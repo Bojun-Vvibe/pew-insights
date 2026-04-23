@@ -23,6 +23,7 @@ import {
   renderSources,
   renderStatus,
 } from './format.js';
+import { renderHtmlReport } from './html.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -43,7 +44,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.1.0')
+  .version('0.2.0')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -120,6 +121,48 @@ program
       } else {
         process.stdout.write(renderSources(pivot) + '\n');
       }
+    } catch (e) {
+      die(e);
+    }
+  });
+
+program
+  .command('report')
+  .description('Render a self-contained HTML report')
+  .option('--since <spec>', 'window: 24h, 7d, 30d, all', '7d')
+  .option('--out <path>', 'output HTML file (default report.html)', 'report.html')
+  .action(async (opts: { since: string; out: string }, cmd) => {
+    try {
+      const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+      const paths = resolvePewPaths(common.pewHome);
+      const since = resolveSince(opts.since);
+      const [queue, sessions, qSize, sqSize, state, cursors, runsCount] = await Promise.all([
+        readQueue(paths),
+        readSessionQueue(paths),
+        fileSize(paths.queueJsonl),
+        fileSize(paths.sessionQueueJsonl),
+        readState(paths),
+        readCursors(paths),
+        countRuns(paths),
+      ]);
+      const digest = buildDigest(queue, sessions, since);
+      const status = buildStatus({
+        pewHome: paths.home,
+        state,
+        queue,
+        queueFileSize: qSize,
+        sessionQueueFileSize: sqSize,
+        cursors,
+        runsCountApprox: runsCount,
+      });
+      const html = renderHtmlReport({
+        pewHome: paths.home,
+        digest,
+        status,
+        generatedAt: new Date().toISOString(),
+      });
+      await fs.writeFile(opts.out, html, 'utf8');
+      process.stdout.write(`wrote ${opts.out} (${html.length} bytes)\n`);
     } catch (e) {
       die(e);
     }
