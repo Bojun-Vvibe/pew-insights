@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.1 — 2026-04-24
+
+Adds `anomalies` — a small but standalone subcommand for flagging
+days whose token usage deviates from a trailing baseline. Designed to
+sit next to `budget` in a cron alerting pipeline.
+
+### Added
+
+- `pew-insights anomalies [--lookback N] [--baseline N] [--threshold Z]
+  [--json]` — for each day in the lookback window (default 30), computes
+  a z-score against the trailing `--baseline` days (default 7, sample
+  stddev with Bessel's correction). Flags days with `|z| ≥ --threshold`
+  (default 2.0) as `high` / `low`. Days where the baseline σ is 0 are
+  reported as `flat` (no division-by-zero, no false alarms on perfectly
+  flat history). The first `--baseline` days exist only to seed the
+  baseline and are not visible in the output. Exits with code 2 when
+  the most recent scored day is `high`, mirroring the `budget`
+  exit-code contract so both commands compose into the same cron
+  alert path.
+
+### Tests
+
+Test count grew from 169 → 187 (+18 across stats helpers, option
+validation, detection accuracy, threshold-tightening behavior, and
+determinism).
+
+### Design notes
+
+- Trailing (not global) baseline so regime shifts don't generate
+  perpetual alerts: a permanent doubling of usage stops being flagged
+  after `--baseline` days.
+- Pure builder (`buildAnomalies`) takes `asOf` explicitly — same
+  determinism contract as `forecast` and `budget`. No `Date.now()`
+  inside scoring code.
+- `anomalies` is intentionally CLI-only this release. The HTML report
+  panel lands in 0.5 alongside the webhook poster.
+
 ## 0.4.0 — 2026-04-23
 
 Adds forward-looking analysis (forecast, budget), A/B comparison
