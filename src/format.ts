@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import type { Digest, DigestRow, DoctorReport, SourcesPivot, Status } from './report.js';
 import type { CostReport } from './cost.js';
 import type { DeltaWindow, TrendReport } from './trend.js';
+import type { TopProjectsResult } from './topprojects.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -383,5 +384,41 @@ export function renderTrend(t: TrendReport): string {
       ),
     );
   }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Top projects
+// ---------------------------------------------------------------------------
+
+export function renderTopProjects(t: TopProjectsResult, opts: { showPaths?: boolean } = {}): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights top-projects'));
+  lines.push(
+    chalk.dim(
+      `since: ${t.since ?? 'all'}    attributed: ${formatTokens(t.totalTokens)}    unattributed: ${formatTokens(t.unattributedTokens)}    resolved: ${t.resolvedCount}/${t.resolvedCount + t.unresolvedCount}`,
+    ),
+  );
+  lines.push('');
+  if (t.rows.length === 0) {
+    lines.push(chalk.dim('no projects in window'));
+    return lines.join('\n');
+  }
+  const headers = opts.showPaths
+    ? ['#', 'project_ref', 'tokens', 'share', 'basename', 'path']
+    : ['#', 'project_ref', 'tokens', 'share', 'basename'];
+  const rows = t.rows.map((r) => {
+    const base = r.basename ?? chalk.dim('(unresolved)');
+    const cols = [
+      String(r.rank),
+      r.projectRef,
+      formatTokens(r.totalTokens),
+      (r.share * 100).toFixed(1) + '%',
+      base,
+    ];
+    if (opts.showPaths) cols.push(r.path ?? chalk.dim('—'));
+    return cols;
+  });
+  lines.push(renderTable(headers, rows));
   return lines.join('\n');
 }

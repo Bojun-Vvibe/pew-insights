@@ -24,6 +24,7 @@ import {
   renderDoctor,
   renderSources,
   renderStatus,
+  renderTopProjects,
   renderTrend,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
@@ -48,6 +49,7 @@ import { executeCompaction, planCompaction } from './compact.js';
 import { attributeTokensByProject } from './byproject.js';
 import { executeGc, planGc } from './gcruns.js';
 import { buildTrend } from './trend.js';
+import { buildTopProjects } from './topprojects.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -245,6 +247,54 @@ program
       die(e);
     }
   });
+
+program
+  .command('top-projects')
+  .description('Top N projects by attributed tokens, with reverse-mapped paths')
+  .option('--since <spec>', 'window: 24h, 7d, 30d, all', '7d')
+  .option('-n, --top <n>', 'number of projects to show (default 10)', '10')
+  .option('--show-paths', 'include resolved paths (still denylist-filtered)')
+  .option('--json', 'emit JSON instead of a pretty table')
+  .action(
+    async (
+      opts: { since: string; top: string; showPaths?: boolean; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+        const paths = resolvePewPaths(common.pewHome);
+        const since = resolveSince(opts.since);
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isFinite(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const [queue, sessions] = await Promise.all([
+          readQueue(paths),
+          readSessionQueue(paths),
+        ]);
+        const result = await buildTopProjects(queue, sessions, since, {
+          topN,
+          showPaths: opts.showPaths,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderTopProjects(result, { showPaths: opts.showPaths }) + '\n',
+          );
+          if (result.unresolvedCount > 0) {
+            process.stdout.write(
+              chalk.dim(
+                `\n${result.unresolvedCount} project_ref(s) unresolved — run \`pew-insights projects --refresh\` to rebuild the lookup.\n`,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
 
 program
   .command('trend')
