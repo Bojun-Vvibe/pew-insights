@@ -21,27 +21,32 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 | Self-contained HTML report                 |   ❌    |      ✅      |
 | Reverse-map `project_ref` → project path   |   ❌    |      ✅      |
 | Per-project token breakdown                |   ❌    |      ✅      |
+| Top-N projects ranking with paths          |   ❌    |      ✅      |
+| Day-over-day / week-over-week trends       |   ❌    |      ✅      |
+| $-cost estimation with cache savings       |   ❌    |      ✅      |
 | Safe queue/runs compaction                 |   ❌    |      ✅      |
 
 ## Features
 
-**v0.2 (this release):**
+**v0.3 (this release):**
 
 - `digest` — token totals by day, source, model, hour-of-day for any window
   - `--by-project` adds a top-10 projects breakdown via proportional attribution
+- `cost` — estimate $ cost with per-model rates; cache savings vs no-cache baseline
+- `trend` — DoD / WoW deltas + ASCII sparklines + per-model breakdown
+- `top-projects` — top N projects by tokens with reverse-mapped paths
 - `status` — pending queue lines, session-queue offset, last-success timestamp, trailing-lock holder, dirty cursor keys, runs/ size
 - `sources` — pivot table of source × model token totals
 - `doctor` — health checks; suggests `compact` and `gc-runs` when applicable
-- `report` — self-contained HTML report with inline SVG charts (no CDNs)
+- `report` — self-contained HTML report with inline SVG charts (no CDNs); now includes cost + trend sections
 - `projects` — reverse-map `project_ref` hashes to project paths (cached, denylist-filtered)
 - `compact` — archive flushed prefix of `queue.jsonl` / `session-queue.jsonl` and shrink the live file (dry-run by default)
 - `gc-runs` — move old `runs/` entries to a cache dir while keeping recent + daily-success entries (dry-run by default)
 
 **Roadmap (see [docs/ROADMAP.md](docs/ROADMAP.md)):**
 
-- v0.3 — weekly email-ready digest, monthly rollup
-- v0.4 — sparkline trends embedded in `digest` terminal output
-- v0.5 — exporters (CSV, Parquet) for the queue / session data
+- v0.4 — exporters (CSV, Parquet) for the queue / session data
+- v0.5 — webhook poster (Slack-formatted digest), anomaly detection
 
 ## Install
 
@@ -78,6 +83,53 @@ pew-insights doctor
 pew-insights status --pew-home /tmp/pew-snapshot
 ```
 
+### Cost estimation
+
+```sh
+# Estimate $ cost for the last 7 days using built-in default rates.
+pew-insights cost --since 7d
+
+# Override rates per-model. File format:
+# { "claude-opus-4.7": { "input": 12, "cachedInput": 1.2, "output": 60, "reasoning": 60 } }
+pew-insights cost --rates ~/.config/pew-insights/rates.json
+```
+
+The default rate table covers `claude-opus-4.7`, `claude-sonnet-4.6`,
+`gpt-5.4`, `gpt-5.2`, and `gpt-5-nano` — treat the numbers as a starting
+point, not gospel; provider pricing changes frequently. Cached input
+tokens are billed at the cached rate, and the report shows both the
+no-cache baseline and the savings the cache earned. Models that aren't
+in your rate table contribute zero cost and are listed separately so
+you can extend the table.
+
+### Trends
+
+```sh
+# Day-over-day, week-over-week deltas + 14-day sparkline.
+pew-insights trend
+
+# Custom display window (deltas always use fixed 24h / 7d offsets).
+pew-insights trend --window 30
+```
+
+The sparkline uses Unicode block characters (`▁▂▃▄▅▆▇█`) so it pastes
+cleanly into emails and chat. `pct` is reported as `n/a` when the
+previous window is zero — never `+Inf%` or `NaN%`.
+
+### Top projects
+
+```sh
+# Top 10 projects by attributed tokens (last 7d).
+pew-insights top-projects
+
+# Top 25 projects with full paths (denylist still applies).
+pew-insights top-projects -n 25 --show-paths --since 30d
+```
+
+Reuses the project_ref reverse-mapping cache built by `pew-insights
+projects`. Run `pew-insights projects --refresh` first if a lot of
+your refs show up as `(unresolved)`.
+
 ### HTML report
 
 ```sh
@@ -87,7 +139,9 @@ open report.html
 ```
 
 The output uses inline CSS (light + dark via `prefers-color-scheme`) and
-hand-rolled inline SVG charts — no external resources are loaded.
+hand-rolled inline SVG charts — no external resources are loaded. The
+report includes everything from `digest`, plus the `cost` and `trend`
+sections.
 
 ### Project-ref reverse mapping
 

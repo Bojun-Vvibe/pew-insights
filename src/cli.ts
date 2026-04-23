@@ -70,7 +70,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.2.0')
+  .version('0.3.0')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program

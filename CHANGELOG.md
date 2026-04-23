@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0 — 2026-04-23
+
+Adds dollar-cost estimation, trend analysis with sparklines, and a
+top-projects ranking. The HTML report grows two new sections (cost,
+trend) that drop in next to the existing digest sections.
+
+### Added
+
+- `pew-insights cost --since <window>` — estimates USD cost from queue
+  tokens against a per-model rate table. Default rates ship for
+  `claude-opus-4.7`, `claude-sonnet-4.6`, `gpt-5.4`, `gpt-5.2`, and
+  `gpt-5-nano`. Cached input tokens are priced at the discounted
+  cached rate, and the report surfaces a no-cache baseline + explicit
+  cache savings. Override per-model via
+  `~/.config/pew-insights/rates.json` or `--rates <path>`. Unknown
+  models contribute zero cost and are listed separately so the user
+  can extend the table.
+- `pew-insights trend --since <window>` — day-over-day (24h vs prior
+  24h) and week-over-week (7d vs prior 7d) deltas with absolute and
+  pct-change figures, plus a unicode block sparkline of the last N
+  (default 14) days. Per-model breakdown shows current vs previous
+  half-window with its own per-model spark. Deltas use fixed offsets
+  relative to `asOf` so headline numbers stay stable as the user
+  changes the display window. `pct` is `null` (rendered as `n/a`)
+  when the previous window is zero, never `+Inf%` or `NaN%`.
+- `pew-insights top-projects --since <window> -n <N>` — ranks
+  projects by attributed tokens (proportional message-share via
+  `byproject.ts`) and labels each row using the cached project-ref
+  lookup populated by `pew-insights projects`. Reuses both modules
+  verbatim. Same denylist filter applies to every label, including
+  in JSON output: denylisted projects keep their position but their
+  basename becomes `<redacted>` and path becomes `null`. Unresolved
+  refs show as `(unresolved)` and surface a hint to rebuild the cache.
+- `pew-insights report` — HTML output now embeds the new cost and
+  trend sections inline alongside the existing digest sections. The
+  `HtmlReportInput.cost` / `.trend` fields are optional, so direct
+  callers built against 0.2 keep compiling and rendering.
+
+### Changed
+
+- `report.html` is now gitignored (it's a build output, not source).
+
+### Tests
+
+- Test count grew from 41 → 75. New suites: `cost` (10), `trend`
+  (11), `topprojects` (8), `html` (6). Coverage includes
+  cache-savings math, default-rate completeness, sparkline edge
+  cases (empty, constant, monotonic, negatives), DoD/WoW arithmetic,
+  div-by-zero pct guard, denylist enforcement on the new
+  top-projects path, XSS-safe HTML escaping in the cost table, and
+  back-compat behaviour of `renderHtmlReport` when the new fields
+  are omitted.
+
 ## 0.2.0 — 2026-04-23
 
 Adds an HTML report, project-ref reverse mapping, and the first two safe
