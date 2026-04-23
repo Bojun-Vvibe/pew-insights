@@ -235,10 +235,16 @@ program
         cursors,
         runsCountApprox: runsCount,
       });
+      // Cost + trend always populated for the HTML view; cheap to compute.
+      const userRates = await readRatesFile(defaultRatesPath());
+      const cost = computeCost(queue, since, mergeRates(DEFAULT_RATES, userRates));
+      const trend = buildTrend(queue, since, { windowDays: 14 });
       const html = renderHtmlReport({
         pewHome: paths.home,
         digest,
         status,
+        cost,
+        trend,
         generatedAt: new Date().toISOString(),
       });
       await fs.writeFile(opts.out, html, 'utf8');

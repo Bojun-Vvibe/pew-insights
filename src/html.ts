@@ -1,5 +1,7 @@
 import type { Digest } from './report.js';
 import type { Status } from './report.js';
+import type { CostReport } from './cost.js';
+import type { TrendReport } from './trend.js';
 import { sparkline, barChart, pieChart } from './svg.js';
 
 function escapeHtml(s: string): string {
@@ -26,6 +28,26 @@ function fmtBytes(n: number): string {
   if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + ' MB';
   if (n >= 1024) return (n / 1024).toFixed(2) + ' KB';
   return n + ' B';
+}
+
+function fmtUsd(n: number): string {
+  if (!Number.isFinite(n)) return '$0.00';
+  if (Math.abs(n) >= 1000) return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  if (Math.abs(n) >= 1) return '$' + n.toFixed(2);
+  if (Math.abs(n) >= 0.01) return '$' + n.toFixed(4);
+  if (n === 0) return '$0.00';
+  return '$' + n.toFixed(6);
+}
+
+function fmtPct(p: number | null): string {
+  if (p === null) return 'n/a';
+  const sign = p > 0 ? '+' : '';
+  return `${sign}${(p * 100).toFixed(1)}%`;
+}
+
+function pctClass(p: number | null): string {
+  if (p === null) return 'muted';
+  return p >= 0 ? 'ok' : 'err';
 }
 
 const STYLES = `
@@ -88,11 +110,15 @@ export interface HtmlReportInput {
   pewHome: string;
   digest: Digest;
   status: Status | null;
+  /** Optional cost report; section is omitted when absent. */
+  cost?: CostReport | null;
+  /** Optional trend report; section is omitted when absent. */
+  trend?: TrendReport | null;
   generatedAt: string;
 }
 
 export function renderHtmlReport(input: HtmlReportInput): string {
-  const { pewHome, digest, status, generatedAt } = input;
+  const { pewHome, digest, status, cost, trend, generatedAt } = input;
 
   const dayValues = digest.byDay.map((d) => d.totalTokens);
   const dayLabels = digest.byDay.map((d) => d.key);
@@ -191,6 +217,84 @@ export function renderHtmlReport(input: HtmlReportInput): string {
 </table>`;
   }
 
+  let costSection = '';
+  if (cost) {
+    const rateRows =
+      cost.rows.length === 0
+        ? '<tr><td colspan="6" class="muted">no priced events in window</td></tr>'
+        : cost.rows
+            .map(
+              (r) =>
+                `<tr><td>${escapeHtml(r.model)}</td><td class="num">${escapeHtml(fmtUsd(r.totalCost))}</td><td class="num">${escapeHtml(fmtUsd(r.inputCost))}</td><td class="num">${escapeHtml(fmtUsd(r.cachedInputCost))}</td><td class="num">${escapeHtml(fmtUsd(r.outputCost))}</td><td class="num">${escapeHtml(fmtUsd(r.reasoningCost))}</td></tr>`,
+            )
+            .join('');
+
+    const unknownRows =
+      cost.unknownModels.length === 0
+        ? ''
+        : `<h2>Unpriced models</h2>
+<p class="muted">Add these to <code>~/.config/pew-insights/rates.json</code> to include them in the estimate.</p>
+<table>
+  <thead><tr><th>model</th><th class="num">tokens</th><th class="num">events</th></tr></thead>
+  <tbody>${cost.unknownModels
+    .map(
+      (u) =>
+        `<tr><td>${escapeHtml(u.model)}</td><td class="num">${fmtTokens(u.totalTokens)}</td><td class="num">${fmt(u.events)}</td></tr>`,
+    )
+    .join('')}</tbody>
+</table>`;
+
+    costSection = `
+<h2>Estimated cost</h2>
+<div class="totals">
+  <div class="card"><div class="label">Estimated cost</div><div class="value">${escapeHtml(fmtUsd(cost.totalCost))}</div></div>
+  <div class="card"><div class="label">No-cache baseline</div><div class="value">${escapeHtml(fmtUsd(cost.totalCostNoCache))}</div></div>
+  <div class="card"><div class="label">Cache savings</div><div class="value ok">${escapeHtml(fmtUsd(cost.cacheSavings))}</div></div>
+</div>
+<table>
+  <thead><tr><th>model</th><th class="num">total</th><th class="num">input</th><th class="num">cached</th><th class="num">output</th><th class="num">reasoning</th></tr></thead>
+  <tbody>${rateRows}</tbody>
+</table>
+${unknownRows}`;
+  }
+
+  let trendSection = '';
+  if (trend) {
+    const trendSpark = sparkline(trend.series.map((s) => s.tokens), { width: 720, height: 60 });
+    const dod = trend.dod;
+    const wow = trend.wow;
+    const modelRows =
+      trend.byModel.length === 0
+        ? '<tr><td colspan="5" class="muted">no model activity in window</td></tr>'
+        : trend.byModel
+            .map(
+              (m) =>
+                `<tr><td>${escapeHtml(m.model)}</td><td class="num">${fmtTokens(m.current)}</td><td class="num">${fmtTokens(m.previous)}</td><td class="num ${pctClass(m.pct)}">${escapeHtml(fmtPct(m.pct))}</td><td><code>${escapeHtml(m.sparkline)}</code></td></tr>`,
+            )
+            .join('');
+
+    trendSection = `
+<h2>Trend</h2>
+<div class="totals">
+  <div class="card">
+    <div class="label">Day-over-day (24h)</div>
+    <div class="value">${fmtTokens(dod.current)} <span class="muted">vs</span> ${fmtTokens(dod.previous)}</div>
+    <div class="${pctClass(dod.pct)}">${escapeHtml(fmtPct(dod.pct))}</div>
+  </div>
+  <div class="card">
+    <div class="label">Week-over-week (7d)</div>
+    <div class="value">${fmtTokens(wow.current)} <span class="muted">vs</span> ${fmtTokens(wow.previous)}</div>
+    <div class="${pctClass(wow.pct)}">${escapeHtml(fmtPct(wow.pct))}</div>
+  </div>
+</div>
+<div class="spark">${trendSpark}</div>
+<p class="muted">${escapeHtml(trend.series[0]?.day ?? '')} → ${escapeHtml(trend.series.at(-1)?.day ?? '')} (${trend.series.length}d window)</p>
+<table>
+  <thead><tr><th>model</th><th class="num">current</th><th class="num">previous</th><th class="num">Δ%</th><th>spark</th></tr></thead>
+  <tbody>${modelRows}</tbody>
+</table>`;
+  }
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -208,6 +312,10 @@ export function renderHtmlReport(input: HtmlReportInput): string {
 </div>
 
 <div class="totals">${totalsCards}</div>
+
+${trendSection}
+
+${costSection}
 
 <h2>Tokens by day</h2>
 <div class="spark">${sparkSvg}</div>
