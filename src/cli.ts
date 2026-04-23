@@ -19,6 +19,7 @@ import {
   resolveSince,
 } from './report.js';
 import {
+  renderBudget,
   renderCost,
   renderDigest,
   renderDoctor,
@@ -52,6 +53,7 @@ import { executeGc, planGc } from './gcruns.js';
 import { buildTrend } from './trend.js';
 import { buildTopProjects } from './topprojects.js';
 import { buildForecast } from './forecast.js';
+import { buildBudget, defaultBudgetPath, readBudgetFile } from './budget.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -695,5 +697,69 @@ program
       die(e);
     }
   });
+
+program
+  .command('budget')
+  .description('Track $ burn against a daily budget; show ETA to monthly breach')
+  .option('--daily <usd>', 'daily budget in USD (overrides config file)')
+  .option('--monthly <usd>', 'monthly cap in USD (otherwise daily × days-in-month)')
+  .option('--config <path>', 'budget config file (default ~/.config/pew-insights/budget.json)')
+  .option('--window <days>', 'rolling window for burn-rate average (default 7)', '7')
+  .option('--rates <path>', 'rates file (defaults to cost rates path)')
+  .option('--json', 'emit JSON')
+  .action(
+    async (
+      opts: {
+        daily?: string;
+        monthly?: string;
+        config?: string;
+        window: string;
+        rates?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        // Load budget config: --daily wins; else config file; else error.
+        let cfgFromFile = await readBudgetFile(opts.config ?? defaultBudgetPath());
+        let dailyUsd: number | undefined;
+        if (opts.daily != null) dailyUsd = Number(opts.daily);
+        else if (cfgFromFile) dailyUsd = cfgFromFile.dailyUsd;
+        if (dailyUsd == null || !Number.isFinite(dailyUsd) || dailyUsd < 0) {
+          throw new Error(
+            `no budget configured. Pass --daily <usd> or write {"dailyUsd": N} to ${opts.config ?? defaultBudgetPath()}`,
+          );
+        }
+        let monthlyUsd: number | undefined;
+        if (opts.monthly != null) monthlyUsd = Number(opts.monthly);
+        else if (cfgFromFile?.monthlyUsd != null) monthlyUsd = cfgFromFile.monthlyUsd;
+
+        const windowDays = Number.parseInt(opts.window, 10);
+        if (!Number.isFinite(windowDays) || windowDays < 1) {
+          throw new Error(`--window must be a positive integer (got ${opts.window})`);
+        }
+
+        const ratesPath = opts.rates ?? defaultRatesPath();
+        const userRates = await readRatesFile(ratesPath);
+        const rates = mergeRates(DEFAULT_RATES, userRates);
+        const queue = await readQueue(paths);
+
+        const report = buildBudget(queue, rates, { dailyUsd, monthlyUsd }, { windowDays });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBudget(report) + '\n');
+        }
+
+        if (report.status === 'breached') process.exitCode = 2;
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
 
 program.parseAsync(process.argv).catch(die);

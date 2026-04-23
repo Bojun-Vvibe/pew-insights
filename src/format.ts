@@ -4,6 +4,7 @@ import type { CostReport } from './cost.js';
 import type { DeltaWindow, TrendReport } from './trend.js';
 import type { TopProjectsResult } from './topprojects.js';
 import type { ForecastReport } from './forecast.js';
+import type { BudgetReport, BudgetStatus } from './budget.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -472,5 +473,55 @@ export function renderForecast(f: ForecastReport): string {
   lines.push(
     chalk.dim(`slope: ${f.slope >= 0 ? '+' : ''}${formatTokens(Math.round(f.slope))}/day  intercept: ${formatTokens(Math.round(f.intercept))}`),
   );
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Budget
+// ---------------------------------------------------------------------------
+
+function statusColor(s: BudgetStatus): (s: string) => string {
+  switch (s) {
+    case 'under':    return chalk.green;
+    case 'on-track': return chalk.cyan;
+    case 'over':     return chalk.yellow;
+    case 'breached': return chalk.red.bold;
+  }
+}
+
+export function renderBudget(b: BudgetReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights budget'));
+  lines.push(chalk.dim(`as of: ${b.asOf}    window: ${b.windowDays}d`));
+  lines.push('');
+
+  const color = statusColor(b.status);
+  const pct = (b.percentOfMonthBudgetUsed * 100).toFixed(1) + '%';
+  lines.push(
+    renderTable(
+      ['metric', 'value'],
+      [
+        ['daily budget', formatUsd(b.dailyBudgetUsd) + '/day'],
+        ['monthly budget', formatUsd(b.monthlyBudgetUsd)],
+        ['month spend so far', formatUsd(b.monthSpendUsd) + '   (' + pct + ' of monthly)'],
+        ['today spend', formatUsd(b.todaySpendUsd)],
+        ['daily burn (avg)', formatUsd(b.dailyBurnUsd) + '/day'],
+        ['days remaining in month', String(b.daysRemainingInMonth)],
+        ['ETA to monthly breach', b.etaBreachDay ?? chalk.dim('— (not within this month)')],
+        ['status', color(b.status.toUpperCase())],
+      ],
+    ),
+  );
+
+  if (b.dailySpendSeries.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`Daily spend (${b.windowDays}d window)`));
+    lines.push(
+      renderTable(
+        ['day', 'usd'],
+        b.dailySpendSeries.map((p) => [p.day, formatUsd(p.usd)]),
+      ),
+    );
+  }
   return lines.join('\n');
 }
