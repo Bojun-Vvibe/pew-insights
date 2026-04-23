@@ -386,7 +386,7 @@ export function buildDoctor(inputs: DoctorInputs): DoctorReport {
       severity: 'warn',
       code: 'RUNS_DIR_LARGE',
       message: `runs/ contains ${runsCount.toLocaleString()} files`,
-      hint: 'pew never prunes runs/. Consider archiving older entries.',
+      hint: 'Run `pew-insights gc-runs --keep 1000` to archive older entries.',
     });
   }
 
@@ -397,7 +397,7 @@ export function buildDoctor(inputs: DoctorInputs): DoctorReport {
       severity: 'warn',
       code: 'QUEUE_NEVER_COMPACTED',
       message: `queue.jsonl is ${queueFileSize.toLocaleString()} bytes; ${flushedBytes.toLocaleString()} bytes already flushed but not pruned`,
-      hint: 'Roadmap: `pew-insights compact --confirm` (v0.3) will safely shrink this file.',
+      hint: 'Run `pew-insights compact --confirm` to archive the flushed prefix and shrink the live file.',
     });
   }
 

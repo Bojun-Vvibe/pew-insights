@@ -36,6 +36,7 @@ import {
 } from './projects.js';
 import { executeCompaction, planCompaction } from './compact.js';
 import { attributeTokensByProject } from './byproject.js';
+import { executeGc, planGc } from './gcruns.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -466,6 +467,60 @@ program
               );
             }
           }
+        }
+      }
+    } catch (e) {
+      die(e);
+    }
+  });
+
+program
+  .command('gc-runs')
+  .description('Move old runs/ entries into ~/.cache/pew-insights/archive/runs/')
+  .option('--keep <n>', 'keep the most recent N runs (default 1000)', '1000')
+  .option('--confirm', 'actually move files; without this the command is dry-run')
+  .option('--json', 'emit JSON')
+  .action(async (opts: { keep: string; confirm?: boolean; json?: boolean }, cmd) => {
+    try {
+      const common = cmd.optsWithGlobals() as CommonOpts;
+      const paths = resolvePewPaths(common.pewHome);
+      const keep = Number.parseInt(opts.keep, 10);
+      if (!Number.isFinite(keep) || keep < 0) {
+        throw new Error(`--keep must be a non-negative integer (got ${opts.keep})`);
+      }
+      const plan = await planGc(paths, { keep });
+      let moved = 0;
+      if (opts.confirm) {
+        const r = await executeGc(plan);
+        moved = r.moved;
+      }
+      if (opts.json || common.json) {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              dryRun: !opts.confirm,
+              totalRuns: plan.totalRuns,
+              keepRecent: plan.keepRecent,
+              keepers: plan.keepers.length,
+              candidatesToMove: plan.candidates.length,
+              archiveDir: plan.archiveDir,
+              moved,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      } else {
+        process.stdout.write(`pew-insights gc-runs ${opts.confirm ? '(LIVE)' : '(dry-run)'}\n`);
+        process.stdout.write(`runs/ entries: ${plan.totalRuns}\n`);
+        process.stdout.write(`keep most recent: ${plan.keepRecent}\n`);
+        process.stdout.write(`total keepers (recent ∪ daily-success): ${plan.keepers.length}\n`);
+        process.stdout.write(`candidates to move: ${plan.candidates.length}\n`);
+        process.stdout.write(`archive dir: ${plan.archiveDir}\n`);
+        if (!opts.confirm) {
+          process.stdout.write('\nDry-run only. Re-run with --confirm to actually move files.\n');
+        } else {
+          process.stdout.write(`\nMoved ${moved} files.\n`);
         }
       }
     } catch (e) {
