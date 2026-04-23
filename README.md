@@ -28,7 +28,15 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 
 ## Features
 
-**v0.3 (this release):**
+**v0.4 (this release):**
+
+- `forecast` — OLS over last N daily totals (zero-filled); projects the rest of the current UTC week with 95 % prediction intervals; reports tomorrow, full-week projection, slope, R², low-confidence flag
+- `budget` — daily / monthly USD targets, MTD spend, burn rate, ETA-to-breach, status (`under` / `on-track` / `over` / `breached`); exits with code 2 on `breached` so it composes into cron alerting
+- `compare` — A/B over two named windows by source or model; presets `wow` / `dod` / `rolling-week` plus arbitrary ISO ranges; coarse Welch-t significance hint per row
+- `export` — dump filtered queue or sessions as CSV (RFC-4180-style) or NDJSON (Parquet-friendly); `usd` column populated from rates table
+- HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
+
+**v0.3:**
 
 - `digest` — token totals by day, source, model, hour-of-day for any window
   - `--by-project` adds a top-10 projects breakdown via proportional attribution
@@ -38,14 +46,13 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `status` — pending queue lines, session-queue offset, last-success timestamp, trailing-lock holder, dirty cursor keys, runs/ size
 - `sources` — pivot table of source × model token totals
 - `doctor` — health checks; suggests `compact` and `gc-runs` when applicable
-- `report` — self-contained HTML report with inline SVG charts (no CDNs); now includes cost + trend sections
+- `report` — self-contained HTML report with inline SVG charts (no CDNs)
 - `projects` — reverse-map `project_ref` hashes to project paths (cached, denylist-filtered)
 - `compact` — archive flushed prefix of `queue.jsonl` / `session-queue.jsonl` and shrink the live file (dry-run by default)
 - `gc-runs` — move old `runs/` entries to a cache dir while keeping recent + daily-success entries (dry-run by default)
 
 **Roadmap (see [docs/ROADMAP.md](docs/ROADMAP.md)):**
 
-- v0.4 — exporters (CSV, Parquet) for the queue / session data
 - v0.5 — webhook poster (Slack-formatted digest), anomaly detection
 
 ## Install
@@ -129,6 +136,84 @@ pew-insights top-projects -n 25 --show-paths --since 30d
 Reuses the project_ref reverse-mapping cache built by `pew-insights
 projects`. Run `pew-insights projects --refresh` first if a lot of
 your refs show up as `(unresolved)`.
+
+### Forecast
+
+```sh
+# OLS over the last 14 days; project the rest of this UTC week.
+pew-insights forecast
+
+# Longer lookback for a smoother fit.
+pew-insights forecast --lookback 30 --json
+```
+
+Reports tomorrow's predicted total with a 95 % prediction interval, the
+full-week projection (observed + predicted), slope (tokens/day), and
+R². Flagged as `low-confidence` when the sample is too small or all-zero.
+The PI is a directional band, not a calibrated guarantee.
+
+### Budget
+
+```sh
+# Inline target.
+pew-insights budget --daily 5
+
+# Both daily and explicit monthly cap.
+pew-insights budget --daily 5 --monthly 120 --window 14
+
+# Read from ~/.config/pew-insights/budget.json
+echo '{"dailyUsd": 5}' > ~/.config/pew-insights/budget.json
+pew-insights budget
+```
+
+Status is one of `under` / `on-track` / `over` / `breached`. Exit code
+is 2 on `breached`, suitable for cron alerting (`pew-insights budget
+|| send-alert`). ETA-to-breach is reported in UTC `yyyy-mm-dd` form
+when the burn rate would breach the cap inside the current month.
+
+### Compare
+
+```sh
+# This week vs last week, per source.
+pew-insights compare --preset wow
+
+# Today vs yesterday, per model.
+pew-insights compare --preset dod --by model
+
+# Arbitrary windows in ISO.
+pew-insights compare \
+  --a-from 2026-04-15T00:00:00Z --a-until 2026-04-22T00:00:00Z \
+  --b-from 2026-04-08T00:00:00Z --b-until 2026-04-15T00:00:00Z \
+  --by model --top 10
+```
+
+Each row reports tokens in window A, tokens in window B, delta,
+percent change, and a coarse Welch-t hint over per-day token totals:
+`significant` (|t| ≥ 1.96), `weak` (|t| ≥ 1.28), `n/s`, or
+`insufficient`. Treat the hint as a directional cue — it's a t-stat
+without df correction, not a publication-grade test.
+
+### Export
+
+```sh
+# Last 7 days of queue events, CSV.
+pew-insights export --since 7d > events.csv
+
+# NDJSON for DuckDB / pandas / Parquet ingest.
+pew-insights export --format ndjson --since 30d > events.ndjson
+
+# Filter by source + model.
+pew-insights export --source cli --model gpt --since 7d --out cli-gpt.csv
+
+# Sessions instead of queue rows.
+pew-insights export --entity sessions --format ndjson --since 30d
+```
+
+CSV uses RFC-4180-style escaping with LF line endings. NDJSON emits
+one JSON object per line — the format every Parquet ingest tool
+understands. Queue exports include a per-row `usd` column when a
+rates table is loaded so BI tools can sum dollars without re-applying
+rates.
 
 ### HTML report
 

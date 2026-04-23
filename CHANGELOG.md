@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.0 — 2026-04-23
+
+Adds forward-looking analysis (forecast, budget), A/B comparison
+(compare), and a raw-events dump for downstream BI (export). The HTML
+report grows two new sections — Forecast and Budget — that sit next
+to the existing trend/cost sections.
+
+### Added
+
+- `pew-insights forecast [--lookback N] [--json]` — fits an OLS line
+  through the last N daily token totals (zero-filled, default 14)
+  and projects the rest of the current UTC ISO week with a 95 %
+  prediction interval. Reports tomorrow's predicted total, the full
+  week projection (observed + predicted), slope, and R². Flags the
+  fit as low-confidence when the sample is too small or has zero
+  variance.
+
+- `pew-insights budget [--daily USD] [--monthly USD] [--config PATH]
+  [--window N] [--rates PATH] [--json]` — tracks daily and monthly
+  spend against a USD target, computes burn rate over the last N
+  days, projects an ETA-to-breach day if burn outruns the cap, and
+  classifies status as one of `under` / `on-track` / `over` /
+  `breached`. Exits with code 2 on `breached` so it composes into
+  cron alerting. Config can come from CLI flags or
+  `~/.config/pew-insights/budget.json`.
+
+- `pew-insights compare [--preset NAME | --a-from/--a-until/--b-from/
+  --b-until ISO] [--by source|model] [--top N] [--min-tokens N]
+  [--json]` — compares two named time windows side-by-side per source
+  or per model. Three presets ship: `this-week-vs-last-week` (alias
+  `wow`), `today-vs-yesterday` (alias `dod`), and `last-7d-vs-prior-7d`
+  (alias `rolling-week`). Reports per-key delta, percent change, and
+  a coarse Welch t-statistic over per-day token totals classified as
+  `significant` / `weak` / `n/s` / `insufficient`. The hint is a
+  directional cue, not a publication-grade test.
+
+- `pew-insights export [--entity queue|sessions] [--format csv|ndjson]
+  [--since SPEC] [--until ISO] [--source SUB] [--model SUB]
+  [--out PATH] [--rates PATH]` — dumps filtered raw events. CSV uses
+  RFC-4180-style escaping (LF line endings); NDJSON emits one JSON
+  object per line, the format every Parquet ingest tool understands
+  (`duckdb read_json_auto`, `pandas.read_json(lines=True)`, etc.).
+  Queue exports include a per-row `usd` column when a rates table is
+  loaded so BI tools can sum dollars without re-applying rates.
+
+- HTML report (`pew-insights report`) now includes:
+  - **Forecast** section with tomorrow's prediction, week projection
+    with PI bands, slope/R² card, low-confidence warning when
+    applicable, and a per-day prediction table.
+  - **Budget** section with status badge, today/MTD spend, daily
+    target, monthly cap, burn rate, ETA-to-breach, and a sparkline of
+    daily spend. Rendered only when a budget config exists on disk.
+
+### Tests
+
+Test count grew from 75 → 169 (+94 across forecast, budget, compare,
+export, and HTML extension suites).
+
 ## 0.3.0 — 2026-04-23
 
 Adds dollar-cost estimation, trend analysis with sparklines, and a
