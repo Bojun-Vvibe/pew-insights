@@ -24,6 +24,16 @@ import {
   renderStatus,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
+import {
+  buildLookup,
+  defaultCachePath,
+  isPathDenylisted,
+  readCache,
+  redactPath,
+  scanCandidates,
+  writeCache,
+  type ResolvedRef,
+} from './projects.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -228,6 +238,117 @@ program
       die(e);
     }
   });
+
+program
+  .command('projects')
+  .description('Reverse-map session-queue project_ref hashes to project paths')
+  .option('--show-paths', 'show full filesystem paths (still denylist-filtered)')
+  .option('--refresh', 'force a fresh scan even if a cache exists')
+  .option('--json', 'emit JSON instead of a pretty table')
+  .option('--scan-root <path...>', 'override scan roots (repeatable)')
+  .action(
+    async (
+      opts: { showPaths?: boolean; refresh?: boolean; json?: boolean; scanRoot?: string[] },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const sessions = await readSessionQueue(paths);
+
+        // Tally sessions per project_ref so we can sort & summarise.
+        const sessionsByRef = new Map<string, number>();
+        for (const s of sessions) {
+          const ref = s.project_ref || 'unknown';
+          sessionsByRef.set(ref, (sessionsByRef.get(ref) ?? 0) + 1);
+        }
+        const observed = new Set(sessionsByRef.keys());
+
+        let resolved: ResolvedRef[];
+        const cachePath = defaultCachePath();
+
+        if (!opts.refresh) {
+          const cache = await readCache(cachePath);
+          if (cache) {
+            resolved = cache.entries.filter((e) => observed.has(e.projectRef));
+          } else {
+            resolved = await freshScan(observed, opts.scanRoot);
+            await writeCache(
+              { version: 1, generatedAt: new Date().toISOString(), entries: resolved },
+              cachePath,
+            );
+          }
+        } else {
+          resolved = await freshScan(observed, opts.scanRoot);
+          await writeCache(
+            { version: 1, generatedAt: new Date().toISOString(), entries: resolved },
+            cachePath,
+          );
+        }
+
+        const rows = resolved
+          .map((e) => ({
+            ...e,
+            sessions: sessionsByRef.get(e.projectRef) ?? 0,
+          }))
+          .sort((a, b) => b.sessions - a.sessions);
+
+        if (opts.json || common.json) {
+          // JSON output never includes denylisted paths.
+          const safe = rows.map((r) => ({
+            projectRef: r.projectRef,
+            basename: isPathDenylisted(r.basename) ? '<redacted>' : r.basename,
+            ...(opts.showPaths && !isPathDenylisted(r.path) ? { path: r.path } : {}),
+            algo: r.algo,
+            variant: r.variant,
+            sessions: r.sessions,
+          }));
+          process.stdout.write(
+            JSON.stringify(
+              {
+                cachePath,
+                totalRefs: observed.size,
+                resolvedRefs: rows.length,
+                entries: safe,
+              },
+              null,
+              2,
+            ) + '\n',
+          );
+        } else {
+          process.stdout.write(`pew-insights projects\n`);
+          process.stdout.write(
+            `cache: ${cachePath}\nresolved ${rows.length} of ${observed.size} project_refs\n\n`,
+          );
+          const headers = opts.showPaths
+            ? ['project_ref', 'sessions', 'basename', 'path']
+            : ['project_ref', 'sessions', 'basename'];
+          process.stdout.write(headers.join('\t') + '\n');
+          for (const r of rows) {
+            const safeBase = isPathDenylisted(r.basename) ? '<redacted>' : r.basename;
+            const cols = [
+              r.projectRef,
+              String(r.sessions),
+              safeBase,
+              ...(opts.showPaths ? [redactPath(r.path)] : []),
+            ];
+            process.stdout.write(cols.join('\t') + '\n');
+          }
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+async function freshScan(
+  observed: Set<string>,
+  scanRoots: string[] | undefined,
+): Promise<ResolvedRef[]> {
+  const candidates = await scanCandidates(scanRoots ? { roots: scanRoots } : {});
+  const lookup = buildLookup(candidates, observed);
+  return Array.from(lookup.values());
+}
 
 function die(e: unknown): never {
   const msg = e instanceof Error ? e.stack ?? e.message : String(e);
