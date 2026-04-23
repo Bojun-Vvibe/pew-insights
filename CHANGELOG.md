@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.2 — 2026-04-24
+
+Adds `ratios` — a small, internal helper module for bounded ratios
+(metrics in [0, 1] like cache-hit ratio or reasoning-token share).
+Lays the groundwork for 0.5's webhook scorer without wiring anything
+new to the CLI yet.
+
+### Added
+
+- `src/ratios.ts` exports:
+  - `clampProbability(p, eps?)` — symmetric epsilon clamp; maps 0 →
+    eps and 1 → 1-eps so the round trip stays antisymmetric around
+    0.5.
+  - `logit(p)` — `ln(p / (1 - p))`. Refuses raw 0 / 1 by design so
+    callers can't silently feed ±Infinity into a downstream EWMA.
+  - `expit(z)` — inverse of logit; rewritten branch keeps it
+    numerically stable for very negative z (where the naive form
+    overflows in `Math.exp(-z)`).
+  - `safeLogit(p, eps?)` — clamp then logit. The opt-in entry point
+    for ratios that legitimately hit the boundaries.
+  - `ewmaLogit(series, alpha, eps?)` — EWMA computed in logit space
+    and mapped back into (0, 1). Stays inside the interval even on
+    all-0 or all-1 input, which linear-space EWMA does not.
+  - `ewmaLogitSeries(...)` — same as above but returns the running
+    smoothed value at every step.
+
+### Tests
+
+187 → 225 (+38) covering clamp symmetry, logit antisymmetry, expit
+numerical stability for large |z|, round-trip identities, safeLogit
+boundary handling, EWMA determinism, alpha behavior, step-change
+tracking, and boundary safety.
+
+### Design notes
+
+- The whole module exists because `anomalies` (0.4.1) scores raw
+  token totals (unbounded counts where ±kσ is fine) but the next
+  metrics we want to score live in a closed interval and break that
+  assumption. Logit-space scoring is the standard fix.
+- No `linearEwma` helper. Adding one would invite the boundary bug
+  this module exists to avoid.
+- No CLI command this release. 0.5's webhook scorer will compose
+  `ewmaLogit` with the existing `mean` / `stdDev` from
+  `anomalies.ts`.
+
 ## 0.4.1 — 2026-04-24
 
 Adds `anomalies` — a small but standalone subcommand for flagging

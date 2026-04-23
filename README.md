@@ -35,6 +35,7 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `compare` — A/B over two named windows by source or model; presets `wow` / `dod` / `rolling-week` plus arbitrary ISO ranges; coarse Welch-t significance hint per row
 - `export` — dump filtered queue or sessions as CSV (RFC-4180-style) or NDJSON (Parquet-friendly); `usd` column populated from rates table
 - `anomalies` *(0.4.1)* — flags days whose token total deviates ≥ N σ from a trailing baseline (default 7-day baseline, threshold |z| ≥ 2.0); exits with code 2 when the most recent day spiked HIGH so it composes into cron alerting alongside `budget`
+- `ratios` *(0.4.2, internal)* — pure helper module for bounded ratios in [0, 1] (`clampProbability`, `logit`/`expit`, `safeLogit`, `ewmaLogit`, `ewmaLogitSeries`); EWMA stays inside (0, 1) on all-0/all-1 input where naive linear-space EWMA breaks; foundation for the 0.5 cache-hit / reasoning-share scorers
 - HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
 
 **v0.3:**
