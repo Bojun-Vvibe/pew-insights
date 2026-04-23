@@ -1,0 +1,46 @@
+{
+  "name": "pew-insights",
+  "version": "0.1.0",
+  "description": "Local-first reports and analytics for your `pew` CLI usage.",
+  "license": "MIT",
+  "author": "Bojun-Vvibe",
+  "type": "module",
+  "bin": {
+    "pew-insights": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "node --test --import tsx test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "date-fns": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "keywords": [
+    "pew",
+    "cli",
+    "analytics",
+    "tokens",
+    "ai-usage",
+    "report"
+  ]
+}
