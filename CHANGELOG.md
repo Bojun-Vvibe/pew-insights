@@ -2,6 +2,94 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.3 — 2026-04-24
+
+Wires the 0.4.2 logit-space EWMA helpers into a public surface:
+the new `pew-insights ratios` subcommand scores cache-hit-ratio
+drift over a window. Gives the previously-internal `ratios.ts`
+module a user-visible reason to exist and lays the
+efficiency-monitoring counterpart to `anomalies` (which watches
+volume drift).
+
+### Added
+
+- `pew-insights ratios` subcommand
+  - Composes `buildDailySeries` (trend.ts) for the day grid +
+    zero-fill semantics, `safeLogit`/`expit`/`ewmaLogit` (ratios.ts)
+    for the bounded-ratio math, and `mean`/`stdDev` (anomalies.ts)
+    for the trailing-baseline z-score.
+  - Flags each day as `high` (cache-hit climbed unusually), `low`
+    (cache-hit dropped — usually bad operational news), `normal`,
+    `flat` (logit-space σ ≈ 0), `warmup`, or `undefined` (no input
+    tokens that day).
+  - Exits with code 2 when the most recent scored day flagged in
+    either direction. Mirrors `budget breached` and
+    `anomalies recentHigh` so it composes into existing cron
+    alerting.
+  - Options: `--lookback` (default 30d), `--alpha` (EWMA
+    newer-sample weight, default 0.3), `--baseline` (trailing
+    window over EWMA values, default 7d), `--threshold` (|z| in
+    logit space, default 2.0), `--json`.
+- `src/ratiosreport.ts`
+  - `aggregateCacheTokensByDay(queue)` — sums input + cached per
+    UTC day, kept separate so the ratio is computed at the day
+    level (not per-event).
+  - `buildRatiosReport(queue, opts)` — pure builder, deterministic
+    on a given `asOf`.
+- `renderRatios` in `src/format.ts` — table view with raw daily
+  ratio, smoothed EWMA, baseline summary in `[0, 1]` space, and
+  z-score in logit space; coloring inverts the `anomalies` palette
+  (high = green = good, low = red = bad).
+
+### Design notes
+
+- **Ratio definition.** We use `cached / (input + cached)` rather
+  than `cached / input` because pew sources disagree on whether
+  `input_tokens` includes the cached portion. Several sources
+  report uncached-only, which means `cached / input` can exceed
+  1 (observed: 3.25 against the live queue.jsonl) and immediately
+  poisons the `[0, 1]` domain that `ratios.ts` is built on.
+  `cached / (input + cached)` is unambiguously "fraction of total
+  input tokens that came from the cache", always in `[0, 1]`.
+- **Score the EWMA, not the raw ratios.** The trailing baseline is
+  a window over recent EWMA values. A single noisy day shouldn't
+  fire — only sustained drift should — and EWMA does that
+  smoothing for free.
+- **Only score days with new evidence.** Days with no
+  `input_tokens` get the EWMA carried forward for human display
+  (so the smoothed line doesn't disappear on days the user took
+  off) but stay in `undefined` status — re-scoring a stale
+  carried-forward value would mark the same day-of-no-data as
+  drifted forever.
+- **Walk-back semantics for `recentHigh`/`recentLow`.** Trailing
+  `undefined` days don't suppress the exit-code signal: the
+  builder walks backwards past undefined/warmup days to find the
+  most recent scored day, so a Friday drop still fires Monday's
+  cron even if Saturday/Sunday had no events.
+- **Floating-point flat detection.** `stdDev` of n identical floats
+  returns ~6e-17, not exactly 0. We treat logit-space σ < 1e-9 as
+  `flat` to avoid spurious z-scores in the 1e+15 range.
+
+### Tests
+
+225 → 249 (+24) covering: per-day aggregation; option validation;
+empty-queue / single-day / zero-input edge cases; EWMA convergence
+on a stable series; carry-forward across undefined gaps; warmup
+when not enough trailing history; flat detection past the
+floating-point noise floor; flagged days during sharp transitions
+in both directions; recovery clears `recentLow`; trailing
+undefined days don't suppress an earlier flag; boundary clamp
+keeps EWMA finite on raw 0.0 / 1.0; determinism on identical
+inputs.
+
+### Verified against the live queue
+
+`pew-insights ratios --lookback 14 --baseline 5` against the local
+queue.jsonl detected the cache-hit jump from ~48% (2026-04-13..20)
+to ~77% on 2026-04-21 with z = +43.97, then naturally decayed the
+z-score back toward 2 over the following two days as the new
+regime was absorbed into the EWMA. Exit code 2 surfaced.
+
 ## 0.4.2 — 2026-04-24
 
 Adds `ratios` — a small, internal helper module for bounded ratios

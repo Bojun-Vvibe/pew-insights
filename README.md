@@ -35,7 +35,8 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `compare` — A/B over two named windows by source or model; presets `wow` / `dod` / `rolling-week` plus arbitrary ISO ranges; coarse Welch-t significance hint per row
 - `export` — dump filtered queue or sessions as CSV (RFC-4180-style) or NDJSON (Parquet-friendly); `usd` column populated from rates table
 - `anomalies` *(0.4.1)* — flags days whose token total deviates ≥ N σ from a trailing baseline (default 7-day baseline, threshold |z| ≥ 2.0); exits with code 2 when the most recent day spiked HIGH so it composes into cron alerting alongside `budget`
-- `ratios` *(0.4.2, internal)* — pure helper module for bounded ratios in [0, 1] (`clampProbability`, `logit`/`expit`, `safeLogit`, `ewmaLogit`, `ewmaLogitSeries`); EWMA stays inside (0, 1) on all-0/all-1 input where naive linear-space EWMA breaks; foundation for the 0.5 cache-hit / reasoning-share scorers
+- `ratios` *(0.4.3)* — scores cache-hit-ratio drift over a window using logit-space EWMA + a trailing baseline of EWMA values; handles bounded `[0, 1]` metrics correctly (no spurious ±2σ alerts near the boundaries) and exits 2 when the most recent day flagged either direction so cache-hit regressions surface in cron alongside `budget` / `anomalies`
+- `ratios` *(0.4.2, internal helpers; 0.4.3 wired to CLI)* — bounded-ratio math (`clampProbability`, `logit`/`expit`, `safeLogit`, `ewmaLogit`, `ewmaLogitSeries`) with the `pew-insights ratios` subcommand on top; EWMA stays inside (0, 1) on all-0/all-1 input where naive linear-space EWMA breaks
 - HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
 
 **v0.3:**
@@ -200,6 +201,51 @@ pew-insights anomalies --json > /tmp/anom.json || curl -X POST $WEBHOOK -d @/tmp
 The trailing baseline tracks regime shifts: if usage permanently
 doubles, the baseline catches up after `--baseline` days and stops
 flagging the new normal.
+
+### Ratios (cache-hit drift)
+
+```sh
+# Default: 30-day lookback, EWMA α=0.3, 7-day baseline of EWMA values, |z| ≥ 2.0.
+pew-insights ratios
+
+# Faster-reacting smoother + tighter threshold for short-window monitoring.
+pew-insights ratios --alpha 0.5 --baseline 5 --threshold 1.5 --lookback 14
+
+# JSON for piping into jq / dashboards.
+pew-insights ratios --json | jq '.flagged'
+```
+
+Cache-hit ratio (`cached_input_tokens / (input_tokens + cached_input_tokens)`)
+is a bounded metric in `[0, 1]`. You cannot just EWMA it directly and
+score with ±kσ — the variance is bounded, predictions can fall
+outside `[0, 1]`, and identical absolute steps mean different things
+near the boundaries vs near 0.5. The standard fix is to do the
+smoothing and scoring in **logit space** (`ln(p / (1 − p))`) and
+back-transform for display.
+
+For each day in the lookback window, `ratios`:
+
+1. Aggregates `input_tokens` + `cached_input_tokens` per UTC day.
+2. Maintains an EWMA of the daily ratio in logit space (carried
+   forward across days with no events — no spurious decay).
+3. Z-scores today's logit-EWMA against the prior `--baseline` days
+   of EWMA values (regime-shift-aware, like `anomalies`).
+4. Tags each day `high` (cache-hit climbed unusually — usually good
+   news), `low` (cache-hit dropped — usually bad), `normal`, `flat`
+   (logit-space σ ≈ 0), `warmup`, or `undefined` (no input tokens).
+
+Exit code is 2 when the most recent scored day flagged either
+direction, so the command composes into cron alerting:
+
+```sh
+pew-insights ratios --json > /tmp/ratios.json || curl -X POST $WEBHOOK -d @/tmp/ratios.json
+```
+
+The composition story: `anomalies` watches *volume* drift, `ratios`
+watches *efficiency* drift. A user whose token volume is flat but
+whose cache-hit ratio fell from 70% to 30% is paying ~2.5× more for
+the same workload — invisible to `anomalies`, surfaces immediately
+in `ratios`.
 
 ### Compare
 
