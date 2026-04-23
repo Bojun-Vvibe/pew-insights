@@ -7,6 +7,7 @@ import type { ForecastReport } from './forecast.js';
 import type { BudgetReport, BudgetStatus } from './budget.js';
 import type { CompareReport, SignificanceHint } from './compare.js';
 import type { AnomaliesReport, AnomalyStatus } from './anomalies.js';
+import type { RatiosReport, RatioStatus } from './ratiosreport.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -633,6 +634,85 @@ export function renderAnomalies(a: AnomaliesReport): string {
         d.baselineStdDev == null ? '—' : formatTokens(Math.round(d.baselineStdDev)),
         d.z == null ? '—' : (d.z >= 0 ? '+' : '') + d.z.toFixed(2),
         anomalyColor(d.status)(d.status),
+      ]),
+    ),
+  );
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Ratios (cache-hit-ratio drift)
+// ---------------------------------------------------------------------------
+
+function ratioColor(s: RatioStatus): (s: string) => string {
+  switch (s) {
+    case 'high':      return chalk.green.bold;  // cache-hit climbed = good news
+    case 'low':       return chalk.red.bold;    // cache-hit dropped = bad news
+    case 'normal':    return chalk.green;
+    case 'flat':      return chalk.dim;
+    case 'warmup':    return chalk.dim;
+    case 'undefined': return chalk.dim;
+  }
+}
+
+function formatRatio(r: number | null): string {
+  if (r == null) return '—';
+  return (r * 100).toFixed(2) + '%';
+}
+
+export function renderRatios(r: RatiosReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights ratios (cache-hit drift)'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.asOf}    lookback: ${r.lookbackDays}d    α: ${r.alpha.toFixed(2)}    baseline: ${r.baselineDays}d    threshold: |z| ≥ ${r.threshold.toFixed(1)}`,
+    ),
+  );
+  lines.push('');
+
+  if (r.series.length === 0) {
+    lines.push(chalk.dim('no days in window'));
+    return lines.join('\n');
+  }
+
+  if (r.currentEwma != null) {
+    lines.push(
+      chalk.bold(`Current cache-hit EWMA: ${formatRatio(r.currentEwma)}`),
+    );
+  } else {
+    lines.push(chalk.dim('no defined ratios in window (no input_tokens)'));
+  }
+
+  const high = r.flagged.filter((d) => d.status === 'high').length;
+  const low = r.flagged.filter((d) => d.status === 'low').length;
+  if (r.flagged.length === 0) {
+    lines.push(chalk.green(`✓ no drift in last ${r.lookbackDays}d`));
+  } else {
+    lines.push(
+      chalk.bold(`Flagged: ${r.flagged.length}`) +
+        chalk.dim(`  (${high} high, ${low} low)`),
+    );
+  }
+  if (r.recentHigh) {
+    lines.push(chalk.green.bold('  ⬆ most recent day flagged HIGH (cache-hit climbed)'));
+  } else if (r.recentLow) {
+    lines.push(chalk.red.bold('  ⬇ most recent day flagged LOW (cache-hit dropped)'));
+  }
+  lines.push('');
+
+  lines.push(
+    renderTable(
+      ['day', 'ratio', 'ewma', 'baseline', 'σ(logit)', 'z', 'status'],
+      r.series.map((d) => [
+        d.day,
+        formatRatio(d.ratio),
+        formatRatio(d.ewma),
+        d.baselineLogitMean == null
+          ? '—'
+          : formatRatio(1 / (1 + Math.exp(-d.baselineLogitMean))),
+        d.baselineLogitStdDev == null ? '—' : d.baselineLogitStdDev.toFixed(3),
+        d.z == null ? '—' : (d.z >= 0 ? '+' : '') + d.z.toFixed(2),
+        ratioColor(d.status)(d.status),
       ]),
     ),
   );

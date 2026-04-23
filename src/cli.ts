@@ -30,6 +30,7 @@ import {
   renderTopProjects,
   renderTrend,
   renderAnomalies,
+  renderRatios,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -59,6 +60,7 @@ import { buildBudget, defaultBudgetPath, readBudgetFile } from './budget.js';
 import { buildCompare, resolveComparePreset, type CompareDimension, type CompareWindow } from './compare.js';
 import { exportQueue, exportSessions, type ExportFormat } from './export.js';
 import { buildAnomalies } from './anomalies.js';
+import { buildRatiosReport } from './ratiosreport.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -79,7 +81,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.4.0')
+  .version('0.4.3')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -970,6 +972,72 @@ program
         // Compose with cron alerting: non-zero exit when the most
         // recent day spiked HIGH. Mirrors `budget breached` (exit 2).
         if (report.recentHigh) process.exitCode = 2;
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('ratios')
+  .description('Score cache-hit-ratio drift over a window using logit-space EWMA')
+  .option('--lookback <days>', 'days of history to score (default 30)', '30')
+  .option('--alpha <a>', 'EWMA alpha in (0, 1] — newer-sample weight (default 0.3)', '0.3')
+  .option('--baseline <days>', 'trailing baseline window over EWMA values (default 7)', '7')
+  .option('--threshold <z>', '|z| threshold for flagging in logit space (default 2.0)', '2.0')
+  .option('--json', 'emit JSON')
+  .action(
+    async (
+      opts: {
+        lookback: string;
+        alpha: string;
+        baseline: string;
+        threshold: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        const lookback = Number.parseInt(opts.lookback, 10);
+        const alpha = Number(opts.alpha);
+        const baseline = Number.parseInt(opts.baseline, 10);
+        const threshold = Number(opts.threshold);
+        if (!Number.isFinite(lookback) || lookback < 1) {
+          throw new Error(`--lookback must be a positive integer (got ${opts.lookback})`);
+        }
+        if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 1) {
+          throw new Error(`--alpha must be in (0, 1] (got ${opts.alpha})`);
+        }
+        if (!Number.isFinite(baseline) || baseline < 1) {
+          throw new Error(`--baseline must be a positive integer (got ${opts.baseline})`);
+        }
+        if (!Number.isFinite(threshold) || threshold <= 0) {
+          throw new Error(`--threshold must be > 0 (got ${opts.threshold})`);
+        }
+
+        const queue = await readQueue(paths);
+        const report = buildRatiosReport(queue, {
+          lookbackDays: lookback,
+          alpha,
+          baselineDays: baseline,
+          threshold,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderRatios(report) + '\n');
+        }
+
+        // Compose with cron alerting: non-zero exit when the most
+        // recent scored day drifted in either direction. Mirrors
+        // `anomalies` (exit 2 on recent high). We exit on `recentLow`
+        // too because a falling cache-hit ratio is the operational
+        // signal that matters most — costs are climbing.
+        if (report.recentHigh || report.recentLow) process.exitCode = 2;
       } catch (e) {
         die(e);
       }
