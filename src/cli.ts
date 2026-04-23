@@ -56,6 +56,7 @@ import { buildTopProjects } from './topprojects.js';
 import { buildForecast } from './forecast.js';
 import { buildBudget, defaultBudgetPath, readBudgetFile } from './budget.js';
 import { buildCompare, resolveComparePreset, type CompareDimension, type CompareWindow } from './compare.js';
+import { exportQueue, exportSessions, type ExportFormat } from './export.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -830,6 +831,79 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderCompare(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('export')
+  .description('Dump filtered events as CSV or Parquet-friendly NDJSON for downstream BI')
+  .option('--entity <name>', 'queue | sessions (default queue)', 'queue')
+  .option('--format <fmt>', 'csv | ndjson (default csv)', 'csv')
+  .option('--since <spec>', 'lower bound: 24h, 7d, 30d, all, or ISO')
+  .option('--until <iso>', 'upper bound (exclusive); ISO timestamp')
+  .option('--source <substr>', 'case-insensitive substring filter on source')
+  .option('--model <substr>', 'case-insensitive substring filter on normalised model name')
+  .option('--out <path>', 'write to file instead of stdout')
+  .option('--rates <path>', 'rates JSON; populates the `usd` column for queue exports')
+  .action(
+    async (
+      opts: {
+        entity: string;
+        format: string;
+        since?: string;
+        until?: string;
+        source?: string;
+        model?: string;
+        out?: string;
+        rates?: string;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        if (opts.entity !== 'queue' && opts.entity !== 'sessions') {
+          throw new Error(`--entity must be 'queue' or 'sessions' (got ${opts.entity})`);
+        }
+        if (opts.format !== 'csv' && opts.format !== 'ndjson') {
+          throw new Error(`--format must be 'csv' or 'ndjson' (got ${opts.format})`);
+        }
+        const since = opts.since ? resolveSince(opts.since) : null;
+        const until = opts.until ? new Date(opts.until).toISOString() : null;
+        const filters = { since, until, source: opts.source, model: opts.model };
+
+        let result;
+        if (opts.entity === 'queue') {
+          let rates = null;
+          if (opts.rates !== undefined || opts.format === 'ndjson' || opts.format === 'csv') {
+            // Try the user rates file (or default) but fall back to nothing — the
+            // `usd` column is optional.
+            const ratesPath = opts.rates ?? defaultRatesPath();
+            try {
+              const userRates = await readRatesFile(ratesPath);
+              rates = mergeRates(DEFAULT_RATES, userRates);
+            } catch {
+              rates = DEFAULT_RATES;
+            }
+          }
+          const queue = await readQueue(paths);
+          result = exportQueue(queue, opts.format as ExportFormat, filters, rates);
+        } else {
+          const sessions = await readSessionQueue(paths);
+          result = exportSessions(sessions, opts.format as ExportFormat, filters);
+        }
+
+        if (opts.out) {
+          await fs.writeFile(opts.out, result.body, 'utf8');
+          process.stderr.write(
+            `wrote ${result.rowCount} rows (${result.body.length} bytes) to ${opts.out}\n`,
+          );
+        } else {
+          process.stdout.write(result.body);
         }
       } catch (e) {
         die(e);
