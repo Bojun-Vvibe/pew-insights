@@ -3,6 +3,7 @@ import type { Digest, DigestRow, DoctorReport, SourcesPivot, Status } from './re
 import type { CostReport } from './cost.js';
 import type { DeltaWindow, TrendReport } from './trend.js';
 import type { TopProjectsResult } from './topprojects.js';
+import type { ForecastReport } from './forecast.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -420,5 +421,56 @@ export function renderTopProjects(t: TopProjectsResult, opts: { showPaths?: bool
     return cols;
   });
   lines.push(renderTable(headers, rows));
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Forecast
+// ---------------------------------------------------------------------------
+
+export function renderForecast(f: ForecastReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights forecast'));
+  lines.push(
+    chalk.dim(
+      `as of: ${f.asOf}    lookback: ${f.lookbackDays}d    n=${f.n}    R²=${Number.isFinite(f.r2) ? f.r2.toFixed(3) : 'n/a'}`,
+    ),
+  );
+  if (f.lowConfidence) {
+    lines.push(chalk.yellow('  ⚠ low confidence: small sample or all-zero history'));
+  }
+  lines.push('');
+
+  lines.push(chalk.bold('Tomorrow'));
+  lines.push(
+    `  ${f.tomorrow.day}: ${formatTokens(Math.round(f.tomorrow.predicted))}  (95% CI ${formatTokens(Math.round(f.tomorrow.lower))} – ${formatTokens(Math.round(f.tomorrow.upper))})`,
+  );
+  lines.push('');
+
+  lines.push(chalk.bold('Week-end projection (UTC week)'));
+  lines.push(
+    `  observed-so-far: ${formatTokens(f.weekObserved)}  ` +
+      `+ projected: ${formatTokens(Math.round(f.weekProjected - f.weekObserved))}  ` +
+      `= total: ${formatTokens(Math.round(f.weekProjected))}  ` +
+      `(95% CI ${formatTokens(Math.round(f.weekProjectedLower))} – ${formatTokens(Math.round(f.weekProjectedUpper))})`,
+  );
+  if (f.weekRemaining.length > 0) {
+    lines.push('');
+    lines.push(
+      renderTable(
+        ['day', 'predicted', 'low', 'high'],
+        f.weekRemaining.map((p) => [
+          p.day,
+          formatTokens(Math.round(p.predicted)),
+          formatTokens(Math.round(p.lower)),
+          formatTokens(Math.round(p.upper)),
+        ]),
+      ),
+    );
+  }
+  lines.push('');
+  lines.push(
+    chalk.dim(`slope: ${f.slope >= 0 ? '+' : ''}${formatTokens(Math.round(f.slope))}/day  intercept: ${formatTokens(Math.round(f.intercept))}`),
+  );
   return lines.join('\n');
 }

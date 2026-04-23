@@ -22,6 +22,7 @@ import {
   renderCost,
   renderDigest,
   renderDoctor,
+  renderForecast,
   renderSources,
   renderStatus,
   renderTopProjects,
@@ -50,6 +51,7 @@ import { attributeTokensByProject } from './byproject.js';
 import { executeGc, planGc } from './gcruns.js';
 import { buildTrend } from './trend.js';
 import { buildTopProjects } from './topprojects.js';
+import { buildForecast } from './forecast.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -70,7 +72,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.3.0')
+  .version('0.4.0')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -668,5 +670,30 @@ function die(e: unknown): never {
   process.stderr.write(`pew-insights: ${msg}\n`);
   process.exit(1);
 }
+
+program
+  .command('forecast')
+  .description('Linear-regression forecast: tomorrow + week-end token totals with 95% CI')
+  .option('--lookback <days>', 'days of history to fit on (default 14)', '14')
+  .option('--json', 'emit JSON instead of a pretty table')
+  .action(async (opts: { lookback: string; json?: boolean }, cmd) => {
+    try {
+      const common = cmd.optsWithGlobals() as CommonOpts;
+      const paths = resolvePewPaths(common.pewHome);
+      const lookback = Number.parseInt(opts.lookback, 10);
+      if (!Number.isFinite(lookback) || lookback < 2) {
+        throw new Error(`--lookback must be an integer >= 2 (got ${opts.lookback})`);
+      }
+      const queue = await readQueue(paths);
+      const report = buildForecast(queue, { lookbackDays: lookback });
+      if (opts.json || common.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(renderForecast(report) + '\n');
+      }
+    } catch (e) {
+      die(e);
+    }
+  });
 
 program.parseAsync(process.argv).catch(die);
