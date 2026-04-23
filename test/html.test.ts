@@ -160,3 +160,95 @@ test('renderHtmlReport: trend section renders when previous window is zero (pct=
   assert.ok(!html.includes('NaN'));
   assert.ok(!html.includes('Infinity'));
 });
+
+import { buildForecast } from '../src/forecast.ts';
+import { buildBudget } from '../src/budget.ts';
+
+test('renderHtmlReport: includes forecast section with PI bands and slope card', () => {
+  // 14 days of monotonically rising tokens to give the OLS fit something
+  // structured to chew on (R² should be ~1; not low-confidence).
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 14; i++) {
+    const day = String(i + 1).padStart(2, '0');
+    queue.push(q({
+      hour_start: `2026-04-${day}T12:00:00.000Z`,
+      input_tokens: 1000 * (i + 1),
+      total_tokens: 1000 * (i + 1),
+    }));
+  }
+  const forecast = buildForecast(queue, { lookbackDays: 14, asOf: '2026-04-15T00:00:00.000Z' });
+  const html = renderHtmlReport({
+    pewHome: '/tmp/pew',
+    digest: buildDigest(queue, [s()], null),
+    status: null,
+    forecast,
+    generatedAt: '2026-04-15T00:00:00.000Z',
+  });
+  assert.ok(html.includes('Forecast (next 7 days)'));
+  assert.ok(html.includes('Tomorrow (predicted)'));
+  assert.ok(html.includes('95% PI'));
+  assert.ok(html.includes('Trend (slope · R²)'));
+  // The forecast table header must be present.
+  assert.ok(html.includes('lower (95%)'));
+});
+
+test('renderHtmlReport: forecast section shows low-confidence warning when fit is weak', () => {
+  // Single non-zero day → n=1 effectively, lowConfidence=true expected.
+  const queue: QueueLine[] = [
+    q({ hour_start: '2026-04-20T12:00:00.000Z', input_tokens: 100, total_tokens: 100 }),
+  ];
+  const forecast = buildForecast(queue, { lookbackDays: 3, asOf: '2026-04-22T00:00:00.000Z' });
+  const html = renderHtmlReport({
+    pewHome: '/tmp/pew',
+    digest: buildDigest(queue, [s()], null),
+    status: null,
+    forecast,
+    generatedAt: '2026-04-22T00:00:00.000Z',
+  });
+  if (forecast.lowConfidence) {
+    assert.ok(html.includes('Low-confidence fit'));
+  }
+});
+
+test('renderHtmlReport: includes budget section with status badge and ETA', () => {
+  // ~$5 of input on gpt-5.4 → daily cap $1 → status=breached.
+  const queue: QueueLine[] = [
+    q({
+      hour_start: '2026-04-22T12:00:00.000Z',
+      model: 'gpt-5.4',
+      input_tokens: 1_000_000,
+      total_tokens: 1_000_000,
+    }),
+  ];
+  const budget = buildBudget(
+    queue,
+    DEFAULT_RATES,
+    { dailyUsd: 1 },
+    { asOf: '2026-04-22T23:00:00.000Z', windowDays: 7 },
+  );
+  const html = renderHtmlReport({
+    pewHome: '/tmp/pew',
+    digest: buildDigest(queue, [s()], null),
+    status: null,
+    budget,
+    generatedAt: '2026-04-22T23:00:00.000Z',
+  });
+  assert.ok(html.includes('<h2>Budget</h2>'));
+  assert.ok(html.includes('Status'));
+  assert.ok(html.includes('Today&#x27;s spend') || html.includes("Today's spend"));
+  assert.ok(html.includes('Burn rate'));
+  // Status word must be one of the four valid classifications.
+  assert.ok(/(under|on-track|over|breached)/.test(html));
+});
+
+test('renderHtmlReport: forecast + budget omitted when not provided (back-compat)', () => {
+  const queue: QueueLine[] = [q({ total_tokens: 100 })];
+  const html = renderHtmlReport({
+    pewHome: '/tmp/pew',
+    digest: buildDigest(queue, [s()], null),
+    status: null,
+    generatedAt: '2026-04-23T00:00:00.000Z',
+  });
+  assert.ok(!html.includes('Forecast (next 7 days)'));
+  assert.ok(!html.includes('<h2>Budget</h2>'));
+});

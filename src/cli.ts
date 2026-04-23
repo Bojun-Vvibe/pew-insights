@@ -244,14 +244,26 @@ program
       });
       // Cost + trend always populated for the HTML view; cheap to compute.
       const userRates = await readRatesFile(defaultRatesPath());
-      const cost = computeCost(queue, since, mergeRates(DEFAULT_RATES, userRates));
+      const mergedRates = mergeRates(DEFAULT_RATES, userRates);
+      const cost = computeCost(queue, since, mergedRates);
       const trend = buildTrend(queue, since, { windowDays: 14 });
+      // Forecast: 14d lookback for the OLS fit; the forecast itself spans the
+      // current UTC week. Always rendered — cheap and adds operational signal.
+      const forecast = buildForecast(queue, { lookbackDays: 14 });
+      // Budget: only render if the user has a budget config on disk. We never
+      // synthesise a daily target for the HTML view (would mis-represent intent).
+      const budgetCfg = await readBudgetFile(defaultBudgetPath());
+      const budget = budgetCfg
+        ? buildBudget(queue, mergedRates, budgetCfg, { windowDays: 14 })
+        : null;
       const html = renderHtmlReport({
         pewHome: paths.home,
         digest,
         status,
         cost,
         trend,
+        forecast,
+        budget,
         generatedAt: new Date().toISOString(),
       });
       await fs.writeFile(opts.out, html, 'utf8');

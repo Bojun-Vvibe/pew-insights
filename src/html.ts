@@ -2,6 +2,8 @@ import type { Digest } from './report.js';
 import type { Status } from './report.js';
 import type { CostReport } from './cost.js';
 import type { TrendReport } from './trend.js';
+import type { ForecastReport } from './forecast.js';
+import type { BudgetReport, BudgetStatus } from './budget.js';
 import { sparkline, barChart, pieChart } from './svg.js';
 
 function escapeHtml(s: string): string {
@@ -114,11 +116,15 @@ export interface HtmlReportInput {
   cost?: CostReport | null;
   /** Optional trend report; section is omitted when absent. */
   trend?: TrendReport | null;
+  /** Optional 7-day forecast; section is omitted when absent. */
+  forecast?: ForecastReport | null;
+  /** Optional budget report; section is omitted when absent. */
+  budget?: BudgetReport | null;
   generatedAt: string;
 }
 
 export function renderHtmlReport(input: HtmlReportInput): string {
-  const { pewHome, digest, status, cost, trend, generatedAt } = input;
+  const { pewHome, digest, status, cost, trend, forecast, budget, generatedAt } = input;
 
   const dayValues = digest.byDay.map((d) => d.totalTokens);
   const dayLabels = digest.byDay.map((d) => d.key);
@@ -295,6 +301,102 @@ ${unknownRows}`;
 </table>`;
   }
 
+  let forecastSection = '';
+  if (forecast) {
+    const histSpark = sparkline(
+      forecast.history.map((h) => h.tokens),
+      { width: 720, height: 60 },
+    );
+    const tomorrow = forecast.tomorrow;
+    const weekRows =
+      forecast.weekRemaining.length === 0
+        ? '<tr><td colspan="4" class="muted">no remaining forecast days this week (already at week end)</td></tr>'
+        : forecast.weekRemaining
+            .map(
+              (p) =>
+                `<tr><td>${escapeHtml(p.day)}</td><td class="num">${fmtTokens(p.predicted)}</td><td class="num muted">${fmtTokens(p.lower)}</td><td class="num muted">${fmtTokens(p.upper)}</td></tr>`,
+            )
+            .join('');
+    const lowConf = forecast.lowConfidence
+      ? '<p class="warn">Low-confidence fit (small sample or zero variance) — predictions are very wide.</p>'
+      : '';
+    const r2Display = Number.isFinite(forecast.r2) ? forecast.r2.toFixed(3) : 'n/a';
+    forecastSection = `
+<h2>Forecast (next 7 days)</h2>
+<div class="totals">
+  <div class="card">
+    <div class="label">Tomorrow (predicted)</div>
+    <div class="value">${fmtTokens(tomorrow.predicted)}</div>
+    <div class="muted">95% PI ${fmtTokens(tomorrow.lower)} – ${fmtTokens(tomorrow.upper)}</div>
+  </div>
+  <div class="card">
+    <div class="label">Week observed (Mon→${escapeHtml(forecast.asOf.slice(0, 10))})</div>
+    <div class="value">${fmtTokens(forecast.weekObserved)}</div>
+  </div>
+  <div class="card">
+    <div class="label">Week projected (full Mon→Sun)</div>
+    <div class="value">${fmtTokens(forecast.weekProjected)}</div>
+    <div class="muted">95% PI ${fmtTokens(forecast.weekProjectedLower)} – ${fmtTokens(forecast.weekProjectedUpper)}</div>
+  </div>
+  <div class="card">
+    <div class="label">Trend (slope · R²)</div>
+    <div class="value">${forecast.slope >= 0 ? '+' : ''}${fmtTokens(Math.abs(forecast.slope))}/d</div>
+    <div class="muted">R² = ${escapeHtml(r2Display)} · n=${forecast.n}d</div>
+  </div>
+</div>
+${lowConf}
+<div class="spark">${histSpark}</div>
+<p class="muted">history: ${escapeHtml(forecast.history[0]?.day ?? '')} → ${escapeHtml(forecast.history.at(-1)?.day ?? '')}</p>
+<table>
+  <thead><tr><th>day</th><th class="num">predicted</th><th class="num">lower (95%)</th><th class="num">upper (95%)</th></tr></thead>
+  <tbody>${weekRows}</tbody>
+</table>`;
+  }
+
+  let budgetSection = '';
+  if (budget) {
+    const statusClass: Record<BudgetStatus, string> = {
+      under: 'ok',
+      'on-track': 'ok',
+      over: 'warn',
+      breached: 'err',
+    };
+    const pctUsed = (budget.percentOfMonthBudgetUsed * 100).toFixed(1) + '%';
+    const burnSpark = sparkline(
+      budget.dailySpendSeries.map((d) => d.usd),
+      { width: 480, height: 50 },
+    );
+    const eta = budget.etaBreachDay
+      ? `<span class="warn">${escapeHtml(budget.etaBreachDay)}</span>`
+      : '<span class="muted">none in current month</span>';
+    budgetSection = `
+<h2>Budget</h2>
+<div class="totals">
+  <div class="card">
+    <div class="label">Status</div>
+    <div class="value ${statusClass[budget.status]}">${escapeHtml(budget.status)}</div>
+    <div class="muted">${escapeHtml(pctUsed)} of monthly cap</div>
+  </div>
+  <div class="card">
+    <div class="label">Today's spend</div>
+    <div class="value">${escapeHtml(fmtUsd(budget.todaySpendUsd))}</div>
+    <div class="muted">daily target ${escapeHtml(fmtUsd(budget.dailyBudgetUsd))}</div>
+  </div>
+  <div class="card">
+    <div class="label">Month-to-date spend</div>
+    <div class="value">${escapeHtml(fmtUsd(budget.monthSpendUsd))}</div>
+    <div class="muted">cap ${escapeHtml(fmtUsd(budget.monthlyBudgetUsd))} · ${budget.daysRemainingInMonth}d left</div>
+  </div>
+  <div class="card">
+    <div class="label">Burn rate (${budget.windowDays}d avg)</div>
+    <div class="value">${escapeHtml(fmtUsd(budget.dailyBurnUsd))}/d</div>
+    <div class="muted">ETA breach: ${eta}</div>
+  </div>
+</div>
+<div class="spark">${burnSpark}</div>
+<p class="muted">daily spend, last ${budget.dailySpendSeries.length} days</p>`;
+  }
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -314,6 +416,10 @@ ${unknownRows}`;
 <div class="totals">${totalsCards}</div>
 
 ${trendSection}
+
+${forecastSection}
+
+${budgetSection}
 
 ${costSection}
 
