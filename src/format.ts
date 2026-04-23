@@ -6,6 +6,7 @@ import type { TopProjectsResult } from './topprojects.js';
 import type { ForecastReport } from './forecast.js';
 import type { BudgetReport, BudgetStatus } from './budget.js';
 import type { CompareReport, SignificanceHint } from './compare.js';
+import type { AnomaliesReport, AnomalyStatus } from './anomalies.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -574,5 +575,66 @@ export function renderCompare(c: CompareReport): string {
   );
   lines.push('');
   lines.push(chalk.dim('hint = coarse Welch-t classifier on per-day totals; not a real p-value.'));
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Anomalies
+// ---------------------------------------------------------------------------
+
+function anomalyColor(s: AnomalyStatus): (s: string) => string {
+  switch (s) {
+    case 'high':   return chalk.red.bold;
+    case 'low':    return chalk.yellow.bold;
+    case 'normal': return chalk.green;
+    case 'flat':   return chalk.dim;
+    case 'warmup': return chalk.dim;
+  }
+}
+
+export function renderAnomalies(a: AnomaliesReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights anomalies'));
+  lines.push(
+    chalk.dim(
+      `as of: ${a.asOf}    lookback: ${a.lookbackDays}d    baseline: ${a.baselineDays}d    threshold: |z| ≥ ${a.threshold.toFixed(1)}`,
+    ),
+  );
+  lines.push('');
+
+  if (a.series.length === 0) {
+    lines.push(chalk.dim('no scored days in window'));
+    return lines.join('\n');
+  }
+
+  const flaggedCount = a.flagged.length;
+  if (flaggedCount === 0) {
+    lines.push(chalk.green(`✓ no anomalies in last ${a.lookbackDays}d`));
+  } else {
+    const high = a.flagged.filter((d) => d.status === 'high').length;
+    const low = a.flagged.filter((d) => d.status === 'low').length;
+    lines.push(
+      chalk.bold(`Flagged: ${flaggedCount}`) +
+        chalk.dim(`  (${high} high, ${low} low)`),
+    );
+  }
+  if (a.recentHigh) {
+    lines.push(chalk.red.bold('  ⚠ most recent day flagged HIGH'));
+  }
+  lines.push('');
+
+  lines.push(
+    renderTable(
+      ['day', 'tokens', 'baseline', 'σ', 'z', 'status'],
+      a.series.map((d) => [
+        d.day,
+        formatTokens(d.tokens),
+        d.baselineMean == null ? '—' : formatTokens(Math.round(d.baselineMean)),
+        d.baselineStdDev == null ? '—' : formatTokens(Math.round(d.baselineStdDev)),
+        d.z == null ? '—' : (d.z >= 0 ? '+' : '') + d.z.toFixed(2),
+        anomalyColor(d.status)(d.status),
+      ]),
+    ),
+  );
   return lines.join('\n');
 }

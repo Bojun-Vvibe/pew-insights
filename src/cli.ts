@@ -29,6 +29,7 @@ import {
   renderStatus,
   renderTopProjects,
   renderTrend,
+  renderAnomalies,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -57,6 +58,7 @@ import { buildForecast } from './forecast.js';
 import { buildBudget, defaultBudgetPath, readBudgetFile } from './budget.js';
 import { buildCompare, resolveComparePreset, type CompareDimension, type CompareWindow } from './compare.js';
 import { exportQueue, exportSessions, type ExportFormat } from './export.js';
+import { buildAnomalies } from './anomalies.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -917,6 +919,57 @@ program
         } else {
           process.stdout.write(result.body);
         }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('anomalies')
+  .description('Flag days whose token total deviates >threshold σ from a trailing baseline')
+  .option('--lookback <days>', 'days of history to score (default 30)', '30')
+  .option('--baseline <days>', 'trailing baseline window size (default 7)', '7')
+  .option('--threshold <z>', '|z| threshold for flagging (default 2.0)', '2.0')
+  .option('--json', 'emit JSON')
+  .action(
+    async (
+      opts: { lookback: string; baseline: string; threshold: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        const lookback = Number.parseInt(opts.lookback, 10);
+        const baseline = Number.parseInt(opts.baseline, 10);
+        const threshold = Number(opts.threshold);
+        if (!Number.isFinite(lookback) || lookback < 1) {
+          throw new Error(`--lookback must be a positive integer (got ${opts.lookback})`);
+        }
+        if (!Number.isFinite(baseline) || baseline < 1) {
+          throw new Error(`--baseline must be a positive integer (got ${opts.baseline})`);
+        }
+        if (!Number.isFinite(threshold) || threshold <= 0) {
+          throw new Error(`--threshold must be > 0 (got ${opts.threshold})`);
+        }
+
+        const queue = await readQueue(paths);
+        const report = buildAnomalies(queue, {
+          lookbackDays: lookback,
+          baselineDays: baseline,
+          threshold,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderAnomalies(report) + '\n');
+        }
+
+        // Compose with cron alerting: non-zero exit when the most
+        // recent day spiked HIGH. Mirrors `budget breached` (exit 2).
+        if (report.recentHigh) process.exitCode = 2;
       } catch (e) {
         die(e);
       }
