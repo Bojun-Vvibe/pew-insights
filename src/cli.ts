@@ -24,6 +24,7 @@ import {
   renderDoctor,
   renderSources,
   renderStatus,
+  renderTrend,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -46,6 +47,7 @@ import {
 import { executeCompaction, planCompaction } from './compact.js';
 import { attributeTokensByProject } from './byproject.js';
 import { executeGc, planGc } from './gcruns.js';
+import { buildTrend } from './trend.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -239,6 +241,33 @@ program
       });
       await fs.writeFile(opts.out, html, 'utf8');
       process.stdout.write(`wrote ${opts.out} (${html.length} bytes)\n`);
+    } catch (e) {
+      die(e);
+    }
+  });
+
+program
+  .command('trend')
+  .description('Day-over-day and week-over-week token deltas with ASCII sparklines')
+  .option('--since <spec>', 'display window: 24h, 7d, 30d, all (deltas always use fixed 24h/7d offsets)', '14d')
+  .option('--window <days>', 'number of days in the displayed sparkline (default 14)', '14')
+  .option('--json', 'emit JSON instead of a pretty table')
+  .action(async (opts: { since: string; window: string; json?: boolean }, cmd) => {
+    try {
+      const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+      const paths = resolvePewPaths(common.pewHome);
+      const since = resolveSince(opts.since);
+      const windowDays = Number.parseInt(opts.window, 10);
+      if (!Number.isFinite(windowDays) || windowDays < 2) {
+        throw new Error(`--window must be an integer >= 2 (got ${opts.window})`);
+      }
+      const queue = await readQueue(paths);
+      const report = buildTrend(queue, since, { windowDays });
+      if (opts.json || common.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        process.stdout.write(renderTrend(report) + '\n');
+      }
     } catch (e) {
       die(e);
     }

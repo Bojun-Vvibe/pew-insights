@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import type { Digest, DigestRow, DoctorReport, SourcesPivot, Status } from './report.js';
 import type { CostReport } from './cost.js';
+import type { DeltaWindow, TrendReport } from './trend.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -325,5 +326,62 @@ export function renderCost(c: CostReport): string {
     );
   }
 
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Trend
+// ---------------------------------------------------------------------------
+
+export function formatPct(pct: number | null): string {
+  if (pct === null) return 'n/a';
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${(pct * 100).toFixed(1)}%`;
+}
+
+function deltaCell(d: DeltaWindow): string {
+  const arrow = d.delta > 0 ? chalk.green('▲') : d.delta < 0 ? chalk.red('▼') : chalk.dim('•');
+  const pctStr = d.pct === null ? chalk.dim('n/a') : (d.pct >= 0 ? chalk.green : chalk.red)(formatPct(d.pct));
+  return `${formatTokens(d.current)}  vs  ${formatTokens(d.previous)}  ${arrow} ${pctStr}`;
+}
+
+export function renderTrend(t: TrendReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights trend'));
+  lines.push(chalk.dim(`as of: ${t.asOf}`));
+  lines.push('');
+  lines.push(
+    renderTable(
+      ['window', 'current vs previous'],
+      [
+        ['day-over-day (24h)', deltaCell(t.dod)],
+        ['week-over-week (7d)', deltaCell(t.wow)],
+      ],
+    ),
+  );
+  lines.push('');
+  lines.push(chalk.bold(`Daily tokens (${t.series.length}d)`));
+  lines.push(`  ${chalk.cyan(t.sparkline)}`);
+  lines.push(
+    `  ${chalk.dim(t.series[0]?.day ?? '')}` +
+      ' '.repeat(Math.max(1, t.series.length - (t.series[0]?.day.length ?? 10) - (t.series.at(-1)?.day.length ?? 10))) +
+      `${chalk.dim(t.series.at(-1)?.day ?? '')}`,
+  );
+  lines.push('');
+  if (t.byModel.length > 0) {
+    lines.push(chalk.bold('By model (current half vs previous half)'));
+    lines.push(
+      renderTable(
+        ['model', 'current', 'previous', 'Δ%', 'spark'],
+        t.byModel.map((m) => [
+          m.model,
+          formatTokens(m.current),
+          formatTokens(m.previous),
+          formatPct(m.pct),
+          m.sparkline,
+        ]),
+      ),
+    );
+  }
   return lines.join('\n');
 }
