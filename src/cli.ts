@@ -34,6 +34,7 @@ import {
   writeCache,
   type ResolvedRef,
 } from './projects.js';
+import { executeCompaction, planCompaction } from './compact.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -349,6 +350,73 @@ async function freshScan(
   const lookup = buildLookup(candidates, observed);
   return Array.from(lookup.values());
 }
+
+program
+  .command('compact')
+  .description('Archive flushed prefix of queue.jsonl / session-queue.jsonl and truncate the live file')
+  .option('--confirm', 'actually mutate; without this the command is dry-run')
+  .option('--json', 'emit JSON')
+  .action(async (opts: { confirm?: boolean; json?: boolean }, cmd) => {
+    try {
+      const common = cmd.optsWithGlobals() as CommonOpts;
+      const paths = resolvePewPaths(common.pewHome);
+      const plan = await planCompaction(paths);
+
+      const summary = {
+        pewHome: paths.home,
+        dryRun: !opts.confirm,
+        blocked: plan.blocked,
+        blockReason: plan.blockReason,
+        trailingLockHolder: plan.trailingLockHolder,
+        trailingLockAlive: plan.trailingLockAlive,
+        plan: plan.entries.map((e) => ({
+          name: e.name,
+          liveSize: e.liveSize,
+          offset: e.offset,
+          evictableBytes: e.evictableBytes,
+          archivePath: e.archivePath,
+        })),
+        executed: [] as Awaited<ReturnType<typeof executeCompaction>>,
+      };
+
+      if (opts.confirm && !plan.blocked) {
+        summary.executed = await executeCompaction(paths, plan);
+      }
+
+      if (opts.json || common.json) {
+        process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+      } else {
+        process.stdout.write(`pew-insights compact ${opts.confirm ? '(LIVE)' : '(dry-run)'}\n`);
+        process.stdout.write(`pew home: ${paths.home}\n`);
+        if (plan.blocked) {
+          process.stdout.write(`BLOCKED: ${plan.blockReason}\n`);
+          process.exitCode = 2;
+          return;
+        }
+        for (const e of plan.entries) {
+          process.stdout.write(
+            `  ${e.name}: live=${e.liveSize}B  offset=${e.offset}B  evictable=${e.evictableBytes}B  → ${e.archivePath}\n`,
+          );
+        }
+        if (!opts.confirm) {
+          process.stdout.write(`\nDry-run only. Re-run with --confirm to actually compact.\n`);
+        } else {
+          process.stdout.write('\nResults:\n');
+          for (const r of summary.executed) {
+            if (r.skipped) {
+              process.stdout.write(`  ${r.name}: skipped (${r.reason})\n`);
+            } else {
+              process.stdout.write(
+                `  ${r.name}: archived ${r.archivedBytes}B → ${r.archivePath}; live now ${r.newLiveBytes}B\n`,
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      die(e);
+    }
+  });
 
 function die(e: unknown): never {
   const msg = e instanceof Error ? e.stack ?? e.message : String(e);
