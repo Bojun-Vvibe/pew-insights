@@ -34,6 +34,7 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `budget` — daily / monthly USD targets, MTD spend, burn rate, ETA-to-breach, status (`under` / `on-track` / `over` / `breached`); exits with code 2 on `breached` so it composes into cron alerting
 - `compare` — A/B over two named windows by source or model; presets `wow` / `dod` / `rolling-week` plus arbitrary ISO ranges; coarse Welch-t significance hint per row
 - `export` — dump filtered queue or sessions as CSV (RFC-4180-style) or NDJSON (Parquet-friendly); `usd` column populated from rates table
+- `anomalies` *(0.4.1)* — flags days whose token total deviates ≥ N σ from a trailing baseline (default 7-day baseline, threshold |z| ≥ 2.0); exits with code 2 when the most recent day spiked HIGH so it composes into cron alerting alongside `budget`
 - HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
 
 **v0.3:**
@@ -53,7 +54,7 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 
 **Roadmap (see [docs/ROADMAP.md](docs/ROADMAP.md)):**
 
-- v0.5 — webhook poster (Slack-formatted digest), anomaly detection
+- v0.5 — webhook poster (Slack-formatted digest), HTML anomalies panel
 
 ## Install
 
@@ -170,6 +171,34 @@ Status is one of `under` / `on-track` / `over` / `breached`. Exit code
 is 2 on `breached`, suitable for cron alerting (`pew-insights budget
 || send-alert`). ETA-to-breach is reported in UTC `yyyy-mm-dd` form
 when the burn rate would breach the cap inside the current month.
+
+### Anomalies
+
+```sh
+# Default: 30-day lookback, 7-day baseline, |z| ≥ 2.0.
+pew-insights anomalies
+
+# Tighter threshold + longer baseline.
+pew-insights anomalies --threshold 1.5 --baseline 14 --lookback 60
+
+# JSON for piping into jq / dashboards.
+pew-insights anomalies --json | jq '.flagged'
+```
+
+For each day in the lookback window we compute a z-score against the
+trailing `--baseline` days (sample stddev with Bessel's correction).
+Days are tagged `high` (z ≥ +threshold), `low` (z ≤ −threshold),
+`normal`, or `flat` (baseline σ = 0 — no scale). Exit code is 2 when
+the most recent day spiked HIGH so the command composes into cron
+alerting alongside `budget`:
+
+```sh
+pew-insights anomalies --json > /tmp/anom.json || curl -X POST $WEBHOOK -d @/tmp/anom.json
+```
+
+The trailing baseline tracks regime shifts: if usage permanently
+doubles, the baseline catches up after `--baseline` days and stops
+flagging the new normal.
 
 ### Compare
 
