@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import type { Digest, DigestRow, DoctorReport, SourcesPivot, Status } from './report.js';
+import type { CostReport } from './cost.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -257,6 +258,71 @@ export function renderDoctor(r: DoctorReport): string {
       chalk.green.bold('INFO ');
     lines.push(`${tag} ${chalk.bold(f.code)}  ${f.message}`);
     if (f.hint) lines.push(chalk.dim(`     hint: ${f.hint}`));
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Cost
+// ---------------------------------------------------------------------------
+
+export function formatUsd(n: number): string {
+  if (!Number.isFinite(n)) return '$0.00';
+  if (Math.abs(n) >= 1000) return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  if (Math.abs(n) >= 1) return '$' + n.toFixed(2);
+  if (Math.abs(n) >= 0.01) return '$' + n.toFixed(4);
+  if (n === 0) return '$0.00';
+  return '$' + n.toFixed(6);
+}
+
+export function renderCost(c: CostReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights cost'));
+  lines.push(chalk.dim(`since: ${c.since ?? 'all'}`));
+  lines.push('');
+  lines.push(
+    renderTable(
+      ['metric', 'value'],
+      [
+        ['estimated cost', formatUsd(c.totalCost)],
+        ['no-cache baseline', formatUsd(c.totalCostNoCache)],
+        ['cache savings', formatUsd(c.cacheSavings)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  if (c.rows.length === 0) {
+    lines.push(chalk.dim('no priced events in window'));
+  } else {
+    lines.push(chalk.bold('By model'));
+    lines.push(
+      renderTable(
+        ['model', 'total', 'input', 'cached', 'output', 'reasoning', '$/1M', 'events'],
+        c.rows.map((r) => [
+          r.model,
+          formatUsd(r.totalCost),
+          formatUsd(r.inputCost),
+          formatUsd(r.cachedInputCost),
+          formatUsd(r.outputCost),
+          formatUsd(r.reasoningCost),
+          formatUsd(r.blendedRatePerMillion),
+          formatNumber(r.events),
+        ]),
+      ),
+    );
+  }
+
+  if (c.unknownModels.length > 0) {
+    lines.push('');
+    lines.push(chalk.yellow.bold('Unpriced models (add to ~/.config/pew-insights/rates.json)'));
+    lines.push(
+      renderTable(
+        ['model', 'tokens', 'events'],
+        c.unknownModels.map((u) => [u.model, formatTokens(u.totalTokens), formatNumber(u.events)]),
+      ),
+    );
   }
 
   return lines.join('\n');

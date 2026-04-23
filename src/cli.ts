@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import chalk from 'chalk';
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import { resolvePewPaths } from './paths.js';
@@ -18,12 +19,20 @@ import {
   resolveSince,
 } from './report.js';
 import {
+  renderCost,
   renderDigest,
   renderDoctor,
   renderSources,
   renderStatus,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
+import {
+  computeCost,
+  DEFAULT_RATES,
+  defaultRatesPath,
+  mergeRates,
+  readRatesFile,
+} from './cost.js';
 import {
   buildLookup,
   defaultCachePath,
@@ -230,6 +239,47 @@ program
       });
       await fs.writeFile(opts.out, html, 'utf8');
       process.stdout.write(`wrote ${opts.out} (${html.length} bytes)\n`);
+    } catch (e) {
+      die(e);
+    }
+  });
+
+program
+  .command('cost')
+  .description('Estimate $ cost from queue tokens × per-model rate table')
+  .option('--since <spec>', 'window: 24h, 7d, 30d, all', '7d')
+  .option('--rates <path>', 'JSON rates file (defaults to ~/.config/pew-insights/rates.json)')
+  .option('--json', 'emit JSON instead of a pretty table')
+  .action(async (opts: { since: string; rates?: string; json?: boolean }, cmd) => {
+    try {
+      const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+      const paths = resolvePewPaths(common.pewHome);
+      const since = resolveSince(opts.since);
+      const ratesPath = opts.rates ?? defaultRatesPath();
+      const userRates = await readRatesFile(ratesPath);
+      const rates = mergeRates(DEFAULT_RATES, userRates);
+      const queue = await readQueue(paths);
+      const report = computeCost(queue, since, rates);
+      if (opts.json || common.json) {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              ...report,
+              ratesSource: userRates ? ratesPath : 'defaults',
+              modelsPriced: Object.keys(rates).length,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      } else {
+        process.stdout.write(renderCost(report) + '\n');
+        process.stdout.write(
+          chalk.dim(
+            `\nrates source: ${userRates ? ratesPath : 'built-in defaults'}  (${Object.keys(rates).length} models priced)\n`,
+          ),
+        );
+      }
     } catch (e) {
       die(e);
     }
