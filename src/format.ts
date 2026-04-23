@@ -5,6 +5,7 @@ import type { DeltaWindow, TrendReport } from './trend.js';
 import type { TopProjectsResult } from './topprojects.js';
 import type { ForecastReport } from './forecast.js';
 import type { BudgetReport, BudgetStatus } from './budget.js';
+import type { CompareReport, SignificanceHint } from './compare.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -523,5 +524,55 @@ export function renderBudget(b: BudgetReport): string {
       ),
     );
   }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Compare
+// ---------------------------------------------------------------------------
+
+function hintColor(h: SignificanceHint): (s: string) => string {
+  switch (h) {
+    case 'significant':  return chalk.green.bold;
+    case 'weak':         return chalk.yellow;
+    case 'n/s':          return chalk.dim;
+    case 'insufficient': return chalk.dim;
+  }
+}
+
+export function renderCompare(c: CompareReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights compare'));
+  lines.push(
+    chalk.dim(
+      `dim: ${c.dimension}    A=${c.a.label} (${c.a.from} → ${c.a.until})    B=${c.b.label} (${c.b.from} → ${c.b.until})`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `A total: ${formatTokens(c.aTotalTokens)}    B total: ${formatTokens(c.bTotalTokens)}    Δ: ${formatTokens(c.aTotalTokens - c.bTotalTokens)}`,
+    ),
+  );
+  lines.push('');
+  if (c.rows.length === 0) {
+    lines.push(chalk.dim('no rows in either window'));
+    return lines.join('\n');
+  }
+  lines.push(
+    renderTable(
+      [c.dimension, `A (${c.a.label})`, `B (${c.b.label})`, 'Δ', 'Δ%', 't', 'hint'],
+      c.rows.map((r) => [
+        r.key,
+        formatTokens(r.aTokens),
+        formatTokens(r.bTokens),
+        formatTokens(r.delta),
+        formatPct(r.pct),
+        r.t === null ? '—' : Number.isFinite(r.t) ? r.t.toFixed(2) : '∞',
+        hintColor(r.hint)(r.hint),
+      ]),
+    ),
+  );
+  lines.push('');
+  lines.push(chalk.dim('hint = coarse Welch-t classifier on per-day totals; not a real p-value.'));
   return lines.join('\n');
 }

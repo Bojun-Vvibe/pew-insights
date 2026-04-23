@@ -20,6 +20,7 @@ import {
 } from './report.js';
 import {
   renderBudget,
+  renderCompare,
   renderCost,
   renderDigest,
   renderDoctor,
@@ -54,6 +55,7 @@ import { buildTrend } from './trend.js';
 import { buildTopProjects } from './topprojects.js';
 import { buildForecast } from './forecast.js';
 import { buildBudget, defaultBudgetPath, readBudgetFile } from './budget.js';
+import { buildCompare, resolveComparePreset, type CompareDimension, type CompareWindow } from './compare.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -756,6 +758,79 @@ program
         }
 
         if (report.status === 'breached') process.exitCode = 2;
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('compare')
+  .description('A/B compare two windows by source or model with significance hint')
+  .option('--preset <name>', 'preset window pair: this-week-vs-last-week | today-vs-yesterday | last-7d-vs-prior-7d')
+  .option('--a-from <iso>', 'window A inclusive start (ISO)')
+  .option('--a-until <iso>', 'window A exclusive end (ISO)')
+  .option('--b-from <iso>', 'window B inclusive start (ISO)')
+  .option('--b-until <iso>', 'window B exclusive end (ISO)')
+  .option('--by <dim>', 'dimension: source | model (default model)', 'model')
+  .option('--top <n>', 'cap rows shown (default 20)', '20')
+  .option('--min-tokens <n>', 'drop keys whose A+B tokens < this threshold (default 0)', '0')
+  .option('--json', 'emit JSON')
+  .action(
+    async (
+      opts: {
+        preset?: string;
+        aFrom?: string;
+        aUntil?: string;
+        bFrom?: string;
+        bUntil?: string;
+        by: string;
+        top: string;
+        minTokens: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        let a: CompareWindow;
+        let b: CompareWindow;
+        if (opts.preset) {
+          const pr = resolveComparePreset(opts.preset);
+          if (!pr) throw new Error(`unknown --preset: ${opts.preset}`);
+          a = pr.a;
+          b = pr.b;
+        } else {
+          if (!opts.aFrom || !opts.aUntil || !opts.bFrom || !opts.bUntil) {
+            throw new Error('either --preset or all of --a-from --a-until --b-from --b-until are required');
+          }
+          a = { label: 'A', from: new Date(opts.aFrom).toISOString(), until: new Date(opts.aUntil).toISOString() };
+          b = { label: 'B', from: new Date(opts.bFrom).toISOString(), until: new Date(opts.bUntil).toISOString() };
+        }
+
+        const dim = opts.by as CompareDimension;
+        if (dim !== 'source' && dim !== 'model') {
+          throw new Error(`--by must be 'source' or 'model' (got ${opts.by})`);
+        }
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isFinite(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
+        }
+
+        const queue = await readQueue(paths);
+        const report = buildCompare(queue, a, b, dim, { topN, minTokens });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderCompare(report) + '\n');
+        }
       } catch (e) {
         die(e);
       }
