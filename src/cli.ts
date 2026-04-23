@@ -35,6 +35,7 @@ import {
   type ResolvedRef,
 } from './projects.js';
 import { executeCompaction, planCompaction } from './compact.js';
+import { attributeTokensByProject } from './byproject.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -62,23 +63,77 @@ program
   .command('digest')
   .description('Token totals by day / source / model / hour for a window')
   .option('--since <spec>', 'window: 24h, 7d, 30d, all', '7d')
+  .option('--by-project', 'add a top-projects breakdown using project_ref reverse mapping')
   .option('--json', 'emit JSON instead of a pretty table')
-  .action(async (opts: { since: string; json?: boolean }, cmd) => {
-    try {
-      const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
-      const paths = resolvePewPaths(common.pewHome);
-      const since = resolveSince(opts.since);
-      const [queue, sessions] = await Promise.all([readQueue(paths), readSessionQueue(paths)]);
-      const digest = buildDigest(queue, sessions, since);
-      if (opts.json || common.json) {
-        process.stdout.write(JSON.stringify(digest, null, 2) + '\n');
-      } else {
-        process.stdout.write(renderDigest(digest) + '\n');
+  .action(
+    async (
+      opts: { since: string; json?: boolean; byProject?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+        const paths = resolvePewPaths(common.pewHome);
+        const since = resolveSince(opts.since);
+        const [queue, sessions] = await Promise.all([readQueue(paths), readSessionQueue(paths)]);
+        const digest = buildDigest(queue, sessions, since);
+
+        let byProject: ReturnType<typeof attributeTokensByProject> | null = null;
+        let labels: Map<string, string> | null = null;
+        if (opts.byProject) {
+          byProject = attributeTokensByProject(queue, sessions, since);
+          // Resolve project labels via cached lookup (do not rescan).
+          const cache = await readCache();
+          labels = new Map();
+          if (cache) {
+            for (const e of cache.entries) {
+              const safeBase = isPathDenylisted(e.basename) ? '<redacted>' : e.basename;
+              labels.set(e.projectRef, safeBase);
+            }
+          }
+        }
+
+        if (opts.json || common.json) {
+          const enriched = byProject
+            ? {
+                ...digest,
+                byProject: {
+                  unattributedTokens: byProject.unattributedTokens,
+                  rows: byProject.rows.slice(0, 10).map((r) => ({
+                    projectRef: r.projectRef,
+                    label: labels?.get(r.projectRef) ?? null,
+                    totalTokens: r.totalTokens,
+                    bySource: r.bySource,
+                  })),
+                },
+              }
+            : digest;
+          process.stdout.write(JSON.stringify(enriched, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDigest(digest) + '\n');
+          if (byProject) {
+            process.stdout.write('\nTop projects (proportional attribution)\n');
+            process.stdout.write(
+              `unattributed: ${byProject.unattributedTokens.toLocaleString()} tokens\n\n`,
+            );
+            const top = byProject.rows.slice(0, 10);
+            for (const r of top) {
+              const label = labels?.get(r.projectRef) ?? '(unresolved)';
+              process.stdout.write(
+                `  ${r.projectRef}  ${r.totalTokens.toLocaleString().padStart(14)}  ${label}\n`,
+              );
+              for (const s of r.bySource.slice(0, 5)) {
+                process.stdout.write(
+                  `      ${s.source.padEnd(18)} ${s.tokens.toLocaleString().padStart(12)}\n`,
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        die(e);
       }
-    } catch (e) {
-      die(e);
-    }
-  });
+    },
+  );
 
 program
   .command('status')
