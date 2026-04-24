@@ -68,6 +68,18 @@ export interface BurstinessOptions {
    */
   minActiveHours?: number;
   /**
+   * Drop groups whose `cv` is `< minCv` from `groups[]`. Display
+   * filter only — global denominators reflect the full
+   * population. Default 0 (keep every group).
+   *
+   * Operationally useful for surfacing only the spiky models
+   * when you want to see which workloads need rate-limiting or
+   * smoothing. Setting `--min-cv 1.0` keeps only groups whose
+   * stddev exceeds their mean (i.e. clearly bursty rather than
+   * noise-around-baseline).
+   */
+  minCv?: number;
+  /**
    * Truncate `groups[]` to the top N by total tokens. Display
    * filter only. Default 0 (no truncation).
    */
@@ -114,6 +126,8 @@ export interface BurstinessReport {
   minTokens: number;
   /** Echo of the resolved minActiveHours floor. */
   minActiveHours: number;
+  /** Echo of the resolved minCv floor. */
+  minCv: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
   /** Sum of total_tokens across all kept rows for the *global* row. */
@@ -136,6 +150,8 @@ export interface BurstinessReport {
   droppedGroupRows: number;
   /** Group rows hidden by the minActiveHours floor. */
   droppedSparseGroups: number;
+  /** Group rows hidden by the minCv floor. */
+  droppedLowCvGroups: number;
   /** Group rows hidden by the `top` cap (counted after other floors). */
   droppedTopGroups: number;
   /**
@@ -188,6 +204,10 @@ export function buildBurstiness(
     throw new Error(
       `minActiveHours must be a positive integer (got ${opts.minActiveHours})`,
     );
+  }
+  const minCv = opts.minCv ?? 0;
+  if (!Number.isFinite(minCv) || minCv < 0) {
+    throw new Error(`minCv must be a non-negative number (got ${opts.minCv})`);
   }
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
@@ -250,6 +270,7 @@ export function buildBurstiness(
   const groups: BurstinessGroupRow[] = [];
   let droppedGroupRows = 0;
   let droppedSparseGroups = 0;
+  let droppedLowCvGroups = 0;
 
   for (const [group, hours] of agg) {
     const values = Array.from(hours.values());
@@ -272,6 +293,11 @@ export function buildBurstiness(
     const p95 = percentileSorted(sorted, 0.95);
     const max = sorted[sorted.length - 1]!;
     const burstRatio = p50 > 0 ? max / p50 : 0;
+
+    if (cv < minCv) {
+      droppedLowCvGroups += 1;
+      continue;
+    }
 
     groups.push({
       model: group,
@@ -315,6 +341,7 @@ export function buildBurstiness(
     by,
     minTokens,
     minActiveHours,
+    minCv,
     top,
     totalTokens: globalTotal,
     globalActiveHours,
@@ -326,6 +353,7 @@ export function buildBurstiness(
     droppedZeroTokens,
     droppedGroupRows,
     droppedSparseGroups,
+    droppedLowCvGroups,
     droppedTopGroups,
     groups: kept,
   };

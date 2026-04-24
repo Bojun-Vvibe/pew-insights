@@ -35,6 +35,11 @@ test('burstiness: rejects bad minActiveHours', () => {
   assert.throws(() => buildBurstiness([], { minActiveHours: 1.5 }));
 });
 
+test('burstiness: rejects bad minCv', () => {
+  assert.throws(() => buildBurstiness([], { minCv: -0.1 }));
+  assert.throws(() => buildBurstiness([], { minCv: Number.NaN }));
+});
+
 test('burstiness: rejects bad since/until', () => {
   assert.throws(() => buildBurstiness([], { since: 'no' }));
   assert.throws(() => buildBurstiness([], { until: 'nope' }));
@@ -270,4 +275,54 @@ test('burstiness: groups sorted by total tokens desc, key asc on ties', () => {
     r.groups.map((g) => g.model),
     ['c', 'a', 'b'],
   );
+});
+
+// ---- minCv filter ---------------------------------------------------------
+
+test('burstiness: minCv default is 0 and droppedLowCvGroups starts at 0', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'm', { total_tokens: 100 }),
+    ql('2026-04-20T01:00:00.000Z', 'm', { total_tokens: 100 }),
+  ];
+  const r = buildBurstiness(rows, { generatedAt: GEN });
+  assert.equal(r.minCv, 0);
+  assert.equal(r.droppedLowCvGroups, 0);
+});
+
+test('burstiness: minCv hides low-variance groups, preserves global denominators', () => {
+  const rows = [
+    // "steady" model: cv=0
+    ql('2026-04-20T00:00:00.000Z', 'steady', { total_tokens: 100 }),
+    ql('2026-04-20T01:00:00.000Z', 'steady', { total_tokens: 100 }),
+    // "spiky" model: cv=0.5 (values [10, 30])
+    ql('2026-04-20T00:00:00.000Z', 'spiky', { total_tokens: 10 }),
+    ql('2026-04-20T01:00:00.000Z', 'spiky', { total_tokens: 30 }),
+  ];
+  const noFilter = buildBurstiness(rows, { generatedAt: GEN });
+  assert.equal(noFilter.groups.length, 2);
+  const filtered = buildBurstiness(rows, { generatedAt: GEN, minCv: 0.25 });
+  assert.equal(filtered.groups.length, 1);
+  assert.equal(filtered.groups[0]!.model, 'spiky');
+  assert.equal(filtered.droppedLowCvGroups, 1);
+  // Global denominators untouched: minCv is a display filter only
+  assert.equal(filtered.totalTokens, noFilter.totalTokens);
+  assert.equal(filtered.globalActiveHours, noFilter.globalActiveHours);
+  assert.equal(filtered.globalCv, noFilter.globalCv);
+});
+
+test('burstiness: minCv 1.0 keeps only stddev >= mean groups', () => {
+  const rows = [
+    // cv = 0.5
+    ql('2026-04-20T00:00:00.000Z', 'mid', { total_tokens: 10 }),
+    ql('2026-04-20T01:00:00.000Z', 'mid', { total_tokens: 30 }),
+    // cv = ~1.732 (values [1, 1, 1, 100], mean=25.75, popstd≈42.85, cv≈1.66)
+    ql('2026-04-20T00:00:00.000Z', 'wild', { total_tokens: 1 }),
+    ql('2026-04-20T01:00:00.000Z', 'wild', { total_tokens: 1 }),
+    ql('2026-04-20T02:00:00.000Z', 'wild', { total_tokens: 1 }),
+    ql('2026-04-20T03:00:00.000Z', 'wild', { total_tokens: 100 }),
+  ];
+  const r = buildBurstiness(rows, { generatedAt: GEN, minCv: 1.0 });
+  assert.equal(r.groups.length, 1);
+  assert.equal(r.groups[0]!.model, 'wild');
+  assert.equal(r.droppedLowCvGroups, 1);
 });

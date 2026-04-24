@@ -2523,12 +2523,12 @@ export function renderBurstiness(r: BurstinessReport): string {
   lines.push(chalk.bold.cyan('pew-insights burstiness'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    groups: ${formatNumber(r.groups.length)}    global active hrs: ${formatNumber(r.globalActiveHours)}    global mean/hr: ${formatNumber(Math.round(r.globalMeanTokensPerHour))}    global cv: ${r.globalCv.toFixed(3)}    global max/hr: ${formatNumber(r.globalMaxTokensPerHour)}    min-tokens: ${formatNumber(r.minTokens)}    min-active-hours: ${r.minActiveHours}`,
+      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    groups: ${formatNumber(r.groups.length)}    global active hrs: ${formatNumber(r.globalActiveHours)}    global mean/hr: ${formatNumber(Math.round(r.globalMeanTokensPerHour))}    global cv: ${r.globalCv.toFixed(3)}    global max/hr: ${formatNumber(r.globalMaxTokensPerHour)}    min-tokens: ${formatNumber(r.minTokens)}    min-active-hours: ${r.minActiveHours}    min-cv: ${r.minCv.toFixed(3)}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedGroupRows)} below min-tokens, ${formatNumber(r.droppedSparseGroups)} below min-active-hours, ${formatNumber(r.droppedTopGroups)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedGroupRows)} below min-tokens, ${formatNumber(r.droppedSparseGroups)} below min-active-hours, ${formatNumber(r.droppedLowCvGroups)} below min-cv, ${formatNumber(r.droppedTopGroups)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

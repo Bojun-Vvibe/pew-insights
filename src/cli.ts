@@ -2721,6 +2721,11 @@ program
     '1',
   )
   .option(
+    '--min-cv <x>',
+    'hide groups whose coefficient of variation is < x; their counts surface as droppedLowCvGroups. Default 0 keeps every group. Bump to 1.0 to keep only clearly bursty groups (stddev >= mean)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n groups by total tokens; remainder surface as droppedTopGroups (default 0 = no cap)',
     '0',
@@ -2734,6 +2739,7 @@ program
         by: string;
         minTokens: string;
         minActiveHours: string;
+        minCv: string;
         top: string;
         json?: boolean;
       },
@@ -2752,6 +2758,10 @@ program
             `--min-active-hours must be a positive integer (got ${opts.minActiveHours})`,
           );
         }
+        const minCv = Number.parseFloat(opts.minCv);
+        if (!Number.isFinite(minCv) || minCv < 0) {
+          throw new Error(`--min-cv must be a non-negative number (got ${opts.minCv})`);
+        }
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
@@ -2766,6 +2776,7 @@ program
           by: opts.by as 'model' | 'source',
           minTokens,
           minActiveHours,
+          minCv,
           top,
         });
         if (opts.json || common.json) {
