@@ -276,3 +276,49 @@ test('transitions: deterministic ordering when started_at ties on the same sourc
   assert.ok(yx, 'expected Y→X transition');
   assert.ok(xz, 'expected X→Z transition');
 });
+
+test('transitions: minCount filters surfaced cells but not stickiness', () => {
+  // 3 X→X handoffs, 1 X→Y handoff.
+  const sessions = [
+    sl('a', '2026-04-24T10:00:00.000Z', '2026-04-24T10:01:00.000Z', { source: 'X' }),
+    sl('b', '2026-04-24T10:02:00.000Z', '2026-04-24T10:03:00.000Z', { source: 'X' }),
+    sl('c', '2026-04-24T10:04:00.000Z', '2026-04-24T10:05:00.000Z', { source: 'X' }),
+    sl('d', '2026-04-24T10:06:00.000Z', '2026-04-24T10:07:00.000Z', { source: 'X' }),
+    sl('e', '2026-04-24T10:08:00.000Z', '2026-04-24T10:09:00.000Z', { source: 'Y' }),
+  ];
+  const r = buildTransitions(sessions, { generatedAt: GEN, minCount: 2 });
+  assert.equal(r.minCount, 2);
+  // Only X→X (count=3) survives the surfaced table.
+  assert.equal(r.topTransitions.length, 1);
+  assert.equal(r.topTransitions[0]!.from, 'X');
+  assert.equal(r.topTransitions[0]!.to, 'X');
+  // Stickiness still tallies all 4 outgoing from X.
+  const x = r.stickiness.find((s) => s.group === 'X')!;
+  assert.equal(x.outgoing, 4);
+  assert.equal(x.selfLoop, 3);
+});
+
+test('transitions: excludeSelfLoops drops A→A from the surfaced table only', () => {
+  const sessions = [
+    sl('a', '2026-04-24T10:00:00.000Z', '2026-04-24T10:01:00.000Z', { source: 'X' }),
+    sl('b', '2026-04-24T10:02:00.000Z', '2026-04-24T10:03:00.000Z', { source: 'X' }),
+    sl('c', '2026-04-24T10:04:00.000Z', '2026-04-24T10:05:00.000Z', { source: 'Y' }),
+  ];
+  const r = buildTransitions(sessions, { generatedAt: GEN, excludeSelfLoops: true });
+  assert.equal(r.excludeSelfLoops, true);
+  // X→X dropped; only X→Y surfaces.
+  assert.equal(r.topTransitions.length, 1);
+  assert.equal(r.topTransitions[0]!.from, 'X');
+  assert.equal(r.topTransitions[0]!.to, 'Y');
+  // handoffs (matrix-wide tally) still 2.
+  assert.equal(r.handoffs, 2);
+  // Stickiness for X still counts the X→X self-loop.
+  const x = r.stickiness.find((s) => s.group === 'X')!;
+  assert.equal(x.selfLoop, 1);
+  assert.equal(x.outgoing, 2);
+});
+
+test('transitions: rejects bad minCount', () => {
+  assert.throws(() => buildTransitions([], { minCount: -1 }));
+  assert.throws(() => buildTransitions([], { minCount: 1.5 }));
+});

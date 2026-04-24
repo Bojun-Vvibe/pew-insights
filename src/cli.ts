@@ -1471,10 +1471,21 @@ program
   .option('--by <dim>', "grouping dimension: source | kind | project_ref (default 'source')", 'source')
   .option('--max-gap-seconds <n>', 'max gap to count as a handoff (default 1800 = 30 min)', '1800')
   .option('--top <n>', 'top-N transitions to surface (default 10)', '10')
+  .option('--min-count <n>', 'drop cells with count < n from the surfaced table (default 0)', '0')
+  .option('--exclude-self-loops', 'drop A→A cells from the surfaced table', false)
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; by: string; maxGapSeconds: string; top: string; json?: boolean },
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        maxGapSeconds: string;
+        top: string;
+        minCount: string;
+        excludeSelfLoops?: boolean;
+        json?: boolean;
+      },
       cmd,
     ) => {
       try {
@@ -1483,6 +1494,10 @@ program
         const topN = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(topN) || topN < 1) {
           throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const minCount = Number.parseInt(opts.minCount, 10);
+        if (!Number.isInteger(minCount) || minCount < 0) {
+          throw new Error(`--min-count must be a non-negative integer (got ${opts.minCount})`);
         }
         const maxGapSeconds = Number.parseFloat(opts.maxGapSeconds);
         if (!Number.isFinite(maxGapSeconds) || maxGapSeconds < 0) {
@@ -1499,6 +1514,8 @@ program
           by: opts.by as TransitionsDimension,
           maxGapSeconds,
           topN,
+          minCount,
+          excludeSelfLoops: opts.excludeSelfLoops ?? false,
         });
 
         if (opts.json || common.json) {

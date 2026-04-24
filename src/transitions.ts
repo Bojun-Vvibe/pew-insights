@@ -67,6 +67,21 @@ export interface TransitionsOptions {
   by?: TransitionsDimension;
   /** Top-N transitions surfaced in the table. Default 10. Must be >= 1. */
   topN?: number;
+  /**
+   * Drop cells whose `count < minCount` from `topTransitions`. The
+   * matrix-wide tallies (`handoffs`, `stickiness`) are unaffected;
+   * this is a *display* filter to suppress one-off noise from the
+   * surfaced table when the corpus is large. Default 0 = no filter.
+   */
+  minCount?: number;
+  /**
+   * When true, drop self-loop cells (where `from == to`) from
+   * `topTransitions`. Useful when the operator already understands
+   * stickiness from the dedicated table and wants to see only
+   * actual cross-group context switches. Stickiness math is
+   * unaffected. Default false.
+   */
+  excludeSelfLoops?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -108,6 +123,10 @@ export interface TransitionsReport {
   by: TransitionsDimension;
   maxGapSeconds: number;
   topN: number;
+  /** As-supplied minCount filter (0 = no filter). */
+  minCount: number;
+  /** As-supplied excludeSelfLoops flag. */
+  excludeSelfLoops: boolean;
   /** Sessions inside the window after filtering. */
   consideredSessions: number;
   /** Adjacent pairs evaluated = max(0, considered - 1). */
@@ -178,6 +197,11 @@ export function buildTransitions(
   if (by !== 'source' && by !== 'kind' && by !== 'project_ref') {
     throw new Error(`by must be 'source' | 'kind' | 'project_ref' (got ${String(opts.by)})`);
   }
+  const minCount = opts.minCount ?? 0;
+  if (!Number.isInteger(minCount) || minCount < 0) {
+    throw new Error(`minCount must be a non-negative integer (got ${opts.minCount})`);
+  }
+  const excludeSelfLoops = opts.excludeSelfLoops ?? false;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -269,7 +293,11 @@ export function buildTransitions(
     if (a.from !== b.from) return a.from < b.from ? -1 : 1;
     return a.to < b.to ? -1 : a.to > b.to ? 1 : 0;
   });
-  const topTransitions = cells.slice(0, topN);
+  // Apply display filters.
+  let displayCells = cells;
+  if (excludeSelfLoops) displayCells = displayCells.filter((c) => c.from !== c.to);
+  if (minCount > 0) displayCells = displayCells.filter((c) => c.count >= minCount);
+  const topTransitions = displayCells.slice(0, topN);
 
   // Stickiness rows.
   const stickiness: TransitionStickiness[] = [];
@@ -300,6 +328,8 @@ export function buildTransitions(
     by,
     maxGapSeconds,
     topN,
+    minCount,
+    excludeSelfLoops,
     consideredSessions: filtered.length,
     adjacentPairs: Math.max(0, filtered.length - 1),
     handoffs,

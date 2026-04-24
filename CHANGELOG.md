@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## 0.4.11 — 2026-04-24
 
+### Added (refinement)
+
+- `--min-count <n>` and `--exclude-self-loops` display filters on
+  `transitions`. Both surface-only — they shape the
+  `topTransitions[]` table without altering the matrix-wide
+  tallies (`handoffs`, `breaks`, `overlaps`) or the per-group
+  `stickiness` math, so the operator can hide noisy one-offs or
+  see only true cross-group context switches without losing the
+  underlying counts. Three new tests cover (1) `minCount` filter
+  semantics + stickiness preservation, (2) `excludeSelfLoops`
+  removing A→A only from the surfaced table, and (3) `minCount`
+  validation. Live smoke with `--exclude-self-loops --min-count 50`
+  on the same corpus collapses the table to the four genuine
+  cross-group bridges (opencode↔openclaw symmetric pair plus
+  codex↔claude-code symmetric pair) — exactly the actionable
+  workflow signal once the obvious self-loops are filtered out.
+
 ### Added
 
 - `pew-insights transitions` subcommand — adjacency analysis of
