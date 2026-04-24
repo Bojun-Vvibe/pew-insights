@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.34 — 2026-04-25
+
+### Added
+
+- `--by-source` flag on `cache-hit-ratio`. Adds a per-model
+  per-source breakdown so the operator can see whether a low (or
+  suspiciously high) hit ratio is concentrated in one producer
+  CLI vs. spread across all of them. Sources are sorted by
+  input volume desc, then source asc, for stable output. The
+  per-source rows surface as `bySource: { source -> { rows,
+  inputTokens, cachedInputTokens, hitRatio } }` in the JSON
+  output. 3 new unit tests (618 total, up from 615 at 0.4.33).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js cache-hit-ratio --since 2026-04-13T00:00:00Z --by-source --min-rows 2
+pew-insights cache-hit-ratio
+as of: 2026-04-24T19:04:19.012Z    rows: 876    input: 2,847,096,244 tok    cached: 4,458,766,954 tok    overall: 156.6%    min-rows: 2
+dropped: 0 bad hour_start, 2 zero-input, 0 bad tokens, 2 below min-rows
+window: 2026-04-13T00:00:00Z → +∞
+
+per-source breakdown (sources sorted by input volume desc)
+model               source          rows  input          cached         hit-ratio
+------------------  --------------  ----  -------------  -------------  ---------
+claude-opus-4.7     claude-code     81    1,159,017,656  1,091,902,015  94.2%
+                    opencode        144   125,975,719    1,922,701,165  1526.2%
+                    hermes          136   53,881,197     75,712,609     140.5%
+                    vscode-copilot  2     237,329        0              0.0%
+gpt-5.4             openclaw        319   865,559,374    744,874,112    86.1%
+                    codex           64    410,781,190    396,009,088    96.4%
+                    opencode        11    2,073,715      22,346,240     1077.6%
+                    hermes          1     15,400         0              0.0%
+```
+
+Key finding: the headline 230.8% leverage on `claude-opus-4.7`
+is driven almost entirely by the **opencode** producer
+(1526.2% — i.e. opencode reads ~15× more cached tokens than
+fresh input bytes), while `claude-code` itself runs at a far
+more sober **94.2%**. Without the per-source split this is
+invisible in the model-level rollup. The `vscode-copilot` rows
+on opus are a 0.0% outlier worth investigating — the producer
+is paying full freight on every token.
+
 ## 0.4.33 — 2026-04-25
 
 ### Added

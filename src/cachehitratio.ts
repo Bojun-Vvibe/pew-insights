@@ -52,8 +52,23 @@ export interface CacheHitRatioOptions {
    * Default 0 (keep every model).
    */
   minRows?: number;
+  /**
+   * Also break down each per-model row by `source` (the local
+   * producer CLI). When true, each `ModelCacheRow` carries a
+   * `bySource` map of `source -> { rows, inputTokens,
+   * cachedInputTokens, hitRatio }`. Default false.
+   */
+  bySource?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
+}
+
+export interface SourceCacheStats {
+  rows: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  /** cachedInputTokens / inputTokens, 0 when inputTokens === 0. */
+  hitRatio: number;
 }
 
 export interface ModelCacheRow {
@@ -72,6 +87,12 @@ export interface ModelCacheRow {
    * dropped — defensively guarded).
    */
   hitRatio: number;
+  /**
+   * Per-source breakdown for this model. Empty object when
+   * `bySource` is false. Sources sorted by inputTokens desc,
+   * then source asc.
+   */
+  bySource: Record<string, SourceCacheStats>;
 }
 
 export interface CacheHitRatioReport {
@@ -80,6 +101,8 @@ export interface CacheHitRatioReport {
   windowEnd: string | null;
   /** Echo of the resolved minRows floor. */
   minRows: number;
+  /** Echo of `bySource`. */
+  bySource: boolean;
   /** Rows considered (input_tokens > 0 and inside window). */
   consideredRows: number;
   /** Sum of input_tokens across consideredRows. */
@@ -127,8 +150,17 @@ export function buildCacheHitRatio(
   }
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
+  const bySource = opts.bySource === true;
 
-  const agg = new Map<string, { rows: number; input: number; cached: number }>();
+  const agg = new Map<
+    string,
+    {
+      rows: number;
+      input: number;
+      cached: number;
+      sources: Map<string, { rows: number; input: number; cached: number }>;
+    }
+  >();
   let consideredRows = 0;
   let totalInput = 0;
   let totalCached = 0;
@@ -163,12 +195,24 @@ export function buildCacheHitRatio(
 
     let row = agg.get(model);
     if (!row) {
-      row = { rows: 0, input: 0, cached: 0 };
+      row = { rows: 0, input: 0, cached: 0, sources: new Map() };
       agg.set(model, row);
     }
     row.rows += 1;
     row.input += inT;
     row.cached += cT;
+    if (bySource) {
+      const src =
+        typeof q.source === 'string' && q.source.length > 0 ? q.source : 'unknown';
+      let sRow = row.sources.get(src);
+      if (!sRow) {
+        sRow = { rows: 0, input: 0, cached: 0 };
+        row.sources.set(src, sRow);
+      }
+      sRow.rows += 1;
+      sRow.input += inT;
+      sRow.cached += cT;
+    }
   }
 
   const models: ModelCacheRow[] = [];
@@ -178,12 +222,28 @@ export function buildCacheHitRatio(
       droppedModelRows += 1;
       continue;
     }
+    const sourceOut: Record<string, SourceCacheStats> = {};
+    if (bySource) {
+      const entries = Array.from(row.sources.entries()).sort((a, b) => {
+        if (b[1].input !== a[1].input) return b[1].input - a[1].input;
+        return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+      });
+      for (const [src, s] of entries) {
+        sourceOut[src] = {
+          rows: s.rows,
+          inputTokens: s.input,
+          cachedInputTokens: s.cached,
+          hitRatio: s.input === 0 ? 0 : s.cached / s.input,
+        };
+      }
+    }
     models.push({
       model,
       rows: row.rows,
       inputTokens: row.input,
       cachedInputTokens: row.cached,
       hitRatio: row.input === 0 ? 0 : row.cached / row.input,
+      bySource: sourceOut,
     });
   }
   models.sort((a, b) => {
@@ -196,6 +256,7 @@ export function buildCacheHitRatio(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minRows,
+    bySource,
     consideredRows,
     totalInputTokens: totalInput,
     totalCachedInputTokens: totalCached,

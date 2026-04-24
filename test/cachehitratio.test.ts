@@ -170,3 +170,55 @@ test('cache-hit-ratio: report echoes window/minRows', () => {
   assert.equal(r.windowEnd, '2026-05-01T00:00:00Z');
   assert.equal(r.minRows, 5);
 });
+
+// ---- by-source breakdown (0.4.34) -----------------------------------------
+
+test('cache-hit-ratio: bySource off (default) → bySource is empty object on every model', () => {
+  const r = buildCacheHitRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'claude-opus-4.7', { input_tokens: 100, cached_input_tokens: 50, source: 'opencode' }),
+      ql('2026-04-20T02:00:00Z', 'claude-opus-4.7', { input_tokens: 100, cached_input_tokens: 80, source: 'claude-code' }),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.bySource, false);
+  assert.deepEqual(r.models[0]!.bySource, {});
+});
+
+test('cache-hit-ratio: bySource on → per-source rows/tokens/ratio populated and sorted by input desc', () => {
+  const r = buildCacheHitRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'claude-opus-4.7', { input_tokens: 100, cached_input_tokens: 50, source: 'opencode' }),
+      ql('2026-04-20T02:00:00Z', 'claude-opus-4.7', { input_tokens: 300, cached_input_tokens: 240, source: 'claude-code' }),
+      ql('2026-04-20T03:00:00Z', 'claude-opus-4.7', { input_tokens: 300, cached_input_tokens: 60, source: 'claude-code' }),
+    ],
+    { generatedAt: GEN, bySource: true },
+  );
+  assert.equal(r.bySource, true);
+  const m = r.models[0]!;
+  const keys = Object.keys(m.bySource);
+  // claude-code total input = 600, opencode = 100 → claude-code first
+  assert.deepEqual(keys, ['claude-code', 'opencode']);
+  const cc = m.bySource['claude-code']!;
+  assert.equal(cc.rows, 2);
+  assert.equal(cc.inputTokens, 600);
+  assert.equal(cc.cachedInputTokens, 300);
+  assert.equal(cc.hitRatio, 0.5);
+  const oc = m.bySource['opencode']!;
+  assert.equal(oc.rows, 1);
+  assert.equal(oc.inputTokens, 100);
+  assert.equal(oc.cachedInputTokens, 50);
+  assert.equal(oc.hitRatio, 0.5);
+});
+
+test('cache-hit-ratio: bySource folds missing/empty source into "unknown"', () => {
+  const r = buildCacheHitRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'claude-opus-4.7', { input_tokens: 100, cached_input_tokens: 10, source: '' }),
+    ],
+    { generatedAt: GEN, bySource: true },
+  );
+  const m = r.models[0]!;
+  assert.deepEqual(Object.keys(m.bySource), ['unknown']);
+  assert.equal(m.bySource['unknown']!.rows, 1);
+});

@@ -2293,10 +2293,11 @@ program
     'hide models with fewer than n rows; their counts surface as droppedModelRows but not in the table (default 0)',
     '0',
   )
+  .option('--by-source', 'also break down each model row by source (producer CLI)')
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minRows: string; json?: boolean },
+      opts: { since?: string; until?: string; minRows: string; bySource?: boolean; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2311,6 +2312,7 @@ program
           since: opts.since ?? null,
           until: opts.until ?? null,
           minRows,
+          bySource: opts.bySource === true,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
