@@ -1824,6 +1824,89 @@ export function renderMessageVolume(r: MessageVolumeReport): string {
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type { ModelSwitchingReport } from './modelswitching.js';
+
+export function renderModelSwitching(r: ModelSwitchingReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights model-switching'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    switched: ${formatNumber(r.switchedSessions)} (${formatPercentLocal(r.switchedShare)})    transitions: ${formatNumber(r.totalTransitions)} across ${formatNumber(r.uniqueTransitionPairs)} pairs    top: ${r.top}`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  for (const d of r.distributions) {
+    if (r.by !== 'all') {
+      lines.push(chalk.bold(`group: ${d.group}`));
+    }
+    lines.push(
+      renderTableLocal(
+        ['summary', 'value'],
+        [
+          ['sessions', formatNumber(d.consideredSessions)],
+          ['switched', formatNumber(d.switchedSessions)],
+          ['switched share', formatPercentLocal(d.switchedShare)],
+          ['transitions', formatNumber(d.totalTransitions)],
+          [
+            'mean models / switched session',
+            d.switchedSessions === 0 ? '—' : d.meanModelsPerSwitchedSession.toFixed(2),
+          ],
+          ['p50 distinct models', formatNumber(d.p50DistinctModels)],
+          ['p90 distinct models', formatNumber(d.p90DistinctModels)],
+          ['p99 distinct models', formatNumber(d.p99DistinctModels)],
+          ['max distinct models', formatNumber(d.maxDistinctModels)],
+        ],
+      ),
+    );
+    lines.push('');
+    lines.push(
+      renderTableLocal(
+        ['distinct models', 'count', 'share'],
+        d.distinctModelCountBuckets.map((b) => [
+          b.label,
+          formatNumber(b.count),
+          formatPercentLocal(b.share),
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  if (r.topTransitions.length > 0) {
+    lines.push(chalk.bold(`top transitions (from → to):`));
+    lines.push(
+      renderTableLocal(
+        ['from', 'to', 'count', 'share'],
+        r.topTransitions.map((t) => [
+          t.from,
+          t.to,
+          formatNumber(t.count),
+          formatPercentLocal(t.share),
+        ]),
+      ),
+    );
+    if (r.otherTransitionsCount > 0) {
+      lines.push(
+        chalk.dim(
+          `  + ${formatNumber(r.uniqueTransitionPairs - r.topTransitions.length)} more pairs accounting for ${formatNumber(r.otherTransitionsCount)} transitions (use --top to expand).`,
+        ),
+      );
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 function renderTableLocal(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)),

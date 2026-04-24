@@ -114,6 +114,32 @@ export async function readSessionQueue(paths: PewPaths): Promise<SessionLine[]> 
   return Array.from(byKey.values());
 }
 
+/**
+ * Stream-parse session-queue.jsonl WITHOUT deduplicating. Returns
+ * every well-formed JSON row, preserving file order. Needed by
+ * commands that analyse multiple snapshots of the same
+ * `session_key` (e.g. `model-switching`, where dedup destroys the
+ * intra-session model-change signal).
+ */
+export async function readSessionQueueRaw(paths: PewPaths): Promise<SessionLine[]> {
+  const out: SessionLine[] = [];
+  try {
+    for await (const line of readJsonlLines(paths.sessionQueueJsonl)) {
+      let parsed: SessionLine;
+      try {
+        parsed = JSON.parse(line) as SessionLine;
+      } catch {
+        continue;
+      }
+      if (!parsed || !parsed.session_key) continue;
+      out.push(parsed);
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Runs
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import {
   readCursors,
   readQueue,
   readSessionQueue,
+  readSessionQueueRaw,
   readState,
 } from './parsers.js';
 import {
@@ -45,6 +46,7 @@ import {
   renderReplyRatio,
   renderTurnCadence,
   renderMessageVolume,
+  renderModelSwitching,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -104,6 +106,10 @@ import {
   DEFAULT_VOLUME_EDGES,
   type MessageVolumeDimension,
 } from './messagevolume.js';
+import {
+  buildModelSwitching,
+  type ModelSwitchingDimension,
+} from './modelswitching.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1935,6 +1941,55 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderMessageVolume(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('model-switching')
+  .description('Sessions whose snapshots span >1 model; switched-share, distinct-model histogram, top from→to transitions')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option('--by <dim>', "split dimension: all | source (default 'all')", 'all')
+  .option('--top <n>', 'max number of (from→to) transition pairs to emit (default 10)', '10')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        if (opts.by !== 'all' && opts.by !== 'source') {
+          throw new Error(`--by must be 'all' | 'source' (got ${opts.by})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isFinite(top) || top <= 0) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+
+        const sessions = await readSessionQueueRaw(paths);
+        const report = buildModelSwitching(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as ModelSwitchingDimension,
+          top,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderModelSwitching(report) + '\n');
         }
       } catch (e) {
         die(e);
