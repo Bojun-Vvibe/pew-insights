@@ -212,3 +212,20 @@ test('gaps: quantileRank is mid-rank — strictly increasing for distinct gaps',
   assert.ok(r.flagged[0]!.quantileRank > r.flagged[1]!.quantileRank);
   assert.ok(r.flagged[1]!.quantileRank > r.flagged[2]!.quantileRank);
 });
+
+test('gaps: gapsAtThreshold counts ties at the threshold value', () => {
+  // 4 gaps all equal to 60s. Quantile 0.5 → threshold = 60.
+  // gapsAtThreshold should equal 4 and flagged should be empty
+  // (strict-greater never matches a tie at the threshold).
+  const sessions: SessionLine[] = [];
+  let t = new Date('2026-04-20T10:00:00.000Z').getTime();
+  for (let i = 0; i < 5; i += 1) {
+    sessions.push(sl(new Date(t).toISOString(), 0));
+    t += 60_000;
+  }
+  const r = buildGaps(sessions, { quantile: 0.5, generatedAt: FIXED_GEN });
+  assert.equal(r.totalGaps, 4);
+  assert.equal(r.thresholdSeconds, 60);
+  assert.equal(r.gapsAtThreshold, 4);
+  assert.equal(r.flagged.length, 0);
+});

@@ -1197,6 +1197,7 @@ export function renderGaps(r: GapsReport): string {
             : formatDurSeconds(Math.round(r.medianGapSeconds)),
         ],
         ['max gap', formatDurSeconds(r.maxGapSeconds)],
+        ['gaps tied at threshold', formatNumber(r.gapsAtThreshold)],
         ['flagged', formatNumber(r.flagged.length)],
       ],
     ),
@@ -1214,7 +1215,11 @@ export function renderGaps(r: GapsReport): string {
       ['gap', 'qrank', 'before (last_msg)', 'after (started)', 'src/kind'],
       r.flagged.map((g) => [
         formatDurSeconds(g.gapSeconds),
-        g.quantileRank.toFixed(2),
+        // Percentile rendering with 1 decimal so the operator can
+        // distinguish "barely past threshold" (e.g. 90.2%) from a
+        // true outlier (99.9%); the prior 2-decimal fraction
+        // collapsed everything in a long tail to a flat "1.00".
+        `${(g.quantileRank * 100).toFixed(1)}%`,
         g.before.lastMessageAt.slice(0, 16) + 'Z',
         g.after.startedAt.slice(0, 16) + 'Z',
         `${g.before.source}/${g.before.kind} → ${g.after.source}/${g.after.kind}`,

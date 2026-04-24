@@ -110,6 +110,15 @@ export interface GapsReport {
   medianGapSeconds: number | null;
   /** Max observed gap. null when totalGaps == 0. */
   maxGapSeconds: number | null;
+  /**
+   * How many gaps in the distribution equal `thresholdSeconds`
+   * exactly. Useful diagnostic: when this is large, lots of ties
+   * are sitting *at* the threshold and won't be flagged because the
+   * comparison is strict-greater. Tells the operator whether to
+   * lower `quantile` or accept that the distribution is too flat
+   * to threshold meaningfully.
+   */
+  gapsAtThreshold: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +226,7 @@ export function buildGaps(sessions: SessionLine[], opts: GapsOptions = {}): Gaps
   let thresholdSeconds: number | null = null;
   let medianGapSeconds: number | null = null;
   let maxGapSeconds: number | null = null;
+  let gapsAtThreshold = 0;
   let flagged: GapRow[] = [];
 
   if (totalGaps > 0) {
@@ -224,6 +234,9 @@ export function buildGaps(sessions: SessionLine[], opts: GapsOptions = {}): Gaps
     thresholdSeconds = nearestRankQuantile(sortedAsc, quantile);
     medianGapSeconds = median(sortedAsc);
     maxGapSeconds = sortedAsc[sortedAsc.length - 1]!;
+    for (const v of sortedAsc) {
+      if (v === thresholdSeconds) gapsAtThreshold += 1;
+    }
 
     const candidates: GapRow[] = [];
     for (const t of gapTuples) {
@@ -263,5 +276,6 @@ export function buildGaps(sessions: SessionLine[], opts: GapsOptions = {}): Gaps
     flagged,
     medianGapSeconds,
     maxGapSeconds,
+    gapsAtThreshold,
   };
 }
