@@ -100,6 +100,26 @@ export interface PeakHourOptions {
    * `droppedSingletonDays`.
    */
   minActiveHours?: number;
+  /**
+   * Width of the "peak window" in hours, in [1, 24]. Default 1
+   * — the historical "busiest single hour" lens. Bumping to
+   * e.g. 3 generalises the metric: for each day the K
+   * highest-token hours are summed and divided by the day's
+   * total. Useful for answering "what fraction of the day's
+   * spend lands in my busiest 3 hours?" — a smoothly-spread
+   * model rises slowly with K (a perfectly uniform 24-hour
+   * model goes K/24), while a bursty one saturates at 100%
+   * almost immediately. The picked hours are NOT required to
+   * be contiguous: this is the empirical-quantile lens, not a
+   * sliding-window lens. K must be <= 24; K === 24 always
+   * yields share == 1.0 (and the metric becomes degenerate).
+   * The chosen K is enforced against `minActiveHours` (the
+   * day must have at least K active hours to be included),
+   * and overrides `minActiveHours` upward when K > minActiveHours
+   * — selecting the top-K of fewer-than-K active hours would
+   * over-count zeroes.
+   */
+  peakWindowHours?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -153,6 +173,8 @@ export interface PeakHourReport {
   top: number;
   /** Echo of the resolved minActiveHours floor. */
   minActiveHours: number;
+  /** Echo of the resolved peakWindowHours width (1 = legacy single-hour lens). */
+  peakWindowHours: number;
   /** Distinct (group, day) pairs that contributed. */
   consideredDays: number;
   /** Sum of total_tokens across all considered (group, day) pairs. */
@@ -226,12 +248,33 @@ export function buildPeakHourShare(
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
-  const minActiveHours = opts.minActiveHours ?? 1;
-  if (!Number.isInteger(minActiveHours) || minActiveHours < 1 || minActiveHours > 24) {
+  const minActiveHoursRaw = opts.minActiveHours ?? 1;
+  if (
+    !Number.isInteger(minActiveHoursRaw) ||
+    minActiveHoursRaw < 1 ||
+    minActiveHoursRaw > 24
+  ) {
     throw new Error(
       `minActiveHours must be an integer in [1, 24] (got ${opts.minActiveHours})`,
     );
   }
+  const peakWindowHours = opts.peakWindowHours ?? 1;
+  if (
+    !Number.isInteger(peakWindowHours) ||
+    peakWindowHours < 1 ||
+    peakWindowHours > 24
+  ) {
+    throw new Error(
+      `peakWindowHours must be an integer in [1, 24] (got ${opts.peakWindowHours})`,
+    );
+  }
+  // Selecting the top-K of fewer-than-K active hours would
+  // count "missing" hours as zero against the day total — the
+  // share is still mathematically defined but the operator
+  // signal degrades. Pull the floor up to K silently here so
+  // the metric stays apples-to-apples; the caller's chosen
+  // floor is still respected as a *minimum*.
+  const minActiveHours = Math.max(minActiveHoursRaw, peakWindowHours);
   const by: PeakHourDimension = opts.by ?? 'model';
   if (by !== 'model' && by !== 'source') {
     throw new Error(`by must be 'model' or 'source' (got ${opts.by})`);
@@ -339,7 +382,22 @@ export function buildPeakHourShare(
         droppedSingletonDays += 1;
         continue;
       }
-      const share = peakTokens / dayTotal;
+      // Top-K peak window. K === 1 collapses to the legacy
+      // single-hour share (peakTokens / dayTotal); K > 1 sums
+      // the K largest hours by token mass. The picked hours
+      // need not be contiguous — empirical-quantile lens, not
+      // sliding-window. Sort descending and take K (we already
+      // know activeHours >= peakWindowHours via minActiveHours,
+      // so we never sum a synthetic zero into the numerator).
+      const peakSum =
+        peakWindowHours === 1
+          ? peakTokens
+          : hours
+              .slice()
+              .sort((a, b) => b - a)
+              .slice(0, peakWindowHours)
+              .reduce((acc, x) => acc + x, 0);
+      const share = peakSum / dayTotal;
       peakShares.push(share);
       peakHourCounts[peakHour] = (peakHourCounts[peakHour] ?? 0) + 1;
       groupDays += 1;
@@ -409,6 +467,7 @@ export function buildPeakHourShare(
     minDays,
     top,
     minActiveHours,
+    peakWindowHours,
     consideredDays,
     totalTokens,
     overallMeanPeakShare:

@@ -2409,7 +2409,7 @@ export function renderPeakHourShare(r: PeakHourReport): string {
   lines.push(chalk.bold.cyan('pew-insights peak-hour-share'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    days: ${formatNumber(r.consideredDays)}    tokens: ${formatNumber(r.totalTokens)}    overall mean peak-share: ${formatPercentLocal(r.overallMeanPeakShare)}    overall max: ${formatPercentLocal(r.overallMaxPeakShare)}    min-days: ${r.minDays}    min-active-hours: ${r.minActiveHours}`,
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.consideredDays)}    tokens: ${formatNumber(r.totalTokens)}    overall mean peak-share: ${formatPercentLocal(r.overallMeanPeakShare)}    overall max: ${formatPercentLocal(r.overallMaxPeakShare)}    peak-window: ${r.peakWindowHours}h    min-days: ${r.minDays}    min-active-hours: ${r.minActiveHours}`,
     ),
   );
   lines.push(
@@ -2430,7 +2430,7 @@ export function renderPeakHourShare(r: PeakHourReport): string {
   }
 
   const barWidth = 20;
-  lines.push(chalk.bold(`per-${r.by} daily peak-hour concentration (sorted by day count desc)`));
+  lines.push(chalk.bold(`per-${r.by} top-${r.peakWindowHours}h peak-window concentration (sorted by day count desc)`));
   const rows: string[][] = r.groups.map((g) => {
     const fill = Math.round(Math.min(1, Math.max(0, g.meanPeakShare)) * barWidth);
     const bar = '█'.repeat(fill) + '·'.repeat(barWidth - fill);

@@ -274,3 +274,94 @@ test('peak-hour-share: modal hour ties broken by lowest hour', () => {
   assert.equal(g.modalPeakHour, 7);
   assert.equal(g.modalPeakHourCount, 1);
 });
+
+// ---- --peak-window refinement ---------------------------------------------
+
+test('peak-hour-share: peakWindowHours rejects out-of-range / non-integer', () => {
+  assert.throws(() => buildPeakHourShare([], { peakWindowHours: 0 }));
+  assert.throws(() => buildPeakHourShare([], { peakWindowHours: 25 }));
+  assert.throws(() => buildPeakHourShare([], { peakWindowHours: 1.5 }));
+  assert.throws(() => buildPeakHourShare([], { peakWindowHours: -3 }));
+});
+
+test('peak-hour-share: peakWindowHours=1 (default) preserves legacy single-hour share', () => {
+  const q = [
+    ql('2026-04-20T01:00:00.000Z', 'm', { total_tokens: 100 }),
+    ql('2026-04-20T02:00:00.000Z', 'm', { total_tokens: 200 }),
+    ql('2026-04-20T03:00:00.000Z', 'm', { total_tokens: 700 }),
+  ];
+  const rDefault = buildPeakHourShare(q, { generatedAt: GEN });
+  const rExplicit = buildPeakHourShare(q, { generatedAt: GEN, peakWindowHours: 1 });
+  assert.equal(rDefault.groups[0]!.meanPeakShare, rExplicit.groups[0]!.meanPeakShare);
+  assert.equal(rDefault.groups[0]!.meanPeakShare, 0.7); // 700/1000
+  assert.equal(rDefault.peakWindowHours, 1);
+  assert.equal(rExplicit.peakWindowHours, 1);
+});
+
+test('peak-hour-share: peakWindowHours=K sums top-K hours by token mass', () => {
+  // 5 active hours: 100, 200, 300, 400, 500. Day total = 1500.
+  // Top-1 = 500 (33.3%). Top-2 = 900 (60%). Top-3 = 1200 (80%).
+  const q = [
+    ql('2026-04-20T01:00:00.000Z', 'm', { total_tokens: 100 }),
+    ql('2026-04-20T02:00:00.000Z', 'm', { total_tokens: 200 }),
+    ql('2026-04-20T03:00:00.000Z', 'm', { total_tokens: 300 }),
+    ql('2026-04-20T04:00:00.000Z', 'm', { total_tokens: 400 }),
+    ql('2026-04-20T05:00:00.000Z', 'm', { total_tokens: 500 }),
+  ];
+  const r1 = buildPeakHourShare(q, { generatedAt: GEN, peakWindowHours: 1 });
+  const r2 = buildPeakHourShare(q, { generatedAt: GEN, peakWindowHours: 2 });
+  const r3 = buildPeakHourShare(q, { generatedAt: GEN, peakWindowHours: 3 });
+  assert.ok(Math.abs(r1.groups[0]!.meanPeakShare - 500 / 1500) < 1e-9);
+  assert.equal(r2.groups[0]!.meanPeakShare, 900 / 1500);
+  assert.equal(r3.groups[0]!.meanPeakShare, 1200 / 1500);
+});
+
+test('peak-hour-share: top-K picks need not be contiguous', () => {
+  // Active hours: 0:300, 5:100, 12:400, 13:50, 23:200. Day total = 1050.
+  // Top-2 = 400 + 300 = 700 (66.67%); 12 and 0 are not contiguous.
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'm', { total_tokens: 300 }),
+    ql('2026-04-20T05:00:00.000Z', 'm', { total_tokens: 100 }),
+    ql('2026-04-20T12:00:00.000Z', 'm', { total_tokens: 400 }),
+    ql('2026-04-20T13:00:00.000Z', 'm', { total_tokens: 50 }),
+    ql('2026-04-20T23:00:00.000Z', 'm', { total_tokens: 200 }),
+  ];
+  const r = buildPeakHourShare(q, { generatedAt: GEN, peakWindowHours: 2 });
+  assert.equal(r.groups[0]!.meanPeakShare, 700 / 1050);
+});
+
+test('peak-hour-share: peakWindowHours pulls minActiveHours floor up implicitly', () => {
+  // 2 active hours; --peak-window 3 silently raises floor to 3,
+  // dropping the day so we never sum a synthetic zero into the
+  // numerator. Surfaces as droppedSingletonDays.
+  const q = [
+    ql('2026-04-20T01:00:00.000Z', 'm', { total_tokens: 100 }),
+    ql('2026-04-20T02:00:00.000Z', 'm', { total_tokens: 200 }),
+  ];
+  const r = buildPeakHourShare(q, {
+    generatedAt: GEN,
+    minActiveHours: 1, // user asked for 1 but K=3 wins
+    peakWindowHours: 3,
+  });
+  assert.equal(r.consideredDays, 0);
+  assert.equal(r.droppedSingletonDays, 1);
+  assert.equal(r.groups.length, 0);
+  // Echo: minActiveHours reports the *effective* floor (3), not the input (1).
+  assert.equal(r.minActiveHours, 3);
+  assert.equal(r.peakWindowHours, 3);
+});
+
+test('peak-hour-share: peakWindowHours=24 collapses to share === 1.0 (degenerate)', () => {
+  // Any day with >= 24 active hours sums to the day total; share == 1.
+  // We can't have 24 active hours from one row per hour without a 24-row day.
+  const rows: QueueLine[] = [];
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    rows.push(
+      ql(`2026-04-20T${hh}:00:00.000Z`, 'm', { total_tokens: (h + 1) * 10 }),
+    );
+  }
+  const r = buildPeakHourShare(rows, { generatedAt: GEN, peakWindowHours: 24 });
+  assert.equal(r.consideredDays, 1);
+  assert.equal(r.groups[0]!.meanPeakShare, 1);
+});

@@ -2547,6 +2547,11 @@ program
     'drop (group, day) pairs with fewer than n distinct active hours BEFORE peak-share is recorded; default 1 keeps singleton-hour days at 100%',
     '1',
   )
+  .option(
+    '--peak-window <k>',
+    'width of the peak window in hours, in [1, 24] (default 1 = busiest single hour). Sums the K highest-token hours per day before dividing by the day total — answers "what fraction of the day landed in my busiest K hours?"',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2557,6 +2562,7 @@ program
         minDays: string;
         top: string;
         minActiveHours: string;
+        peakWindow: string;
         json?: boolean;
       },
       cmd,
@@ -2578,6 +2584,12 @@ program
             `--min-active-hours must be an integer in [1, 24] (got ${opts.minActiveHours})`,
           );
         }
+        const peakWindow = Number.parseInt(opts.peakWindow, 10);
+        if (!Number.isInteger(peakWindow) || peakWindow < 1 || peakWindow > 24) {
+          throw new Error(
+            `--peak-window must be an integer in [1, 24] (got ${opts.peakWindow})`,
+          );
+        }
         if (opts.by !== 'model' && opts.by !== 'source') {
           throw new Error(`--by must be 'model' or 'source' (got ${opts.by})`);
         }
@@ -2589,6 +2601,7 @@ program
           minDays,
           top,
           minActiveHours,
+          peakWindowHours: peakWindow,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
