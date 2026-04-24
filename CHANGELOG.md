@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.36 — 2026-04-25
+
+### Added
+
+- New `reasoning-share` subcommand. Per-model
+  token-weighted share of `reasoning_output_tokens /
+  (output_tokens + reasoning_output_tokens)` across
+  `queue.jsonl`. Answers "how much of what this model
+  generates is hidden chain-of-thought?" — useful for
+  routing decisions and budgeting the reasoning premium.
+  Pure builder, deterministic sort (generated volume desc,
+  then model asc), full window / minRows / drop bookkeeping
+  mirroring `cache-hit-ratio`. 9 new unit tests (630 total,
+  up from 621 at 0.4.35).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js reasoning-share
+pew-insights reasoning-share
+as of: 2026-04-24T19:26:18.738Z    rows: 1,371    output: 33,507,399 tok    reasoning: 1,098,634 tok    overall: 3.2%    min-rows: 0
+dropped: 0 bad hour_start, 0 zero-output, 0 bad tokens, 0 below min-rows, 0 below top cap
+
+per-model token-weighted reasoning share (sorted by generated volume desc)
+model                 rows  output      reasoning  generated   share  bar
+--------------------  ----  ----------  ---------  ----------  -----  --------------------
+claude-opus-4.7       364   21,558,961  0          21,558,961  0.0%   ····················
+gpt-5.4               399   6,758,563   930,598    7,689,161   12.1%  ██··················
+claude-opus-4.6.1m    182   3,450,625   0          3,450,625   0.0%   ····················
+gpt-5                 170   842,008     8,653      850,661     1.0%   ····················
+unknown               56    410,432     0          410,432     0.0%   ····················
+gemini-3-pro-preview  37    43,665      110,831    154,496     71.7%  ██████████████······
+claude-haiku-4.5      31    133,160     0          133,160     0.0%   ····················
+gpt-5.1               53    81,808      29,815     111,623     26.7%  █████···············
+claude-sonnet-4.5     37    93,835      11,547     105,382     11.0%  ██··················
+claude-sonnet-4.6     9     73,444      0          73,444      0.0%   ····················
+claude-sonnet-4       26    53,062      0          53,062      0.0%   ····················
+claude-opus-4.6       4     5,787       1,292      7,079       18.3%  ████················
+gpt-5.2               1     1,690       3,082      4,772       64.6%  █████████████·······
+gpt-5-nano            1     287         2,816      3,103       90.8%  ██████████████████··
+gpt-4.1               1     72          0          72          0.0%   ····················
+```
+
+Key finding: the headline 3.2% overall reasoning share is
+misleading. The bulk of generation goes through Anthropic
+models that emit zero reasoning tokens at all (claude-opus-4.7
+alone is 21.5M output tokens at 0%), dragging the global
+denominator down. The actual signal lives in the reasoning
+models: **`gemini-3-pro-preview` runs at 71.7% reasoning**
+(only ~28% of its tokens are user-visible) and `gpt-5-nano`
+even higher at **90.8%** (small sample, but every output
+token is preceded by ~10 reasoning tokens). `gpt-5.4` —
+the workhorse reasoning model — sits at a more sober 12.1%.
+The cost implication is direct: a workload routed to
+gemini-3-pro is spending ~5× the output dollars per visible
+token compared to its non-reasoning peers.
+
 ## 0.4.35 — 2026-04-25
 
 ### Added
