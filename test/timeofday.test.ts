@@ -220,3 +220,116 @@ test('buildTimeOfDay: shares sum to 1 (within float tolerance) when sessions pre
   const total = r.hours.reduce((acc, h) => acc + h.share, 0);
   assert.ok(Math.abs(total - 1) < 1e-9, `expected shares to sum to 1, got ${total}`);
 });
+
+// ---- --collapse refinement -------------------------------------------------
+
+test('collapse: default 1 → 24 buckets, hour field equals index', () => {
+  const r = buildTimeOfDay([sl('2026-04-25T03:00:00.000Z')], { generatedAt: GEN });
+  assert.equal(r.collapse, 1);
+  assert.equal(r.hours.length, 24);
+  for (let h = 0; h < 24; h++) assert.equal(r.hours[h]!.hour, h);
+});
+
+test('collapse: 6 → 4 quadrant buckets at 0, 6, 12, 18', () => {
+  const r = buildTimeOfDay(
+    [
+      sl('2026-04-25T01:00:00.000Z'), // bucket 0 (00-05)
+      sl('2026-04-25T05:59:00.000Z'), // bucket 0 (00-05)
+      sl('2026-04-25T06:00:00.000Z'), // bucket 6 (06-11)
+      sl('2026-04-25T11:59:00.000Z'), // bucket 6
+      sl('2026-04-25T13:00:00.000Z'), // bucket 12
+      sl('2026-04-25T20:00:00.000Z'), // bucket 18
+      sl('2026-04-25T23:59:00.000Z'), // bucket 18
+    ],
+    { generatedAt: GEN, collapse: 6 },
+  );
+  assert.equal(r.collapse, 6);
+  assert.equal(r.hours.length, 4);
+  assert.deepEqual(
+    r.hours.map((h) => h.hour),
+    [0, 6, 12, 18],
+  );
+  assert.deepEqual(
+    r.hours.map((h) => h.sessions),
+    [2, 2, 1, 2],
+  );
+});
+
+test('collapse: 12 → 2 buckets (AM/PM split), peakHour reported as bin start', () => {
+  const r = buildTimeOfDay(
+    [
+      sl('2026-04-25T02:00:00.000Z'),
+      sl('2026-04-25T04:00:00.000Z'),
+      sl('2026-04-25T15:00:00.000Z'),
+      sl('2026-04-25T15:30:00.000Z'),
+      sl('2026-04-25T17:00:00.000Z'),
+    ],
+    { generatedAt: GEN, collapse: 12 },
+  );
+  assert.equal(r.hours.length, 2);
+  assert.deepEqual(
+    r.hours.map((h) => h.hour),
+    [0, 12],
+  );
+  assert.equal(r.hours[0]!.sessions, 2);
+  assert.equal(r.hours[1]!.sessions, 3);
+  assert.equal(r.peakHour, 12); // start of the winning bin
+  assert.equal(r.peakSessions, 3);
+});
+
+test('collapse: 24 → single bucket, all sessions land in it', () => {
+  const r = buildTimeOfDay(
+    [
+      sl('2026-04-25T00:30:00.000Z'),
+      sl('2026-04-25T13:00:00.000Z'),
+      sl('2026-04-25T23:30:00.000Z'),
+    ],
+    { generatedAt: GEN, collapse: 24 },
+  );
+  assert.equal(r.hours.length, 1);
+  assert.equal(r.hours[0]!.hour, 0);
+  assert.equal(r.hours[0]!.sessions, 3);
+  assert.equal(r.hours[0]!.share, 1);
+  assert.equal(r.peakHour, 0);
+});
+
+test('collapse: rejects non-divisors of 24 and non-positive integers', () => {
+  for (const bad of [0, 5, 7, 9, 10, 11, 13, 25, -6, 1.5, NaN]) {
+    assert.throws(
+      () => buildTimeOfDay([], { generatedAt: GEN, collapse: bad }),
+      /collapse must be a positive divisor of 24/,
+      `expected throw for collapse=${bad}`,
+    );
+  }
+});
+
+test('collapse: bySource still works (per-bin source map sums across collapsed hours)', () => {
+  const r = buildTimeOfDay(
+    [
+      sl('2026-04-25T01:00:00.000Z', { source: 'opencode', session_key: 'a' }),
+      sl('2026-04-25T02:00:00.000Z', { source: 'claude-code', session_key: 'b' }),
+      sl('2026-04-25T05:00:00.000Z', { source: 'claude-code', session_key: 'c' }),
+      sl('2026-04-25T07:00:00.000Z', { source: 'codex', session_key: 'd' }),
+    ],
+    { generatedAt: GEN, collapse: 6, bySource: true },
+  );
+  // bin 0 (00-05): opencode 1 + claude-code 2 = 3 sessions
+  assert.equal(r.hours[0]!.sessions, 3);
+  assert.equal(r.hours[0]!.bySource['claude-code'], 2);
+  assert.equal(r.hours[0]!.bySource['opencode'], 1);
+  // bin 6 (06-11): codex 1
+  assert.equal(r.hours[1]!.sessions, 1);
+  assert.equal(r.hours[1]!.bySource['codex'], 1);
+});
+
+test('collapse: tzOffset still applies to underlying hour before binning', () => {
+  // UTC 06:00 + -07:00 = local 23:00 → with collapse 6, bin 18 (18-23)
+  const r = buildTimeOfDay([sl('2026-04-25T06:00:00.000Z')], {
+    generatedAt: GEN,
+    tzOffset: '-07:00',
+    collapse: 6,
+  });
+  assert.equal(r.hours.length, 4);
+  assert.equal(r.hours[3]!.hour, 18);
+  assert.equal(r.hours[3]!.sessions, 1);
+});

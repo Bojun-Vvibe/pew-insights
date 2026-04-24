@@ -57,22 +57,36 @@ export interface TimeOfDayOptions {
    * `source -> count`. Default false.
    */
   bySource?: boolean;
+  /**
+   * Collapse adjacent hours into N-sized bins. Must be a divisor
+   * of 24 (1, 2, 3, 4, 6, 8, 12, 24). Default 1 (no collapsing).
+   *
+   * With `collapse: 6` the output has 4 buckets:
+   *
+   *   - hour 0  → 00:00–05:00 (night)
+   *   - hour 6  → 06:00–11:00 (morning)
+   *   - hour 12 → 12:00–17:00 (afternoon)
+   *   - hour 18 → 18:00–23:00 (evening)
+   *
+   * The `hour` field on each bucket is the *start* of the bin,
+   * so downstream consumers can format the range as
+   * `[hour, hour + collapse)` if they want.
+   */
+  collapse?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
 
 export interface HourBucket {
-  /** 0..23 in the resolved timezone. */
+  /** Start hour of this bucket (0..23). With collapse=N, always a multiple of N. */
   hour: number;
-  /** Number of sessions whose start fell in this hour. */
+  /** Number of sessions whose start fell in this bucket. */
   sessions: number;
   /** sessions / consideredSessions. 0 when input is empty. */
   share: number;
   /**
-   * Per-source counts in this hour. Empty object when
-   * `bySource` is false. Sources with 0 sessions in this hour
-   * are omitted (so the map is sparse per row but the parent
-   * `hours[]` array is dense).
+   * Per-source counts in this bucket. Empty object when
+   * `bySource` is false.
    */
   bySource: Record<string, number>;
 }
@@ -85,19 +99,21 @@ export interface TimeOfDayReport {
   tzOffset: string;
   /** Echo of `bySource`. */
   bySource: boolean;
+  /** Echo of resolved `collapse` width (1..24, divisor of 24). */
+  collapse: number;
   /** Total sessions matched by window and used in shares. */
   consideredSessions: number;
   /** Sessions with non-parseable started_at. */
   droppedInvalidStartedAt: number;
   /**
-   * The hour with the most sessions. -1 when no sessions.
+   * The bucket start-hour with the most sessions. -1 when no sessions.
    * Ties broken by lowest hour.
    */
   peakHour: number;
   /** Sessions in `peakHour`. 0 when no sessions. */
   peakSessions: number;
   /**
-   * 24 entries, hour 0 through hour 23, always present.
+   * 24/collapse entries, always present (zero-filled).
    */
   hours: HourBucket[];
 }
@@ -138,6 +154,13 @@ export function buildTimeOfDay(
   }
   const tzOffset = formatTzOffset(tzMinutes);
 
+  const collapse = opts.collapse ?? 1;
+  if (!Number.isInteger(collapse) || collapse < 1 || collapse > 24 || 24 % collapse !== 0) {
+    throw new Error(
+      `collapse must be a positive divisor of 24 (1, 2, 3, 4, 6, 8, 12, 24); got ${opts.collapse}`,
+    );
+  }
+
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
   if (opts.since != null && (sinceMs === null || !Number.isFinite(sinceMs))) {
@@ -149,10 +172,11 @@ export function buildTimeOfDay(
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const bySource = opts.bySource === true;
+  const numBuckets = 24 / collapse;
 
-  const counts: number[] = new Array(24).fill(0);
+  const counts: number[] = new Array(numBuckets).fill(0);
   const sourceCounts: Array<Map<string, number>> = bySource
-    ? Array.from({ length: 24 }, () => new Map<string, number>())
+    ? Array.from({ length: numBuckets }, () => new Map<string, number>())
     : [];
   let considered = 0;
   let droppedInvalidStartedAt = 0;
@@ -169,11 +193,13 @@ export function buildTimeOfDay(
     // Apply offset, then extract UTC hour of the shifted instant.
     const shifted = new Date(startMs + tzMinutes * 60_000);
     const hour = shifted.getUTCHours();
-    counts[hour]! += 1;
+    const bucketIdx = Math.floor(hour / collapse);
+    counts[bucketIdx]! += 1;
     considered += 1;
     if (bySource) {
-      const src = typeof s.source === 'string' && s.source.length > 0 ? s.source : 'unknown';
-      const m = sourceCounts[hour]!;
+      const src =
+        typeof s.source === 'string' && s.source.length > 0 ? s.source : 'unknown';
+      const m = sourceCounts[bucketIdx]!;
       m.set(src, (m.get(src) ?? 0) + 1);
     }
   }
@@ -181,26 +207,25 @@ export function buildTimeOfDay(
   let peakHour = -1;
   let peakSessions = 0;
   if (considered > 0) {
-    for (let h = 0; h < 24; h++) {
-      if (counts[h]! > peakSessions) {
-        peakSessions = counts[h]!;
-        peakHour = h;
+    for (let b = 0; b < numBuckets; b++) {
+      if (counts[b]! > peakSessions) {
+        peakSessions = counts[b]!;
+        peakHour = b * collapse;
       }
     }
   }
 
   const hours: HourBucket[] = [];
-  for (let h = 0; h < 24; h++) {
-    const c = counts[h]!;
+  for (let b = 0; b < numBuckets; b++) {
+    const c = counts[b]!;
     const bucket: HourBucket = {
-      hour: h,
+      hour: b * collapse,
       sessions: c,
       share: considered === 0 ? 0 : c / considered,
       bySource: {},
     };
     if (bySource) {
-      const m = sourceCounts[h]!;
-      // Deterministic key order: sort by count desc then key asc.
+      const m = sourceCounts[b]!;
       const entries = Array.from(m.entries()).sort((a, b) => {
         if (b[1] !== a[1]) return b[1] - a[1];
         return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
@@ -218,6 +243,7 @@ export function buildTimeOfDay(
     windowEnd: opts.until ?? null,
     tzOffset,
     bySource,
+    collapse,
     consideredSessions: considered,
     droppedInvalidStartedAt,
     peakHour,

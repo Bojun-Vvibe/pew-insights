@@ -2233,15 +2233,33 @@ program
     'Z',
   )
   .option('--by-source', 'also break down each hour by session source (producer CLI)')
+  .option(
+    '--collapse <n>',
+    'collapse adjacent hours into n-sized bins; n must divide 24 (default 1)',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; tzOffset: string; bySource?: boolean; json?: boolean },
+      opts: {
+        since?: string;
+        until?: string;
+        tzOffset: string;
+        bySource?: boolean;
+        collapse: string;
+        json?: boolean;
+      },
       cmd,
     ) => {
       try {
         const common = cmd.optsWithGlobals() as CommonOpts;
         const paths = resolvePewPaths(common.pewHome);
+        const collapse = Number.parseInt(opts.collapse, 10);
+        if (!Number.isInteger(collapse) || collapse < 1 || collapse > 24 || 24 % collapse !== 0) {
+          throw new Error(
+            `--collapse must be a positive divisor of 24 (1, 2, 3, 4, 6, 8, 12, 24); got ${opts.collapse}`,
+          );
+        }
 
         const sessions = await readSessionQueue(paths);
         const report = buildTimeOfDay(sessions, {
@@ -2249,6 +2267,7 @@ program
           until: opts.until ?? null,
           tzOffset: opts.tzOffset,
           bySource: opts.bySource === true,
+          collapse,
         });
 
         if (opts.json || common.json) {

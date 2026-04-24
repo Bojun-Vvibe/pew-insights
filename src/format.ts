@@ -2110,13 +2110,16 @@ import type { TimeOfDayReport } from './timeofday.js';
 export function renderTimeOfDay(r: TimeOfDayReport): string {
   const lines: string[] = [];
   lines.push(chalk.bold.cyan('pew-insights time-of-day'));
+  const hourLabel = (start: number) => {
+    if (r.collapse === 1) return `${String(start).padStart(2, '0')}:00`;
+    const end = (start + r.collapse) % 24;
+    return `${String(start).padStart(2, '0')}-${String(end).padStart(2, '0')}`;
+  };
   const peakLabel =
-    r.peakHour < 0
-      ? '—'
-      : `${String(r.peakHour).padStart(2, '0')}:00 (${formatNumber(r.peakSessions)} sess)`;
+    r.peakHour < 0 ? '—' : `${hourLabel(r.peakHour)} (${formatNumber(r.peakSessions)} sess)`;
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    tz: ${r.tzOffset}    peak: ${peakLabel}    by-source: ${r.bySource ? 'on' : 'off'}    dropped: ${formatNumber(r.droppedInvalidStartedAt)} bad started_at`,
+      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    tz: ${r.tzOffset}    collapse: ${r.collapse}h    peak: ${peakLabel}    by-source: ${r.bySource ? 'on' : 'off'}    dropped: ${formatNumber(r.droppedInvalidStartedAt)} bad started_at`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -2132,33 +2135,26 @@ export function renderTimeOfDay(r: TimeOfDayReport): string {
   const maxSessions = r.peakSessions;
   const barWidth = 24;
 
-  lines.push(chalk.bold('hour-of-day distribution'));
+  lines.push(
+    chalk.bold(r.collapse === 1 ? 'hour-of-day distribution' : `${r.collapse}h-bin distribution`),
+  );
   const rows: string[][] = r.hours.map((h) => {
     const fill = maxSessions === 0 ? 0 : Math.round((h.sessions / maxSessions) * barWidth);
     const bar = '█'.repeat(fill) + '·'.repeat(barWidth - fill);
-    return [
-      `${String(h.hour).padStart(2, '0')}:00`,
-      formatNumber(h.sessions),
-      formatPercentLocal(h.share),
-      bar,
-    ];
+    return [hourLabel(h.hour), formatNumber(h.sessions), formatPercentLocal(h.share), bar];
   });
   lines.push(renderTableLocal(['hour', 'sessions', 'share', 'bar'], rows));
 
   if (r.bySource) {
     lines.push('');
-    lines.push(chalk.bold('per-source breakdown (only hours with sessions)'));
+    lines.push(chalk.bold('per-source breakdown (only buckets with sessions)'));
     const srcRows: string[][] = [];
     for (const h of r.hours) {
       const entries = Object.entries(h.bySource);
       if (entries.length === 0) continue;
       for (let i = 0; i < entries.length; i++) {
         const [src, n] = entries[i]!;
-        srcRows.push([
-          i === 0 ? `${String(h.hour).padStart(2, '0')}:00` : '',
-          src,
-          formatNumber(n),
-        ]);
+        srcRows.push([i === 0 ? hourLabel(h.hour) : '', src, formatNumber(n)]);
       }
     }
     if (srcRows.length === 0) {
