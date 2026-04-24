@@ -8,6 +8,7 @@ import type { BudgetReport, BudgetStatus } from './budget.js';
 import type { CompareReport, SignificanceHint } from './compare.js';
 import type { AnomaliesReport, AnomalyStatus } from './anomalies.js';
 import type { RatiosReport, RatioStatus } from './ratiosreport.js';
+import type { DashboardReport } from './dashboard.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -716,5 +717,133 @@ export function renderRatios(r: RatiosReport): string {
       ]),
     ),
   );
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard (composite operator view: status + anomalies + ratios + drift)
+// ---------------------------------------------------------------------------
+
+function formatPctSigned(n: number | null): string {
+  if (n == null) return '—';
+  const sign = n >= 0 ? '+' : '';
+  return sign + n.toFixed(2) + '%';
+}
+
+function formatPctPointsSigned(n: number | null): string {
+  if (n == null) return '—';
+  const sign = n >= 0 ? '+' : '';
+  return sign + n.toFixed(2) + 'pp';
+}
+
+/**
+ * One-screen operator dashboard. Sections are deliberately compact so the
+ * whole report stays under ~24 terminal rows for a typical pew-home — the
+ * detailed views (`status`, `anomalies`, `ratios`) remain available as
+ * separate subcommands when an operator wants to drill in.
+ *
+ * Section order is intentional: queue health first (is the pipeline
+ * actually flowing?), then volume drift (are we burning more tokens than
+ * usual?), then ratio drift (is the cache holding up?). Health → volume →
+ * efficiency mirrors how an SRE would triage from coarse to fine.
+ */
+export function renderDashboard(d: DashboardReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights dashboard'));
+  lines.push(chalk.dim(`as of: ${d.asOf}    pew home: ${d.status.pewHome}`));
+  lines.push('');
+
+  // --- Health row ---------------------------------------------------------
+  lines.push(chalk.bold('Health'));
+  const lockState = d.status.trailingLockHolder
+    ? d.status.trailingLockAlive === false
+      ? chalk.red('STALE')
+      : chalk.green('alive')
+    : chalk.dim('none');
+  lines.push(
+    renderTable(
+      ['field', 'value'],
+      [
+        ['queue pending', `${formatBytes(d.status.pendingQueueBytes)} (${formatNumber(d.status.pendingQueueLines)} lines)`],
+        ['session-queue pending', formatBytes(d.status.pendingSessionQueueBytes)],
+        ['last success', `${d.status.lastSuccess ?? chalk.dim('never')} (${formatDuration(d.status.lastSuccessAgeSeconds)})`],
+        ['trailing.lock', lockState],
+        ['runs/ count', formatNumber(d.status.runsCountApprox)],
+        ['lagging files', String(d.status.lagFiles.length)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // --- Volume row ---------------------------------------------------------
+  lines.push(chalk.bold('Volume (daily token totals)'));
+  if (d.recentAnomaly == null) {
+    lines.push(chalk.dim('  no scored days in window (warmup)'));
+  } else {
+    const a = d.recentAnomaly;
+    const statusStr = anomalyColor(a.status)(a.status);
+    const zStr = a.z == null ? '—' : (a.z >= 0 ? '+' : '') + a.z.toFixed(2);
+    lines.push(
+      renderTable(
+        ['field', 'value'],
+        [
+          ['most recent day', a.day],
+          ['tokens', formatTokens(a.tokens)],
+          ['baseline mean', a.baselineMean == null ? '—' : formatTokens(Math.round(a.baselineMean))],
+          ['drift vs baseline', formatPctSigned(d.tokenDriftPct)],
+          ['z-score', zStr],
+          ['status', statusStr],
+          ['flagged in window', `${d.anomalies.flagged.length} (${d.anomalies.flagged.filter((x) => x.status === 'high').length} high, ${d.anomalies.flagged.filter((x) => x.status === 'low').length} low)`],
+        ],
+      ),
+    );
+    if (d.anomalies.recentHigh) {
+      lines.push(chalk.red.bold('  ⚠ most recent day flagged HIGH'));
+    }
+  }
+  lines.push('');
+
+  // --- Efficiency row -----------------------------------------------------
+  lines.push(chalk.bold('Efficiency (cache-hit ratio drift)'));
+  if (d.recentRatio == null) {
+    lines.push(chalk.dim('  no ratio days in window'));
+  } else {
+    const r = d.recentRatio;
+    const statusStr = ratioColor(r.status)(r.status);
+    const zStr = r.z == null ? '—' : (r.z >= 0 ? '+' : '') + r.z.toFixed(2);
+    const baselineProb =
+      r.baselineLogitMean == null
+        ? null
+        : 1 / (1 + Math.exp(-r.baselineLogitMean));
+    lines.push(
+      renderTable(
+        ['field', 'value'],
+        [
+          ['current EWMA', formatRatio(d.ratios.currentEwma)],
+          ['most recent day', r.day],
+          ['day ratio', formatRatio(r.ratio)],
+          ['day EWMA', formatRatio(r.ewma)],
+          ['baseline EWMA', formatRatio(baselineProb)],
+          ['drift vs baseline', formatPctPointsSigned(d.ratioDriftPctPoints)],
+          ['z-score (logit)', zStr],
+          ['status', statusStr],
+          ['flagged in window', `${d.ratios.flagged.length} (${d.ratios.flagged.filter((x) => x.status === 'high').length} high, ${d.ratios.flagged.filter((x) => x.status === 'low').length} low)`],
+        ],
+      ),
+    );
+    if (d.ratios.recentHigh) {
+      lines.push(chalk.green.bold('  ⬆ cache-hit climbed (HIGH)'));
+    } else if (d.ratios.recentLow) {
+      lines.push(chalk.red.bold('  ⬇ cache-hit dropped (LOW)'));
+    }
+  }
+  lines.push('');
+
+  // --- Footer alert summary ----------------------------------------------
+  if (d.alerting) {
+    lines.push(chalk.red.bold('ALERT — see flagged sections above'));
+  } else {
+    lines.push(chalk.green('✓ no alerts'));
+  }
   return lines.join('\n');
 }

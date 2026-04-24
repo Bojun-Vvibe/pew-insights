@@ -31,6 +31,7 @@ import {
   renderTrend,
   renderAnomalies,
   renderRatios,
+  renderDashboard,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -61,6 +62,7 @@ import { buildCompare, resolveComparePreset, type CompareDimension, type Compare
 import { exportQueue, exportSessions, type ExportFormat } from './export.js';
 import { buildAnomalies } from './anomalies.js';
 import { buildRatiosReport } from './ratiosreport.js';
+import { buildDashboard } from './dashboard.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -81,7 +83,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.4.3')
+  .version('0.4.4')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -1038,6 +1040,95 @@ program
         // too because a falling cache-hit ratio is the operational
         // signal that matters most — costs are climbing.
         if (report.recentHigh || report.recentLow) process.exitCode = 2;
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('dashboard')
+  .description('One-screen operator view: queue health + token volume drift + cache-hit drift')
+  .option('--lookback <days>', 'days of history for anomalies + ratios (default 30)', '30')
+  .option('--baseline <days>', 'trailing baseline window for both (default 7)', '7')
+  .option('--threshold <z>', '|z| threshold for flagging in both (default 2.0)', '2.0')
+  .option('--alpha <a>', 'EWMA alpha for ratios in (0, 1] (default 0.3)', '0.3')
+  .option('--json', 'emit JSON')
+  .action(
+    async (
+      opts: {
+        lookback: string;
+        baseline: string;
+        threshold: string;
+        alpha: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        const lookback = Number.parseInt(opts.lookback, 10);
+        const baseline = Number.parseInt(opts.baseline, 10);
+        const threshold = Number(opts.threshold);
+        const alpha = Number(opts.alpha);
+        if (!Number.isFinite(lookback) || lookback < 1) {
+          throw new Error(`--lookback must be a positive integer (got ${opts.lookback})`);
+        }
+        if (!Number.isFinite(baseline) || baseline < 1) {
+          throw new Error(`--baseline must be a positive integer (got ${opts.baseline})`);
+        }
+        if (!Number.isFinite(threshold) || threshold <= 0) {
+          throw new Error(`--threshold must be > 0 (got ${opts.threshold})`);
+        }
+        if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 1) {
+          throw new Error(`--alpha must be in (0, 1] (got ${opts.alpha})`);
+        }
+
+        // Read everything in parallel — each builder is pure and
+        // independent. Mirrors the parallelism `status` already does.
+        const [state, queue, queueSize, sessionQueueSize, cursors, runsCount] =
+          await Promise.all([
+            readState(paths),
+            readQueue(paths),
+            fileSize(paths.queueJsonl),
+            fileSize(paths.sessionQueueJsonl),
+            readCursors(paths),
+            countRuns(paths),
+          ]);
+        const status = buildStatus({
+          pewHome: paths.home,
+          state,
+          queue,
+          queueFileSize: queueSize,
+          sessionQueueFileSize: sessionQueueSize,
+          cursors,
+          runsCountApprox: runsCount,
+        });
+        const anomalies = buildAnomalies(queue, {
+          lookbackDays: lookback,
+          baselineDays: baseline,
+          threshold,
+        });
+        const ratios = buildRatiosReport(queue, {
+          lookbackDays: lookback,
+          baselineDays: baseline,
+          threshold,
+          alpha,
+        });
+        const dash = buildDashboard({ status, anomalies, ratios });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(dash, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDashboard(dash) + '\n');
+        }
+
+        // Exit 2 if EITHER dimension flags the most recent day —
+        // mirrors the per-subcommand contract so existing cron
+        // glue behaves the same when swapped to `dashboard`.
+        if (dash.alerting) process.exitCode = 2;
       } catch (e) {
         die(e);
       }
