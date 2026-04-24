@@ -244,3 +244,25 @@ test('reply-ratio: rejects bad threshold', () => {
   assert.throws(() => buildReplyRatio([], { threshold: -1 }));
   assert.throws(() => buildReplyRatio([], { threshold: Number.NaN }));
 });
+
+test('reply-ratio: report is JSON-serializable and round-trips losslessly', () => {
+  // Stability test: the JSON payload that --json emits must be a
+  // pure data shape (no functions, no Date objects, no Maps).
+  // Catches accidental introduction of non-serializable fields.
+  const r = buildReplyRatio(
+    [
+      sl('2026-04-20T10:00:00Z', 1, 1),
+      sl('2026-04-20T11:00:00Z', 1, 5, { source: 'b' }),
+      sl('2026-04-20T12:00:00Z', 1, 25, { source: 'b' }),
+    ],
+    { by: 'source', threshold: 5, generatedAt: GEN },
+  );
+  const round = JSON.parse(JSON.stringify(r));
+  assert.deepEqual(round, r);
+  // Spot-check a few invariants survived the trip.
+  assert.equal(round.threshold, 5);
+  assert.equal(round.distributions.length, 2);
+  for (const d of round.distributions) {
+    assert.equal(typeof d.aboveThresholdShare, 'number');
+  }
+});
