@@ -1988,6 +1988,55 @@ export function renderIdleGaps(r: IdleGapsReport): string {
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type { SourceMixReport } from './sourcemix.js';
+
+export function renderSourceMix(r: SourceMixReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights session-source-mix'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    unit: ${r.unit}    sessions: ${formatNumber(r.consideredSessions)}    sources: ${formatNumber(r.sources.length)}    buckets: ${formatNumber(r.buckets.length)}    top: ${r.top === 0 ? 'all' : String(r.top)}    dropped: ${formatNumber(r.droppedInvalid)} invalid`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.buckets.length === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('overall source mix'));
+  lines.push(
+    renderTableLocal(
+      ['source', 'sessions', 'share'],
+      r.sources.map((s) => [s.source, formatNumber(s.count), formatPercentLocal(s.share)]),
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold(`per-${r.unit} mix`));
+  // Per-bucket: bucket label, total, modal, modal share, then each source share inline.
+  const headers = ['bucket', 'sessions', 'modal', 'modal share', 'mix'];
+  const rows = r.buckets.map((b) => {
+    const mix = b.shares
+      .map((s) => `${s.source}=${formatPercentLocal(s.share)}`)
+      .join('  ');
+    return [
+      b.bucket,
+      formatNumber(b.totalSessions),
+      b.modalSource,
+      formatPercentLocal(b.modalShare),
+      mix,
+    ];
+  });
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 function renderTableLocal(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)),

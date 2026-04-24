@@ -48,6 +48,7 @@ import {
   renderMessageVolume,
   renderModelSwitching,
   renderIdleGaps,
+  renderSourceMix,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -116,6 +117,10 @@ import {
   DEFAULT_IDLE_GAP_EDGES_SECONDS,
   type IdleGapsDimension,
 } from './idlegaps.js';
+import {
+  buildSourceMix,
+  type SourceMixBucketUnit,
+} from './sourcemix.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -2089,6 +2094,59 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderIdleGaps(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('session-source-mix')
+  .description('Share of sessions per source over time buckets (day | week | month)')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option('--unit <u>', "bucket granularity: day | week | month (default 'day')", 'day')
+  .option(
+    '--top <n>',
+    "keep only the top-N sources by total sessions in window; fold the rest into 'other' (default 0 = no folding)",
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        unit: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        if (opts.unit !== 'day' && opts.unit !== 'week' && opts.unit !== 'month') {
+          throw new Error(`--unit must be 'day' | 'week' | 'month' (got ${opts.unit})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isFinite(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildSourceMix(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          unit: opts.unit as SourceMixBucketUnit,
+          top,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceMix(report) + '\n');
         }
       } catch (e) {
         die(e);
