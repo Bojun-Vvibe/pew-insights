@@ -71,6 +71,19 @@ export interface WeekdayShareOptions {
    * filter only. Default 0 (no truncation).
    */
   top?: number;
+  /**
+   * Drop groups whose `activeWeekdays` count is `< minActiveWeekdays`.
+   * Display filter only — global denominators reflect the full
+   * population. Default 1 (keep every group with any activity).
+   *
+   * Operationally useful for hiding the "this model only ever ran
+   * on one weekday" long tail when ranking by HHI: a singleton-day
+   * model trivially scores HHI = 1.0 and crowds out the top of an
+   * `--by hhi` sort. Setting `--min-active-weekdays 5` keeps only
+   * models with broad enough activity to make the HHI comparison
+   * meaningful.
+   */
+  minActiveWeekdays?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -112,6 +125,8 @@ export interface WeekdayShareReport {
   minTokens: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
+  /** Echo of the resolved minActiveWeekdays floor. */
+  minActiveWeekdays: number;
   /** Sum of total_tokens across all kept rows for the *global* row. */
   totalTokens: number;
   /** Tokens per ISO weekday across all rows (Mon=0..Sun=6). */
@@ -132,6 +147,8 @@ export interface WeekdayShareReport {
   droppedGroupRows: number;
   /** Group rows hidden by the `top` cap (counted after minTokens). */
   droppedTopGroups: number;
+  /** Group rows hidden by the minActiveWeekdays floor. */
+  droppedSparseGroups: number;
   /**
    * One row per kept group. Sorted by total tokens desc, then
    * group key asc.
@@ -166,6 +183,16 @@ export function buildWeekdayShare(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minActiveWeekdays = opts.minActiveWeekdays ?? 1;
+  if (
+    !Number.isInteger(minActiveWeekdays) ||
+    minActiveWeekdays < 1 ||
+    minActiveWeekdays > 7
+  ) {
+    throw new Error(
+      `minActiveWeekdays must be an integer in [1, 7] (got ${opts.minActiveWeekdays})`,
+    );
   }
   const by: WeekdayShareDimension = opts.by ?? 'model';
   if (by !== 'model' && by !== 'source') {
@@ -225,6 +252,7 @@ export function buildWeekdayShare(
 
   const groups: WeekdayShareGroupRow[] = [];
   let droppedGroupRows = 0;
+  let droppedSparseGroups = 0;
 
   for (const [group, buckets] of agg) {
     const total = buckets.reduce((acc, x) => acc + x, 0);
@@ -244,6 +272,10 @@ export function buildWeekdayShare(
         peakWd = i;
       }
       if ((buckets[i] ?? 0) > 0) activeWd += 1;
+    }
+    if (activeWd < minActiveWeekdays) {
+      droppedSparseGroups += 1;
+      continue;
     }
     groups.push({
       model: group,
@@ -291,6 +323,7 @@ export function buildWeekdayShare(
     by,
     minTokens,
     top,
+    minActiveWeekdays,
     totalTokens,
     globalTokensPerWeekday,
     globalSharePerWeekday,
@@ -301,6 +334,7 @@ export function buildWeekdayShare(
     droppedZeroTokens,
     droppedGroupRows,
     droppedTopGroups,
+    droppedSparseGroups,
     groups: kept,
   };
 }

@@ -2467,12 +2467,12 @@ export function renderWeekdayShare(r: WeekdayShareReport): string {
   lines.push(chalk.bold.cyan('pew-insights weekday-share'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    groups: ${formatNumber(r.groups.length)}    global peak: ${r.globalPeakWeekday < 0 ? '—' : WEEKDAY_LABELS_MON_FIRST[r.globalPeakWeekday]} ${formatPercentLocal(r.globalPeakShare)}    global hhi: ${r.globalHhi.toFixed(3)}    min-tokens: ${formatNumber(r.minTokens)}`,
+      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    groups: ${formatNumber(r.groups.length)}    global peak: ${r.globalPeakWeekday < 0 ? '—' : WEEKDAY_LABELS_MON_FIRST[r.globalPeakWeekday]} ${formatPercentLocal(r.globalPeakShare)}    global hhi: ${r.globalHhi.toFixed(3)}    min-tokens: ${formatNumber(r.minTokens)}    min-active-weekdays: ${r.minActiveWeekdays}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedGroupRows)} below min-tokens, ${formatNumber(r.droppedTopGroups)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedGroupRows)} below min-tokens, ${formatNumber(r.droppedSparseGroups)} below min-active-weekdays, ${formatNumber(r.droppedTopGroups)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

@@ -2635,6 +2635,11 @@ program
     'show only the top n groups by total tokens; remainder surface as droppedTopGroups (default 0 = no cap)',
     '0',
   )
+  .option(
+    '--min-active-weekdays <n>',
+    'hide groups whose activeWeekdays count is < n; their counts surface as droppedSparseGroups. Default 1 keeps every group with any activity. Bump to 5 to hide single-weekday models that trivially score HHI = 1.0',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2644,6 +2649,7 @@ program
         by: string;
         minTokens: string;
         top: string;
+        minActiveWeekdays: string;
         json?: boolean;
       },
       cmd,
@@ -2659,6 +2665,16 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const minActiveWeekdays = Number.parseInt(opts.minActiveWeekdays, 10);
+        if (
+          !Number.isInteger(minActiveWeekdays) ||
+          minActiveWeekdays < 1 ||
+          minActiveWeekdays > 7
+        ) {
+          throw new Error(
+            `--min-active-weekdays must be an integer in [1, 7] (got ${opts.minActiveWeekdays})`,
+          );
+        }
         if (opts.by !== 'model' && opts.by !== 'source') {
           throw new Error(`--by must be 'model' or 'source' (got ${opts.by})`);
         }
@@ -2669,6 +2685,7 @@ program
           by: opts.by as 'model' | 'source',
           minTokens,
           top,
+          minActiveWeekdays,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

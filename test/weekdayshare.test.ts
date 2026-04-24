@@ -225,3 +225,71 @@ test('weekday-share: HHI matches hand-computed value for a known split', () => {
   // Global also matches when there's only one group.
   assert.ok(Math.abs(r.globalHhi - 0.625) < 1e-9);
 });
+
+// ---- minActiveWeekdays refinement -----------------------------------------
+
+test('weekday-share: rejects bad minActiveWeekdays', () => {
+  assert.throws(() => buildWeekdayShare([], { minActiveWeekdays: 0 }));
+  assert.throws(() => buildWeekdayShare([], { minActiveWeekdays: 8 }));
+  assert.throws(() => buildWeekdayShare([], { minActiveWeekdays: 1.5 }));
+});
+
+test('weekday-share: minActiveWeekdays default is 1 and droppedSparseGroups starts at 0', () => {
+  const r = buildWeekdayShare([], { generatedAt: GEN });
+  assert.equal(r.minActiveWeekdays, 1);
+  assert.equal(r.droppedSparseGroups, 0);
+});
+
+test('weekday-share: minActiveWeekdays drops sparse groups and counts droppedSparseGroups', () => {
+  const rows = [
+    // single-weekday model: would score HHI = 1.0, drops at threshold 2.
+    ql('2026-04-22T00:00:00.000Z', 'wed-only', { total_tokens: 500 }),
+    // two-weekday model: kept at threshold 2, dropped at 3.
+    ql('2026-04-20T00:00:00.000Z', 'mon-tue', { total_tokens: 100 }),
+    ql('2026-04-21T00:00:00.000Z', 'mon-tue', { total_tokens: 100 }),
+    // five-weekday model: kept at all thresholds <= 5.
+    ql('2026-04-20T00:00:00.000Z', 'workweek', { total_tokens: 10 }),
+    ql('2026-04-21T00:00:00.000Z', 'workweek', { total_tokens: 10 }),
+    ql('2026-04-22T00:00:00.000Z', 'workweek', { total_tokens: 10 }),
+    ql('2026-04-23T00:00:00.000Z', 'workweek', { total_tokens: 10 }),
+    ql('2026-04-24T00:00:00.000Z', 'workweek', { total_tokens: 10 }),
+  ];
+
+  const r1 = buildWeekdayShare(rows, { generatedAt: GEN, minActiveWeekdays: 1 });
+  assert.equal(r1.groups.length, 3);
+  assert.equal(r1.droppedSparseGroups, 0);
+
+  const r2 = buildWeekdayShare(rows, { generatedAt: GEN, minActiveWeekdays: 2 });
+  assert.equal(r2.groups.length, 2);
+  assert.equal(r2.droppedSparseGroups, 1);
+  assert.ok(!r2.groups.some((g) => g.model === 'wed-only'));
+
+  const r3 = buildWeekdayShare(rows, { generatedAt: GEN, minActiveWeekdays: 3 });
+  assert.equal(r3.groups.length, 1);
+  assert.equal(r3.droppedSparseGroups, 2);
+  assert.equal(r3.groups[0]!.model, 'workweek');
+
+  const r5 = buildWeekdayShare(rows, { generatedAt: GEN, minActiveWeekdays: 5 });
+  assert.equal(r5.groups.length, 1);
+  assert.equal(r5.groups[0]!.model, 'workweek');
+
+  const r6 = buildWeekdayShare(rows, { generatedAt: GEN, minActiveWeekdays: 6 });
+  assert.equal(r6.groups.length, 0);
+  assert.equal(r6.droppedSparseGroups, 3);
+});
+
+test('weekday-share: minActiveWeekdays does not affect global denominators', () => {
+  const rows = [
+    ql('2026-04-22T00:00:00.000Z', 'wed-only', { total_tokens: 1000 }),
+    ql('2026-04-20T00:00:00.000Z', 'broad', { total_tokens: 1 }),
+    ql('2026-04-21T00:00:00.000Z', 'broad', { total_tokens: 1 }),
+    ql('2026-04-22T00:00:00.000Z', 'broad', { total_tokens: 1 }),
+  ];
+  const r = buildWeekdayShare(rows, { generatedAt: GEN, minActiveWeekdays: 3 });
+  assert.equal(r.groups.length, 1);
+  assert.equal(r.groups[0]!.model, 'broad');
+  // Global tokens still include the dropped group's mass.
+  assert.equal(r.totalTokens, 1003);
+  // Global peak is Wed because wed-only dominates token mass.
+  assert.equal(r.globalPeakWeekday, 2);
+});
