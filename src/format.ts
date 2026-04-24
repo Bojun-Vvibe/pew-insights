@@ -2241,6 +2241,8 @@ import type { ReasoningShareReport } from './reasoningshare.js';
 import type { PromptSizeReport } from './promptsize.js';
 import type { OutputSizeReport } from './outputsize.js';
 import type { PeakHourReport } from './peakhour.js';
+import type { WeekdayShareReport } from './weekdayshare.js';
+import { WEEKDAY_LABELS_MON_FIRST } from './weekdayshare.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2456,6 +2458,61 @@ export function renderPeakHourShare(r: PeakHourReport): string {
       rows,
     ),
   );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderWeekdayShare(r: WeekdayShareReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights weekday-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    groups: ${formatNumber(r.groups.length)}    global peak: ${r.globalPeakWeekday < 0 ? '—' : WEEKDAY_LABELS_MON_FIRST[r.globalPeakWeekday]} ${formatPercentLocal(r.globalPeakShare)}    global hhi: ${r.globalHhi.toFixed(3)}    min-tokens: ${formatNumber(r.minTokens)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedGroupRows)} below min-tokens, ${formatNumber(r.droppedTopGroups)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.totalTokens === 0 || r.groups.length === 0) {
+    lines.push(
+      chalk.yellow('  no rows in the window with positive tokens. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-${r.by} weekday share (UTC ISO weekday, sorted by total tokens desc; HHI in [1/7, 1])`,
+    ),
+  );
+  const headers = [
+    r.by,
+    'tokens',
+    ...WEEKDAY_LABELS_MON_FIRST,
+    'peak',
+    'active',
+    'hhi',
+  ];
+  const rows: string[][] = r.groups.map((g) => {
+    const cols = [g.model, formatNumber(g.totalTokens)];
+    for (let i = 0; i < 7; i++) {
+      cols.push(formatPercentLocal(g.sharePerWeekday[i] ?? 0));
+    }
+    cols.push(
+      `${WEEKDAY_LABELS_MON_FIRST[g.peakWeekday]} ${formatPercentLocal(g.peakShare)}`,
+    );
+    cols.push(`${g.activeWeekdays}/7`);
+    cols.push(g.hhi.toFixed(3));
+    return cols;
+  });
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
