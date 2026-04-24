@@ -1599,3 +1599,73 @@ export function renderSessionLengths(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { ReplyRatioReport } from './replyratio.js';
+
+function fmtRatio(r: number): string {
+  if (r === 0) return '0';
+  if (Number.isInteger(r)) return String(r);
+  return r < 1 ? r.toFixed(2) : r.toFixed(2);
+}
+
+export function renderReplyRatio(r: ReplyRatioReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights reply-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges: [${r.edges.map(fmtRatio).join(', ')}]    min-total-messages: ${r.minTotalMessages}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedZeroUserMessages)} zero-user-msg, ${formatNumber(r.droppedMinMessages)} below min-total`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.distributions.length === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  for (const d of r.distributions) {
+    if (r.by !== 'all') {
+      lines.push(chalk.bold(`group: ${d.group}`));
+    }
+    lines.push(
+      renderTable(
+        ['summary', 'value'],
+        [
+          ['sessions', formatNumber(d.totalSessions)],
+          ['mean ratio', fmtRatio(Number(d.meanRatio.toFixed(2)))],
+          ['p50', fmtRatio(Number(d.p50Ratio.toFixed(2)))],
+          ['p90', fmtRatio(Number(d.p90Ratio.toFixed(2)))],
+          ['p95', fmtRatio(Number(d.p95Ratio.toFixed(2)))],
+          ['p99', fmtRatio(Number(d.p99Ratio.toFixed(2)))],
+          ['max', fmtRatio(Number(d.maxRatio.toFixed(2)))],
+          ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
+        ],
+      ),
+    );
+    lines.push('');
+    lines.push(
+      renderTable(
+        ['bin', 'count', 'share', 'cum.', 'median', 'mean'],
+        d.bins.map((b) => [
+          b.label,
+          formatNumber(b.count),
+          formatPercent(b.share),
+          formatPercent(b.cumulativeShare),
+          b.count > 0 ? fmtRatio(Number(b.medianRatio.toFixed(2))) : '—',
+          b.count > 0 ? fmtRatio(Number(b.meanRatio.toFixed(2))) : '—',
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

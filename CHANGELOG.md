@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.17 — 2026-04-24
+
+### Added
+
+- `pew-insights reply-ratio` subcommand — empirical distribution of
+  per-session `assistant_messages / user_messages` over
+  `session-queue.jsonl`. Where `sessions` reports message counts in
+  aggregate (totals, mean, p95) and `agent-mix` describes
+  *token-volume* concentration across agents (HHI / Gini), neither
+  exposes the *conversational shape inside one session*: how many
+  assistant turns the operator gets per prod. A ratio near 1 means
+  the session is conversational; ≥5 means agent-amplified; >20
+  means a near-monologue chain. The default bin ladder
+  (`≤0.5, ≤1, ≤2, ≤5, ≤10, ≤20, >20`) spans the four meaningful
+  regimes (under-replied, conversational, amplified, monologue) so
+  one glance shows which mode dominates the window.
+  - Flags: `--since` / `--until` window on `started_at` (matches
+    `sessions` / `gaps` / `session-lengths` semantics — a session
+    is attributed to the day it *started*), `--by all|source|kind`
+    (default `all`; group splits emit one distribution row per
+    group sharing the same bin ladder so they are directly
+    comparable), `--min-total-messages <n>` to drop noise
+    (default 2 — a 1-message session can't describe reply
+    behaviour; set 0 to keep everything),
+    `--edges <comma-list>` to override the default ladder, and
+    `--json` to emit the structured report instead of the pretty
+    table.
+  - Reports per-bin `count` / `share` / `cumulativeShare` /
+    per-bin `medianRatio` / `meanRatio`, plus distribution-level
+    quantile waypoints (`p50` / `p90` / `p95` / `p99` / `max`)
+    using the nearest-rank convention (`k = ceil(q*n)`) so the
+    threshold is always an actually-observed ratio, matching
+    `gaps` / `session-lengths`. The modal bin (largest count,
+    ties broken by tighter upper edge) is also called out.
+  - Two distinct dropped-row counters surface in the report
+    header: `droppedZeroUserMessages` (sessions with
+    `user_messages == 0`, where the ratio is mathematically
+    undefined) and `droppedMinMessages` (sessions filtered out
+    by `--min-total-messages`). Distinct counters let the
+    operator tell "I have lots of agent-only rows" from "I have
+    lots of tiny-noise rows" without having to re-derive the
+    drop reason.
+  - Determinism: pure builder. Never reads `Date.now()` (override
+    via `generatedAt` for tests). All sorts have a fully
+    specified secondary key.
+  - 12 new unit tests cover validation (bad `by`, bad
+    `minTotalMessages`, non-ascending edges, malformed window),
+    empty-input shape, the two dropped-row counters, inclusive
+    upper-edge bin assignment, nearest-rank quantiles, window
+    filtering, by-source group sort, monotone non-decreasing
+    cumulative share with `1.0` endpoint, per-bin median + mean
+    over bin members only, and modal-bin tie-breaking by tighter
+    upper bound.
+
 ## 0.4.16 — 2026-04-24
 
 ### Added (refinement)
