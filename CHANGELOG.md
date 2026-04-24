@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.39 — 2026-04-25
+
+### Added
+
+- `--at-least <n>` flag on `prompt-size`. Drops rows whose
+  `input_tokens` is below `n` BEFORE bucketing, mean, p95,
+  and max are computed — so every stat in the output reflects
+  the filtered population, not the full one. Lets the operator
+  scope the report to the long-context workload only and ask
+  "of just my heavy prompts, how big are they really?"
+  without the small-prompt mass dragging the mean down. The
+  flag composes with `--since/--until` (window applied first,
+  then `at-least`) and with `--min-rows` / `--top` (those still
+  act on the post-`at-least` population). Dropped rows surface
+  as `droppedAtLeast` in the report. 4 new unit tests
+  covering option validation, no-op default, the filter-then-
+  bucket interaction, and window composition (651 total, up
+  from 647 at 0.4.38).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js prompt-size --at-least 1000000 --top 5
+pew-insights prompt-size
+as of: 2026-04-24T20:38:04.530Z    rows: 532    input: 3,141,266,166 tok    mean: 5,904,636    max: 55,738,577    min-rows: 0    at-least: 1,000,000
+dropped: 0 bad hour_start, 327 zero-input, 0 bad tokens, 517 below at-least, 0 below min-rows, 1 below top cap
+
+overall input_tokens distribution
+bucket     rows  share
+---------  ----  ------
+0–4k       0     0.0%
+4k–32k     0     0.0%
+32k–128k   0     0.0%
+128k–200k  0     0.0%
+200k–500k  0     0.0%
+500k–1M    0     0.0%
+1M+        532   100.0%
+
+per-model prompt-size summary (sorted by row count desc)
+model               rows  mean        p95         max         0–4k  4k–32k  32k–128k  128k–200k  200k–500k  500k–1M  1M+
+------------------  ----  ----------  ----------  ----------  ----  ------  --------  ---------  ---------  -------  ---
+gpt-5.4             287   4,244,889   14,255,648  29,634,948  ·     ·       ·         ·          ·          ·        287
+claude-opus-4.7     113   11,253,075  31,507,543  55,738,577  ·     ·       ·         ·          ·          ·        113
+claude-opus-4.6.1m  107   5,436,778   17,721,311  28,001,329  ·     ·       ·         ·          ·          ·        107
+claude-haiku-4.5    21    2,942,929   6,805,993   7,800,557   ·     ·       ·         ·          ·          ·        21
+claude-sonnet-4.6   3     2,149,104   2,974,411   2,974,411   ·     ·       ·         ·          ·          ·        3
+```
+
+Filtering to `--at-least 1M` drops 517 of the 1,049 considered
+rows from the unfiltered baseline, leaving exactly the 532 rows
+that already lived in the `1M+` bucket. The view is sober: in
+the long-context regime, the per-row mean climbs from 3.17M
+(unfiltered) to 5.90M tokens — a true 1.86× delta hidden in the
+unfiltered "average", because half of all rows below the floor
+were diluting it. `claude-opus-4.7` is the operationally
+interesting tail: p95=31.5M tokens and a 55.7M outlier that
+sits well above any current published context window — worth
+auditing as a metering bug or a runaway prompt-construction
+loop.
+
 ## 0.4.38 — 2026-04-25
 
 ### Added

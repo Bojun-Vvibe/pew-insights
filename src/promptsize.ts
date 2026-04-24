@@ -92,6 +92,15 @@ export interface PromptSizeOptions {
    * loudly so the operator never silently miscounts.
    */
   edges?: number[];
+  /**
+   * Drop rows whose `input_tokens < atLeast` from the considered
+   * population entirely. Acts BEFORE bucketing, mean, p95, and max are
+   * computed — i.e. all stats reflect the filtered population.
+   * Useful for "show me only the long-context workload" lenses,
+   * where small calls are operationally noise. Their counts surface
+   * as `droppedAtLeast`. Default 0 (no floor).
+   */
+  atLeast?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -147,7 +156,9 @@ export interface PromptSizeReport {
   top: number;
   /** Echo of the resolved bucket edges (inclusive lower bounds). */
   edges: number[];
-  /** Rows considered (input_tokens > 0 and inside window). */
+  /** Echo of the resolved `atLeast` floor (0 = no floor). */
+  atLeast: number;
+  /** Rows considered (input_tokens > 0, >= atLeast, and inside window). */
   consideredRows: number;
   /** Sum of input_tokens across consideredRows. */
   totalInputTokens: number;
@@ -164,6 +175,8 @@ export interface PromptSizeReport {
   droppedZeroInput: number;
   /** Rows with non-finite / negative input_tokens. */
   droppedInvalidTokens: number;
+  /** Rows with input_tokens < atLeast (when atLeast > 0). */
+  droppedAtLeast: number;
   /** Model rows hidden by the minRows floor. */
   droppedModelRows: number;
   /** Model rows hidden by the `top` cap (counted after minRows). */
@@ -238,6 +251,10 @@ export function buildPromptSize(
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
+  const atLeast = opts.atLeast ?? 0;
+  if (!Number.isFinite(atLeast) || atLeast < 0) {
+    throw new Error(`atLeast must be a non-negative finite number (got ${opts.atLeast})`);
+  }
   const edges = opts.edges ?? DEFAULT_PROMPT_SIZE_EDGES;
   validateEdges(edges);
 
@@ -268,6 +285,7 @@ export function buildPromptSize(
   let droppedInvalidHourStart = 0;
   let droppedZeroInput = 0;
   let droppedInvalidTokens = 0;
+  let droppedAtLeast = 0;
 
   for (const q of queue) {
     const hourMs = Date.parse(q.hour_start);
@@ -285,6 +303,10 @@ export function buildPromptSize(
     }
     if (inT === 0) {
       droppedZeroInput += 1;
+      continue;
+    }
+    if (atLeast > 0 && inT < atLeast) {
+      droppedAtLeast += 1;
       continue;
     }
 
@@ -371,6 +393,7 @@ export function buildPromptSize(
     minRows,
     top,
     edges: edges.slice(),
+    atLeast,
     consideredRows,
     totalInputTokens: totalInput,
     overallMeanInputTokens: consideredRows === 0 ? 0 : totalInput / consideredRows,
@@ -378,6 +401,7 @@ export function buildPromptSize(
     droppedInvalidHourStart,
     droppedZeroInput,
     droppedInvalidTokens,
+    droppedAtLeast,
     droppedModelRows,
     droppedTopModels,
     overallBuckets,

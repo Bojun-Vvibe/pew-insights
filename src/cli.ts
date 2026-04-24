@@ -2404,10 +2404,15 @@ program
     'show only the top n models by row count; remainder surface as droppedTopModels (default 0 = no cap)',
     '0',
   )
+  .option(
+    '--at-least <n>',
+    'drop rows whose input_tokens < n BEFORE bucketing/mean/p95; lets you scope to long-context workloads only (default 0 = no floor)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minRows: string; top: string; json?: boolean },
+      opts: { since?: string; until?: string; minRows: string; top: string; atLeast: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2421,12 +2426,17 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const atLeast = Number.parseInt(opts.atLeast, 10);
+        if (!Number.isFinite(atLeast) || atLeast < 0) {
+          throw new Error(`--at-least must be a non-negative integer (got ${opts.atLeast})`);
+        }
         const queue = await readQueue(paths);
         const report = buildPromptSize(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minRows,
           top,
+          atLeast,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

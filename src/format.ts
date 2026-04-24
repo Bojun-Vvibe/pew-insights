@@ -2255,12 +2255,12 @@ export function renderPromptSize(r: PromptSizeReport): string {
   lines.push(chalk.bold.cyan('pew-insights prompt-size'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    input: ${formatNumber(r.totalInputTokens)} tok    mean: ${formatNumber(Math.round(r.overallMeanInputTokens))}    max: ${formatNumber(r.overallMaxInputTokens)}    min-rows: ${r.minRows}`,
+      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    input: ${formatNumber(r.totalInputTokens)} tok    mean: ${formatNumber(Math.round(r.overallMeanInputTokens))}    max: ${formatNumber(r.overallMaxInputTokens)}    min-rows: ${r.minRows}    at-least: ${formatNumber(r.atLeast)}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroInput)} zero-input, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedModelRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroInput)} zero-input, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedAtLeast)} below at-least, ${formatNumber(r.droppedModelRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

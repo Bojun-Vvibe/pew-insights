@@ -282,3 +282,74 @@ test('prompt-size: deterministic — same input, same output', () => {
   const b = buildPromptSize(input, { generatedAt: GEN });
   assert.deepEqual(a, b);
 });
+
+// ---- atLeast filter --------------------------------------------------------
+
+test('prompt-size: rejects bad atLeast', () => {
+  assert.throws(() => buildPromptSize([], { atLeast: -1 }));
+  assert.throws(() => buildPromptSize([], { atLeast: Number.NaN }));
+  assert.throws(() => buildPromptSize([], { atLeast: Number.POSITIVE_INFINITY }));
+});
+
+test('prompt-size: atLeast=0 is the default and changes nothing', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', 'gpt-5', { input_tokens: 1 }),
+    ql('2026-04-20T02:00:00Z', 'gpt-5', { input_tokens: 1_000_000 }),
+  ];
+  const a = buildPromptSize(rows, { generatedAt: GEN });
+  const b = buildPromptSize(rows, { atLeast: 0, generatedAt: GEN });
+  assert.deepEqual(a, b);
+  assert.equal(a.atLeast, 0);
+  assert.equal(a.droppedAtLeast, 0);
+});
+
+test('prompt-size: atLeast filters BEFORE bucketing/mean/p95', () => {
+  // 5 rows: 100, 1k, 100k, 500k, 2M. atLeast=200_000 keeps the last two.
+  const r = buildPromptSize(
+    [
+      ql('2026-04-20T01:00:00Z', 'gpt-5', { input_tokens: 100 }),
+      ql('2026-04-20T02:00:00Z', 'gpt-5', { input_tokens: 1_000 }),
+      ql('2026-04-20T03:00:00Z', 'gpt-5', { input_tokens: 100_000 }),
+      ql('2026-04-20T04:00:00Z', 'gpt-5', { input_tokens: 500_000 }),
+      ql('2026-04-20T05:00:00Z', 'gpt-5', { input_tokens: 2_000_000 }),
+    ],
+    { atLeast: 200_000, generatedAt: GEN },
+  );
+  assert.equal(r.atLeast, 200_000);
+  assert.equal(r.droppedAtLeast, 3);
+  assert.equal(r.consideredRows, 2);
+  assert.equal(r.totalInputTokens, 2_500_000);
+  // Mean reflects ONLY the survivors.
+  assert.equal(r.overallMeanInputTokens, 1_250_000);
+  assert.equal(r.overallMaxInputTokens, 2_000_000);
+  // The two survivors land in 200k-500k and 1M+ buckets respectively.
+  const m = r.models[0]!;
+  assert.equal(m.rows, 2);
+  // Default ladder edges = [0, 4k, 32k, 128k, 200k, 500k, 1M].
+  // 500_000 → bucket index 5 (500k–1M); 2_000_000 → bucket index 6 (1M+).
+  assert.equal(m.buckets[5]!.rows, 1);
+  assert.equal(m.buckets[6]!.rows, 1);
+  assert.equal(m.buckets[0]!.rows, 0);
+});
+
+test('prompt-size: atLeast composes with window filter', () => {
+  const r = buildPromptSize(
+    [
+      // outside window → not counted in any drop bucket
+      ql('2026-04-19T23:00:00Z', 'gpt-5', { input_tokens: 100 }),
+      // inside window, below atLeast → droppedAtLeast
+      ql('2026-04-20T01:00:00Z', 'gpt-5', { input_tokens: 100 }),
+      // inside window, above atLeast → counted
+      ql('2026-04-20T02:00:00Z', 'gpt-5', { input_tokens: 5_000 }),
+    ],
+    {
+      since: '2026-04-20T00:00:00Z',
+      until: '2026-04-20T06:00:00Z',
+      atLeast: 1_000,
+      generatedAt: GEN,
+    },
+  );
+  assert.equal(r.consideredRows, 1);
+  assert.equal(r.droppedAtLeast, 1);
+  assert.equal(r.totalInputTokens, 5_000);
+});
