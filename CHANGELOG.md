@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.22 — 2026-04-24
+
+### Added
+
+- `message-volume` subcommand: per-session distribution of
+  `total_messages` with binned histogram, quantile waypoints
+  (p50 / p90 / p95 / p99 / max via nearest-rank), per-bin
+  median + mean, modal bin (ties → tighter upper edge), and
+  cumulative share. Distinct from `session-lengths` (which
+  reports per-session *duration*), `reply-ratio` (which
+  reports the *assistant/user shape* of messages), and
+  `turn-cadence` (which reports *time between* operator
+  turns) — `message-volume` answers a different question:
+  *how big are my sessions in messages?* A small bin (≤2)
+  means one-shot execs (one prompt + one reply); a middle
+  bin (3–20) means short conversational; a large bin (>200)
+  means sustained loops or runaway agent chains.
+  - Default ladder: ≤2, ≤5, ≤10, ≤20, ≤50, ≤100, ≤200,
+    >200. Operator can override with `--edges 5,10,50` etc.
+    (strictly ascending, all > 0). Bin labels use the
+    lower=prev+1 form (`3-5`, `6-10`, …) so the integer
+    nature of message counts is preserved end-to-end (vs
+    `session-lengths` which uses fractional second edges).
+  - Supports `--by all|source|kind` (default `all` →
+    single global distribution; `source`/`kind` →
+    per-group distributions sharing the same ladder so
+    they are directly comparable, sorted by
+    `totalSessions desc` then `group asc`),
+    `--since`/`--until` window filtering on `started_at`
+    (matches `sessions` / `gaps` / `session-lengths` /
+    `reply-ratio` / `turn-cadence`),
+    `--min-total-messages <n>` floor (default 1; set 0 to
+    keep all rows), and `--json`.
+  - Distinct dropped-session counters:
+    `droppedMinMessages` (rows below the min-messages
+    floor) vs `droppedInvalid` (negative or non-finite
+    `total_messages`) so the operator can tell "lots of
+    tiny sessions" apart from "data quality bugs".
+  - 13 unit tests cover input validation (bad `by`, bad
+    `minTotalMessages`, bad `edges`, bad `since`/`until`),
+    empty-input shape, dropping below the floor, dropping
+    invalid rows, inclusive bin assignment on the upper
+    edge, nearest-rank quantiles, window filter on
+    `started_at`, `by=source` ordering, monotone CDF
+    ending at exactly 1.0, per-bin median/mean computed
+    over bin members only, modal-bin tie-break, the
+    `lower=prev+1` label format (including singleton
+    bins), and JSON round-trip stability.
+  - Smoke against the live corpus shows the value
+    immediately: opencode's modal bin is ≤2 (1481 of 3063
+    sessions = 48.4% — opencode is dominated by one-shot
+    execs) while openclaw's modal bin is 3-5 (634 of 1090
+    = 58.2% — openclaw sessions are uniformly tiny
+    conversational rounds, and openclaw has *zero*
+    one-shot ≤2 rows). This regime split is invisible in
+    `session-lengths` (both look like "short sessions"),
+    `reply-ratio` (both run near 1:1), and `turn-cadence`
+    (both bunch in the rapid bin) — only `message-volume`
+    surfaces it. Tail behaviour is also distinct:
+    opencode max = 1031 messages, openclaw max = 1213,
+    but openclaw's p99 is 658 vs opencode's 76, so
+    openclaw's runaway tail is much heavier.
+
 ## 0.4.21 — 2026-04-24
 
 ### Added (refinement)
