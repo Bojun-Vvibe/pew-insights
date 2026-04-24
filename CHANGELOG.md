@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.44 — 2026-04-25
+
+### Added
+
+- `weekday-share`: `--min-active-weekdays <n>` flag (default 1).
+  Drops groups whose `activeWeekdays` count is `< n`; their
+  counts surface as `droppedSparseGroups`. Display filter only —
+  global denominators and the global headline row still reflect
+  the full population.
+
+  Operational use: the long-tail single-weekday models trivially
+  score HHI = 1.0 and dominate any HHI-ranked view. Setting
+  `--min-active-weekdays 5` keeps only models with broad enough
+  activity to make HHI comparison meaningful. 4 new test cases
+  (706 total, up from 702): option-validation rejection, default
+  = 1 back-compat, threshold sweep across `[1, 6]` showing exact
+  group-count and `droppedSparseGroups` arithmetic, and a
+  denominator-isolation test confirming the floor does NOT
+  shrink the global token count or shift the global peak
+  weekday.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js weekday-share --min-active-weekdays 5
+pew-insights weekday-share
+as of: 2026-04-24T22:39:02.945Z    tokens: 8,205,355,057    groups: 9    global peak: Mon 24.9%    global hhi: 0.163    min-tokens: 0    min-active-weekdays: 5
+dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-tokens, 6 below min-active-weekdays, 0 below top cap
+
+per-model weekday share (UTC ISO weekday, sorted by total tokens desc; HHI in [1/7, 1])
+model                 tokens         Mon    Tue    Wed    Thu    Fri    Sat    Sun    peak       active  hhi
+--------------------  -------------  -----  -----  -----  -----  -----  -----  -----  ---------  ------  -----
+claude-opus-4.7       4,520,585,751  24.3%  21.3%  14.8%  10.3%  7.8%   15.7%  5.8%   Mon 24.3%  7/7     0.171
+gpt-5.4               2,454,860,231  34.9%  8.2%   9.1%   8.9%   14.2%  8.6%   16.1%  Mon 34.9%  7/7     0.198
+claude-opus-4.6.1m    1,108,978,665  7.4%   8.6%   50.5%  16.4%  17.2%  0.0%   0.0%   Wed 50.5%  5/7     0.324
+claude-haiku-4.5      70,717,678     4.3%   9.3%   46.0%  33.7%  6.8%   0.0%   0.0%   Wed 46.0%  5/7     0.340
+gpt-5                 850,661        24.3%  17.5%  10.6%  27.3%  15.7%  3.3%   1.4%   Thu 27.3%  7/7     0.201
+gemini-3-pro-preview  154,496        16.0%  39.5%  8.4%   29.2%  6.9%   0.0%   0.0%   Tue 39.5%  5/7     0.279
+gpt-5.1               111,623        18.6%  36.4%  12.0%  7.5%   0.3%   0.0%   25.2%  Tue 36.4%  6/7     0.251
+claude-sonnet-4.5     105,382        2.5%   46.4%  6.1%   42.2%  2.8%   0.0%   0.0%   Tue 46.4%  5/7     0.398
+claude-sonnet-4       53,062         43.0%  5.2%   31.0%  0.0%   6.8%   14.0%  0.0%   Mon 43.0%  5/7     0.308
+```
+
+Headline reading: `--min-active-weekdays 5` shrinks the model
+list from 15 to 9 (6 sparse groups dropped: `unknown` 3-day,
+`claude-sonnet-4.6` and `claude-opus-4.6` 2-day, plus three
+single-day spikes `gpt-5.2`, `gpt-5-nano`, `gpt-4.1`). The
+global token count (`8,205,355,057`) and global peak weekday
+(`Mon 24.9%`) are unchanged from the unfiltered view, confirming
+this is a display-only filter. Among the kept models the HHI
+ranking now genuinely reflects week-shape concentration:
+`claude-sonnet-4.5` at HHI `0.398` is the most concentrated
+(46% Tuesday, 42% Thursday — a clear two-day shape), while
+`claude-opus-4.7` at HHI `0.171` is the closest to a uniform
+week.
+
 ## 0.4.43 — 2026-04-25
 
 ### Added
