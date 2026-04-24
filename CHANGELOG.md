@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.24 — 2026-04-25
+
+### Added
+
+- `pew-insights model-switching` subcommand — identifies sessions
+  whose `session_key` spans more than one `model` value across
+  snapshots, and quantifies how often the operator (or the host
+  runtime) hops between models *inside* one logical session. Fills
+  a gap left by `agent-mix` (cross-session concentration) and
+  `transitions` (between-session adjacency), neither of which
+  inspect intra-session model identity.
+
+  - Reports `switchedShare`, `totalTransitions` (directed hops in
+    snapshot order, counting back-and-forth toggling),
+    `uniqueTransitionPairs`, and a top-N (from → to) table with
+    counts and shares.
+  - Per-session distinct-model histogram with fixed buckets
+    (`1`, `2`, `3`, `4+`) plus quantile waypoints (p50/p90/p99/max)
+    using nearest-rank, matching the rest of the codebase.
+  - Optional `--by source` split so the operator can spot which
+    integration is doing the switching.
+  - Window semantics match the rest of the session-level
+    subcommands (`--since` / `--until` filter on `started_at`); a
+    session_key is admitted if *any* of its snapshots fall in the
+    window.
+  - `--json` for machine-readable output. Pure builder; fully
+    deterministic.
+
+  Implementation notes:
+
+  - Required a new `readSessionQueueRaw` parser. The existing
+    `readSessionQueue` deduplicates by `session_key` keeping only
+    the row with the largest `snapshot_at`, which is correct for
+    every other session-level subcommand but destroys the
+    intra-session model-change signal. The raw reader returns
+    every well-formed JSON row in file order.
+  - Snapshots with empty/missing `model` are dropped at the row
+    level, not the key level. This means a key whose early
+    snapshots have no model and whose later snapshots have a real
+    model is treated as single-model (no spurious "switch from
+    `<empty>` to `claude-opus-4.7`" rows).
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl` (7,328 lines,
+6,121 distinct `session_key` values pre-filter):
+
+```
+$ node dist/cli.js model-switching
+pew-insights model-switching
+as of: 2026-04-24T16:33:03.409Z    by: all    sessions: 5,714    switched: 1 (0.0%)    transitions: 24 across 2 pairs    top: 10
+
+summary                         value
+------------------------------  -----
+sessions                        5,714
+switched                        1
+switched share                  0.0%
+transitions                     24
+mean models / switched session  2.00
+p50 distinct models             1
+p90 distinct models             1
+p99 distinct models             1
+max distinct models             2
+
+distinct models  count  share
+---------------  -----  ------
+1                5,713  100.0%
+2                1      0.0%
+3                0      0.0%
+4+               0      0.0%
+
+top transitions (from → to):
+from             to               count  share
+---------------  ---------------  -----  -----
+delivery-mirror  gpt-5.4          12     50.0%
+gpt-5.4          delivery-mirror  12     50.0%
+```
+
+Headline finding: of 5,714 considered sessions, exactly **one**
+session truly switched models in flight — a single `openclaw`
+session that toggled 25 times between `delivery-mirror` and
+`gpt-5.4` (12 hops in each direction). True intra-session
+model-switching in this corpus is essentially zero. Most of the
+"keys spanning >1 model" rows you'd see in a naive count come from
+early snapshots with `model` unset later being filled in, which
+this command correctly does *not* count as a switch.
+
+### Tests
+
+- New `test/modelswitching.test.ts` (16 tests). Suite count
+  504 → 520. Covers: validation (bad `by` / `top` / `since` /
+  `until`), empty input, snapshot-order-driven transition
+  direction, collapse of repeated consecutive identical models,
+  3-distinct- and 4+-distinct-model histograms, window filtering,
+  `--by source` ordering, top-N capping with `otherTransitionsCount`
+  tail accounting, deterministic lexicographic tiebreaker for
+  equal-count transitions, bucket shares summing to 1, and graceful
+  handling of rows with empty `session_key` / `model`.
+
 ## 0.4.23 — 2026-04-24
 
 ### Added (refinement)
