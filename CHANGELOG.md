@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.25 — 2026-04-25
+
+### Added (refinement)
+
+- `model-switching --min-switches <n>` flag (and matching
+  `minSwitches` builder option). Sets the minimum number of
+  distinct models a session must have touched to be classified as
+  "switched" and to contribute to the transitions table. Default
+  remains `2` (any change of model). Set to `3+` to focus on
+  heavier switching — sessions that touched at least three
+  different models, useful when chasing routing instability vs
+  ordinary 2-model fallback. Sessions below the threshold are
+  still counted in `consideredSessions` and in the
+  `distinctModelCountBuckets` histogram so the operator can see
+  the full population.
+
+  The report now echoes the resolved `minSwitches` in both the
+  human-readable header and the JSON payload.
+
+### Live-smoke output
+
+```
+$ node dist/cli.js model-switching --min-switches 3
+pew-insights model-switching
+as of: 2026-04-24T16:36:17.934Z    by: all    sessions: 5,714    switched: 0 (0.0%)    transitions: 0 across 0 pairs    top: 10    min-switches: 3
+```
+
+Headline: with the threshold raised to 3, the corpus has zero
+"heavy switching" sessions — confirming that the only true
+in-flight model change (an `openclaw` session toggling between
+`delivery-mirror` and `gpt-5.4`) only ever touched 2 distinct
+models. There is no evidence in this dataset of any session being
+re-routed across three or more backends.
+
+### Tests
+
+- 3 new tests for `--min-switches` validation, default value
+  back-compat, and threshold=3 semantics. Suite count 520 → 523.
+
 ## 0.4.24 — 2026-04-25
 
 ### Added

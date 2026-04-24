@@ -269,3 +269,50 @@ test('model-switching: ignores rows with missing/empty session_key or model', ()
   );
   assert.equal(r.consideredSessions, 1);
 });
+
+test('model-switching: rejects bad minSwitches', () => {
+  assert.throws(() => buildModelSwitching([], { minSwitches: 1 }));
+  assert.throws(() => buildModelSwitching([], { minSwitches: 0 }));
+  assert.throws(() => buildModelSwitching([], { minSwitches: -2 }));
+  assert.throws(() => buildModelSwitching([], { minSwitches: 2.5 }));
+  assert.throws(() => buildModelSwitching([], { minSwitches: Number.NaN }));
+});
+
+test('model-switching: minSwitches=3 excludes 2-distinct sessions from switched but keeps them in considered', () => {
+  const lines: SessionLine[] = [
+    // k1: 2 distinct models
+    sl('k1', '2026-04-20T10:00:00Z', 'a', { snapshot_at: '2026-04-20T10:00:00Z' }),
+    sl('k1', '2026-04-20T10:00:00Z', 'b', { snapshot_at: '2026-04-20T10:30:00Z' }),
+    // k2: 3 distinct models
+    sl('k2', '2026-04-20T10:00:00Z', 'a', { snapshot_at: '2026-04-20T10:00:00Z' }),
+    sl('k2', '2026-04-20T10:00:00Z', 'b', { snapshot_at: '2026-04-20T10:30:00Z' }),
+    sl('k2', '2026-04-20T10:00:00Z', 'c', { snapshot_at: '2026-04-20T11:00:00Z' }),
+    // k3: 1 model
+    sl('k3', '2026-04-20T10:00:00Z', 'a'),
+  ];
+  const r = buildModelSwitching(lines, { minSwitches: 3, generatedAt: GEN });
+  assert.equal(r.minSwitches, 3);
+  assert.equal(r.consideredSessions, 3);
+  assert.equal(r.switchedSessions, 1);
+  assert.equal(r.distributions[0]!.switchedSessions, 1);
+  // Histogram still reports the full population.
+  const buckets = r.distributions[0]!.distinctModelCountBuckets;
+  assert.equal(buckets.find((b) => b.label === '1')!.count, 1);
+  assert.equal(buckets.find((b) => b.label === '2')!.count, 1);
+  assert.equal(buckets.find((b) => b.label === '3')!.count, 1);
+  // Transitions: only k2 contributes (a→b, b→c) = 2 directed hops.
+  assert.equal(r.totalTransitions, 2);
+  assert.equal(r.uniqueTransitionPairs, 2);
+});
+
+test('model-switching: minSwitches default is 2 (back-compat)', () => {
+  const r = buildModelSwitching(
+    [
+      sl('k1', '2026-04-20T10:00:00Z', 'a', { snapshot_at: '2026-04-20T10:00:00Z' }),
+      sl('k1', '2026-04-20T10:00:00Z', 'b', { snapshot_at: '2026-04-20T10:30:00Z' }),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.minSwitches, 2);
+  assert.equal(r.switchedSessions, 1);
+});

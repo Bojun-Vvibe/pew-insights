@@ -79,6 +79,23 @@ export interface ModelSwitchingOptions {
    * Pairs beyond the top-N are summarised in `otherTransitions`.
    */
   top?: number;
+  /**
+   * Minimum number of distinct models a session must have touched
+   * to be classified as "switched" and to contribute to
+   * `topTransitions`. Must be an integer ≥ 2. Default 2 (any
+   * change of model). Set to 3+ to focus on heavier switching
+   * (sessions that touched at least three different models),
+   * which is useful when chasing routing instability vs ordinary
+   * 2-model fallback.
+   *
+   * Sessions with `distinctModels < minSwitches` are still
+   * counted in `consideredSessions` and in the
+   * `distinctModelCountBuckets` histogram (so the operator can
+   * see the full population), but contribute zero to
+   * `switchedSessions`, `totalTransitions`, and the transitions
+   * table.
+   */
+  minSwitches?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -119,15 +136,17 @@ export interface ModelSwitchingReport {
   windowEnd: string | null;
   by: ModelSwitchingDimension;
   top: number;
+  /** Echo of the resolved minSwitches (always ≥ 2). */
+  minSwitches: number;
   /** Sessions matched by window (distinct session_key, post-dedup). */
   consideredSessions: number;
-  /** Distinct session_keys with ≥2 distinct model values across snapshots. */
+  /** Distinct session_keys with ≥ minSwitches distinct model values. */
   switchedSessions: number;
   /** switchedSessions / consideredSessions. 0 when consideredSessions == 0. */
   switchedShare: number;
-  /** Distinct (from,to) pairs observed across all switched sessions. */
+  /** Distinct (from,to) pairs observed across all qualifying switched sessions. */
   uniqueTransitionPairs: number;
-  /** Total directed transitions counted (sum over switched sessions of (distinct_models − 1)). */
+  /** Total directed transitions counted (sum over qualifying sessions of (seq_len − 1)). */
   totalTransitions: number;
   /** Top-N (from,to) pairs by count. Length ≤ `top`. */
   topTransitions: ModelSwitchingTransition[];
@@ -187,6 +206,7 @@ function distinctConsecutiveModels(pk: PerKey): string[] {
 function buildDistribution(
   group: string,
   perKey: PerKey[],
+  minSwitches: number,
 ): ModelSwitchingDistribution {
   const distinctCounts: number[] = [];
   let switchedSessions = 0;
@@ -195,7 +215,7 @@ function buildDistribution(
   for (const pk of perKey) {
     const distinct = new Set(pk.snapshots.map((s) => s.model)).size;
     distinctCounts.push(distinct);
-    if (distinct >= 2) {
+    if (distinct >= minSwitches) {
       switchedSessions += 1;
       totalDistinctModelHops += distinct - 1;
       // Directed hops, counting back-and-forth toggling, computed
@@ -253,6 +273,15 @@ export function buildModelSwitching(
     throw new Error(`top must be a positive integer (got ${opts.top})`);
   }
 
+  const minSwitches = opts.minSwitches ?? 2;
+  if (
+    !Number.isFinite(minSwitches) ||
+    minSwitches < 2 ||
+    !Number.isInteger(minSwitches)
+  ) {
+    throw new Error(`minSwitches must be an integer >= 2 (got ${opts.minSwitches})`);
+  }
+
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
   if (opts.since != null && (sinceMs === null || !Number.isFinite(sinceMs))) {
@@ -294,6 +323,8 @@ export function buildModelSwitching(
   const transitionCounts = new Map<string, number>();
   for (const pk of perKey.values()) {
     consideredSessions += 1;
+    const distinct = new Set(pk.snapshots.map((s) => s.model)).size;
+    if (distinct < minSwitches) continue;
     const seq = distinctConsecutiveModels(pk);
     if (seq.length >= 2) {
       switchedSessions += 1;
@@ -333,7 +364,7 @@ export function buildModelSwitching(
   // Distributions.
   const distributions: ModelSwitchingDistribution[] = [];
   if (by === 'all') {
-    distributions.push(buildDistribution('all', [...perKey.values()]));
+    distributions.push(buildDistribution('all', [...perKey.values()], minSwitches));
   } else {
     const grouped = new Map<string, PerKey[]>();
     for (const pk of perKey.values()) {
@@ -345,7 +376,7 @@ export function buildModelSwitching(
       }
       arr.push(pk);
     }
-    for (const [g, arr] of grouped) distributions.push(buildDistribution(g, arr));
+    for (const [g, arr] of grouped) distributions.push(buildDistribution(g, arr, minSwitches));
     distributions.sort((a, b) => {
       if (b.consideredSessions !== a.consideredSessions) {
         return b.consideredSessions - a.consideredSessions;
@@ -360,6 +391,7 @@ export function buildModelSwitching(
     windowEnd: opts.until ?? null,
     by,
     top,
+    minSwitches,
     consideredSessions,
     switchedSessions,
     switchedShare: consideredSessions === 0 ? 0 : switchedSessions / consideredSessions,

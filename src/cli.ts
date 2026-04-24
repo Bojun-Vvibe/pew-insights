@@ -1955,6 +1955,11 @@ program
   .option('--until <iso>', 'exclusive ISO upper bound on started_at')
   .option('--by <dim>', "split dimension: all | source (default 'all')", 'all')
   .option('--top <n>', 'max number of (from→to) transition pairs to emit (default 10)', '10')
+  .option(
+    '--min-switches <n>',
+    "minimum distinct models a session must touch to count as 'switched' (default 2; set 3+ to focus on heavier switching)",
+    '2',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -1963,6 +1968,7 @@ program
         until?: string;
         by: string;
         top: string;
+        minSwitches: string;
         json?: boolean;
       },
       cmd,
@@ -1977,6 +1983,12 @@ program
         if (!Number.isFinite(top) || top <= 0) {
           throw new Error(`--top must be a positive integer (got ${opts.top})`);
         }
+        const minSwitches = Number.parseInt(opts.minSwitches, 10);
+        if (!Number.isFinite(minSwitches) || minSwitches < 2) {
+          throw new Error(
+            `--min-switches must be an integer >= 2 (got ${opts.minSwitches})`,
+          );
+        }
 
         const sessions = await readSessionQueueRaw(paths);
         const report = buildModelSwitching(sessions, {
@@ -1984,6 +1996,7 @@ program
           until: opts.until ?? null,
           by: opts.by as ModelSwitchingDimension,
           top,
+          minSwitches,
         });
 
         if (opts.json || common.json) {

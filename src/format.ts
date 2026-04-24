@@ -1831,7 +1831,7 @@ export function renderModelSwitching(r: ModelSwitchingReport): string {
   lines.push(chalk.bold.cyan('pew-insights model-switching'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    switched: ${formatNumber(r.switchedSessions)} (${formatPercentLocal(r.switchedShare)})    transitions: ${formatNumber(r.totalTransitions)} across ${formatNumber(r.uniqueTransitionPairs)} pairs    top: ${r.top}`,
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    switched: ${formatNumber(r.switchedSessions)} (${formatPercentLocal(r.switchedShare)})    transitions: ${formatNumber(r.totalTransitions)} across ${formatNumber(r.uniqueTransitionPairs)} pairs    top: ${r.top}    min-switches: ${r.minSwitches}`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
