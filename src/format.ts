@@ -2240,6 +2240,7 @@ export function renderCacheHitRatio(r: CacheHitRatioReport): string {
 import type { ReasoningShareReport } from './reasoningshare.js';
 import type { PromptSizeReport } from './promptsize.js';
 import type { OutputSizeReport } from './outputsize.js';
+import type { PeakHourReport } from './peakhour.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2396,6 +2397,62 @@ export function renderReasoningShare(r: ReasoningShareReport): string {
   lines.push(
     renderTableLocal(
       ['model', 'rows', 'output', 'reasoning', 'generated', 'share', 'bar'],
+      rows,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderPeakHourShare(r: PeakHourReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights peak-hour-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.consideredDays)}    tokens: ${formatNumber(r.totalTokens)}    overall mean peak-share: ${formatPercentLocal(r.overallMeanPeakShare)}    overall max: ${formatPercentLocal(r.overallMaxPeakShare)}    min-days: ${r.minDays}    min-active-hours: ${r.minActiveHours}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSingletonDays)} below min-active-hours, ${formatNumber(r.droppedGroupRows)} below min-days, ${formatNumber(r.droppedTopGroups)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredDays === 0 || r.groups.length === 0) {
+    lines.push(
+      chalk.yellow('  no (group, day) pairs in the window with enough activity. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  const barWidth = 20;
+  lines.push(chalk.bold(`per-${r.by} daily peak-hour concentration (sorted by day count desc)`));
+  const rows: string[][] = r.groups.map((g) => {
+    const fill = Math.round(Math.min(1, Math.max(0, g.meanPeakShare)) * barWidth);
+    const bar = '█'.repeat(fill) + '·'.repeat(barWidth - fill);
+    const modal =
+      g.modalPeakHour < 0
+        ? '—'
+        : `${String(g.modalPeakHour).padStart(2, '0')}:00 (${g.modalPeakHourCount}/${g.days})`;
+    return [
+      g.model,
+      formatNumber(g.days),
+      formatNumber(g.totalTokens),
+      formatPercentLocal(g.meanPeakShare),
+      formatPercentLocal(g.p50PeakShare),
+      formatPercentLocal(g.p95PeakShare),
+      formatPercentLocal(g.maxPeakShare),
+      modal,
+      bar,
+    ];
+  });
+  lines.push(
+    renderTableLocal(
+      [r.by, 'days', 'tokens', 'mean', 'p50', 'p95', 'max', 'modal-hr (UTC)', 'bar'],
       rows,
     ),
   );

@@ -55,6 +55,7 @@ import {
   renderReasoningShare,
   renderPromptSize,
   renderOutputSize,
+  renderPeakHourShare,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -132,6 +133,7 @@ import { buildCacheHitRatio } from './cachehitratio.js';
 import { buildReasoningShare } from './reasoningshare.js';
 import { buildPromptSize } from './promptsize.js';
 import { buildOutputSize } from './outputsize.js';
+import { buildPeakHourShare } from './peakhour.js';
 import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
@@ -2513,6 +2515,85 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderOutputSize(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('peak-hour-share')
+  .description('Per-model concentration of token spend in each day\'s busiest 1-hour window (UTC)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--by <dim>',
+    'group rows by model | source (default model). Source-grouping answers "which CLI is bursty?"',
+    'model',
+  )
+  .option(
+    '--min-days <n>',
+    'hide groups with fewer than n contributing days; their counts surface as droppedGroupRows (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n groups by day count; remainder surface as droppedTopGroups (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--min-active-hours <n>',
+    'drop (group, day) pairs with fewer than n distinct active hours BEFORE peak-share is recorded; default 1 keeps singleton-hour days at 100%',
+    '1',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        minDays: string;
+        top: string;
+        minActiveHours: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 0) {
+          throw new Error(`--min-days must be a non-negative integer (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minActiveHours = Number.parseInt(opts.minActiveHours, 10);
+        if (!Number.isInteger(minActiveHours) || minActiveHours < 1 || minActiveHours > 24) {
+          throw new Error(
+            `--min-active-hours must be an integer in [1, 24] (got ${opts.minActiveHours})`,
+          );
+        }
+        if (opts.by !== 'model' && opts.by !== 'source') {
+          throw new Error(`--by must be 'model' or 'source' (got ${opts.by})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildPeakHourShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as 'model' | 'source',
+          minDays,
+          top,
+          minActiveHours,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderPeakHourShare(report) + '\n');
         }
       } catch (e) {
         die(e);
