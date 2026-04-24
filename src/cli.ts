@@ -78,7 +78,7 @@ import { buildGaps } from './gaps.js';
 import { buildVelocity } from './velocity.js';
 import { buildConcurrency } from './concurrency.js';
 import { buildTransitions, type TransitionsDimension } from './transitions.js';
-import { buildAgentMix, type AgentMixDimension } from './agentmix.js';
+import { buildAgentMix, type AgentMixDimension, type AgentMixMetric } from './agentmix.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1537,6 +1537,7 @@ program
   .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
   .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
   .option('--by <dim>', "grouping dimension: source | model | kind (default 'source')", 'source')
+  .option('--metric <name>', "token field: total | input | output | cached (default 'total')", 'total')
   .option('--top <n>', 'top-N groups to surface (default 10)', '10')
   .option('--min-tokens <n>', 'drop groups with tokens < n from the surfaced table (default 0)', '0')
   .option('--json', 'emit JSON instead of a pretty report')
@@ -1546,6 +1547,7 @@ program
         since?: string;
         until?: string;
         by: string;
+        metric: string;
         top: string;
         minTokens: string;
         json?: boolean;
@@ -1566,12 +1568,21 @@ program
         if (opts.by !== 'source' && opts.by !== 'model' && opts.by !== 'kind') {
           throw new Error(`--by must be 'source' | 'model' | 'kind' (got ${opts.by})`);
         }
+        if (
+          opts.metric !== 'total' &&
+          opts.metric !== 'input' &&
+          opts.metric !== 'output' &&
+          opts.metric !== 'cached'
+        ) {
+          throw new Error(`--metric must be 'total' | 'input' | 'output' | 'cached' (got ${opts.metric})`);
+        }
 
         const queue = await readQueue(paths);
         const report = buildAgentMix(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           by: opts.by as AgentMixDimension,
+          metric: opts.metric as AgentMixMetric,
           topN,
           minTokens,
         });

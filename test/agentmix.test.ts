@@ -230,3 +230,58 @@ test('agent-mix: events and activeHours counted per group', () => {
   assert.equal(r.topGroups[0]!.events, 3);
   assert.equal(r.topGroups[0]!.activeHours, 2);
 });
+
+test('agent-mix: rejects bad metric', () => {
+  // @ts-expect-error testing runtime validation
+  assert.throws(() => buildAgentMix([], { metric: 'bogus' }));
+});
+
+test('agent-mix: metric=output concentrates on output_tokens only', () => {
+  const r = buildAgentMix(
+    [
+      // a: heavy input, light output
+      ql('a', '2026-04-24T10:00:00.000Z', 1000, { input_tokens: 900, output_tokens: 100 }),
+      // b: light input, heavy output
+      ql('b', '2026-04-24T10:00:00.000Z', 1000, { input_tokens: 100, output_tokens: 900 }),
+    ],
+    { metric: 'output', generatedAt: GEN },
+  );
+  assert.equal(r.metric, 'output');
+  assert.equal(r.totalTokens, 1000);
+  // b dominates output 9:1
+  assert.equal(r.topGroups[0]!.group, 'b');
+  assert.equal(r.topGroups[0]!.tokens, 900);
+  assert.equal(Number(r.topGroups[0]!.share.toFixed(4)), 0.9);
+});
+
+test('agent-mix: metric=input flips ranking from metric=output', () => {
+  const lines = [
+    ql('a', '2026-04-24T10:00:00.000Z', 1000, { input_tokens: 900, output_tokens: 100 }),
+    ql('b', '2026-04-24T10:00:00.000Z', 1000, { input_tokens: 100, output_tokens: 900 }),
+  ];
+  const ri = buildAgentMix(lines, { metric: 'input', generatedAt: GEN });
+  const ro = buildAgentMix(lines, { metric: 'output', generatedAt: GEN });
+  assert.equal(ri.topGroups[0]!.group, 'a');
+  assert.equal(ro.topGroups[0]!.group, 'b');
+});
+
+test('agent-mix: metric=cached sums cached_input_tokens', () => {
+  const r = buildAgentMix(
+    [
+      ql('a', '2026-04-24T10:00:00.000Z', 100, { cached_input_tokens: 80 }),
+      ql('b', '2026-04-24T10:00:00.000Z', 100, { cached_input_tokens: 0 }),
+    ],
+    { metric: 'cached', generatedAt: GEN },
+  );
+  assert.equal(r.totalTokens, 80);
+  assert.equal(r.groupCount, 1);
+  assert.equal(r.topGroups[0]!.group, 'a');
+});
+
+test('agent-mix: default metric is total (back-compat)', () => {
+  const r = buildAgentMix(
+    [ql('a', '2026-04-24T10:00:00.000Z', 100)],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.metric, 'total');
+});

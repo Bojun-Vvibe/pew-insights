@@ -1468,7 +1468,7 @@ export function renderAgentMix(r: AgentMixReport): string {
   lines.push(chalk.bold.cyan('pew-insights agent-mix'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    by: ${r.by}    events: ${formatNumber(r.consideredEvents)}    tokens: ${formatNumber(r.totalTokens)}    groups: ${r.groupCount}    top: ${r.topN}`,
+      `as of: ${r.generatedAt}    by: ${r.by}    metric: ${r.metric}    events: ${formatNumber(r.consideredEvents)}    tokens: ${formatNumber(r.totalTokens)}    groups: ${r.groupCount}    top: ${r.topN}`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

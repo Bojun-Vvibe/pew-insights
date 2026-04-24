@@ -45,6 +45,8 @@ import type { QueueLine } from './types.js';
 
 export type AgentMixDimension = 'source' | 'model' | 'kind';
 
+export type AgentMixMetric = 'total' | 'input' | 'output' | 'cached';
+
 export interface AgentMixOptions {
   /** Inclusive ISO lower bound on `hour_start`. null = no lower bound. */
   since?: string | null;
@@ -52,6 +54,14 @@ export interface AgentMixOptions {
   until?: string | null;
   /** Grouping dimension. Default 'source'. */
   by?: AgentMixDimension;
+  /**
+   * Which token field to attribute and concentrate on. Default
+   * 'total'. `input` and `output` separate the producer/consumer
+   * sides — a source can dominate input (lots of context) without
+   * dominating output (lots of generated text), and vice versa.
+   * `cached` surfaces who is actually benefiting from cache hits.
+   */
+  metric?: AgentMixMetric;
   /** Cap rows shown in `topGroups`. Default 10. Must be a positive integer. */
   topN?: number;
   /**
@@ -84,6 +94,7 @@ export interface AgentMixReport {
   /** Exclusive ISO end of the window. null = unbounded. */
   windowEnd: string | null;
   by: AgentMixDimension;
+  metric: AgentMixMetric;
   topN: number;
   /** As-supplied minTokens display filter (0 = no filter). */
   minTokens: number;
@@ -146,6 +157,20 @@ function pickGroup(q: QueueLine, by: AgentMixDimension): string {
   return src;
 }
 
+function pickMetric(q: QueueLine, metric: AgentMixMetric): number {
+  switch (metric) {
+    case 'input':
+      return q.input_tokens || 0;
+    case 'output':
+      return q.output_tokens || 0;
+    case 'cached':
+      return q.cached_input_tokens || 0;
+    case 'total':
+    default:
+      return q.total_tokens || 0;
+  }
+}
+
 function median(_sorted: number[]): number {
   // unused; kept for symmetry with neighbouring builders. Removed
   // intentionally — we don't report a median here.
@@ -161,6 +186,10 @@ export function buildAgentMix(queue: QueueLine[], opts: AgentMixOptions = {}): A
   const by: AgentMixDimension = opts.by ?? 'source';
   if (by !== 'source' && by !== 'model' && by !== 'kind') {
     throw new Error(`by must be 'source' | 'model' | 'kind' (got ${String(opts.by)})`);
+  }
+  const metric: AgentMixMetric = opts.metric ?? 'total';
+  if (metric !== 'total' && metric !== 'input' && metric !== 'output' && metric !== 'cached') {
+    throw new Error(`metric must be 'total' | 'input' | 'output' | 'cached' (got ${String(opts.metric)})`);
   }
   const minTokens = opts.minTokens ?? 0;
   if (!Number.isFinite(minTokens) || minTokens < 0) {
@@ -189,7 +218,7 @@ export function buildAgentMix(queue: QueueLine[], opts: AgentMixOptions = {}): A
     if (untilMs !== null && startMs >= untilMs) continue;
 
     consideredEvents += 1;
-    const tk = q.total_tokens || 0;
+    const tk = pickMetric(q, metric);
     totalTokens += tk;
 
     const g = pickGroup(q, by);
@@ -263,6 +292,7 @@ export function buildAgentMix(queue: QueueLine[], opts: AgentMixOptions = {}): A
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     by,
+    metric,
     topN,
     minTokens,
     consideredEvents,

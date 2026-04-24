@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## 0.4.12 — 2026-04-24
 
+### Added (refinement)
+
+- `--metric <name>` flag on `agent-mix`: `total | input | output |
+  cached`. Default `total` (back-compat). Switches which token
+  field the per-group sums and the HHI / Gini concentration math
+  run on. Lets the operator separate questions that the existing
+  `total`-only view conflated:
+  - `--metric input` — who is sending the most context (often
+    determined by file selection / planning style).
+  - `--metric output` — who is generating the most text (often
+    determined by task verbosity / model choice).
+  - `--metric cached` — who is actually benefiting from prompt
+    caching, distinct from raw input volume.
+  The renderer header surfaces the active metric so JSON / pretty
+  output can never be misread. Five new tests cover (1) bad
+  metric rejection, (2) `output` correctly attributes the
+  output-heavy group as dominant, (3) `input` vs `output` flip
+  the ranking on the same input data, (4) `cached` sums
+  `cached_input_tokens`, (5) default metric stays `total`.
+  Live smoke (same window) flips the picture: with
+  `--metric output`, `claude-code` and `opencode` are *tied* at
+  ~37.4% of generated tokens (vs 40.8% / 26.6% on total) — i.e.
+  `opencode`'s lower `total` share was driven mostly by
+  comparatively lighter input/context, not by less generation
+  work. HHI rises to 0.307 and top-half share to 89.2% on the
+  output side.
+
 ### Added
 
 - `pew-insights agent-mix` subcommand — concentration analysis of
