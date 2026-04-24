@@ -202,3 +202,44 @@ test('device-share: cacheHitRatio is 0 when input_tokens is 0', () => {
   const r = buildDeviceShare(rows, { generatedAt: GEN });
   assert.equal(r.devices[0]!.cacheHitRatio, 0);
 });
+
+// ---- redact flag ----------------------------------------------------------
+
+test('device-share: redact replaces device_id with stable dev-XXXXXXXX label', async () => {
+  const { redactDeviceId } = await import('../src/deviceshare.js');
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'a6aa6846-9de9-444d-ba23-279d86441eee', { total_tokens: 100 }),
+    ql('2026-04-20T00:00:00.000Z', 'b7bb7957-aefa-555e-cb34-380e97552fff', { total_tokens: 200 }),
+  ];
+  const r = buildDeviceShare(rows, { generatedAt: GEN, redact: true });
+  assert.equal(r.redact, true);
+  assert.equal(r.devices.length, 2);
+  for (const d of r.devices) {
+    assert.match(d.deviceId, /^dev-[0-9a-f]{8}$/);
+  }
+  // Ordering by tokens desc preserved
+  assert.equal(r.devices[0]!.totalTokens, 200);
+  // Stability: same input => same label
+  assert.equal(redactDeviceId('a6aa6846-9de9-444d-ba23-279d86441eee'), redactDeviceId('a6aa6846-9de9-444d-ba23-279d86441eee'));
+  assert.notEqual(redactDeviceId('x'), redactDeviceId('y'));
+});
+
+test('device-share: redact defaults to false and echoes raw device_id', () => {
+  const rows = [ql('2026-04-20T00:00:00.000Z', 'devA', { total_tokens: 100 })];
+  const r = buildDeviceShare(rows, { generatedAt: GEN });
+  assert.equal(r.redact, false);
+  assert.equal(r.devices[0]!.deviceId, 'devA');
+});
+
+test('device-share: redact does not change global denominators or counts', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'devA', { total_tokens: 100 }),
+    ql('2026-04-20T00:00:00.000Z', 'devB', { total_tokens: 200 }),
+  ];
+  const plain = buildDeviceShare(rows, { generatedAt: GEN });
+  const red = buildDeviceShare(rows, { generatedAt: GEN, redact: true });
+  assert.equal(plain.totalTokens, red.totalTokens);
+  assert.equal(plain.totalDevices, red.totalDevices);
+  assert.equal(plain.devices.length, red.devices.length);
+  assert.deepEqual(plain.devices.map((d) => d.totalTokens), red.devices.map((d) => d.totalTokens));
+});

@@ -40,6 +40,17 @@
  */
 import type { QueueLine } from './types.js';
 import { normaliseModel } from './parsers.js';
+import { createHash } from 'node:crypto';
+
+/**
+ * Stable short label for a device id. SHA-256, first 8 hex chars,
+ * `dev-` prefix. Same input always yields the same label so a
+ * shared dashboard can still join across reports.
+ */
+export function redactDeviceId(id: string): string {
+  const h = createHash('sha256').update(id).digest('hex').slice(0, 8);
+  return `dev-${h}`;
+}
 
 export interface DeviceShareOptions {
   /** Inclusive ISO lower bound on `hour_start`. null = no lower bound. */
@@ -57,6 +68,17 @@ export interface DeviceShareOptions {
    * filter only. Default 0 (no truncation).
    */
   top?: number;
+  /**
+   * Redact `deviceId` in emitted rows by replacing it with a
+   * short stable label of the form `dev-XXXXXXXX` where the
+   * suffix is the first 8 hex chars of a SHA-256 of the original
+   * id. Default false. Useful when the report will be shared in
+   * issues / dashboards / tickets where the raw UUID is mildly
+   * PII-ish or just visually noisy. The hash is deterministic
+   * across runs so a given device keeps the same short label
+   * everywhere.
+   */
+  redact?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -94,6 +116,8 @@ export interface DeviceShareReport {
   minTokens: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
+  /** Echo of the resolved redact flag. */
+  redact: boolean;
   /** Sum of total_tokens across all kept rows for the *global* row. */
   totalTokens: number;
   /** Distinct devices observed before display filters. */
@@ -127,6 +151,7 @@ export function buildDeviceShare(
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
+  const redact = opts.redact ?? false;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -235,7 +260,7 @@ export function buildDeviceShare(
     const cacheHitRatio =
       a.inputTokens > 0 ? a.cachedInputTokens / a.inputTokens : 0;
     all.push({
-      deviceId: a.deviceId,
+      deviceId: redact ? redactDeviceId(a.deviceId) : a.deviceId,
       totalTokens: a.totalTokens,
       share: globalTotal > 0 ? a.totalTokens / globalTotal : 0,
       inputTokens: a.inputTokens,
@@ -283,6 +308,7 @@ export function buildDeviceShare(
     windowEnd: opts.until ?? null,
     minTokens,
     top,
+    redact,
     totalTokens: globalTotal,
     totalDevices,
     droppedInvalidHourStart,
