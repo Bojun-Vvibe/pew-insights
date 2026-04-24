@@ -303,3 +303,21 @@ Counts come from the still-present (un-compacted) entries in `queue.jsonl` at th
 10. **Plugin ABI for `openclaw-plugin/pew-session-sync`.** Out of scope but worth documenting.
 
 PRs welcome.
+
+## Note on `cache_input_tokens` semantics (observed 2026-04)
+
+Empirically, summing `cached_input_tokens / input_tokens` per `(model,
+source)` pair across `queue.jsonl` produces ratios well above 1.0 for
+some producers (most notably `opencode`, where the ratio on
+`claude-opus-4.7` runs above 15×). This is consistent with
+`cached_input_tokens` being reported as the **count of tokens served
+from cache** — which can exceed `input_tokens` (treated as a
+"fresh-only" or "uncached" counter) when the same prompt prefix is
+reused many times.
+
+The `cache-hit-ratio` subcommand intentionally does **not** clamp the
+ratio to `[0,1]`: ratios > 1 are a real signal (high cache leverage),
+not data corruption, and clamping would hide producer-level
+differences. The progress bar in the pretty renderer *does* clamp to
+`[0,1]` for visual sanity, but the numeric `hit-ratio` column is
+unmodified.
