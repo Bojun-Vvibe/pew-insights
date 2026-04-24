@@ -10,6 +10,7 @@ import type { AnomaliesReport, AnomalyStatus } from './anomalies.js';
 import type { RatiosReport, RatioStatus } from './ratiosreport.js';
 import type { DashboardReport } from './dashboard.js';
 import { HEATMAP_DOW_LABELS, type HeatmapReport } from './heatmap.js';
+import type { StreaksReport } from './streaks.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -963,6 +964,71 @@ export function renderHeatmap(h: HeatmapReport): string {
         ['peak hour', peakHourStr],
         ['top-4-hr share', diurnalStr],
         ['top-2-day share', weeklyStr],
+      ],
+    ),
+  );
+  return lines.join('\n');
+}
+
+export function renderStreaks(s: StreaksReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights streaks'));
+  lines.push(
+    chalk.dim(
+      `as of: ${s.asOf}    window: ${s.windowStart} → ${s.windowEnd} (${s.lookbackDays}d)    minTokens: ${formatNumber(s.minTokens)}`,
+    ),
+  );
+  lines.push('');
+
+  // Cadence strip — one glyph per day in chronological order.
+  // ' ' = idle, '█' = active. Color the *current* run so the
+  // operator's eye lands on "where am I right now".
+  const dayGlyphs: string[] = [];
+  for (const r of s.runs) {
+    const glyph = r.state === 'active' ? '█' : '·';
+    const colored =
+      r === s.currentRun
+        ? r.state === 'active'
+          ? chalk.green(glyph)
+          : chalk.red(glyph)
+        : r.state === 'active'
+          ? chalk.cyan(glyph)
+          : chalk.dim(glyph);
+    for (let i = 0; i < r.length; i++) dayGlyphs.push(colored);
+  }
+  // Wrap to 50 chars/row so a 90-day window stays inside an 80-col TTY.
+  const stripWidth = 50;
+  for (let i = 0; i < dayGlyphs.length; i += stripWidth) {
+    lines.push('  ' + dayGlyphs.slice(i, i + stripWidth).join(''));
+  }
+  lines.push('  ' + chalk.dim(`oldest → newest    █ active   · idle    (current run colored)`));
+  lines.push('');
+
+  // Summary table.
+  const fmtRun = (r: typeof s.longestActive): string => {
+    if (r == null) return '—';
+    if (r.length === 1) return `${r.startDay} (1 day)`;
+    return `${r.startDay} → ${r.endDay} (${r.length} days)`;
+  };
+  const currentRunStr =
+    s.currentRun.state === 'active'
+      ? `${s.currentRun.length}-day active streak (since ${s.currentRun.startDay})`
+      : `${s.currentRun.length}-day idle gap (since ${s.currentRun.startDay})`;
+  const median = s.medianActiveLength;
+  const mean = s.meanActiveLength;
+
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['active days', `${formatNumber(s.activeDays)} / ${formatNumber(s.lookbackDays)}  (${(s.activeFraction * 100).toFixed(1)}%)`],
+        ['idle days', formatNumber(s.idleDays)],
+        ['active runs', formatNumber(s.activeRunCount)],
+        ['longest active', fmtRun(s.longestActive)],
+        ['longest idle gap', fmtRun(s.longestIdle)],
+        ['current', currentRunStr],
+        ['median active run', median == null ? '—' : `${median} days`],
+        ['mean active run', mean == null ? '—' : `${mean.toFixed(2)} days`],
       ],
     ),
   );

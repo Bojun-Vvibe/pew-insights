@@ -33,6 +33,7 @@ import {
   renderRatios,
   renderDashboard,
   renderHeatmap,
+  renderStreaks,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -65,6 +66,7 @@ import { buildAnomalies } from './anomalies.js';
 import { buildRatiosReport } from './ratiosreport.js';
 import { buildDashboard } from './dashboard.js';
 import { buildHeatmap, type HeatmapMetric, type HeatmapTz } from './heatmap.js';
+import { buildStreaks } from './streaks.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -85,7 +87,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.4.5')
+  .version('0.4.6')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -1184,6 +1186,55 @@ program
           process.stdout.write(JSON.stringify(heatmap, null, 2) + '\n');
         } else {
           process.stdout.write(renderHeatmap(heatmap) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('streaks')
+  .description('Activity-cadence runs: longest active streak, longest gap, current run')
+  .option('--lookback <days>', 'days of history to include (default 30)', '30')
+  .option(
+    '--min-tokens <n>',
+    'minimum total_tokens for a day to count as ACTIVE (default 1)',
+    '1',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        lookback: string;
+        minTokens: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        const lookback = Number.parseInt(opts.lookback, 10);
+        if (!Number.isFinite(lookback) || lookback < 1) {
+          throw new Error(`--lookback must be a positive integer (got ${opts.lookback})`);
+        }
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
+        }
+
+        const queue = await readQueue(paths);
+        const report = buildStreaks(queue, {
+          lookbackDays: lookback,
+          minTokens,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderStreaks(report) + '\n');
         }
       } catch (e) {
         die(e);
