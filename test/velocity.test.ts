@@ -205,3 +205,36 @@ test('velocity: row hour_start floored to hour bucket (defensive)', () => {
   assert.equal(r.totalActiveHours, 1);
   assert.equal(r.totalActiveTokens, 600);
 });
+
+test('velocity: idleHoursBefore counts contiguous idle hours preceding each stretch', () => {
+  // Window: 24 hours ending at 2026-04-24T12Z (so 2026-04-23T13Z..12Z).
+  // Stretches:
+  //   A: hour 0 of window (2026-04-23T13Z) → idleBefore = 0 (window edge)
+  //   3 idle hours
+  //   B: hours 4-5 (2026-04-23T17Z..18Z) → idleBefore = 3
+  //   5 idle hours
+  //   C: hour 11 (2026-04-24T00Z) → idleBefore = 5
+  const queue = [
+    ql('2026-04-23T13:00:00.000Z', 600),
+    ql('2026-04-23T17:00:00.000Z', 600),
+    ql('2026-04-23T18:00:00.000Z', 600),
+    ql('2026-04-24T00:00:00.000Z', 600),
+  ];
+  const r = buildVelocity(queue, {
+    lookbackHours: 24,
+    asOf: '2026-04-24T12:00:00.000Z',
+    generatedAt: GEN,
+  });
+  assert.equal(r.stretchCount, 3);
+  // Find each by startHour for clarity (independent of sort order in topStretches).
+  const byStart = new Map(
+    [
+      r.peakStretch!,
+      r.longestStretch!,
+      ...r.topStretches,
+    ].map((s) => [s.startHour, s]),
+  );
+  assert.equal(byStart.get('2026-04-23T13:00:00.000Z')!.idleHoursBefore, 0);
+  assert.equal(byStart.get('2026-04-23T17:00:00.000Z')!.idleHoursBefore, 3);
+  assert.equal(byStart.get('2026-04-24T00:00:00.000Z')!.idleHoursBefore, 5);
+});

@@ -1302,10 +1302,11 @@ export function renderVelocity(r: VelocityReport): string {
   lines.push(chalk.bold(`top stretches (tokens/min desc, top ${r.topN})`));
   lines.push(
     renderTable(
-      ['span', 'hours', 'tokens', 'in/out', 'rate'],
+      ['span', 'hours', 'idle-before', 'tokens', 'in/out', 'rate'],
       r.topStretches.map((s) => [
         formatStretchSpan(s),
         String(s.hours),
+        s.idleHoursBefore === 0 ? '—' : `${s.idleHoursBefore}h`,
         formatTokens(s.tokens),
         `${formatTokens(s.inputTokens)} / ${formatTokens(s.outputTokens)}`,
         formatRate(s.tokensPerMinute),

@@ -92,6 +92,17 @@ export interface VelocityStretch {
    * landed (the bucket is hour-aligned upstream).
    */
   tokensPerMinute: number;
+  /**
+   * Number of consecutive idle hours immediately preceding this
+   * stretch within the window. A stretch starting at the very
+   * first hour of the window reports 0 (we don't infer beyond the
+   * window edge — the operator should re-run with a bigger
+   * lookback if they want to know the true preceding idle).
+   * Lets the operator see how isolated each burst was: a 100/min
+   * stretch with 24 idle hours before it is a different signal
+   * from one wedged between two equally-busy stretches.
+   */
+  idleHoursBefore: number;
 }
 
 export interface VelocityReport {
@@ -207,8 +218,9 @@ export function buildVelocity(queue: QueueLine[], opts: VelocityOptions = {}): V
   // 2. Walk the grid forward; build maximal active stretches.
   const stretches: VelocityStretch[] = [];
   let cur:
-    | (HourBucket & { startHour: string; endHour: string; hours: number })
+    | (HourBucket & { startHour: string; endHour: string; hours: number; idleBefore: number })
     | null = null;
+  let pendingIdle = 0;
 
   for (let i = 0; i < lookbackHours; i += 1) {
     const h = addHoursIso(startHour, i);
@@ -216,7 +228,8 @@ export function buildVelocity(queue: QueueLine[], opts: VelocityOptions = {}): V
     const isActive = b.tokens >= minTokensPerHour && b.tokens > 0;
     if (isActive) {
       if (cur == null) {
-        cur = { startHour: h, endHour: h, hours: 1, ...b };
+        cur = { startHour: h, endHour: h, hours: 1, idleBefore: pendingIdle, ...b };
+        pendingIdle = 0;
       } else {
         cur.endHour = h;
         cur.hours += 1;
@@ -225,9 +238,12 @@ export function buildVelocity(queue: QueueLine[], opts: VelocityOptions = {}): V
         cur.outputTokens += b.outputTokens;
         cur.events += b.events;
       }
-    } else if (cur != null) {
-      stretches.push(finalizeStretch(cur));
-      cur = null;
+    } else {
+      if (cur != null) {
+        stretches.push(finalizeStretch(cur));
+        cur = null;
+      }
+      pendingIdle += 1;
     }
   }
   if (cur != null) stretches.push(finalizeStretch(cur));
@@ -274,7 +290,7 @@ export function buildVelocity(queue: QueueLine[], opts: VelocityOptions = {}): V
 }
 
 function finalizeStretch(
-  cur: HourBucket & { startHour: string; endHour: string; hours: number },
+  cur: HourBucket & { startHour: string; endHour: string; hours: number; idleBefore: number },
 ): VelocityStretch {
   const tokensPerMinute = cur.tokens / (cur.hours * 60);
   return {
@@ -286,6 +302,7 @@ function finalizeStretch(
     outputTokens: cur.outputTokens,
     events: cur.events,
     tokensPerMinute,
+    idleHoursBefore: cur.idleBefore,
   };
 }
 
