@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.37 — 2026-04-25
+
+### Added
+
+- `--top <n>` flag on `reasoning-share`. Truncates the model
+  table to the top n by generated-token volume so dashboards /
+  cron outputs stay short. Truncated tail surfaces as
+  `droppedTopModels` in the report. Global denominators stay
+  computed against the full population. The flag composes
+  cleanly with `--min-rows` (minRows is applied before top, so
+  the cap counts post-floor survivors). 2 new unit tests
+  covering the no-cap path and the minRows-then-top
+  composition (632 total, up from 630 at 0.4.36).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js reasoning-share --top 5 --min-rows 5
+pew-insights reasoning-share
+as of: 2026-04-24T19:27:37.972Z    rows: 1,371    output: 33,507,399 tok    reasoning: 1,098,634 tok    overall: 3.2%    min-rows: 5
+dropped: 0 bad hour_start, 0 zero-output, 0 bad tokens, 4 below min-rows, 6 below top cap
+
+per-model token-weighted reasoning share (sorted by generated volume desc)
+model               rows  output      reasoning  generated   share  bar
+------------------  ----  ----------  ---------  ----------  -----  --------------------
+claude-opus-4.7     364   21,558,961  0          21,558,961  0.0%   ····················
+gpt-5.4             399   6,758,563   930,598    7,689,161   12.1%  ██··················
+claude-opus-4.6.1m  182   3,450,625   0          3,450,625   0.0%   ····················
+gpt-5               170   842,008     8,653      850,661     1.0%   ····················
+unknown             56    410,432     0          410,432     0.0%   ····················
+```
+
+The combined `--top 5 --min-rows 5` view drops 4 single-shot
+models (gpt-4.1, gpt-5.2, gpt-5-nano, claude-opus-4.6) plus
+6 small-tail models past the top-5 cap, leaving only the
+load-bearing workloads. Note how this view *hides* the
+high-share outliers (gemini at 71.7%, gpt-5-nano at 90.8%)
+because they don't carry meaningful generated volume — the
+operator can choose between the unfiltered "where is the
+share signal?" lens and this filtered "where is the dollar
+exposure?" lens. The picture from the dollar-exposure side
+is sober: 95%+ of generated-token volume is on Anthropic
+models that emit no reasoning at all.
+
 ## 0.4.36 — 2026-04-25
 
 ### Added
