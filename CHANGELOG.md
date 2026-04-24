@@ -2,9 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
-# Changelog
+## 0.4.8 — 2026-04-24
 
-All notable changes to this project will be documented in this file.
+Idle-gap detection between sessions. The new `pew-insights gaps`
+subcommand reads `session-queue.jsonl` (the second subcommand to
+do so as a primary input, joining `sessions`) and answers a
+question that none of the existing token-aggregation subcommands
+can: *which idle stretches in this window are unusually long
+compared to my own typical inter-session quiet?*
+
+Most naive "long idle" alerting against the session corpus is
+noisy: every overnight pause looks like a long gap. `gaps` makes
+the question relative — it builds the empirical distribution of
+inter-session gaps in the window, picks a quantile threshold via
+nearest-rank, and only flags gaps that strictly exceed it. This
+plays directly with the alert-noise post: the threshold is
+self-calibrating per operator, so a heavy weekend user and a 9-5
+weekday user each get *their own* notion of "unusual".
+
+### Added
+
+- `pew-insights gaps` subcommand
+  - `--since` window (`24h | 7d | 30d | all`, default `7d`) and
+    `--until <iso>` exclusive upper bound, both filtering on
+    `started_at` so window membership matches the `sessions`
+    subcommand exactly.
+  - `--quantile <q>` threshold in `(0, 1]` (default `0.9` — flag
+    the longest 10%). Use `0.95` for stricter, `0.75` for noisier.
+  - `--min-gap <seconds>` absolute floor (default 0). A gap below
+    this is never flagged regardless of quantile — useful when
+    your gap distribution is dominated by sub-minute pauses and
+    you only care about real idles.
+  - `--top <n>` caps flagged rows shown (default 10).
+  - `--json` emits the full report including the threshold,
+    distribution stats (median + max), and per-row pointers
+    (sessionKey, source, kind, startedAt, lastMessageAt,
+    projectRef) for the session before and after each flagged
+    gap, plus the empirical `quantileRank` for that gap.
+  - Reports total sessions in window, adjacent-gap count, the
+    nearest-rank threshold, median + max of the gap distribution,
+    and the flagged rows themselves.
+- `src/gaps.ts`
+  - `buildGaps(sessions, opts)` — pure builder, deterministic on
+    a given input. Throws on `quantile` outside `(0, 1]`,
+    `minGapSeconds < 0`, and non-integer or non-positive `topN`.
+  - Gap is measured as `next.started_at - prev.last_message_at`
+    (clamped at 0). Measuring to `last_message_at` rather than
+    `started_at` means a long-running session does not count as
+    "idle" while it was still emitting messages — and a
+    corrupted overlap (next starts before prev ends) safely
+    yields a 0-second gap rather than a negative one.
+  - Threshold is the **nearest-rank** quantile
+    (k = ceil(q × n)), so the threshold is always an actual
+    observed gap value rather than an interpolated one. Matches
+    how an operator reads "the unusual 10%".
+  - `quantileRank` per flagged row is **mid-rank**:
+    `(#strictly_less + 0.5 × #equal) / n`. Lets the operator
+    distinguish a gap that just barely cleared the bar from a
+    true outlier, even when many gaps share the same value.
+  - Flagged rows are sorted `gap_seconds desc, before.startedAt
+    asc, before.session_key asc` — fully deterministic across
+    re-runs.
+- `renderGaps` in `src/format.ts` — top-line summary table
+  (sessions in window, adjacent gaps, threshold, median, max,
+  flagged count), then the flagged-gaps table with gap duration,
+  quantile rank, the `last_message_at` of the prior session, the
+  `started_at` of the next session, and the `source/kind →
+  source/kind` transition that bracketed the idle.
+
+### Tests
+
+- `test/gaps.test.ts` — 13 new cases covering: empty input,
+  single-session input (no gaps measurable), the two-session
+  edge case (threshold equals the only observed gap and nothing
+  is strictly greater), clear outlier flagging at default
+  quantile, equal-gap tie-break (earlier `before.startedAt`
+  wins), `started_at` window filter (inclusive lower / exclusive
+  upper), `minGapSeconds` suppression even past threshold,
+  overlapping `last_message_at` clamped to 0, validation
+  (`quantile`, `topN`, `minGapSeconds`), determinism across
+  repeated calls on the same input, `topN` truncation, and
+  monotonicity of mid-rank `quantileRank` across distinct gap
+  values.
 
 ## 0.4.7 — 2026-04-24
 
