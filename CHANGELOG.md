@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.15 — 2026-04-24
+
+### Added
+
+- `pew-insights session-lengths` subcommand — binned histogram of
+  per-session `duration_seconds` over `session-queue.jsonl`. Where
+  `sessions` only emits scalar summary stats (median / mean / p95
+  + the single longest session callout), `session-lengths` exposes
+  the *shape* of the distribution: how the population splits across
+  a fixed ladder (`≤1m, ≤5m, ≤15m, ≤30m, ≤1h, ≤2h, ≤4h, >4h` by
+  default), what each bin's own median + mean look like, and which
+  bin is modal. Also reports p50 / p90 / p95 / p99 / max waypoints
+  via the same nearest-rank convention as `gaps`, so a downstream
+  consumer can read both the central tendency and the long-tail
+  threshold from one report.
+  - Flags: `--since` / `--until` window on `started_at` (matches
+    `sessions` / `gaps` semantics — a long session belongs to the
+    day it started on), `--by all|source|kind` (default `all`;
+    `source` / `kind` emit one distribution row per group sharing
+    the same bin ladder so they are directly comparable),
+    `--min-duration-seconds <n>` to drop noise (default 0),
+    `--edges <csv>` to override the bin upper-edges, `--json`.
+  - `src/sessionlengths.ts` builder. Pure, deterministic. Bin
+    membership is by inclusive upper bound (`60s` lands in `≤1m`,
+    `61s` in `1m-5m`, etc). Modal-bin tie-break picks the tighter
+    upper bound first, so a tie between `≤1m` and `>4h` resolves
+    to `≤1m` (the more informative cell).
+
 ## 0.4.14 — 2026-04-24
 
 ### Added (refinement)
