@@ -39,6 +39,7 @@ import {
   renderVelocity,
   renderConcurrency,
   renderTransitions,
+  renderAgentMix,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -77,6 +78,7 @@ import { buildGaps } from './gaps.js';
 import { buildVelocity } from './velocity.js';
 import { buildConcurrency } from './concurrency.js';
 import { buildTransitions, type TransitionsDimension } from './transitions.js';
+import { buildAgentMix, type AgentMixDimension } from './agentmix.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1522,6 +1524,62 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderTransitions(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('agent-mix')
+  .description('Per-group token share with HHI + Gini concentration scalars')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--by <dim>', "grouping dimension: source | model | kind (default 'source')", 'source')
+  .option('--top <n>', 'top-N groups to surface (default 10)', '10')
+  .option('--min-tokens <n>', 'drop groups with tokens < n from the surfaced table (default 0)', '0')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        top: string;
+        minTokens: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isInteger(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
+        }
+        if (opts.by !== 'source' && opts.by !== 'model' && opts.by !== 'kind') {
+          throw new Error(`--by must be 'source' | 'model' | 'kind' (got ${opts.by})`);
+        }
+
+        const queue = await readQueue(paths);
+        const report = buildAgentMix(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as AgentMixDimension,
+          topN,
+          minTokens,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderAgentMix(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.12 — 2026-04-24
+
+### Added
+
+- `pew-insights agent-mix` subcommand — concentration analysis of
+  token spend across sources, models, or session kinds. Where
+  `sources` hands the operator a raw source × model pivot, this
+  one collapses the window to a single share-of-tokens row per
+  group and reports two standard concentration scalars:
+  - **HHI** (Herfindahl–Hirschman Index) = Σ sᵢ². Bounded in
+    `[1/groupCount, 1]`. The renderer always prints the uniform
+    floor next to the value so the operator can read "0.29 vs
+    uniform 0.17" without context-switching.
+  - **Gini coefficient** ∈ `[0, 1−1/n]`. Computed via the
+    trapezoid Lorenz-curve formula on the per-group token totals.
+  - `topHalfShare` — cumulative share of the top `ceil(n/2)`
+    largest groups; sits between HHI's "squared dominance" and
+    Gini's "whole curve" framings.
+  - Flags: `--since` / `--until` window on `hour_start`,
+    `--by source|model|kind` (default `source`), `--top <n>`
+    (default 10), `--min-tokens <n>` display filter (default 0,
+    surface-only — does NOT alter HHI/Gini/groupCount), `--json`.
+- `src/agentmix.ts` builder. Pure, deterministic. Sort fully
+  specified (`tokens desc, group asc`). Empty/missing source
+  bucketed as `'unknown'`. Concentration math runs only on
+  groups with `tokens > 0`.
+- `renderAgentMix()` in `src/format.ts` — pretty header with
+  events/tokens/groupCount tally, summary table (HHI vs uniform,
+  Gini, top-half share), and a top-N groups table with absolute
+  tokens, share, event count, and active-hour count per group.
+- 14 new tests (`test/agentmix.test.ts`) covering input
+  validation (topN, by, minTokens, since/until), empty input,
+  single-group degenerate (HHI = 1, Gini = 0), perfect 50/50
+  split (HHI = 0.5, Gini = 0), 80/20 closed-form HHI (0.68) and
+  Gini (0.3), high-concentration scenario, `by=model` grouping,
+  unknown-source bucketing, since/until window, the
+  `minTokens`-doesn't-affect-concentration invariant, sort
+  determinism (group-name tiebreak), `topN` truncation
+  preserving full `groupCount`, and per-group event /
+  active-hour tallies.
+
+Live smoke (this repo's `~/.config/pew/queue.jsonl`, window
+`2026-04-01T00:00:00Z → now`): 897 events totalling **7.50B
+tokens** across **6 sources**. `claude-code` leads at **40.8%
+share** (3.06B), `opencode` 26.6% (1.99B), `openclaw` 20.0%
+(1.50B), `codex` 10.8% (810M), `hermes` 1.8%, `vscode-copilot`
+≈0%. **HHI = 0.289 vs uniform floor 0.167** — moderately
+concentrated workload, well shy of "single-vendor lock-in"
+territory (HHI > 0.5). **Gini = 0.479** confirms the long tail
+is real but not pathological. Top-half share = **87.4%** — the
+three largest sources own essentially all the spend, the bottom
+three are rounding error. This is the kind of single-glance
+shape the existing `sources` pivot makes the operator squint to
+extract.
+
 ## 0.4.11 — 2026-04-24
 
 ### Added (refinement)

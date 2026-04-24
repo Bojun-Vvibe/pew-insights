@@ -16,6 +16,7 @@ import type { GapsReport } from './gaps.js';
 import type { VelocityReport, VelocityStretch } from './velocity.js';
 import type { ConcurrencyReport } from './concurrency.js';
 import type { TransitionsReport } from './transitions.js';
+import type { AgentMixReport } from './agentmix.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1455,6 +1456,54 @@ export function renderTransitions(r: TransitionsReport): string {
         formatNumber(s.outgoing),
         formatNumber(s.selfLoop),
         s.stickiness === null ? '—' : formatPercent(s.stickiness),
+      ]),
+    ),
+  );
+
+  return lines.join('\n');
+}
+
+export function renderAgentMix(r: AgentMixReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights agent-mix'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    events: ${formatNumber(r.consideredEvents)}    tokens: ${formatNumber(r.totalTokens)}    groups: ${r.groupCount}    top: ${r.topN}`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.totalTokens === 0 || r.groupCount === 0) {
+    lines.push(chalk.yellow('  no token activity in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  const uniformHHI = 1 / r.groupCount;
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['HHI (concentration)', `${r.hhi.toFixed(4)} (uniform = ${uniformHHI.toFixed(4)})`],
+        ['Gini coefficient', r.gini.toFixed(4)],
+        ['top-half share', formatPercent(r.topHalfShare)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold(`top groups (${r.topGroups.length} of ${r.groupCount})`));
+  lines.push(
+    renderTable(
+      ['group', 'tokens', 'share', 'events', 'active hours'],
+      r.topGroups.map((g) => [
+        g.group,
+        formatNumber(g.tokens),
+        formatPercent(g.share),
+        formatNumber(g.events),
+        formatNumber(g.activeHours),
       ]),
     ),
   );
