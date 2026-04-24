@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.31 — 2026-04-25
+
+### Added
+
+- `time-of-day` subcommand. Distribution of session **start
+  times** across the 24 hours of the day, with optional fixed
+  timezone offset (`--tz-offset`, e.g. `-07:00`, `+08:00`,
+  `+05:30`, `Z`). Always emits a dense 24-row table (zero-fills
+  empty hours) so the bar chart shape is stable across runs.
+  Reports `peakHour` / `peakSessions` in the header for
+  one-glance reading.
+
+  Fills a real gap: `heatmap` already crosses weekday × hour
+  but is *message-weighted* and rendered as a 2-D grid (great
+  for visual gestalt, hard to drive numerical decisions off);
+  `turn-cadence` and `idle-gaps` are about within- and
+  between-session timing, not the absolute hour-of-day a
+  session is launched. `time-of-day` is the operator's
+  scheduling lens: when am I starting work?
+
+  Sub-hour offsets (`+05:30` IST, `+09:30` ACST,
+  `+05:45` NPT) are supported because the offset is added to
+  the parsed UTC instant *before* hour extraction.
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js time-of-day --since 2026-04-13T00:00:00Z --tz-offset -07:00
+pew-insights time-of-day
+as of: 2026-04-24T18:38:42.638Z    sessions: 6,002    tz: -07:00    peak: 02:00 (556 sess)    by-source: off    dropped: 0 bad started_at
+window: 2026-04-13T00:00:00Z → +∞
+
+hour-of-day distribution
+hour   sessions  share  bar
+-----  --------  -----  ------------------------
+00:00  131       2.2%   ██████··················
+01:00  175       2.9%   ████████················
+02:00  556       9.3%   ████████████████████████
+03:00  519       8.6%   ██████████████████████··
+04:00  273       4.5%   ████████████············
+05:00  178       3.0%   ████████················
+06:00  405       6.7%   █████████████████·······
+07:00  243       4.0%   ██████████··············
+08:00  381       6.3%   ████████████████········
+09:00  422       7.0%   ██████████████████······
+10:00  396       6.6%   █████████████████·······
+11:00  388       6.5%   █████████████████·······
+12:00  181       3.0%   ████████················
+13:00  124       2.1%   █████···················
+14:00  88        1.5%   ████····················
+15:00  101       1.7%   ████····················
+16:00  108       1.8%   █████···················
+17:00  154       2.6%   ███████·················
+18:00  238       4.0%   ██████████··············
+19:00  169       2.8%   ███████·················
+20:00  354       5.9%   ███████████████·········
+21:00  164       2.7%   ███████·················
+22:00  117       1.9%   █████···················
+23:00  137       2.3%   ██████··················
+```
+
+Read (operator's local time, `-07:00`): the day has a sharp
+late-night spike at 02:00–03:00 (556 + 519 = 1,075 sessions,
+17.9% of the window's 6,002 sessions in just two hours), then
+a softer plateau across the late morning (08:00–11:00,
+roughly 6–7% per hour). The 02:00 peak is single-handedly
+larger than all of 12:00–17:00 combined (756 sessions). This
+matches the operator's known overnight-automation pattern:
+session bursts kicked off by long-running pipelines and
+auto-dispatchers, not interactive work.
+
 ## 0.4.30 — 2026-04-25
 
 ### Added

@@ -2104,3 +2104,69 @@ function renderTableLocal(headers: string[], rows: string[][]): string {
   const sep = widths.map((w) => '-'.repeat(w)).join('  ');
   return [fmt(headers), sep, ...rows.map(fmt)].join('\n');
 }
+
+import type { TimeOfDayReport } from './timeofday.js';
+
+export function renderTimeOfDay(r: TimeOfDayReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights time-of-day'));
+  const peakLabel =
+    r.peakHour < 0
+      ? '—'
+      : `${String(r.peakHour).padStart(2, '0')}:00 (${formatNumber(r.peakSessions)} sess)`;
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    tz: ${r.tzOffset}    peak: ${peakLabel}    by-source: ${r.bySource ? 'on' : 'off'}    dropped: ${formatNumber(r.droppedInvalidStartedAt)} bad started_at`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  const maxSessions = r.peakSessions;
+  const barWidth = 24;
+
+  lines.push(chalk.bold('hour-of-day distribution'));
+  const rows: string[][] = r.hours.map((h) => {
+    const fill = maxSessions === 0 ? 0 : Math.round((h.sessions / maxSessions) * barWidth);
+    const bar = '█'.repeat(fill) + '·'.repeat(barWidth - fill);
+    return [
+      `${String(h.hour).padStart(2, '0')}:00`,
+      formatNumber(h.sessions),
+      formatPercentLocal(h.share),
+      bar,
+    ];
+  });
+  lines.push(renderTableLocal(['hour', 'sessions', 'share', 'bar'], rows));
+
+  if (r.bySource) {
+    lines.push('');
+    lines.push(chalk.bold('per-source breakdown (only hours with sessions)'));
+    const srcRows: string[][] = [];
+    for (const h of r.hours) {
+      const entries = Object.entries(h.bySource);
+      if (entries.length === 0) continue;
+      for (let i = 0; i < entries.length; i++) {
+        const [src, n] = entries[i]!;
+        srcRows.push([
+          i === 0 ? `${String(h.hour).padStart(2, '0')}:00` : '',
+          src,
+          formatNumber(n),
+        ]);
+      }
+    }
+    if (srcRows.length === 0) {
+      lines.push(chalk.dim('  (no source data)'));
+    } else {
+      lines.push(renderTableLocal(['hour', 'source', 'sessions'], srcRows));
+    }
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

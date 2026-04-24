@@ -50,6 +50,7 @@ import {
   renderIdleGaps,
   renderSourceMix,
   renderProviderShare,
+  renderTimeOfDay,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -123,6 +124,7 @@ import {
   type SourceMixBucketUnit,
 } from './sourcemix.js';
 import { buildProviderShare } from './providershare.js';
+import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -2213,6 +2215,46 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderProviderShare(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('time-of-day')
+  .description('Distribution of session start times across the 24 hours of the day')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option(
+    '--tz-offset <offset>',
+    'timezone offset for hour bucketing (e.g. -07:00, +08:00, Z). default Z (UTC)',
+    'Z',
+  )
+  .option('--by-source', 'also break down each hour by session source (producer CLI)')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; tzOffset: string; bySource?: boolean; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildTimeOfDay(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          tzOffset: opts.tzOffset,
+          bySource: opts.bySource === true,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderTimeOfDay(report) + '\n');
         }
       } catch (e) {
         die(e);
