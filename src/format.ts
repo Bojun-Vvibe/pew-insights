@@ -1967,6 +1967,24 @@ export function renderIdleGaps(r: IdleGapsReport): string {
     lines.push('');
   }
 
+  if (r.topSessions.length > 0) {
+    lines.push(chalk.bold(`top sessions by max intra-session gap:`));
+    lines.push(
+      renderTableLocal(
+        ['session_key', 'source', 'kind', 'gaps', 'max (s)', 'total (s)'],
+        r.topSessions.map((t) => [
+          t.session_key,
+          t.source,
+          t.kind,
+          formatNumber(t.gapCount),
+          t.maxGapSeconds.toFixed(2),
+          t.totalGapSeconds.toFixed(2),
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }
 

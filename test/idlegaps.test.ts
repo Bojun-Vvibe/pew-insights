@@ -57,6 +57,58 @@ test('idle-gaps: empty input → empty report', () => {
   assert.equal(r.distributions.length, 1);
   assert.equal(r.distributions[0]!.modalBinIndex, -1);
   assert.equal(r.distributions[0]!.bins.length, DEFAULT_IDLE_GAP_EDGES_SECONDS.length + 1);
+  assert.equal(r.topSessions.length, 0);
+});
+
+test('idle-gaps: rejects bad topSessions', () => {
+  assert.throws(() => buildIdleGaps([], { topSessions: -1 }));
+  assert.throws(() => buildIdleGaps([], { topSessions: 1.5 }));
+  assert.throws(() => buildIdleGaps([], { topSessions: Number.NaN }));
+});
+
+test('idle-gaps: topSessions=0 (default) yields empty topSessions', () => {
+  const lines: SessionLine[] = [
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:00:00Z'),
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:01:00Z'),
+  ];
+  const r = buildIdleGaps(lines, { generatedAt: GEN });
+  assert.equal(r.topSessions.length, 0);
+});
+
+test('idle-gaps: topSessions ranks by maxGapSeconds desc with stable tiebreak', () => {
+  const lines: SessionLine[] = [
+    // k1: gaps 60, 120 → max=120
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:00:00Z'),
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:01:00Z'),
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:03:00Z'),
+    // k2: gaps 600 → max=600
+    sl('k2', '2026-04-25T10:00:00Z', '2026-04-25T10:00:00Z', { source: 'src2' }),
+    sl('k2', '2026-04-25T10:00:00Z', '2026-04-25T10:10:00Z', { source: 'src2' }),
+    // k3: gaps 600 → max=600 (tie with k2; tie broken by session_key asc)
+    sl('k3', '2026-04-25T10:00:00Z', '2026-04-25T10:00:00Z'),
+    sl('k3', '2026-04-25T10:00:00Z', '2026-04-25T10:10:00Z'),
+  ];
+  const r = buildIdleGaps(lines, { generatedAt: GEN, topSessions: 2 });
+  assert.equal(r.topSessions.length, 2);
+  assert.equal(r.topSessions[0]!.session_key, 'k2');
+  assert.equal(r.topSessions[0]!.maxGapSeconds, 600);
+  assert.equal(r.topSessions[0]!.source, 'src2');
+  assert.equal(r.topSessions[1]!.session_key, 'k3');
+  assert.equal(r.topSessions[1]!.maxGapSeconds, 600);
+});
+
+test('idle-gaps: topSessions reports gapCount and totalGapSeconds correctly', () => {
+  const lines: SessionLine[] = [
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:00:00Z'),
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:01:00Z'), // 60
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:03:00Z'), // 120
+    sl('k1', '2026-04-25T10:00:00Z', '2026-04-25T10:08:00Z'), // 300
+  ];
+  const r = buildIdleGaps(lines, { generatedAt: GEN, topSessions: 5 });
+  assert.equal(r.topSessions.length, 1);
+  assert.equal(r.topSessions[0]!.gapCount, 3);
+  assert.equal(r.topSessions[0]!.maxGapSeconds, 300);
+  assert.equal(r.topSessions[0]!.totalGapSeconds, 480);
 });
 
 test('idle-gaps: single-snapshot session is counted but contributes no gaps', () => {

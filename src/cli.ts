@@ -2027,6 +2027,11 @@ program
     '--edges <list>',
     `comma-separated bin upper-edges in seconds, strictly ascending (default ${DEFAULT_IDLE_GAP_EDGES_SECONDS.join(',')})`,
   )
+  .option(
+    '--top-sessions <n>',
+    'also emit the top-N session_keys ranked by max intra-session gap (default 0 = skip)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2036,6 +2041,7 @@ program
         by: string;
         minGapSeconds: string;
         edges?: string;
+        topSessions: string;
         json?: boolean;
       },
       cmd,
@@ -2050,6 +2056,12 @@ program
         if (!Number.isFinite(minGapSeconds) || minGapSeconds < 0) {
           throw new Error(
             `--min-gap-seconds must be a non-negative finite number (got ${opts.minGapSeconds})`,
+          );
+        }
+        const topSessions = Number.parseInt(opts.topSessions, 10);
+        if (!Number.isFinite(topSessions) || topSessions < 0) {
+          throw new Error(
+            `--top-sessions must be a non-negative integer (got ${opts.topSessions})`,
           );
         }
         let edges: number[] | undefined;
@@ -2070,6 +2082,7 @@ program
           by: opts.by as IdleGapsDimension,
           minGapSeconds,
           edges,
+          topSessions,
         });
 
         if (opts.json || common.json) {

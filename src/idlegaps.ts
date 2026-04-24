@@ -94,8 +94,27 @@ export interface IdleGapsOptions {
   minGapSeconds?: number;
   /** Optional split dimension. Default 'all'. */
   by?: IdleGapsDimension;
+  /**
+   * If > 0, populate `topSessions` with the top-N session_keys
+   * ranked by `maxGapSeconds` desc. Useful for "which sessions
+   * have the longest single intra-session pause" — typically
+   * "I left this one open overnight" cases. Default 0 (skip).
+   */
+  topSessions?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
+}
+
+export interface IdleGapsTopSession {
+  session_key: string;
+  source: string;
+  kind: string;
+  /** Number of intra-session gap pairs for this session_key. */
+  gapCount: number;
+  /** Maximum intra-session gap in seconds. */
+  maxGapSeconds: number;
+  /** Sum of intra-session gaps in seconds. */
+  totalGapSeconds: number;
 }
 
 export interface IdleGapsBin {
@@ -167,6 +186,12 @@ export interface IdleGapsReport {
   consideredSessions: number;
   /** Total intra-session gap pairs included across all groups. */
   totalGaps: number;
+  /**
+   * Top-N session_keys by max intra-session gap (desc, with
+   * session_key asc as deterministic tiebreaker). Empty unless
+   * `opts.topSessions > 0`.
+   */
+  topSessions: IdleGapsTopSession[];
   /**
    * One distribution row per group. When `by == 'all'`, length 1
    * with group `'all'`. Otherwise sorted by `totalGaps` desc,
@@ -351,6 +376,13 @@ export function buildIdleGaps(
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const labels = makeBinLabels(edges);
 
+  const topSessionsN = opts.topSessions ?? 0;
+  if (!Number.isFinite(topSessionsN) || topSessionsN < 0 || !Number.isInteger(topSessionsN)) {
+    throw new Error(
+      `topSessions must be a non-negative integer (got ${opts.topSessions})`,
+    );
+  }
+
   // Accumulate snapshots per session_key.
   const perKey = new Map<string, PerKey>();
   let droppedInvalidSnapshots = 0;
@@ -384,6 +416,8 @@ export function buildIdleGaps(
   // Map<group, { sessions: Set<key>, gaps: number[] }>
   const buckets = new Map<string, { sessions: Set<string>; gaps: number[] }>();
   let consideredSessions = 0;
+  // For top-sessions: collected per session_key.
+  const perSessionStats: IdleGapsTopSession[] = [];
 
   for (const [key, pk] of perKey) {
     if (pk.snapshots.length < 2) {
@@ -420,10 +454,39 @@ export function buildIdleGaps(
     }
     bucket.sessions.add(key);
     for (const v of localGaps) bucket.gaps.push(v);
+
+    if (topSessionsN > 0) {
+      let maxG = 0;
+      let sumG = 0;
+      for (const v of localGaps) {
+        if (v > maxG) maxG = v;
+        sumG += v;
+      }
+      perSessionStats.push({
+        session_key: key,
+        source: pk.source,
+        kind: pk.kind,
+        gapCount: localGaps.length,
+        maxGapSeconds: maxG,
+        totalGapSeconds: sumG,
+      });
+    }
   }
 
   let totalGaps = 0;
   for (const b of buckets.values()) totalGaps += b.gaps.length;
+
+  // Resolve top-N sessions by maxGapSeconds desc, session_key asc.
+  let topSessions: IdleGapsTopSession[] = [];
+  if (topSessionsN > 0 && perSessionStats.length > 0) {
+    perSessionStats.sort((a, b) => {
+      if (b.maxGapSeconds !== a.maxGapSeconds) return b.maxGapSeconds - a.maxGapSeconds;
+      if (a.session_key < b.session_key) return -1;
+      if (a.session_key > b.session_key) return 1;
+      return 0;
+    });
+    topSessions = perSessionStats.slice(0, topSessionsN);
+  }
 
   const distributions: IdleGapsDistribution[] = [];
   if (by === 'all') {
@@ -451,6 +514,7 @@ export function buildIdleGaps(
     droppedBelowFloor,
     consideredSessions,
     totalGaps,
+    topSessions,
     distributions,
   };
 }
