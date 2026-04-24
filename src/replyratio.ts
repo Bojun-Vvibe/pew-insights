@@ -100,6 +100,16 @@ export interface ReplyRatioOptions {
   by?: ReplyRatioDimension;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
+  /**
+   * Optional analytic threshold on the ratio scale. When set, every
+   * distribution gets an extra `aboveThresholdShare` field = the
+   * fraction of sessions with `ratio > threshold`. Useful for
+   * answering "what share of my sessions are monologues" (e.g.
+   * `threshold=10`) in a single field, without re-summing bin
+   * shares (which is fragile when the operator overrides
+   * `--edges`). Must be > 0 when supplied.
+   */
+  threshold?: number;
 }
 
 export interface ReplyRatioBin {
@@ -140,6 +150,12 @@ export interface ReplyRatioDistribution {
   bins: ReplyRatioBin[];
   /** Index into `bins[]` of the modal bin. -1 when empty. */
   modalBinIndex: number;
+  /**
+   * Fraction of sessions with `ratio > threshold`. Only populated
+   * when `opts.threshold` is supplied; otherwise `null`. 0 when
+   * empty.
+   */
+  aboveThresholdShare: number | null;
 }
 
 export interface ReplyRatioReport {
@@ -150,6 +166,8 @@ export interface ReplyRatioReport {
   /** Resolved upper-edges actually used. */
   edges: number[];
   minTotalMessages: number;
+  /** Threshold echoed from opts; null when not supplied. */
+  threshold: number | null;
   /** Sessions matched by window+min-messages but with user_messages == 0. */
   droppedZeroUserMessages: number;
   /** Sessions matched by window but dropped by the min-messages floor. */
@@ -212,6 +230,7 @@ function buildDistribution(
   ratios: number[],
   edges: number[],
   labels: string[],
+  threshold: number | null,
 ): ReplyRatioDistribution {
   const totalSessions = ratios.length;
   if (totalSessions === 0) {
@@ -236,6 +255,7 @@ function buildDistribution(
       maxRatio: 0,
       bins,
       modalBinIndex: -1,
+      aboveThresholdShare: threshold === null ? null : 0,
     };
   }
 
@@ -292,6 +312,10 @@ function buildDistribution(
     maxRatio: sortedAsc[sortedAsc.length - 1]!,
     bins,
     modalBinIndex,
+    aboveThresholdShare:
+      threshold === null
+        ? null
+        : ratios.reduce((acc, r) => acc + (r > threshold ? 1 : 0), 0) / totalSessions,
   };
 }
 
@@ -335,6 +359,11 @@ export function buildReplyRatio(
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const labels = makeBinLabels(edges);
 
+  const threshold = opts.threshold ?? null;
+  if (threshold !== null && (!Number.isFinite(threshold) || threshold <= 0)) {
+    throw new Error(`threshold must be a positive finite number when supplied (got ${opts.threshold})`);
+  }
+
   const buckets = new Map<string, number[]>();
   let consideredSessions = 0;
   let droppedZeroUserMessages = 0;
@@ -375,11 +404,11 @@ export function buildReplyRatio(
   const distributions: ReplyRatioDistribution[] = [];
   if (by === 'all') {
     distributions.push(
-      buildDistribution('all', buckets.get('all') ?? [], edges, labels),
+      buildDistribution('all', buckets.get('all') ?? [], edges, labels, threshold),
     );
   } else {
     for (const [g, arr] of buckets) {
-      distributions.push(buildDistribution(g, arr, edges, labels));
+      distributions.push(buildDistribution(g, arr, edges, labels, threshold));
     }
     distributions.sort((a, b) => {
       if (b.totalSessions !== a.totalSessions) return b.totalSessions - a.totalSessions;
@@ -394,6 +423,7 @@ export function buildReplyRatio(
     by,
     edges: [...edges],
     minTotalMessages,
+    threshold,
     droppedZeroUserMessages,
     droppedMinMessages,
     consideredSessions,

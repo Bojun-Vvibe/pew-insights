@@ -1647,6 +1647,9 @@ export function renderReplyRatio(r: ReplyRatioReport): string {
           ['p99', fmtRatio(Number(d.p99Ratio.toFixed(2)))],
           ['max', fmtRatio(Number(d.maxRatio.toFixed(2)))],
           ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
+          ...(d.aboveThresholdShare !== null && r.threshold !== null
+            ? [[`> ${fmtRatio(r.threshold)} share`, formatPercent(d.aboveThresholdShare)] as [string, string]]
+            : []),
         ],
       ),
     );

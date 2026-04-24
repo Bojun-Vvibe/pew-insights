@@ -209,3 +209,38 @@ test('reply-ratio: modalBinIndex picks largest count, ties → tighter upper bou
   assert.equal(d.bins[1]!.count, 2);
   assert.equal(d.modalBinIndex, 0);
 });
+
+test('reply-ratio: aboveThresholdShare null when threshold not supplied', () => {
+  const r = buildReplyRatio(
+    [sl('2026-04-20T10:00:00Z', 1, 1), sl('2026-04-20T11:00:00Z', 1, 5)],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.threshold, null);
+  assert.equal(r.distributions[0]!.aboveThresholdShare, null);
+});
+
+test('reply-ratio: aboveThresholdShare counts strictly greater (not >=)', () => {
+  // ratios: 1, 5, 10, 20. threshold=5 → only 10 and 20 exceed → 2/4 = 0.5
+  const r = buildReplyRatio(
+    [
+      sl('2026-04-20T10:00:00Z', 1, 1),
+      sl('2026-04-20T11:00:00Z', 1, 5),
+      sl('2026-04-20T12:00:00Z', 1, 10),
+      sl('2026-04-20T13:00:00Z', 1, 20),
+    ],
+    { threshold: 5, generatedAt: GEN },
+  );
+  assert.equal(r.threshold, 5);
+  assert.equal(r.distributions[0]!.aboveThresholdShare, 0.5);
+});
+
+test('reply-ratio: aboveThresholdShare on empty group is 0 (not null) when threshold supplied', () => {
+  const r = buildReplyRatio([], { threshold: 10, generatedAt: GEN });
+  assert.equal(r.distributions[0]!.aboveThresholdShare, 0);
+});
+
+test('reply-ratio: rejects bad threshold', () => {
+  assert.throws(() => buildReplyRatio([], { threshold: 0 }));
+  assert.throws(() => buildReplyRatio([], { threshold: -1 }));
+  assert.throws(() => buildReplyRatio([], { threshold: Number.NaN }));
+});

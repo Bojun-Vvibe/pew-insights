@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.18 — 2026-04-24
+
+### Added (refinement)
+
+- `reply-ratio --threshold <n>` flag (and the matching
+  `threshold` builder option). When set, every distribution row
+  in the report gets an `aboveThresholdShare` field = the
+  fraction of sessions whose ratio is **strictly greater** than
+  `n`. This answers "what share of my sessions are agent
+  monologues?" (e.g. `--threshold 10`) in a single field, without
+  having to re-sum bin shares — which is fragile when the
+  operator overrides `--edges` and the natural threshold no
+  longer aligns with a bin boundary. The pretty renderer adds a
+  `> N share` row to the per-distribution summary table when
+  `--threshold` is set; otherwise the row is omitted entirely
+  (no visual noise in the default flow).
+  - When `threshold` is omitted, `aboveThresholdShare` is `null`
+    on every distribution, so a downstream JSON consumer can
+    distinguish "operator did not ask" from "operator asked and
+    nothing exceeded" (the latter is `0`, not `null`). Empty
+    distributions return `0` rather than `null` when the
+    threshold was supplied — the *question* was asked, the
+    answer is "none".
+  - Validation: `threshold` must be a positive finite number
+    when supplied; `0`, negative, and `NaN` are all rejected
+    with a clear error.
+  - Smoke test against the real pew corpus (4,556 sessions in
+    the window) showed the practical value: opencode runs at a
+    `> 10` share of ~30% (heavy monologue / chain-of-thought
+    workload), claude-code runs at `> 10` share of 0% (purely
+    conversational), and codex sits in the middle. That split
+    was previously only visible by squinting at three separate
+    bin tables; the new field surfaces it directly.
+  - 5 new unit tests cover (1) `aboveThresholdShare` is `null`
+    when threshold is unset, (2) strictly-greater semantics
+    (boundary value is excluded), (3) empty group returns `0`
+    not `null` when threshold is set, (4) validation rejects
+    `0`/`-1`/`NaN`, (5) `threshold` echoed on the report.
+
 ## 0.4.17 — 2026-04-24
 
 ### Added
