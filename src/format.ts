@@ -2166,3 +2166,47 @@ export function renderTimeOfDay(r: TimeOfDayReport): string {
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { CacheHitRatioReport } from './cachehitratio.js';
+
+export function renderCacheHitRatio(r: CacheHitRatioReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights cache-hit-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    input: ${formatNumber(r.totalInputTokens)} tok    cached: ${formatNumber(r.totalCachedInputTokens)} tok    overall: ${formatPercentLocal(r.overallHitRatio)}    min-rows: ${r.minRows}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroInput)} zero-input, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedModelRows)} below min-rows`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredRows === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows with input_tokens > 0 in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  const barWidth = 20;
+  lines.push(chalk.bold('per-model token-weighted cache-hit ratio (sorted by input volume desc)'));
+  const rows: string[][] = r.models.map((m) => {
+    const fill = Math.round(Math.min(1, Math.max(0, m.hitRatio)) * barWidth);
+    const bar = '█'.repeat(fill) + '·'.repeat(barWidth - fill);
+    return [
+      m.model,
+      formatNumber(m.rows),
+      formatNumber(m.inputTokens),
+      formatNumber(m.cachedInputTokens),
+      formatPercentLocal(m.hitRatio),
+      bar,
+    ];
+  });
+  lines.push(renderTableLocal(['model', 'rows', 'input', 'cached', 'hit-ratio', 'bar'], rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

@@ -51,6 +51,7 @@ import {
   renderSourceMix,
   renderProviderShare,
   renderTimeOfDay,
+  renderCacheHitRatio,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -124,6 +125,7 @@ import {
   type SourceMixBucketUnit,
 } from './sourcemix.js';
 import { buildProviderShare } from './providershare.js';
+import { buildCacheHitRatio } from './cachehitratio.js';
 import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
@@ -2274,6 +2276,46 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderTimeOfDay(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('cache-hit-ratio')
+  .description('Per-model prompt-cache hit ratio (cached_input_tokens / input_tokens) across queue.jsonl')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-rows <n>',
+    'hide models with fewer than n rows; their counts surface as droppedModelRows but not in the table (default 0)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; minRows: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 0) {
+          throw new Error(`--min-rows must be a non-negative integer (got ${opts.minRows})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildCacheHitRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minRows,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderCacheHitRatio(report) + '\n');
         }
       } catch (e) {
         die(e);

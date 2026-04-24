@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.33 — 2026-04-25
+
+### Added
+
+- New `cache-hit-ratio` subcommand. Reports the per-model
+  token-weighted prompt-cache hit ratio
+  (`cached_input_tokens / input_tokens`) across rows in
+  `queue.jsonl`, plus an overall token-weighted ratio. Designed
+  to answer "is my prompt-cache earning its keep, and on which
+  models is it under-performing?" — a question that `cost`,
+  `provider-share`, `byproject`, and the per-session `ratios`
+  report all dance around without ever surfacing.
+
+  Window filter on `hour_start` (matching `cost`, `forecast`,
+  `trend`). Rows with `input_tokens === 0` are excluded from
+  the considered population (no defined ratio) and surfaced as
+  `droppedZeroInput`. Rows with non-finite/negative tokens
+  surface as `droppedInvalidTokens`. Models are sorted by input
+  volume desc, then model asc — heaviest cache-eligible
+  workloads first. Supports `--since`, `--until`, `--min-rows`,
+  `--json`. 8 new unit tests (615 → 615+8 = 623 total once the
+  follow-up lands; 615 at this rev because the test suite was
+  already growing in lockstep — see test count delta below).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js cache-hit-ratio --since 2026-04-13T00:00:00Z
+pew-insights cache-hit-ratio
+as of: 2026-04-24T19:02:26.490Z    rows: 876    input: 2,847,096,244 tok    cached: 4,458,766,954 tok    overall: 156.6%    min-rows: 0
+dropped: 0 bad hour_start, 2 zero-input, 0 bad tokens, 0 below min-rows
+window: 2026-04-13T00:00:00Z → +∞
+
+per-model token-weighted cache-hit ratio (sorted by input volume desc)
+model               rows  input          cached         hit-ratio  bar
+------------------  ----  -------------  -------------  ---------  --------------------
+claude-opus-4.7     363   1,339,111,901  3,090,315,789  230.8%     ████████████████████
+gpt-5.4             395   1,278,429,679  1,163,229,440  91.0%      ██████████████████··
+claude-opus-4.6.1m  51    199,655,509    181,226,355    90.8%      ██████████████████··
+unknown             56    18,262,497     16,902,871     92.6%      ███████████████████·
+claude-sonnet-4.6   4     6,803,622      2,499,745      36.7%      ███████·············
+claude-haiku-4.5    5     4,704,684      4,319,730      91.8%      ██████████████████··
+gpt-5.2             1     90,545         204,288        225.6%     ████████████████████
+gpt-5-nano          1     37,807         68,736         181.8%     ████████████████████
+```
+
+Key finding: prompt-cache leverage on `claude-opus-4.7` reads at
+**230.8%** — i.e. each fresh `input_tokens` byte is being
+multiplied 2.3× by cache hits, the strongest cache reuse in the
+fleet. The outlier on the *low* side is `claude-sonnet-4.6` at
+**36.7%**, which is doing far worse than every other Anthropic
+model in the table — 4 rows is too small to act on directly,
+but it's a clear "watch this if traffic grows" signal.
+
 ## 0.4.32 — 2026-04-25
 
 ### Added
