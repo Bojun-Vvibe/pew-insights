@@ -1751,6 +1751,76 @@ export function renderTurnCadence(r: TurnCadenceReport): string {
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type { MessageVolumeReport } from './messagevolume.js';
+
+function fmtMessages(n: number): string {
+  if (n === 0) return '0';
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(1);
+}
+
+export function renderMessageVolume(r: MessageVolumeReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights message-volume'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges: [${r.edges.join(', ')}]    min-total-messages: ${r.minTotalMessages}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedMinMessages)} below min-total, ${formatNumber(r.droppedInvalid)} invalid`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.distributions.length === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  for (const d of r.distributions) {
+    if (r.by !== 'all') {
+      lines.push(chalk.bold(`group: ${d.group}`));
+    }
+    lines.push(
+      renderTableLocal(
+        ['summary', 'value'],
+        [
+          ['sessions', formatNumber(d.totalSessions)],
+          ['mean', fmtMessages(Number(d.meanMessages.toFixed(2)))],
+          ['p50', fmtMessages(d.p50Messages)],
+          ['p90', fmtMessages(d.p90Messages)],
+          ['p95', fmtMessages(d.p95Messages)],
+          ['p99', fmtMessages(d.p99Messages)],
+          ['max', fmtMessages(d.maxMessages)],
+          ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
+        ],
+      ),
+    );
+    lines.push('');
+    lines.push(
+      renderTableLocal(
+        ['bin', 'count', 'share', 'cum.', 'median', 'mean'],
+        d.bins.map((b) => [
+          b.label,
+          formatNumber(b.count),
+          formatPercentLocal(b.share),
+          formatPercentLocal(b.cumulativeShare),
+          b.count > 0 ? fmtMessages(b.medianMessages) : '—',
+          b.count > 0 ? fmtMessages(Number(b.meanMessages.toFixed(2))) : '—',
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 function renderTableLocal(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)),
