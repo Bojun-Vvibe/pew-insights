@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.29 — 2026-04-25
+
+### Added
+
+- `provider-share` subcommand. Classifies each session's
+  `model` (after `normaliseModel`) into a vendor key
+  (`anthropic`, `openai`, `google`, `meta`, `mistral`, `xai`,
+  `deepseek`, `qwen`, `cohere`, `unknown`) and reports both
+  the **session-count share** and the **message-weighted
+  share** per provider, plus the top distinct models actually
+  observed inside each provider so the operator can audit the
+  classification on their own data. Fills a gap left by
+  `agent-mix` (kind, not vendor), `model-switching`
+  (within-session model variety, never aggregated), and
+  `session-source-mix` (the local producer CLI, orthogonal to
+  which inference vendor served the tokens).
+
+  Window semantics match the rest of the session-driven
+  reports (filter on `started_at`, `--since` inclusive,
+  `--until` exclusive). Pure builder, fully deterministic
+  ordering (sessions desc, then provider asc; ties on per-model
+  counts broken by model id asc).
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js provider-share --since 2026-04-13T00:00:00Z
+pew-insights provider-share
+as of: 2026-04-24T18:15:56.725Z    sessions: 5,994    messages: 189,113    providers: 3    top-models: 3    dropped: 0 bad started_at, 0 bad messages
+window: 2026-04-13T00:00:00Z → +∞
+
+provider mix
+provider   sessions  sess.share  messages  msg.share  models
+---------  --------  ----------  --------  ---------  ------
+anthropic  3,154     52.6%       97,985    51.8%      4
+unknown    1,889     31.5%       10,154    5.4%       2
+openai     951       15.9%       80,974    42.8%      5
+
+top 3 models per provider
+provider   model               sessions
+---------  ------------------  --------
+anthropic  claude-opus-4.7     2,845
+           claude-sonnet-4.6   279
+           claude-opus-4.6.1m  26
+unknown    unknown             1,255
+           acp-runtime         634
+openai     gpt-5.4             935
+           gpt-5.2             11
+           gpt-5-nano          3
+```
+
+Read: anthropic owns 52.6% of sessions and 51.8% of messages —
+roughly proportional. `openai` is far more *intensive* per
+session — 15.9% of sessions but **42.8%** of all messages, i.e.
+~3.6× more messages per session than anthropic. The `unknown`
+bucket (placeholder model ids: `<synthetic>`, `acp-runtime`,
+the literal `'unknown'` sentinel) is 31.5% of sessions but only
+5.4% of messages, so it is not distorting the real-vendor mix.
+The model breakdown confirms anthropic traffic is dominated by
+`claude-opus-4.7` (2,845 / 3,154 sessions) and openai by
+`gpt-5.4` (935 / 951).
+
 ## 0.4.28 — 2026-04-25
 
 ### Added
