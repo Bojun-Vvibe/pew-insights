@@ -2238,6 +2238,71 @@ export function renderCacheHitRatio(r: CacheHitRatioReport): string {
 }
 
 import type { ReasoningShareReport } from './reasoningshare.js';
+import type { PromptSizeReport } from './promptsize.js';
+
+function formatBucketLabel(from: number, to: number | null): string {
+  const fmt = (n: number): string => {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + 'k';
+    return String(n);
+  };
+  if (to === null) return `${fmt(from)}+`;
+  return `${fmt(from)}–${fmt(to)}`;
+}
+
+export function renderPromptSize(r: PromptSizeReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights prompt-size'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    input: ${formatNumber(r.totalInputTokens)} tok    mean: ${formatNumber(Math.round(r.overallMeanInputTokens))}    max: ${formatNumber(r.overallMaxInputTokens)}    min-rows: ${r.minRows}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroInput)} zero-input, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedModelRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredRows === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows with input_tokens > 0 in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  // Overall histogram first — answers "what fraction of all my prompts
+  // are above 200k?" in one glance.
+  lines.push(chalk.bold('overall input_tokens distribution'));
+  const overallRows: string[][] = r.overallBuckets.map((b) => [
+    formatBucketLabel(b.from, b.to),
+    formatNumber(b.rows),
+    formatPercentLocal(b.share),
+  ]);
+  lines.push(renderTableLocal(['bucket', 'rows', 'share'], overallRows));
+  lines.push('');
+
+  // Per-model: rows, mean, p95, max, plus inline mini-bar for the
+  // bucket distribution. Sorted by row count desc upstream.
+  lines.push(chalk.bold('per-model prompt-size summary (sorted by row count desc)'));
+  const bucketHeaders = r.edges.map((from, i) =>
+    formatBucketLabel(from, i + 1 < r.edges.length ? r.edges[i + 1]! : null),
+  );
+  const headers = ['model', 'rows', 'mean', 'p95', 'max', ...bucketHeaders];
+  const rows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.rows),
+    formatNumber(Math.round(m.meanInputTokens)),
+    formatNumber(m.p95InputTokens),
+    formatNumber(m.maxInputTokens),
+    ...m.buckets.map((b) => (b.rows === 0 ? '·' : formatNumber(b.rows))),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderReasoningShare(r: ReasoningShareReport): string {
   const lines: string[] = [];

@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.38 — 2026-04-25
+
+### Added
+
+- New `prompt-size` subcommand. Per-model histogram of
+  `input_tokens` per `queue.jsonl` row, bucketised against a
+  fixed default ladder (`0, 4k, 32k, 128k, 200k, 500k, 1M`).
+  Answers "how close are my prompts to the model's context
+  window?" — a question the existing `cost`,
+  `cache-hit-ratio`, `provider-share`, and `reasoning-share`
+  reports all collapse away. Each kept model gets row count,
+  arithmetic mean, nearest-rank p95, observed max, and a
+  per-bucket count vector. Pure builder, deterministic sort
+  (rows desc, then model asc), full window / minRows / top /
+  drop bookkeeping mirroring the rest of the queue-based
+  reports. Custom edges supported via the JS API
+  (`opts.edges`); CLI uses defaults. 15 new unit tests
+  (647 total, up from 632 at 0.4.37).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js prompt-size
+pew-insights prompt-size
+as of: 2026-04-24T20:35:22.783Z    rows: 1,049    input: 3,322,165,100 tok    mean: 3,166,983    max: 55,738,577    min-rows: 0
+dropped: 0 bad hour_start, 327 zero-input, 0 bad tokens, 0 below min-rows, 0 below top cap
+
+overall input_tokens distribution
+bucket     rows  share
+---------  ----  -----
+0–4k       1     0.1%
+4k–32k     58    5.5%
+32k–128k   95    9.1%
+128k–200k  50    4.8%
+200k–500k  167   15.9%
+500k–1M    146   13.9%
+1M+        532   50.7%
+
+per-model prompt-size summary (sorted by row count desc)
+model               rows  mean       p95         max         0–4k  4k–32k  32k–128k  128k–200k  200k–500k  500k–1M  1M+
+------------------  ----  ---------  ----------  ----------  ----  ------  --------  ---------  ---------  -------  ---
+gpt-5.4             398   3,216,086  11,838,574  29,634,948  ·     2       8         6          30         65       287
+claude-opus-4.7     367   3,654,029  24,632,407  55,738,577  1     43      65        24         71         50       113
+claude-opus-4.6.1m  182   3,330,720  14,674,276  28,001,329  ·     11      14        12         17         21       107
+unknown             56    326,116    527,137     1,401,547   ·     2       2         6          42         3        1
+claude-haiku-4.5    31    2,137,574  6,805,993   7,800,557   ·     ·       1         1          4          4        21
+claude-sonnet-4.6   9     1,104,858  2,974,411   2,974,411   ·     ·       ·         ·          3          3        3
+claude-opus-4.6     4     85,940     139,952     139,952     ·     ·       3         1          ·          ·        ·
+gpt-5-nano          1     37,807     37,807      37,807      ·     ·       1         ·          ·          ·        ·
+gpt-5.2             1     90,545     90,545      90,545      ·     ·       1         ·          ·          ·        ·
+```
+
+The picture is striking: 50.7% of all observed rows ship a
+prompt above 1M tokens, and another 13.9% sit between 500k
+and 1M. The per-row mean of 3.17M tokens is far above any
+legacy 200k ceiling — the workload is squarely a
+long-context regime, which is exactly the population
+`cache-hit-ratio` was built to optimise for. The two
+top-volume models (`gpt-5.4`, `claude-opus-4.7`) each
+push prompts past 24M tokens at p95, with `claude-opus-4.7`
+hitting a one-shot 55.7M-token outlier worth flagging
+manually. The 327 `zero-input` rows dropped upstream are
+metering artefacts (warm-up pings / retries with empty
+bodies) that would otherwise drag the mean downward — they
+surface explicitly in the dropped line so the operator can
+audit them.
+
 ## 0.4.37 — 2026-04-25
 
 ### Added
