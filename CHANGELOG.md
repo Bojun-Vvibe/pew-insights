@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.16 — 2026-04-24
+
+### Added (refinement)
+
+- `session-lengths` JSON now emits a `cumulativeShare` field on
+  every bin: the empirical CDF evaluated at the bin's upper edge.
+  Lets a downstream consumer answer "what fraction of my sessions
+  finish within X minutes" in a single field lookup instead of
+  re-summing `share[]`. The open-ended final bin's
+  `cumulativeShare` is forced to `1.0` exactly to absorb
+  floating-point drift from the per-bin division. The pretty
+  renderer now also prints a `cum.` column next to `share` so the
+  CDF is visible without `--json`.
+- `--unit auto|seconds|minutes|hours` flag on `session-lengths`:
+  forces the renderer to express all duration columns in the
+  chosen unit. Default `auto` = the existing mixed `s/m/h`
+  formatter (back-compat). Useful when piping into a downstream
+  table renderer that expects a single unit, or when the
+  operator-selected `--edges` straddle the auto-formatter's
+  natural cutoffs and the resulting mixed column reads as noisy.
+  Four new tests cover (1) cumulativeShare monotonicity +
+  endpoint = 1, (2) empty distribution → all-zero cumulative,
+  (3) `--unit minutes` formats p50, (4) `--unit hours` formats
+  p50.
+
 ## 0.4.15 — 2026-04-24
 
 ### Added
