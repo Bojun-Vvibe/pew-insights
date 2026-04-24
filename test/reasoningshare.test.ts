@@ -170,3 +170,49 @@ test('reasoning-share: top truncates models[] but preserves global denom', () =>
   // global denom unaffected
   assert.equal(r.totalGeneratedTokens, 3200);
 });
+
+test('reasoning-share: top=0 means no cap, droppedTopModels stays 0', () => {
+  const r = buildReasoningShare(
+    [
+      ql('2026-04-20T01:00:00Z', 'gpt-5', { output_tokens: 100, reasoning_output_tokens: 100 }),
+      ql('2026-04-20T02:00:00Z', 'gemini-3-pro-preview', {
+        output_tokens: 50,
+        reasoning_output_tokens: 50,
+      }),
+    ],
+    { top: 0, generatedAt: GEN },
+  );
+  assert.equal(r.models.length, 2);
+  assert.equal(r.droppedTopModels, 0);
+});
+
+test('reasoning-share: top combines with minRows correctly (minRows applied first)', () => {
+  const r = buildReasoningShare(
+    [
+      // gpt-5: 2 rows, generated = 4000
+      ql('2026-04-20T01:00:00Z', 'gpt-5', { output_tokens: 1000, reasoning_output_tokens: 1000 }),
+      ql('2026-04-20T02:00:00Z', 'gpt-5', { output_tokens: 1000, reasoning_output_tokens: 1000 }),
+      // single-row big spender — dropped by minRows even though it has the most volume
+      ql('2026-04-20T03:00:00Z', 'one-shot-big', {
+        output_tokens: 5000,
+        reasoning_output_tokens: 5000,
+      }),
+      // gemini: 2 rows, generated = 1000
+      ql('2026-04-20T04:00:00Z', 'gemini-3-pro-preview', {
+        output_tokens: 250,
+        reasoning_output_tokens: 250,
+      }),
+      ql('2026-04-20T05:00:00Z', 'gemini-3-pro-preview', {
+        output_tokens: 250,
+        reasoning_output_tokens: 250,
+      }),
+    ],
+    { minRows: 2, top: 1, generatedAt: GEN },
+  );
+  // one-shot-big is dropped by minRows BEFORE top is applied
+  assert.equal(r.droppedModelRows, 1);
+  // then top=1 keeps just gpt-5 (heavier of the two survivors), drops gemini
+  assert.equal(r.models.length, 1);
+  assert.equal(r.models[0]!.model, 'gpt-5');
+  assert.equal(r.droppedTopModels, 1);
+});

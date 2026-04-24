@@ -2347,10 +2347,15 @@ program
     'hide models with fewer than n rows; their counts surface as droppedModelRows but not in the table (default 0)',
     '0',
   )
+  .option(
+    '--top <n>',
+    'show only the top n models by generated volume; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minRows: string; json?: boolean },
+      opts: { since?: string; until?: string; minRows: string; top: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2360,11 +2365,16 @@ program
         if (!Number.isInteger(minRows) || minRows < 0) {
           throw new Error(`--min-rows must be a non-negative integer (got ${opts.minRows})`);
         }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
         const queue = await readQueue(paths);
         const report = buildReasoningShare(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minRows,
+          top,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
