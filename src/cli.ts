@@ -36,6 +36,7 @@ import {
   renderStreaks,
   renderSessions,
   renderGaps,
+  renderVelocity,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -71,6 +72,7 @@ import { buildHeatmap, type HeatmapMetric, type HeatmapTz } from './heatmap.js';
 import { buildStreaks } from './streaks.js';
 import { buildSessions, type SessionsDimension } from './sessions.js';
 import { buildGaps } from './gaps.js';
+import { buildVelocity } from './velocity.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1366,6 +1368,52 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderGaps(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('velocity')
+  .description('Tokens-per-minute during active hour-stretches (intensity, not totals)')
+  .option('--lookback <hours>', 'hours of history ending at now (default 168)', '168')
+  .option('--min-tokens <n>', 'minimum total_tokens for an hour to count as ACTIVE (default 1)', '1')
+  .option('--top <n>', 'cap top-stretches table (default 10)', '10')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { lookback: string; minTokens: string; top: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const lookback = Number.parseInt(opts.lookback, 10);
+        if (!Number.isInteger(lookback) || lookback < 1) {
+          throw new Error(`--lookback must be a positive integer (got ${opts.lookback})`);
+        }
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be >= 0 (got ${opts.minTokens})`);
+        }
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+
+        const queue = await readQueue(paths);
+        const report = buildVelocity(queue, {
+          lookbackHours: lookback,
+          minTokensPerHour: minTokens,
+          topN,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderVelocity(report) + '\n');
         }
       } catch (e) {
         die(e);

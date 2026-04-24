@@ -13,6 +13,7 @@ import { HEATMAP_DOW_LABELS, type HeatmapReport } from './heatmap.js';
 import type { StreaksReport } from './streaks.js';
 import type { SessionsReport } from './sessions.js';
 import type { GapsReport } from './gaps.js';
+import type { VelocityReport, VelocityStretch } from './velocity.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1223,6 +1224,91 @@ export function renderGaps(r: GapsReport): string {
         g.before.lastMessageAt.slice(0, 16) + 'Z',
         g.after.startedAt.slice(0, 16) + 'Z',
         `${g.before.source}/${g.before.kind} → ${g.after.source}/${g.after.kind}`,
+      ]),
+    ),
+  );
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// velocity
+// ---------------------------------------------------------------------------
+
+function formatRate(tpm: number): string {
+  // Tokens-per-minute. Compact for large values, decimals for small.
+  if (!Number.isFinite(tpm) || tpm <= 0) return '0/min';
+  if (tpm >= 10000) return `${(tpm / 1000).toFixed(1)}K/min`;
+  if (tpm >= 100) return `${Math.round(tpm)}/min`;
+  if (tpm >= 10) return `${tpm.toFixed(1)}/min`;
+  return `${tpm.toFixed(2)}/min`;
+}
+
+function formatStretchSpan(s: VelocityStretch): string {
+  const start = s.startHour.slice(0, 13) + 'Z';
+  if (s.hours === 1) return start;
+  const end = s.endHour.slice(0, 13) + 'Z';
+  return `${start} → ${end}`;
+}
+
+export function renderVelocity(r: VelocityReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights velocity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    window: ${r.windowStart.slice(0, 13)}Z → ${r.windowEnd.slice(0, 13)}Z    lookback: ${r.lookbackHours}h    minTokens/h: ${r.minTokensPerHour}    top: ${r.topN}`,
+    ),
+  );
+  lines.push('');
+
+  if (r.stretchCount === 0) {
+    lines.push(
+      chalk.yellow(
+        `  no active hours in the last ${r.lookbackHours}h (>= ${r.minTokensPerHour} tokens). nothing to measure.`,
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['active hours', formatNumber(r.totalActiveHours)],
+        ['active stretches', formatNumber(r.stretchCount)],
+        ['active tokens (sum)', formatTokens(r.totalActiveTokens)],
+        ['avg velocity (active)', formatRate(r.averageTokensPerMinute)],
+        [
+          'median stretch velocity',
+          r.medianTokensPerMinute == null ? '—' : formatRate(r.medianTokensPerMinute),
+        ],
+        [
+          'peak stretch',
+          r.peakStretch == null
+            ? '—'
+            : `${formatRate(r.peakStretch.tokensPerMinute)}  (${r.peakStretch.hours}h, ${formatTokens(r.peakStretch.tokens)} tokens, ${formatStretchSpan(r.peakStretch)})`,
+        ],
+        [
+          'longest stretch',
+          r.longestStretch == null
+            ? '—'
+            : `${r.longestStretch.hours}h  (${formatRate(r.longestStretch.tokensPerMinute)}, ${formatTokens(r.longestStretch.tokens)} tokens, ${formatStretchSpan(r.longestStretch)})`,
+        ],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold(`top stretches (tokens/min desc, top ${r.topN})`));
+  lines.push(
+    renderTable(
+      ['span', 'hours', 'tokens', 'in/out', 'rate'],
+      r.topStretches.map((s) => [
+        formatStretchSpan(s),
+        String(s.hours),
+        formatTokens(s.tokens),
+        `${formatTokens(s.inputTokens)} / ${formatTokens(s.outputTokens)}`,
+        formatRate(s.tokensPerMinute),
       ]),
     ),
   );
