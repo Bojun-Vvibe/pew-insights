@@ -1781,6 +1781,11 @@ program
   .option('--by <dim>', "split dimension: all | source | kind (default 'all')", 'all')
   .option('--min-duration-seconds <n>', 'drop sessions with duration_seconds < n (default 1)', '1')
   .option(
+    '--min-user-messages <n>',
+    'drop sessions with user_messages < n (default 1; set 2 to exclude single-prompt sessions where cadence collapses into pure duration)',
+    '1',
+  )
+  .option(
     '--edges <list>',
     `comma-separated bin upper-edges in seconds, strictly ascending (default ${DEFAULT_CADENCE_EDGES_SECONDS.join(',')})`,
   )
@@ -1792,6 +1797,7 @@ program
         until?: string;
         by: string;
         minDurationSeconds: string;
+        minUserMessages: string;
         edges?: string;
         json?: boolean;
       },
@@ -1804,6 +1810,12 @@ program
         if (!Number.isFinite(minDurationSeconds) || minDurationSeconds < 0) {
           throw new Error(
             `--min-duration-seconds must be a non-negative finite number (got ${opts.minDurationSeconds})`,
+          );
+        }
+        const minUserMessages = Number.parseFloat(opts.minUserMessages);
+        if (!Number.isFinite(minUserMessages) || minUserMessages < 1) {
+          throw new Error(
+            `--min-user-messages must be a finite number >= 1 (got ${opts.minUserMessages})`,
           );
         }
         if (opts.by !== 'all' && opts.by !== 'source' && opts.by !== 'kind') {
@@ -1826,6 +1838,7 @@ program
           until: opts.until ?? null,
           by: opts.by as TurnCadenceDimension,
           minDurationSeconds,
+          minUserMessages,
           edges,
         });
 

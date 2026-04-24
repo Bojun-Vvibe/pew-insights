@@ -251,3 +251,49 @@ test('turn-cadence: skips negative duration / negative user_messages', () => {
   const r = buildTurnCadence(sessions, { generatedAt: GEN });
   assert.equal(r.consideredSessions, 1);
 });
+
+test('turn-cadence: rejects bad minUserMessages', () => {
+  assert.throws(() => buildTurnCadence([], { minUserMessages: 0 }));
+  assert.throws(() => buildTurnCadence([], { minUserMessages: -1 }));
+  assert.throws(() => buildTurnCadence([], { minUserMessages: Number.NaN }));
+});
+
+test('turn-cadence: minUserMessages=2 drops single-prompt sessions, counted separately', () => {
+  const sessions = [
+    sl('2026-04-20T10:00:00Z', 1, 100), // single-prompt → dropped
+    sl('2026-04-20T10:01:00Z', 1, 200), // single-prompt → dropped
+    sl('2026-04-20T10:02:00Z', 5, 100), // kept (cadence 20)
+    sl('2026-04-20T10:03:00Z', 0, 50),  // zero-user → dropped via the existing counter
+  ];
+  const r = buildTurnCadence(sessions, { minUserMessages: 2, generatedAt: GEN });
+  assert.equal(r.consideredSessions, 1);
+  assert.equal(r.droppedMinUserMessages, 2);
+  assert.equal(r.droppedZeroUserMessages, 1);
+  assert.equal(r.minUserMessages, 2);
+});
+
+test('turn-cadence: minUserMessages defaults to 1 (no extra drops, single-prompt kept)', () => {
+  const r = buildTurnCadence(
+    [sl('2026-04-20T10:00:00Z', 1, 100)],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.consideredSessions, 1);
+  assert.equal(r.droppedMinUserMessages, 0);
+  assert.equal(r.minUserMessages, 1);
+});
+
+test('turn-cadence: minUserMessages reported on the report header', () => {
+  const r = buildTurnCadence([], { minUserMessages: 3, generatedAt: GEN });
+  assert.equal(r.minUserMessages, 3);
+});
+
+test('turn-cadence: minUserMessages does not double-count zero-user sessions', () => {
+  // user_messages = 0 should hit droppedZeroUserMessages, not droppedMinUserMessages,
+  // even when minUserMessages > 1.
+  const r = buildTurnCadence(
+    [sl('2026-04-20T10:00:00Z', 0, 100)],
+    { minUserMessages: 5, generatedAt: GEN },
+  );
+  assert.equal(r.droppedZeroUserMessages, 1);
+  assert.equal(r.droppedMinUserMessages, 0);
+});

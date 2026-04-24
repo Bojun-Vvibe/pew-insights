@@ -1692,12 +1692,12 @@ export function renderTurnCadence(r: TurnCadenceReport): string {
   lines.push(chalk.bold.cyan('pew-insights turn-cadence'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges(s): [${r.edges.join(', ')}]    min-duration: ${r.minDurationSeconds}s`,
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges(s): [${r.edges.join(', ')}]    min-duration: ${r.minDurationSeconds}s    min-user-msgs: ${r.minUserMessages}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedZeroUserMessages)} zero-user-msg, ${formatNumber(r.droppedMinDuration)} below min-duration`,
+      `dropped: ${formatNumber(r.droppedZeroUserMessages)} zero-user-msg, ${formatNumber(r.droppedMinDuration)} below min-duration, ${formatNumber(r.droppedMinUserMessages)} below min-user-msgs`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

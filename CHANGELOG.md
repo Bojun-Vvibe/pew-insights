@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.20 — 2026-04-24
+
+### Added (refinement)
+
+- `turn-cadence --min-user-messages <n>` flag (and the matching
+  `minUserMessages` builder option). Default `1` preserves the
+  existing behaviour. Setting `2` (or higher) drops single-prompt
+  sessions where the cadence formula collapses into pure session
+  duration (`cadence = duration / 1 = duration`) and stops
+  describing any actual back-and-forth tempo. Excluded sessions
+  are counted into a new `droppedMinUserMessages` field —
+  *distinct* from `droppedZeroUserMessages` so the operator can
+  tell "agent-only rows" apart from "single-prompt rows", which
+  are very different beasts (the first is a missing turn, the
+  second is a one-shot exec where the cadence question has no
+  meaningful answer).
+  - Validation: `minUserMessages` must be a finite number `>= 1`;
+    `0`, negative, and `NaN` are all rejected with a clear
+    error. The `0`-user case is already handled by
+    `droppedZeroUserMessages` and must not be silently merged
+    into the new counter (covered by a regression test).
+  - The pretty renderer adds `min-user-msgs: N` to the header
+    line and a third `... below min-user-msgs` field to the
+    dropped-row summary so the new floor is always visible.
+  - Smoke against the same corpus: at the default
+    `--min-user-messages 1`, the global modal bin is `10s-30s`
+    (31.3% of 4,530 sessions) — but **3,455 of those 4,530 are
+    single-prompt sessions** (76%). With `--min-user-messages 2`
+    excluding them, only 1,078 multi-prompt sessions remain and
+    the modal bin shifts to `≤10s` (39.1%) with p99 collapsing
+    from 14.5min to 50.9min for the tail (more spread, but on a
+    much smaller and more *meaningful* base — these are the
+    actual back-and-forth sessions, not one-shot execs that
+    happened to take 5 minutes for the agent to finish). That
+    re-framing was previously impossible: the default report
+    blends both populations into one distribution.
+  - 5 new unit tests cover (1) validation rejects `0` / `-1` /
+    `NaN`, (2) `minUserMessages=2` drops single-prompt sessions
+    and counts them into the new counter, (3) default `1`
+    preserves the existing behaviour with no extra drops,
+    (4) the value is echoed on the report header, (5) zero-user
+    sessions are *not* double-counted into the new counter when
+    `minUserMessages > 1` (regression).
+
 ## 0.4.19 — 2026-04-24
 
 ### Added

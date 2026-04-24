@@ -97,6 +97,19 @@ export interface TurnCadenceOptions {
    */
   minDurationSeconds?: number;
   /**
+   * Drop sessions whose `user_messages < min`. Default 1 — every
+   * session needs at least one operator turn for the cadence
+   * formula to be defined. Set higher (e.g. 2) to *also* exclude
+   * single-prompt sessions, where `cadence = duration / 1 =
+   * duration` and the metric collapses into pure session length.
+   * Filtering single-prompt sessions surfaces the cadence of
+   * actual *back-and-forth* sessions, separating "one prompt,
+   * long autonomous run" from "many prods, fast tempo". Counted
+   * separately as `droppedMinUserMessages` so the operator can
+   * see how many sessions were excluded.
+   */
+  minUserMessages?: number;
+  /**
    * Optional split dimension. Default 'all' = single global
    * distribution. 'source' / 'kind' emits one distribution per
    * group, sharing the same bin ladder for direct comparison.
@@ -154,10 +167,20 @@ export interface TurnCadenceReport {
   /** Resolved upper-edges actually used, in seconds. */
   edges: number[];
   minDurationSeconds: number;
+  minUserMessages: number;
   /** Sessions matched by window but with user_messages == 0. */
   droppedZeroUserMessages: number;
   /** Sessions matched by window but dropped by the duration floor. */
   droppedMinDuration: number;
+  /**
+   * Sessions matched by window with `user_messages > 0` but
+   * `user_messages < minUserMessages` (and so excluded as
+   * single-prompt / not-enough-back-and-forth). Always `0` when
+   * `minUserMessages <= 1`. Distinct from
+   * `droppedZeroUserMessages` so the operator can tell
+   * "agent-only rows" apart from "single-prompt rows".
+   */
+  droppedMinUserMessages: number;
   /** Sessions actually included in the distributions. */
   consideredSessions: number;
   /**
@@ -315,6 +338,13 @@ export function buildTurnCadence(
     );
   }
 
+  const minUserMessages = opts.minUserMessages ?? 1;
+  if (!Number.isFinite(minUserMessages) || minUserMessages < 1) {
+    throw new Error(
+      `minUserMessages must be a finite number >= 1 (got ${opts.minUserMessages})`,
+    );
+  }
+
   const edges = opts.edges ?? DEFAULT_CADENCE_EDGES_SECONDS;
   if (!Array.isArray(edges) || edges.length === 0) {
     throw new Error('edges must be a non-empty array');
@@ -347,6 +377,7 @@ export function buildTurnCadence(
   let consideredSessions = 0;
   let droppedZeroUserMessages = 0;
   let droppedMinDuration = 0;
+  let droppedMinUserMessages = 0;
 
   for (const s of sessions) {
     const startMs = Date.parse(s.started_at);
@@ -365,6 +396,10 @@ export function buildTurnCadence(
     }
     if (um === 0) {
       droppedZeroUserMessages += 1;
+      continue;
+    }
+    if (um < minUserMessages) {
+      droppedMinUserMessages += 1;
       continue;
     }
 
@@ -401,8 +436,10 @@ export function buildTurnCadence(
     by,
     edges: [...edges],
     minDurationSeconds,
+    minUserMessages,
     droppedZeroUserMessages,
     droppedMinDuration,
+    droppedMinUserMessages,
     consideredSessions,
     distributions,
   };
