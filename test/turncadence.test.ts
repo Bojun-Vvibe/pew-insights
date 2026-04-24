@@ -297,3 +297,58 @@ test('turn-cadence: minUserMessages does not double-count zero-user sessions', (
   assert.equal(r.droppedZeroUserMessages, 1);
   assert.equal(r.droppedMinUserMessages, 0);
 });
+
+test('turn-cadence: stdev and cv are 0 when n < 2 (undefined estimator)', () => {
+  const r = buildTurnCadence([sl('2026-04-20T10:00:00Z', 5, 100)], { generatedAt: GEN });
+  const d = r.distributions[0]!;
+  assert.equal(d.totalSessions, 1);
+  assert.equal(d.stdevSeconds, 0);
+  assert.equal(d.cadenceCV, 0);
+});
+
+test('turn-cadence: stdev computed with Bessel correction (n-1 denominator)', () => {
+  // Two cadences: 10s and 20s → mean 15, sample stdev = sqrt(((10-15)^2 + (20-15)^2)/(2-1)) = sqrt(50)
+  const sessions = [
+    sl('2026-04-20T10:00:00Z', 1, 10),
+    sl('2026-04-20T10:01:00Z', 1, 20),
+  ];
+  const r = buildTurnCadence(sessions, { generatedAt: GEN });
+  const d = r.distributions[0]!;
+  assert.equal(d.meanSeconds, 15);
+  assert.ok(Math.abs(d.stdevSeconds - Math.sqrt(50)) < 1e-9);
+});
+
+test('turn-cadence: cv = stdev / mean and is 0 when mean is 0', () => {
+  // Two zero-cadence sessions (duration 0, but min-duration 0 keeps them) → mean 0 → CV defined as 0
+  const sessions = [
+    sl('2026-04-20T10:00:00Z', 5, 0),
+    sl('2026-04-20T10:01:00Z', 5, 0),
+  ];
+  const r = buildTurnCadence(sessions, { minDurationSeconds: 0, generatedAt: GEN });
+  const d = r.distributions[0]!;
+  assert.equal(d.meanSeconds, 0);
+  assert.equal(d.cadenceCV, 0);
+});
+
+test('turn-cadence: cv is the dimensionless ratio stdev / mean', () => {
+  const sessions = [
+    sl('2026-04-20T10:00:00Z', 1, 10),
+    sl('2026-04-20T10:01:00Z', 1, 20),
+    sl('2026-04-20T10:02:00Z', 1, 30),
+  ];
+  const r = buildTurnCadence(sessions, { generatedAt: GEN });
+  const d = r.distributions[0]!;
+  // mean = 20, sample stdev = sqrt(((10-20)^2 + (20-20)^2 + (30-20)^2)/2) = sqrt(100) = 10
+  // cv = 10 / 20 = 0.5
+  assert.ok(Math.abs(d.meanSeconds - 20) < 1e-9);
+  assert.ok(Math.abs(d.stdevSeconds - 10) < 1e-9);
+  assert.ok(Math.abs(d.cadenceCV - 0.5) < 1e-9);
+});
+
+test('turn-cadence: empty distribution has stdev=0 and cv=0', () => {
+  const r = buildTurnCadence([], { generatedAt: GEN });
+  const d = r.distributions[0]!;
+  assert.equal(d.totalSessions, 0);
+  assert.equal(d.stdevSeconds, 0);
+  assert.equal(d.cadenceCV, 0);
+});

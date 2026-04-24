@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.21 — 2026-04-24
+
+### Added (refinement)
+
+- `turn-cadence` distributions now include `stdevSeconds` (sample
+  standard deviation, Bessel-corrected with the `n-1`
+  denominator) and `cadenceCV` (coefficient of variation =
+  `stdev / mean`). The CV is dimensionless, so cadence variability
+  can be compared across groups with very different means —
+  claude-code's stdev around a 20s mean is not directly
+  comparable to opencode's stdev around a 100s mean, but the CV
+  puts them on one scale. The pretty renderer adds `stdev` and
+  `cv` rows to each per-distribution summary table.
+  - For `n < 2` the unbiased sample stdev is undefined; both
+    `stdevSeconds` and `cadenceCV` are reported as `0` (with the
+    pretty renderer printing `cv` as `—`) so JSON consumers
+    don't have to special-case `NaN` / `Infinity`. The `cv` is
+    also `0` when `meanSeconds == 0`, again to avoid
+    division-by-zero in downstream plots.
+  - Smoke against the live corpus exposes a non-obvious split:
+    opencode CV is 3.93, codex CV is 4.47, but **claude-code CV
+    is 31.73** — claude-code's cadence is dominated by a small
+    number of extreme outliers (max = 480.8h vs opencode's
+    max = 4.1h), while the bulk of claude-code sessions are
+    actually tighter than opencode (p95 = 55.8s vs 6.0min). The
+    CV makes that "tight bulk + huge tail" structure show up in
+    a single number, which neither the bin counts nor the
+    quantile waypoints alone can convey.
+  - 5 new unit tests cover (1) `n < 2` returns `stdev=0` and
+    `cv=0` (no NaN), (2) sample stdev uses the `n-1` denominator
+    with a hand-computed example (10s, 20s → stdev = sqrt(50)),
+    (3) `cv = 0` when `mean = 0` (all-zero-cadence input),
+    (4) `cv = stdev / mean` with an exact arithmetic example
+    (10/20/30 → mean 20, stdev 10, cv 0.5), (5) empty
+    distribution has `stdev=0` and `cv=0`.
+
 ## 0.4.20 — 2026-04-24
 
 ### Added (refinement)

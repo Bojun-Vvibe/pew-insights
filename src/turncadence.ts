@@ -147,6 +147,24 @@ export interface TurnCadenceDistribution {
   totalSessions: number;
   /** Mean of cadence across sessions, in seconds. 0 when empty. */
   meanSeconds: number;
+  /**
+   * Sample standard deviation of cadence across sessions, in
+   * seconds (Bessel-corrected, n-1 denominator). 0 when fewer
+   * than 2 sessions, since the unbiased estimator is undefined
+   * for n < 2.
+   */
+  stdevSeconds: number;
+  /**
+   * Coefficient of variation: stdev / mean. Dimensionless
+   * dispersion measure that lets cadence variability be compared
+   * across groups with very different means (claude-code's
+   * stdev around a 20s mean is not directly comparable to
+   * opencode's stdev around a 100s mean — the CV puts them on
+   * one scale). 0 when n < 2 or when mean is 0 (CV is undefined
+   * — we report 0 rather than NaN/Infinity so JSON consumers
+   * don't need to special-case it).
+   */
+  cadenceCV: number;
   /** Quantile waypoints in seconds via nearest-rank. 0 when empty. */
   p50Seconds: number;
   p90Seconds: number;
@@ -256,6 +274,8 @@ function buildDistribution(
       group,
       totalSessions: 0,
       meanSeconds: 0,
+      stdevSeconds: 0,
+      cadenceCV: 0,
       p50Seconds: 0,
       p90Seconds: 0,
       p95Seconds: 0,
@@ -269,6 +289,21 @@ function buildDistribution(
   const sortedAsc = [...cadences].sort((a, b) => a - b);
   const sum = sortedAsc.reduce((a, b) => a + b, 0);
   const meanSeconds = sum / totalSessions;
+
+  // Sample stdev (n-1) — undefined for n < 2; report 0 for stability.
+  let stdevSeconds = 0;
+  if (totalSessions >= 2) {
+    let sqSum = 0;
+    for (const c of cadences) {
+      const d = c - meanSeconds;
+      sqSum += d * d;
+    }
+    stdevSeconds = Math.sqrt(sqSum / (totalSessions - 1));
+  }
+  // CV = stdev / mean. Report 0 (not NaN/Infinity) when undefined
+  // so JSON consumers don't have to special-case.
+  const cadenceCV =
+    totalSessions < 2 || meanSeconds === 0 ? 0 : stdevSeconds / meanSeconds;
 
   const perBin: number[][] = labels.map(() => []);
   for (const c of cadences) perBin[binFor(edges, c)]!.push(c);
@@ -312,6 +347,8 @@ function buildDistribution(
     group,
     totalSessions,
     meanSeconds,
+    stdevSeconds,
+    cadenceCV,
     p50Seconds: nearestRank(sortedAsc, 0.5),
     p90Seconds: nearestRank(sortedAsc, 0.9),
     p95Seconds: nearestRank(sortedAsc, 0.95),

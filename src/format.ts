@@ -1720,6 +1720,8 @@ export function renderTurnCadence(r: TurnCadenceReport): string {
         [
           ['sessions', formatNumber(d.totalSessions)],
           ['mean', fmtSeconds(d.meanSeconds)],
+          ['stdev', fmtSeconds(d.stdevSeconds)],
+          ['cv', d.totalSessions >= 2 ? d.cadenceCV.toFixed(2) : '—'],
           ['p50', fmtSeconds(d.p50Seconds)],
           ['p90', fmtSeconds(d.p90Seconds)],
           ['p95', fmtSeconds(d.p95Seconds)],
