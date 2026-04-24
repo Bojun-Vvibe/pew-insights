@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.13 — 2026-04-24
+
+Release roll-up of the `agent-mix` work landed under 0.4.12 plus
+the `--metric` refinement. No behaviour change beyond the
+version stamp; the prior tag was published mid-stream and this
+bump captures the refinement in its own released version so
+downstream consumers can pin against the post-refinement API.
+
 ## 0.4.12 — 2026-04-24
 
 ### Added (refinement)
