@@ -85,11 +85,21 @@ export const DEFAULT_OUTPUT_SIZE_EDGES: number[] = [
   64_000,
 ];
 
+export type OutputSizeDimension = 'model' | 'source';
+
 export interface OutputSizeOptions {
   /** Inclusive ISO lower bound on `hour_start`. null = no lower bound. */
   since?: string | null;
   /** Exclusive ISO upper bound on `hour_start`. null = no upper bound. */
   until?: string | null;
+  /**
+   * Group rows by `model` (default — normalised model id) or by
+   * `source` (the producer string: `claude-code`, `codex`, `opencode`,
+   * ...). Source-grouping answers "which CLI's traffic is generating
+   * the long-completion mass?" — the model view can't tell you that
+   * because the same model is reached through several producers.
+   */
+  by?: OutputSizeDimension;
   /**
    * Drop model rows whose row count is `< minRows` from the
    * `models[]` output. Display filter only — global denominators
@@ -136,7 +146,12 @@ export interface OutputSizeBucket {
 }
 
 export interface ModelOutputSizeRow {
-  /** Normalised model id (output of `normaliseModel`). */
+  /**
+   * Group key. When `by === 'model'` this is the normalised model id
+   * (output of `normaliseModel`); when `by === 'source'` this is the
+   * raw source string from the QueueLine. The field name is kept as
+   * `model` for backwards-compatibility with downstream JSON consumers.
+   */
   model: string;
   /** Number of QueueLine rows considered for this model. */
   rows: number;
@@ -166,6 +181,8 @@ export interface OutputSizeReport {
   generatedAt: string;
   windowStart: string | null;
   windowEnd: string | null;
+  /** Echo of the resolved grouping dimension. */
+  by: OutputSizeDimension;
   /** Echo of the resolved minRows floor. */
   minRows: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
@@ -258,6 +275,10 @@ export function buildOutputSize(
   if (!Number.isFinite(atLeast) || atLeast < 0) {
     throw new Error(`atLeast must be a non-negative finite number (got ${opts.atLeast})`);
   }
+  const by: OutputSizeDimension = opts.by ?? 'model';
+  if (by !== 'model' && by !== 'source') {
+    throw new Error(`by must be 'model' or 'source' (got ${opts.by})`);
+  }
   const edges = opts.edges ?? DEFAULT_OUTPUT_SIZE_EDGES;
   validateEdges(edges);
 
@@ -314,13 +335,19 @@ export function buildOutputSize(
     }
 
     const model = normaliseModel(typeof q.model === 'string' ? q.model : '');
+    const groupKey =
+      by === 'source'
+        ? typeof q.source === 'string' && q.source !== ''
+          ? q.source
+          : 'unknown'
+        : model;
     consideredRows += 1;
     totalOutput += outT;
     if (outT > overallMaxOutput) overallMaxOutput = outT;
     const bIdx = bucketIndex(outT, edges);
     overallBucketCounts[bIdx] = (overallBucketCounts[bIdx] ?? 0) + 1;
 
-    let row = agg.get(model);
+    let row = agg.get(groupKey);
     if (!row) {
       row = {
         rows: 0,
@@ -329,7 +356,7 @@ export function buildOutputSize(
         bucketCounts: new Array(edges.length).fill(0) as number[],
         samples: [],
       };
-      agg.set(model, row);
+      agg.set(groupKey, row);
     }
     row.rows += 1;
     row.totalOutput += outT;
@@ -385,6 +412,7 @@ export function buildOutputSize(
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
+    by,
     minRows,
     top,
     edges: edges.slice(),

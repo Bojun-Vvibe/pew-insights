@@ -220,3 +220,47 @@ test('output-size: custom edges respected', () => {
     [1, 1, 1],
   );
 });
+
+// ---- --by source refinement ------------------------------------------------
+
+test('output-size: --by source groups by source string instead of model', () => {
+  const queue = [
+    ql('2026-04-20T00:00:00.000Z', 'claude-opus-4.7', { source: 'claude-code', output_tokens: 9_000 }),
+    ql('2026-04-20T01:00:00.000Z', 'claude-opus-4.7', { source: 'claude-code', output_tokens: 12_000 }),
+    ql('2026-04-20T02:00:00.000Z', 'gpt-5', { source: 'codex', output_tokens: 500 }),
+  ];
+  const byModel = buildOutputSize(queue, { generatedAt: GEN, by: 'model' });
+  assert.equal(byModel.by, 'model');
+  assert.equal(byModel.models.length, 2);
+  assert.deepEqual(
+    byModel.models.map((m) => m.model).sort(),
+    ['claude-opus-4.7', 'gpt-5'],
+  );
+
+  const bySource = buildOutputSize(queue, { generatedAt: GEN, by: 'source' });
+  assert.equal(bySource.by, 'source');
+  assert.equal(bySource.models.length, 2);
+  const claudeCode = bySource.models.find((m) => m.model === 'claude-code')!;
+  const codex = bySource.models.find((m) => m.model === 'codex')!;
+  assert.equal(claudeCode.rows, 2);
+  assert.equal(claudeCode.totalOutputTokens, 21_000);
+  assert.equal(codex.rows, 1);
+  assert.equal(codex.totalOutputTokens, 500);
+});
+
+test('output-size: --by source falls back to "unknown" for empty/missing source', () => {
+  const queue = [
+    { ...ql('2026-04-20T00:00:00.000Z', 'm', { output_tokens: 100 }), source: '' },
+    ql('2026-04-20T01:00:00.000Z', 'm', { source: 'codex', output_tokens: 200 }),
+  ];
+  const r = buildOutputSize(queue, { generatedAt: GEN, by: 'source' });
+  assert.equal(r.models.length, 2);
+  assert.ok(r.models.some((m) => m.model === 'unknown'));
+  assert.ok(r.models.some((m) => m.model === 'codex'));
+});
+
+test('output-size: rejects bad --by value', () => {
+  assert.throws(() =>
+    buildOutputSize([], { by: 'session' as unknown as 'model' }),
+  );
+});

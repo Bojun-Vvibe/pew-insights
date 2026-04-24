@@ -2472,9 +2472,14 @@ program
     '0',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--by <dim>',
+    'group rows by model | source (default model). Source-grouping answers "which CLI is generating the long-completion mass?"',
+    'model',
+  )
   .action(
     async (
-      opts: { since?: string; until?: string; minRows: string; top: string; atLeast: string; json?: boolean },
+      opts: { since?: string; until?: string; minRows: string; top: string; atLeast: string; by: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2492,6 +2497,9 @@ program
         if (!Number.isFinite(atLeast) || atLeast < 0) {
           throw new Error(`--at-least must be a non-negative integer (got ${opts.atLeast})`);
         }
+        if (opts.by !== 'model' && opts.by !== 'source') {
+          throw new Error(`--by must be 'model' or 'source' (got ${opts.by})`);
+        }
         const queue = await readQueue(paths);
         const report = buildOutputSize(queue, {
           since: opts.since ?? null,
@@ -2499,6 +2507,7 @@ program
           minRows,
           top,
           atLeast,
+          by: opts.by as 'model' | 'source',
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

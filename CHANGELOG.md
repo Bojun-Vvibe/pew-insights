@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.41 — 2026-04-25
+
+### Added
+
+- `--by <model|source>` flag on `output-size`. Default stays at
+  `model`; passing `--by source` re-aggregates the same row
+  population by the QueueLine `source` string (`claude-code`,
+  `codex`, `opencode`, `vscode-copilot`, `hermes`, `openclaw`,
+  ...) instead of the normalised model id. Answers a question
+  the model view literally cannot: "which CLI is generating the
+  long-completion mass?" — same model can be reached through
+  several producers, and the same producer can route to several
+  models, so the two views are genuinely orthogonal. Empty /
+  missing source falls back to the `unknown` sentinel so the
+  global denominators stay stable. The grouping dimension echoes
+  back in the report's new `by` field; the renderer adapts the
+  table header (`per-source output-size summary` / `source`
+  column) automatically. 3 new unit tests covering the by-source
+  grouping, the unknown fallback, and rejection of bad `--by`
+  values (670 total, up from 667).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js output-size --by source
+pew-insights output-size
+as of: 2026-04-24T21:17:57.993Z    rows: 1,367    output: 33,858,725 tok    mean: 24,769    max: 416,890    min-rows: 0    at-least: 0
+dropped: 0 bad hour_start, 12 zero-output, 0 bad tokens, 0 below at-least, 0 below min-rows, 0 below top cap
+
+overall output_tokens distribution
+bucket   rows  share
+-------  ----  -----
+0–256    70    5.1%
+256–1k   189   13.8%
+1k–4k    342   25.0%
+4k–8k    194   14.2%
+8k–16k   179   13.1%
+16k–64k  258   18.9%
+64k+     135   9.9%
+
+per-source output-size summary (sorted by row count desc)
+source          rows  mean    p95      max      0–256  256–1k  1k–4k  4k–8k  8k–16k  16k–64k  64k+
+--------------  ----  ------  -------  -------  -----  ------  -----  -----  ------  -------  ----
+openclaw        324   14,392  58,172   116,291  5      65      94     40     40      74       6
+vscode-copilot  321   3,537   14,290   37,381   35     81      120    49     25      11       ·
+claude-code     299   40,565  188,818  416,890  22     22      49     37     52      56       61
+opencode        218   58,144  282,231  333,890  3      3       20     49     22      66       55
+hermes          141   8,590   25,827   38,184   2      15      47     16     31      30       ·
+codex           64    31,954  100,274  163,782  3      3       12     3      9       21       13
+```
+
+The source view reframes the v0.4.40 finding: the long-tail
+generation mass is concentrated in `opencode` (mean 58,144 tok,
+p95 282k, 121 of 218 rows above 8k) and `claude-code`
+(mean 40,565, p95 188k, 169 of 299 above 8k), while
+`vscode-copilot` is the row-count leader (321 rows) but mean
+3,537 — it ships volume but the completions stay short. This
+is the lens that says where to invest in latency / cost
+optimisation: shrinking the `opencode` tail buys more than
+shrinking the `vscode-copilot` mass, because the latter is
+already cheap-per-call. The model view collapsed `opencode`
+and `claude-code` together (both route to `claude-opus-4.7`)
+and so couldn't surface that distinction.
+
 ## 0.4.40 — 2026-04-25
 
 ### Added

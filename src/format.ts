@@ -2337,11 +2337,11 @@ export function renderOutputSize(r: OutputSizeReport): string {
   lines.push(renderTableLocal(['bucket', 'rows', 'share'], overallRows));
   lines.push('');
 
-  lines.push(chalk.bold('per-model output-size summary (sorted by row count desc)'));
+  lines.push(chalk.bold(`per-${r.by} output-size summary (sorted by row count desc)`));
   const bucketHeaders = r.edges.map((from, i) =>
     formatBucketLabel(from, i + 1 < r.edges.length ? r.edges[i + 1]! : null),
   );
-  const headers = ['model', 'rows', 'mean', 'p95', 'max', ...bucketHeaders];
+  const headers = [r.by, 'rows', 'mean', 'p95', 'max', ...bucketHeaders];
   const rows: string[][] = r.models.map((m) => [
     m.model,
     formatNumber(m.rows),
