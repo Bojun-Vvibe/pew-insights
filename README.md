@@ -39,6 +39,7 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `ratios` *(0.4.2, internal helpers; 0.4.3 wired to CLI)* — bounded-ratio math (`clampProbability`, `logit`/`expit`, `safeLogit`, `ewmaLogit`, `ewmaLogitSeries`) with the `pew-insights ratios` subcommand on top; EWMA stays inside (0, 1) on all-0/all-1 input where naive linear-space EWMA breaks
 - `dashboard` *(0.4.4)* — one-screen operator view; composes `status` + `anomalies` + `ratios` into Health → Volume → Efficiency sections with two derived drift indicators (token volume %, cache-hit drift in percentage points). Exits 2 if EITHER the most recent day flagged token-high OR the most recent day flagged ratio-high/ratio-low.
 - `heatmap` *(0.4.5)* — 7×24 hour-of-day × day-of-week token-activity matrix with row/column totals and two concentration metrics (top-4-consecutive-hour share with midnight wrap-around, top-2-day share). Bucket in `--tz utc` (default, matches `hour_start` storage) or `--tz local` for "actual workday shape". Surfaces diurnal/weekly cycles that `trend` and `anomalies` collapse into a single time axis.
+- `streaks` *(0.4.6)* — activity-cadence runs; classifies each day in the window as ACTIVE (`total_tokens >= --min-tokens`, default 1) or IDLE, then reports longest active streak, longest idle gap, current trailing run ("you're 11 days into an active streak" / "it's been 3 days"), active-run count, and median + mean active-run length. Different time scale from `anomalies` (regime/cadence vs point spikes) and a different lens from `trend` (categorical state vs magnitude).
 - HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
 
 **v0.3:**
@@ -336,6 +337,57 @@ your own per-cell alerts:
 # Hours where activity exceeded 100M tokens this month.
 pew-insights heatmap --lookback 30 --json \
   | jq '.cells[] | to_entries | map(select(.value > 100000000))'
+```
+
+### Streaks (activity cadence)
+
+```sh
+# Default: 30-day lookback, any token at all counts as ACTIVE.
+pew-insights streaks
+
+# 90-day cadence picture, only days with >=1M tokens count as a "real work day".
+pew-insights streaks --lookback 90 --min-tokens 1000000
+
+# JSON for cron — pipe into jq, alert on idle gap >= 3.
+pew-insights streaks --json \
+  | jq -e '.longestIdle.length < 3' >/dev/null \
+  || echo "warning: idle gap >=3 days in last 30"
+```
+
+`streaks` discretises the daily token series into ACTIVE / IDLE
+states (ACTIVE = `total_tokens >= --min-tokens`), then walks the
+series to find:
+
+- **longest active streak** — longest consecutive ACTIVE run, with
+  start/end dates and total tokens for the run.
+- **longest idle gap** — longest consecutive IDLE run (the dual,
+  for "when did I most fall off?").
+- **current run** — the run containing today. Tells you "you're on
+  day 12 of an active streak" or "it's been 4 days since you
+  touched pew" without making you count.
+- **active run count + median + mean active-run length** — robust
+  summary of a typical run, with the mean alongside so a skewed
+  distribution (one big streak + many short ones) is visible.
+
+Different time scale from `anomalies` (regime/cadence vs point
+spikes) and a different lens from `trend` (categorical state-change
+vs continuous magnitude). A 0-token day reads as IDLE in `streaks`
+where `trend` would just call it a low value, so the cadence signal
+isn't smeared into the magnitude one.
+
+The default `--min-tokens 1` answers "how often do I touch pew at
+all?". Raise it (e.g. `--min-tokens 1000000`) to track a deliberate
+practice cadence — "at least 1M tokens of real work per day" — and
+have casual / experimental days collapse into the IDLE state.
+
+`streaks` does not have an alerting exit code, but the JSON output
+makes cron alerts trivial:
+
+```sh
+# Alert if the current trailing idle gap exceeds N days.
+pew-insights streaks --json \
+  | jq -e '.currentRun.state == "idle" and .currentRun.length >= 3' >/dev/null \
+  && echo "alert: idle for $(pew-insights streaks --json | jq -r '.currentRun.length') days"
 ```
 
 ### Compare

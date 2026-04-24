@@ -6,6 +6,72 @@ All notable changes to this project will be documented in this file.
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.6 — 2026-04-24
+
+Activity-cadence analysis. The new `pew-insights streaks` subcommand
+classifies each day in the lookback window as ACTIVE (`total_tokens
+>= --min-tokens`) or IDLE, then walks the series to surface the
+longest active streak, longest idle gap, and the current trailing
+run ("you're on day 12 of an active streak" / "it's been 4 days").
+
+Different time scale from `anomalies` (regime/cadence vs point
+spikes) and a different lens from `trend` (categorical state-change
+vs continuous magnitude). A 0-token day reads as IDLE here where
+`trend` would just call it a low value, so the cadence signal is
+not smeared into the magnitude signal.
+
+### Added
+
+- `pew-insights streaks` subcommand
+  - Discretises the daily token series (reuses `trend.buildDailySeries`
+    so day-grid semantics match every other subcommand exactly: UTC,
+    inclusive both ends, 0-fill for empty days).
+  - Threshold via `--min-tokens` (default 1, i.e. "any usage at all
+    counts"). Raise to track a deliberate practice cadence — e.g.
+    `--min-tokens 1000000` for "at least 1M tokens of real work per
+    day".
+  - Reports longest ACTIVE run, longest IDLE run, current trailing
+    run (so the operator's eye lands on the present moment without
+    counting days), active-run count, and both median + mean
+    active-run length so a skewed distribution (one giant streak +
+    many short ones) is visible.
+  - Pretty output renders a one-glyph-per-day cadence strip
+    (50 chars/row, wraps for 90-day windows on a standard 80-col
+    TTY) with the current run colored green/red so "where am I now"
+    is unambiguous.
+  - `--json` emits the full report including every run with its
+    start/end day, length, and token sum, suitable for cron-driven
+    alerting on idle-gap length or active-streak length.
+- `src/streaks.ts`
+  - `buildStreaks(queue, opts)` — pure builder, deterministic on a
+    given `asOf`. Throws on `lookbackDays < 1` and on negative
+    `minTokens`. Returns `null` for `longestActive` / `longestIdle`
+    /  `medianActiveLength` / `meanActiveLength` when the relevant
+    state never appears in the window, so consumers can distinguish
+    "no active days" from "0-length active runs".
+  - Tie-break for `longestActive` / `longestIdle`: the *earlier* run
+    wins, so the result is deterministic on a given series.
+  - Median uses standard even-count averaging of the two middle
+    values; mean is reported alongside so distribution skew is
+    visible in one glance.
+- `renderStreaks` in `src/format.ts` — cadence strip + summary table
+  with active fraction, idle days, run count, longest active /
+  longest idle (with date range), current run, median + mean
+  active-run length.
+
+### Tests
+
+- `test/streaks.test.ts` — 13 new cases covering: lookback validation,
+  negative-minTokens validation, empty-queue all-idle, all-active
+  window, alternating active/idle, longest-active tie-break (earlier
+  wins), current-run state on most-recent day, threshold reclassification
+  (`--min-tokens` shifting the boundary), token aggregation within a
+  run, out-of-window event filtering, even-count median averaging,
+  inclusive boundary days, and `minTokens=0` corner case (every day
+  qualifies, single all-active run).
+
+Total test count: 295 → 308.
+
 ## 0.4.5 — 2026-04-24
 
 Hour-of-day × day-of-week token-activity heatmap. Where `trend`
