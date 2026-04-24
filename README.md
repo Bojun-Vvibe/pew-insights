@@ -38,6 +38,7 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `ratios` *(0.4.3)* — scores cache-hit-ratio drift over a window using logit-space EWMA + a trailing baseline of EWMA values; handles bounded `[0, 1]` metrics correctly (no spurious ±2σ alerts near the boundaries) and exits 2 when the most recent day flagged either direction so cache-hit regressions surface in cron alongside `budget` / `anomalies`
 - `ratios` *(0.4.2, internal helpers; 0.4.3 wired to CLI)* — bounded-ratio math (`clampProbability`, `logit`/`expit`, `safeLogit`, `ewmaLogit`, `ewmaLogitSeries`) with the `pew-insights ratios` subcommand on top; EWMA stays inside (0, 1) on all-0/all-1 input where naive linear-space EWMA breaks
 - `dashboard` *(0.4.4)* — one-screen operator view; composes `status` + `anomalies` + `ratios` into Health → Volume → Efficiency sections with two derived drift indicators (token volume %, cache-hit drift in percentage points). Exits 2 if EITHER the most recent day flagged token-high OR the most recent day flagged ratio-high/ratio-low.
+- `heatmap` *(0.4.5)* — 7×24 hour-of-day × day-of-week token-activity matrix with row/column totals and two concentration metrics (top-4-consecutive-hour share with midnight wrap-around, top-2-day share). Bucket in `--tz utc` (default, matches `hour_start` storage) or `--tz local` for "actual workday shape". Surfaces diurnal/weekly cycles that `trend` and `anomalies` collapse into a single time axis.
 - HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
 
 **v0.3:**
@@ -283,6 +284,58 @@ not a page (matches `anomalies`).
 
 ```sh
 pew-insights dashboard --json > /tmp/dash.json || curl -X POST $WEBHOOK -d @/tmp/dash.json
+```
+
+### Heatmap (hour-of-day × day-of-week)
+
+```sh
+# Default: 30-day lookback, total tokens, UTC buckets.
+pew-insights heatmap
+
+# Local-calendar shape — what your actual workday looks like.
+pew-insights heatmap --tz local --lookback 14
+
+# Cache-only heatmap to find the hours where your prompt cache is doing the work.
+pew-insights heatmap --metric cached --lookback 30
+
+# JSON for piping the matrix into other tools.
+pew-insights heatmap --json | jq '.cells'
+```
+
+`heatmap` aggregates `QueueLine[]` into a 7×24 matrix (ISO dow rows
+Mon..Sun × hour cols 00..23). Where `trend` and `anomalies` collapse
+usage onto a single time axis, this view keeps the *cycle* dimension
+separate — a steady night-owl regime reads as the shape of the work
+itself, not as a "late-night spike".
+
+Output is a colored Unicode-block ramp (▁▂▄▅▇█) sized for a standard
+80-column terminal, with row totals on the right and per-column
+order-of-magnitude indicators along the bottom.
+
+Two concentration metrics in the summary:
+
+- **top-4-hr share** — fraction of `grandTotal` in the best 4
+  *consecutive* hours, with wrap-around (a 22:00–01:59 peak across
+  midnight collapses to a single window). Uniform baseline = 4/24
+  = 16.7%; values near 100% mean activity is sharply concentrated.
+- **top-2-day share** — fraction of `grandTotal` in the top 2 days
+  of the week (any 2, not necessarily consecutive). Uniform
+  baseline = 2/7 = 28.6%.
+
+The `--metric` flag picks the token field: `total` (default),
+`input` (uncached input only — see the *Ratios* section above for
+why uncached vs. inclusive matters), `cached`, or `output` (sums
+`output_tokens + reasoning_output_tokens` so reasoning models
+aren't undercounted).
+
+`heatmap` does not have an alerting exit code — it's a
+visualization, not a detector. Pipe the JSON into `jq` to build
+your own per-cell alerts:
+
+```sh
+# Hours where activity exceeded 100M tokens this month.
+pew-insights heatmap --lookback 30 --json \
+  | jq '.cells[] | to_entries | map(select(.value > 100000000))'
 ```
 
 ### Compare

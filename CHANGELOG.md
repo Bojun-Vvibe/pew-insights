@@ -6,6 +6,70 @@ All notable changes to this project will be documented in this file.
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.5 — 2026-04-24
+
+Hour-of-day × day-of-week token-activity heatmap. Where `trend`
+and `anomalies` collapse usage onto a single time axis, the new
+`pew-insights heatmap` subcommand keeps the *cycle* dimension
+separate so a steady night-owl regime doesn't false-positive as
+a "late-night spike" — it reads as the shape of the work itself.
+Closes a long-standing gap: `forecast` already uses
+`dayOfWeek` for seasonal residuals internally, but never exposed
+the day-of-week shape directly.
+
+### Added
+
+- `pew-insights heatmap` subcommand
+  - Aggregates `QueueLine[]` into a 7×24 matrix (ISO dow rows
+    Mon..Sun × hour cols 00..23). Bucketing is UTC by default
+    (matches `hour_start` storage); pass `--tz local` to bucket
+    in the host's calendar — useful when the operator wants
+    "my actual workday shape" instead of UTC.
+  - Renders as a colored Unicode-block ramp (▁▂▄▅▇█) with row
+    totals on the right and per-column order-of-magnitude
+    indicators along the bottom, sized to fit a standard
+    80-column terminal.
+  - `--metric total | input | cached | output` switches which
+    token field feeds the matrix. `output` sums
+    `output_tokens + reasoning_output_tokens` so reasoning models
+    aren't undercounted.
+  - Emits two concentration metrics:
+    - **top-4-hr share** — fraction of `grandTotal` in the
+      best 4 *consecutive* hours, with wrap-around (so a
+      22:00–01:59 peak across midnight collapses to a single
+      window). Uniform baseline = 4/24 = 16.7%.
+    - **top-2-day share** — fraction of `grandTotal` in the
+      top 2 days of the week (any 2, not consecutive). Uniform
+      baseline = 2/7 = 28.6%.
+  - JSON output includes the full matrix, marginal totals, peak
+    cell, peak dow, peak hour, and both concentration metrics.
+- `src/heatmap.ts`
+  - `buildHeatmap(queue, opts)` — pure builder, deterministic
+    on a given `asOf`. Throws on `lookbackDays < 1`. Returns
+    null peaks/concentrations on empty matrices instead of `0`
+    so consumers can distinguish "no data" from "uniform-zero".
+  - `bucketOf` routes through `Date.getUTC*` for UTC and
+    `Intl.DateTimeFormat` for local — never hand-rolls offsets.
+  - `maxWindowSumCircular` — O(n) sliding-window sum over a
+    circular array, used by `diurnalConcentration`.
+- `renderHeatmap` in `src/format.ts` — six-bin glyph ramp with
+  empty cells rendered as a dim center-dot to keep
+  zero-vs-low visually distinct.
+
+### Tests
+
+- `test/heatmap.test.ts` — 17 new cases covering: 7×24 shape on
+  empty queue, rowTotals/colTotals/grandTotal consistency, peak
+  cell and peak marginal detection (with deterministic
+  tie-breaking), all four metrics, lookback window edges
+  (inclusive both ends), `lookbackDays < 1` rejection, uniform
+  matrix concentration ≈ 4/24 and 2/7, single-cell concentration
+  = 1.0, midnight-wrap circular peak window, ISO-dow mapping
+  (Sun→7, Mon→1), weekend-vs-weekday isolation, repeated
+  (dow, hour) aggregation, and tz=local invariants.
+
+Total test count: 278 → 295.
+
 ## 0.4.4 — 2026-04-24
 
 One-screen operator view. The new `pew-insights dashboard`
