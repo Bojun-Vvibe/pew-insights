@@ -2236,3 +2236,53 @@ export function renderCacheHitRatio(r: CacheHitRatioReport): string {
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { ReasoningShareReport } from './reasoningshare.js';
+
+export function renderReasoningShare(r: ReasoningShareReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights reasoning-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    output: ${formatNumber(r.totalOutputTokens)} tok    reasoning: ${formatNumber(r.totalReasoningTokens)} tok    overall: ${formatPercentLocal(r.overallReasoningShare)}    min-rows: ${r.minRows}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroOutput)} zero-output, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedModelRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredRows === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows with generated tokens > 0 in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  const barWidth = 20;
+  lines.push(chalk.bold('per-model token-weighted reasoning share (sorted by generated volume desc)'));
+  const rows: string[][] = r.models.map((m) => {
+    const fill = Math.round(Math.min(1, Math.max(0, m.reasoningShare)) * barWidth);
+    const bar = '█'.repeat(fill) + '·'.repeat(barWidth - fill);
+    return [
+      m.model,
+      formatNumber(m.rows),
+      formatNumber(m.outputTokens),
+      formatNumber(m.reasoningTokens),
+      formatNumber(m.generatedTokens),
+      formatPercentLocal(m.reasoningShare),
+      bar,
+    ];
+  });
+  lines.push(
+    renderTableLocal(
+      ['model', 'rows', 'output', 'reasoning', 'generated', 'share', 'bar'],
+      rows,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
