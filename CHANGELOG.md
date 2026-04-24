@@ -2,6 +2,92 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.42 — 2026-04-25
+
+### Added
+
+- New `peak-hour-share` subcommand. Per-`(model|source)`
+  concentration of token spend in each day's busiest 1-hour
+  window (UTC). For every `(group, day)` pair, sums
+  `total_tokens` per hour-of-day, finds the single hour with
+  the largest sum, and records its share of the day's total.
+  Aggregates per group as **mean / p50 / p95 / max** of the
+  per-day peak share, plus the **modal peak hour** (which
+  clock hour most often holds the daily peak) and its
+  dominance ratio (`modalPeakHourCount / days`).
+
+  Answers the "spikiness" question that `time-of-day`,
+  `heatmap`, `output-size`, `prompt-size`, `concurrency`,
+  `gaps`, `idle-gaps`, and `velocity` all leave on the floor:
+  a high mean peak-share means the model's day collapses into
+  one burst (batch-style); a low one means the spend is
+  smoothly spread. The modal hour + dominance ratio is the
+  operational lens for rate-limit planning and provider-side
+  capacity scheduling.
+
+  Token-weighted overall mean (not a naïve cross-group simple
+  mean) so heavy days move the headline number more — the
+  operator question "for an arbitrary token, what fraction of
+  its day arrived in its group's peak hour" has the right
+  denominator. Singleton-hour days score 1.0 by definition
+  and are kept by default; `--min-active-hours` scopes to
+  multi-hour days when comparing "true" spikiness across
+  models with different baseline activity.
+
+  Flags: `--since`, `--until`, `--by model|source`,
+  `--min-days`, `--top`, `--min-active-hours`, `--json`.
+  19 new unit tests (689 total, up from 670) covering
+  option-validation, peak-by-mass-not-rows, multi-day modal
+  aggregation, the token-weighted overall arithmetic
+  (verified to 1e-9 against hand-computed expectations), the
+  filter / floor / cap surfaces, the by-source split, and
+  modal tie-break ordering.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js peak-hour-share
+pew-insights peak-hour-share
+as of: 2026-04-24T22:13:39.751Z    days: 157    tokens: 8,195,845,645    overall mean peak-share: 21.9%    overall max: 100.0%    min-days: 0    min-active-hours: 1
+dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-active-hours, 0 below min-days, 0 below top cap
+
+per-model daily peak-hour concentration (sorted by day count desc)
+model                 days  tokens         mean    p50     p95     max     modal-hr (UTC)  bar
+--------------------  ----  -------------  ------  ------  ------  ------  --------------  --------------------
+gpt-5                 32    850,661        63.5%   69.5%   100.0%  100.0%  07:00 (8/32)    █████████████·······
+claude-opus-4.6.1m    20    1,108,978,665  53.3%   47.1%   100.0%  100.0%  08:00 (6/20)    ███████████·········
+gpt-5.1               20    111,623        76.7%   78.9%   100.0%  100.0%  06:00 (3/20)    ███████████████·····
+claude-haiku-4.5      16    70,717,678     88.4%   100.0%  100.0%  100.0%  07:00 (3/16)    ██████████████████··
+gemini-3-pro-preview  15    154,496        90.3%   100.0%  100.0%  100.0%  06:00 (5/15)    ██████████████████··
+gpt-5.4               13    2,454,673,106  33.0%   22.2%   100.0%  100.0%  02:00 (2/13)    ███████·············
+claude-sonnet-4.5     11    105,382        72.0%   63.0%   100.0%  100.0%  07:00 (3/11)    ██████████████······
+claude-sonnet-4       9     53,062         76.8%   87.0%   100.0%  100.0%  09:00 (4/9)     ███████████████·····
+claude-opus-4.7       8     4,511,263,464  23.8%   18.0%   50.3%   50.3%   01:00 (2/8)     █████···············
+claude-sonnet-4.6     4     12,601,545     86.8%   77.3%   100.0%  100.0%  09:00 (2/4)     █████████████████···
+unknown               4     35,575,800     48.2%   17.0%   100.0%  100.0%  07:00 (1/4)     ██████████··········
+claude-opus-4.6       2     350,840        70.0%   66.4%   73.7%   73.7%   06:00 (1/2)     ██████████████······
+```
+
+The headline finding: `claude-opus-4.7` (the heaviest model
+at 4.5B tokens / 8 days, 55% of the entire considered mass)
+is by far the **smoothest** at 23.8% mean peak-share, p95
+50.3% — meaning even on its busiest day the peak hour
+captured only half the spend; the rest was paced through
+the day. By contrast `gemini-3-pro-preview` (90.3% mean) and
+`claude-haiku-4.5` (88.4% mean, p50 100.0%) are operated as
+short bursts: a typical day for those models has the
+overwhelming majority of tokens land inside one hour. The
+overall token-weighted mean (21.9%) is dragged down by
+opus-4.7's mass, and is *much* lower than the naïve
+group-simple-mean (~67%) precisely because the heaviest
+model is the smoothest — exactly the asymmetry the weighting
+formula is designed to surface. Modal hours cluster around
+06:00–09:00 UTC for the chat-style models; opus-4.7's modal
+hour is 01:00 UTC (long-running coding sessions in
+evening-of-the-prior-day local time).
+
 ## 0.4.41 — 2026-04-25
 
 ### Added
