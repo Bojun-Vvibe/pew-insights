@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.40 — 2026-04-25
+
+### Added
+
+- New `output-size` subcommand. Per-model histogram of
+  `output_tokens` per `queue.jsonl` row, bucketised against a
+  fixed default ladder (`0, 256, 1k, 4k, 8k, 16k, 64k`).
+  Symmetric counterpart to `prompt-size` but for the *generated*
+  side of every call. Answers questions the existing
+  `prompt-size`, `cost`, `cache-hit-ratio`, `provider-share`,
+  and `reasoning-share` reports all collapse away: "how much do
+  my models actually generate per call?", "is anything in the
+  64k+ runaway-loop regime?", "is the long-completion mass
+  hidden behind a small-tool-call dilution?". Each kept model
+  gets row count, arithmetic mean, nearest-rank p95, observed
+  max, and a per-bucket count vector. Pure builder, deterministic
+  sort (rows desc, then model asc), full window / minRows / top
+  / atLeast bookkeeping mirroring `prompt-size`. Custom edges
+  supported via the JS API (`opts.edges`); CLI uses defaults.
+  10 new unit tests covering option validation, bucketing,
+  zero-output / invalid drops, the `--at-least` filter-then-stat
+  interaction, window composition, minRows / top display
+  filters, sort determinism, and custom edges (667 total, up
+  from 657 at 0.4.39 plus 10).
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js output-size
+pew-insights output-size
+as of: 2026-04-24T21:15:57.839Z    rows: 1,367    output: 33,858,725 tok    mean: 24,769    max: 416,890    min-rows: 0    at-least: 0
+dropped: 0 bad hour_start, 12 zero-output, 0 bad tokens, 0 below at-least, 0 below min-rows, 0 below top cap
+
+overall output_tokens distribution
+bucket   rows  share
+-------  ----  -----
+0–256    70    5.1%
+256–1k   189   13.8%
+1k–4k    342   25.0%
+4k–8k    194   14.2%
+8k–16k   179   13.1%
+16k–64k  258   18.9%
+64k+     135   9.9%
+
+per-model output-size summary (sorted by row count desc)
+model                 rows  mean    p95      max      0–256  256–1k  1k–4k  4k–8k  8k–16k  16k–64k  64k+
+--------------------  ----  ------  -------  -------  -----  ------  -----  -----  ------  -------  ----
+gpt-5.4               403   16,817  63,910   163,782  9      68      115    45     52      95       19
+claude-opus-4.7       368   59,488  243,808  416,890  7      24      58     25     47      101      106
+claude-opus-4.6.1m    182   18,959  65,478   351,990  9      16      33     25     43      46       10
+gpt-5                 169   4,982   17,028   37,381   4      34      66     34     21      10       ·
+unknown               56    7,329   12,835   40,565   ·      ·       5      42     7       2        ·
+gpt-5.1               51    1,604   5,471    14,233   11     19      15     5      1       ·        ·
+gemini-3-pro-preview  33    1,323   6,297    10,276   12     8       11     1      1       ·        ·
+claude-sonnet-4.5     32    2,932   10,297   13,702   3      9       11     7      2       ·        ·
+claude-haiku-4.5      31    4,295   14,346   17,236   7      ·       11     8      4       1        ·
+claude-sonnet-4       26    2,041   5,139    17,028   4      9       11     1      ·       1        ·
+```
+
+The shape is asymmetric to the prompt-size view in a way that
+matters: 28.8% of all 1,367 rows are above 8k generated tokens
+(8k–16k + 16k–64k + 64k+ = 13.1+18.9+9.9), and 9.9% are above
+64k. The `claude-opus-4.7` row owns the operationally heavy
+tail — 106 of 135 (78.5%) of all 64k+ completions, p95=243.8k,
+and a single 416.9k outlier worth investigating. By contrast
+`gpt-5.4` runs 403 rows but stops at 163.8k max, and `gpt-5`
+never crosses 64k at all. This is the lens that makes the
+Anthropic-output-pricing exposure visible in one screen — the
+mean (59,488) on `claude-opus-4.7` is ~3.5× the next heaviest
+model and ~12× `gpt-5`.
+
 ## 0.4.39 — 2026-04-25
 
 ### Added
