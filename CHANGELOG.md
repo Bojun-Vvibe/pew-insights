@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.11 — 2026-04-24
+
+### Added
+
+- `pew-insights transitions` subcommand — adjacency analysis of
+  consecutive sessions. Builds a from→to handoff matrix over a
+  chosen dimension (`source` | `kind` | `project_ref`) and reports
+  per-cell counts, gap distribution, and per-group "stickiness"
+  (P(next session shares the same group)).
+  - `--since <iso>` / `--until <iso>` window membership on
+    `started_at` (mirroring `sessions` / `gaps`).
+  - `--max-gap-seconds <n>` threshold separating *handoffs* from
+    *breaks*. Default 1800 (30 min) — long enough to span a
+    short break, short enough that overnight gaps do not get
+    spuriously stitched into a "transition".
+  - `--by source|kind|project_ref` grouping dimension. Default
+    `source`.
+  - `--top <n>` cap on the surfaced transitions table. Default
+    10.
+  - `--json` emits the full report including `topTransitions[]`,
+    per-from `stickiness[]`, `groups[]`, `overallMedianGapMs`,
+    `overallP95GapMs`, `handoffs`, `breaks`, and `overlaps`.
+- `src/transitions.ts` builder. Pure, deterministic. Sort order
+  is fully specified: sessions by `(started_at asc,
+  session_key asc)` for reproducibility under timestamp ties;
+  cells by `(count desc, from asc, to asc)`; stickiness rows by
+  `group asc`. Negative raw gaps (overlapping pairs) are floored
+  to 0 and counted in `overlapCount` so the operator can tell
+  "0ms because back-to-back" from "0ms because the two sessions
+  were running side-by-side".
+- `renderTransitions()` in `src/format.ts` — pretty header with
+  handoff/break/overlap tally, summary table, top-N transitions
+  with `medianGap` and `p95Gap` per cell, and a stickiness table.
+- 17 new tests (`test/transitions.test.ts`) covering input
+  validation, empty input, single session, the handoff vs break
+  threshold, overlap-floored gaps, stickiness math, sort
+  determinism (count-tied cells, started_at-tied sessions),
+  topN truncation, since/until filtering, alternative `by`
+  dimensions, multi-sample median + p95 (per-cell and overall),
+  groups-list dedup/sort, and unknown-source fallback.
+
+Live smoke (this repo's `~/.config/pew/session-queue.jsonl`,
+6,817 raw lines → 5,756 in-window sessions, full corpus): 5,755
+adjacent pairs total, **5,657 handoffs** (98.3% handoff rate)
+and 98 breaks. Overall median gap is **0s** — most sessions are
+back-to-back or actually overlap (3,224 overlaps observed).
+Overall p95 gap is **2m**, so even the slow 5% are well under
+the 30-min threshold.
+
+The matrix surfaces the actual workflow shape:
+
+  - `opencode → opencode` is the dominant cell at **2,781**
+    handoffs (1,908 overlapping), confirming `opencode` is the
+    primary driver and frequently runs concurrent windows.
+  - `claude-code → claude-code` second at 883.
+  - `opencode ↔ openclaw` is symmetric (459 / 457), the
+    fingerprint of the openclaw automated fan-out colliding with
+    `opencode` human work — same pattern previously surfaced as
+    the 21-deep concurrency peak in 0.4.10.
+  - `codex ↔ claude-code` (117 / 114) is symmetric too — those
+    two tools alternate.
+  - `claude-code` has the highest stickiness at **86.6%** —
+    once an operator is in `claude-code`, the next session is
+    almost certainly another `claude-code`. `opencode` is close
+    behind at 85.5%. `openclaw` is the spreadiest at 48.4% — its
+    sessions hand off to other tools more than half the time,
+    consistent with it being the orchestrator that triggers
+    other agents.
+
+This is the categorical companion to `gaps`: `gaps` tells the
+operator *how long* the idle space is, `transitions` tells them
+*what kind of work was on either side of it*.
+
 ## 0.4.10 — 2026-04-24
 
 ### Added (refinement)
