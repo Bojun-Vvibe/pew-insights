@@ -353,3 +353,56 @@ test('prompt-size: atLeast composes with window filter', () => {
   assert.equal(r.droppedAtLeast, 1);
   assert.equal(r.totalInputTokens, 5_000);
 });
+
+test('prompt-size: atLeast above every observed row leaves an empty considered population', () => {
+  // Pathological knob: nobody can clear the floor. The report should
+  // still come back coherently shaped — empty models, zero-row buckets,
+  // and droppedAtLeast accounting for the full kept-by-window set.
+  const r = buildPromptSize(
+    [
+      ql('2026-04-20T01:00:00Z', 'gpt-5', { input_tokens: 100 }),
+      ql('2026-04-20T02:00:00Z', 'claude-x', { input_tokens: 50_000 }),
+      ql('2026-04-20T03:00:00Z', 'gemini', { input_tokens: 999_999 }),
+    ],
+    { atLeast: 1_000_000, generatedAt: GEN },
+  );
+  assert.equal(r.consideredRows, 0);
+  assert.equal(r.droppedAtLeast, 3);
+  assert.equal(r.models.length, 0);
+  assert.equal(r.totalInputTokens, 0);
+  assert.equal(r.overallMeanInputTokens, 0);
+  assert.equal(r.overallMaxInputTokens, 0);
+  assert.ok(r.overallBuckets.every((b) => b.rows === 0 && b.share === 0));
+});
+
+test('prompt-size: atLeast composes with top — top still acts on filtered survivors', () => {
+  const r = buildPromptSize(
+    [
+      // gpt-5: 3 rows, all clearing atLeast=1000
+      ql('2026-04-20T01:00:00Z', 'gpt-5', { input_tokens: 5_000 }),
+      ql('2026-04-20T02:00:00Z', 'gpt-5', { input_tokens: 6_000 }),
+      ql('2026-04-20T03:00:00Z', 'gpt-5', { input_tokens: 7_000 }),
+      // claude: 2 rows, clearing atLeast
+      ql('2026-04-20T04:00:00Z', 'claude-x', { input_tokens: 5_000 }),
+      ql('2026-04-20T05:00:00Z', 'claude-x', { input_tokens: 5_000 }),
+      // gemini: 1 row clearing atLeast
+      ql('2026-04-20T06:00:00Z', 'gemini', { input_tokens: 9_999_999 }),
+      // small-fry: 5 rows BELOW atLeast — drop them entirely so they
+      // can't game the per-model row count rankings.
+      ql('2026-04-20T07:00:00Z', 'small-fry', { input_tokens: 100 }),
+      ql('2026-04-20T08:00:00Z', 'small-fry', { input_tokens: 100 }),
+      ql('2026-04-20T09:00:00Z', 'small-fry', { input_tokens: 100 }),
+      ql('2026-04-20T10:00:00Z', 'small-fry', { input_tokens: 100 }),
+      ql('2026-04-20T11:00:00Z', 'small-fry', { input_tokens: 100 }),
+    ],
+    { atLeast: 1_000, top: 2, generatedAt: GEN },
+  );
+  assert.equal(r.droppedAtLeast, 5);
+  // top=2 keeps gpt-5 (3 rows) + claude-x (2 rows); gemini (1 row) drops.
+  assert.equal(r.models.length, 2);
+  assert.deepEqual(
+    r.models.map((m) => m.model),
+    ['gpt-5', 'claude-x'],
+  );
+  assert.equal(r.droppedTopModels, 1);
+});
