@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.46 — 2026-04-25
+
+### Added
+
+- `burstiness`: `--min-cv <x>` flag (default 0). Drops groups
+  whose `cv` is `< x`; their counts surface as
+  `droppedLowCvGroups`. Display filter only — global denominators
+  and the global headline row still reflect the full population.
+
+  Operational use: when ranking by spikiness, the
+  steady-baseline groups (cv ≈ 0) clutter the top of any
+  cv-sorted view. Setting `--min-cv 1.0` keeps only groups whose
+  stddev is at least their mean — i.e. clearly bursty rather
+  than noise-around-baseline. Combine with `--min-active-hours`
+  to also exclude the n=1 long tail. 4 new test cases (737
+  total, up from 733): option-validation rejection, default = 0
+  back-compat, threshold sweep separating spiky `[10, 30]`
+  (cv = 0.5) from a uniform group, and a denominator-isolation
+  test confirming the floor does NOT shrink the global token
+  count or shift the global cv.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl` with both refinement
+flags engaged:
+
+```
+$ npx tsx src/cli.ts burstiness --min-cv 1.0 --min-active-hours 5
+pew-insights burstiness
+as of: 2026-04-24T23:17:45.328Z    tokens: 8,221,565,624    groups: 9    global active hrs: 868    global mean/hr: 9,471,850    global cv: 1.917    global max/hr: 126,620,962    min-tokens: 0    min-active-hours: 5    min-cv: 1.000
+dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-tokens, 4 below min-active-hours, 2 below min-cv, 0 below top cap
+
+per-model hourly burstiness (active hour buckets only; cv = stddev/mean; burst = max/p50)
+model                 tokens         active hrs  mean/hr     stddev/hr   cv     p50/hr     p95/hr      max/hr       burst
+--------------------  -------------  ----------  ----------  ----------  -----  ---------  ----------  -----------  ------
+claude-opus-4.7       4,534,275,812  262         17,306,396  21,066,779  1.217  7,413,532  60,140,851  108,008,474  14.57×
+gpt-5.4               2,457,380,737  362         6,788,345   9,266,293   1.365  3,883,536  27,231,107  65,604,896   16.89×
+claude-opus-4.6.1m    1,108,978,665  167         6,640,591   9,375,732   1.412  3,244,687  24,327,017  55,962,051   17.25×
+unknown               35,575,800     56          635,282     1,166,943   1.837  401,246    1,045,158   8,368,144    20.86×
+gpt-5                 850,661        170         5,004       5,905       1.180  2,977      16,934      37,381       12.56×
+gemini-3-pro-preview  154,496        37          4,176       4,246       1.017  3,178      10,276      22,021       6.93×
+gpt-5.1               111,623        53          2,106       3,104       1.474  1,178      8,579       17,031       14.46×
+claude-sonnet-4.5     105,382        37          2,848       3,132       1.100  1,544      8,790       14,366       9.30×
+claude-sonnet-4       53,062         26          2,041       3,257       1.596  1,016      4,691       17,028       16.76×
+```
+
+Headline reading: `--min-cv 1.0 --min-active-hours 5` shrinks the
+model list from 15 to 9. Four single-/few-hour models drop on
+the `--min-active-hours 5` floor (`gpt-5.2`, `gpt-5-nano`,
+`gpt-4.1`, `claude-opus-4.6` at 4 hrs); two more drop on
+`--min-cv 1.0` because their stddev is below their mean
+(`claude-haiku-4.5` at cv `0.840`, `claude-sonnet-4.6` at cv
+`0.902` — both bursty by eye, but the strict cv ≥ 1 cut
+excludes them). The global token count (`8,221,565,624`) and
+global cv (`1.917`) are unchanged from the unfiltered view,
+confirming both filters are display-only. Among the kept
+models, `claude-sonnet-4` at cv `1.596` and `unknown` at cv
+`1.837` are the spikiest workloads — exactly the ones a
+rate-limit / smoothing pass should target.
+
 ## 0.4.45 — 2026-04-25
 
 ### Added
