@@ -333,3 +333,52 @@ test('collapse: tzOffset still applies to underlying hour before binning', () =>
   assert.equal(r.hours[3]!.hour, 18);
   assert.equal(r.hours[3]!.sessions, 1);
 });
+
+// ---- JSON shape stability --------------------------------------------------
+
+test('JSON shape: top-level keys are stable and collapse is echoed', () => {
+  const r = buildTimeOfDay([sl('2026-04-25T10:00:00.000Z')], {
+    generatedAt: GEN,
+    collapse: 4,
+    bySource: true,
+    tzOffset: '+02:00',
+    since: '2026-04-25T00:00:00Z',
+    until: '2026-04-26T00:00:00Z',
+  });
+  const json = JSON.parse(JSON.stringify(r));
+  assert.deepEqual(
+    Object.keys(json).sort(),
+    [
+      'bySource',
+      'collapse',
+      'consideredSessions',
+      'droppedInvalidStartedAt',
+      'generatedAt',
+      'hours',
+      'peakHour',
+      'peakSessions',
+      'tzOffset',
+      'windowEnd',
+      'windowStart',
+    ].sort(),
+  );
+  assert.equal(json.collapse, 4);
+  assert.equal(json.tzOffset, '+02:00');
+  assert.equal(json.bySource, true);
+  // collapse=4 → 6 buckets at 0,4,8,12,16,20
+  assert.equal(json.hours.length, 6);
+  assert.deepEqual(
+    json.hours.map((h: { hour: number }) => h.hour),
+    [0, 4, 8, 12, 16, 20],
+  );
+});
+
+test('JSON shape: every hour bucket has a stable key set', () => {
+  const r = buildTimeOfDay([sl('2026-04-25T03:00:00.000Z')], {
+    generatedAt: GEN,
+    bySource: true,
+  });
+  for (const h of r.hours) {
+    assert.deepEqual(Object.keys(h).sort(), ['bySource', 'hour', 'sessions', 'share'].sort());
+  }
+});
