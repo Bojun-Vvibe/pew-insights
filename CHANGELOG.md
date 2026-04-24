@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.32 — 2026-04-25
+
+### Added
+
+- `--collapse <n>` flag on `time-of-day`. Collapses adjacent
+  hours into n-sized bins, where `n` must be a positive divisor
+  of 24 (1, 2, 3, 4, 6, 8, 12, 24). Default 1 (no collapsing).
+  With `--collapse 6` the report shows four 6-hour quadrants
+  (00-06 / 06-12 / 12-18 / 18-00); with `--collapse 12` it
+  shows the AM/PM split; with `--collapse 24` it shows a single
+  whole-day bin (useful for sanity-checking total counts).
+
+  The `hour` field on each bucket is the *start* of the bin so
+  `--json` consumers can format the range as
+  `[hour, hour + collapse)`. `peakHour` is also reported as the
+  bin start (so a `peakHour: 6` under `--collapse 6` means
+  "06-12 was the busiest 6-hour window"). `--by-source` and
+  `--tz-offset` compose with `--collapse` as expected.
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js time-of-day --since 2026-04-13T00:00:00Z --tz-offset -07:00 --collapse 6 --by-source
+pew-insights time-of-day
+as of: 2026-04-24T18:41:25.903Z    sessions: 6,004    tz: -07:00    collapse: 6h    peak: 06-12 (2,237 sess)    by-source: on    dropped: 0 bad started_at
+window: 2026-04-13T00:00:00Z → +∞
+
+6h-bin distribution
+hour   sessions  share  bar
+-----  --------  -----  ------------------------
+00-06  1,832     30.5%  ████████████████████····
+06-12  2,237     37.3%  ████████████████████████
+12-18  756       12.6%  ████████················
+18-00  1,179     19.6%  █████████████···········
+
+per-source breakdown (only buckets with sessions)
+hour   source       sessions
+-----  -----------  --------
+00-06  opencode     1,021
+       claude-code  348
+       openclaw     252
+       codex        211
+06-12  opencode     1,329
+       claude-code  400
+       openclaw     313
+       codex        195
+12-18  opencode     427
+       openclaw     307
+       claude-code  16
+       codex        6
+18-00  opencode     727
+       openclaw     222
+       claude-code  164
+       codex        66
+```
+
+Read (operator's local time, `-07:00`): the morning quadrant
+06-12 is the hottest (37.3% of sessions), with the late-night
+00-06 a strong second (30.5%) — together those two
+back-to-back quadrants hold 67.8% of all sessions in the
+window. The afternoon 12-18 collapses to just 12.6% and is
+also the only quadrant where `opencode` does *not* run away
+with the share (`opencode` 427 vs `openclaw` 307, only
+1.4×); in every other quadrant `opencode` is at least
+2.6× the runner-up. The original 1h view (v0.4.31) showed the
+02:00 spike but obscured the morning plateau; collapsing to
+6h makes the workday-vs-overnight split readable at a glance.
+
 ## 0.4.31 — 2026-04-25
 
 ### Added
