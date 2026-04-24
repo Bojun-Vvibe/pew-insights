@@ -14,6 +14,7 @@ import type { StreaksReport } from './streaks.js';
 import type { SessionsReport } from './sessions.js';
 import type { GapsReport } from './gaps.js';
 import type { VelocityReport, VelocityStretch } from './velocity.js';
+import type { ConcurrencyReport } from './concurrency.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1311,6 +1312,85 @@ export function renderVelocity(r: VelocityReport): string {
         `${formatTokens(s.inputTokens)} / ${formatTokens(s.outputTokens)}`,
         formatRate(s.tokensPerMinute),
       ]),
+    ),
+  );
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// concurrency
+// ---------------------------------------------------------------------------
+
+function formatMs(ms: number): string {
+  if (ms <= 0) return '0s';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${(s / 3600).toFixed(1)}h`;
+  return `${(s / 86400).toFixed(1)}d`;
+}
+
+function formatPercent(f: number): string {
+  if (!Number.isFinite(f)) return '—';
+  return `${(f * 100).toFixed(1)}%`;
+}
+
+export function renderConcurrency(r: ConcurrencyReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights concurrency'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    window: ${r.windowStart} → ${r.windowEnd}    span: ${formatMs(r.windowMs)}    sessions: ${formatNumber(r.consideredSessions)} considered, ${formatNumber(r.skippedSessions)} skipped    top: ${r.topN}`,
+    ),
+  );
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.windowMs === 0) {
+    lines.push(
+      chalk.yellow(
+        `  no overlapping sessions in the window. nothing to measure.`,
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['peak concurrency', formatNumber(r.peakConcurrency)],
+        ['peak first seen', r.peakAt ?? '—'],
+        ['peak total time', formatMs(r.peakDurationMs)],
+        ['avg concurrency', r.averageConcurrency.toFixed(2)],
+        ['coverage (>=1 open)', formatPercent(r.coverage)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  if (r.peakSessions.length > 0) {
+    lines.push(chalk.bold(`sessions open at peak (${r.peakSessions.length} of ${r.peakConcurrency})`));
+    lines.push(
+      renderTable(
+        ['session_key', 'source', 'kind', 'started_at', 'ended_at'],
+        r.peakSessions.map((s) => [
+          s.sessionKey.length > 16 ? s.sessionKey.slice(0, 13) + '…' : s.sessionKey,
+          s.source,
+          s.kind,
+          s.startedAt,
+          s.endedAt,
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  lines.push(chalk.bold('concurrency histogram (time spent at each level)'));
+  lines.push(
+    renderTable(
+      ['level', 'time', 'share'],
+      r.histogram.map((b) => [String(b.level), formatMs(b.totalMs), formatPercent(b.fraction)]),
     ),
   );
 

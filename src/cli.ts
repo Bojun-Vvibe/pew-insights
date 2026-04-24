@@ -37,6 +37,7 @@ import {
   renderSessions,
   renderGaps,
   renderVelocity,
+  renderConcurrency,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -73,6 +74,7 @@ import { buildStreaks } from './streaks.js';
 import { buildSessions, type SessionsDimension } from './sessions.js';
 import { buildGaps } from './gaps.js';
 import { buildVelocity } from './velocity.js';
+import { buildConcurrency } from './concurrency.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1414,6 +1416,44 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderVelocity(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('concurrency')
+  .description('Peak overlapping sessions and time-at-each-level histogram')
+  .option('--since <iso>', 'inclusive ISO lower bound on the sweep window')
+  .option('--until <iso>', 'exclusive ISO upper bound on the sweep window')
+  .option('--top <n>', 'cap on peakSessions[] (default 10)', '10')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; top: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildConcurrency(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          topN,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderConcurrency(report) + '\n');
         }
       } catch (e) {
         die(e);
