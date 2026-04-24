@@ -79,6 +79,21 @@ export interface ProviderShareOptions {
    * (0 disables the per-provider model breakdown entirely).
    */
   topModels?: number;
+  /**
+   * Drop providers whose session count is `< minSessions` from
+   * the `providers[]` output. Useful when the long tail of
+   * single-session vendors (or one-off `unknown` placeholder
+   * rows that survived classification) crowds the report.
+   *
+   * Important: this is a *display* filter only. The dropped
+   * providers' sessions and messages still count toward
+   * `consideredSessions` / `consideredMessages` (so the global
+   * denominators are stable) and are surfaced as
+   * `droppedProviders` / `droppedProviderSessions` /
+   * `droppedProviderMessages` so the operator can see how much
+   * was hidden. Default 0 (keep every provider).
+   */
+  minSessions?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -115,6 +130,8 @@ export interface ProviderShareReport {
   windowStart: string | null;
   windowEnd: string | null;
   topModels: number;
+  /** Echo of the resolved `minSessions` floor. */
+  minSessions: number;
   /** Sessions matched by window and used in shares. */
   consideredSessions: number;
   /** Sum of total_messages across `consideredSessions`. */
@@ -123,7 +140,13 @@ export interface ProviderShareReport {
   droppedInvalidStartedAt: number;
   /** Sessions with non-finite / negative total_messages. */
   droppedInvalidMessages: number;
-  /** One row per provider, sorted by sessions desc, provider asc. */
+  /** Provider-rows hidden by the minSessions floor. */
+  droppedProviders: number;
+  /** Sum of sessions across hidden providers. */
+  droppedProviderSessions: number;
+  /** Sum of messages across hidden providers. */
+  droppedProviderMessages: number;
+  /** One row per kept provider, sorted by sessions desc, provider asc. */
   providers: ProviderRow[];
 }
 
@@ -166,6 +189,11 @@ export function buildProviderShare(
   const topModels = opts.topModels ?? 3;
   if (!Number.isInteger(topModels) || topModels < 0) {
     throw new Error(`topModels must be a non-negative integer (got ${opts.topModels})`);
+  }
+
+  const minSessions = opts.minSessions ?? 0;
+  if (!Number.isInteger(minSessions) || minSessions < 0) {
+    throw new Error(`minSessions must be a non-negative integer (got ${opts.minSessions})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -221,7 +249,16 @@ export function buildProviderShare(
   }
 
   const providers: ProviderRow[] = [];
+  let droppedProviders = 0;
+  let droppedProviderSessions = 0;
+  let droppedProviderMessages = 0;
   for (const [provider, row] of agg) {
+    if (row.sessions < minSessions) {
+      droppedProviders += 1;
+      droppedProviderSessions += row.sessions;
+      droppedProviderMessages += row.messages;
+      continue;
+    }
     const top: ProviderModelEntry[] = [];
     if (topModels > 0) {
       const entries = Array.from(row.models.entries()).map(([model, sessions]) => ({
@@ -254,10 +291,14 @@ export function buildProviderShare(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     topModels,
+    minSessions,
     consideredSessions,
     consideredMessages,
     droppedInvalidStartedAt,
     droppedInvalidMessages,
+    droppedProviders,
+    droppedProviderSessions,
+    droppedProviderMessages,
     providers,
   };
 }

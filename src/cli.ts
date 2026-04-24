@@ -2178,10 +2178,15 @@ program
   .option('--since <iso>', 'inclusive ISO lower bound on started_at')
   .option('--until <iso>', 'exclusive ISO upper bound on started_at')
   .option('--top-models <n>', 'top distinct models reported per provider (default 3, 0 disables)', '3')
+  .option(
+    '--min-sessions <n>',
+    'hide providers with fewer than n sessions; their counts are surfaced as droppedProviders* but not in the table (default 0)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; topModels: string; json?: boolean },
+      opts: { since?: string; until?: string; topModels: string; minSessions: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2191,12 +2196,17 @@ program
         if (!Number.isInteger(topModels) || topModels < 0) {
           throw new Error(`--top-models must be a non-negative integer (got ${opts.topModels})`);
         }
+        const minSessions = Number.parseInt(opts.minSessions, 10);
+        if (!Number.isInteger(minSessions) || minSessions < 0) {
+          throw new Error(`--min-sessions must be a non-negative integer (got ${opts.minSessions})`);
+        }
 
         const sessions = await readSessionQueue(paths);
         const report = buildProviderShare(sessions, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           topModels,
+          minSessions,
         });
 
         if (opts.json || common.json) {

@@ -252,3 +252,53 @@ test('provider-share: report carries window/topModels echoed back', () => {
   assert.equal(r.windowEnd, '2026-05-01T00:00:00Z');
   assert.equal(r.topModels, 7);
 });
+
+// ---- minSessions floor (0.4.30) -------------------------------------------
+
+test('provider-share: rejects bad minSessions', () => {
+  assert.throws(() => buildProviderShare([], { minSessions: -1 }));
+  assert.throws(() => buildProviderShare([], { minSessions: 1.5 }));
+  assert.throws(() => buildProviderShare([], { minSessions: Number.NaN }));
+});
+
+test('provider-share: minSessions hides small providers but keeps global denominators', () => {
+  const r = buildProviderShare(
+    [
+      sl('2026-04-20T01:00:00Z', 'claude-opus-4.7', { total_messages: 10 }),
+      sl('2026-04-20T02:00:00Z', 'claude-opus-4.7', { total_messages: 10 }),
+      sl('2026-04-20T03:00:00Z', 'claude-opus-4.7', { total_messages: 10 }),
+      sl('2026-04-20T04:00:00Z', 'gpt-5', { total_messages: 50 }),
+      sl('2026-04-20T05:00:00Z', 'gemini-2.5-pro', { total_messages: 7 }),
+    ],
+    { generatedAt: GEN, minSessions: 2 },
+  );
+  // anthropic has 3 → kept; openai has 1 → dropped; google has 1 → dropped.
+  assert.equal(r.minSessions, 2);
+  assert.deepEqual(r.providers.map((p) => p.provider), ['anthropic']);
+  assert.equal(r.droppedProviders, 2);
+  assert.equal(r.droppedProviderSessions, 2);
+  assert.equal(r.droppedProviderMessages, 57);
+  // global denominators unchanged: shares for the kept provider are
+  // computed against the FULL considered population.
+  assert.equal(r.consideredSessions, 5);
+  assert.equal(r.consideredMessages, 87);
+  const a = r.providers[0]!;
+  assert.equal(a.sessionShare, 3 / 5);
+  assert.equal(a.messageShare, 30 / 87);
+});
+
+test('provider-share: minSessions=0 (default) keeps every provider', () => {
+  const r = buildProviderShare(
+    [
+      sl('2026-04-20T01:00:00Z', 'claude-opus-4.7'),
+      sl('2026-04-20T02:00:00Z', 'gpt-5'),
+      sl('2026-04-20T03:00:00Z', 'gemini-2.5-pro'),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.minSessions, 0);
+  assert.equal(r.providers.length, 3);
+  assert.equal(r.droppedProviders, 0);
+  assert.equal(r.droppedProviderSessions, 0);
+  assert.equal(r.droppedProviderMessages, 0);
+});

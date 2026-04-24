@@ -2047,7 +2047,7 @@ export function renderProviderShare(r: ProviderShareReport): string {
   lines.push(chalk.bold.cyan('pew-insights provider-share'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    messages: ${formatNumber(r.consideredMessages)}    providers: ${formatNumber(r.providers.length)}    top-models: ${r.topModels}    dropped: ${formatNumber(r.droppedInvalidStartedAt)} bad started_at, ${formatNumber(r.droppedInvalidMessages)} bad messages`,
+      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    messages: ${formatNumber(r.consideredMessages)}    providers: ${formatNumber(r.providers.length)}    top-models: ${r.topModels}    min-sessions: ${r.minSessions}    dropped: ${formatNumber(r.droppedInvalidStartedAt)} bad started_at, ${formatNumber(r.droppedInvalidMessages)} bad messages, ${formatNumber(r.droppedProviders)} small providers (${formatNumber(r.droppedProviderSessions)} sess / ${formatNumber(r.droppedProviderMessages)} msg)`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
