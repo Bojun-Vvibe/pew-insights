@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.23 — 2026-04-24
+
+### Added (refinement)
+
+- `message-volume --threshold <n>` flag (and the matching
+  `threshold` builder option). When supplied, every
+  distribution gets a new `aboveThresholdShare` field =
+  fraction of sessions with `total_messages > threshold`.
+  Mirrors the `reply-ratio --threshold` pattern, including
+  the strict-`>` (not `>=`) semantics so a session sitting
+  exactly on the threshold is *not* counted as exceeding it.
+  Null when the flag is not supplied; **0** (not null) on
+  empty groups so downstream JSON consumers never have to
+  special-case the field. Per-distribution under `--by
+  source|kind` so each group reports its own share.
+  - Useful for one-shot answers like *"what share of my
+    sessions are runaway loops?"* (e.g. `--threshold 100`)
+    without having to re-sum bin shares — which is fragile
+    when the operator has overridden `--edges` to a
+    different ladder.
+  - Smoke against the live corpus with `--threshold 100
+    --by source` shows the value cleanly: opencode 0.6%,
+    openclaw 3.1%, but **claude-code 34.2%** — a third of
+    claude-code sessions exceed 100 messages, vs <1% for
+    opencode. This is the same "runaway tail" signal that
+    `turn-cadence`'s coefficient-of-variation surfaced from
+    the *timing* side, but expressed structurally in
+    message counts. The two views agree, which is what we
+    want.
+  - 5 new tests cover (1) `aboveThresholdShare === null`
+    when threshold not supplied, (2) strict-`>` semantics
+    via a hand-computed example (5/50/100/500 with
+    `threshold=50` → 0.5, *not* 0.75), (3) `0` (not null)
+    on empty groups when threshold *is* supplied, (4)
+    validation rejects `0`/negative/`NaN` thresholds with a
+    clear error, (5) per-group computation under
+    `--by=source` (group `a`: 1/3 above, group `b`: 2/2
+    above).
+
 ## 0.4.22 — 2026-04-24
 
 ### Added
