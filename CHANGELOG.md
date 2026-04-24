@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.27 — 2026-04-25
+
+### Added
+
+- `pew-insights session-source-mix` subcommand — share of
+  sessions per `source` over time buckets (`--unit day | week
+  | month`, default `day`).
+
+  Why a separate subcommand:
+
+  - `sessions` reports an aggregate single-row roll-up of
+    counts per source across the whole window. It cannot show
+    whether the mix is *changing* over time — a workspace that
+    used to be 100% `claude-code` and is now 90% `opencode`
+    looks identical to one that has been 50/50 the whole way
+    if the totals happen to land in the same place.
+  - `trend` is token-shaped (operates on `queue.jsonl`, not
+    the session corpus) and reports volume, not mix.
+  - `top-projects` / `by-project` slice along `project_ref`,
+    not along `source` × time.
+
+  What the new command answers:
+
+  1. What share of sessions per day / week / month came from
+     each source?
+  2. Which source dominated each bucket and how strongly
+     (`modalSource` + `modalShare`)?
+  3. Is one source rising while another fades over the
+     window?
+
+  Implementation: pure builder against `readSessionQueue`
+  (deduplicated reader is correct here — one row per
+  `session_key`). UTC-floored bucket keys (`YYYY-MM-DD` for
+  day; ISO-week Monday at `00:00:00Z` for week; `YYYY-MM-01`
+  for month). Empty / missing source folded into `'unknown'`
+  (matches the convention in `messagevolume` /
+  `modelswitching`). Window filter on `started_at`. Sessions
+  with unparseable `started_at` are reported in
+  `droppedInvalid`.
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js session-source-mix
+pew-insights session-source-mix
+as of: 2026-04-24T17:49:19.968Z    unit: day    sessions: 6,134    sources: 4    buckets: 38    top: all    dropped: 0 invalid
+
+overall source mix
+source       sessions  share
+-----------  --------  -----
+opencode     3,484     56.8%
+openclaw     1,092     17.8%
+claude-code  1,080     17.6%
+codex        478       7.8%
+
+per-day mix (tail)
+bucket      sessions  modal        modal share  mix
+----------  --------  -----------  -----------  ------------------------------------------------------------
+2026-04-13  20        codex        90.0%        codex=90.0%  claude-code=10.0%
+2026-04-14  9         claude-code  55.6%        claude-code=55.6%  codex=44.4%
+2026-04-15  15        claude-code  86.7%        claude-code=86.7%  codex=13.3%
+2026-04-16  5         claude-code  80.0%        claude-code=80.0%  codex=20.0%
+2026-04-17  15        claude-code  66.7%        claude-code=66.7%  codex=20.0%  openclaw=13.3%
+2026-04-18  254       codex        59.8%        codex=59.8%  claude-code=37.8%  openclaw=2.4%
+2026-04-19  181       codex        73.5%        codex=73.5%  claude-code=18.8%  openclaw=7.7%
+2026-04-20  384       claude-code  57.6%        claude-code=57.6%  codex=41.4%  openclaw=0.5%  opencode=0.5%
+2026-04-21  1,139     opencode     89.7%        opencode=89.7%  claude-code=7.7%  openclaw=2.0%  codex=0.5%
+2026-04-22  797       opencode     91.2%        opencode=91.2%  openclaw=8.8%
+2026-04-23  1,814     opencode     50.9%        opencode=50.9%  claude-code=25.1%  openclaw=24.0%
+2026-04-24  1,349     opencode     60.0%        opencode=60.0%  openclaw=40.0%
+```
+
+Read: the workspace's source mix has clearly shifted —
+`claude-code` was the only source through late March, then
+`codex` briefly took over mid-April (`2026-04-13` through
+`2026-04-19`), and from `2026-04-21` onward `opencode` has
+been the modal source every day with shares ≥ 50.9%.
+`openclaw` showed up `2026-04-17` and is now the #2 source on
+the most recent day (40.0%). None of `sessions`, `trend`, or
+`top-projects` exposes this transition shape.
+
 ## 0.4.26 — 2026-04-25
 
 ### Added
