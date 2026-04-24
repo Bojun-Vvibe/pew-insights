@@ -15,6 +15,7 @@ import type { SessionsReport } from './sessions.js';
 import type { GapsReport } from './gaps.js';
 import type { VelocityReport, VelocityStretch } from './velocity.js';
 import type { ConcurrencyReport } from './concurrency.js';
+import type { TransitionsReport } from './transitions.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1392,6 +1393,69 @@ export function renderConcurrency(r: ConcurrencyReport): string {
     renderTable(
       ['level', 'time', 'share'],
       r.histogram.map((b) => [String(b.level), formatMs(b.totalMs), formatPercent(b.fraction)]),
+    ),
+  );
+
+  return lines.join('\n');
+}
+
+export function renderTransitions(r: TransitionsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights transitions'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    max-gap: ${r.maxGapSeconds}s    sessions: ${formatNumber(r.consideredSessions)}    pairs: ${formatNumber(r.adjacentPairs)} (${formatNumber(r.handoffs)} handoffs, ${formatNumber(r.breaks)} breaks, ${formatNumber(r.overlaps)} overlaps)    top: ${r.topN}`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.handoffs === 0) {
+    lines.push(chalk.yellow('  no handoffs in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['groups observed', String(r.groups.length)],
+        ['handoff rate', formatPercent(r.adjacentPairs === 0 ? 0 : r.handoffs / r.adjacentPairs)],
+        ['overall median gap', formatMs(r.overallMedianGapMs)],
+        ['overall p95 gap', formatMs(r.overallP95GapMs)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold(`top transitions (${r.topTransitions.length} of ${r.handoffs} handoffs)`));
+  lines.push(
+    renderTable(
+      ['from', 'to', 'count', 'median gap', 'p95 gap', 'overlaps'],
+      r.topTransitions.map((c) => [
+        c.from,
+        c.to,
+        formatNumber(c.count),
+        formatMs(c.medianGapMs),
+        formatMs(c.p95GapMs),
+        formatNumber(c.overlapCount),
+      ]),
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold('stickiness (P(next = same group | from group))'));
+  lines.push(
+    renderTable(
+      ['group', 'outgoing', 'self-loop', 'stickiness'],
+      r.stickiness.map((s) => [
+        s.group,
+        formatNumber(s.outgoing),
+        formatNumber(s.selfLoop),
+        s.stickiness === null ? '—' : formatPercent(s.stickiness),
+      ]),
     ),
   );
 

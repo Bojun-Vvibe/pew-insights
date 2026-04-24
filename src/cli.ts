@@ -38,6 +38,7 @@ import {
   renderGaps,
   renderVelocity,
   renderConcurrency,
+  renderTransitions,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -75,6 +76,7 @@ import { buildSessions, type SessionsDimension } from './sessions.js';
 import { buildGaps } from './gaps.js';
 import { buildVelocity } from './velocity.js';
 import { buildConcurrency } from './concurrency.js';
+import { buildTransitions, type TransitionsDimension } from './transitions.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1461,4 +1463,54 @@ program
     },
   );
 
+program
+  .command('transitions')
+  .description('Adjacency matrix of source-to-source session handoffs (with gap distribution)')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option('--by <dim>', "grouping dimension: source | kind | project_ref (default 'source')", 'source')
+  .option('--max-gap-seconds <n>', 'max gap to count as a handoff (default 1800 = 30 min)', '1800')
+  .option('--top <n>', 'top-N transitions to surface (default 10)', '10')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; by: string; maxGapSeconds: string; top: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const maxGapSeconds = Number.parseFloat(opts.maxGapSeconds);
+        if (!Number.isFinite(maxGapSeconds) || maxGapSeconds < 0) {
+          throw new Error(`--max-gap-seconds must be a non-negative finite number (got ${opts.maxGapSeconds})`);
+        }
+        if (opts.by !== 'source' && opts.by !== 'kind' && opts.by !== 'project_ref') {
+          throw new Error(`--by must be 'source' | 'kind' | 'project_ref' (got ${opts.by})`);
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildTransitions(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as TransitionsDimension,
+          maxGapSeconds,
+          topN,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderTransitions(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
 program.parseAsync(process.argv).catch(die);
+
