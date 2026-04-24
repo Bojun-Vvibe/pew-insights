@@ -2807,6 +2807,10 @@ program
     'show only the top n devices by total tokens; remainder surface as droppedTopDevices (default 0 = no cap)',
     '0',
   )
+  .option(
+    '--redact',
+    'replace each device_id with a stable short label (dev-XXXXXXXX, sha256/8) for shareable output',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2815,6 +2819,7 @@ program
         until?: string;
         minTokens: string;
         top: string;
+        redact?: boolean;
         json?: boolean;
       },
       cmd,
@@ -2836,6 +2841,7 @@ program
           until: opts.until ?? null,
           minTokens,
           top,
+          redact: opts.redact ?? false,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

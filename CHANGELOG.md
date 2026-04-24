@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.48 — 2026-04-25
+
+### Added
+
+- `device-share`: `--redact` flag (default false). Replaces every
+  emitted `deviceId` with a stable short label of the form
+  `dev-XXXXXXXX` where the suffix is the first 8 hex chars of a
+  SHA-256 of the original UUID. The hash is deterministic, so a
+  given device keeps the same short label across runs and across
+  hosts — meaning two redacted reports can still be joined on
+  the label without ever exposing the raw UUID.
+
+  Use case: pasting a `device-share` table into a public issue,
+  a screenshot, or a shared dashboard where the raw UUID is
+  mildly PII-ish or just visually noisy. Display-only — global
+  denominators, totals, drop counters, and ordering are
+  identical to the un-redacted run; only the `deviceId` column
+  is rewritten. Also exports `redactDeviceId(id: string): string`
+  as a public helper for consumers who want the same labelling
+  scheme outside the CLI path.
+
+  3 new test cases (753 total, up from 750): the redacted run
+  emits the `dev-XXXXXXXX` shape and shares preserve their
+  ordering by token mass; default value is false (back-compat
+  echo of raw `device_id`); `redact: true` does NOT change
+  `totalTokens`, `totalDevices`, `devices.length`, or per-row
+  token counts vs the plain run.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl` with the new flag:
+
+```
+$ npx tsx src/cli.ts device-share --redact
+pew-insights device-share
+as of: 2026-04-24T23:53:13.507Z    tokens: 8,237,898,930    devices: 1    shown: 1    min-tokens: 0    top: ∞
+dropped: 0 bad hour_start, 0 zero-tokens, 0 empty device_id, 0 below min-tokens, 0 below top cap
+
+per-device share of token mass (cache% = cached_input / input; models / sources = distinct count)
+device_id     tokens         share    rows   active hrs  models  sources  input          cached         output      cache%  first seen         last seen
+------------  -------------  -------  -----  ----------  ------  -------  -------------  -------------  ----------  ------  -----------------  -----------------
+dev-37533d9d  8,237,898,930  100.00%  1,391  869         15      6        3,329,072,339  4,873,378,646  34,349,311  146.4%  2025-07-30T06:00Z  2026-04-24T23:30Z
+```
+
+The raw 36-char UUID `a6aa6846-…` is now `dev-37533d9d`, stable
+across runs. All other columns are byte-identical to the
+v0.4.47 plain run.
+
 ## 0.4.47 — 2026-04-25
 
 ### Added
