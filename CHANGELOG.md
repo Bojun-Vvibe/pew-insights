@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## 0.4.10 — 2026-04-24
 
+### Added (refinement)
+
+- `p95Concurrency` field on the report: the smallest level L such
+  that cumulative window-time at concurrency <= L is >= 95%. Robust
+  to rare tall spikes — on this repo's corpus, peak is 21 but p95
+  is **7**, immediately telling the operator the 33-second peak is
+  an outlier rather than a sustained regime. Surfaced as a new row
+  in the pretty-table summary and a new key in the JSON. Three
+  additional tests cover the rare-spike case, the sustained-peak
+  case, and the empty-input baseline.
+
+
 Session-concurrency analysis. The new `pew-insights concurrency`
 subcommand sweeps `session-queue.jsonl` as a half-open-interval
 event stream, reporting peak overlapping sessions, when the peak

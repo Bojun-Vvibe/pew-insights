@@ -1363,6 +1363,7 @@ export function renderConcurrency(r: ConcurrencyReport): string {
         ['peak first seen', r.peakAt ?? '—'],
         ['peak total time', formatMs(r.peakDurationMs)],
         ['avg concurrency', r.averageConcurrency.toFixed(2)],
+        ['p95 concurrency', formatNumber(r.p95Concurrency)],
         ['coverage (>=1 open)', formatPercent(r.coverage)],
       ],
     ),

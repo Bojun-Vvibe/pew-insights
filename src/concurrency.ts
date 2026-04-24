@@ -110,6 +110,16 @@ export interface ConcurrencyReport {
   /** Average concurrency = sum(level * totalMs) / windowMs. 0 when windowMs == 0. */
   averageConcurrency: number;
   /**
+   * p95 concurrency: the smallest level L such that the cumulative
+   * fraction of window-time spent at concurrency <= L is >= 0.95.
+   * Robust to rare tall spikes — e.g., a 33-second peak of 21
+   * concurrent sessions inside a 72-day window will have a p95
+   * far below 21, telling the operator that the peak is an
+   * outlier rather than a sustained regime. 0 when windowMs == 0
+   * or when level 0 alone covers >= 95% of the window.
+   */
+  p95Concurrency: number;
+  /**
    * Coverage = fraction of window with concurrency >= 1. 0..1.
    * 0 when windowMs == 0.
    */
@@ -305,6 +315,22 @@ export function buildConcurrency(
       ? 0
       : histogram.filter((b) => b.level >= 1).reduce((acc, b) => acc + b.totalMs, 0) / windowMs;
 
+  // p95 concurrency: walk histogram in level-asc order, accumulate
+  // fraction; first level that brings cumulative fraction >= 0.95
+  // wins. Histogram is already sorted ascending and contains every
+  // non-zero bin (including level 0 if any), so this is exact.
+  let p95Concurrency = 0;
+  if (windowMs > 0) {
+    let acc = 0;
+    for (const bin of histogram) {
+      acc += bin.fraction;
+      if (acc >= 0.95) {
+        p95Concurrency = bin.level;
+        break;
+      }
+    }
+  }
+
   const peakSessions: ConcurrencyPeakSession[] = peakSessionsSnapshot
     .slice(0, topN)
     .map((key) => {
@@ -331,6 +357,7 @@ export function buildConcurrency(
     peakSessions,
     averageConcurrency,
     coverage,
+    p95Concurrency,
     histogram,
     topN,
   };

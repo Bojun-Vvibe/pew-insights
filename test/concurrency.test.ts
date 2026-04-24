@@ -227,3 +227,31 @@ test('concurrency: peak spanning multiple disjoint segments accumulates duration
   assert.ok(lvl2);
   assert.equal(lvl2!.totalMs, 60 * 60 * 1000);
 });
+
+test('concurrency: p95 — sustained level dominates over rare tall spike', () => {
+  // 100h window. 99h at level=1, then 1h at level=2.
+  // Cumulative: level 1 → 99%, so p95 = 1 (not 2).
+  const sessions = [
+    sl('a', '2026-04-01T00:00:00.000Z', '2026-04-05T04:00:00.000Z'), // 100h
+    sl('b', '2026-04-05T03:00:00.000Z', '2026-04-05T04:00:00.000Z'), // last 1h
+  ];
+  const r = buildConcurrency(sessions, { generatedAt: GEN });
+  assert.equal(r.peakConcurrency, 2);
+  assert.equal(r.p95Concurrency, 1, 'rare spike should not move p95');
+});
+
+test('concurrency: p95 — when peak sustained for >5%, p95 reaches peak', () => {
+  // 10h window: 5h at level=1, 5h at level=2. p95 must be 2.
+  const sessions = [
+    sl('a', '2026-04-01T00:00:00.000Z', '2026-04-01T10:00:00.000Z'),
+    sl('b', '2026-04-01T05:00:00.000Z', '2026-04-01T10:00:00.000Z'),
+  ];
+  const r = buildConcurrency(sessions, { generatedAt: GEN });
+  assert.equal(r.peakConcurrency, 2);
+  assert.equal(r.p95Concurrency, 2);
+});
+
+test('concurrency: p95 = 0 on empty input', () => {
+  const r = buildConcurrency([], { generatedAt: GEN });
+  assert.equal(r.p95Concurrency, 0);
+});
