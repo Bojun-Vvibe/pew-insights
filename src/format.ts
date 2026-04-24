@@ -12,6 +12,7 @@ import type { DashboardReport } from './dashboard.js';
 import { HEATMAP_DOW_LABELS, type HeatmapReport } from './heatmap.js';
 import type { StreaksReport } from './streaks.js';
 import type { SessionsReport } from './sessions.js';
+import type { GapsReport } from './gaps.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1152,6 +1153,74 @@ export function renderSessions(r: SessionsReport): string {
       ),
     );
   }
+
+  return lines.join('\n');
+}
+
+export function renderGaps(r: GapsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights gaps'));
+  const win =
+    r.since == null && r.until == null
+      ? 'all time'
+      : `${r.since ?? '—'} → ${r.until ?? 'now'}`;
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    window: ${win}    quantile: ${r.quantile}    minGap: ${r.minGapSeconds}s    top: ${r.topN}`,
+    ),
+  );
+  lines.push('');
+
+  if (r.totalGaps === 0) {
+    lines.push(
+      chalk.yellow(
+        `  need >= 2 sessions to measure gaps (got ${r.totalSessions}).`,
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['sessions in window', formatNumber(r.totalSessions)],
+        ['adjacent gaps', formatNumber(r.totalGaps)],
+        [
+          'threshold (nearest-rank)',
+          r.thresholdSeconds == null ? '—' : formatDurSeconds(r.thresholdSeconds),
+        ],
+        [
+          'median gap',
+          r.medianGapSeconds == null
+            ? '—'
+            : formatDurSeconds(Math.round(r.medianGapSeconds)),
+        ],
+        ['max gap', formatDurSeconds(r.maxGapSeconds)],
+        ['flagged', formatNumber(r.flagged.length)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  if (r.flagged.length === 0) {
+    lines.push(chalk.dim('  no gaps strictly exceeded the threshold.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`flagged gaps (>${formatDurSeconds(r.thresholdSeconds)}, gap_seconds desc)`));
+  lines.push(
+    renderTable(
+      ['gap', 'qrank', 'before (last_msg)', 'after (started)', 'src/kind'],
+      r.flagged.map((g) => [
+        formatDurSeconds(g.gapSeconds),
+        g.quantileRank.toFixed(2),
+        g.before.lastMessageAt.slice(0, 16) + 'Z',
+        g.after.startedAt.slice(0, 16) + 'Z',
+        `${g.before.source}/${g.before.kind} → ${g.after.source}/${g.after.kind}`,
+      ]),
+    ),
+  );
 
   return lines.join('\n');
 }

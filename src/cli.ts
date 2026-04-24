@@ -35,6 +35,7 @@ import {
   renderHeatmap,
   renderStreaks,
   renderSessions,
+  renderGaps,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -69,6 +70,7 @@ import { buildDashboard } from './dashboard.js';
 import { buildHeatmap, type HeatmapMetric, type HeatmapTz } from './heatmap.js';
 import { buildStreaks } from './streaks.js';
 import { buildSessions, type SessionsDimension } from './sessions.js';
+import { buildGaps } from './gaps.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1304,6 +1306,66 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSessions(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('gaps')
+  .description('Find unusually long idle periods between sessions via empirical-quantile thresholds')
+  .option('--since <spec>', 'window: 24h, 7d, 30d, all', '7d')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at (default: open-ended)')
+  .option('--quantile <q>', 'quantile threshold in (0,1] (default 0.9 — flag the longest 10%)', '0.9')
+  .option('--min-gap <seconds>', 'absolute floor; gaps below this never flagged (default 0)', '0')
+  .option('--top <n>', 'cap flagged rows shown (default 10)', '10')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since: string;
+        until?: string;
+        quantile: string;
+        minGap: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+        const paths = resolvePewPaths(common.pewHome);
+
+        const since = resolveSince(opts.since);
+        const until = opts.until ? new Date(opts.until).toISOString() : null;
+        const quantile = Number.parseFloat(opts.quantile);
+        if (!Number.isFinite(quantile) || quantile <= 0 || quantile > 1) {
+          throw new Error(`--quantile must be in (0,1] (got ${opts.quantile})`);
+        }
+        const minGap = Number.parseInt(opts.minGap, 10);
+        if (!Number.isFinite(minGap) || minGap < 0) {
+          throw new Error(`--min-gap must be a non-negative integer (got ${opts.minGap})`);
+        }
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildGaps(sessions, {
+          since,
+          until,
+          quantile,
+          minGapSeconds: minGap,
+          topN,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderGaps(report) + '\n');
         }
       } catch (e) {
         die(e);
