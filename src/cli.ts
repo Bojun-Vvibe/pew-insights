@@ -34,6 +34,7 @@ import {
   renderDashboard,
   renderHeatmap,
   renderStreaks,
+  renderSessions,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -67,6 +68,7 @@ import { buildRatiosReport } from './ratiosreport.js';
 import { buildDashboard } from './dashboard.js';
 import { buildHeatmap, type HeatmapMetric, type HeatmapTz } from './heatmap.js';
 import { buildStreaks } from './streaks.js';
+import { buildSessions, type SessionsDimension } from './sessions.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -87,7 +89,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.4.6')
+  .version('0.4.7')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -1235,6 +1237,73 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderStreaks(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('sessions')
+  .description('Per-session shape: counts, durations, message volume, top groups by source/kind/project_ref')
+  .option('--since <spec>', 'window: 24h, 7d, 30d, all', '7d')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at (default: open-ended)')
+  .option('--by <dim>', 'group dimension: source | kind | project_ref (default source)', 'source')
+  .option('--top <n>', 'cap groups shown in the breakdown (default 10)', '10')
+  .option(
+    '--min-duration <seconds>',
+    'drop sessions whose duration_seconds < this (default 0)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since: string;
+        until?: string;
+        by: string;
+        top: string;
+        minDuration: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts & { since: string };
+        const paths = resolvePewPaths(common.pewHome);
+
+        const since = resolveSince(opts.since);
+        const until = opts.until ? new Date(opts.until).toISOString() : null;
+        const topN = Number.parseInt(opts.top, 10);
+        if (!Number.isFinite(topN) || topN < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const minDuration = Number.parseInt(opts.minDuration, 10);
+        if (!Number.isFinite(minDuration) || minDuration < 0) {
+          throw new Error(
+            `--min-duration must be a non-negative integer in seconds (got ${opts.minDuration})`,
+          );
+        }
+        if (opts.by !== 'source' && opts.by !== 'kind' && opts.by !== 'project_ref') {
+          throw new Error(
+            `--by must be one of source | kind | project_ref (got ${opts.by})`,
+          );
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildSessions(sessions, {
+          since,
+          until,
+          by: opts.by as SessionsDimension,
+          topN,
+          minDurationSeconds: minDuration,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSessions(report) + '\n');
         }
       } catch (e) {
         die(e);

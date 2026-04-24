@@ -11,6 +11,7 @@ import type { RatiosReport, RatioStatus } from './ratiosreport.js';
 import type { DashboardReport } from './dashboard.js';
 import { HEATMAP_DOW_LABELS, type HeatmapReport } from './heatmap.js';
 import type { StreaksReport } from './streaks.js';
+import type { SessionsReport } from './sessions.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1032,5 +1033,125 @@ export function renderStreaks(s: StreaksReport): string {
       ],
     ),
   );
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+function formatDurSeconds(s: number | null): string {
+  if (s == null) return '—';
+  if (s < 60) return `${s}s`;
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return sec === 0 ? `${m}m` : `${m}m${sec}s`;
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return m === 0 ? `${h}h` : `${h}h${m}m`;
+}
+
+function shortKey(k: string, max = 24): string {
+  if (k.length <= max) return k;
+  return k.slice(0, max - 1) + '…';
+}
+
+export function renderSessions(r: SessionsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights sessions'));
+  const win =
+    r.since == null && r.until == null
+      ? 'all time'
+      : `${r.since ?? '—'} → ${r.until ?? 'now'}`;
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    window: ${win}    by: ${r.by}    minDuration: ${r.minDurationSeconds}s`,
+    ),
+  );
+  lines.push('');
+
+  if (r.totalSessions === 0) {
+    lines.push(chalk.yellow('  no sessions match the current window/filter.'));
+    return lines.join('\n');
+  }
+
+  // Top-line totals.
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['total sessions', formatNumber(r.totalSessions)],
+        ['total wall-clock', formatDurSeconds(r.totalDurationSeconds)],
+        ['total messages', formatNumber(r.totalMessages)],
+        [
+          'longest session',
+          r.longestSession == null
+            ? '—'
+            : `${formatDurSeconds(r.longestSession.durationSeconds)}  (${r.longestSession.source}/${r.longestSession.kind}, started ${r.longestSession.startedAt.slice(0, 16)}Z)`,
+        ],
+        [
+          'chattiest session',
+          r.chattiestSession == null
+            ? '—'
+            : `${formatNumber(r.chattiestSession.totalMessages)} msgs  (${r.chattiestSession.source}/${r.chattiestSession.kind}, started ${r.chattiestSession.startedAt.slice(0, 16)}Z)`,
+        ],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // Distribution stats — duration first, then messages, both 5-stat.
+  lines.push(chalk.bold('duration distribution (per session)'));
+  lines.push(
+    renderTable(
+      ['stat', 'value'],
+      [
+        ['min', formatDurSeconds(r.durationStats.min)],
+        ['median', formatDurSeconds(r.durationStats.median == null ? null : Math.round(r.durationStats.median))],
+        ['mean', formatDurSeconds(r.durationStats.mean == null ? null : Math.round(r.durationStats.mean))],
+        ['p95', formatDurSeconds(r.durationStats.p95)],
+        ['max', formatDurSeconds(r.durationStats.max)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold('messages distribution (per session)'));
+  lines.push(
+    renderTable(
+      ['stat', 'value'],
+      [
+        ['min', r.messageStats.min == null ? '—' : formatNumber(r.messageStats.min)],
+        ['median', r.messageStats.median == null ? '—' : (Math.round(r.messageStats.median * 10) / 10).toString()],
+        ['mean', r.messageStats.mean == null ? '—' : r.messageStats.mean.toFixed(2)],
+        ['p95', r.messageStats.p95 == null ? '—' : formatNumber(r.messageStats.p95)],
+        ['max', r.messageStats.max == null ? '—' : formatNumber(r.messageStats.max)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // Top-N grouped breakdown.
+  const heading = `top ${Math.min(r.topN, r.topGroups.length)} of ${r.groupCardinality} ${r.by} value(s)`;
+  lines.push(chalk.bold(heading));
+  if (r.topGroups.length === 0) {
+    lines.push(chalk.dim('  (no groups)'));
+  } else {
+    lines.push(
+      renderTable(
+        [r.by, 'sessions', 'wall-clock', 'msgs', 'median dur'],
+        r.topGroups.map((g) => [
+          shortKey(g.key),
+          formatNumber(g.sessions),
+          formatDurSeconds(g.totalDurationSeconds),
+          formatNumber(g.totalMessages),
+          formatDurSeconds(Math.round(g.medianDurationSeconds)),
+        ]),
+      ),
+    );
+  }
+
   return lines.join('\n');
 }
