@@ -6,6 +6,90 @@ All notable changes to this project will be documented in this file.
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.7 — 2026-04-24
+
+Per-session shape analysis. The new `pew-insights sessions`
+subcommand reads the `session-queue.jsonl` corpus directly (the
+first builder to do so as a primary input) and answers a question
+none of the existing token-aggregation subcommands can: *what does
+my conversation shape look like?*
+
+A session is the unit of human-LLM interaction — a `started_at`,
+`last_message_at`, `duration_seconds`, message count, kind
+(`agent`/`human`), source, and project_ref. `digest`/`top-projects`
+treat each session row as a thing to be tallied for its tokens;
+`sessions` treats each row as a row, with its own duration and
+message-count distribution.
+
+### Added
+
+- `pew-insights sessions` subcommand
+  - `--since` window (`24h | 7d | 30d | all`, default `7d`) filters
+    on `started_at`; `--until <iso>` sets an exclusive upper bound
+    so a long session is attributed to its starting day (matches
+    how an operator describes it: "the long session I started
+    Tuesday").
+  - `--by source | kind | project_ref` (default `source`) drives
+    the breakdown table.
+  - `--top <n>` caps the breakdown table (default 10); the report
+    still surfaces `groupCardinality` so truncation is visible.
+  - `--min-duration <seconds>` (default 0) drops sub-threshold
+    rows — useful for filtering auto-created empty sessions or
+    one-shot exec calls that left a 0-second row behind.
+  - Reports total session count, total wall-clock seconds, total
+    messages, the **longest** session (by duration_seconds, with
+    earlier-started tie-break), the **chattiest** session (by
+    total_messages, same tie-break), a 5-stat duration distribution
+    (min/median/mean/p95/max) and the same on message count, then
+    the top-N grouped breakdown.
+  - p95 uses **nearest-rank** (k = ceil(0.95 × n)) rather than
+    linear interpolation. Session counts are typically small and
+    we want the answer to be an actual observed value — matches
+    how an operator reads "the worst 5% of sessions".
+  - Median uses standard lower-half averaging for even-count
+    populations.
+  - `--json` emits the full report including pointers to the
+    longest + chattiest sessions and the per-group rows, suitable
+    for feeding into downstream BI or alerting on session-shape
+    drift.
+- `src/sessions.ts`
+  - `buildSessions(sessions, opts)` — pure builder, deterministic
+    on a given input. Throws on `topN < 1`, non-integer `topN`,
+    negative `minDurationSeconds`, and unknown `by` values. Returns
+    `null` for `longestSession` / `chattiestSession` when no
+    session survives the filter, so consumers can distinguish
+    "empty window" from "all sessions are 0-second".
+  - Tie-break for `longestSession` / `chattiestSession`: the
+    *earlier-started* session wins when the metric is equal, so
+    re-running on the same input always picks the same pointer.
+  - Group sort order: `sessions desc, totalDurationSeconds desc,
+    key asc` — fully deterministic across re-runs.
+- `renderSessions` in `src/format.ts` — top-line summary table
+  with longest + chattiest pointers in human-readable form
+  (`66h32m  (opencode/human, started 2026-04-21T08:23Z)`),
+  duration + messages distribution tables (5-stat each), and the
+  top-N grouped breakdown with per-group session count, wall-clock,
+  message count, and median duration. Duration formatting collapses
+  to `s | m | m+s | h | h+m` so a 30-second session and a 7-hour
+  session both render compactly.
+
+### Tests
+
+- `test/sessions.test.ts` — 17 new cases covering: `topN` integer
+  validation (rejects 0, negative, fractional), `minDurationSeconds`
+  non-negativity, unknown `by` rejection, empty-input nulls and
+  zero totals, totals + longest + chattiest aggregation, longest
+  tie-break (earlier wins), chattiest tie-break (earlier wins),
+  `since`/`until` window with exclusive upper bound, `min-duration`
+  threshold filtering, even-count median (lower-half averaging),
+  p95 nearest-rank with n=20, `by=source` / `by=kind` /
+  `by=project_ref` grouping, group sort tie-break (sessions tie →
+  duration desc → key asc), `topN` truncation surfacing
+  `groupCardinality`, distribution min/max correctness, and full
+  determinism on a given input.
+
+Total test count: 308 → 325.
+
 ## 0.4.6 — 2026-04-24
 
 Activity-cadence analysis. The new `pew-insights streaks` subcommand
