@@ -98,6 +98,16 @@ export interface MessageVolumeOptions {
   by?: MessageVolumeDimension;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
+  /**
+   * Optional analytic threshold on the message-count scale. When
+   * set, every distribution gets an extra `aboveThresholdShare`
+   * field = the fraction of sessions with `total_messages >
+   * threshold`. Useful for answering "what share of my sessions
+   * are runaway loops" (e.g. `threshold=100`) in a single field,
+   * without re-summing bin shares (which is fragile when the
+   * operator overrides `--edges`). Must be > 0 when supplied.
+   */
+  threshold?: number;
 }
 
 export interface MessageVolumeBin {
@@ -139,6 +149,12 @@ export interface MessageVolumeDistribution {
   bins: MessageVolumeBin[];
   /** Index into `bins[]` of the modal bin. -1 when empty. */
   modalBinIndex: number;
+  /**
+   * Fraction of sessions with `total_messages > threshold`. Only
+   * populated when `opts.threshold` is supplied; otherwise `null`.
+   * 0 when empty.
+   */
+  aboveThresholdShare: number | null;
 }
 
 export interface MessageVolumeReport {
@@ -149,6 +165,8 @@ export interface MessageVolumeReport {
   /** Resolved upper-edges actually used. */
   edges: number[];
   minTotalMessages: number;
+  /** Threshold echoed from opts; null when not supplied. */
+  threshold: number | null;
   /** Sessions matched by window but dropped by the min-messages floor. */
   droppedMinMessages: number;
   /** Sessions with non-finite / negative total_messages. */
@@ -206,6 +224,7 @@ function buildDistribution(
   values: number[],
   edges: number[],
   labels: string[],
+  threshold: number | null,
 ): MessageVolumeDistribution {
   const totalSessions = values.length;
   if (totalSessions === 0) {
@@ -230,6 +249,7 @@ function buildDistribution(
       maxMessages: 0,
       bins,
       modalBinIndex: -1,
+      aboveThresholdShare: threshold === null ? null : 0,
     };
   }
 
@@ -286,6 +306,10 @@ function buildDistribution(
     maxMessages: sortedAsc[sortedAsc.length - 1]!,
     bins,
     modalBinIndex,
+    aboveThresholdShare:
+      threshold === null
+        ? null
+        : values.reduce((acc, n) => acc + (n > threshold ? 1 : 0), 0) / totalSessions,
   };
 }
 
@@ -333,6 +357,13 @@ export function buildMessageVolume(
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const labels = makeBinLabels(edges);
 
+  const threshold = opts.threshold ?? null;
+  if (threshold !== null && (!Number.isFinite(threshold) || threshold <= 0)) {
+    throw new Error(
+      `threshold must be a positive finite number when supplied (got ${opts.threshold})`,
+    );
+  }
+
   const buckets = new Map<string, number[]>();
   let consideredSessions = 0;
   let droppedMinMessages = 0;
@@ -368,11 +399,11 @@ export function buildMessageVolume(
   const distributions: MessageVolumeDistribution[] = [];
   if (by === 'all') {
     distributions.push(
-      buildDistribution('all', buckets.get('all') ?? [], edges, labels),
+      buildDistribution('all', buckets.get('all') ?? [], edges, labels, threshold),
     );
   } else {
     for (const [g, arr] of buckets) {
-      distributions.push(buildDistribution(g, arr, edges, labels));
+      distributions.push(buildDistribution(g, arr, edges, labels, threshold));
     }
     distributions.sort((a, b) => {
       if (b.totalSessions !== a.totalSessions) return b.totalSessions - a.totalSessions;
@@ -387,6 +418,7 @@ export function buildMessageVolume(
     by,
     edges: [...edges],
     minTotalMessages,
+    threshold,
     droppedMinMessages,
     droppedInvalid,
     consideredSessions,

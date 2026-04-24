@@ -1870,6 +1870,10 @@ program
     '--edges <list>',
     `comma-separated bin upper-edges in messages, strictly ascending (default ${DEFAULT_VOLUME_EDGES.join(',')})`,
   )
+  .option(
+    '--threshold <n>',
+    'report aboveThresholdShare = fraction of sessions with total_messages > n (default unset)',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -1879,6 +1883,7 @@ program
         by: string;
         minTotalMessages: string;
         edges?: string;
+        threshold?: string;
         json?: boolean;
       },
       cmd,
@@ -1905,6 +1910,16 @@ program
             return v;
           });
         }
+        let threshold: number | undefined;
+        if (opts.threshold != null && opts.threshold.length > 0) {
+          const v = Number.parseFloat(opts.threshold);
+          if (!Number.isFinite(v) || v <= 0) {
+            throw new Error(
+              `--threshold must be a positive finite number (got '${opts.threshold}')`,
+            );
+          }
+          threshold = v;
+        }
 
         const sessions = await readSessionQueue(paths);
         const report = buildMessageVolume(sessions, {
@@ -1913,6 +1928,7 @@ program
           by: opts.by as MessageVolumeDimension,
           minTotalMessages,
           edges,
+          threshold,
         });
 
         if (opts.json || common.json) {

@@ -234,3 +234,57 @@ test('message-volume: report is JSON-serializable and round-trips losslessly', (
     assert.equal(typeof d.maxMessages, 'number');
   }
 });
+
+test('message-volume: aboveThresholdShare null when threshold not supplied', () => {
+  const r = buildMessageVolume(
+    [sl('2026-04-20T10:00:00Z', 3), sl('2026-04-20T11:00:00Z', 200)],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.threshold, null);
+  assert.equal(r.distributions[0]!.aboveThresholdShare, null);
+});
+
+test('message-volume: aboveThresholdShare counts strictly greater (not >=)', () => {
+  // counts: 5, 50, 100, 500. threshold=50 → only 100 and 500 exceed → 2/4 = 0.5
+  const r = buildMessageVolume(
+    [
+      sl('2026-04-20T10:00:00Z', 5),
+      sl('2026-04-20T11:00:00Z', 50),
+      sl('2026-04-20T12:00:00Z', 100),
+      sl('2026-04-20T13:00:00Z', 500),
+    ],
+    { threshold: 50, generatedAt: GEN },
+  );
+  assert.equal(r.threshold, 50);
+  assert.equal(r.distributions[0]!.aboveThresholdShare, 0.5);
+});
+
+test('message-volume: aboveThresholdShare on empty group is 0 (not null) when threshold supplied', () => {
+  const r = buildMessageVolume([], { threshold: 100, generatedAt: GEN });
+  assert.equal(r.distributions[0]!.aboveThresholdShare, 0);
+});
+
+test('message-volume: rejects bad threshold', () => {
+  assert.throws(() => buildMessageVolume([], { threshold: 0 }));
+  assert.throws(() => buildMessageVolume([], { threshold: -1 }));
+  assert.throws(() => buildMessageVolume([], { threshold: Number.NaN }));
+});
+
+test('message-volume: aboveThresholdShare is per-distribution under by=source', () => {
+  // group a: 5, 5, 200 → 1/3 above 50
+  // group b: 100, 100 → 2/2 above 50
+  const r = buildMessageVolume(
+    [
+      sl('2026-04-20T10:00:00Z', 5, { source: 'a' }),
+      sl('2026-04-20T11:00:00Z', 5, { source: 'a' }),
+      sl('2026-04-20T12:00:00Z', 200, { source: 'a' }),
+      sl('2026-04-20T13:00:00Z', 100, { source: 'b' }),
+      sl('2026-04-20T14:00:00Z', 100, { source: 'b' }),
+    ],
+    { by: 'source', threshold: 50, generatedAt: GEN },
+  );
+  const a = r.distributions.find((d) => d.group === 'a')!;
+  const b = r.distributions.find((d) => d.group === 'b')!;
+  assert.equal(a.aboveThresholdShare, 1 / 3);
+  assert.equal(b.aboveThresholdShare, 1);
+});

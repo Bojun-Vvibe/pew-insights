@@ -1798,6 +1798,9 @@ export function renderMessageVolume(r: MessageVolumeReport): string {
           ['p99', fmtMessages(d.p99Messages)],
           ['max', fmtMessages(d.maxMessages)],
           ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
+          ...(d.aboveThresholdShare !== null && r.threshold !== null
+            ? [[`> ${r.threshold} share`, formatPercentLocal(d.aboveThresholdShare)] as [string, string]]
+            : []),
         ],
       ),
     );
