@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.43 — 2026-04-25
+
+### Added
+
+- New `weekday-share` subcommand. Per-`(model|source)` token mass
+  distribution across the 7 ISO weekdays (Mon..Sun, UTC) with a
+  Herfindahl-Hirschman concentration index in `[1/7, 1]`. Surfaces
+  the **peak weekday + share**, **active weekdays out of 7**, and
+  **HHI** for every group, plus a global headline row that
+  answers "is my overall workload Mon-Fri shaped or 7-day uniform"
+  in a single scalar.
+
+  Distinct lens vs the existing time-axis reports:
+  - `time-of-day` collapses across weekdays (hour-of-day only);
+  - `heatmap` is 24×7 normalised against the global cell maximum,
+    so scale differences across models are deliberately squashed
+    and you cannot read "this model is 90% Mon-Fri" off it;
+  - `peak-hour-share` is *within-day* concentration, not
+    across-week composition;
+  - `streaks`, `velocity`, `concurrency`, `gaps`, `idle-gaps`
+    look at sub-day cadence, not day-of-week mass.
+
+  HHI is the single-scalar week-shape headline: `1/7 ≈ 0.143`
+  means a perfectly uniform week, `1.0` means the entire spend
+  landed on one weekday. Lets operators rank models by week-shape
+  concentration without eyeballing seven percentages each.
+
+  Flags: `--since`, `--until`, `--by model|source`, `--min-tokens`,
+  `--top`, `--json`. 13 new unit tests (702 total, up from 689)
+  covering option-validation, ISO-weekday mapping (Mon=0..Sun=6
+  derived from UTC `getUTCDay()`), single-weekday HHI=1.0,
+  hand-computed HHI (0.625 for a 75/25 Mon/Tue split), share
+  normalisation summing to 1.0 within `1e-9`, droppage of bad
+  `hour_start` and non-positive `total_tokens`, window filtering
+  by `since`/`until`, by-source split with empty-source folding
+  to `unknown`, sort order (tokens desc, key asc tie-break), and
+  the `min-tokens` / `top` cap surfaces.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ node dist/cli.js weekday-share
+pew-insights weekday-share
+as of: 2026-04-24T22:36:47.638Z    tokens: 8,205,355,057    groups: 15    global peak: Mon 24.9%    global hhi: 0.163    min-tokens: 0
+dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-tokens, 0 below top cap
+
+per-model weekday share (UTC ISO weekday, sorted by total tokens desc; HHI in [1/7, 1])
+model                 tokens         Mon    Tue    Wed    Thu     Fri     Sat    Sun    peak        active  hhi
+--------------------  -------------  -----  -----  -----  ------  ------  -----  -----  ----------  ------  -----
+claude-opus-4.7       4,520,585,751  24.3%  21.3%  14.8%  10.3%   7.8%    15.7%  5.8%   Mon 24.3%   7/7     0.171
+gpt-5.4               2,454,860,231  34.9%  8.2%   9.1%   8.9%    14.2%   8.6%   16.1%  Mon 34.9%   7/7     0.198
+claude-opus-4.6.1m    1,108,978,665  7.4%   8.6%   50.5%  16.4%   17.2%   0.0%   0.0%   Wed 50.5%   5/7     0.324
+claude-haiku-4.5      70,717,678     4.3%   9.3%   46.0%  33.7%   6.8%    0.0%   0.0%   Wed 46.0%   5/7     0.340
+unknown               35,575,800     0.0%   0.0%   23.5%  20.6%   55.9%   0.0%   0.0%   Fri 55.9%   3/7     0.410
+claude-sonnet-4.6     12,601,545     0.0%   0.0%   21.3%  78.7%   0.0%    0.0%   0.0%   Thu 78.7%   2/7     0.665
+gpt-5                 850,661        24.3%  17.5%  10.6%  27.3%   15.7%   3.3%   1.4%   Thu 27.3%   7/7     0.201
+claude-opus-4.6       350,840        0.0%   0.0%   0.0%   55.3%   44.7%   0.0%   0.0%   Thu 55.3%   2/7     0.506
+gpt-5.2               299,605        0.0%   0.0%   0.0%   100.0%  0.0%    0.0%   0.0%   Thu 100.0%  1/7     1.000
+gemini-3-pro-preview  154,496        16.0%  39.5%  8.4%   29.2%   6.9%    0.0%   0.0%   Tue 39.5%   5/7     0.279
+gpt-5.1               111,623        18.6%  36.4%  12.0%  7.5%    0.3%    0.0%   25.2%  Tue 36.4%   6/7     0.251
+gpt-5-nano            109,646        0.0%   0.0%   0.0%   100.0%  0.0%    0.0%   0.0%   Thu 100.0%  1/7     1.000
+claude-sonnet-4.5     105,382        2.5%   46.4%  6.1%   42.2%   2.8%    0.0%   0.0%   Tue 46.4%   5/7     0.398
+claude-sonnet-4       53,062         43.0%  5.2%   31.0%  0.0%    6.8%    14.0%  0.0%   Mon 43.0%   5/7     0.308
+gpt-4.1               72             0.0%   0.0%   0.0%   0.0%    100.0%  0.0%   0.0%   Fri 100.0%  1/7     1.000
+```
+
+Headline reading: at the workspace level (~8.2B tokens across
+15 distinct model ids over the full window) the global HHI is
+`0.163` — only marginally above the uniform-week floor of
+`0.143`, with `Monday` the modal weekday at `24.9%` of mass.
+Per-model the picture diverges: the two top-volume models
+(`claude-opus-4.7`, `gpt-5.4`) are 7-day-active with HHI in
+`[0.17, 0.20]` (close to uniform), while the long-tail models
+collapse to single-day spikes — `gpt-5.2`, `gpt-5-nano`, and
+`gpt-4.1` each show HHI = `1.000` because all of their
+recorded mass landed on a single weekday (Thu, Thu, Fri
+respectively), and `claude-sonnet-4.6` lands `78.7%` on
+Thursday alone (HHI `0.665`).
+
 ## 0.4.42 — 2026-04-25
 
 ### Added
