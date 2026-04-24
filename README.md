@@ -37,6 +37,7 @@ What pew gives you out of the box, vs. what `pew-insights` adds:
 - `anomalies` *(0.4.1)* — flags days whose token total deviates ≥ N σ from a trailing baseline (default 7-day baseline, threshold |z| ≥ 2.0); exits with code 2 when the most recent day spiked HIGH so it composes into cron alerting alongside `budget`
 - `ratios` *(0.4.3)* — scores cache-hit-ratio drift over a window using logit-space EWMA + a trailing baseline of EWMA values; handles bounded `[0, 1]` metrics correctly (no spurious ±2σ alerts near the boundaries) and exits 2 when the most recent day flagged either direction so cache-hit regressions surface in cron alongside `budget` / `anomalies`
 - `ratios` *(0.4.2, internal helpers; 0.4.3 wired to CLI)* — bounded-ratio math (`clampProbability`, `logit`/`expit`, `safeLogit`, `ewmaLogit`, `ewmaLogitSeries`) with the `pew-insights ratios` subcommand on top; EWMA stays inside (0, 1) on all-0/all-1 input where naive linear-space EWMA breaks
+- `dashboard` *(0.4.4)* — one-screen operator view; composes `status` + `anomalies` + `ratios` into Health → Volume → Efficiency sections with two derived drift indicators (token volume %, cache-hit drift in percentage points). Exits 2 if EITHER the most recent day flagged token-high OR the most recent day flagged ratio-high/ratio-low.
 - HTML report now includes Forecast and Budget sections alongside the existing Trend / Cost panels
 
 **v0.3:**
@@ -246,6 +247,43 @@ watches *efficiency* drift. A user whose token volume is flat but
 whose cache-hit ratio fell from 70% to 30% is paying ~2.5× more for
 the same workload — invisible to `anomalies`, surfaces immediately
 in `ratios`.
+
+### Dashboard (one-screen operator view)
+
+```sh
+# Default: 30-day lookback, 7-day baseline, |z| ≥ 2.0, EWMA α=0.3.
+pew-insights dashboard
+
+# JSON for piping into jq / scrapers.
+pew-insights dashboard --json | jq '.alerting'
+
+# Tighter window for short-term monitoring.
+pew-insights dashboard --lookback 14 --baseline 5 --threshold 1.5
+```
+
+`dashboard` collapses three already-shipped subcommands (`status`,
+`anomalies`, `ratios`) into a single Health → Volume → Efficiency
+view sized for a normal terminal. The detailed views remain
+available when an operator wants to drill in.
+
+Two derived drift indicators on the most recent scored day that
+don't exist in the standalone reports:
+
+- **`tokenDriftPct`** — `(tokens - baselineMean) / baselineMean × 100`.
+  Signed percent. null on `warmup` / `flat` / zero baseline.
+- **`ratioDriftPctPoints`** — `(ewma - inverseLogit(baselineLogitMean)) × 100`.
+  Signed *percentage points* (not percent of percent — a cache-hit
+  going from 50% to 65% is +15pp, the operator-friendly unit).
+  null on `warmup` / `flat` / `undefined`.
+
+Exit-code contract mirrors the per-subcommand contracts: exit 2 if
+EITHER the most recent token day is `high` OR the most recent ratio
+day is `high` / `low`. Token `low` does NOT trigger — a slow day is
+not a page (matches `anomalies`).
+
+```sh
+pew-insights dashboard --json > /tmp/dash.json || curl -X POST $WEBHOOK -d @/tmp/dash.json
+```
 
 ### Compare
 

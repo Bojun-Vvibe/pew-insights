@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## 0.4.4 — 2026-04-24
+
+One-screen operator view. The new `pew-insights dashboard`
+subcommand composes `status` + `anomalies` + `ratios` into a
+single report sized for a normal terminal, with two derived drift
+indicators that don't exist standalone: token-volume drift (% vs
+trailing baseline mean) and cache-hit drift (signed percentage
+points vs baseline EWMA recovered from logit space). Health →
+volume → efficiency, in that order — coarse to fine, the way an
+SRE would triage.
+
+### Added
+
+- `pew-insights dashboard` subcommand
+  - Reads pew state once and runs `buildStatus`, `buildAnomalies`,
+    and `buildRatiosReport` in parallel. Composition lives in a
+    new pure builder (`buildDashboard`) so the renderer is a
+    DashboardReport-in / string-out function and tests can inject
+    fixtures directly without any filesystem.
+  - Two derived indicators on the most recent day:
+    - `tokenDriftPct` — `(tokens - baselineMean) / baselineMean × 100`.
+      null on `warmup` / `flat` / zero baseline.
+    - `ratioDriftPctPoints` — `ewma - inverseLogit(baselineLogitMean)` × 100.
+      Reported in *percentage points* (not percent of percent), the
+      operator-friendly unit. null on `warmup` / `flat` / `undefined`.
+  - Exit-code contract mirrors the per-subcommand contracts:
+    exit 2 if EITHER the most recent token day is `high` OR the
+    most recent ratio day is `high`/`low`. Token `low` does NOT
+    trigger — a slow day is not a page (matches `anomalies`).
+  - `--lookback` / `--baseline` / `--threshold` / `--alpha` /
+    `--json` flags pass through to the underlying builders with
+    the same defaults (`30 / 7 / 2.0 / 0.3`).
+
+### Tests
+
+- `test/dashboard.test.ts` — 29 new cases, covering the drift
+  math (including the live 04-24 cache-hit jump 48% → 77% which
+  reproduces as ~+29pp), recentRatio walk-back to the most recent
+  defined-baseline day, the OR-merge alerting truth table
+  (token-high alone / ratio-high alone / ratio-low alone / both /
+  neither / token-low alone → false / empty → false), and the
+  inverseLogit numeric guard at extreme |logit|.
+
+Total test count: 249 → 278.
+
 ## 0.4.3 — 2026-04-24
 
 Wires the 0.4.2 logit-space EWMA helpers into a public surface:
