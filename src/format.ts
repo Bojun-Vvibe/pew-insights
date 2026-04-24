@@ -17,6 +17,7 @@ import type { VelocityReport, VelocityStretch } from './velocity.js';
 import type { ConcurrencyReport } from './concurrency.js';
 import type { TransitionsReport } from './transitions.js';
 import type { AgentMixReport } from './agentmix.js';
+import type { SessionLengthsReport } from './sessionlengths.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1509,4 +1510,72 @@ export function renderAgentMix(r: AgentMixReport): string {
   );
 
   return lines.join('\n');
+}
+
+function fmtDur(sec: number): string {
+  if (sec === 0) return '0s';
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) {
+    const m = sec / 60;
+    return Number.isInteger(m) ? `${m}m` : `${m.toFixed(1)}m`;
+  }
+  const h = sec / 3600;
+  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
+}
+
+export function renderSessionLengths(r: SessionLengthsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights session-lengths'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges: [${r.edgesSeconds.map(fmtDur).join(', ')}]    min-duration: ${fmtDur(r.minDurationSeconds)}`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.distributions.length === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  for (const d of r.distributions) {
+    if (r.by !== 'all') {
+      lines.push(chalk.bold(`group: ${d.group}`));
+    }
+    lines.push(
+      renderTable(
+        ['summary', 'value'],
+        [
+          ['sessions', formatNumber(d.totalSessions)],
+          ['total wall-clock', fmtDur(Math.round(d.totalSeconds))],
+          ['mean', fmtDur(Math.round(d.meanSeconds))],
+          ['p50', fmtDur(d.p50Seconds)],
+          ['p90', fmtDur(d.p90Seconds)],
+          ['p95', fmtDur(d.p95Seconds)],
+          ['p99', fmtDur(d.p99Seconds)],
+          ['max', fmtDur(d.maxSeconds)],
+          ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
+        ],
+      ),
+    );
+    lines.push('');
+    lines.push(
+      renderTable(
+        ['bin', 'count', 'share', 'median', 'mean'],
+        d.bins.map((b) => [
+          b.label,
+          formatNumber(b.count),
+          formatPercent(b.share),
+          b.count > 0 ? fmtDur(b.medianSeconds) : '—',
+          b.count > 0 ? fmtDur(Math.round(b.meanSeconds)) : '—',
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
 }

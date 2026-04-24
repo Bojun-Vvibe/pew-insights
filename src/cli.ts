@@ -40,6 +40,7 @@ import {
   renderConcurrency,
   renderTransitions,
   renderAgentMix,
+  renderSessionLengths,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -79,6 +80,11 @@ import { buildVelocity } from './velocity.js';
 import { buildConcurrency } from './concurrency.js';
 import { buildTransitions, type TransitionsDimension } from './transitions.js';
 import { buildAgentMix, type AgentMixDimension, type AgentMixMetric } from './agentmix.js';
+import {
+  buildSessionLengths,
+  DEFAULT_LENGTH_EDGES_SECONDS,
+  type SessionLengthsDimension,
+} from './sessionlengths.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -1591,6 +1597,71 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderAgentMix(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('session-lengths')
+  .description('Binned histogram of session duration_seconds with quantile waypoints (p50/p90/p95/p99/max)')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option('--by <dim>', "split dimension: all | source | kind (default 'all')", 'all')
+  .option('--min-duration-seconds <n>', 'drop sessions shorter than this (default 0)', '0')
+  .option(
+    '--edges <list>',
+    `comma-separated bin upper-edges in seconds, strictly ascending (default ${DEFAULT_LENGTH_EDGES_SECONDS.join(',')})`,
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        minDurationSeconds: string;
+        edges?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDurationSeconds = Number.parseFloat(opts.minDurationSeconds);
+        if (!Number.isFinite(minDurationSeconds) || minDurationSeconds < 0) {
+          throw new Error(`--min-duration-seconds must be a non-negative finite number (got ${opts.minDurationSeconds})`);
+        }
+        if (opts.by !== 'all' && opts.by !== 'source' && opts.by !== 'kind') {
+          throw new Error(`--by must be 'all' | 'source' | 'kind' (got ${opts.by})`);
+        }
+        let edgesSeconds: number[] | undefined;
+        if (opts.edges != null && opts.edges.trim().length > 0) {
+          edgesSeconds = opts.edges.split(',').map((s) => {
+            const v = Number.parseFloat(s.trim());
+            if (!Number.isFinite(v) || v <= 0) {
+              throw new Error(`--edges entries must be positive finite numbers (got '${s}')`);
+            }
+            return v;
+          });
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildSessionLengths(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as SessionLengthsDimension,
+          minDurationSeconds,
+          edgesSeconds,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSessionLengths(report) + '\n');
         }
       } catch (e) {
         die(e);
