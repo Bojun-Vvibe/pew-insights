@@ -179,3 +179,57 @@ test('session-lengths: per-bin median + mean computed only over bin members', ()
   assert.equal(b1.count, 0);
   assert.equal(b1.medianSeconds, 0);
 });
+
+test('session-lengths: cumulativeShare is monotone non-decreasing and ends at 1.0', () => {
+  const r = buildSessionLengths(
+    [
+      sl('2026-04-20T10:00:00Z', 30),
+      sl('2026-04-20T11:00:00Z', 90),
+      sl('2026-04-20T12:00:00Z', 200),
+      sl('2026-04-20T13:00:00Z', 1000),
+    ],
+    { edgesSeconds: [60, 300], generatedAt: GEN },
+  );
+  const d = r.distributions[0]!;
+  // bin0 = 1 (≤60), bin1 = 2 (≤300), bin2 = 1 (>300) → shares 0.25, 0.5, 0.25
+  // cumulative: 0.25, 0.75, 1.0
+  assert.equal(d.bins[0]!.cumulativeShare, 0.25);
+  assert.equal(d.bins[1]!.cumulativeShare, 0.75);
+  assert.equal(d.bins[2]!.cumulativeShare, 1);
+  // monotone
+  for (let i = 1; i < d.bins.length; i++) {
+    assert.ok(d.bins[i]!.cumulativeShare >= d.bins[i - 1]!.cumulativeShare);
+  }
+});
+
+test('session-lengths: empty distribution → all bins cumulativeShare = 0', () => {
+  const r = buildSessionLengths([], { generatedAt: GEN });
+  const d = r.distributions[0]!;
+  for (const b of d.bins) assert.equal(b.cumulativeShare, 0);
+});
+
+import { renderSessionLengths } from '../src/format.js';
+
+test('session-lengths: renderer --unit minutes converts seconds to minutes', () => {
+  const r = buildSessionLengths(
+    [
+      sl('2026-04-20T10:00:00Z', 120), // 2m
+      sl('2026-04-20T11:00:00Z', 240), // 4m
+    ],
+    { generatedAt: GEN },
+  );
+  const out = renderSessionLengths(r, { unit: 'minutes' });
+  // p50 of [120, 240] nearest-rank(0.5, n=2) → k=1 → 120s = 2m
+  assert.match(out, /unit: minutes/);
+  assert.match(out, /\bp50\b.*\b2m\b/);
+});
+
+test('session-lengths: renderer --unit hours converts seconds to hours', () => {
+  const r = buildSessionLengths(
+    [sl('2026-04-20T10:00:00Z', 3600), sl('2026-04-20T11:00:00Z', 7200)],
+    { generatedAt: GEN },
+  );
+  const out = renderSessionLengths(r, { unit: 'hours' });
+  assert.match(out, /unit: hours/);
+  assert.match(out, /\bp50\b.*\b1h\b/);
+});

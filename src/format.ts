@@ -1523,12 +1523,31 @@ function fmtDur(sec: number): string {
   return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
 }
 
-export function renderSessionLengths(r: SessionLengthsReport): string {
+export type SessionLengthsUnit = 'auto' | 'seconds' | 'minutes' | 'hours';
+
+function fmtDurUnit(sec: number, unit: SessionLengthsUnit): string {
+  if (unit === 'auto') return fmtDur(sec);
+  if (unit === 'seconds') return `${sec.toFixed(0)}s`;
+  if (unit === 'minutes') {
+    const m = sec / 60;
+    return `${(Number.isInteger(m) ? m : Number(m.toFixed(2))).toString()}m`;
+  }
+  // hours
+  const h = sec / 3600;
+  return `${(Number.isInteger(h) ? h : Number(h.toFixed(3))).toString()}h`;
+}
+
+export function renderSessionLengths(
+  r: SessionLengthsReport,
+  opts: { unit?: SessionLengthsUnit } = {},
+): string {
+  const unit: SessionLengthsUnit = opts.unit ?? 'auto';
+  const fd = (s: number) => fmtDurUnit(s, unit);
   const lines: string[] = [];
   lines.push(chalk.bold.cyan('pew-insights session-lengths'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges: [${r.edgesSeconds.map(fmtDur).join(', ')}]    min-duration: ${fmtDur(r.minDurationSeconds)}`,
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges: [${r.edgesSeconds.map(fmtDur).join(', ')}]    min-duration: ${fmtDur(r.minDurationSeconds)}    unit: ${unit}`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -1550,13 +1569,13 @@ export function renderSessionLengths(r: SessionLengthsReport): string {
         ['summary', 'value'],
         [
           ['sessions', formatNumber(d.totalSessions)],
-          ['total wall-clock', fmtDur(Math.round(d.totalSeconds))],
-          ['mean', fmtDur(Math.round(d.meanSeconds))],
-          ['p50', fmtDur(d.p50Seconds)],
-          ['p90', fmtDur(d.p90Seconds)],
-          ['p95', fmtDur(d.p95Seconds)],
-          ['p99', fmtDur(d.p99Seconds)],
-          ['max', fmtDur(d.maxSeconds)],
+          ['total wall-clock', fd(Math.round(d.totalSeconds))],
+          ['mean', fd(Math.round(d.meanSeconds))],
+          ['p50', fd(d.p50Seconds)],
+          ['p90', fd(d.p90Seconds)],
+          ['p95', fd(d.p95Seconds)],
+          ['p99', fd(d.p99Seconds)],
+          ['max', fd(d.maxSeconds)],
           ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
         ],
       ),
@@ -1564,13 +1583,14 @@ export function renderSessionLengths(r: SessionLengthsReport): string {
     lines.push('');
     lines.push(
       renderTable(
-        ['bin', 'count', 'share', 'median', 'mean'],
+        ['bin', 'count', 'share', 'cum.', 'median', 'mean'],
         d.bins.map((b) => [
           b.label,
           formatNumber(b.count),
           formatPercent(b.share),
-          b.count > 0 ? fmtDur(b.medianSeconds) : '—',
-          b.count > 0 ? fmtDur(Math.round(b.meanSeconds)) : '—',
+          formatPercent(b.cumulativeShare),
+          b.count > 0 ? fd(b.medianSeconds) : '—',
+          b.count > 0 ? fd(Math.round(b.meanSeconds)) : '—',
         ]),
       ),
     );

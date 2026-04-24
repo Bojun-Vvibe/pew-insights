@@ -89,6 +89,13 @@ export interface SessionLengthsBin {
   count: number;
   /** count / totalSessions (in the owning distribution). 0 if owner is empty. */
   share: number;
+  /**
+   * Cumulative share of sessions in this bin and all earlier
+   * (shorter-duration) bins. Empirical CDF evaluated at the bin's
+   * upper edge (or 1.0 for the open-ended final bin). 0 when the
+   * owning distribution is empty.
+   */
+  cumulativeShare: number;
   /** Median duration_seconds of the sessions in this bin. 0 if bin empty. */
   medianSeconds: number;
   /** Mean duration_seconds of the sessions in this bin. 0 if bin empty. */
@@ -194,6 +201,7 @@ function buildDistribution(
       label,
       count: 0,
       share: 0,
+      cumulativeShare: 0,
       medianSeconds: 0,
       meanSeconds: 0,
     }));
@@ -230,10 +238,19 @@ function buildDistribution(
       label,
       count: sortedBin.length,
       share: sortedBin.length / totalSessions,
+      cumulativeShare: 0, // patched below in a second pass
       medianSeconds: sortedBin.length === 0 ? 0 : nearestRank(sortedBin, 0.5),
       meanSeconds: sortedBin.length === 0 ? 0 : sum / sortedBin.length,
     };
   });
+
+  // Cumulative share pass. Open-ended bin always closes at 1.0
+  // exactly to absorb floating-point drift.
+  let acc = 0;
+  for (let i = 0; i < bins.length; i++) {
+    acc += bins[i]!.share;
+    bins[i]!.cumulativeShare = i === bins.length - 1 ? 1 : acc;
+  }
 
   // Modal bin: largest count; tie-break upper edge ascending
   // (open-ended bin's upper is treated as +Infinity for ordering).

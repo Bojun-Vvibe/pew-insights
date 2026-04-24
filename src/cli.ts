@@ -41,6 +41,7 @@ import {
   renderTransitions,
   renderAgentMix,
   renderSessionLengths,
+  type SessionLengthsUnit,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -1615,6 +1616,7 @@ program
     '--edges <list>',
     `comma-separated bin upper-edges in seconds, strictly ascending (default ${DEFAULT_LENGTH_EDGES_SECONDS.join(',')})`,
   )
+  .option('--unit <name>', "display unit for durations: auto | seconds | minutes | hours (default 'auto')", 'auto')
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -1624,6 +1626,7 @@ program
         by: string;
         minDurationSeconds: string;
         edges?: string;
+        unit: string;
         json?: boolean;
       },
       cmd,
@@ -1637,6 +1640,14 @@ program
         }
         if (opts.by !== 'all' && opts.by !== 'source' && opts.by !== 'kind') {
           throw new Error(`--by must be 'all' | 'source' | 'kind' (got ${opts.by})`);
+        }
+        if (
+          opts.unit !== 'auto' &&
+          opts.unit !== 'seconds' &&
+          opts.unit !== 'minutes' &&
+          opts.unit !== 'hours'
+        ) {
+          throw new Error(`--unit must be 'auto' | 'seconds' | 'minutes' | 'hours' (got ${opts.unit})`);
         }
         let edgesSeconds: number[] | undefined;
         if (opts.edges != null && opts.edges.trim().length > 0) {
@@ -1661,7 +1672,9 @@ program
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
-          process.stdout.write(renderSessionLengths(report) + '\n');
+          process.stdout.write(
+            renderSessionLengths(report, { unit: opts.unit as SessionLengthsUnit }) + '\n',
+          );
         }
       } catch (e) {
         die(e);
