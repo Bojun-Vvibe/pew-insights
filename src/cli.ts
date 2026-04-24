@@ -54,6 +54,7 @@ import {
   renderCacheHitRatio,
   renderReasoningShare,
   renderPromptSize,
+  renderOutputSize,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -130,6 +131,7 @@ import { buildProviderShare } from './providershare.js';
 import { buildCacheHitRatio } from './cachehitratio.js';
 import { buildReasoningShare } from './reasoningshare.js';
 import { buildPromptSize } from './promptsize.js';
+import { buildOutputSize } from './outputsize.js';
 import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
@@ -2442,6 +2444,66 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderPromptSize(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('output-size')
+  .description('Per-model distribution of output_tokens per row across queue.jsonl (completion size, latency / cost geometry)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-rows <n>',
+    'hide models with fewer than n rows; their counts surface as droppedModelRows but not in the table (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n models by row count; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--at-least <n>',
+    'drop rows whose output_tokens < n BEFORE bucketing/mean/p95; lets you scope to heavy-completion workloads only (default 0 = no floor)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; minRows: string; top: string; atLeast: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 0) {
+          throw new Error(`--min-rows must be a non-negative integer (got ${opts.minRows})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const atLeast = Number.parseInt(opts.atLeast, 10);
+        if (!Number.isFinite(atLeast) || atLeast < 0) {
+          throw new Error(`--at-least must be a non-negative integer (got ${opts.atLeast})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildOutputSize(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minRows,
+          top,
+          atLeast,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderOutputSize(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -2239,6 +2239,7 @@ export function renderCacheHitRatio(r: CacheHitRatioReport): string {
 
 import type { ReasoningShareReport } from './reasoningshare.js';
 import type { PromptSizeReport } from './promptsize.js';
+import type { OutputSizeReport } from './outputsize.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2297,6 +2298,56 @@ export function renderPromptSize(r: PromptSizeReport): string {
     formatNumber(Math.round(m.meanInputTokens)),
     formatNumber(m.p95InputTokens),
     formatNumber(m.maxInputTokens),
+    ...m.buckets.map((b) => (b.rows === 0 ? '·' : formatNumber(b.rows))),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderOutputSize(r: OutputSizeReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights output-size'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    output: ${formatNumber(r.totalOutputTokens)} tok    mean: ${formatNumber(Math.round(r.overallMeanOutputTokens))}    max: ${formatNumber(r.overallMaxOutputTokens)}    min-rows: ${r.minRows}    at-least: ${formatNumber(r.atLeast)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroOutput)} zero-output, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedAtLeast)} below at-least, ${formatNumber(r.droppedModelRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredRows === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows with output_tokens > 0 in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('overall output_tokens distribution'));
+  const overallRows: string[][] = r.overallBuckets.map((b) => [
+    formatBucketLabel(b.from, b.to),
+    formatNumber(b.rows),
+    formatPercentLocal(b.share),
+  ]);
+  lines.push(renderTableLocal(['bucket', 'rows', 'share'], overallRows));
+  lines.push('');
+
+  lines.push(chalk.bold('per-model output-size summary (sorted by row count desc)'));
+  const bucketHeaders = r.edges.map((from, i) =>
+    formatBucketLabel(from, i + 1 < r.edges.length ? r.edges[i + 1]! : null),
+  );
+  const headers = ['model', 'rows', 'mean', 'p95', 'max', ...bucketHeaders];
+  const rows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.rows),
+    formatNumber(Math.round(m.meanOutputTokens)),
+    formatNumber(m.p95OutputTokens),
+    formatNumber(m.maxOutputTokens),
     ...m.buckets.map((b) => (b.rows === 0 ? '·' : formatNumber(b.rows))),
   ]);
   lines.push(renderTableLocal(headers, rows));
