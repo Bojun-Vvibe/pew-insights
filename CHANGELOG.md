@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.30 — 2026-04-25
+
+### Added
+
+- `--min-sessions <n>` flag on `provider-share`. Hides
+  providers whose session count is below `n` from the
+  `providers[]` table while keeping their sessions and messages
+  in the global `consideredSessions` / `consideredMessages`
+  denominators (so the kept providers' shares are still
+  reported against the *full* population, not a truncated one).
+  Hidden rows are surfaced as `droppedProviders`,
+  `droppedProviderSessions`, `droppedProviderMessages` so the
+  operator can see how much was filtered. Default 0 keeps every
+  provider.
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js provider-share --since 2026-04-13T00:00:00Z --min-sessions 1000 --top-models 1
+pew-insights provider-share
+as of: 2026-04-24T18:18:04.778Z    sessions: 5,994    messages: 189,113    providers: 2    top-models: 1    min-sessions: 1000    dropped: 0 bad started_at, 0 bad messages, 1 small providers (951 sess / 80,974 msg)
+window: 2026-04-13T00:00:00Z → +∞
+
+provider mix
+provider   sessions  sess.share  messages  msg.share  models
+---------  --------  ----------  --------  ---------  ------
+anthropic  3,154     52.6%       97,985    51.8%      4
+unknown    1,889     31.5%       10,154    5.4%       2
+
+top 1 models per provider
+provider   model            sessions
+---------  ---------------  --------
+anthropic  claude-opus-4.7  2,845
+unknown    unknown          1,255
+```
+
+Read: with `--min-sessions 1000`, the `openai` provider (951
+sessions, just below the floor) drops out of the table and
+appears in the header summary as `1 small providers (951 sess
+/ 80,974 msg)`. The kept providers still carry shares against
+the full 5,994-session denominator (anthropic 52.6%, unknown
+31.5%) — so the summed shares deliberately do *not* add to
+100%; the gap (~15.9%) is the hidden providers' share. This
+matches operator intent: "hide the noisy long tail but don't
+let me forget how much I hid."
+
 ## 0.4.29 — 2026-04-25
 
 ### Added
