@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.9 — 2026-04-24
+
+Token-velocity analysis. The new `pew-insights velocity` subcommand
+projects `queue.jsonl` onto a contiguous, zero-filled hourly grid,
+walks it for *active stretches* (maximal runs of hours with
+`total_tokens >= --min-tokens`), and reports tokens-per-minute for
+each stretch. Where every existing builder either sums (digest,
+trend), categorises (streaks), averages over the diurnal cycle
+(heatmap), or scores single-day outliers (anomalies), `velocity`
+is the first to surface a *rate* — "while you were actually
+working, how hard were you hitting the API?". A 90-minute frenzy
+and a 90-minute trickle that produced the same daily total are
+indistinguishable to `digest`; here they live at opposite ends of
+the top-stretches table.
+
+Live smoke (this repo's `pew/queue.jsonl`, last 168h, default
+`--min-tokens 1`): 156 active hours across 4 stretches, 6.28B
+total active tokens, average velocity **671.3K tokens/min** while
+active, median stretch velocity 45.4K/min. Peak / longest stretch
+coincided: a 147-hour run from 2026-04-18T08Z → 2026-04-24T10Z at
+**709.9K/min** (6.26B tokens). Tightening to `--lookback 24
+--min-tokens 1000` collapses to one 24h stretch at **323.7K/min**
+(466.11M tokens) — a baseline number the operator can compare
+future days against.
+
+### Added
+
+- `pew-insights velocity` subcommand
+  - `--lookback <hours>` ending-hour-aligned window (default 168
+    = 7 days). Window end is the hour-floor of `asOf`/now; window
+    start is `lookback - 1` hours earlier so the count is
+    inclusive on both ends.
+  - `--min-tokens <n>` minimum `total_tokens` for an hour to
+    count as ACTIVE (default 1 — any usage). Raise this to ignore
+    trickle-only hours and stretch-merge only hours of substantive
+    work; useful when background polling produces small constant
+    hourly noise that would otherwise glue every stretch into one.
+  - `--top <n>` caps the top-stretches table (default 10).
+  - `--json` emits the full report including `windowStart`,
+    `windowEnd`, `totalActiveHours`, `stretchCount`,
+    `totalActiveTokens`, `averageTokensPerMinute`,
+    `medianTokensPerMinute`, `peakStretch`, `longestStretch`, and
+    `topStretches[]` (each row with `startHour`, `endHour`,
+    `hours`, `tokens`, `inputTokens`, `outputTokens`, `events`,
+    `tokensPerMinute`).
+- `src/velocity.ts`
+  - `buildVelocity(queue, opts)` — pure builder, deterministic on
+    a given input. Throws on non-positive-integer
+    `lookbackHours`, negative `minTokensPerHour`, and
+    non-positive-integer `topN`.
+  - Hour-grid is UTC-aligned to match `buildDailySeries`
+    (trend.ts) and `buildHeatmap` so all three subcommands can be
+    safely cross-read on the same window. Defensive
+    `hourFloorIso` collapses sub-hour-aligned `hour_start` rows
+    into the right bucket.
+  - Velocity is `tokens / (hours * 60)` — divides by *bucket
+    hours*, not wall-clock minutes between first event and last,
+    so a 1-hour stretch is consistently `tokens / 60` regardless
+    of where in the hour the first event landed.
+  - `peakStretch` sort: velocity desc, hours desc, startHour asc
+    (deterministic across re-runs).
+  - `longestStretch` sort: hours desc, tokens desc, startHour asc
+    (a 3h trickle and a 3h frenzy tie on hours; more tokens wins
+    so the operator sees the more substantive run first).
+  - `topStretches` sorted same as `peakStretch`.
+- `renderVelocity` in `src/format.ts` — top-line summary table
+  (active hours, stretches, tokens, average + median velocity,
+  peak + longest stretch with span), then the top-N table with
+  span, hours, tokens, input/output split, and rate. `formatRate`
+  switches between `K/min` for fast bursts and 2-decimal raw for
+  trickle-only stretches.
+
+### Tests
+
+- `test/velocity.test.ts` — 15 new cases: input validation
+  (lookback < 1, non-integer lookback, negative min-tokens,
+  non-positive-integer topN), empty queue, window alignment to
+  `asOf` hour-floor, single-active-hour stretch, contiguous-hours
+  merge, idle-hour breaking stretches with deterministic
+  `longestStretch` tie-break (more tokens wins), `min-tokens`
+  filter excluding trickle hours, out-of-window rows ignored,
+  top-stretches sort determinism, equal-velocity tie-break (more
+  hours then earlier start), median robustness against a single
+  fast outlier, input/output sums carried through merged
+  stretches, defensive sub-hour `hour_start` flooring.
+- All 354 tests across 8 test files pass.
+
 ## 0.4.8 — 2026-04-24
 
 Idle-gap detection between sessions. The new `pew-insights gaps`
