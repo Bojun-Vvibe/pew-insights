@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.19 — 2026-04-24
+
+### Added
+
+- `pew-insights turn-cadence` subcommand — empirical distribution
+  of per-session **average seconds between operator turns**,
+  defined as `duration_seconds / user_messages`. This is the
+  temporal counterpart to `reply-ratio`'s structural view: where
+  `reply-ratio` reports the ratio of assistant turns per user
+  turn (a *shape* metric), `turn-cadence` reports how often the
+  operator actually prods the agent inside one session (a *tempo*
+  metric). Neither `session-lengths` (per-session duration,
+  unnormalised by message count), `gaps` (between-session gaps),
+  `velocity` (window-level rate across many sessions), nor
+  `concurrency` / `transitions` (inter-session structure) expose
+  this intra-session cadence directly. A small cadence (≤30s)
+  identifies rapid back-and-forth conversation; a large one
+  (≥1800s) identifies sessions where the operator parked the
+  agent and walked away.
+  - Default bin ladder (in seconds): `≤10, ≤30, ≤60, ≤300,
+    ≤600, ≤1800, >1800` covering the natural tempo regimes:
+    rapid (≤10s) / fast conversational (≤30s) / conversational
+    (≤60s) / thoughtful (≤5min) / slow (≤10min) / parked
+    (≤30min) / abandoned-style (>30min).
+  - Flags: `--since` / `--until` window on `started_at`
+    (matching `sessions` / `gaps` / `session-lengths` /
+    `reply-ratio` semantics), `--by all|source|kind` (default
+    `all`; group splits emit one distribution per group sharing
+    the same bin ladder for direct comparison), `--min-duration-
+    seconds <n>` to drop instant / negative-duration noise
+    (default 1; set 0 to keep everything),
+    `--edges <comma-list>` to override the default ladder, and
+    `--json` to emit the structured report instead of the
+    pretty table.
+  - Reports per-bin `count` / `share` / `cumulativeShare` /
+    per-bin `medianSeconds` / `meanSeconds`, plus distribution-
+    level quantile waypoints (`p50` / `p90` / `p95` / `p99` /
+    `max`) using nearest-rank (`k = ceil(q*n)`) — matching
+    `gaps` / `session-lengths` / `reply-ratio` so quantiles are
+    always actually-observed cadences.
+  - Two distinct dropped-row counters surface in the report
+    header: `droppedZeroUserMessages` (cadence undefined when
+    `user_messages == 0`) vs `droppedMinDuration` (instant /
+    sub-second sessions where cadence is meaningless), so the
+    operator can tell agent-only rows apart from negligible-
+    duration noise.
+  - The modal bin (largest count, ties broken by tighter upper
+    edge) is called out so a glance at the summary table tells
+    you which tempo dominates.
+  - Smoke against the real pew corpus (4,530 sessions, 447 zero-
+    user-msg + 1,047 sub-1s dropped): the global cadence is
+    bimodal — the modal bin is `10s-30s` (31.3%) but `60s-300s`
+    is the second-largest (23.8%). Splitting by source surfaces
+    the real story: **claude-code** runs at modal bin `10s-30s`
+    with 90% of sessions ≤30s cadence (purely conversational,
+    p95 = 55.8s), while **opencode** has modal bin `60s-300s`
+    with 30.4% in the 1–5min band (operator gives it longer
+    chains to chew on, p95 = 6.0min). That 6× difference in
+    typical pace was previously invisible in any other report —
+    `session-lengths` only showed both as "minutes-long sessions"
+    without normalising by turn count.
+  - 18 unit tests cover validation of `by` / `minDurationSeconds`
+    / `edges` / `since` / `until`, empty-input handling, the two
+    distinct drop counters, the cadence formula, inclusive
+    upper-edge boundary semantics, the open-ended final bin,
+    window filtering (inclusive since, exclusive until), `--by
+    source` grouping + sort order, monotonic cumulative share,
+    nearest-rank quantiles, modal-bin tie-break by tighter
+    upper edge, custom edges override, per-bin median + mean
+    semantics, report echo of window/edges/min-duration, and
+    rejection of negative duration / negative user_messages.
+
 ## 0.4.18 — 2026-04-24
 
 ### Added (refinement)

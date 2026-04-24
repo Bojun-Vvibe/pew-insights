@@ -1672,3 +1672,89 @@ export function renderReplyRatio(r: ReplyRatioReport): string {
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { TurnCadenceReport } from './turncadence.js';
+
+function fmtSeconds(s: number): string {
+  if (s === 0) return '0s';
+  if (s < 1) return `${s.toFixed(2)}s`;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  if (s < 3600) return `${(s / 60).toFixed(1)}m`;
+  return `${(s / 3600).toFixed(1)}h`;
+}
+
+function formatPercentLocal(x: number): string {
+  return `${(x * 100).toFixed(1)}%`;
+}
+
+export function renderTurnCadence(r: TurnCadenceReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights turn-cadence'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    edges(s): [${r.edges.join(', ')}]    min-duration: ${r.minDurationSeconds}s`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedZeroUserMessages)} zero-user-msg, ${formatNumber(r.droppedMinDuration)} below min-duration`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.distributions.length === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  for (const d of r.distributions) {
+    if (r.by !== 'all') {
+      lines.push(chalk.bold(`group: ${d.group}`));
+    }
+    lines.push(
+      renderTableLocal(
+        ['summary', 'value'],
+        [
+          ['sessions', formatNumber(d.totalSessions)],
+          ['mean', fmtSeconds(d.meanSeconds)],
+          ['p50', fmtSeconds(d.p50Seconds)],
+          ['p90', fmtSeconds(d.p90Seconds)],
+          ['p95', fmtSeconds(d.p95Seconds)],
+          ['p99', fmtSeconds(d.p99Seconds)],
+          ['max', fmtSeconds(d.maxSeconds)],
+          ['modal bin', d.modalBinIndex >= 0 ? d.bins[d.modalBinIndex]!.label : '—'],
+        ],
+      ),
+    );
+    lines.push('');
+    lines.push(
+      renderTableLocal(
+        ['bin', 'count', 'share', 'cum.', 'median', 'mean'],
+        d.bins.map((b) => [
+          b.label,
+          formatNumber(b.count),
+          formatPercentLocal(b.share),
+          formatPercentLocal(b.cumulativeShare),
+          b.count > 0 ? fmtSeconds(b.medianSeconds) : '—',
+          b.count > 0 ? fmtSeconds(b.meanSeconds) : '—',
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function renderTableLocal(headers: string[], rows: string[][]): string {
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)),
+  );
+  const fmt = (cells: string[]) =>
+    cells.map((c, i) => c.padEnd(widths[i]!)).join('  ').replace(/\s+$/, '');
+  const sep = widths.map((w) => '-'.repeat(w)).join('  ');
+  return [fmt(headers), sep, ...rows.map(fmt)].join('\n');
+}
