@@ -222,3 +222,41 @@ test('cache-hit-ratio: bySource folds missing/empty source into "unknown"', () =
   assert.deepEqual(Object.keys(m.bySource), ['unknown']);
   assert.equal(m.bySource['unknown']!.rows, 1);
 });
+
+// ---- top cap (0.4.35) -----------------------------------------------------
+
+test('cache-hit-ratio: rejects bad top', () => {
+  assert.throws(() => buildCacheHitRatio([], { top: -1 }));
+  assert.throws(() => buildCacheHitRatio([], { top: 1.5 }));
+});
+
+test('cache-hit-ratio: top truncates kept models and surfaces droppedTopModels', () => {
+  const r = buildCacheHitRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'claude-opus-4.7', { input_tokens: 5000, cached_input_tokens: 100 }),
+      ql('2026-04-20T02:00:00Z', 'gpt-5', { input_tokens: 3000, cached_input_tokens: 100 }),
+      ql('2026-04-20T03:00:00Z', 'gemini-2.5-pro', { input_tokens: 1000, cached_input_tokens: 100 }),
+      ql('2026-04-20T04:00:00Z', 'claude-haiku-4.5', { input_tokens: 100, cached_input_tokens: 10 }),
+    ],
+    { generatedAt: GEN, top: 2 },
+  );
+  assert.equal(r.top, 2);
+  assert.deepEqual(r.models.map((m) => m.model), ['claude-opus-4.7', 'gpt-5']);
+  assert.equal(r.droppedTopModels, 2);
+  // global totals unchanged
+  assert.equal(r.consideredRows, 4);
+  assert.equal(r.totalInputTokens, 9100);
+});
+
+test('cache-hit-ratio: top=0 (default) is no-op', () => {
+  const r = buildCacheHitRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'claude-opus-4.7'),
+      ql('2026-04-20T02:00:00Z', 'gpt-5'),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.top, 0);
+  assert.equal(r.droppedTopModels, 0);
+  assert.equal(r.models.length, 2);
+});

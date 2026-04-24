@@ -2294,10 +2294,15 @@ program
     '0',
   )
   .option('--by-source', 'also break down each model row by source (producer CLI)')
+  .option(
+    '--top <n>',
+    'show only the top n models by input volume; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minRows: string; bySource?: boolean; json?: boolean },
+      opts: { since?: string; until?: string; minRows: string; bySource?: boolean; top: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2307,12 +2312,17 @@ program
         if (!Number.isInteger(minRows) || minRows < 0) {
           throw new Error(`--min-rows must be a non-negative integer (got ${opts.minRows})`);
         }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
         const queue = await readQueue(paths);
         const report = buildCacheHitRatio(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minRows,
           bySource: opts.bySource === true,
+          top,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

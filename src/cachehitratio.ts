@@ -59,6 +59,14 @@ export interface CacheHitRatioOptions {
    * cachedInputTokens, hitRatio }`. Default false.
    */
   bySource?: boolean;
+  /**
+   * Truncate `models[]` to the top N by input volume. Display
+   * filter only — global denominators stay stable. Models hidden
+   * by `--top` surface as `droppedTopModels` so the operator can
+   * see how many tail entries were elided. Default 0 (no
+   * truncation).
+   */
+  top?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -120,8 +128,12 @@ export interface CacheHitRatioReport {
   droppedZeroInput: number;
   /** Rows with non-finite / negative input_tokens or cached_input_tokens. */
   droppedInvalidTokens: number;
+  /** Echo of the resolved `top` cap (0 = no cap). */
+  top: number;
   /** Model rows hidden by the minRows floor. */
   droppedModelRows: number;
+  /** Model rows hidden by the `top` cap (counted after minRows). */
+  droppedTopModels: number;
   /**
    * One row per kept model. Sorted by inputTokens desc, then
    * model asc — i.e. the heaviest cache-eligible workloads
@@ -138,6 +150,10 @@ export function buildCacheHitRatio(
   const minRows = opts.minRows ?? 0;
   if (!Number.isInteger(minRows) || minRows < 0) {
     throw new Error(`minRows must be a non-negative integer (got ${opts.minRows})`);
+  }
+  const top = opts.top ?? 0;
+  if (!Number.isInteger(top) || top < 0) {
+    throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -251,12 +267,20 @@ export function buildCacheHitRatio(
     return a.model < b.model ? -1 : a.model > b.model ? 1 : 0;
   });
 
+  let droppedTopModels = 0;
+  let kept = models;
+  if (top > 0 && models.length > top) {
+    droppedTopModels = models.length - top;
+    kept = models.slice(0, top);
+  }
+
   return {
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minRows,
     bySource,
+    top,
     consideredRows,
     totalInputTokens: totalInput,
     totalCachedInputTokens: totalCached,
@@ -265,6 +289,7 @@ export function buildCacheHitRatio(
     droppedZeroInput,
     droppedInvalidTokens,
     droppedModelRows,
-    models,
+    droppedTopModels,
+    models: kept,
   };
 }

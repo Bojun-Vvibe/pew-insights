@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.35 — 2026-04-25
+
+### Added
+
+- `--top <n>` flag on `cache-hit-ratio`. Truncates the model
+  table to the top n by input volume so dashboards / cron
+  outputs stay short. Truncated tail surfaces as
+  `droppedTopModels` in the report. Global denominators stay
+  computed against the full population. 3 new unit tests
+  (621 total).
+
+### Live-smoke output
+
+```
+$ node dist/cli.js cache-hit-ratio --since 2026-04-13T00:00:00Z --top 3
+pew-insights cache-hit-ratio
+as of: 2026-04-24T19:05:34.034Z    rows: 876    input: 2,847,168,246 tok    cached: 4,462,390,929 tok    overall: 156.7%    min-rows: 0
+dropped: 0 bad hour_start, 2 zero-input, 0 bad tokens, 0 below min-rows
+window: 2026-04-13T00:00:00Z → +∞
+
+per-model token-weighted cache-hit ratio (sorted by input volume desc)
+model               rows  input          cached         hit-ratio  bar
+------------------  ----  -------------  -------------  ---------  --------------------
+claude-opus-4.7     363   1,339,183,903  3,093,939,764  231.0%     ████████████████████
+gpt-5.4             395   1,278,429,679  1,163,229,440  91.0%      ██████████████████··
+claude-opus-4.6.1m  51    199,655,509    181,226,355    90.8%      ██████████████████··
+```
+
 ## 0.4.34 — 2026-04-25
 
 ### Added
