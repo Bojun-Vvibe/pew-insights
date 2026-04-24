@@ -1907,6 +1907,69 @@ export function renderModelSwitching(r: ModelSwitchingReport): string {
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type { IdleGapsReport } from './idlegaps.js';
+
+export function renderIdleGaps(r: IdleGapsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights idle-gaps'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    by: ${r.by}    sessions: ${formatNumber(r.consideredSessions)}    gaps: ${formatNumber(r.totalGaps)}    single-snapshot: ${formatNumber(r.singleSnapshotSessions)}    min-gap: ${r.minGapSeconds}s`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.totalGaps === 0) {
+    lines.push(chalk.yellow('  no intra-session gap pairs in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  for (const d of r.distributions) {
+    if (r.by !== 'all') {
+      lines.push(chalk.bold(`group: ${d.group}`));
+    }
+    lines.push(
+      renderTableLocal(
+        ['summary', 'value'],
+        [
+          ['sessions', formatNumber(d.sessions)],
+          ['gap pairs', formatNumber(d.totalGaps)],
+          ['mean gap (s)', d.meanSeconds.toFixed(2)],
+          ['p50 gap (s)', d.p50Seconds.toFixed(2)],
+          ['p90 gap (s)', d.p90Seconds.toFixed(2)],
+          ['p95 gap (s)', d.p95Seconds.toFixed(2)],
+          ['p99 gap (s)', d.p99Seconds.toFixed(2)],
+          ['max gap (s)', d.maxSeconds.toFixed(2)],
+        ],
+      ),
+    );
+    lines.push('');
+    lines.push(
+      renderTableLocal(
+        ['gap', 'count', 'share', 'cum', 'median (s)'],
+        d.bins.map((b) => [
+          b.label,
+          formatNumber(b.count),
+          formatPercentLocal(b.share),
+          formatPercentLocal(b.cumulativeShare),
+          b.medianSeconds.toFixed(2),
+        ]),
+      ),
+    );
+    if (d.modalBinIndex >= 0) {
+      lines.push(
+        chalk.dim(`  modal bin: ${d.bins[d.modalBinIndex]!.label}`),
+      );
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 function renderTableLocal(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)),

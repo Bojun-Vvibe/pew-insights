@@ -47,6 +47,7 @@ import {
   renderTurnCadence,
   renderMessageVolume,
   renderModelSwitching,
+  renderIdleGaps,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -110,6 +111,11 @@ import {
   buildModelSwitching,
   type ModelSwitchingDimension,
 } from './modelswitching.js';
+import {
+  buildIdleGaps,
+  DEFAULT_IDLE_GAP_EDGES_SECONDS,
+  type IdleGapsDimension,
+} from './idlegaps.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -2003,6 +2009,73 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderModelSwitching(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('idle-gaps')
+  .description('Distribution of intra-session idle gaps between consecutive snapshots')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option('--by <dim>', "split dimension: all | source | kind (default 'all')", 'all')
+  .option('--min-gap-seconds <n>', 'drop intra-session gaps shorter than n seconds (default 0)', '0')
+  .option(
+    '--edges <list>',
+    `comma-separated bin upper-edges in seconds, strictly ascending (default ${DEFAULT_IDLE_GAP_EDGES_SECONDS.join(',')})`,
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        minGapSeconds: string;
+        edges?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        if (opts.by !== 'all' && opts.by !== 'source' && opts.by !== 'kind') {
+          throw new Error(`--by must be 'all' | 'source' | 'kind' (got ${opts.by})`);
+        }
+        const minGapSeconds = Number.parseFloat(opts.minGapSeconds);
+        if (!Number.isFinite(minGapSeconds) || minGapSeconds < 0) {
+          throw new Error(
+            `--min-gap-seconds must be a non-negative finite number (got ${opts.minGapSeconds})`,
+          );
+        }
+        let edges: number[] | undefined;
+        if (opts.edges != null && opts.edges.trim().length > 0) {
+          edges = opts.edges.split(',').map((s) => {
+            const v = Number.parseFloat(s.trim());
+            if (!Number.isFinite(v) || v <= 0) {
+              throw new Error(`--edges entries must be positive finite numbers (got '${s}')`);
+            }
+            return v;
+          });
+        }
+
+        const sessions = await readSessionQueueRaw(paths);
+        const report = buildIdleGaps(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as IdleGapsDimension,
+          minGapSeconds,
+          edges,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderIdleGaps(report) + '\n');
         }
       } catch (e) {
         die(e);
