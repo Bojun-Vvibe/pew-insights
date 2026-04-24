@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.14 — 2026-04-24
+
+### Added (refinement)
+
+- `agent-mix` now emits a `lorenz[]` array on the JSON report:
+  cumulative `(x, y)` points starting at `(0, 0)` and ending at
+  `(1, 1)`, where `x = k/n` is the cumulative population share
+  and `y` is the cumulative token share of the `k` smallest
+  groups. Lets a downstream plotter render the Lorenz curve
+  directly without re-deriving it from `topGroups`. Two new
+  tests cover monotonicity / endpoints and the
+  empty-input no-curve degenerate. The Gini computation now also
+  short-circuits cleanly when `groupCount == 1` (single-group
+  Lorenz still emits `(0,0) → (1,1)`, Gini stays 0).
+
 ## 0.4.13 — 2026-04-24
 
 Release roll-up of the `agent-mix` work landed under 0.4.12 plus

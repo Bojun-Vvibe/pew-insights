@@ -285,3 +285,29 @@ test('agent-mix: default metric is total (back-compat)', () => {
   );
   assert.equal(r.metric, 'total');
 });
+
+test('agent-mix: lorenz curve starts (0,0), ends (1,1), monotone', () => {
+  const r = buildAgentMix(
+    [
+      ql('a', '2026-04-24T10:00:00.000Z', 80),
+      ql('b', '2026-04-24T10:00:00.000Z', 20),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.lorenz.length, 3); // (0,0), (0.5, 0.2), (1.0, 1.0)
+  assert.deepEqual(r.lorenz[0], { x: 0, y: 0 });
+  assert.equal(r.lorenz[r.lorenz.length - 1]!.x, 1);
+  assert.equal(Number(r.lorenz[r.lorenz.length - 1]!.y.toFixed(6)), 1);
+  // Monotone non-decreasing in y.
+  for (let i = 1; i < r.lorenz.length; i++) {
+    assert.ok(r.lorenz[i]!.y >= r.lorenz[i - 1]!.y);
+    assert.ok(r.lorenz[i]!.x > r.lorenz[i - 1]!.x);
+  }
+  // Smallest group (b: 0.2) at x=0.5.
+  assert.equal(Number(r.lorenz[1]!.y.toFixed(4)), 0.2);
+});
+
+test('agent-mix: lorenz empty for empty input', () => {
+  const r = buildAgentMix([], { generatedAt: GEN });
+  assert.deepEqual(r.lorenz, []);
+});

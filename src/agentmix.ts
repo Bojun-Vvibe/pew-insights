@@ -125,6 +125,15 @@ export interface AgentMixReport {
   topHalfShare: number;
   /** Top-N rows by tokens desc, ties broken by group asc. */
   topGroups: AgentMixGroup[];
+  /**
+   * Lorenz curve points: cumulative share of the population (`x`,
+   * step k/n for k = 0..n) vs cumulative share of tokens (`y`,
+   * sum of the k smallest group shares). Always starts at
+   * `(0, 0)` and ends at `(1, 1)`. Empty when `groupCount == 0`.
+   * Cheap to emit, lets a downstream plotter render the curve
+   * without re-running the math.
+   */
+  lorenz: Array<{ x: number; y: number }>;
 }
 
 interface Bucket {
@@ -259,18 +268,21 @@ export function buildAgentMix(queue: QueueLine[], opts: AgentMixOptions = {}): A
   for (const g of positive) hhi += g.share * g.share;
 
   let gini = 0;
-  if (n >= 2 && totalTokens > 0) {
+  const lorenz: Array<{ x: number; y: number }> = [];
+  if (n >= 1 && totalTokens > 0) {
     // Sort ascending for the Lorenz curve.
     const asc = [...positive].sort((a, b) => a.tokens - b.tokens);
+    lorenz.push({ x: 0, y: 0 });
     let cumShare = 0;
     let prevCum = 0;
     let trapezoidSum = 0;
     for (let i = 0; i < n; i++) {
       cumShare += asc[i]!.share;
+      lorenz.push({ x: (i + 1) / n, y: cumShare });
       trapezoidSum += cumShare + prevCum;
       prevCum = cumShare;
     }
-    gini = Math.max(0, 1 - trapezoidSum / n);
+    if (n >= 2) gini = Math.max(0, 1 - trapezoidSum / n);
   }
 
   let topHalfShare = 0;
@@ -302,5 +314,6 @@ export function buildAgentMix(queue: QueueLine[], opts: AgentMixOptions = {}): A
     gini,
     topHalfShare,
     topGroups,
+    lorenz,
   };
 }
