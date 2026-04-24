@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.10 — 2026-04-24
+
+Session-concurrency analysis. The new `pew-insights concurrency`
+subcommand sweeps `session-queue.jsonl` as a half-open-interval
+event stream, reporting peak overlapping sessions, when the peak
+was first reached, total time spent at peak, average concurrency,
+window coverage (>=1 open), and a full histogram of time spent at
+each concurrency level. It is the first builder to ask the
+*interval* question rather than the *row* or *bucket* question:
+`sessions` reports per-session distributions, `gaps` measures the
+idle spaces between sessions, `streaks` collapses days to
+ACTIVE/IDLE, and `velocity` aggregates by hour onto the token
+corpus — none of them measure how many sessions were
+simultaneously open at any given instant.
+
+Live smoke (this repo's `pew/session-queue.jsonl`, full window of
+4,825 sessions spanning 72.3 days): peak concurrency **21**
+sessions, first reached 2026-04-22T10:33:39Z and held for ~33s
+(an `openclaw` automated fan-out colliding with an `opencode`
+human session burst). Average concurrency **1.38**; coverage
+49.3% (the box was idle slightly more than half the window).
+Histogram: 50.7% of time at level 0, 18.8% at 1, 15.5% at 2,
+falling off through level 11 (0.6%). The peak duration of 33s
+versus the multi-day spans at lower levels is exactly the
+"tall narrow spike" pattern the subcommand is designed to surface
+— invisible to per-day averages.
+
+Tie-break is fully specified and tested: closes are processed
+*before* opens at the same timestamp, so a session ending at the
+exact moment another starts is **not** counted as concurrency
+(the standard half-open-interval convention). Sessions starting
+before `--since` or extending past `--until` are clipped, not
+dropped, so their in-window contribution is preserved. Zero-length
+sessions (`last_message_at == started_at` and `duration_seconds ==
+0`) are dropped from consideration.
+
+### Added
+
+- `pew-insights concurrency` subcommand
+  - `--since <iso>` inclusive ISO lower bound on the sweep window
+    (default: earliest session start in the corpus).
+  - `--until <iso>` exclusive ISO upper bound (default: latest
+    session end). When a session's interval crosses either bound,
+    it is clipped to the window — its overlap contribution inside
+    the window is preserved, only the out-of-window portion is
+    discarded.
+  - `--top <n>` caps `peakSessions[]` (default 10). The `count`
+    is always exact even when more sessions tied at the peak.
+  - `--json` emits the full report including `windowStart`,
+    `windowEnd`, `windowMs`, `consideredSessions`,
+    `skippedSessions`, `peakConcurrency`, `peakAt`,
+    `peakDurationMs`, `peakSessions[]`, `averageConcurrency`,
+    `coverage`, and `histogram[]` (each row with `level`,
+    `totalMs`, `fraction`).
+- `src/concurrency.ts` builder. Pure, deterministic. End time
+  per session is `max(last_message_at, started_at +
+  duration_seconds*1000)`, favouring the larger of the two so
+  late-arriving messages or rounding don't truncate overlap.
+- `renderConcurrency()` in `src/format.ts` — pretty table with
+  summary, peak-sessions table (truncating long `session_key`s
+  with an ellipsis), and the level histogram.
+- 16 new tests covering input validation, empty input, single
+  session, non-overlap, overlap, the closes-before-opens
+  tie-break, peak-session sorting and topN cap, numeric
+  correctness of average/histogram, clipping at window bounds,
+  fully-out-of-window skip, zero-length drop, the
+  duration-extends-end branch, identical-interval handling,
+  histogram fractions summing to 1.0, and disjoint-peak-segment
+  duration accumulation.
+
 ## 0.4.9 — 2026-04-24
 
 Token-velocity analysis. The new `pew-insights velocity` subcommand
