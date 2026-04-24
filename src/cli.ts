@@ -32,6 +32,7 @@ import {
   renderAnomalies,
   renderRatios,
   renderDashboard,
+  renderHeatmap,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -63,6 +64,7 @@ import { exportQueue, exportSessions, type ExportFormat } from './export.js';
 import { buildAnomalies } from './anomalies.js';
 import { buildRatiosReport } from './ratiosreport.js';
 import { buildDashboard } from './dashboard.js';
+import { buildHeatmap, type HeatmapMetric, type HeatmapTz } from './heatmap.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -83,7 +85,7 @@ const program = new Command();
 program
   .name('pew-insights')
   .description('Local-first reports and analytics for your `pew` CLI usage.')
-  .version('0.4.4')
+  .version('0.4.5')
   .option('--pew-home <path>', 'override pew state directory (default $PEW_HOME or ~/.config/pew)');
 
 program
@@ -1129,6 +1131,60 @@ program
         // mirrors the per-subcommand contract so existing cron
         // glue behaves the same when swapped to `dashboard`.
         if (dash.alerting) process.exitCode = 2;
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('heatmap')
+  .description('Hour-of-day × day-of-week token-activity matrix (surfaces diurnal/weekly cycles)')
+  .option('--lookback <days>', 'days of history to include (default 30)', '30')
+  .option('--metric <name>', 'token field: total | input | cached | output', 'total')
+  .option('--tz <name>', 'bucket in utc | local (default utc)', 'utc')
+  .option('--json', 'emit JSON instead of a colored grid')
+  .action(
+    async (
+      opts: {
+        lookback: string;
+        metric: string;
+        tz: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+
+        const lookback = Number.parseInt(opts.lookback, 10);
+        if (!Number.isFinite(lookback) || lookback < 1) {
+          throw new Error(`--lookback must be a positive integer (got ${opts.lookback})`);
+        }
+        const metric = opts.metric as HeatmapMetric;
+        if (!['total', 'input', 'cached', 'output'].includes(metric)) {
+          throw new Error(
+            `--metric must be one of total | input | cached | output (got ${opts.metric})`,
+          );
+        }
+        const tz = opts.tz as HeatmapTz;
+        if (!['utc', 'local'].includes(tz)) {
+          throw new Error(`--tz must be one of utc | local (got ${opts.tz})`);
+        }
+
+        const queue = await readQueue(paths);
+        const heatmap = buildHeatmap(queue, {
+          lookbackDays: lookback,
+          metric,
+          tz,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(heatmap, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderHeatmap(heatmap) + '\n');
+        }
       } catch (e) {
         die(e);
       }

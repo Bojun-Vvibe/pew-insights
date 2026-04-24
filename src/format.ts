@@ -9,6 +9,7 @@ import type { CompareReport, SignificanceHint } from './compare.js';
 import type { AnomaliesReport, AnomalyStatus } from './anomalies.js';
 import type { RatiosReport, RatioStatus } from './ratiosreport.js';
 import type { DashboardReport } from './dashboard.js';
+import { HEATMAP_DOW_LABELS, type HeatmapReport } from './heatmap.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -845,5 +846,125 @@ export function renderDashboard(d: DashboardReport): string {
   } else {
     lines.push(chalk.green('✓ no alerts'));
   }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Heatmap
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a normalised intensity in [0, 1] to a Unicode block + chalk
+ * color. Six bins: empty, low, low-mid, mid, mid-high, high. We use
+ * the partial-block characters (▁..█) so the column width stays at
+ * one cell per cell — important for the 24-wide grid to fit on a
+ * standard 80-col terminal.
+ *
+ * Empty cells render as a centered dim dot to make zero-vs-low
+ * obvious; the eye should read "nothing happened here", not "low".
+ */
+function heatmapGlyph(norm: number): string {
+  if (!Number.isFinite(norm) || norm <= 0) return chalk.dim('·');
+  if (norm < 0.10) return chalk.blue('▁');
+  if (norm < 0.25) return chalk.cyan('▂');
+  if (norm < 0.45) return chalk.green('▄');
+  if (norm < 0.65) return chalk.yellow('▅');
+  if (norm < 0.85) return chalk.magenta('▇');
+  return chalk.red('█');
+}
+
+export function renderHeatmap(h: HeatmapReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights heatmap'));
+  lines.push(
+    chalk.dim(
+      `as of: ${h.asOf}    window: ${h.windowStart} → ${h.windowEnd} (${h.lookbackDays}d)    metric: ${h.metric}    tz: ${h.tz}    events: ${formatNumber(h.events)}`,
+    ),
+  );
+  lines.push('');
+
+  if (h.grandTotal === 0) {
+    lines.push(chalk.dim('  (no token activity in window)'));
+    return lines.join('\n');
+  }
+
+  // Find the per-cell max so we can normalise. We deliberately
+  // normalise against the grid max (not the row or col max) so the
+  // glyph intensity is a global ranking — easier to read at a glance
+  // than a per-row palette.
+  let cellMax = 0;
+  for (let r = 0; r < 7; r++) {
+    for (let c = 0; c < 24; c++) {
+      const v = h.cells[r]![c]!;
+      if (v > cellMax) cellMax = v;
+    }
+  }
+
+  // Header row: hour labels 00..23, single-char to fit grid pitch.
+  // We tag every 6 hours bold so the eye can find quartiles without
+  // counting columns.
+  const hourLabel = (n: number): string => {
+    const s = String(n).padStart(2, '0').slice(-1); // last digit
+    return n % 6 === 0 ? chalk.bold(s) : s;
+  };
+  const hourHeader = '     ' + Array.from({ length: 24 }, (_, i) => hourLabel(i)).join(' ');
+  lines.push(hourHeader);
+  lines.push('     ' + chalk.dim('─'.repeat(24 * 2 - 1)));
+
+  for (let r = 0; r < 7; r++) {
+    const label = chalk.bold(HEATMAP_DOW_LABELS[r]);
+    const cells = h.cells[r]!;
+    const glyphs = cells.map((v) => heatmapGlyph(v / cellMax)).join(' ');
+    const rowTotal = formatTokens(h.rowTotals[r]!).padStart(7);
+    lines.push(`  ${label}  ${glyphs}  ${chalk.dim(rowTotal)}`);
+  }
+  lines.push('     ' + chalk.dim('─'.repeat(24 * 2 - 1)));
+
+  // Column totals row — abbreviated single-char K/M scale so the
+  // 1-char-per-cell pitch is preserved. We show the order of
+  // magnitude only; the JSON output has the precise numbers.
+  const colDigit = (n: number): string => {
+    if (n <= 0) return chalk.dim('·');
+    if (n < 1_000) return chalk.dim('·');
+    if (n < 10_000) return chalk.dim('K');
+    if (n < 100_000) return chalk.cyan('K');
+    if (n < 1_000_000) return chalk.green('K');
+    if (n < 10_000_000) return chalk.yellow('M');
+    if (n < 100_000_000) return chalk.magenta('M');
+    return chalk.red('B');
+  };
+  const colMagnitudes = h.colTotals.map((v) => colDigit(v)).join(' ');
+  lines.push(`  ${chalk.dim('mag')}  ${colMagnitudes}  ${chalk.dim('total')}`);
+  lines.push('');
+
+  // Summary block.
+  const peakCellStr =
+    h.peakCell == null
+      ? '—'
+      : `${HEATMAP_DOW_LABELS[h.peakCell.dow - 1]} ${String(h.peakCell.hour).padStart(2, '0')}:00 (${formatTokens(h.peakCell.tokens)})`;
+  const peakDowStr = h.peakDow == null ? '—' : HEATMAP_DOW_LABELS[h.peakDow - 1]!;
+  const peakHourStr = h.peakHour == null ? '—' : `${String(h.peakHour).padStart(2, '0')}:00`;
+  const diurnalStr =
+    h.diurnalConcentration == null
+      ? '—'
+      : `${(h.diurnalConcentration * 100).toFixed(1)}%  (uniform: 16.7%)`;
+  const weeklyStr =
+    h.weeklyConcentration == null
+      ? '—'
+      : `${(h.weeklyConcentration * 100).toFixed(1)}%  (uniform: 28.6%)`;
+
+  lines.push(
+    renderTable(
+      ['summary', 'value'],
+      [
+        ['grand total', formatTokens(h.grandTotal)],
+        ['peak cell', peakCellStr],
+        ['peak day', peakDowStr],
+        ['peak hour', peakHourStr],
+        ['top-4-hr share', diurnalStr],
+        ['top-2-day share', weeklyStr],
+      ],
+    ),
+  );
   return lines.join('\n');
 }
