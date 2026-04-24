@@ -2,7 +2,104 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.4.25 — 2026-04-25
+## 0.4.26 — 2026-04-25
+
+### Added
+
+- `pew-insights idle-gaps` subcommand — empirical distribution
+  of **intra-session** idle gaps (seconds between consecutive
+  `snapshot_at` values for the same `session_key`). Fills the
+  blind spot left by the existing `gaps` subcommand, which only
+  measures pauses *between* sessions.
+
+  Why a separate subcommand:
+
+  - `gaps` cannot see *inside* a session — a session that was
+    "alive" for 8 hours with a 7-hour idle stretch in the middle
+    is reported as one long session, not as a gap.
+  - `session-lengths` reports `duration_seconds` totals; it cannot
+    tell the difference between an 8-hour session that was
+    actively chatting the whole time and an 8-hour session that
+    was idle for 7 of those hours.
+  - `turn-cadence` averages over the whole session and so smears
+    away the bursty / idle structure.
+
+  What the new command answers:
+
+  1. Are my long sessions *actually* long, or just left-open?
+     (Look at p99 / max gap inside the modal-duration sessions.)
+  2. Is one of my integrations re-snapshotting too aggressively?
+     (Modal bin in `≤60s` with a high `≤60s` share = chatty
+     re-snapshot loop.)
+  3. What does a "normal" pause inside one of my sessions look
+     like? (The modal bin gives the operator's typical
+     intra-session quiet.)
+
+  Implementation: pure builder against `readSessionQueueRaw`
+  (the same raw reader added for `model-switching`, since the
+  deduplicating `readSessionQueue` would destroy the
+  intra-session signal). Nearest-rank quantiles match the rest
+  of the codebase. Default bin ladder spans bursty (≤60s),
+  conversational (≤5m, ≤30m), break (≤1h, ≤4h), and
+  left-open-overnight (≤1d, >1d). Optional `--by source` /
+  `--by kind` split, optional `--min-gap-seconds` floor for
+  noisy queues, optional `--edges` override.
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js idle-gaps
+pew-insights idle-gaps
+as of: 2026-04-24T17:30:44.552Z    by: all    sessions: 650    gaps: 1,228    single-snapshot: 5,484    min-gap: 0s
+
+summary       value
+------------  --------
+sessions      650
+gap pairs     1,228
+mean gap (s)  1235.53
+p50 gap (s)   300.99
+p90 gap (s)   1804.78
+p95 gap (s)   2075.22
+p99 gap (s)   20333.95
+max gap (s)   84784.65
+
+gap            count  share  cum     median (s)
+-------------  -----  -----  ------  ----------
+≤60s           16     1.3%   1.3%    21.28
+60s-300s       149    12.1%  13.4%   155.07
+300s-1800s     922    75.1%  88.5%   301.01
+1800s-3600s    97     7.9%   96.4%   1806.04
+3600s-14400s   29     2.4%   98.8%   6135.65
+14400s-86400s  15     1.2%   100.0%  34227.41
+>86400s        0      0.0%   100.0%  0.00
+  modal bin: 300s-1800s
+```
+
+Headline: of the 6,134 distinct `session_key` values seen, only
+**650** ever produced more than one snapshot — the other 5,484
+are one-shot sessions (single snapshot, no intra-session gap
+measurable). For the 650 multi-snapshot sessions, the modal
+intra-session pause sits firmly in the **5m–30m bucket (75.1%
+of all 1,228 gap pairs)**, with median 301s. The p99 climbs to
+~5.6 hours and the max to ~23.5 hours, showing a long but thin
+tail of "left it open overnight" cases. Notably **0 gaps cross
+the >1-day edge**, which means no session has ever been
+re-snapshotted *more than a day* after its previous snapshot —
+a useful invariant for any downstream code that assumes a
+session_key is bounded in wall-clock time.
+
+### Tests
+
+- 12 new tests (validation across `--by` / `--min-gap-seconds` /
+  `--since` / `--until` / `--edges`, empty input, single-snapshot
+  dropping, single-gap nearest-rank, dense-snapshot quantile
+  correctness, min-gap floor, started_at window filter, by=source
+  split with deterministic sort, invalid snapshot_at handling,
+  custom edge labels). Suite count 524 → 536.
+
+
 
 ### Added (refinement)
 
