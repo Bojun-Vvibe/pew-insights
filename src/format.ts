@@ -2243,6 +2243,7 @@ import type { OutputSizeReport } from './outputsize.js';
 import type { PeakHourReport } from './peakhour.js';
 import type { WeekdayShareReport } from './weekdayshare.js';
 import { WEEKDAY_LABELS_MON_FIRST } from './weekdayshare.js';
+import type { BurstinessReport } from './burstiness.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2513,6 +2514,65 @@ export function renderWeekdayShare(r: WeekdayShareReport): string {
     return cols;
   });
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderBurstiness(r: BurstinessReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights burstiness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    groups: ${formatNumber(r.groups.length)}    global active hrs: ${formatNumber(r.globalActiveHours)}    global mean/hr: ${formatNumber(Math.round(r.globalMeanTokensPerHour))}    global cv: ${r.globalCv.toFixed(3)}    global max/hr: ${formatNumber(r.globalMaxTokensPerHour)}    min-tokens: ${formatNumber(r.minTokens)}    min-active-hours: ${r.minActiveHours}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedGroupRows)} below min-tokens, ${formatNumber(r.droppedSparseGroups)} below min-active-hours, ${formatNumber(r.droppedTopGroups)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.totalTokens === 0 || r.groups.length === 0) {
+    lines.push(
+      chalk.yellow('  no rows in the window with positive tokens. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-${r.by} hourly burstiness (active hour buckets only; cv = stddev/mean; burst = max/p50)`,
+    ),
+  );
+  const headers = [
+    r.by,
+    'tokens',
+    'active hrs',
+    'mean/hr',
+    'stddev/hr',
+    'cv',
+    'p50/hr',
+    'p95/hr',
+    'max/hr',
+    'burst',
+  ];
+  const rows2: string[][] = r.groups.map((g) => [
+    g.model,
+    formatNumber(g.totalTokens),
+    formatNumber(g.activeHours),
+    formatNumber(Math.round(g.meanTokensPerHour)),
+    formatNumber(Math.round(g.stddevTokensPerHour)),
+    g.cv.toFixed(3),
+    formatNumber(Math.round(g.p50TokensPerHour)),
+    formatNumber(Math.round(g.p95TokensPerHour)),
+    formatNumber(g.maxTokensPerHour),
+    g.burstRatio > 0 ? g.burstRatio.toFixed(2) + '×' : '—',
+  ]);
+  lines.push(renderTableLocal(headers, rows2));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
