@@ -2040,6 +2040,61 @@ export function renderSourceMix(r: SourceMixReport): string {
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type { ProviderShareReport } from './providershare.js';
+
+export function renderProviderShare(r: ProviderShareReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights provider-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    messages: ${formatNumber(r.consideredMessages)}    providers: ${formatNumber(r.providers.length)}    top-models: ${r.topModels}    dropped: ${formatNumber(r.droppedInvalidStartedAt)} bad started_at, ${formatNumber(r.droppedInvalidMessages)} bad messages`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredSessions === 0 || r.providers.length === 0) {
+    lines.push(chalk.yellow('  no sessions in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('provider mix'));
+  lines.push(
+    renderTableLocal(
+      ['provider', 'sessions', 'sess.share', 'messages', 'msg.share', 'models'],
+      r.providers.map((p) => [
+        p.provider,
+        formatNumber(p.sessions),
+        formatPercentLocal(p.sessionShare),
+        formatNumber(p.messages),
+        formatPercentLocal(p.messageShare),
+        formatNumber(p.distinctModels),
+      ]),
+    ),
+  );
+
+  if (r.topModels > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`top ${r.topModels} models per provider`));
+    const rows: string[][] = [];
+    for (const p of r.providers) {
+      if (p.topModels.length === 0) {
+        rows.push([p.provider, '—', '—']);
+        continue;
+      }
+      for (let i = 0; i < p.topModels.length; i++) {
+        const m = p.topModels[i]!;
+        rows.push([i === 0 ? p.provider : '', m.model, formatNumber(m.sessions)]);
+      }
+    }
+    lines.push(renderTableLocal(['provider', 'model', 'sessions'], rows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 function renderTableLocal(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)),

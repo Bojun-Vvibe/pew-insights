@@ -49,6 +49,7 @@ import {
   renderModelSwitching,
   renderIdleGaps,
   renderSourceMix,
+  renderProviderShare,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -121,6 +122,7 @@ import {
   buildSourceMix,
   type SourceMixBucketUnit,
 } from './sourcemix.js';
+import { buildProviderShare } from './providershare.js';
 
 interface CommonOpts {
   pewHome?: string;
@@ -2163,6 +2165,44 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceMix(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('provider-share')
+  .description('Per-session model-provider mix (anthropic / openai / google / ...) by sessions and by message volume')
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option('--top-models <n>', 'top distinct models reported per provider (default 3, 0 disables)', '3')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; topModels: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topModels = Number.parseInt(opts.topModels, 10);
+        if (!Number.isInteger(topModels) || topModels < 0) {
+          throw new Error(`--top-models must be a non-negative integer (got ${opts.topModels})`);
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildProviderShare(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          topModels,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderProviderShare(report) + '\n');
         }
       } catch (e) {
         die(e);
