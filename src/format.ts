@@ -2244,6 +2244,7 @@ import type { PeakHourReport } from './peakhour.js';
 import type { WeekdayShareReport } from './weekdayshare.js';
 import { WEEKDAY_LABELS_MON_FIRST } from './weekdayshare.js';
 import type { BurstinessReport } from './burstiness.js';
+import type { DeviceShareReport } from './deviceshare.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2573,6 +2574,71 @@ export function renderBurstiness(r: BurstinessReport): string {
     g.burstRatio > 0 ? g.burstRatio.toFixed(2) + '×' : '—',
   ]);
   lines.push(renderTableLocal(headers, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDeviceShare(r: DeviceShareReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights device-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    devices: ${formatNumber(r.totalDevices)}    shown: ${formatNumber(r.devices.length)}    min-tokens: ${formatNumber(r.minTokens)}    top: ${r.top === 0 ? '∞' : formatNumber(r.top)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptyDevice)} empty device_id, ${formatNumber(r.droppedMinTokens)} below min-tokens, ${formatNumber(r.droppedTopDevices)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.totalTokens === 0 || r.devices.length === 0) {
+    lines.push(
+      chalk.yellow('  no rows in the window with positive tokens. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-device share of token mass (cache% = cached_input / input; models / sources = distinct count)`,
+    ),
+  );
+  const headers = [
+    'device_id',
+    'tokens',
+    'share',
+    'rows',
+    'active hrs',
+    'models',
+    'sources',
+    'input',
+    'cached',
+    'output',
+    'cache%',
+    'first seen',
+    'last seen',
+  ];
+  const rows: string[][] = r.devices.map((d) => [
+    d.deviceId,
+    formatNumber(d.totalTokens),
+    (d.share * 100).toFixed(2) + '%',
+    formatNumber(d.rows),
+    formatNumber(d.activeHours),
+    formatNumber(d.distinctModels),
+    formatNumber(d.distinctSources),
+    formatNumber(d.inputTokens),
+    formatNumber(d.cachedInputTokens),
+    formatNumber(d.outputTokens),
+    (d.cacheHitRatio * 100).toFixed(1) + '%',
+    d.firstSeen.slice(0, 16) + 'Z',
+    d.lastSeen.slice(0, 16) + 'Z',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

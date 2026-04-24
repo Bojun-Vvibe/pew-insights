@@ -58,6 +58,7 @@ import {
   renderPeakHourShare,
   renderWeekdayShare,
   renderBurstiness,
+  renderDeviceShare,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -138,6 +139,7 @@ import { buildOutputSize } from './outputsize.js';
 import { buildPeakHourShare } from './peakhour.js';
 import { buildWeekdayShare } from './weekdayshare.js';
 import { buildBurstiness } from './burstiness.js';
+import { buildDeviceShare } from './deviceshare.js';
 import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
@@ -2783,6 +2785,62 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBurstiness(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('device-share')
+  .description('Per-device_id share of token mass with model/source/cache breakdown')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-tokens <n>',
+    'hide devices with fewer than n total tokens; their counts surface as droppedMinTokens (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n devices by total tokens; remainder surface as droppedTopDevices (default 0 = no cap)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minTokens: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isInteger(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDeviceShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minTokens,
+          top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDeviceShare(report) + '\n');
         }
       } catch (e) {
         die(e);

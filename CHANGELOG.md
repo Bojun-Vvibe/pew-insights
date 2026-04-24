@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.47 — 2026-04-25
+
+### Added
+
+- `device-share`: per-`device_id` slice of the queue population.
+  Every queue line carries the `device_id` (a stable UUID per pew
+  install) of the machine that minted it, but every other report
+  collapses devices together. This subcommand keeps them split so
+  multi-machine users can ask "which box drove most of last
+  week's spend?" and "is one machine's cache hit rate dragging the
+  fleet average down?".
+
+  Per-device columns: `totalTokens`, `share` (vs global token
+  total), `inputTokens` / `cachedInputTokens` / `outputTokens` /
+  `reasoningOutputTokens`, `cacheHitRatio` = `cached_input /
+  input` (matches the convention of the existing
+  `cache-hit-ratio` subcommand and can exceed 1.0 when pew
+  accounts uncached vs cached separately), `rows`, `activeHours`,
+  `distinctModels`, `distinctSources`, `firstSeen` / `lastSeen`.
+
+  Flags: `--since`, `--until`, `--min-tokens`, `--top`, `--json`.
+  Display filters do not shrink the global denominators — `share`
+  is always computed against the full population, mirroring the
+  family-wide convention.
+
+  Distinct lens vs existing reports: `provider-share` slices by
+  `source` (which client), not by `device_id` (which physical
+  machine). A laptop running codex + claude-code + gemini-cli
+  collapses into one row in `provider-share` but splits cleanly
+  here. `concurrency`, `velocity`, `peak-hour-share`,
+  `weekday-share` all collapse across devices.
+
+  13 new test cases (750 total, up from 737): option validation,
+  empty population, single-device share=1, multi-device share
+  arithmetic summing to 1.0, distinct-model / distinct-source
+  counting, drop counters for bad `hour_start` / zero tokens /
+  empty `device_id` (incl. whitespace-only), `since`/`until`
+  window clamping, `--min-tokens` floor with global-denominator
+  isolation, `--top` cap, sort order (tokens desc, deviceId
+  asc), and the `cacheHitRatio = 0` edge case for zero-input rows.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ npx tsx src/cli.ts device-share
+pew-insights device-share
+as of: 2026-04-24T23:51:02.099Z    tokens: 8,235,256,800    devices: 1    shown: 1    min-tokens: 0    top: ∞
+dropped: 0 bad hour_start, 0 zero-tokens, 0 empty device_id, 0 below min-tokens, 0 below top cap
+
+per-device share of token mass (cache% = cached_input / input; models / sources = distinct count)
+device_id                             tokens         share    rows   active hrs  models  sources  input          cached         output      cache%  first seen         last seen
+------------------------------------  -------------  -------  -----  ----------  ------  -------  -------------  -------------  ----------  ------  -----------------  -----------------
+a6aa6846-9de9-444d-ba23-279d86441eee  8,235,256,800  100.00%  1,391  869         15      6        3,329,026,650  4,870,800,584  34,330,932  146.3%  2025-07-30T06:00Z  2026-04-24T23:30Z
+```
+
+This host is currently single-device; the report degenerates to
+one row at 100% share. Multi-device populations (laptop +
+desktop + CI box) will show non-trivial slices. Notable: the
+real fleet shows `cache%` at 146.3% — `cached_input_tokens`
+exceeds `input_tokens` because pew's queue accounts uncached
+prompt bytes and cached prompt bytes as separate columns rather
+than as a subset. The ratio is still informative for
+device-vs-device comparison; it just does not bound at 100%.
+
 ## 0.4.46 — 2026-04-25
 
 ### Added
