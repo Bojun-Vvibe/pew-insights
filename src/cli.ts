@@ -2112,6 +2112,10 @@ program
     "keep only the top-N sources by total sessions in window; fold the rest into 'other' (default 0 = no folding)",
     '0',
   )
+  .option(
+    '--exclude-source <list>',
+    'comma-separated source names to drop *before* bucketing (e.g. synthetic,health-check)',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2120,6 +2124,7 @@ program
         until?: string;
         unit: string;
         top: string;
+        excludeSource?: string;
         json?: boolean;
       },
       cmd,
@@ -2134,6 +2139,16 @@ program
         if (!Number.isFinite(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        let excludeSources: string[] | undefined;
+        if (opts.excludeSource != null && opts.excludeSource.trim().length > 0) {
+          excludeSources = opts.excludeSource
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (excludeSources.length === 0) {
+            throw new Error('--exclude-source must contain at least one non-empty entry');
+          }
+        }
 
         const sessions = await readSessionQueue(paths);
         const report = buildSourceMix(sessions, {
@@ -2141,6 +2156,7 @@ program
           until: opts.until ?? null,
           unit: opts.unit as SourceMixBucketUnit,
           top,
+          excludeSources,
         });
 
         if (opts.json || common.json) {

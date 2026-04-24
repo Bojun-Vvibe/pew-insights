@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.28 — 2026-04-25
+
+### Added
+
+- `--exclude-source <list>` flag on `session-source-mix`.
+  Comma-separated source names dropped *before* bucketing, so
+  a noisy background source (synthetic / health-check rows,
+  one-off integrations) does not dominate the per-bucket mix
+  line. Excluded rows are reported separately as
+  `droppedExcluded` and the resolved exclude list is echoed in
+  the report header (`excludedSources`, sorted +
+  deduplicated).
+
+  Composition with `--top`: exclusion is applied first, then
+  the top-N selection runs on the *remaining* sources. This
+  matches operator intent ("first hide the noise, then keep
+  only the dominant signals") and keeps the global rollup
+  consistent with the per-bucket rows.
+
+### Live-smoke output
+
+Run against `~/.config/pew/session-queue.jsonl`:
+
+```
+$ node dist/cli.js session-source-mix --unit week --since 2026-04-13T00:00:00Z --exclude-source openclaw --top 2
+pew-insights session-source-mix
+as of: 2026-04-24T17:52:25.015Z    unit: week    sessions: 4,894    sources: 3    buckets: 2    top: 2    dropped: 0 invalid, 1,092 excluded
+excluded sources: openclaw
+window: 2026-04-13T00:00:00Z → +∞
+
+overall source mix
+source       sessions  share
+-----------  --------  -----
+opencode     3,488     71.3%
+claude-code  928       19.0%
+other        478       9.8%
+
+per-week mix
+bucket      sessions  modal     modal share  mix
+----------  --------  --------  -----------  ---------------------------------------------
+2026-04-13  477       other     65.6%        other=65.6%  claude-code=34.4%
+2026-04-20  4,417     opencode  79.0%        opencode=79.0%  claude-code=17.3%  other=3.7%
+```
+
+Read: filtering out the `openclaw` background source (1,092
+rows) and folding everything outside the top-2 (`opencode`,
+`claude-code`) into `'other'` makes the underlying weekly
+dynamic clear — the week of `2026-04-13` was dominated by
+`'other'` (65.6%, here mostly the `codex` source from the
+0.4.27 view), and the week of `2026-04-20` flipped hard to
+`opencode` at 79.0%. Without `--exclude-source` this
+transition was muddied by the `openclaw` rows that piled into
+the most recent days.
+
 ## 0.4.27 — 2026-04-25
 
 ### Added

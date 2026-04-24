@@ -1995,9 +1995,12 @@ export function renderSourceMix(r: SourceMixReport): string {
   lines.push(chalk.bold.cyan('pew-insights session-source-mix'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    unit: ${r.unit}    sessions: ${formatNumber(r.consideredSessions)}    sources: ${formatNumber(r.sources.length)}    buckets: ${formatNumber(r.buckets.length)}    top: ${r.top === 0 ? 'all' : String(r.top)}    dropped: ${formatNumber(r.droppedInvalid)} invalid`,
+      `as of: ${r.generatedAt}    unit: ${r.unit}    sessions: ${formatNumber(r.consideredSessions)}    sources: ${formatNumber(r.sources.length)}    buckets: ${formatNumber(r.buckets.length)}    top: ${r.top === 0 ? 'all' : String(r.top)}    dropped: ${formatNumber(r.droppedInvalid)} invalid, ${formatNumber(r.droppedExcluded)} excluded`,
     ),
   );
+  if (r.excludedSources.length > 0) {
+    lines.push(chalk.dim(`excluded sources: ${r.excludedSources.join(', ')}`));
+  }
   if (r.windowStart || r.windowEnd) {
     lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
   }

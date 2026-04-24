@@ -227,3 +227,79 @@ test('source-mix: top larger than distinct sources → no folding', () => {
     undefined,
   );
 });
+
+test('source-mix: excludeSources drops matching rows before bucketing', () => {
+  const r = buildSourceMix(
+    [
+      sl('2026-04-20T00:00:00.000Z', 'noisy'),
+      sl('2026-04-20T01:00:00.000Z', 'noisy'),
+      sl('2026-04-20T02:00:00.000Z', 'real'),
+      sl('2026-04-21T00:00:00.000Z', 'real'),
+    ],
+    { excludeSources: ['noisy'], generatedAt: GEN },
+  );
+  assert.equal(r.consideredSessions, 2);
+  assert.equal(r.droppedExcluded, 2);
+  assert.deepEqual(r.excludedSources, ['noisy']);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'real');
+  // Make sure no bucket carries the excluded source.
+  for (const b of r.buckets) {
+    for (const s of b.shares) assert.notEqual(s.source, 'noisy');
+  }
+});
+
+test('source-mix: excludeSources empty / unset → no rows dropped', () => {
+  const data = [
+    sl('2026-04-20T00:00:00.000Z', 'a'),
+    sl('2026-04-20T01:00:00.000Z', 'b'),
+  ];
+  const r1 = buildSourceMix(data, { generatedAt: GEN });
+  assert.equal(r1.droppedExcluded, 0);
+  assert.deepEqual(r1.excludedSources, []);
+
+  const r2 = buildSourceMix(data, { excludeSources: [], generatedAt: GEN });
+  assert.equal(r2.droppedExcluded, 0);
+  assert.deepEqual(r2.excludedSources, []);
+});
+
+test('source-mix: excludeSources rejects bad input', () => {
+  // @ts-expect-error testing runtime validation
+  assert.throws(() => buildSourceMix([], { excludeSources: 'noisy' }));
+  assert.throws(() => buildSourceMix([], { excludeSources: [''] }));
+  // @ts-expect-error testing runtime validation
+  assert.throws(() => buildSourceMix([], { excludeSources: [null] }));
+});
+
+test('source-mix: excludeSources composes with --top', () => {
+  // Drop 'noisy' first, then take top-1 of {a:3, b:2, c:1} = a, fold b+c into 'other'.
+  const r = buildSourceMix(
+    [
+      sl('2026-04-20T00:00:00.000Z', 'noisy'),
+      sl('2026-04-20T01:00:00.000Z', 'noisy'),
+      sl('2026-04-20T02:00:00.000Z', 'noisy'),
+      sl('2026-04-20T03:00:00.000Z', 'a'),
+      sl('2026-04-20T04:00:00.000Z', 'a'),
+      sl('2026-04-20T05:00:00.000Z', 'a'),
+      sl('2026-04-20T06:00:00.000Z', 'b'),
+      sl('2026-04-20T07:00:00.000Z', 'b'),
+      sl('2026-04-20T08:00:00.000Z', 'c'),
+    ],
+    { excludeSources: ['noisy'], top: 1, generatedAt: GEN },
+  );
+  assert.equal(r.consideredSessions, 6);
+  assert.equal(r.droppedExcluded, 3);
+  const m = new Map(r.sources.map((s) => [s.source, s.count]));
+  assert.equal(m.get('a'), 3);
+  assert.equal(m.get('other'), 3);
+  assert.equal(m.has('b'), false);
+  assert.equal(m.has('noisy'), false);
+});
+
+test('source-mix: excludedSources is sorted and deduplicated', () => {
+  const r = buildSourceMix(
+    [sl('2026-04-20T00:00:00.000Z', 'keep')],
+    { excludeSources: ['z', 'a', 'm', 'a'], generatedAt: GEN },
+  );
+  assert.deepEqual(r.excludedSources, ['a', 'm', 'z']);
+});

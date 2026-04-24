@@ -58,6 +58,15 @@ export interface SourceMixOptions {
    * Default: 0 = no folding (every source kept).
    */
   top?: number;
+  /**
+   * If non-empty, sessions whose `source` is in this list are
+   * dropped *before* bucketing. Useful for stripping a noisy
+   * background source (e.g. synthetic / health-check sessions)
+   * so the remaining mix is dominated by real operator
+   * activity. Counted separately in `droppedExcluded` so the
+   * operator can still see how many rows were stripped.
+   */
+  excludeSources?: string[];
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -97,10 +106,14 @@ export interface SourceMixReport {
   windowEnd: string | null;
   unit: SourceMixBucketUnit;
   top: number;
+  /** Sources excluded before bucketing, sorted asc. Empty when none. */
+  excludedSources: string[];
   /** Total sessions matched by window and bucketed. */
   consideredSessions: number;
   /** Sessions with unparseable `started_at`. */
   droppedInvalid: number;
+  /** Sessions dropped because their source matched `excludeSources`. */
+  droppedExcluded: number;
   /** All sources seen across the window, sorted by total desc then source asc. */
   sources: SourceMixShareRow[];
   /** Buckets in ascending order by bucketStart. */
@@ -158,6 +171,20 @@ export function buildSourceMix(
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
 
+  const excludeSet = new Set<string>();
+  if (opts.excludeSources != null) {
+    if (!Array.isArray(opts.excludeSources)) {
+      throw new Error('excludeSources must be an array of strings when supplied');
+    }
+    for (const s of opts.excludeSources) {
+      if (typeof s !== 'string' || s.length === 0) {
+        throw new Error(`excludeSources entries must be non-empty strings (got ${String(s)})`);
+      }
+      excludeSet.add(s);
+    }
+  }
+  const excludedSources = [...excludeSet].sort();
+
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
   if (opts.since != null && (sinceMs === null || !Number.isFinite(sinceMs))) {
@@ -177,6 +204,7 @@ export function buildSourceMix(
   const totalsBySource = new Map<string, number>();
   let consideredSessions = 0;
   let droppedInvalid = 0;
+  let droppedExcluded = 0;
 
   for (const s of sessions) {
     const startMs = Date.parse(s.started_at);
@@ -187,8 +215,13 @@ export function buildSourceMix(
     if (sinceMs !== null && startMs < sinceMs) continue;
     if (untilMs !== null && startMs >= untilMs) continue;
 
-    const { key, startMs: bStart } = bucketKeyFor(startMs, unit);
     const src = pickSource(s);
+    if (excludeSet.has(src)) {
+      droppedExcluded += 1;
+      continue;
+    }
+
+    const { key, startMs: bStart } = bucketKeyFor(startMs, unit);
     let st = bucketState.get(key);
     if (!st) {
       st = { startMs: bStart, counts: new Map(), total: 0 };
@@ -287,8 +320,10 @@ export function buildSourceMix(
     windowEnd: opts.until ?? null,
     unit,
     top,
+    excludedSources,
     consideredSessions,
     droppedInvalid,
+    droppedExcluded,
     sources,
     buckets,
   };
