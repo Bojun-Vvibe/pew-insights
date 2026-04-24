@@ -24,6 +24,18 @@
  * to hit a 200k/1M cap, picking models whose ceilings actually fit the
  * job, and noticing when a single runaway request blows up the average.
  *
+ * Two complementary lenses on the same data:
+ *
+ *   - The default (no `atLeast`) shows the full prompt-size population
+ *     — small classifier-style calls and giant repo-context calls all
+ *     in the same histogram. This view answers "what fraction of all
+ *     my prompts are above 200k?" and surfaces the long tail.
+ *   - With `atLeast >= 1_000_000`, the view scopes to the long-context
+ *     workload only. The mean and p95 then reflect the heavy population
+ *     specifically, instead of being dragged downward by the small-call
+ *     mass. This is the lens that matters for context-window planning
+ *     and for catching million-token outliers.
+ *
  * Window semantics: filter by `hour_start` (the row's own timestamp),
  * exactly like the rest of the queue-based reports (`cost`, `forecast`,
  * `trend`, `cache-hit-ratio`, `reasoning-share`).
