@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.45 — 2026-04-25
+
+### Added
+
+- New `burstiness` subcommand. Per-`(model|source)` spikiness of
+  hourly token usage. Buckets rows by `hour_start`, sums tokens
+  per bucket, then reports across the *active* hour buckets:
+  mean, population stddev, **coefficient of variation
+  (cv = stddev / mean)**, p50, p95, max, and **burst ratio
+  (max / p50)**. The cv scalar is the headline: cv ≈ 0 means
+  steady hour-to-hour, cv ≈ 1 means stddev equals mean
+  (Poisson-ish noise), cv ≫ 1 means a few huge hours dwarf the
+  rest.
+
+  Distinct lens vs the existing reports:
+  - `velocity` averages tokens over wall-clock — a steady drip
+    and a single 10× spike that averages to the same rate are
+    indistinguishable;
+  - `concurrency` is session overlap, not token dispersion;
+  - `streaks` / `gaps` measure *contiguity* of activity, not
+    magnitude variance;
+  - `peak-hour-share` / `weekday-share` measure *which* hour or
+    weekday is hottest, not how spiky the time series is.
+
+  10 new test cases (733 total, up from 723): option validation
+  rejection, n=1 stable case (cv=0), perfectly uniform (cv=0),
+  known-arithmetic case `[10, 30] → mean=20, popstd=10, cv=0.5,
+  burst=1.5×`, single-spike inflation
+  (cv > 1.5, burst = 100×), same-hour aggregation, sparse-group
+  filter with global-denominator isolation, top cap, by=source
+  dimension, since/until window clamp, bad-row counting, and
+  sort order.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ npx tsx src/cli.ts burstiness
+pew-insights burstiness
+as of: 2026-04-24T23:14:58.936Z    tokens: 8,215,771,731    groups: 15    global active hrs: 868    global mean/hr: 9,465,175    global cv: 1.919    global max/hr: 126,620,962    min-tokens: 0    min-active-hours: 1
+dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-tokens, 0 below min-active-hours, 0 below top cap
+
+per-model hourly burstiness (active hour buckets only; cv = stddev/mean; burst = max/p50)
+model                 tokens         active hrs  mean/hr     stddev/hr   cv     p50/hr     p95/hr      max/hr       burst
+--------------------  -------------  ----------  ----------  ----------  -----  ---------  ----------  -----------  ------
+claude-opus-4.7       4,528,737,641  262         17,285,258  21,080,553  1.220  7,413,532  60,140,851  108,008,474  14.57×
+gpt-5.4               2,457,125,015  362         6,787,638   9,266,722   1.365  3,883,536  27,231,107  65,604,896   16.89×
+claude-opus-4.6.1m    1,108,978,665  167         6,640,591   9,375,732   1.412  3,244,687  24,327,017  55,962,051   17.25×
+claude-haiku-4.5      70,717,678     30          2,357,256   1,980,077   0.840  1,968,551  6,603,988   7,814,903    3.97×
+unknown               35,575,800     56          635,282     1,166,943   1.837  401,246    1,045,158   8,368,144    20.86×
+claude-sonnet-4.6     12,601,545     9           1,400,172   1,262,893   0.902  704,086    3,685,618   3,938,865    5.59×
+gpt-5                 850,661        170         5,004       5,905       1.180  2,977      16,934      37,381       12.56×
+claude-opus-4.6       350,840        4           87,710      38,329      0.437  78,408     137,090     142,920      1.82×
+gpt-5.2               299,605        1           299,605     0           0.000  299,605    299,605     299,605      1.00×
+gemini-3-pro-preview  154,496        37          4,176       4,246       1.017  3,178      10,276      22,021       6.93×
+gpt-5.1               111,623        53          2,106       3,104       1.474  1,178      8,579       17,031       14.46×
+gpt-5-nano            109,646        1           109,646     0           0.000  109,646    109,646     109,646      1.00×
+claude-sonnet-4.5     105,382        37          2,848       3,132       1.100  1,544      8,790       14,366       9.30×
+claude-sonnet-4       53,062         26          2,041       3,257       1.596  1,016      4,691       17,028       16.76×
+gpt-4.1               72             1           72          0           0.000  72         72          72           1.00×
+```
+
+Headline reading: global cv `1.919` confirms the workload is
+heavily bursty — stddev across the 868 active hour buckets is
+~2× the mean. The two flagship models (`claude-opus-4.7`,
+`gpt-5.4`) each show cv ≈ 1.2-1.4 with burst ratios near 15×,
+meaning peak hours land an order of magnitude above the median
+hour. `unknown` (background traffic) is the spikiest active
+group at cv `1.837` and burst `20.86×`. Three single-hour models
+(`gpt-5.2`, `gpt-5-nano`, `gpt-4.1`) trivially score cv = 0;
+`--min-active-hours 5` would hide them — wired up as a refinement
+in v0.4.46.
+
 ## 0.4.44 — 2026-04-25
 
 ### Added
