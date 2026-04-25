@@ -30,6 +30,7 @@ import type { InterSourceHandoffLatencyReport } from './intersourcehandofflatenc
 import type { SourcePairCooccurrenceReport } from './sourcepaircooccurrence.js';
 import type { ProviderSwitchingFrequencyReport } from './providerswitchingfrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
+import type { LastBucketOfDayReport } from './lastbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
 import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
 import type { BucketDensityPercentileReport } from './bucketdensitypercentile.js';
@@ -3871,6 +3872,64 @@ export function renderFirstBucketOfDay(r: FirstBucketOfDayReport): string {
     d.day,
     d.firstBucket,
     d.firstHour.toString().padStart(2, '0'),
+    formatNumber(d.bucketsOnDay),
+    formatNumber(d.tokensOnDay),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderLastBucketOfDay(r: LastBucketOfDayReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights last-bucket-of-day'));
+  const fmtH = (h: number | null) => (h === null ? '-' : h.toString().padStart(2, '0'));
+  const fmtHF = (h: number | null) => (h === null ? '-' : h.toFixed(2));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.distinctDays)} (shown ${formatNumber(r.days.length)})    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `lastHour UTC: min=${fmtH(r.lastHourMin)} p25=${fmtH(r.lastHourP25)} median=${fmtH(r.lastHourMedian)} mean=${fmtHF(r.lastHourMean)} p75=${fmtH(r.lastHourP75)} max=${fmtH(r.lastHourMax)} mode=${fmtH(r.lastHourMode)} (n=${formatNumber(r.lastHourModeCount)}, share=${(r.lastHourModeShare * 100).toFixed(1)}%)`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopDays)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per UTC calendar day: lastBucket = latest hour_start with positive total_tokens; lastHour = its UTC hour-of-day; mode tiebreak: latest hour wins)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.days.length === 0) {
+    lines.push(chalk.yellow('  no day rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-day last bucket (sorted by ${r.sort}${r.sort === 'last-hour' ? ' desc' : ' desc'})`));
+  const headers = [
+    'day (UTC)',
+    'last-bucket (UTC)',
+    'last-hour',
+    'buckets-on-day',
+    'tokens-on-day',
+  ];
+  const rows: string[][] = r.days.map((d) => [
+    d.day,
+    d.lastBucket,
+    d.lastHour.toString().padStart(2, '0'),
     formatNumber(d.bucketsOnDay),
     formatNumber(d.tokensOnDay),
   ]);

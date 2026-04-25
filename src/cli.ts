@@ -78,6 +78,7 @@ import {
   renderSourcePairCooccurrence,
   renderProviderSwitchingFrequency,
   renderFirstBucketOfDay,
+  renderLastBucketOfDay,
   renderActiveSpanPerDay,
   renderSourceBreadthPerDay,
   renderBucketDensityPercentile,
@@ -182,6 +183,7 @@ import { buildInterSourceHandoffLatency } from './intersourcehandofflatency.js';
 import { buildSourcePairCooccurrence } from './sourcepaircooccurrence.js';
 import { buildProviderSwitchingFrequency } from './providerswitchingfrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
+import { buildLastBucketOfDay } from './lastbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
 import { buildBucketDensityPercentile } from './bucketdensitypercentile.js';
@@ -3549,6 +3551,72 @@ program
       }
     },
   );
+
+program
+  .command('last-bucket-of-day')
+  .description('Per UTC calendar day, the latest active hour bucket — shutdown-clock lens with min/max/mean/median/p25/p75/mode lastHour stats')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top <n>',
+    'cap days[] after sorting; remainder surface as droppedTopDays. Summary stats always reflect the full population. Default 0 = no cap.',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for days[]: 'day' (default, desc) | 'last-hour' (desc) | 'tokens' (desc) | 'buckets' (desc)",
+    'day',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'day' &&
+          opts.sort !== 'last-hour' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'buckets'
+        ) {
+          throw new Error(
+            `--sort must be 'day' | 'last-hour' | 'tokens' | 'buckets' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildLastBucketOfDay(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          top,
+          sort: opts.sort as 'day' | 'last-hour' | 'tokens' | 'buckets',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderLastBucketOfDay(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
 
 program
   .command('active-span-per-day')
