@@ -288,3 +288,35 @@ test('interarrival-time: minActiveBuckets composes with top (min applied first)'
   assert.equal(r.sources.length, 1);
   assert.equal(r.sources[0].source, 'a');
 });
+
+// ---- determinism + JSON shape stability -----------------------------------
+
+test('interarrival-time: deterministic on shuffled input', () => {
+  const queue: QueueLine[] = [];
+  for (let h = 0; h < 24; h++) {
+    queue.push(ql(new Date(Date.UTC(2026, 0, 1, h)).toISOString(), { source: 'a' }));
+    queue.push(ql(new Date(Date.UTC(2026, 0, 2, h)).toISOString(), { source: 'b' }));
+  }
+  const r1 = buildInterarrivalTime(queue, { generatedAt: GEN });
+  // Shuffle deterministically (reverse) and rebuild.
+  const r2 = buildInterarrivalTime(queue.slice().reverse(), { generatedAt: GEN });
+  assert.deepEqual(r2, r1);
+});
+
+test('interarrival-time: report echoes options for JSON consumers', () => {
+  const r = buildInterarrivalTime([], {
+    generatedAt: GEN,
+    since: '2026-04-01T00:00:00Z',
+    until: '2026-04-30T00:00:00Z',
+    source: 'codex',
+    top: 5,
+    minActiveBuckets: 2,
+    sort: 'p90',
+  });
+  assert.equal(r.windowStart, '2026-04-01T00:00:00Z');
+  assert.equal(r.windowEnd, '2026-04-30T00:00:00Z');
+  assert.equal(r.source, 'codex');
+  assert.equal(r.top, 5);
+  assert.equal(r.minActiveBuckets, 2);
+  assert.equal(r.sort, 'p90');
+});
