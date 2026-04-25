@@ -305,3 +305,18 @@ test('token-velocity-percentiles: rateMin partial filter alters surviving source
   assert.equal(r.sources[0]!.min, 1000);
   assert.equal(r.sources[0]!.max, 1004);
 });
+
+test('token-velocity-percentiles: sort=mean orders by mean tok/min desc', () => {
+  // src "fast": one bucket of 12000 tokens -> 200 tok/min mean
+  // src "slow": two buckets of 60 tokens   -> 1 tok/min mean
+  const lines: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { source: 'fast', total_tokens: 12_000 }),
+    ql('2026-04-20T01:00:00Z', { source: 'slow', total_tokens: 60 }),
+    ql('2026-04-20T02:00:00Z', { source: 'slow', total_tokens: 60 }),
+  ];
+  const r = buildTokenVelocityPercentiles(lines, { sort: 'mean', generatedAt: GEN });
+  assert.equal(r.sources[0]!.source, 'fast');
+  assert.equal(r.sources[0]!.mean, 200);
+  assert.equal(r.sources[1]!.source, 'slow');
+  assert.equal(r.sources[1]!.mean, 1);
+});
