@@ -4933,6 +4933,11 @@ program
     '0',
   )
   .option(
+    '--rate-min <n>',
+    'noise-floor: drop individual (source, hour) buckets whose tokens-per-minute rate is < n; counts surface as droppedRateMin (default 0)',
+    '0',
+  )
+  .option(
     '--sort <key>',
     "sort key for sources[]: 'tokens' (default) | 'buckets' | 'p99' | 'mean'",
     'tokens',
@@ -4946,6 +4951,7 @@ program
         source?: string;
         minBuckets: string;
         top: string;
+        rateMin: string;
         sort: string;
         json?: boolean;
       },
@@ -4961,6 +4967,10 @@ program
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const rateMin = Number.parseFloat(opts.rateMin);
+        if (!Number.isFinite(rateMin) || rateMin < 0) {
+          throw new Error(`--rate-min must be a non-negative finite number (got ${opts.rateMin})`);
         }
         if (
           opts.sort !== 'tokens' &&
@@ -4979,6 +4989,7 @@ program
           source: opts.source ?? null,
           minBuckets,
           top,
+          rateMin,
           sort: opts.sort as 'tokens' | 'buckets' | 'p99' | 'mean',
         });
         if (opts.json || common.json) {

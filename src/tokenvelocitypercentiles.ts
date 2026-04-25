@@ -55,6 +55,25 @@ export interface TokenVelocityPercentilesOptions {
    */
   top?: number;
   /**
+   * Drop individual *(source, hour) bucket observations* whose
+   * tokens-per-minute rate (after multi-device/multi-model summing
+   * within the same source+hour) is `< rateMin`. Counts surface as
+   * `droppedRateMin`. This is a noise-floor filter — useful for
+   * hiding tiny background pings (health probes, single-byte
+   * heartbeats) that would otherwise pull p50 toward zero and
+   * inflate the apparent mean. Distinct from `minBuckets`:
+   *   - `minBuckets` is a per-source display filter on the *count*
+   *     of observations.
+   *   - `rateMin` is a per-observation filter on each bucket's
+   *     *rate*, applied during aggregation. It alters
+   *     `totalBuckets`, `totalTokens`, every percentile, and can
+   *     remove a source entirely if all its buckets fall below the
+   *     threshold (the resulting source row will not appear in
+   *     `sources[]` even before display filters).
+   * Default 0 = no filter. Must be a non-negative finite number.
+   */
+  rateMin?: number;
+  /**
    * Sort key for `sources[]`:
    *   - 'tokens' (default): sum of token mass desc
    *   - 'buckets':          number of active buckets desc
@@ -94,6 +113,8 @@ export interface TokenVelocityPercentilesReport {
   source: string | null;
   minBuckets: number;
   top: number;
+  /** Echo of the resolved `rateMin` threshold (tokens-per-minute). */
+  rateMin: number;
   sort: 'tokens' | 'buckets' | 'p99' | 'mean';
   /** Distinct sources observed in the window before display filters. */
   totalSources: number;
@@ -107,6 +128,11 @@ export interface TokenVelocityPercentilesReport {
   droppedZeroTokens: number;
   /** Rows excluded by the `source` filter. */
   droppedSourceFilter: number;
+  /**
+   * Aggregated (source, hour) buckets whose tokens-per-minute fell
+   * below `rateMin`. Counted *after* multi-device/multi-model summing.
+   */
+  droppedRateMin: number;
   /** Source rows hidden by `minBuckets`. */
   droppedMinBuckets: number;
   /** Source rows hidden by the `top` cap. */
@@ -138,6 +164,12 @@ export function buildTokenVelocityPercentiles(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const rateMin = opts.rateMin ?? 0;
+  if (!Number.isFinite(rateMin) || rateMin < 0) {
+    throw new Error(
+      `rateMin must be a non-negative finite number (got ${opts.rateMin})`,
+    );
   }
   const sort = opts.sort ?? 'tokens';
   if (sort !== 'tokens' && sort !== 'buckets' && sort !== 'p99' && sort !== 'mean') {
@@ -201,11 +233,17 @@ export function buildTokenVelocityPercentiles(
   const allRows: TokenVelocitySourceRow[] = [];
   let totalBuckets = 0;
   let totalTokens = 0;
+  let droppedRateMin = 0;
   for (const [source, buckets] of perSourceBuckets.entries()) {
     const rates: number[] = [];
     let sum = 0;
     for (const v of buckets.values()) {
-      rates.push(v / MINUTES_PER_BUCKET);
+      const rate = v / MINUTES_PER_BUCKET;
+      if (rateMin > 0 && rate < rateMin) {
+        droppedRateMin += 1;
+        continue;
+      }
+      rates.push(rate);
       sum += v;
     }
     if (rates.length === 0) continue;
@@ -266,6 +304,7 @@ export function buildTokenVelocityPercentiles(
     source: sourceFilter,
     minBuckets,
     top,
+    rateMin,
     sort,
     totalSources,
     totalBuckets,
@@ -273,6 +312,7 @@ export function buildTokenVelocityPercentiles(
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
+    droppedRateMin,
     droppedMinBuckets,
     droppedTopSources,
     sources: kept,

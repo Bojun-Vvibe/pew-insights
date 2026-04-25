@@ -235,3 +235,73 @@ test('token-velocity-percentiles: since/until window applied before bucketing', 
   assert.equal(r.totalBuckets, 2);
   assert.equal(r.totalTokens, 180);
 });
+
+// ---- rateMin (refinement) -----------------------------------------------
+
+test('token-velocity-percentiles: rejects bad rateMin', () => {
+  assert.throws(() => buildTokenVelocityPercentiles([], { rateMin: -1 }));
+  assert.throws(() =>
+    buildTokenVelocityPercentiles([], { rateMin: Number.POSITIVE_INFINITY }),
+  );
+});
+
+test('token-velocity-percentiles: rateMin echoes through the report', () => {
+  const r = buildTokenVelocityPercentiles([], { rateMin: 0.5, generatedAt: GEN });
+  assert.equal(r.rateMin, 0.5);
+});
+
+test('token-velocity-percentiles: rateMin drops sub-threshold buckets and re-shapes percentiles', () => {
+  // Two sources. tiny: only sub-threshold buckets (drops out entirely);
+  // real: all-medium buckets (unchanged).
+  const lines: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { source: 'tiny', total_tokens: 6 }),     // 0.1 tok/min
+    ql('2026-04-20T02:00:00Z', { source: 'tiny', total_tokens: 30 }),    // 0.5 tok/min
+    ql('2026-04-20T01:00:00Z', { source: 'real', total_tokens: 6_000 }), // 100 tok/min
+    ql('2026-04-20T02:00:00Z', { source: 'real', total_tokens: 12_000 }), // 200 tok/min
+  ];
+  const baseline = buildTokenVelocityPercentiles(lines, { generatedAt: GEN });
+  assert.equal(baseline.totalSources, 2);
+  assert.equal(baseline.totalBuckets, 4);
+  assert.equal(baseline.droppedRateMin, 0);
+
+  // Threshold 1 tok/min wipes tiny entirely, leaves real intact.
+  const filtered = buildTokenVelocityPercentiles(lines, {
+    rateMin: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(filtered.droppedRateMin, 2, 'tiny\'s 2 buckets dropped by threshold');
+  assert.equal(filtered.totalSources, 1);
+  assert.equal(filtered.totalBuckets, 2);
+  assert.equal(filtered.totalTokens, 18_000);
+  assert.equal(filtered.sources[0]!.source, 'real');
+  const baseReal = baseline.sources.find((s) => s.source === 'real')!;
+  assert.equal(filtered.sources[0]!.p50, baseReal.p50);
+  assert.equal(filtered.sources[0]!.p99, baseReal.p99);
+});
+
+test('token-velocity-percentiles: rateMin partial filter alters surviving source percentiles', () => {
+  // Single source, 5 sub-threshold + 5 above-threshold.
+  const lines: QueueLine[] = [];
+  for (let i = 0; i < 5; i++) {
+    lines.push(
+      ql(`2026-04-${String(10 + i).padStart(2, '0')}T01:00:00Z`, {
+        total_tokens: 6, // 0.1 tok/min
+      }),
+    );
+  }
+  for (let i = 0; i < 5; i++) {
+    lines.push(
+      ql(`2026-04-${String(15 + i).padStart(2, '0')}T01:00:00Z`, {
+        total_tokens: 60_000 + i * 60, // 1000..1004 tok/min
+      }),
+    );
+  }
+  const r = buildTokenVelocityPercentiles(lines, {
+    rateMin: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedRateMin, 5);
+  assert.equal(r.totalBuckets, 5);
+  assert.equal(r.sources[0]!.min, 1000);
+  assert.equal(r.sources[0]!.max, 1004);
+});
