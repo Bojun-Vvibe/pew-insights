@@ -67,6 +67,7 @@ import {
   renderInterarrivalTime,
   renderBucketIntensity,
   renderTokenVelocityPercentiles,
+  renderCostPerBucketPercentiles,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -176,6 +177,7 @@ import { buildModelCohabitation } from './modelcohabitation.js';
 import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildBucketIntensity } from './bucketintensity.js';
 import { buildTokenVelocityPercentiles } from './tokenvelocitypercentiles.js';
+import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -4996,6 +4998,100 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderTokenVelocityPercentiles(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('cost-per-bucket-percentiles')
+  .description(
+    'Per-source distribution of estimated USD cost per (source, UTC hour) bucket; reports p50/p90/p99 dollars-per-bucket plus min/max/mean per source',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-buckets <n>',
+    'hide source rows with fewer than n active buckets; counts surface as droppedMinBuckets (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sorting; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--min-cost <usd>',
+    'noise-floor: drop individual (source, hour) buckets whose USD cost is < n; counts surface as droppedMinCost (default 0)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'cost' (default) | 'buckets' | 'p99' | 'mean'",
+    'cost',
+  )
+  .option('--rates <path>', 'override rates JSON path (default ~/.config/pew-insights/rates.json)')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minBuckets: string;
+        top: string;
+        minCost: string;
+        sort: string;
+        rates?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minCost = Number.parseFloat(opts.minCost);
+        if (!Number.isFinite(minCost) || minCost < 0) {
+          throw new Error(`--min-cost must be a non-negative finite number (got ${opts.minCost})`);
+        }
+        if (
+          opts.sort !== 'cost' &&
+          opts.sort !== 'buckets' &&
+          opts.sort !== 'p99' &&
+          opts.sort !== 'mean'
+        ) {
+          throw new Error(
+            `--sort must be 'cost' | 'buckets' | 'p99' | 'mean' (got ${opts.sort})`,
+          );
+        }
+        const ratesPath = opts.rates ?? defaultRatesPath();
+        const userRates = await readRatesFile(ratesPath);
+        const rates = mergeRates(DEFAULT_RATES, userRates);
+        const queue = await readQueue(paths);
+        const report = buildCostPerBucketPercentiles(queue, rates, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minBuckets,
+          top,
+          minCost,
+          sort: opts.sort as 'cost' | 'buckets' | 'p99' | 'mean',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderCostPerBucketPercentiles(report) + '\n');
         }
       } catch (e) {
         die(e);

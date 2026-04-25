@@ -4694,3 +4694,72 @@ export function renderTokenVelocityPercentiles(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+function fmtUsd(n: number): string {
+  if (!Number.isFinite(n)) return '-';
+  if (n === 0) return '$0.00';
+  if (Math.abs(n) < 0.01) return `$${n.toFixed(4)}`;
+  if (Math.abs(n) < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+export function renderCostPerBucketPercentiles(
+  r: import('./costperbucketpercentiles.js').CostPerBucketPercentilesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights cost-per-bucket-percentiles'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    buckets: ${formatNumber(r.totalBuckets)}    cost: ${fmtUsd(r.totalCost)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.unknownModelRows)} unknown-model rows, ${formatNumber(r.droppedZeroCost)} zero-cost buckets, ${formatNumber(r.droppedMinCost)} below min-cost, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(observation = one (source, UTC hour_start) bucket; cost summed across rows in that bucket; percentiles are nearest-rank R-1)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source dollars-per-bucket summary (sorted by ${r.sort} desc)`));
+  const headers = [
+    'source',
+    'buckets',
+    'cost',
+    'min',
+    'p50',
+    'p90',
+    'p99',
+    'max',
+    'mean',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.buckets),
+    fmtUsd(s.cost),
+    fmtUsd(s.min),
+    fmtUsd(s.p50),
+    fmtUsd(s.p90),
+    fmtUsd(s.p99),
+    fmtUsd(s.max),
+    fmtUsd(s.mean),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
