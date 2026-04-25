@@ -26,6 +26,7 @@ import type { SourceTenureReport } from './sourcetenure.js';
 import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
+import type { InterSourceHandoffLatencyReport } from './intersourcehandofflatency.js';
 import type { ProviderSwitchingFrequencyReport } from './providerswitchingfrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
@@ -3601,6 +3602,92 @@ export function renderBucketHandoffFrequency(r: BucketHandoffFrequencyReport): s
     p.to,
     formatNumber(p.count),
     r.handoffPairs > 0 ? ((p.count / r.handoffPairs) * 100).toFixed(1) + '%' : '0.0%',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderInterSourceHandoffLatency(
+  r: InterSourceHandoffLatencyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights inter-source-handoff-latency'));
+  const fmtH = (v: number | null): string =>
+    v === null ? '-' : v.toFixed(2) + 'h';
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    pairs: ${formatNumber(r.consideredPairs)}    handoffs: ${formatNumber(r.handoffPairs)} (${(r.handoffShare * 100).toFixed(1)}%)    minHandoffs: ${formatNumber(r.minHandoffs)}    topHandoffs: ${formatNumber(r.topHandoffs)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `latency: median ${fmtH(r.medianLatencyHours)}    mean ${fmtH(r.meanLatencyHours)}    min ${fmtH(r.minLatencyHours)}    max ${fmtH(r.maxLatencyHours)}    contiguous-handoffs (1h): ${formatNumber(r.contiguousHandoffs)}    gapped: ${formatNumber(r.gappedHandoffs)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptySourceBuckets)} empty-source buckets, ${formatNumber(r.droppedBelowMinHandoffs)} below min-handoffs, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.dominantSource !== null) {
+    lines.push(
+      chalk.dim(
+        `dominant source: ${r.dominantSource} (primary in ${formatNumber(r.dominantSourceBuckets)} of ${formatNumber(r.activeBuckets)} buckets)`,
+      ),
+    );
+  }
+  lines.push(
+    chalk.dim(
+      `(primary source per bucket = max-tokens source, ties broken lex; latency = (next.hour_start - prev.hour_start) in hours; handoff = primary source changed between adjacent active buckets)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.activeBuckets === 0) {
+    lines.push(
+      chalk.yellow('  no active buckets in the window after filters. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+  if (r.pairs.length === 0) {
+    lines.push(
+      chalk.yellow(
+        '  no source handoffs detected (all consecutive buckets share a primary source, or topHandoffs=0).',
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `top source handoffs (sorted by count desc, then median-latency asc)`,
+    ),
+  );
+  const headers = [
+    'from-source',
+    'to-source',
+    'count',
+    'share-of-handoffs',
+    'median-latency',
+    'min',
+    'max',
+  ];
+  const rows: string[][] = r.pairs.map((p) => [
+    p.from,
+    p.to,
+    formatNumber(p.count),
+    r.handoffPairs > 0
+      ? ((p.count / r.handoffPairs) * 100).toFixed(1) + '%'
+      : '0.0%',
+    p.medianLatencyHours.toFixed(2) + 'h',
+    p.minLatencyHours.toFixed(2) + 'h',
+    p.maxLatencyHours.toFixed(2) + 'h',
   ]);
   lines.push(renderTableLocal(headers, rows));
 

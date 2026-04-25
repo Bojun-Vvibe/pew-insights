@@ -74,6 +74,7 @@ import {
   renderBucketStreakLength,
   renderSourceDecayHalfLife,
   renderBucketHandoffFrequency,
+  renderInterSourceHandoffLatency,
   renderProviderSwitchingFrequency,
   renderFirstBucketOfDay,
   renderActiveSpanPerDay,
@@ -176,6 +177,7 @@ import { buildSourceTenure } from './sourcetenure.js';
 import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
+import { buildInterSourceHandoffLatency } from './intersourcehandofflatency.js';
 import { buildProviderSwitchingFrequency } from './providerswitchingfrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
@@ -4065,6 +4067,68 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketHandoffFrequency(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('inter-source-handoff-latency')
+  .description(
+    'Median wall-clock time between adjacent active hour-buckets whose primary source (CLI tool) changed — tool-handoff cadence lens with min/median/mean/max latency, contiguous-vs-gapped split, and top (from -> to) source pairs',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--top-handoffs <n>',
+    'cap the number of (from -> to) source-handoff pairs in the table (default 10; use 0 to suppress the table)',
+    '10',
+  )
+  .option(
+    '--min-handoffs <n>',
+    'drop pairs whose count is below n before applying --top-handoffs; suppressed rows surface as droppedBelowMinHandoffs (default 1 = no floor)',
+    '1',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        topHandoffs: string;
+        minHandoffs: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topHandoffs = Number.parseInt(opts.topHandoffs, 10);
+        if (!Number.isInteger(topHandoffs) || topHandoffs < 0) {
+          throw new Error(
+            `--top-handoffs must be a non-negative integer (got ${opts.topHandoffs})`,
+          );
+        }
+        const minHandoffs = Number.parseInt(opts.minHandoffs, 10);
+        if (!Number.isInteger(minHandoffs) || minHandoffs < 1) {
+          throw new Error(
+            `--min-handoffs must be a positive integer (got ${opts.minHandoffs})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildInterSourceHandoffLatency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          topHandoffs,
+          minHandoffs,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderInterSourceHandoffLatency(report) + '\n');
         }
       } catch (e) {
         die(e);
