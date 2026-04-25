@@ -19,21 +19,29 @@
  * Plus distribution stats over the full population: min/p25/median/
  * mean/p75/max for both `spanHours` and `dutyCycle`.
  *
+ * Optional `--min-span` floor drops days whose spanHours < n from
+ * BOTH summary stats and `days[]` (suppressed days surface as
+ * `droppedShortSpanDays`). Use this to strip out single-bucket
+ * background-only days that would otherwise inflate `dutyCycleMean`
+ * toward 1.0 trivially. Unlike `--top` (display-only),
+ * `--min-span` is a true filter on the analysed population.
+ *
  * Why this is orthogonal to what already ships:
  *
  *   - `first-bucket-of-day` reports *when* the day starts (firstHour
  *     only). This reports *how long* the workday window is and
  *     *how saturated* it is.
  *   - `time-of-day` / `which-hour` / `peak-hour-share` distribute
- *     mass across hour-of-day across the whole window — not per-day
- *     start/end/length.
+ *     tokens or buckets across hour-of-day across the *whole*
+ *     window — they tell you where mass lands, not how each
+ *     individual day's start→end window is shaped.
  *   - `bucket-streak-length` measures consecutive-hour runs but a
  *     fragmented day (work at 09, 14, 21) has spanHours=13, runs of
  *     length 1; a focused day (09..13 contiguous) has spanHours=5,
  *     runs of length 5. This lens captures the *containment* signal
  *     a streak doesn't.
- *   - `idle-gaps` / `interarrival` measure gaps *between* active
- *     buckets but don't anchor to a calendar day.
+ *   - `idle-gaps` / `interarrival` measure spacing between active
+ *     buckets; they don't anchor to "the calendar day's window".
  *
  * Note on bucket bin width: pew rolls activity into hour buckets, so
  * 'activeBuckets' is exactly the number of distinct active hours in
