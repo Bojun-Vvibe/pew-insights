@@ -2963,7 +2963,7 @@ export function renderModelCohabitation(r: ModelCohabitationReport): string {
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedMinCoBuckets)} below min-co-buckets, ${formatNumber(r.droppedTopPairs)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedMinCoBuckets)} below min-co-buckets, ${formatNumber(r.droppedByModelFilter)} by model filter, ${formatNumber(r.droppedTopPairs)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -2971,6 +2971,9 @@ export function renderModelCohabitation(r: ModelCohabitationReport): string {
   }
   if (r.source !== null) {
     lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  if (r.byModel !== null) {
+    lines.push(chalk.dim(`by-model filter: ${r.byModel}`));
   }
   lines.push(
     chalk.dim(

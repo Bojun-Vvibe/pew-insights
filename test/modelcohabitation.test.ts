@@ -291,3 +291,84 @@ test('model-cohabitation: pair sort is deterministic (coBuckets desc, coTokens d
   assert.equal(r.pairs[1].modelA + '|' + r.pairs[1].modelB, 'c|d');
   assert.equal(r.pairs[2].modelA + '|' + r.pairs[2].modelB, 'a|b');
 });
+
+// ---- --by-model filter -----------------------------------------------------
+
+test('model-cohabitation: byModel filter restricts pair rows to those including the model', () => {
+  const queue: QueueLine[] = [
+    // pairs: (a,b), (a,c), (b,c)
+    ql('2026-04-20T01:00:00Z', { model: 'a' }),
+    ql('2026-04-20T01:00:00Z', { model: 'b' }),
+    ql('2026-04-20T02:00:00Z', { model: 'a' }),
+    ql('2026-04-20T02:00:00Z', { model: 'c' }),
+    ql('2026-04-20T03:00:00Z', { model: 'b' }),
+    ql('2026-04-20T03:00:00Z', { model: 'c' }),
+  ];
+  const r = buildModelCohabitation(queue, { generatedAt: GEN, byModel: 'a' });
+  assert.equal(r.byModel, 'a');
+  assert.equal(r.totalPairs, 3);
+  assert.equal(r.pairs.length, 2);
+  assert.equal(r.droppedByModelFilter, 1);
+  for (const p of r.pairs) {
+    assert.ok(p.modelA === 'a' || p.modelB === 'a');
+  }
+  // top-level numbers are untouched
+  assert.equal(r.totalBuckets, 3);
+  assert.equal(r.multiModelBuckets, 3);
+});
+
+test('model-cohabitation: byModel filter null/empty disables the filter', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { model: 'a' }),
+    ql('2026-04-20T01:00:00Z', { model: 'b' }),
+    ql('2026-04-20T02:00:00Z', { model: 'b' }),
+    ql('2026-04-20T02:00:00Z', { model: 'c' }),
+  ];
+  const r1 = buildModelCohabitation(queue, { generatedAt: GEN, byModel: null });
+  const r2 = buildModelCohabitation(queue, { generatedAt: GEN, byModel: '' });
+  assert.equal(r1.byModel, null);
+  assert.equal(r2.byModel, null);
+  assert.equal(r1.pairs.length, 2);
+  assert.equal(r2.pairs.length, 2);
+  assert.equal(r1.droppedByModelFilter, 0);
+});
+
+test('model-cohabitation: byModel filter that matches nothing yields empty pairs and accounts for drops', () => {
+  const r = buildModelCohabitation(
+    [
+      ql('2026-04-20T01:00:00Z', { model: 'a' }),
+      ql('2026-04-20T01:00:00Z', { model: 'b' }),
+    ],
+    { generatedAt: GEN, byModel: 'no-such-model' },
+  );
+  assert.equal(r.totalPairs, 1);
+  assert.equal(r.pairs.length, 0);
+  assert.equal(r.droppedByModelFilter, 1);
+});
+
+test('model-cohabitation: byModel filter composes with --top (top is applied after filter)', () => {
+  const queue: QueueLine[] = [
+    // (a,b)=2
+    ql('2026-04-20T01:00:00Z', { model: 'a' }),
+    ql('2026-04-20T01:00:00Z', { model: 'b' }),
+    ql('2026-04-20T02:00:00Z', { model: 'a' }),
+    ql('2026-04-20T02:00:00Z', { model: 'b' }),
+    // (a,c)=1
+    ql('2026-04-20T03:00:00Z', { model: 'a' }),
+    ql('2026-04-20T03:00:00Z', { model: 'c' }),
+    // (b,c)=1
+    ql('2026-04-20T04:00:00Z', { model: 'b' }),
+    ql('2026-04-20T04:00:00Z', { model: 'c' }),
+  ];
+  const r = buildModelCohabitation(queue, {
+    generatedAt: GEN,
+    byModel: 'a',
+    top: 1,
+  });
+  // After filter: (a,b)=2, (a,c)=1; top 1 keeps (a,b)
+  assert.equal(r.pairs.length, 1);
+  assert.equal(r.droppedByModelFilter, 1); // (b,c) dropped
+  assert.equal(r.droppedTopPairs, 1); // (a,c) dropped after byModel
+  assert.equal(r.pairs[0].modelA, 'a');
+  assert.equal(r.pairs[0].modelB, 'b');
+});

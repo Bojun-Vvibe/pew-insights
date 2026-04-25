@@ -70,6 +70,14 @@ export interface ModelCohabitationOptions {
    * Default null.
    */
   source?: string | null;
+  /**
+   * If non-null, hide pair rows that do not include this model
+   * (after `normaliseModel`). Display filter only — every other
+   * top-level number (totals, models[]) is byte-identical to the
+   * unfiltered run. Counts surface as `droppedByModelFilter`.
+   * Default null.
+   */
+  byModel?: string | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -112,6 +120,8 @@ export interface ModelCohabitationReport {
   minCoBuckets: number;
   top: number;
   source: string | null;
+  /** Echo of the resolved byModel filter (post `normaliseModel`). */
+  byModel: string | null;
   /** Distinct hour buckets observed across kept rows. */
   totalBuckets: number;
   /**
@@ -132,6 +142,8 @@ export interface ModelCohabitationReport {
   droppedSourceFilter: number;
   /** Pair rows hidden by `minCoBuckets`. */
   droppedMinCoBuckets: number;
+  /** Pair rows hidden by the `byModel` filter. */
+  droppedByModelFilter: number;
   /** Pair rows hidden by the `top` cap. */
   droppedTopPairs: number;
   /** Per-model summary, sorted by tokens desc, then model asc. */
@@ -166,6 +178,10 @@ export function buildModelCohabitation(
 
   const sourceFilter =
     opts.source != null && opts.source !== '' ? opts.source : null;
+  const byModelFilter =
+    opts.byModel != null && opts.byModel !== ''
+      ? normaliseModel(opts.byModel)
+      : null;
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
 
@@ -286,7 +302,22 @@ export function buildModelCohabitation(
     }
     afterMin.push(row);
   }
-  afterMin.sort((x, y) => {
+
+  // Apply byModel filter.
+  let droppedByModelFilter = 0;
+  let afterByModel = afterMin;
+  if (byModelFilter !== null) {
+    const next: ModelCohabitationPairRow[] = [];
+    for (const row of afterMin) {
+      if (row.modelA === byModelFilter || row.modelB === byModelFilter) {
+        next.push(row);
+      } else {
+        droppedByModelFilter += 1;
+      }
+    }
+    afterByModel = next;
+  }
+  afterByModel.sort((x, y) => {
     if (y.coBuckets !== x.coBuckets) return y.coBuckets - x.coBuckets;
     if (y.coTokens !== x.coTokens) return y.coTokens - x.coTokens;
     if (x.modelA !== y.modelA) return x.modelA < y.modelA ? -1 : 1;
@@ -294,10 +325,10 @@ export function buildModelCohabitation(
   });
 
   let droppedTopPairs = 0;
-  let keptPairs = afterMin;
-  if (top > 0 && afterMin.length > top) {
-    droppedTopPairs = afterMin.length - top;
-    keptPairs = afterMin.slice(0, top);
+  let keptPairs = afterByModel;
+  if (top > 0 && afterByModel.length > top) {
+    droppedTopPairs = afterByModel.length - top;
+    keptPairs = afterByModel.slice(0, top);
   }
 
   // Build per-model summary.
@@ -322,6 +353,7 @@ export function buildModelCohabitation(
     minCoBuckets,
     top,
     source: sourceFilter,
+    byModel: byModelFilter,
     totalBuckets: buckets.size,
     multiModelBuckets,
     totalModels: modelTokens.size,
@@ -331,6 +363,7 @@ export function buildModelCohabitation(
     droppedZeroTokens,
     droppedSourceFilter,
     droppedMinCoBuckets,
+    droppedByModelFilter,
     droppedTopPairs,
     models: modelRows,
     pairs: keptPairs,

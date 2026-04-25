@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.58 — 2026-04-25
+
+### Added
+
+- `model-cohabitation`: `--by-model <name>` flag (default null = no
+  filter). When set, the pair report is restricted to pairs that
+  include the named model (after `normaliseModel`); other pairs
+  surface as `droppedByModelFilter`. Display filter only — every
+  top-level number (`totalBuckets`, `multiModelBuckets`,
+  `totalPairs`, `models[]`) is byte-identical to the unfiltered
+  run. Composes correctly with `--top` (top is applied *after*
+  the byModel filter, so `--by-model X --top 5` returns the top
+  5 partners of X, not the top 5 of all pairs filtered down).
+
+  4 new tests (835 total, up from 831): byModel restricts pairs
+  and reports drops while preserving top-level numbers; null and
+  empty string disable the filter; non-matching name yields zero
+  pairs with droppedByModelFilter accounting; byModel composes
+  with --top.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--by-model claude-opus-4.7 --top 10`:
+
+  ```
+  pew-insights model-cohabitation
+  as of: 2026-04-25T03:33:31.280Z    buckets: 877    multi-model: 296    models: 15    pairs: 23 (shown 7)    tokens: 8,320,680,844
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-co-buckets, 16 by model filter, 0 below top cap
+  by-model filter: claude-opus-4.7
+
+  top model pairs by shared buckets
+  modelA              modelB             coBuckets  coTokens(min)  cohabIndex  P(B|A)  P(A|B)
+  ------------------  -----------------  ---------  -------------  ----------  ------  ------
+  claude-opus-4.7     gpt-5.4            259        1,333,172,648  0.678       95.6%   70.0%
+  claude-opus-4.7     unknown            53         28,947,973     0.193       19.6%   94.6%
+  claude-opus-4.7     claude-sonnet-4.6  3          2,838,126      0.011       1.1%    33.3%
+  claude-haiku-4.5    claude-opus-4.7    2          3,961,417      0.007       6.7%    0.7%
+  claude-opus-4.7     gpt-5.2            1          299,605        0.004       0.4%    100.0%
+  claude-opus-4.6.1m  claude-opus-4.7    1          174,625        0.002       0.6%    0.4%
+  claude-opus-4.7     gpt-5-nano         1          109,646        0.004       0.4%    100.0%
+  ```
+
+  Headline: `claude-opus-4.7` co-habits a UTC hour bucket with
+  exactly 7 other models (16 of the 23 global pairs are dropped
+  because they don't touch opus-4.7). The bucket-overlap is
+  extremely lopsided — 259 of 271 opus-4.7 buckets (95.6%) also
+  carry gpt-5.4, but only 53 (19.6%) carry the `unknown` model
+  and 0 carry the gemini-* family. The unfiltered global view
+  ranked the opus×unknown pair #3 by coBuckets; this lens makes
+  it clear that opus-4.7's *only* meaningful cohabitant is
+  gpt-5.4 — every other partner is a long-tail accident.
+
 ## 0.4.57 — 2026-04-25
 
 ### Added

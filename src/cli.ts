@@ -3099,6 +3099,7 @@ program
     '0',
   )
   .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option('--by-model <name>', 'restrict pair report to pairs that include this model (post-normalisation); display only')
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3108,6 +3109,7 @@ program
         minCoBuckets: string;
         top: string;
         source?: string;
+        byModel?: string;
         json?: boolean;
       },
       cmd,
@@ -3130,6 +3132,7 @@ program
           minCoBuckets,
           top,
           source: opts.source ?? null,
+          byModel: opts.byModel ?? null,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
