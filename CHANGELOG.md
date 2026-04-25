@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.55 — 2026-04-25
+
+### Added
+
+- `cache-hit-by-hour`: prompt-cache effectiveness
+  (`cached_input_tokens / input_tokens`) bucketed by UTC
+  hour-of-day (0..23), broken down per source. Distinct lens vs
+  `cache-hit-ratio` (which is a single cumulative number per
+  model) and `time-of-day` (which is just raw token mass per
+  hour). For each kept queue row we bucket `hour_start`'s UTC
+  hour and accumulate input + cached tokens per (source, hour).
+  The report emits a 24-hour global breakdown plus one block per
+  source with `peakHour`/`peakRatio`, `troughHour`/`troughRatio`
+  and `spread = peak - trough` so a source with a 60+ pp swing
+  across the day pops out vs one that holds a flat ratio.
+
+  Window semantics match the rest of the suite (`since`
+  inclusive, `until` exclusive on `hour_start`). Defensive guards:
+  bad `hour_start` and zero/negative `input_tokens` rows are
+  dropped with separate counters; `cached_input_tokens` is clamped
+  to `input_tokens` so the per-bucket ratio never exceeds 1.0.
+  Empty-source string falls back to `unknown`.
+
+  12 new tests (811 total, up from 799): option validation
+  (minInputTokens, topSources, since/until); empty input shape (24
+  zero buckets); UTC hour bucketing across multiple rows;
+  per-source peak/trough/spread; dropped accounting for invalid
+  hour_start and zero-input; cached clamped to input; window
+  filter (since inclusive, until exclusive); minInputTokens floor
+  preserves global; topSources truncation with droppedTopSources;
+  empty-source-string fallback to "unknown".
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--top 5`:
+
+  ```
+  pew-insights cache-hit-by-hour
+  as of: 2026-04-25T02:52:25.184Z    input: 3,336,583,730    cached: 2,921,188,059 (87.55%)    sources: 6    shown: 5
+  dropped: 0 bad hour_start, 327 zero-input, 0 below min-input, 1 below top cap
+  (hour-of-day in UTC; ratio = cached_input_tokens / input_tokens)
+
+  global cache ratio by hour-of-day (UTC)
+  hr  input        cached       cache%  rows
+  --  -----------  -----------  ------  ----
+  00  50,522,168   43,248,730   85.6%   27
+  01  203,109,223  183,878,008  90.5%   58
+  02  201,285,062  174,695,939  86.8%   85
+  03  131,759,767  108,972,941  82.7%   53
+  04  104,910,397  93,971,670   89.6%   33
+  05  163,807,255  118,817,981  72.5%   48
+  06  256,349,939  195,965,025  76.4%   84
+  07  270,761,129  226,516,037  83.7%   80
+  08  304,687,802  283,796,926  93.1%   72
+  09  123,016,299  100,568,171  81.8%   58
+  10  144,972,967  130,936,534  90.3%   47
+  11  138,615,297  121,739,392  87.8%   42
+  12  175,239,572  163,322,466  93.2%   32
+  13  179,397,781  160,348,473  89.4%   44
+  14  183,392,669  167,443,060  91.3%   48
+  15  175,398,855  161,968,485  92.3%   42
+  16  199,691,294  187,401,236  93.8%   41
+  17  96,935,963   89,586,277   92.4%   30
+  18  90,932,645   85,328,194   93.8%   28
+  19  43,845,137   39,560,645   90.2%   29
+  20  21,996,796   18,738,907   85.2%   23
+  21  18,705,219   15,751,424   84.2%   22
+  22  27,907,564   23,757,250   85.1%   22
+  23  29,342,930   24,874,288   84.8%   29
+
+  per-source summary (sorted by input tokens desc)
+  source       input          cached         daily%  peak hr  peak%  trough hr  trough%  spread
+  -----------  -------------  -------------  ------  -------  -----  ---------  -------  -------
+  <src-A>      1,834,613,640  1,595,643,323  87.0%   19       95.7%  05         61.7%    34.1 pp
+  <src-B>      875,080,976    753,201,792    86.1%   03       90.8%  00         80.8%    10.0 pp
+  <src-C>      410,781,190    396,009,088    96.4%   12       98.0%  01         86.0%    12.1 pp
+  <src-D>      160,919,437    133,191,295    82.8%   19       99.7%  04         31.2%    68.4 pp
+  <src-E>      54,607,397     43,142,561     79.0%   19       96.7%  20         53.6%    43.1 pp
+  ```
+
+  Headline: across 6 sources, the daily blended cache ratio is
+  87.55%. The 05:00 UTC hour is the global trough (72.5%) and
+  16:00–18:00 sit above 93%. Per-source spread tells the real
+  story: one source swings 68.4 pp across the day (peak 99.7% →
+  trough 31.2%) while another only swings 10.0 pp — so a single
+  cumulative cache-hit number can hide an order-of-magnitude
+  variability in cache discipline.
+
 ## 0.4.54 — 2026-04-25
 
 ### Added
