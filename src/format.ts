@@ -4071,9 +4071,10 @@ export function renderPromptOutputCorrelation(
 ): string {
   const lines: string[] = [];
   lines.push(chalk.bold.cyan('pew-insights prompt-output-correlation'));
+  const outLabel = r.includeReasoning ? 'out+r' : 'out';
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    groups: ${formatNumber(r.totalGroups)} (shown ${formatNumber(r.groups.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    in: ${formatNumber(r.totalInputTokens)}    out: ${formatNumber(r.totalOutputTokens)}    minBuckets: ${r.minBuckets}    minTokens: ${formatNumber(r.minTokens)}    sort: ${r.sort}    global r: ${r.globalDegenerate ? '—' : r.globalPearsonR.toFixed(3)}    global slope: ${r.globalDegenerate ? '—' : r.globalSlope.toFixed(3)}`,
+      `as of: ${r.generatedAt}    groups: ${formatNumber(r.totalGroups)} (shown ${formatNumber(r.groups.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    in: ${formatNumber(r.totalInputTokens)}    ${outLabel}: ${formatNumber(r.totalOutputTokens)}    minBuckets: ${r.minBuckets}    minTokens: ${formatNumber(r.minTokens)}    sort: ${r.sort}    global r: ${r.globalDegenerate ? '—' : r.globalPearsonR.toFixed(3)}    global slope: ${r.globalDegenerate ? '—' : r.globalSlope.toFixed(3)}`,
     ),
   );
   lines.push(
@@ -4121,12 +4122,12 @@ export function renderPromptOutputCorrelation(
     r.by,
     'tokens',
     'in',
-    'out',
+    r.includeReasoning ? 'out+r' : 'out',
     'buckets',
     'mean-in',
-    'mean-out',
+    r.includeReasoning ? 'mean-out+r' : 'mean-out',
     'std-in',
-    'std-out',
+    r.includeReasoning ? 'std-out+r' : 'std-out',
     'r',
     'slope',
     'intercept',
