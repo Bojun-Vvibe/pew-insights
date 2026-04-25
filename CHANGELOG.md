@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.6 — 2026-04-26
+
+### Added
+
+- `token-velocity-percentiles --rate-min <n>`: noise-floor that
+  drops individual `(source, hour)` bucket observations whose
+  tokens-per-minute rate (after multi-device/multi-model summing
+  within the same source+hour) is `< n`. Counts surface as
+  `droppedRateMin`. Distinct from `--min-buckets`, which is a
+  per-source display filter on the *count* of observations;
+  `--rate-min` is a per-observation filter on each bucket's *rate*
+  applied during aggregation, so it alters `totalBuckets`,
+  `totalTokens`, every percentile, and can remove a source entirely
+  if all its buckets fall below the threshold. Useful for hiding
+  tiny background pings (health probes, single-byte heartbeats)
+  that would otherwise pull p50 toward zero. Default 0 = no filter.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, top 5 sources, `--rate-min 100`)
+
+```
+pew-insights token-velocity-percentiles
+as of: 2026-04-25T18:34:54.887Z    sources: 6 (shown 5)    buckets: 1,114    tokens: 8,725,138,671    sort: tokens
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 251 below rate-min, 0 below min-buckets, 1 below top cap
+(observation = one (source, UTC hour_start) bucket; rate = total_tokens / 60 minutes; percentiles are nearest-rank R-1)
+
+per-source tokens-per-minute summary (sorted by tokens desc)
+source       buckets  tokens         min/min  p50/min   p90/min   p99/min    max/min    mean/min
+-----------  -------  -------------  -------  --------  --------  ---------  ---------  --------
+claude-code  266      3,442,379,812  294.3    75072.2   722223.3  1304497.4  1815870.9  215688.0
+opencode     197      2,644,372,828  796.5    141102.6  736124.7  1072301.8  1158406.9  223720.2
+openclaw     366      1,685,600,445  1779.3   51494.2   151813.9  524151.4   751226.0   76757.8
+codex        64       809,624,660    788.6    102559.7  586159.6  980675.9   980675.9   210839.8
+hermes       151      141,781,764    388.0    7780.4    36841.5   69381.9    98311.9    15649.2
+```
+
+Reading: with a 100 tok/min noise floor, 251 / 1,365 buckets
+(18.4%) get dropped, but the lost token mass is only 512,541
+(0.006% of the 8.73B total) — confirming these are background
+pings, not real workload. `claude-code`'s `min/min` jumps from
+99.6 to 294.3 once the sub-floor buckets are gone.
+
+### Tests
+
+- 4 new tests on the `tokenvelocitypercentiles` suite covering
+  `rateMin` validation, echo into the report, full-source-removal
+  via threshold, and percentile re-shaping when only some buckets
+  fall below threshold. Total test count grew 1284 → 1288.
+
 ## 0.5.5 — 2026-04-26
 
 ### Added
