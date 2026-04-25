@@ -3617,7 +3617,7 @@ export function renderInterSourceHandoffLatency(
     v === null ? '-' : v.toFixed(2) + 'h';
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    pairs: ${formatNumber(r.consideredPairs)}    handoffs: ${formatNumber(r.handoffPairs)} (${(r.handoffShare * 100).toFixed(1)}%)    minHandoffs: ${formatNumber(r.minHandoffs)}    topHandoffs: ${formatNumber(r.topHandoffs)}`,
+      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    pairs: ${formatNumber(r.consideredPairs)}    handoffs: ${formatNumber(r.handoffPairs)} (${(r.handoffShare * 100).toFixed(1)}%)    minHandoffs: ${formatNumber(r.minHandoffs)}    topHandoffs: ${formatNumber(r.topHandoffs)}    maxLatency: ${r.maxLatencyCap === null ? 'none' : r.maxLatencyCap.toFixed(2) + 'h'}`,
     ),
   );
   lines.push(
@@ -3627,7 +3627,7 @@ export function renderInterSourceHandoffLatency(
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptySourceBuckets)} empty-source buckets, ${formatNumber(r.droppedBelowMinHandoffs)} below min-handoffs, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptySourceBuckets)} empty-source buckets, ${formatNumber(r.droppedAboveMaxLatency)} above max-latency, ${formatNumber(r.droppedBelowMinHandoffs)} below min-handoffs, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

@@ -73,6 +73,22 @@ export interface InterSourceHandoffLatencyOptions {
    * Default 1 = keep every pair. Applied before `topHandoffs`.
    */
   minHandoffs?: number;
+  /**
+   * Maximum handoff latency (hours, inclusive) to retain in *all*
+   * counters and stats. Handoffs whose `(next.ms - prev.ms) /
+   * 3_600_000 > maxLatencyHours` are excluded **before** anything
+   * else is computed — they do not contribute to `handoffPairs`,
+   * `medianLatencyHours`, the `pairs[]` table, or the contiguous /
+   * gapped split. Suppressed handoffs surface as
+   * `droppedAboveMaxLatency`. `consideredPairs` and `activeBuckets`
+   * are unaffected (the buckets themselves are still active; we
+   * only refuse to *count* the handoff). Default null = no cap.
+   *
+   * Use this to focus on "live in-session swaps" by setting
+   * something like `maxLatencyHours = 4` to drop overnight /
+   * multi-day re-engagements.
+   */
+  maxLatencyHours?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -97,6 +113,8 @@ export interface InterSourceHandoffLatencyReport {
   topHandoffs: number;
   /** Echo of the resolved `minHandoffs` floor. */
   minHandoffs: number;
+  /** Echo of the resolved `maxLatencyHours` cap (null = no cap). */
+  maxLatencyCap: number | null;
   /** Distinct active hour-buckets surviving filters. */
   activeBuckets: number;
   /** activeBuckets - 1 (0 if activeBuckets <= 1). */
@@ -131,6 +149,8 @@ export interface InterSourceHandoffLatencyReport {
   droppedBelowTopCap: number;
   /** Rows hidden by the `minHandoffs` floor (applied before the top cap). */
   droppedBelowMinHandoffs: number;
+  /** Handoffs excluded by the `maxLatencyHours` cap (counted from the raw walk). */
+  droppedAboveMaxLatency: number;
   /** Top directed (from -> to) primary-source handoffs. */
   pairs: InterSourceHandoffPair[];
 }
@@ -158,6 +178,16 @@ export function buildInterSourceHandoffLatency(
   if (!Number.isInteger(minHandoffs) || minHandoffs < 1) {
     throw new Error(
       `minHandoffs must be a positive integer (got ${opts.minHandoffs})`,
+    );
+  }
+  const maxLatencyCap =
+    opts.maxLatencyHours === undefined ? null : opts.maxLatencyHours;
+  if (
+    maxLatencyCap !== null &&
+    (!Number.isFinite(maxLatencyCap) || maxLatencyCap <= 0)
+  ) {
+    throw new Error(
+      `maxLatencyHours must be a positive finite number or null (got ${opts.maxLatencyHours})`,
     );
   }
 
@@ -241,6 +271,7 @@ export function buildInterSourceHandoffLatency(
   let handoffPairs = 0;
   let contiguousHandoffs = 0;
   let gappedHandoffs = 0;
+  let droppedAboveMaxLatency = 0;
   const allLatencies: number[] = [];
   const pairLatencies = new Map<string, { from: string; to: string; lats: number[] }>();
 
@@ -250,6 +281,10 @@ export function buildInterSourceHandoffLatency(
     if (prev.source === next.source) continue;
     const gapMs = next.ms - prev.ms;
     const gapHours = gapMs / HOUR_MS;
+    if (maxLatencyCap !== null && gapHours > maxLatencyCap) {
+      droppedAboveMaxLatency += 1;
+      continue;
+    }
     handoffPairs += 1;
     if (gapMs === HOUR_MS) contiguousHandoffs += 1;
     else gappedHandoffs += 1;
@@ -351,6 +386,7 @@ export function buildInterSourceHandoffLatency(
     windowEnd: opts.until ?? null,
     topHandoffs,
     minHandoffs,
+    maxLatencyCap,
     activeBuckets,
     consideredPairs,
     handoffPairs,
@@ -368,6 +404,7 @@ export function buildInterSourceHandoffLatency(
     droppedEmptySourceBuckets,
     droppedBelowTopCap,
     droppedBelowMinHandoffs,
+    droppedAboveMaxLatency,
     pairs,
   };
 }

@@ -277,3 +277,133 @@ test('inter-source-handoff-latency: deterministic across input order', () => {
   const rb = buildInterSourceHandoffLatency(b, { generatedAt: GEN });
   assert.deepEqual(ra, rb);
 });
+
+// ---- maxLatencyHours flag -------------------------------------------------
+
+test('inter-source-handoff-latency: rejects bad maxLatencyHours', () => {
+  assert.throws(() =>
+    buildInterSourceHandoffLatency([], { maxLatencyHours: 0 }),
+  );
+  assert.throws(() =>
+    buildInterSourceHandoffLatency([], { maxLatencyHours: -1 }),
+  );
+  assert.throws(() =>
+    buildInterSourceHandoffLatency([], { maxLatencyHours: NaN }),
+  );
+  assert.throws(() =>
+    buildInterSourceHandoffLatency([], { maxLatencyHours: Infinity }),
+  );
+});
+
+test('inter-source-handoff-latency: maxLatencyHours null = no cap (default)', () => {
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T05:00:00.000Z', 'b', 'm', 100), // 5h
+    ql('2026-04-20T06:00:00.000Z', 'a', 'm', 100), // 1h
+  ];
+  const r = buildInterSourceHandoffLatency(q, { generatedAt: GEN });
+  assert.equal(r.maxLatencyCap, null);
+  assert.equal(r.handoffPairs, 2);
+  assert.equal(r.droppedAboveMaxLatency, 0);
+});
+
+test('inter-source-handoff-latency: maxLatencyHours excludes long handoffs from all stats', () => {
+  // a->b (5h), b->a (1h), a->b (10h). With maxLatencyHours=4, drop the
+  // 5h and 10h handoffs; only the 1h survives.
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T05:00:00.000Z', 'b', 'm', 100),
+    ql('2026-04-20T06:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T16:00:00.000Z', 'b', 'm', 100),
+  ];
+  const rUnfiltered = buildInterSourceHandoffLatency(q, { generatedAt: GEN });
+  assert.equal(rUnfiltered.handoffPairs, 3);
+  assert.equal(rUnfiltered.droppedAboveMaxLatency, 0);
+
+  const r = buildInterSourceHandoffLatency(q, {
+    generatedAt: GEN,
+    maxLatencyHours: 4,
+  });
+  assert.equal(r.maxLatencyCap, 4);
+  assert.equal(r.handoffPairs, 1);
+  assert.equal(r.droppedAboveMaxLatency, 2);
+  assert.equal(r.medianLatencyHours, 1);
+  assert.equal(r.meanLatencyHours, 1);
+  assert.equal(r.minLatencyHours, 1);
+  assert.equal(r.maxLatencyHours, 1); // stat: max of surviving latencies (just the 1h one)
+  // The 1h survivor is contiguous; the 5h and 10h would have been gapped
+  assert.equal(r.contiguousHandoffs, 1);
+  assert.equal(r.gappedHandoffs, 0);
+  // pairs[] only has the surviving b->a row
+  assert.equal(r.pairs.length, 1);
+  assert.equal(r.pairs[0]!.from, 'b');
+  assert.equal(r.pairs[0]!.to, 'a');
+  assert.equal(r.pairs[0]!.count, 1);
+});
+
+test('inter-source-handoff-latency: maxLatencyHours boundary is inclusive (== survives, > drops)', () => {
+  // Exactly 4h handoff with maxLatencyHours=4 should survive.
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T04:00:00.000Z', 'b', 'm', 100),
+    // 4.5h handoff -> drops at maxLatencyHours=4
+    ql('2026-04-20T08:30:00.000Z', 'a', 'm', 100),
+  ];
+  const r = buildInterSourceHandoffLatency(q, {
+    generatedAt: GEN,
+    maxLatencyHours: 4,
+  });
+  assert.equal(r.handoffPairs, 1);
+  assert.equal(r.droppedAboveMaxLatency, 1);
+  assert.equal(r.pairs[0]!.from, 'a');
+  assert.equal(r.pairs[0]!.to, 'b');
+  assert.equal(r.pairs[0]!.medianLatencyHours, 4);
+});
+
+test('inter-source-handoff-latency: maxLatencyHours preserves consideredPairs and activeBuckets', () => {
+  // Even when handoffs are dropped, the underlying buckets remain
+  // active and the considered-pair count is unchanged.
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T10:00:00.000Z', 'b', 'm', 100), // 10h handoff
+    ql('2026-04-20T11:00:00.000Z', 'a', 'm', 100), // 1h handoff
+  ];
+  const r = buildInterSourceHandoffLatency(q, {
+    generatedAt: GEN,
+    maxLatencyHours: 2,
+  });
+  assert.equal(r.activeBuckets, 3);
+  assert.equal(r.consideredPairs, 2);
+  assert.equal(r.handoffPairs, 1);
+  assert.equal(r.droppedAboveMaxLatency, 1);
+  // handoffShare uses the post-cap handoffPairs over consideredPairs
+  assert.equal(r.handoffShare, 0.5);
+});
+
+test('inter-source-handoff-latency: maxLatencyHours composes with minHandoffs and topHandoffs', () => {
+  // Build: a->b 3x at 1h each, b->a 1x at 1h, a->c 1x at 10h.
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T01:00:00.000Z', 'b', 'm', 100), // a->b 1h
+    ql('2026-04-20T02:00:00.000Z', 'a', 'm', 100), // b->a 1h
+    ql('2026-04-20T03:00:00.000Z', 'b', 'm', 100), // a->b 1h
+    ql('2026-04-20T04:00:00.000Z', 'a', 'm', 100), // b->a 1h
+    ql('2026-04-20T05:00:00.000Z', 'b', 'm', 100), // a->b 1h
+    ql('2026-04-20T15:00:00.000Z', 'c', 'm', 100), // b->c 10h - dropped
+  ];
+  // a->b: 3, b->a: 2, b->c: 1 (dropped by max=4) -> a->b: 3, b->a: 2
+  const r = buildInterSourceHandoffLatency(q, {
+    generatedAt: GEN,
+    maxLatencyHours: 4,
+    minHandoffs: 2,
+  });
+  assert.equal(r.droppedAboveMaxLatency, 1);
+  assert.equal(r.handoffPairs, 5);
+  assert.equal(r.pairs.length, 2);
+  assert.equal(r.pairs[0]!.from, 'a');
+  assert.equal(r.pairs[0]!.to, 'b');
+  assert.equal(r.pairs[0]!.count, 3);
+  assert.equal(r.pairs[1]!.from, 'b');
+  assert.equal(r.pairs[1]!.to, 'a');
+  assert.equal(r.pairs[1]!.count, 2);
+});

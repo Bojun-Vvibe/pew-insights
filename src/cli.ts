@@ -4091,6 +4091,10 @@ program
     'drop pairs whose count is below n before applying --top-handoffs; suppressed rows surface as droppedBelowMinHandoffs (default 1 = no floor)',
     '1',
   )
+  .option(
+    '--max-latency-hours <n>',
+    'exclude handoffs whose latency in hours is strictly greater than n from ALL counters and stats (handoffPairs, latency stats, pairs[], contiguous/gapped split). Suppressed handoffs surface as droppedAboveMaxLatency. Default unset = no cap. Use to focus on live in-session swaps (e.g. 4 drops overnight gaps).',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4099,6 +4103,7 @@ program
         until?: string;
         topHandoffs: string;
         minHandoffs: string;
+        maxLatencyHours?: string;
         json?: boolean;
       },
       cmd,
@@ -4118,12 +4123,23 @@ program
             `--min-handoffs must be a positive integer (got ${opts.minHandoffs})`,
           );
         }
+        let maxLatencyHours: number | null = null;
+        if (opts.maxLatencyHours !== undefined) {
+          const v = Number.parseFloat(opts.maxLatencyHours);
+          if (!Number.isFinite(v) || v <= 0) {
+            throw new Error(
+              `--max-latency-hours must be a positive finite number (got ${opts.maxLatencyHours})`,
+            );
+          }
+          maxLatencyHours = v;
+        }
         const queue = await readQueue(paths);
         const report = buildInterSourceHandoffLatency(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           topHandoffs,
           minHandoffs,
+          maxLatencyHours,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
