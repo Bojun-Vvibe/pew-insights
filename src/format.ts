@@ -2909,6 +2909,9 @@ export function renderCacheHitByHour(r: CacheHitByHourReport): string {
   if (r.windowStart || r.windowEnd) {
     lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
   }
+  if (r.sourceFilter) {
+    lines.push(chalk.dim(`source filter: ${r.sourceFilter}    droppedSourceFilter: ${formatNumber(r.droppedSourceFilter)}`));
+  }
   lines.push(chalk.dim(`(hour-of-day in UTC; ratio = cached_input_tokens / input_tokens)`));
   lines.push('');
 

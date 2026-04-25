@@ -3045,9 +3045,10 @@ program
     '0',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option('--source <name>', 'restrict to a single source (e.g. "codex"); totals and byHour reflect only that source')
   .action(
     async (
-      opts: { since?: string; until?: string; minInput: string; top: string; json?: boolean },
+      opts: { since?: string; until?: string; minInput: string; top: string; source?: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -3067,6 +3068,7 @@ program
           until: opts.until ?? null,
           minInputTokens: minInput,
           topSources: top,
+          source: opts.source ?? null,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

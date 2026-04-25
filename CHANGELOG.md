@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.56 — 2026-04-25
+
+### Added
+
+- `cache-hit-by-hour`: `--source <name>` flag (default null = no
+  filter). When set, totals, `byHour[]` and `bySource[]` are all
+  restricted to a single source; rows from other sources surface
+  as `droppedSourceFilter`. Useful for isolating one producer's
+  daily cache rhythm without the noise of others sharing the same
+  hour buckets — when the global report shows e.g. an hour-23
+  bucket spike, this flag lets you confirm whether the spike is
+  driven by one specific source or distributed.
+
+  3 new tests (814 total, up from 811): filter restricts totals
+  and bySource and excludes other sources from byHour; null/empty
+  string disables the filter; non-matching filter yields zero
+  totals with `droppedSourceFilter` reporting the count.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--source claude-code`:
+
+  ```
+  pew-insights cache-hit-by-hour
+  as of: 2026-04-25T02:54:44.116Z    input: 1,834,613,640    cached: 1,595,643,323 (86.97%)    sources: 1    shown: 1
+  dropped: 0 bad hour_start, 0 zero-input, 0 below min-input, 0 below top cap
+  source filter: claude-code    droppedSourceFilter: 1,105
+  (hour-of-day in UTC; ratio = cached_input_tokens / input_tokens)
+
+  global cache ratio by hour-of-day (UTC)
+  hr  input        cached       cache%  rows
+  --  -----------  -----------  ------  ----
+  00  15,154,831   13,957,061   92.1%   1
+  01  124,632,966  113,333,844  90.9%   23
+  02  108,588,423  93,277,463   85.9%   37
+  03  51,713,312   39,598,387   76.6%   17
+  04  59,017,146   56,368,731   95.5%   5
+  05  95,133,114   58,650,233   61.7%   15
+  06  164,147,228  113,623,031  69.2%   43
+  07  186,705,887  152,464,779  81.7%   40
+  08  238,970,557  226,616,601  94.8%   34
+  09  68,552,948   61,703,676   90.0%   22
+  10  80,612,228   72,720,703   90.2%   11
+  11  86,907,369   75,553,009   86.9%   12
+  12  80,063,900   74,878,017   93.5%   7
+  13  98,458,595   90,162,981   91.6%   7
+  14  101,003,434  91,889,995   91.0%   9
+  15  79,770,174   74,823,790   93.8%   5
+  16  88,403,421   83,966,835   95.0%   5
+  17  45,955,188   43,886,849   95.5%   2
+  18  45,193,203   43,203,388   95.6%   2
+  19  15,629,716   14,963,950   95.7%   2
+  20  0            0            —       0
+  21  0            0            —       0
+  22  0            0            —       0
+  23  0            0            —       0
+
+  per-source summary (sorted by input tokens desc)
+  source       input          cached         daily%  peak hr  peak%  trough hr  trough%  spread
+  -----------  -------------  -------------  ------  -------  -----  ---------  -------  -------
+  claude-code  1,834,613,640  1,595,643,323  87.0%   19       95.7%  05         61.7%    34.1 pp
+  ```
+
+  Headline: this producer never sent traffic at 20:00–23:00 UTC,
+  and its 05:00 trough (61.7%) is much sharper than the global
+  72.5% — the global trough was being lifted by other sources
+  active in that hour. The filtered view reveals a strict
+  workday-UTC pattern (peak activity 06–08 UTC) that the unfiltered
+  report cannot show.
+
 ## 0.4.55 — 2026-04-25
 
 ### Added

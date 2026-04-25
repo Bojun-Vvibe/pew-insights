@@ -47,6 +47,14 @@ export interface CacheHitByHourOptions {
    * Display filter only. Default 0 = no cap.
    */
   topSources?: number;
+  /**
+   * Restrict the entire computation to rows from a single source.
+   * When set, `byHour[]` and totals reflect only that source, and
+   * `bySource[]` will contain at most one entry. Useful when
+   * isolating one producer's daily cache rhythm without the noise
+   * of others sharing the same hour buckets. null = include all.
+   */
+  source?: string | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -104,6 +112,10 @@ export interface CacheHitByHourReport {
   droppedMinInputTokens: number;
   /** Source rows hidden by the topSources cap. */
   droppedTopSources: number;
+  /** Rows dropped because they did not match the requested source. */
+  droppedSourceFilter: number;
+  /** Echo of the resolved source filter. null = no filter. */
+  sourceFilter: string | null;
   /** 24-element global breakdown, hour 0..23. */
   byHour: CacheHitByHourBucket[];
   /** One row per kept source. Sorted by inputTokens desc, source asc on tie. */
@@ -154,10 +166,13 @@ export function buildCacheHitByHour(
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
 
+  const sourceFilter = opts.source != null && opts.source !== '' ? opts.source : null;
+
   const globalRaw = emptyBuckets();
   const perSource = new Map<string, { input: number; cached: number; raw: { input: number; cached: number; rows: number }[] }>();
   let droppedInvalidHourStart = 0;
   let droppedZeroInput = 0;
+  let droppedSourceFilter = 0;
 
   for (const q of queue) {
     const ms = Date.parse(q.hour_start);
@@ -167,6 +182,12 @@ export function buildCacheHitByHour(
     }
     if (sinceMs !== null && ms < sinceMs) continue;
     if (untilMs !== null && ms >= untilMs) continue;
+
+    const srcKey = typeof q.source === 'string' && q.source !== '' ? q.source : 'unknown';
+    if (sourceFilter !== null && srcKey !== sourceFilter) {
+      droppedSourceFilter += 1;
+      continue;
+    }
 
     const input = Number(q.input_tokens);
     if (!Number.isFinite(input) || input <= 0) {
@@ -184,7 +205,6 @@ export function buildCacheHitByHour(
     gb.cached += cached;
     gb.rows += 1;
 
-    const srcKey = typeof q.source === 'string' && q.source !== '' ? q.source : 'unknown';
     let s = perSource.get(srcKey);
     if (!s) {
       s = { input: 0, cached: 0, raw: emptyBuckets() };
@@ -278,6 +298,8 @@ export function buildCacheHitByHour(
     droppedZeroInput,
     droppedMinInputTokens,
     droppedTopSources,
+    droppedSourceFilter,
+    sourceFilter,
     byHour: toBuckets(globalRaw),
     bySource: kept,
   };

@@ -177,3 +177,48 @@ test('cache-hit-by-hour: missing source falls back to "unknown"', () => {
   const r = buildCacheHitByHour(rows, { generatedAt: GEN });
   assert.equal(r.bySource[0].source, 'unknown');
 });
+
+// ---- --source filter -------------------------------------------------------
+
+test('cache-hit-by-hour: source filter restricts totals and bySource', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-20T09:00:00.000Z', { source: 'codex', input_tokens: 1000, cached_input_tokens: 800 }),
+    ql('2026-04-20T13:00:00.000Z', { source: 'codex', input_tokens: 500, cached_input_tokens: 250 }),
+    ql('2026-04-20T09:00:00.000Z', { source: 'other', input_tokens: 9000, cached_input_tokens: 100 }),
+  ];
+  const r = buildCacheHitByHour(rows, { generatedAt: GEN, source: 'codex' });
+  assert.equal(r.sourceFilter, 'codex');
+  assert.equal(r.totalInputTokens, 1500);
+  assert.equal(r.totalCachedInputTokens, 1050);
+  assert.equal(r.bySource.length, 1);
+  assert.equal(r.bySource[0].source, 'codex');
+  assert.equal(r.totalSources, 1);
+  assert.equal(r.droppedSourceFilter, 1);
+  // Other source's hour bucket should not contaminate the global byHour
+  assert.equal(r.byHour[9].inputTokens, 1000);
+  assert.equal(r.byHour[9].cachedInputTokens, 800);
+});
+
+test('cache-hit-by-hour: source filter null/empty disables filter', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-20T09:00:00.000Z', { source: 'codex' }),
+    ql('2026-04-20T09:00:00.000Z', { source: 'other' }),
+  ];
+  const r1 = buildCacheHitByHour(rows, { generatedAt: GEN, source: null });
+  assert.equal(r1.sourceFilter, null);
+  assert.equal(r1.bySource.length, 2);
+  assert.equal(r1.droppedSourceFilter, 0);
+  const r2 = buildCacheHitByHour(rows, { generatedAt: GEN, source: '' });
+  assert.equal(r2.sourceFilter, null);
+  assert.equal(r2.bySource.length, 2);
+});
+
+test('cache-hit-by-hour: source filter with no matches yields empty byHour', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-20T09:00:00.000Z', { source: 'codex' }),
+  ];
+  const r = buildCacheHitByHour(rows, { generatedAt: GEN, source: 'missing' });
+  assert.equal(r.totalInputTokens, 0);
+  assert.equal(r.bySource.length, 0);
+  assert.equal(r.droppedSourceFilter, 1);
+});
