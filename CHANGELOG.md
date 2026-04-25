@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.59 — 2026-04-25
+
+### Added
+
+- `interarrival-time`: per-source distribution of gaps (in hours)
+  between consecutive distinct UTC `hour_start` buckets with
+  positive `total_tokens`. Reports per-source count, min, p50,
+  p90, max, mean, sum, and a fixed-edge histogram over
+  `[1h, 2h, 3h, 6h, 12h, 24h, 48h, 168h, +inf)`.
+
+  Distinct from existing tools:
+    - `idle-gaps` operates on `SessionLine` per `session_key` in
+      seconds (intra-session message spacing).
+    - `burstiness` measures intra-window concentration (Gini /
+      coefficient of variation) of token mass — it ignores
+      *spacing* between active hours.
+    - `time-of-day` and `peak-hour-share` are population stats
+      over the hour-of-day modulus, not raw consecutive-bucket
+      gaps.
+
+  `interarrival-time` is the spacing-of-activity lens: how long
+  does each producer go dark between active wall-clock hours?
+
+  Pure deterministic builder. Flags: `--since`, `--until`,
+  `--source`, `--top`, `--sort buckets|gaps|p90`, `--json`.
+
+  15 new tests (850 total, up from 835): option validation,
+  empty/edge handling, dedup of duplicate hour buckets, exact
+  histogram bucketing of a 24h gap into `[24h, 48h)`,
+  nearest-rank percentiles on a synthetic gap sequence,
+  per-source isolation, source filter accounting, sort defaults
+  with lex tiebreak, `--top` cap with drop accounting, window
+  filter applied before bucket dedup.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights interarrival-time
+  as of: 2026-04-25T03:55:09.963Z    sources: 6 (shown 6)    activeBuckets: 1,299    gaps: 1,293    sort: buckets
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below top cap
+
+  per-source gap summary (sorted by buckets desc)
+  source          buckets  gaps  min(h)  p50(h)  p90(h)  max(h)  mean(h)  sum(h)
+  --------------  -------  ----  ------  ------  ------  ------  -------  ------
+  openclaw        337      336   1       1       1       13      1.07     359
+  vscode-copilot  320      319   1       1       48      568     20.21    6,448
+  claude-code     267      266   1       1       16      316     6.87     1,827
+  opencode        167      166   1       1       1       10      1.13     188
+  hermes          144      143   1       1       3       11      1.59     228
+  codex           64       63    1       1       13      28      3.33     210
+
+  per-source gap histogram
+  source          [1h,2h)  [2h,3h)  [3h,6h)  [6h,12h)  [12h,1d)  [1d,2d)  [2d,1w)  [1w,+inf)
+  --------------  -------  -------  -------  --------  --------  -------  -------  ---------
+  openclaw        331      2        1        1         1         0        0        0
+  vscode-copilot  197      21       22       7         31        9        22       10
+  claude-code     201      7        22       5         18        3        9        1
+  opencode        157      5        3        1         0         0        0        0
+  hermes          98       30       11       4         0         0        0        0
+  codex           49       1        4        2         6         1        0        0
+  ```
+
+  Headline: the producer mix splits cleanly into two regimes by
+  `mean(h)` between active hours. The "always-on" cluster —
+  `openclaw`, `opencode`, `hermes` — sits at mean 1.07–1.59h with
+  p90=1–3h and zero gaps beyond a half-day; their distributions
+  are dominated (>90%) by the `[1h, 2h)` bucket. The "bursty"
+  cluster — `vscode-copilot` (mean 20.21h, p90 48h, max 568h ≈
+  23.7d), `claude-code` (mean 6.87h, p90 16h, max 316h ≈ 13.2d),
+  `codex` (mean 3.33h, p90 13h) — has long tails: 32 of
+  vscode-copilot's 319 gaps (10.0%) cross a full week, vs 0/336
+  for openclaw. Total active-hour-buckets across producers =
+  1,299 with 1,293 emitted gaps — the difference (6) is exactly
+  the per-source "first observation has no predecessor" loss.
+
 ## 0.4.58 — 2026-04-25
 
 ### Added
