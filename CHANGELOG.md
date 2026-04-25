@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.64 — 2026-04-25
+
+### Added
+
+- `model-tenure`: `--top <n>` and `--sort <key>` flags.
+  - `--top <n>` (default 0 = no cap): truncates `models[]` to the
+    top n rows after sorting. Display filter only —
+    `totalModels`, `totalActiveBuckets`, and `totalTokens`
+    always reflect the *full* population (pre-cap). Suppressed
+    rows surface as `droppedTopModels`. The cap is echoed in
+    the report as `top`.
+  - `--sort <key>` (default `span`): sort key for `models[]`.
+    Choices: `span` (spanHours desc), `active` (activeBuckets
+    desc), `tokens` (tokens desc), `density` (tokensPerSpanHour
+    desc). Tiebreak is always model name asc. The key is echoed
+    as `sort`.
+
+  Distinct from `bucket-intensity --sort spread`: this lens
+  ranks by *lifetime properties* (span, total active touches,
+  total mass, average density across the whole tenure), not by
+  per-bucket distribution shape.
+
+  6 new tests (890 total, up from 884): rejects bad top; rejects
+  bad sort; top cap drops to `droppedTopModels` and totals stay
+  full-population; sort=tokens orders by tokens desc; sort=
+  density orders by tokensPerSpanHour desc; sort=active orders
+  by activeBuckets desc.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--sort density --top 5`:
+
+  ```
+  pew-insights model-tenure
+  as of: 2026-04-25T04:48:27.581Z    models: 15 (shown 5)    active-buckets: 1,238    tokens: 8,369,923,336    sort: density
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 10 below top cap
+
+  per-model tenure (sorted by density desc)
+  model               first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         tok/bucket  tok/span-hr
+  ------------------  ------------------------  ------------------------  -------  --------------  -------------  ----------  -----------
+  claude-opus-4.7     2026-04-17T02:00:00.000Z  2026-04-25T04:30:00.000Z  194.5    273             4,665,063,916  17,088,146  23,984,904
+  gpt-5.4             2026-03-20T10:00:00.000Z  2026-04-25T04:30:00.000Z  858.5    373             2,474,950,345  6,635,256   2,882,878
+  claude-opus-4.6.1m  2026-03-04T14:00:00.000Z  2026-04-17T02:00:00.000Z  1044.0   167             1,108,978,665  6,640,591   1,062,240
+  gpt-5.2             2026-04-23T02:30:00.000Z  2026-04-23T02:30:00.000Z  0.0      1               299,605        299,605     299,605
+  unknown             2026-04-17T06:30:00.000Z  2026-04-24T15:00:00.000Z  176.5    56              35,575,800     635,282     201,563
+  ```
+
+  Headline: `claude-opus-4.7` is the densest model by an order
+  of magnitude (24M tok/span-hr), and a single-bucket model
+  (`gpt-5.2`, 299,605 tokens in one bucket) outranks several
+  long-tenure low-density models because the 1-hour floor on
+  `tokensPerSpanHour` makes a fat single bucket competitive
+  against thinly-spread tenure.
+
 ## 0.4.63 — 2026-04-25
 
 ### Added

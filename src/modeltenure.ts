@@ -56,6 +56,22 @@ export interface ModelTenureOptions {
   until?: string | null;
   /** Restrict to a single source. Non-matching rows -> droppedSourceFilter. */
   source?: string | null;
+  /**
+   * Truncate `models[]` to the top N after sorting. Display filter
+   * only — `totalModels`, `totalActiveBuckets`, `totalTokens`
+   * always reflect the full population. Counts surface as
+   * `droppedTopModels`. Default 0 = no cap.
+   */
+  top?: number;
+  /**
+   * Sort key for `models[]`:
+   *   - 'span' (default):    spanHours desc (longest tenure first)
+   *   - 'active':            activeBuckets desc (most-touched first)
+   *   - 'tokens':            tokens desc (highest mass first)
+   *   - 'density':           tokensPerSpanHour desc (densest first)
+   * Tiebreak in all cases: model name asc (lex).
+   */
+  sort?: 'span' | 'active' | 'tokens' | 'density';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -87,11 +103,15 @@ export interface ModelTenureReport {
   windowStart: string | null;
   windowEnd: string | null;
   source: string | null;
+  /** Echo of the resolved `top` cap (0 = no cap). */
+  top: number;
+  /** Echo of the resolved `sort` key. */
+  sort: 'span' | 'active' | 'tokens' | 'density';
   /** Distinct models surviving filters. */
   totalModels: number;
-  /** Sum of activeBuckets across all kept models. */
+  /** Sum of activeBuckets across the *full* population (pre top cap). */
   totalActiveBuckets: number;
-  /** Sum of total_tokens across all kept observations. */
+  /** Sum of total_tokens across the *full* population (pre top cap). */
   totalTokens: number;
   /** Rows with non-parseable hour_start. */
   droppedInvalidHourStart: number;
@@ -99,7 +119,9 @@ export interface ModelTenureReport {
   droppedZeroTokens: number;
   /** Rows excluded by the `source` filter. */
   droppedSourceFilter: number;
-  /** Per-model tenure rows. Sorted by spanHours desc, then model asc. */
+  /** Model rows hidden by the `top` cap. */
+  droppedTopModels: number;
+  /** Per-model tenure rows after sort + top cap. */
   models: ModelTenureRow[];
 }
 
@@ -109,6 +131,17 @@ export function buildModelTenure(
   queue: QueueLine[],
   opts: ModelTenureOptions = {},
 ): ModelTenureReport {
+  const top = opts.top ?? 0;
+  if (!Number.isInteger(top) || top < 0) {
+    throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const sort = opts.sort ?? 'span';
+  if (sort !== 'span' && sort !== 'active' && sort !== 'tokens' && sort !== 'density') {
+    throw new Error(
+      `sort must be 'span' | 'active' | 'tokens' | 'density' (got ${opts.sort})`,
+    );
+  }
+
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
   if (opts.since != null && (sinceMs === null || !Number.isFinite(sinceMs))) {
@@ -197,21 +230,37 @@ export function buildModelTenure(
   }
 
   models.sort((a, b) => {
-    if (b.spanHours !== a.spanHours) return b.spanHours - a.spanHours;
+    let primary = 0;
+    if (sort === 'span') primary = b.spanHours - a.spanHours;
+    else if (sort === 'active') primary = b.activeBuckets - a.activeBuckets;
+    else if (sort === 'tokens') primary = b.tokens - a.tokens;
+    else primary = b.tokensPerSpanHour - a.tokensPerSpanHour;
+    if (primary !== 0) return primary;
     return a.model < b.model ? -1 : a.model > b.model ? 1 : 0;
   });
+
+  // Apply top cap. Totals already reflect the full population.
+  let droppedTopModels = 0;
+  let kept = models;
+  if (top > 0 && models.length > top) {
+    droppedTopModels = models.length - top;
+    kept = models.slice(0, top);
+  }
 
   return {
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     source: sourceFilter,
+    top,
+    sort,
     totalModels: models.length,
     totalActiveBuckets,
     totalTokens,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
-    models,
+    droppedTopModels,
+    models: kept,
   };
 }

@@ -3311,10 +3311,20 @@ program
 
 program
   .command('model-tenure')
-  .description('Per-model active span: firstSeen, lastSeen, tenureHours, activeHours, density, idleHours, tokens')
+  .description('Per-model active span: firstSeen, lastSeen, spanHours, activeBuckets, tokens, tokensPerSpanHour')
   .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
   .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
   .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top <n>',
+    'show only the top n models after sorting; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for models[]: 'span' (default) | 'active' | 'tokens' | 'density'",
+    'span',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3322,6 +3332,8 @@ program
         since?: string;
         until?: string;
         source?: string;
+        top: string;
+        sort: string;
         json?: boolean;
       },
       cmd,
@@ -3329,11 +3341,27 @@ program
       try {
         const common = cmd.optsWithGlobals() as CommonOpts;
         const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'span' &&
+          opts.sort !== 'active' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'density'
+        ) {
+          throw new Error(
+            `--sort must be 'span' | 'active' | 'tokens' | 'density' (got ${opts.sort})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildModelTenure(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
+          top,
+          sort: opts.sort as 'span' | 'active' | 'tokens' | 'density',
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

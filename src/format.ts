@@ -3190,12 +3190,12 @@ export function renderModelTenure(r: ModelTenureReport): string {
   lines.push(chalk.bold.cyan('pew-insights model-tenure'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)}    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}`,
+      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)} (shown ${formatNumber(r.models.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopModels)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -3216,7 +3216,7 @@ export function renderModelTenure(r: ModelTenureReport): string {
     return lines.join('\n');
   }
 
-  lines.push(chalk.bold('per-model tenure (sorted by spanHours desc)'));
+  lines.push(chalk.bold(`per-model tenure (sorted by ${r.sort} desc)`));
   const headers = [
     'model',
     'first-seen (UTC)',

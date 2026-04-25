@@ -186,3 +186,81 @@ test('model-tenure: since/until windowing trims firstSeen/lastSeen', () => {
   assert.equal(m.activeBuckets, 2);
   assert.equal(m.spanHours, 10);
 });
+
+// ---- refinement: --top + --sort -----------------------------------------
+
+test('model-tenure: rejects bad top', () => {
+  assert.throws(() => buildModelTenure([], { top: -1 }));
+  assert.throws(() => buildModelTenure([], { top: 1.5 }));
+});
+
+test('model-tenure: rejects bad sort', () => {
+  assert.throws(() =>
+    buildModelTenure([], { sort: 'bogus' as unknown as 'span' }),
+  );
+});
+
+test('model-tenure: top cap drops to droppedTopModels and totals stay full-population', () => {
+  const lines: QueueLine[] = [];
+  // 5 models, each with a single bucket (so each has spanHours=0,
+  // activeBuckets=1, tokens=100). They tiebreak alphabetically.
+  for (const m of ['e', 'd', 'c', 'b', 'a']) {
+    lines.push(ql('2026-04-20T01:00:00Z', { model: m, total_tokens: 100 }));
+  }
+  const r = buildModelTenure(lines, { generatedAt: GEN, top: 2 });
+  assert.equal(r.totalModels, 5, 'totalModels reflects full population');
+  assert.equal(r.totalActiveBuckets, 5, 'totalActiveBuckets reflects full population');
+  assert.equal(r.totalTokens, 500, 'totalTokens reflects full population');
+  assert.equal(r.droppedTopModels, 3);
+  assert.equal(r.models.length, 2);
+  assert.equal(r.top, 2);
+  // All tied on spanHours==0; alphabetical tiebreak picks a, b.
+  assert.deepEqual(r.models.map((m) => m.model), ['a', 'b']);
+});
+
+test('model-tenure: sort=tokens orders by tokens desc', () => {
+  const r = buildModelTenure(
+    [
+      // a: span 4h, 5000 tokens
+      ql('2026-04-20T00:00:00Z', { model: 'a', total_tokens: 4000 }),
+      ql('2026-04-20T04:00:00Z', { model: 'a', total_tokens: 1000 }),
+      // b: span 9h, 200 tokens (longer span, fewer tokens)
+      ql('2026-04-20T00:00:00Z', { model: 'b', total_tokens: 100 }),
+      ql('2026-04-20T09:00:00Z', { model: 'b', total_tokens: 100 }),
+    ],
+    { generatedAt: GEN, sort: 'tokens' },
+  );
+  assert.equal(r.sort, 'tokens');
+  assert.deepEqual(r.models.map((m) => m.model), ['a', 'b']);
+});
+
+test('model-tenure: sort=density orders by tokensPerSpanHour desc', () => {
+  const r = buildModelTenure(
+    [
+      // a: span 10h, 1000 tok/h
+      ql('2026-04-20T00:00:00Z', { model: 'a', total_tokens: 5000 }),
+      ql('2026-04-20T10:00:00Z', { model: 'a', total_tokens: 5000 }),
+      // b: span 100h, 10 tok/h
+      ql('2026-04-20T00:00:00Z', { model: 'b', total_tokens: 500 }),
+      ql('2026-04-24T04:00:00Z', { model: 'b', total_tokens: 500 }),
+    ],
+    { generatedAt: GEN, sort: 'density' },
+  );
+  assert.equal(r.sort, 'density');
+  assert.deepEqual(r.models.map((m) => m.model), ['a', 'b']);
+});
+
+test('model-tenure: sort=active orders by activeBuckets desc', () => {
+  const r = buildModelTenure(
+    [
+      ql('2026-04-20T00:00:00Z', { model: 'a', total_tokens: 100 }),
+      ql('2026-04-20T01:00:00Z', { model: 'a', total_tokens: 100 }),
+      ql('2026-04-20T02:00:00Z', { model: 'a', total_tokens: 100 }),
+      ql('2026-04-20T00:00:00Z', { model: 'b', total_tokens: 100 }),
+      ql('2026-04-20T10:00:00Z', { model: 'b', total_tokens: 100 }),
+    ],
+    { generatedAt: GEN, sort: 'active' },
+  );
+  assert.equal(r.sort, 'active');
+  assert.deepEqual(r.models.map((m) => m.model), ['a', 'b']);
+});
