@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.53 — 2026-04-25
+
+### Added
+
+- `weekend-vs-weekday`: new subcommand. Splits token mass into
+  weekend (Sat/Sun in UTC) vs weekday (Mon–Fri) buckets, broken
+  down per normalised model. Each model row carries
+  `weekendTokens`, `weekdayTokens`, `weekendShare`, and
+  `weekendToWeekdayRatio` (= weekend / weekday, with `+Infinity`
+  when weekday = 0 and weekend > 0). The "calendar-balanced"
+  reference ratio is 2/5 = 0.400 — anything above means the model
+  leans weekend-heavy *relative to days available*, anything below
+  means weekday-skewed.
+
+  Filling the gap between `weekday-share` (per-day-of-week, all
+  models collapsed) and `time-of-day` / `peak-hour-share`
+  (intra-day): the most common product question — "do I actually
+  use weekends to grind, or only weekdays, and which model do I
+  reach for off-hours?" — needs the coarse two-bucket lens at the
+  per-model granularity, which neither sibling provides.
+
+  Flags: `--since`, `--until` (window), `--min-rows <n>` (hide
+  models with fewer than n considered rows; counts surface as
+  `droppedMinRows`), `--top <n>` (keep top n by total tokens;
+  remainder surface as `droppedTopModels`), `--json`.
+
+  9 new tests (788 total, up from 779): bad opts rejected, empty
+  queue zeros, single weekend row → ratio = ∞, single weekday row
+  → ratio = 0, day-of-week classification correctness, per-model
+  aggregation + sort by total desc, dropped counters, window
+  filtering, minRows floor, top cap, distinct sources, firstSeen /
+  lastSeen.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights weekend-vs-weekday
+  as of: 2026-04-25T02:12:58.025Z    tokens: 8,288,382,199    weekend: 1,626,994,889 (19.63%)    weekday: 6,661,387,310    ratio (we/wd): 0.244    models: 15    shown: 15
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-rows, 0 below top cap
+  (weekend = Sat/Sun in UTC; "calendar-balanced" reference ratio is 2/5 = 0.400)
+
+  per-model weekend vs weekday split (sorted by total tokens desc)
+  model                 tokens         we tok         wd tok         we%    we/wd  we rows  wd rows
+  --------------------  -------------  -------------  -------------  -----  -----  -------  -------
+  claude-opus-4.7       4,592,255,068  1,012,799,334  3,579,455,734  22.1%  0.283  75       306
+  gpt-5.4               2,466,218,056  614,120,317    1,852,097,739  24.9%  0.332  98       315
+  claude-opus-4.6.1m    1,108,978,665  0              1,108,978,665  0.0%   0.000  0        182
+  claude-haiku-4.5      70,717,678     0              70,717,678     0.0%   0.000  0        31
+  unknown               35,575,800     0              35,575,800     0.0%   0.000  0        56
+  claude-sonnet-4.6     12,601,545     0              12,601,545     0.0%   0.000  0        9
+  gpt-5                 850,661        39,723         810,938        4.7%   0.049  10       160
+  ```
+
+  Headline: only ~19.6% of token mass lands on weekends, well
+  below the 28.6% you'd expect from a flat 2/7 distribution. The
+  global `we/wd = 0.244` confirms a weekday-heavy operator. But
+  the per-model split shows the headline averages out heterogeneous
+  behaviour: the two flagship models (`claude-opus-4.7`, `gpt-5.4`)
+  carry essentially all weekend activity (22% and 25%), while
+  every other model is 0% weekend — they are pure weekday tools
+  for one-off queries, not "always-on" companions.
+
 ## 0.4.52 — 2026-04-25
 
 ### Added
