@@ -3395,6 +3395,11 @@ program
   .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
   .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
   .option(
+    '--min-buckets <n>',
+    'drop providers whose activeBuckets < n; suppressed rows surface as droppedSparseProviders (applied before --top; default 0 = no floor)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n providers after sorting; remainder surface as droppedTopProviders (default 0 = no cap)',
     '0',
@@ -3411,6 +3416,7 @@ program
         since?: string;
         until?: string;
         source?: string;
+        minBuckets: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -3420,6 +3426,10 @@ program
       try {
         const common = cmd.optsWithGlobals() as CommonOpts;
         const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
@@ -3440,6 +3450,7 @@ program
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
+          minBuckets,
           top,
           sort: opts.sort as 'span' | 'active' | 'tokens' | 'density' | 'models',
         });

@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.78 — 2026-04-25
+
+### Added
+
+- `provider-tenure`: `--min-buckets <n>` flag. Drop providers
+  whose `activeBuckets < n` from `providers[]` *before* applying
+  `--top`. Display filter only — `totalProviders`,
+  `totalActiveBuckets`, and `totalTokens` still reflect the
+  full pre-filter population (consistent with how `--min-buckets`
+  behaves across this CLI). Suppressed rows surface as
+  `droppedSparseProviders`.
+
+  Why: with the default 1,234-bucket workspace, vendors that
+  appear in only a handful of buckets (`google`: 37 buckets;
+  `unknown`: 56 buckets) pad the table next to the two
+  workhorses (`anthropic`: 535, `openai`: 606). `--min-buckets
+  100` cleanly isolates vendors that are an established part of
+  routing rather than an experiment or a one-off probe.
+
+  Order of operations is documented and tested:
+  `min-buckets` floor first (rows below the floor are
+  `droppedSparseProviders`), then `top` cap (rows trimmed there
+  are `droppedTopProviders`). Default 0 = no-op, echoed as
+  `minBuckets: 0` in the report.
+
+  3 new tests (1025 total, up from 1022): rejects bad
+  `minBuckets` (negative, fractional); floor hides sparse
+  providers and surfaces `droppedSparseProviders` while leaving
+  `totalProviders` / `totalActiveBuckets` / `totalTokens`
+  untouched and verifying the floor is applied *before* the top
+  cap; default is 0 and echoed as such.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--min-buckets 100`:
+
+  ```
+  pew-insights provider-tenure
+  as of: 2026-04-25T09:20:39.601Z    providers: 4 (shown 2)    active-buckets: 1,234    tokens: 8,499,146,406    minBuckets: 100    sort: span
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 2 below min-buckets, 0 below top cap
+  (provider rolled up from normalised model id; spanHours = clock hours first->last across any model from this vendor; activeBuckets = distinct hour_start values touched)
+
+  per-provider tenure (sorted by span desc)
+  provider   first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  distinct-models  tokens         tok/bucket  tok/span-hr
+  ---------  ------------------------  ------------------------  -------  --------------  ---------------  -------------  ----------  -----------
+  anthropic  2025-07-30T06:00:00.000Z  2026-04-25T09:00:00.000Z  6459.0   535             7                5,969,987,723  11,158,856  924,290
+  openai     2025-08-18T06:30:00.000Z  2026-04-25T09:00:00.000Z  6002.5   606             6                2,493,428,387  4,114,568   415,398
+  ```
+
+  Headline: with the floor applied the two workhorses are
+  isolated — anthropic still leads on tenure (6,459h) and
+  cumulative tokens (5.97B), but openai narrowly leads on
+  active-bucket count (606 vs 535) — confirming the dual
+  routing pattern without the sparse-vendor noise.
+
 ## 0.4.77 — 2026-04-25
 
 ### Added

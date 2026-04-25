@@ -3606,12 +3606,12 @@ export function renderProviderTenure(r: ProviderTenureReport): string {
   lines.push(chalk.bold.cyan('pew-insights provider-tenure'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    providers: ${formatNumber(r.totalProviders)} (shown ${formatNumber(r.providers.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    providers: ${formatNumber(r.totalProviders)} (shown ${formatNumber(r.providers.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopProviders)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseProviders)} below min-buckets, ${formatNumber(r.droppedTopProviders)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

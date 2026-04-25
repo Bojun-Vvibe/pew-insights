@@ -73,6 +73,16 @@ export interface ProviderTenureOptions {
    * Tiebreak in all cases: provider name asc (lex).
    */
   sort?: 'span' | 'active' | 'tokens' | 'density' | 'models';
+  /**
+   * Drop providers whose `activeBuckets < n` from `providers[]`
+   * *before* applying the `top` cap. Display filter only —
+   * `totalProviders`, `totalActiveBuckets`, and `totalTokens`
+   * still reflect the full pre-filter population (consistent with
+   * how `--min-buckets` behaves elsewhere in this CLI). Suppressed
+   * rows surface as `droppedSparseProviders`. Default 0 = no
+   * floor.
+   */
+  minBuckets?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -108,6 +118,8 @@ export interface ProviderTenureReport {
   source: string | null;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
+  /** Echo of the resolved `minBuckets` floor (0 = no floor). */
+  minBuckets: number;
   /** Echo of the resolved `sort` key. */
   sort: 'span' | 'active' | 'tokens' | 'density' | 'models';
   /** Distinct providers surviving filters. */
@@ -122,6 +134,8 @@ export interface ProviderTenureReport {
   droppedZeroTokens: number;
   /** Rows excluded by the `source` filter. */
   droppedSourceFilter: number;
+  /** Provider rows hidden by the `minBuckets` floor. */
+  droppedSparseProviders: number;
   /** Provider rows hidden by the `top` cap. */
   droppedTopProviders: number;
   /** Per-provider tenure rows after sort + top cap. */
@@ -137,6 +151,12 @@ export function buildProviderTenure(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minBuckets = opts.minBuckets ?? 0;
+  if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+    throw new Error(
+      `minBuckets must be a non-negative integer (got ${opts.minBuckets})`,
+    );
   }
   const sort = opts.sort ?? 'span';
   if (
@@ -254,11 +274,18 @@ export function buildProviderTenure(
     return a.provider < b.provider ? -1 : a.provider > b.provider ? 1 : 0;
   });
 
+  let droppedSparseProviders = 0;
+  let kept: ProviderTenureRow[] = providers;
+  if (minBuckets > 0) {
+    const before = kept.length;
+    kept = kept.filter((p) => p.activeBuckets >= minBuckets);
+    droppedSparseProviders = before - kept.length;
+  }
+
   let droppedTopProviders = 0;
-  let kept = providers;
-  if (top > 0 && providers.length > top) {
-    droppedTopProviders = providers.length - top;
-    kept = providers.slice(0, top);
+  if (top > 0 && kept.length > top) {
+    droppedTopProviders = kept.length - top;
+    kept = kept.slice(0, top);
   }
 
   return {
@@ -267,6 +294,7 @@ export function buildProviderTenure(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     top,
+    minBuckets,
     sort,
     totalProviders: providers.length,
     totalActiveBuckets,
@@ -274,6 +302,7 @@ export function buildProviderTenure(
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
+    droppedSparseProviders,
     droppedTopProviders,
     providers: kept,
   };

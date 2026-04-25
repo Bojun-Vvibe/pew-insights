@@ -31,6 +31,45 @@ test('provider-tenure: rejects bad top', () => {
   assert.throws(() => buildProviderTenure([], { top: 1.5 }));
 });
 
+test('provider-tenure: rejects bad minBuckets', () => {
+  assert.throws(() => buildProviderTenure([], { minBuckets: -1 }));
+  assert.throws(() => buildProviderTenure([], { minBuckets: 1.5 }));
+});
+
+test('provider-tenure: minBuckets floor hides sparse providers and surfaces droppedSparseProviders, totals stay full-population, applied before --top', () => {
+  const r = buildProviderTenure(
+    [
+      // openai: 3 active buckets
+      ql('2026-04-20T00:00:00Z', { model: 'gpt-5', total_tokens: 100 }),
+      ql('2026-04-20T01:00:00Z', { model: 'gpt-5', total_tokens: 100 }),
+      ql('2026-04-20T02:00:00Z', { model: 'gpt-5', total_tokens: 100 }),
+      // anthropic: 1 active bucket  (sparse)
+      ql('2026-04-20T00:00:00Z', { model: 'claude-opus-4.7', total_tokens: 100 }),
+      // google: 1 active bucket  (sparse)
+      ql('2026-04-20T00:00:00Z', { model: 'gemini-3-pro-preview', total_tokens: 100 }),
+    ],
+    { generatedAt: GEN, minBuckets: 2 },
+  );
+  // Totals reflect the full pre-floor population (3 providers, 5 buckets, 500 tokens).
+  assert.equal(r.totalProviders, 3);
+  assert.equal(r.totalActiveBuckets, 5);
+  assert.equal(r.totalTokens, 500);
+  assert.equal(r.minBuckets, 2);
+  assert.equal(r.droppedSparseProviders, 2);
+  assert.equal(r.droppedTopProviders, 0);
+  assert.equal(r.providers.length, 1);
+  assert.equal(r.providers[0]!.provider, 'openai');
+});
+
+test('provider-tenure: minBuckets default is 0 echoed and droppedSparseProviders is 0', () => {
+  const r = buildProviderTenure(
+    [ql('2026-04-20T00:00:00Z', { model: 'gpt-5', total_tokens: 100 })],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.minBuckets, 0);
+  assert.equal(r.droppedSparseProviders, 0);
+});
+
 test('provider-tenure: rejects bad sort', () => {
   assert.throws(() =>
     buildProviderTenure([], { sort: 'bogus' as unknown as 'span' }),
