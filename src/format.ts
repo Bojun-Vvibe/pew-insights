@@ -2249,6 +2249,7 @@ import type { OutputInputRatioReport } from './outputinputratio.js';
 import type { ModelMixEntropyReport } from './modelmixentropy.js';
 import type { WeekendVsWeekdayReport } from './weekendvsweekday.js';
 import type { CacheHitByHourReport } from './cachehitbyhour.js';
+import type { ModelCohabitationReport } from './modelcohabitation.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2948,6 +2949,77 @@ export function renderCacheHitByHour(r: CacheHitByHourReport): string {
     ]);
     lines.push(renderTableLocal(sumHeaders, sumRows));
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderModelCohabitation(r: ModelCohabitationReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights model-cohabitation'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    buckets: ${formatNumber(r.totalBuckets)}    multi-model: ${formatNumber(r.multiModelBuckets)}    models: ${formatNumber(r.totalModels)}    pairs: ${formatNumber(r.totalPairs)} (shown ${formatNumber(r.pairs.length)})    tokens: ${formatNumber(r.totalTokens)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedMinCoBuckets)} below min-co-buckets, ${formatNumber(r.droppedTopPairs)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(buckets are UTC hour_start values; cohabIndex = Jaccard on bucket-presence sets, in [0,1])`,
+    ),
+  );
+  lines.push('');
+
+  if (r.totalBuckets === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows in the window with positive tokens. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-model presence summary (sorted by tokens desc)'));
+  const mHeaders = ['model', 'tokens', 'buckets', 'cohabitants'];
+  const mRows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.tokens),
+    formatNumber(m.bucketsActive),
+    formatNumber(m.distinctCohabitants),
+  ]);
+  lines.push(renderTableLocal(mHeaders, mRows));
+
+  lines.push('');
+  if (r.pairs.length === 0) {
+    lines.push(chalk.yellow('  no model pairs co-habit any bucket in the window.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('top model pairs by shared buckets (sorted by coBuckets desc, coTokens desc, lex)'));
+  const pHeaders = [
+    'modelA',
+    'modelB',
+    'coBuckets',
+    'coTokens(min)',
+    'cohabIndex',
+    'P(B|A)',
+    'P(A|B)',
+  ];
+  const pRows: string[][] = r.pairs.map((p) => [
+    p.modelA,
+    p.modelB,
+    formatNumber(p.coBuckets),
+    formatNumber(p.coTokens),
+    p.cohabIndex.toFixed(3),
+    (p.coShareA * 100).toFixed(1) + '%',
+    (p.coShareB * 100).toFixed(1) + '%',
+  ]);
+  lines.push(renderTableLocal(pHeaders, pRows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

@@ -63,6 +63,7 @@ import {
   renderModelMixEntropy,
   renderWeekendVsWeekday,
   renderCacheHitByHour,
+  renderModelCohabitation,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -146,6 +147,7 @@ import { buildBurstiness } from './burstiness.js';
 import { buildDeviceShare } from './deviceshare.js';
 import { buildWeekendVsWeekday } from './weekendvsweekday.js';
 import { buildCacheHitByHour } from './cachehitbyhour.js';
+import { buildModelCohabitation } from './modelcohabitation.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -3074,6 +3076,65 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderCacheHitByHour(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('model-cohabitation')
+  .description('Pairs of models that share the same UTC hour bucket; cohabIndex = Jaccard on bucket presence')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-co-buckets <n>',
+    'hide pairs with fewer than n shared buckets; counts surface as droppedMinCoBuckets (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n pairs by coBuckets; remainder surface as droppedTopPairs (default 0 = no cap)',
+    '0',
+  )
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minCoBuckets: string;
+        top: string;
+        source?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minCoBuckets = Number.parseInt(opts.minCoBuckets, 10);
+        if (!Number.isInteger(minCoBuckets) || minCoBuckets < 0) {
+          throw new Error(`--min-co-buckets must be a non-negative integer (got ${opts.minCoBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildModelCohabitation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minCoBuckets,
+          top,
+          source: opts.source ?? null,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderModelCohabitation(report) + '\n');
         }
       } catch (e) {
         die(e);
