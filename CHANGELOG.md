@@ -2,6 +2,110 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.11 — 2026-04-26
+
+### Added
+
+- `pew-insights hour-of-day-token-skew`: per UTC hour-of-day
+  (0..23), the **Fisher–Pearson sample skewness `g1 = m3 /
+  m2^1.5`** of per-day `total_tokens`. For each hour we collect
+  one observation per UTC date that had at least one row landing
+  in that hour, sum tokens within the (date, hour) cell, then
+  compute g1 on that per-day vector. `g1 ≈ 0` = symmetric demand
+  (predictable steady traffic at that hour), `g1 > 0` =
+  right-skewed (most days quiet, occasional bursts — capacity
+  sized for the median will brown out), `g1 < 0` = left-skewed
+  (most days heavy, occasional quiet days). Distinct lens vs:
+  `hour-of-week` / `peak-hour` / `time-of-day` (all report
+  *mean* / *share* per hour but never the *shape* of the per-day
+  distribution within an hour); `bucket-token-gini` (varies the
+  source axis at the bucket grain, not the day axis at fixed
+  hour-of-day); `hour-of-day-source-mix-entropy` (which sources
+  dominate, not how variable the totals are); `burstiness` (one
+  global CV scalar with no hour-of-day breakdown);
+  `weekday-share` (different temporal axis). Per-row output:
+  hour, observedDays, totalTokens, meanDailyTokens,
+  stddevDailyTokens, skewness, maxDailyTokens, minDailyTokens.
+  Global rollup: token-weighted mean of `|skewness|` (which
+  hours are most asymmetric, weighted by their token mass), the
+  unweighted (signed) mean across kept hours, and the count of
+  hours with `|skewness| >= 1` (a conventional "highly skewed"
+  threshold). Default sort is `|skew| desc → totalTokens desc →
+  hour asc`. Flags: `--since` / `--until` (window on
+  `hour_start`, applied before per-(date, hour) aggregation),
+  `--min-days <n>` (display floor; default 2 — the structural
+  minimum for a non-zero `m2`; suppressed hours surface as
+  `droppedBelowMinDays`), `--json`. Numerically degenerate cases
+  (n ≤ 1, m2 = 0 constant vector) emit `skewness: 0` by
+  convention. Pure builder; `generatedAt` is the only `Date.now`
+  read and is overridable.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+pew-insights hour-of-day-token-skew
+as of: 2026-04-25T22:54:58.013Z    shown: 24    observed: 24    tokens: 8.85B    minDays: 2    topK: —
+dropped: 0 bad hour_start, 0 zero tokens, 0 below minDays, 0 below topK
+(per UTC hour: g1 = m3/m2^1.5 on per-day token totals; >0 right-skewed (rare bursts), <0 left-skewed)
+
+global rollup (full kept set, pre-topK)
+summary                  value
+-----------------------  -----
+keptHours                24
+weightedMeanAbsSkewness  2.031
+unweightedMeanSkewness   1.835
+highlySkewedHourCount    19
+
+per hour-of-day: per-day token-total skewness (sorted by |skew| desc; ties: tokens desc, hour asc)
+hour  days  tokens   meanDay  stddevDay  skew   maxDay   minDay
+----  ----  -------  -------  ---------  -----  -------  -------
+07    65    582.77M  8.97M    20.99M     3.714  116.84M  20
+01    32    552.19M  17.26M   44.54M     3.273  209.21M  264
+08    51    690.81M  13.55M   28.49M     3.214  140.82M  143
+04    19    244.04M  12.84M   26.39M     3.068  115.18M  494
+02    55    470.95M  8.56M    16.89M     2.786  83.00M   54
+06    61    523.12M  8.58M    15.33M     2.538  83.83M   280
+12    16    398.02M  24.88M   45.35M     2.469  177.28M  40
+09    41    322.30M  7.86M    15.59M     2.362  66.88M   101
+03    46    301.49M  6.55M    12.27M     2.246  54.11M   72
+05    30    341.57M  11.39M   19.10M     1.835  74.14M   428
+11    22    356.80M  16.22M   25.64M     1.786  93.96M   722
+14    11    458.78M  41.71M   55.02M     1.764  188.93M  12.62K
+13    11    384.72M  34.97M   45.47M     1.735  154.77M  3.88K
+10    25    436.45M  17.46M   30.99M     1.701  96.49M   861
+15    8     495.76M  61.97M   71.20M     1.688  235.59M  5.68M
+00    7     196.54M  28.08M   30.43M     1.644  98.78M   2.58M
+19    9     250.13M  27.79M   30.24M     1.640  105.00M  333.11K
+20    8     109.79M  13.72M   12.94M     1.387  43.93M   2.23M
+21    8     78.20M   9.78M    8.22M      1.143  27.40M   822.47K
+23    7     88.30M   12.61M   9.51M      0.598  28.79M   2.15M
+17    8     446.78M  55.85M   48.78M     0.518  133.50M  3.03M
+18    8     418.11M  52.26M   43.40M     0.435  120.17M  3.29M
+16    8     600.72M  75.09M   57.63M     0.304  166.18M  7.88M
+22    8     97.46M   12.18M   8.50M      0.193  25.00M   1.28M
+```
+
+The headline number is `weightedMeanAbsSkewness = 2.031` and
+`highlySkewedHourCount = 19 / 24` — meaning **19 of 24 UTC
+hours-of-day have a per-day token distribution skewed past
+`|g1| = 1`**, and the entire skewness sign across kept hours is
+positive (`unweightedMeanSkewness = +1.835`). Every single hour
+in the dataset is right-tilted; there is no left-skewed hour.
+The most extreme is **hour 07 UTC** at `g1 = 3.714` over 65 days
+— a stddev of 20.99M tokens against a mean of only 8.97M tokens,
+with a single day burning 116.84M tokens against a low-day floor
+of 20. That signature (mean ≪ stddev ≪ max, min near zero) is
+the textbook "rare-burst" pattern: most 07:00 UTC hours barely
+register, but a small set of days drives the entire bucket.
+Hours **16–18 UTC** are at the other end of the spectrum
+(`g1 ≤ 0.518`) — high mean (52–75M tokens/day) but symmetric
+day-to-day distributions, i.e. predictable mid-day demand. The
+contrast tells you something `peak-hour` cannot: hour 16 (highest
+mean tokens, 75M) is *less* operationally risky than hour 07
+(8.97M mean) because hour 07's 116.84M peak is 13× its mean
+while hour 16's 166.18M peak is only 2.2× its mean. Skew, not
+mean, predicts where capacity surprises live.
+
 ## 0.6.10 — 2026-04-26
 
 ### Added
