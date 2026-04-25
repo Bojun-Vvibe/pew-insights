@@ -3667,7 +3667,7 @@ export function renderFirstBucketOfDay(r: FirstBucketOfDayReport): string {
   const fmtHF = (h: number | null) => (h === null ? '-' : h.toFixed(2));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    days: ${formatNumber(r.distinctDays)} (shown ${formatNumber(r.days.length)})    tokens: ${formatNumber(r.totalTokens)}`,
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.distinctDays)} (shown ${formatNumber(r.days.length)})    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
     ),
   );
   lines.push(
@@ -3698,7 +3698,7 @@ export function renderFirstBucketOfDay(r: FirstBucketOfDayReport): string {
     return lines.join('\n');
   }
 
-  lines.push(chalk.bold(`per-day first bucket (sorted by day desc)`));
+  lines.push(chalk.bold(`per-day first bucket (sorted by ${r.sort}${r.sort === 'first-hour' ? ' asc' : ' desc'})`));
   const headers = [
     'day (UTC)',
     'first-bucket (UTC)',

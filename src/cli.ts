@@ -3478,6 +3478,11 @@ program
     'show only the most-recent n days; remainder surface as droppedTopDays. Summary stats always reflect the full population. Default 0 = no cap.',
     '0',
   )
+  .option(
+    '--sort <key>',
+    "sort key for days[]: 'day' (default, desc) | 'first-hour' (asc) | 'tokens' (desc) | 'buckets' (desc)",
+    'day',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3486,6 +3491,7 @@ program
         until?: string;
         source?: string;
         top: string;
+        sort: string;
         json?: boolean;
       },
       cmd,
@@ -3497,12 +3503,23 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        if (
+          opts.sort !== 'day' &&
+          opts.sort !== 'first-hour' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'buckets'
+        ) {
+          throw new Error(
+            `--sort must be 'day' | 'first-hour' | 'tokens' | 'buckets' (got ${opts.sort})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildFirstBucketOfDay(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
           top,
+          sort: opts.sort as 'day' | 'first-hour' | 'tokens' | 'buckets',
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

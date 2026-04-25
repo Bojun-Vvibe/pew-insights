@@ -232,3 +232,95 @@ test('first-bucket-of-day: same input -> same output (pure builder)', () => {
   const b = buildFirstBucketOfDay(data, { generatedAt: GEN });
   assert.deepEqual(a, b);
 });
+
+// ---- sort -----------------------------------------------------------------
+
+test('first-bucket-of-day: rejects bad sort', () => {
+  assert.throws(() =>
+    buildFirstBucketOfDay([], { sort: 'bogus' as unknown as 'day' }),
+  );
+});
+
+test('first-bucket-of-day: sort default is "day" echoed back', () => {
+  const r = buildFirstBucketOfDay([ql('2026-04-20T09:00:00Z')], {
+    generatedAt: GEN,
+  });
+  assert.equal(r.sort, 'day');
+});
+
+test('first-bucket-of-day: sort=first-hour orders earliest wake-up first; tiebreak day desc', () => {
+  const r = buildFirstBucketOfDay(
+    [
+      ql('2026-04-20T14:00:00Z'),
+      ql('2026-04-21T05:00:00Z'),
+      ql('2026-04-22T05:00:00Z'),
+      ql('2026-04-23T09:00:00Z'),
+    ],
+    { generatedAt: GEN, sort: 'first-hour' },
+  );
+  // firstHours: 04-20=14, 04-21=5, 04-22=5, 04-23=9
+  // sort asc: [5(04-22), 5(04-21), 9(04-23), 14(04-20)] -- tiebreak day desc
+  assert.deepEqual(
+    r.days.map((d) => d.day),
+    ['2026-04-22', '2026-04-21', '2026-04-23', '2026-04-20'],
+  );
+});
+
+test('first-bucket-of-day: sort=tokens orders heaviest day first; tiebreak day desc', () => {
+  const r = buildFirstBucketOfDay(
+    [
+      ql('2026-04-20T09:00:00Z', { total_tokens: 1000 }),
+      ql('2026-04-21T09:00:00Z', { total_tokens: 500 }),
+      ql('2026-04-22T09:00:00Z', { total_tokens: 500 }),
+      ql('2026-04-23T09:00:00Z', { total_tokens: 100 }),
+    ],
+    { generatedAt: GEN, sort: 'tokens' },
+  );
+  // tokensOnDay: 1000(04-20), 500(04-21), 500(04-22), 100(04-23)
+  // sort desc tiebreak day desc: [1000(04-20), 500(04-22), 500(04-21), 100(04-23)]
+  assert.deepEqual(
+    r.days.map((d) => d.day),
+    ['2026-04-20', '2026-04-22', '2026-04-21', '2026-04-23'],
+  );
+});
+
+test('first-bucket-of-day: sort=buckets orders most-active day first; tiebreak day desc', () => {
+  const r = buildFirstBucketOfDay(
+    [
+      // 04-20: 3 buckets
+      ql('2026-04-20T01:00:00Z'),
+      ql('2026-04-20T02:00:00Z'),
+      ql('2026-04-20T03:00:00Z'),
+      // 04-21: 1 bucket
+      ql('2026-04-21T05:00:00Z'),
+      // 04-22: 3 buckets
+      ql('2026-04-22T01:00:00Z'),
+      ql('2026-04-22T02:00:00Z'),
+      ql('2026-04-22T03:00:00Z'),
+    ],
+    { generatedAt: GEN, sort: 'buckets' },
+  );
+  // bucketsOnDay: 3(04-20), 1(04-21), 3(04-22)
+  // sort desc tiebreak day desc: [3(04-22), 3(04-20), 1(04-21)]
+  assert.deepEqual(
+    r.days.map((d) => d.day),
+    ['2026-04-22', '2026-04-20', '2026-04-21'],
+  );
+});
+
+test('first-bucket-of-day: sort=tokens with --top still computes summary stats over full population', () => {
+  const r = buildFirstBucketOfDay(
+    [
+      ql('2026-04-20T09:00:00Z', { total_tokens: 1000 }),
+      ql('2026-04-21T10:00:00Z', { total_tokens: 100 }),
+      ql('2026-04-22T11:00:00Z', { total_tokens: 50 }),
+    ],
+    { generatedAt: GEN, sort: 'tokens', top: 1 },
+  );
+  assert.equal(r.distinctDays, 3); // full pop
+  assert.equal(r.firstHourMin, 9);
+  assert.equal(r.firstHourMax, 11);
+  assert.equal(r.days.length, 1); // only top-1 by tokens shown
+  assert.equal(r.days[0]!.day, '2026-04-20');
+  assert.equal(r.droppedTopDays, 2);
+});

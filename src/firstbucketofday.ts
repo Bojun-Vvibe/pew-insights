@@ -52,6 +52,15 @@ export interface FirstBucketOfDayOptions {
    * Suppressed rows surface as `droppedTopDays`. Default 0 = no cap.
    */
   top?: number;
+  /**
+   * Sort key for `days[]`:
+   *   - 'day' (default):     day desc (newest first)
+   *   - 'first-hour':        firstHour asc (earliest wake-up first)
+   *   - 'tokens':            tokensOnDay desc (heaviest day first)
+   *   - 'buckets':           bucketsOnDay desc (most-active day first)
+   * Tiebreak in all non-default cases: day desc.
+   */
+  sort?: 'day' | 'first-hour' | 'tokens' | 'buckets';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -76,6 +85,8 @@ export interface FirstBucketOfDayReport {
   source: string | null;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
+  /** Echo of the resolved `sort` key. */
+  sort: 'day' | 'first-hour' | 'tokens' | 'buckets';
   /** Distinct UTC calendar days with at least one positive-token row. */
   distinctDays: number;
   /** Sum of total_tokens across the *full* population (pre top cap). */
@@ -117,6 +128,17 @@ export function buildFirstBucketOfDay(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const sort = opts.sort ?? 'day';
+  if (
+    sort !== 'day' &&
+    sort !== 'first-hour' &&
+    sort !== 'tokens' &&
+    sort !== 'buckets'
+  ) {
+    throw new Error(
+      `sort must be 'day' | 'first-hour' | 'tokens' | 'buckets' (got ${opts.sort})`,
+    );
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -229,8 +251,15 @@ export function buildFirstBucketOfDay(
     firstHourModeShare = bestCount / distinctDays;
   }
 
-  // Sort days desc (newest first).
-  allDays.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
+  // Sort days. Default 'day' desc; otherwise primary key with day desc tiebreak.
+  allDays.sort((a, b) => {
+    let primary = 0;
+    if (sort === 'first-hour') primary = a.firstHour - b.firstHour;
+    else if (sort === 'tokens') primary = b.tokensOnDay - a.tokensOnDay;
+    else if (sort === 'buckets') primary = b.bucketsOnDay - a.bucketsOnDay;
+    if (primary !== 0) return primary;
+    return a.day < b.day ? 1 : a.day > b.day ? -1 : 0;
+  });
 
   let droppedTopDays = 0;
   let kept: FirstBucketOfDayRow[] = allDays;
@@ -245,6 +274,7 @@ export function buildFirstBucketOfDay(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     top,
+    sort,
     distinctDays,
     totalTokens,
     firstHourMin,

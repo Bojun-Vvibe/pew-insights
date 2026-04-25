@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.80 — 2026-04-25
+
+### Added
+
+- `first-bucket-of-day`: `--sort <key>` flag. Sort `days[]` by
+  `day` (default, desc), `first-hour` (asc — earliest wake-up
+  first), `tokens` (desc — heaviest day first), or `buckets`
+  (desc — most-active day first). Tiebreak in all non-default
+  cases is `day desc`. Sort key is echoed in the report as
+  `sort: <key>` and respected by both pretty and JSON output.
+
+  Why: `--top` defaulted to "newest N days", which is great
+  for a glance but useless when you want to find the *days
+  where the workday started latest* (sort=first-hour with
+  reverse view) or the *heaviest tokens days* (sort=tokens) or
+  the *most-saturated days* (sort=buckets). All three are
+  natural follow-on questions once you have firstHour stats.
+
+  6 new tests (1043 total, up from 1037): rejects bad sort
+  key, default sort echoed as 'day', sort=first-hour orders
+  earliest wake-up first with day-desc tiebreak, sort=tokens
+  orders heaviest day first with day-desc tiebreak,
+  sort=buckets orders most-active day first with day-desc
+  tiebreak, sort+top combination still computes summary
+  stats over the full pre-cap population.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--sort first-hour --top 8`:
+
+  ```
+  pew-insights first-bucket-of-day
+  as of: 2026-04-25T09:56:42.656Z    days: 105 (shown 8)    tokens: 8,515,226,447    sort: first-hour
+  firstHour UTC: min=00 p25=01 median=02 mean=3.15 p75=05 max=10 mode=02 (n=28, share=26.7%)
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 97 below top cap
+  (per UTC calendar day: firstBucket = earliest hour_start with positive total_tokens; firstHour = its UTC hour-of-day)
+
+  per-day first bucket (sorted by first-hour asc)
+  day (UTC)   first-bucket (UTC)        first-hour  buckets-on-day  tokens-on-day
+  ----------  ------------------------  ----------  --------------  -------------
+  2026-04-25  2026-04-25T00:00:00.000Z  00          20              272,500,254
+  2026-04-24  2026-04-24T00:00:00.000Z  00          48              627,251,216
+  2026-04-23  2026-04-23T00:00:00.000Z  00          48              695,192,088
+  2026-04-22  2026-04-22T00:00:00.000Z  00          48              893,292,230
+  2026-04-21  2026-04-21T00:00:00.000Z  00          48              1,122,611,203
+  2026-04-20  2026-04-20T00:00:00.000Z  00          48              1,773,838,138
+  2026-04-19  2026-04-19T00:00:00.000Z  00          48              659,027,845
+  2026-04-18  2026-04-18T01:30:00.000Z  01          36              922,235,800
+  ```
+
+  Headline: every one of the eight earliest-starting days is
+  also one of the most-recent eight, confirming the "workday
+  started earlier and ran longer over the last week" finding
+  from 0.4.79 — the wake-up-clock shift is *not* an artifact
+  of sample size on older sparse days.
+
 ## 0.4.79 — 2026-04-25
 
 ### Added
