@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.66 — 2026-04-25
+
+### Added
+
+- `tail-share`: `--min-buckets <n>` and `--top <n>` flags.
+  - `--min-buckets <n>` (default 0 = no floor): drop sources whose
+    bucketCount < n. Suppressed rows surface as
+    `droppedSparseSources` (with `droppedSparseBuckets` reporting
+    how many underlying buckets were lost). Totals reflect the
+    *kept* population, not the full pre-filter set — sparse-source
+    tokens are excluded from `totalTokens` / `totalBuckets`.
+  - `--top <n>` (default 0 = no cap): truncate `sources[]` to the
+    top n rows after sorting by giniLike desc. Display filter only —
+    `totalSources`, `totalBuckets`, and `totalTokens` always reflect
+    the *full surviving population* (post-minBuckets, pre-cap).
+    Suppressed rows surface as `droppedTopSources`. The cap is
+    echoed in the report as `top`.
+
+  Use case: `--min-buckets 100` filters out one-off / experimental
+  sources that haven't accumulated enough history for the Pareto
+  read to be meaningful, and `--top 4` keeps the table to the
+  loudest concentration outliers.
+
+  3 new tests (903 total, up from 900): rejects bad top;
+  --min-buckets drops sparse sources and totals reflect kept
+  population; --top caps display rows while totals stay
+  full-population and droppedTopSources surfaces remainder.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--min-buckets 100 --top 4`:
+
+  ```
+  pew-insights tail-share
+  as of: 2026-04-25T05:42:44.071Z    sources: 5 (shown 4)    buckets: 1,243    tokens: 7,581,839,548    minBuckets: 100
+  dropped: 0 bad hour_start, 0 zero-tokens, 1 sparse sources (64 buckets), 1 below top cap
+
+  per-source token concentration (sorted by giniLike desc)
+  source       buckets  tokens         top1%  top5%  top10%  top20%  giniLike
+  -----------  -------  -------------  -----  -----  ------  ------  --------
+  vscode-ext   320      1,885,727      26.1%  44.2%  56.4%   71.1%   0.444
+  claude-code  267      3,442,385,788  8.0%   26.9%  44.9%   70.3%   0.312
+  opencode     171      2,353,488,517  5.7%   22.9%  41.8%   64.8%   0.269
+  openclaw     341      1,643,847,322  9.2%   24.0%  35.0%   51.0%   0.227
+  ```
+
+  Filtering at minBuckets=100 dropped one source (`codex`-like,
+  64 buckets, ~810M tokens) below the floor; the top cap then
+  hid `hermes` (the flattest survivor at giniLike 0.219).
+  Headline read is unchanged from v0.4.65: the small-volume
+  editor source dominates the concentration ranking, and the
+  large CLI sources land in the long-tailed-but-peaky 0.27–0.31
+  band.
+
 ## 0.4.65 — 2026-04-25
 
 ### Added
