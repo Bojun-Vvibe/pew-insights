@@ -92,6 +92,7 @@ import {
   renderOutputTokenDecileDistribution,
   renderInputTokenDecileDistribution,
   renderSourceRunLengths,
+  renderHourOfDaySourceMixEntropy,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -147,6 +148,7 @@ import {
   type TurnCadenceDimension,
 } from './turncadence.js';
 import { buildSourceRunLengths } from './sourcerunlengths.js';
+import { buildHourOfDaySourceMixEntropy } from './hourofdaysourcemixentropy.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2034,6 +2036,50 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRunLengths(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('hour-of-day-source-mix-entropy')
+  .description(
+    'Per UTC hour-of-day Shannon entropy of per-source token share (mono- vs poly-source hours)',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-tokens <n>',
+    'hide hours with fewer than n total tokens; their counts surface as droppedSparseHours (default 0)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; minTokens: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative finite number (got ${opts.minTokens})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildHourOfDaySourceMixEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minTokens,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderHourOfDaySourceMixEntropy(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -4905,10 +4905,96 @@ export function renderRollingBucketCv(
 }
 
 import type { SourceRunLengthsReport } from './sourcerunlengths.js';
+import type {
+  HourOfDaySourceMixEntropyReport,
+  HourOfDaySourceMixEntropyRow,
+} from './hourofdaysourcemixentropy.js';
 
 function fmtRunLen(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(2);
+}
+
+function fmtBits(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(3);
+}
+
+function fmtHour2(h: number): string {
+  return `${String(h).padStart(2, '0')}:00`;
+}
+
+export function renderHourOfDaySourceMixEntropy(
+  r: HourOfDaySourceMixEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights hour-of-day-source-mix-entropy'));
+  const filterDesc = r.filterSources === null ? '—' : `[${r.filterSources.join(',')}]`;
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    occupied hours: ${formatNumber(r.hours.length)}/24    tokens: ${formatTokens(r.totalTokens)}    minTokens: ${formatNumber(r.minTokens)}    filterSources: ${filterDesc}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedSparseHours)} sparse hours`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(per UTC hour-of-day: H = -Σ p_i log2 p_i over per-source token share; max = log2(sources))',
+    ),
+  );
+  lines.push('');
+
+  if (r.hours.length === 0) {
+    lines.push(chalk.yellow('  no occupied hours in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('global rollup (token-weighted across kept hours)'));
+  lines.push(
+    renderTableLocal(
+      ['summary', 'value'],
+      [
+        ['occupiedHours', formatNumber(r.hours.length)],
+        ['weightedMeanEntropyBits', fmtBits(r.weightedMeanEntropyBits)],
+        ['weightedMeanNormalizedEntropy', formatPercentLocal(r.weightedMeanNormalizedEntropy)],
+        ['monoSourceHourCount', formatNumber(r.monoSourceHourCount)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold('per hour-of-day source-mix entropy (UTC, sorted by hour asc)'));
+  const headers = [
+    'hour',
+    'tokens',
+    'sources',
+    'H bits',
+    'maxH',
+    'normH',
+    'effSources',
+    'topSource',
+    'topShare',
+  ];
+  const rows: string[][] = r.hours.map((h: HourOfDaySourceMixEntropyRow) => [
+    fmtHour2(h.hour),
+    formatTokens(h.totalTokens),
+    formatNumber(h.sourceCount),
+    fmtBits(h.entropyBits),
+    fmtBits(h.maxEntropyBits),
+    formatPercentLocal(h.normalizedEntropy),
+    fmtBits(h.effectiveSources),
+    h.topSource,
+    formatPercentLocal(h.topSourceShare),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
 }
 
 export function renderSourceRunLengths(r: SourceRunLengthsReport): string {
