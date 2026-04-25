@@ -67,6 +67,7 @@ import {
   renderInterarrivalTime,
   renderBucketIntensity,
   renderModelTenure,
+  renderTailShare,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -154,6 +155,7 @@ import { buildModelCohabitation } from './modelcohabitation.js';
 import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildBucketIntensity } from './bucketintensity.js';
 import { buildModelTenure } from './modeltenure.js';
+import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -3367,6 +3369,40 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderModelTenure(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('tail-share')
+  .description('Per-source Pareto: fraction of total tokens in the top 1/5/10/20% of buckets, with giniLike concentration scalar')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const queue = await readQueue(paths);
+        const report = buildTailShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderTailShare(report) + '\n');
         }
       } catch (e) {
         die(e);

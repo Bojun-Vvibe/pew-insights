@@ -19,6 +19,7 @@ import type { TransitionsReport } from './transitions.js';
 import type { AgentMixReport } from './agentmix.js';
 import type { SessionLengthsReport } from './sessionlengths.js';
 import type { ModelTenureReport } from './modeltenure.js';
+import type { TailShareReport } from './tailshare.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3236,6 +3237,52 @@ export function renderModelTenure(r: ModelTenureReport): string {
     formatNumber(m.tokens),
     formatNumber(Math.round(m.tokensPerActiveBucket)),
     formatNumber(Math.round(m.tokensPerSpanHour)),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderTailShare(r: TailShareReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights tail-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)}    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSparseSources)} sparse sources (${formatNumber(r.droppedSparseBuckets)} buckets)`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(top K% = fraction of total tokens in the heaviest K% of buckets per source; giniLike in [0,1] = uniform-baseline-corrected mean of the four shares)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows survived filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-source token concentration (sorted by giniLike desc)'));
+  const headers = ['source', 'buckets', 'tokens', 'top1%', 'top5%', 'top10%', 'top20%', 'giniLike'];
+  const fmtPct = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.bucketCount),
+    formatNumber(s.tokens),
+    fmtPct(s.top1Share),
+    fmtPct(s.top5Share),
+    fmtPct(s.top10Share),
+    fmtPct(s.top20Share),
+    s.giniLike.toFixed(3),
   ]);
   lines.push(renderTableLocal(headers, rows));
 
