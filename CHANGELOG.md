@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.0 — 2026-04-26
+
+### Added
+
+- `pew-insights cost-per-bucket-percentiles` — per-source distribution
+  of estimated USD cost per (source, UTC hour) bucket. For every
+  (source, hour_start) pair we sum the per-row cost (input +
+  cached_input + output + reasoning, priced through the shared
+  `RateTable`) across all device/model rows that landed in that
+  hour, then report per-source p50/p90/p99 plus min/max/mean
+  dollars-per-bucket and a per-source cost total. Distinct from
+  existing lenses:
+  - `cost` aggregates by *model* and emits one cumulative dollar
+    figure per model — it cannot tell you whether the spend is
+    dominated by a few catastrophically expensive hours or smeared
+    evenly across many cheap ones.
+  - `bucket-intensity` looks at *token mass* per bucket per model,
+    not USD, and never slices by source. Cheap-large-prompt and
+    expensive-small-prompt bucket land identical there but are
+    very different here.
+  - `token-velocity-percentiles` is the per-source rate
+    distribution but unit-free of price — a 1M-token hour of
+    `gpt-5-nano` and of `claude-opus-4.7` look identical there.
+  Flags: `--since`, `--until`, `--source`, `--min-buckets`,
+  `--top`, `--min-cost`, `--sort cost|buckets|p99|mean`,
+  `--rates`, `--json`. Empty-string source values are bucketed as
+  `(unknown)`. Unknown-rate models contribute zero to their
+  bucket's cost (counted in `unknownModelRows`); buckets that end
+  up with `cost <= 0` (e.g. entirely composed of unknown-model
+  rows) are dropped as `droppedZeroCost` before percentile
+  computation. Percentiles use nearest-rank R-1 to match
+  `bucket-intensity`, `token-velocity-percentiles`, and
+  `interarrival-time` so numbers reconcile across reports.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, top 5 sources by cost)
+
+```
+pew-insights cost-per-bucket-percentiles
+as of: 2026-04-25T19:12:03.708Z    sources: 6 (shown 5)    buckets: 862    cost: $35200.15    sort: cost
+dropped: 0 bad hour_start, 0 by source filter, 597 unknown-model rows, 506 zero-cost buckets, 0 below min-cost, 0 below min-buckets, 1 below top cap
+(observation = one (source, UTC hour_start) bucket; cost summed across rows in that bucket; percentiles are nearest-rank R-1)
+
+per-source dollars-per-bucket summary (sorted by cost desc)
+source       buckets  cost       min     p50      p90      p99      max      mean
+-----------  -------  ---------  ------  -------  -------  -------  -------  -------
+claude-code  82       $19673.03  $0.362  $232.24  $510.83  $947.82  $947.82  $239.92
+opencode     195      $7201.03   $0.235  $22.37   $105.53  $178.42  $189.42  $36.93
+openclaw     368      $4997.08   $0.376  $9.26    $27.92   $89.73   $129.14  $13.58
+codex        64       $2294.43   $0.255  $17.72   $99.80   $165.72  $165.72  $35.85
+hermes       148      $1030.48   $0.161  $3.36    $18.58   $32.80   $52.98   $6.96
+```
+
+Reading: `claude-code` shows the canonical "tail-heavy spend"
+shape: a $239.92 mean against a $232.24 p50 with a $947.82 p99
+that is ~2x the median's worst-case neighbour — i.e. a few sprint
+hours dominate. `openclaw` is the opposite: the largest *bucket
+count* (368) but the smallest mean ($13.58) and a p99 of only
+$89.73 — high-frequency, low-spend traffic. The 506 dropped
+zero-cost buckets correspond to hours composed entirely of
+unknown-model rows (597 rows total) — gaps in the rate table,
+not real-zero spend, and surfaced for triage rather than silently
+absorbed.
+
+### Tests
+
+- 19 new tests on the `costperbucketpercentiles` suite covering
+  option validation (minBuckets / top / minCost / sort / since /
+  until), empty-queue and bad-hour edges, multi-device + multi-
+  model summing into a single bucket, `(unknown)` source bucketing,
+  unknown-model handling that surfaces both `unknownModelRows`
+  and `droppedZeroCost`, nearest-rank R-1 percentile correctness
+  on a known 1..10 sequence, the `minCost` noise floor (both
+  re-shaping percentiles and removing a source entirely), the
+  half-open `[since, until)` window, the `--source` filter, sort
+  with name tiebreak + top cap, `sort=p99` lifting a spiky source
+  above a steady one, `minBuckets` as a display-only filter, and
+  full report-echo of options. Total `test(` declarations grew
+  1272 → 1291.
+
 ## 0.5.6 — 2026-04-26
 
 ### Added
