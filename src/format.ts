@@ -2247,6 +2247,7 @@ import type { BurstinessReport } from './burstiness.js';
 import type { DeviceShareReport } from './deviceshare.js';
 import type { OutputInputRatioReport } from './outputinputratio.js';
 import type { ModelMixEntropyReport } from './modelmixentropy.js';
+import type { WeekendVsWeekdayReport } from './weekendvsweekday.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2803,6 +2804,65 @@ export function renderModelMixEntropy(r: ModelMixEntropyReport): string {
       lines.push(renderTableLocal(['source', 'model', 'tokens', 'share'], tkRows));
     }
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderWeekendVsWeekday(r: WeekendVsWeekdayReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights weekend-vs-weekday'));
+  const ratioStr = !Number.isFinite(r.weekendToWeekdayRatio)
+    ? '∞'
+    : r.weekendToWeekdayRatio.toFixed(3);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    tokens: ${formatNumber(r.totalTokens)}    weekend: ${formatNumber(r.weekendTokens)} (${(r.weekendShare * 100).toFixed(2)}%)    weekday: ${formatNumber(r.weekdayTokens)}    ratio (we/wd): ${ratioStr}    models: ${formatNumber(r.totalModels)}    shown: ${formatNumber(r.models.length)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedMinRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(chalk.dim(`(weekend = Sat/Sun in UTC; "calendar-balanced" reference ratio is 2/5 = 0.400)`));
+  lines.push('');
+
+  if (r.totalTokens === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows in the window with positive tokens. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-model weekend vs weekday split (sorted by total tokens desc)`));
+  const headers = [
+    'model',
+    'tokens',
+    'we tok',
+    'wd tok',
+    'we%',
+    'we/wd',
+    'we rows',
+    'wd rows',
+    'sources',
+    'first seen',
+    'last seen',
+  ];
+  const rows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.totalTokens),
+    formatNumber(m.weekendTokens),
+    formatNumber(m.weekdayTokens),
+    (m.weekendShare * 100).toFixed(1) + '%',
+    !Number.isFinite(m.weekendToWeekdayRatio) ? '∞' : m.weekendToWeekdayRatio.toFixed(3),
+    formatNumber(m.weekendRows),
+    formatNumber(m.weekdayRows),
+    formatNumber(m.distinctSources),
+    m.firstSeen.slice(0, 16) + 'Z',
+    m.lastSeen.slice(0, 16) + 'Z',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

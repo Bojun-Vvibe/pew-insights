@@ -61,6 +61,7 @@ import {
   renderDeviceShare,
   renderOutputInputRatio,
   renderModelMixEntropy,
+  renderWeekendVsWeekday,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -142,6 +143,7 @@ import { buildPeakHourShare } from './peakhour.js';
 import { buildWeekdayShare } from './weekdayshare.js';
 import { buildBurstiness } from './burstiness.js';
 import { buildDeviceShare } from './deviceshare.js';
+import { buildWeekendVsWeekday } from './weekendvsweekday.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -2963,6 +2965,56 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderModelMixEntropy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('weekend-vs-weekday')
+  .description('Per-model weekend (Sat/Sun UTC) vs weekday token mass split with ratio')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-rows <n>',
+    'hide models with fewer than n considered rows (weekend+weekday); counts surface as droppedMinRows (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n models by total tokens; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; minRows: string; top: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 0) {
+          throw new Error(`--min-rows must be a non-negative integer (got ${opts.minRows})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildWeekendVsWeekday(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minRows,
+          top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderWeekendVsWeekday(report) + '\n');
         }
       } catch (e) {
         die(e);
