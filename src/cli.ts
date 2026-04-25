@@ -68,6 +68,7 @@ import {
   renderBucketIntensity,
   renderModelTenure,
   renderTailShare,
+  renderTenureDensityQuadrant,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -155,6 +156,7 @@ import { buildModelCohabitation } from './modelcohabitation.js';
 import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildBucketIntensity } from './bucketintensity.js';
 import { buildModelTenure } from './modeltenure.js';
+import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3425,6 +3427,82 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderTailShare(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('tenure-vs-density-quadrant')
+  .description('Classify each model into a 2×2 quadrant by (long/short tenure × dense/sparse density), with global medians as splits')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-buckets <n>',
+    'drop models whose activeBuckets < n before computing medians; suppressed rows surface as droppedSparseModels (default 0 = no floor)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap each quadrant\'s displayed model list to the top n rows; remainder surface as droppedTop per quadrant (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key inside each quadrant's models[]: 'tokens' (default) | 'span' | 'density' | 'active'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minBuckets: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'span' &&
+          opts.sort !== 'density' &&
+          opts.sort !== 'active'
+        ) {
+          throw new Error(
+            `--sort must be 'tokens' | 'span' | 'density' | 'active' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildTenureDensityQuadrant(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minBuckets,
+          top,
+          sort: opts.sort as 'tokens' | 'span' | 'density' | 'active',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderTenureDensityQuadrant(report) + '\n');
         }
       } catch (e) {
         die(e);

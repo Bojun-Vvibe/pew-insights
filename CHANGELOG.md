@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.67 — 2026-04-25
+
+### Added
+
+- New subcommand: `tenure-vs-density-quadrant`. Classifies each model
+  into a 2×2 quadrant by `(long/short tenure × dense/sparse density)`,
+  where the splits are the global medians of the surviving population.
+  - `tenure` = clock hours from each model's firstSeen to lastSeen.
+  - `density` = total tokens / activeBuckets (mean per-bucket mass).
+  - Splits: `>= medianSpanHours` → long, `>= medianDensity` → dense
+    (ties go long/dense). Even-N median is the arithmetic mean of the
+    two middle values.
+  - Output is the four quadrants in fixed order (long-dense,
+    long-sparse, short-dense, short-sparse) with per-quadrant
+    `count`, `tokens`, `activeBuckets`, and the model rows that
+    landed there.
+
+  Why a separate subcommand:
+  - `model-tenure` reports each model's span/active-buckets/tokens
+    individually but never *classifies* models into a population-relative
+    grid. The quadrant assignment is the new artifact here.
+  - `bucket-intensity` reports per-bucket magnitude distributions per
+    model — no tenure axis, no cross-model classification.
+  - `model-mix-entropy` collapses model usage into a single concentration
+    scalar per window — not per-model and not bivariate.
+  - `tail-share` is a per-source Pareto over buckets — sources, not
+    models, and no tenure axis.
+
+  13 new tests (916 total, up from 903): option validation; empty
+  queue; drop counters (zero-tokens, bad hour_start, source filter);
+  4-model fixture splitting cleanly into 4 quadrants by medians;
+  per-row tokens/activeBuckets/density correctness; tie-break rule
+  (>=) puts ties in long/dense; minBuckets floor excludes sparse
+  models from medians; top cap truncates per-quadrant lists with
+  droppedTop accounting; sort=span ordering; window since/until
+  filtering; determinism; option echoing.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights tenure-vs-density-quadrant
+  as of: 2026-04-25T06:05:41Z    models: 15    active-buckets: 1,243    tokens: 8,405,330,484    minBuckets: 0    sort: tokens
+  splits: medianSpanHours=1044.00    medianDensity=109646    (>= medianSpanHours -> long; >= medianDensity -> dense; ties go long/dense)
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 sparse models (0 buckets)
+
+  quadrant summary
+  quadrant      models  tokens         active-buckets
+  ------------  ------  -------------  --------------
+  long-dense    3       1,192,297,888  206
+  long-sparse   5       1,275,224      323
+  short-dense   5       7,211,406,460  709
+  short-sparse  2       350,912        5
+  ```
+
+  Headline read: short-dense holds 86% of tokens (claude-opus-4.7 +
+  gpt-5.4 are the heavy hitters), while long-sparse holds 5 long-lived
+  models contributing only ~0.015% of tokens — they're persistent
+  background presences, not workload drivers.
+
 ## 0.4.66 — 2026-04-25
 
 ### Added

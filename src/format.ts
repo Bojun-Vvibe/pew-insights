@@ -20,6 +20,7 @@ import type { AgentMixReport } from './agentmix.js';
 import type { SessionLengthsReport } from './sessionlengths.js';
 import type { ModelTenureReport } from './modeltenure.js';
 import type { TailShareReport } from './tailshare.js';
+import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3285,6 +3286,71 @@ export function renderTailShare(r: TailShareReport): string {
     s.giniLike.toFixed(3),
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderTenureDensityQuadrant(r: TenureDensityQuadrantReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights tenure-vs-density-quadrant'));
+  const med = (x: number | null, digits: number) =>
+    x === null ? 'n/a' : x.toFixed(digits);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)}    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `splits: medianSpanHours=${med(r.medianSpanHours, 2)}    medianDensity=${med(r.medianDensity, 0)}    (>= medianSpanHours -> long; >= medianDensity -> dense; ties go long/dense)`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseModels)} sparse models (${formatNumber(r.droppedSparseBuckets)} buckets)`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push('');
+
+  if (r.totalModels === 0) {
+    lines.push(chalk.yellow('  no models survived filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  // Quadrant summary table.
+  lines.push(chalk.bold('quadrant summary'));
+  const sumHeaders = ['quadrant', 'models', 'tokens', 'active-buckets'];
+  const sumRows: string[][] = r.quadrants.map((q) => [
+    q.quadrant,
+    formatNumber(q.count),
+    formatNumber(q.tokens),
+    formatNumber(q.activeBuckets),
+  ]);
+  lines.push(renderTableLocal(sumHeaders, sumRows));
+  lines.push('');
+
+  // Per-quadrant model lists.
+  for (const q of r.quadrants) {
+    if (q.count === 0) continue;
+    const capLabel = r.top > 0 ? ` (shown ${q.models.length} of ${q.count}; ${q.droppedTop} below top cap)` : '';
+    lines.push(chalk.bold(`${q.quadrant}${capLabel}`));
+    const headers = ['model', 'span-hr', 'active-buckets', 'tokens', 'density'];
+    const rows: string[][] = q.models.map((m) => [
+      m.model,
+      m.spanHours.toFixed(1),
+      formatNumber(m.activeBuckets),
+      formatNumber(m.tokens),
+      formatNumber(Math.round(m.density)),
+    ]);
+    lines.push(renderTableLocal(headers, rows));
+    lines.push('');
+  }
 
   return lines.join('\n').replace(/\n+$/, '');
 }
