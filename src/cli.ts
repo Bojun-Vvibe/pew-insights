@@ -4078,6 +4078,11 @@ program
     "sort key for days[]: 'day' (default, desc) | 'sources' (desc) | 'tokens' (desc) | 'buckets' (desc)",
     'day',
   )
+  .option(
+    '--min-sources <n>',
+    'drop days whose sourceCount < n before computing summary stats AND days[]; suppressed days surface as droppedBelowMinSources. Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4087,6 +4092,7 @@ program
         source?: string;
         top: string;
         sort: string;
+        minSources: string;
         json?: boolean;
       },
       cmd,
@@ -4097,6 +4103,10 @@ program
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minSources = Number.parseInt(opts.minSources, 10);
+        if (!Number.isInteger(minSources) || minSources < 0) {
+          throw new Error(`--min-sources must be a non-negative integer (got ${opts.minSources})`);
         }
         if (
           opts.sort !== 'day' &&
@@ -4115,6 +4125,7 @@ program
           source: opts.source ?? null,
           top,
           sort: opts.sort as 'day' | 'sources' | 'tokens' | 'buckets',
+          minSources,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

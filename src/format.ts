@@ -3817,9 +3817,12 @@ export function renderSourceBreadthPerDay(r: SourceBreadthPerDayReport): string 
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptySource)} empty source, ${formatNumber(r.droppedTopDays)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptySource)} empty source, ${formatNumber(r.droppedBelowMinSources)} below min-sources floor, ${formatNumber(r.droppedTopDays)} below top cap`,
     ),
   );
+  if (r.minSources > 0) {
+    lines.push(chalk.dim(`min-sources floor: ${r.minSources} (drops days with sourceCount < ${r.minSources} from stats AND days[])`));
+  }
   if (r.windowStart || r.windowEnd) {
     lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
   }

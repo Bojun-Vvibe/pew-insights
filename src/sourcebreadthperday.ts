@@ -65,6 +65,17 @@ export interface SourceBreadthPerDayOptions {
    * Tiebreak in all non-default cases: day desc.
    */
   sort?: 'day' | 'sources' | 'tokens' | 'buckets';
+  /**
+   * Drop days whose `sourceCount` is strictly less than the floor
+   * *before* computing summary stats and `days[]`. Suppressed days
+   * surface as `droppedBelowMinSources`. Default 0 = no floor.
+   *
+   * Like `--min-span` on `active-span-per-day`, this affects both
+   * `days[]` *and* every summary aggregate. The point is to
+   * characterise the *multi-tool day* distribution, so stats
+   * should reflect the post-floor population.
+   */
+  minSources?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -91,6 +102,8 @@ export interface SourceBreadthPerDayReport {
   top: number;
   /** Echo of the resolved `sort` key. */
   sort: 'day' | 'sources' | 'tokens' | 'buckets';
+  /** Echo of the resolved `minSources` floor (0 = no floor). */
+  minSources: number;
   /** Distinct UTC calendar days with at least one positive-token row. */
   distinctDays: number;
   /** Sum of total_tokens across the *full* population (pre top cap). */
@@ -121,6 +134,8 @@ export interface SourceBreadthPerDayReport {
   droppedSourceFilter: number;
   /** Rows with empty/non-string source value. */
   droppedEmptySource: number;
+  /** Days dropped because sourceCount < minSources. */
+  droppedBelowMinSources: number;
   /** Day rows hidden by the `top` cap. */
   droppedTopDays: number;
   /** Per-day rows after sort + top cap. */
@@ -144,6 +159,12 @@ export function buildSourceBreadthPerDay(
   ) {
     throw new Error(
       `sort must be 'day' | 'sources' | 'tokens' | 'buckets' (got ${opts.sort})`,
+    );
+  }
+  const minSources = opts.minSources ?? 0;
+  if (!Number.isInteger(minSources) || minSources < 0) {
+    throw new Error(
+      `minSources must be a non-negative integer (got ${opts.minSources})`,
     );
   }
 
@@ -209,18 +230,37 @@ export function buildSourceBreadthPerDay(
     acc.tokens += tt;
   }
 
-  const allDays: SourceBreadthPerDayRow[] = [];
-  let totalTokens = 0;
+  const allDaysRaw: SourceBreadthPerDayRow[] = [];
+  let totalTokensRaw = 0;
   for (const [day, acc] of perDay.entries()) {
     const sortedSources = [...acc.sources].sort();
-    allDays.push({
+    allDaysRaw.push({
       day,
       sourceCount: acc.sources.size,
       sources: sortedSources.join(','),
       bucketsOnDay: acc.buckets.size,
       tokensOnDay: acc.tokens,
     });
-    totalTokens += acc.tokens;
+    totalTokensRaw += acc.tokens;
+  }
+
+  // Apply minSources floor BEFORE computing summary stats and days[].
+  let droppedBelowMinSources = 0;
+  let allDays: SourceBreadthPerDayRow[] = allDaysRaw;
+  let totalTokens = totalTokensRaw;
+  if (minSources > 0) {
+    const kept: SourceBreadthPerDayRow[] = [];
+    let keptTokens = 0;
+    for (const d of allDaysRaw) {
+      if (d.sourceCount < minSources) {
+        droppedBelowMinSources += 1;
+      } else {
+        kept.push(d);
+        keptTokens += d.tokensOnDay;
+      }
+    }
+    allDays = kept;
+    totalTokens = keptTokens;
   }
 
   const distinctDays = allDays.length;
@@ -274,6 +314,7 @@ export function buildSourceBreadthPerDay(
     source: sourceFilter,
     top,
     sort,
+    minSources,
     distinctDays,
     totalTokens,
     sourceCountMin,
@@ -289,6 +330,7 @@ export function buildSourceBreadthPerDay(
     droppedZeroTokens,
     droppedSourceFilter,
     droppedEmptySource,
+    droppedBelowMinSources,
     droppedTopDays,
     days: kept,
   };

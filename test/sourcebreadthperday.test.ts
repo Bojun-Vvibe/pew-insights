@@ -282,3 +282,84 @@ test('source-breadth-per-day: source filter degenerates sourceCount to 1', () =>
   assert.equal(r.multiSourceDays, 0);
   assert.equal(r.source, 'codex');
 });
+
+// ---- --min-sources floor (refinement) -------------------------------------
+
+test('source-breadth-per-day: rejects bad minSources', () => {
+  assert.throws(() => buildSourceBreadthPerDay([], { minSources: -1 }));
+  assert.throws(() => buildSourceBreadthPerDay([], { minSources: 1.5 }));
+});
+
+test('source-breadth-per-day: --min-sources filters sub-floor days from stats AND days[], totalTokens reflects post-floor', () => {
+  const lines: QueueLine[] = [
+    // day 1: 1 source, 100 tokens
+    ql('2026-04-15T08:00:00Z', { source: 's1', total_tokens: 100 }),
+    // day 2: 1 source, 50 tokens
+    ql('2026-04-16T08:00:00Z', { source: 's1', total_tokens: 50 }),
+    // day 3: 2 sources, 200 + 200 = 400 tokens
+    ql('2026-04-17T08:00:00Z', { source: 's1', total_tokens: 200 }),
+    ql('2026-04-17T09:00:00Z', { source: 's2', total_tokens: 200 }),
+    // day 4: 3 sources, 300 + 300 + 300 = 900 tokens
+    ql('2026-04-18T08:00:00Z', { source: 's1', total_tokens: 300 }),
+    ql('2026-04-18T09:00:00Z', { source: 's2', total_tokens: 300 }),
+    ql('2026-04-18T10:00:00Z', { source: 's3', total_tokens: 300 }),
+  ];
+  const r = buildSourceBreadthPerDay(lines, { minSources: 2, generatedAt: GEN });
+  assert.equal(r.minSources, 2);
+  assert.equal(r.droppedBelowMinSources, 2); // day 1 + day 2
+  assert.equal(r.distinctDays, 2); // post-floor population
+  assert.equal(r.totalTokens, 1300); // 400 + 900, post-floor
+  assert.equal(r.sourceCountMin, 2);
+  assert.equal(r.sourceCountMax, 3);
+  // singleSourceDays counts inside post-floor population only
+  assert.equal(r.singleSourceDays, 0);
+  assert.equal(r.multiSourceDays, 2);
+  assert.equal(r.multiSourceShare, 1);
+  // days[] also post-floor
+  assert.equal(r.days.length, 2);
+  for (const d of r.days) {
+    assert.ok(d.sourceCount >= 2);
+  }
+});
+
+test('source-breadth-per-day: --min-sources=0 is no-op (default)', () => {
+  const lines: QueueLine[] = [
+    ql('2026-04-15T08:00:00Z', { source: 's1' }),
+    ql('2026-04-16T08:00:00Z', { source: 's1' }),
+    ql('2026-04-16T09:00:00Z', { source: 's2' }),
+  ];
+  const r0 = buildSourceBreadthPerDay(lines, { generatedAt: GEN });
+  const rExplicit = buildSourceBreadthPerDay(lines, { minSources: 0, generatedAt: GEN });
+  assert.equal(r0.distinctDays, rExplicit.distinctDays);
+  assert.equal(r0.droppedBelowMinSources, 0);
+  assert.equal(rExplicit.droppedBelowMinSources, 0);
+  assert.equal(r0.totalTokens, rExplicit.totalTokens);
+});
+
+test('source-breadth-per-day: --min-sources combines correctly with --top (top caps post-floor population)', () => {
+  // 5 days: counts [1, 1, 2, 3, 4] (newest -> oldest day1 is oldest)
+  const lines: QueueLine[] = [];
+  // day 1: 1 source
+  lines.push(ql('2026-04-11T08:00:00Z', { source: 's1' }));
+  // day 2: 1 source
+  lines.push(ql('2026-04-12T08:00:00Z', { source: 's1' }));
+  // day 3: 2 sources
+  lines.push(ql('2026-04-13T08:00:00Z', { source: 's1' }));
+  lines.push(ql('2026-04-13T09:00:00Z', { source: 's2' }));
+  // day 4: 3 sources
+  lines.push(ql('2026-04-14T08:00:00Z', { source: 's1' }));
+  lines.push(ql('2026-04-14T09:00:00Z', { source: 's2' }));
+  lines.push(ql('2026-04-14T10:00:00Z', { source: 's3' }));
+  // day 5: 4 sources
+  lines.push(ql('2026-04-15T08:00:00Z', { source: 's1' }));
+  lines.push(ql('2026-04-15T09:00:00Z', { source: 's2' }));
+  lines.push(ql('2026-04-15T10:00:00Z', { source: 's3' }));
+  lines.push(ql('2026-04-15T11:00:00Z', { source: 's4' }));
+  const r = buildSourceBreadthPerDay(lines, { minSources: 2, top: 2, generatedAt: GEN });
+  assert.equal(r.droppedBelowMinSources, 2); // day 1 + day 2
+  assert.equal(r.distinctDays, 3); // post-floor: days 3, 4, 5
+  assert.equal(r.days.length, 2); // top cap
+  assert.equal(r.droppedTopDays, 1);
+  // default sort = day desc => newest first => 2026-04-15, 2026-04-14
+  assert.deepEqual(r.days.map((d) => d.day), ['2026-04-15', '2026-04-14']);
+});

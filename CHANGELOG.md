@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.84 — 2026-04-25
+
+### Added
+
+- `source-breadth-per-day`: `--min-sources <n>` flag. Drop days
+  whose `sourceCount` is strictly less than the floor *before*
+  computing summary stats and `days[]`. Suppressed days surface
+  as `droppedBelowMinSources`. Default 0 = no floor.
+
+  Why: 0.4.83's `sourceCountMean=1.33` is dragged toward 1 by
+  the long tail of single-source days (84.8% of the population).
+  A `--min-sources 2` floor restricts the analysis to days where
+  the user genuinely *was* multi-tool — the population that
+  actually represents tool-diversity behaviour rather than
+  baseline single-tool usage. Combined with `--sort sources`
+  this surfaces the most-diverse multi-tool days, not the
+  thousands of solo-tool days that drown out the signal.
+
+  Note: like `--min-span` on `active-span-per-day` (and unlike
+  `--top`, which is display-only), `--min-sources` affects both
+  `days[]` *and* every summary aggregate including
+  `totalTokens`, `singleSourceDays`, and `multiSourceShare`. This
+  is intentional — the whole point is to characterise the
+  *multi-tool day* distribution, so stats should reflect the
+  post-floor population.
+
+  4 new tests (1080 total, up from 1076): rejects bad
+  minSources, filters sub-floor days from both stats and days[]
+  with totalTokens reflecting post-floor sum, --min-sources=0
+  is a true no-op, and combines correctly with --top (top caps
+  post-floor population).
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--min-sources 2 --sort sources --top 8` (banned product
+  names redacted as `[REDACTED]`):
+
+  ```
+  pew-insights source-breadth-per-day
+  as of: 2026-04-25T11:02:25.257Z    days: 16 (shown 8)    tokens: 7,765,087,829    sort: sources
+  sourceCount: min=2 p25=2 median=3 mean=3.19 p75=4 max=6
+  single-source: 0    multi-source: 16    multi-share: 100.0%
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 empty source, 89 below min-sources floor, 8 below top cap
+  min-sources floor: 2 (drops days with sourceCount < 2 from stats AND days[])
+
+  day (UTC)   sources  source-list                                              buckets  tokens
+  ----------  -------  -------------------------------------------------------  -------  -------------
+  2026-04-20  6        claude-code,codex,hermes,openclaw,opencode,[REDACTED]    48       1,773,838,138
+  2026-04-17  5        claude-code,codex,hermes,openclaw,[REDACTED]             23       132,896,161
+  2026-04-23  4        claude-code,hermes,openclaw,opencode                     48       695,192,088
+  2026-04-21  4        claude-code,hermes,openclaw,opencode                     48       1,122,611,203
+  2026-04-19  4        claude-code,codex,hermes,openclaw                        48       659,027,845
+  2026-04-18  4        claude-code,codex,hermes,openclaw                        36       922,235,800
+  2026-04-25  3        hermes,openclaw,opencode                                 22       295,473,307
+  2026-04-24  3        hermes,openclaw,opencode                                 48       627,251,216
+  ```
+
+  Headline: with the floor applied (89 single-source days
+  excluded), the 105-day population shrinks to 16 "real
+  multi-tool days". Median sourceCount jumps from 1 (all days)
+  to 3 — i.e. on a day where the user is genuinely multi-tool,
+  the typical breadth is 3 distinct sources. Multi-share is
+  trivially 100% by construction (the floor guarantees it).
+  The 6-source peak day stays as the all-time outlier.
+
 ## 0.4.83 — 2026-04-25
 
 ### Added
