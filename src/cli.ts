@@ -3687,6 +3687,11 @@ program
     'surface the heaviest N individual buckets (with hour_start/source/model/decile) under topBuckets, for D10 outlier drill-down. Default 0 = no top list.',
     '0',
   )
+  .option(
+    '--bottom <n>',
+    'surface the lightest N individual buckets under bottomBuckets, sorted ascending. Default 0 = no bottom list.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3696,6 +3701,7 @@ program
         source?: string;
         minInput: string;
         top: string;
+        bottom: string;
         json?: boolean;
       },
       cmd,
@@ -3711,6 +3717,10 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const bottom = Number.parseInt(opts.bottom, 10);
+        if (!Number.isInteger(bottom) || bottom < 0) {
+          throw new Error(`--bottom must be a non-negative integer (got ${opts.bottom})`);
+        }
         const queue = await readQueue(paths);
         const report = buildInputTokenDecileDistribution(queue, {
           since: opts.since ?? null,
@@ -3718,6 +3728,7 @@ program
           source: opts.source ?? null,
           minInput,
           top,
+          bottom,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

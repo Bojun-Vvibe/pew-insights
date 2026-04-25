@@ -4615,5 +4615,21 @@ export function renderInputTokenDecileDistribution(
     lines.push(renderTableLocal(topHeaders, topRows));
   }
 
+  if (r.bottomBuckets.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`bottom ${r.bottomBuckets.length} lightest individual buckets`));
+    const botHeaders = ['rank', 'hour_start', 'source', 'model', 'input-tokens', 'decile', 'share'];
+    const botRows: string[][] = r.bottomBuckets.map((b, i) => [
+      String(i + 1),
+      b.hourStart,
+      b.source,
+      b.model,
+      formatNumber(b.inputTokens),
+      'D' + b.decile,
+      (b.shareOfTotal * 100).toFixed(2) + '%',
+    ]);
+    lines.push(renderTableLocal(botHeaders, botRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

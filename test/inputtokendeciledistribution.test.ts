@@ -298,3 +298,80 @@ test('input-token-decile-distribution: top respects minInput floor (only floor s
   assert.equal(r.topBuckets[1]!.inputTokens, 19);
   assert.equal(r.topBuckets[2]!.inputTokens, 18);
 });
+
+// ---- bottom lightest buckets refinement (v0.5.4) -------------------------
+
+test('input-token-decile-distribution: rejects bad bottom', () => {
+  assert.throws(() => buildInputTokenDecileDistribution([], { bottom: -1 }));
+  assert.throws(() => buildInputTokenDecileDistribution([], { bottom: 1.5 }));
+  assert.throws(() => buildInputTokenDecileDistribution([], { bottom: NaN }));
+});
+
+test('input-token-decile-distribution: bottom=0 default emits empty bottomBuckets', () => {
+  const rows: QueueLine[] = [];
+  for (let i = 1; i <= 5; i++) rows.push(ql(i * 100));
+  const r = buildInputTokenDecileDistribution(rows, { generatedAt: GEN });
+  assert.equal(r.bottom, 0);
+  assert.deepEqual(r.bottomBuckets, []);
+});
+
+test('input-token-decile-distribution: bottom=3 returns 3 lightest ascending with metadata + decile tag', () => {
+  const rows: QueueLine[] = [
+    ql(100, { hour_start: '2026-04-20T00:00:00.000Z', source: 'codex', model: 'gpt-5' }),
+    ql(900, { hour_start: '2026-04-20T01:00:00.000Z', source: 'cli-a', model: 'm-a' }),
+    ql(500, { hour_start: '2026-04-20T02:00:00.000Z', source: 'cli-b', model: 'm-b' }),
+    ql(800, { hour_start: '2026-04-20T03:00:00.000Z', source: 'cli-c', model: 'm-c' }),
+    ql(200, { hour_start: '2026-04-20T04:00:00.000Z', source: 'cli-d', model: 'm-d' }),
+  ];
+  const r = buildInputTokenDecileDistribution(rows, { bottom: 3, generatedAt: GEN });
+  assert.equal(r.bottomBuckets.length, 3);
+  // ascending: 100, 200, 500
+  assert.equal(r.bottomBuckets[0]!.inputTokens, 100);
+  assert.equal(r.bottomBuckets[0]!.source, 'codex');
+  assert.equal(r.bottomBuckets[0]!.decile, 1);
+  assert.equal(r.bottomBuckets[1]!.inputTokens, 200);
+  assert.equal(r.bottomBuckets[1]!.decile, 2);
+  assert.equal(r.bottomBuckets[2]!.inputTokens, 500);
+  assert.equal(r.bottomBuckets[2]!.decile, 3);
+});
+
+test('input-token-decile-distribution: top + bottom can be requested together and are independent', () => {
+  const rows: QueueLine[] = [];
+  for (let i = 1; i <= 10; i++) rows.push(ql(i * 100));
+  const r = buildInputTokenDecileDistribution(rows, {
+    top: 2,
+    bottom: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.topBuckets.length, 2);
+  assert.equal(r.topBuckets[0]!.inputTokens, 1000);
+  assert.equal(r.topBuckets[1]!.inputTokens, 900);
+  assert.equal(r.bottomBuckets.length, 2);
+  assert.equal(r.bottomBuckets[0]!.inputTokens, 100);
+  assert.equal(r.bottomBuckets[1]!.inputTokens, 200);
+});
+
+test('input-token-decile-distribution: bottom respects minInput floor (only floor survivors are eligible)', () => {
+  const rows: QueueLine[] = [];
+  for (let i = 1; i <= 20; i++) rows.push(ql(i, { hour_start: `2026-04-20T${String(i).padStart(2, '0')}:00:00.000Z` }));
+  const r = buildInputTokenDecileDistribution(rows, {
+    minInput: 15,
+    bottom: 3,
+    generatedAt: GEN,
+  });
+  assert.equal(r.bottomBuckets.length, 3);
+  // Survivors: 15..20. Lightest 3 = 15, 16, 17.
+  assert.equal(r.bottomBuckets[0]!.inputTokens, 15);
+  assert.equal(r.bottomBuckets[1]!.inputTokens, 16);
+  assert.equal(r.bottomBuckets[2]!.inputTokens, 17);
+});
+
+test('input-token-decile-distribution: bottom capped at bucketCount', () => {
+  const r = buildInputTokenDecileDistribution(
+    [ql(10), ql(20)],
+    { bottom: 99, generatedAt: GEN },
+  );
+  assert.equal(r.bottomBuckets.length, 2);
+  assert.equal(r.bottomBuckets[0]!.inputTokens, 10);
+  assert.equal(r.bottomBuckets[1]!.inputTokens, 20);
+});

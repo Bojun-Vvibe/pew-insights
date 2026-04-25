@@ -67,6 +67,14 @@ export interface InputTokenDecileDistributionOptions {
    * actual surviving population.
    */
   top?: number;
+  /**
+   * Surface the lightest N individual buckets (after all filters
+   * and the minInput floor) as `bottomBuckets`, sorted ascending.
+   * Useful for understanding the long-tail floor — what does a
+   * "minimum-viable hour" actually look like? Default 0 = no
+   * bottom list. Capped at the actual surviving population.
+   */
+  bottom?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -97,6 +105,8 @@ export interface InputTokenDecileDistributionReport {
   minInput: number;
   /** Echo of the resolved `top` cap (0 = no top list). */
   top: number;
+  /** Echo of the resolved `bottom` cap (0 = no bottom list). */
+  bottom: number;
   /** Number of bucket rows kept for the analysis. */
   bucketCount: number;
   /** Sum of input_tokens across all kept rows. */
@@ -124,6 +134,12 @@ export interface InputTokenDecileDistributionReport {
    * Length == min(top, bucketCount). Empty when top=0 or no rows.
    */
   topBuckets: InputBucketRow[];
+  /**
+   * Lightest individual buckets, sorted ascending by input_tokens.
+   * Length == min(bottom, bucketCount). Empty when bottom=0 or
+   * no rows.
+   */
+  bottomBuckets: InputBucketRow[];
 }
 
 export interface InputBucketRow {
@@ -159,6 +175,10 @@ export function buildInputTokenDecileDistribution(
   const top = opts.top ?? 0;
   if (!Number.isFinite(top) || top < 0 || !Number.isInteger(top)) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const bottom = opts.bottom ?? 0;
+  if (!Number.isFinite(bottom) || bottom < 0 || !Number.isInteger(bottom)) {
+    throw new Error(`bottom must be a non-negative integer (got ${opts.bottom})`);
   }
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
 
@@ -307,6 +327,23 @@ export function buildInputTokenDecileDistribution(
     }
   }
 
+  const bottomBuckets: InputBucketRow[] = [];
+  if (bottom > 0 && bucketCount > 0) {
+    const k = Math.min(bottom, bucketCount);
+    // Pull from the low end of the sorted array; ascending order.
+    for (let i = 0; i < k; i++) {
+      const e = kept[i]!;
+      bottomBuckets.push({
+        hourStart: e.hourStart,
+        source: e.source,
+        model: e.model,
+        inputTokens: e.inp,
+        decile: decileOf[i]!,
+        shareOfTotal: totalInputTokens > 0 ? e.inp / totalInputTokens : 0,
+      });
+    }
+  }
+
   return {
     generatedAt,
     windowStart: opts.since ?? null,
@@ -314,6 +351,7 @@ export function buildInputTokenDecileDistribution(
     source: sourceFilter,
     minInput,
     top,
+    bottom,
     bucketCount,
     totalInputTokens,
     gini,
@@ -326,6 +364,7 @@ export function buildInputTokenDecileDistribution(
     droppedSourceFilter,
     deciles,
     topBuckets,
+    bottomBuckets,
   };
 }
 

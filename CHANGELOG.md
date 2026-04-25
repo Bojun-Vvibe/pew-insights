@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.4 — 2026-04-26
+
+### Added
+
+- `input-token-decile-distribution --bottom <n>`: symmetric to
+  `--top`. Surface the lightest N individual buckets after all
+  filters and the `--min-input` floor, sorted ascending by
+  input_tokens. Same metadata payload (hour_start, source,
+  model, decile, shareOfTotal). Default 0 = no bottom list.
+  Capped at the surviving population. Independent of `--top` —
+  both can be requested together to get a single command that
+  prints both ends of the distribution.
+
+  Why: D10 outliers dominate cost, but the D1 floor is an
+  equally interesting question — *what does a "minimum-viable
+  hour" actually look like?* Is it always the same source?
+  Always a model that supports prompt caching? Are the
+  smallest hours dominated by one-shot completions, or are
+  they genuinely small genuinely-multi-turn sessions? The
+  decile aggregate flattens this; the bucket-level peek
+  answers it directly.
+
+  6 new tests (1270 total, up from 1264): rejects bad
+  `--bottom` (negative, fractional, NaN); default 0 emits
+  empty `bottomBuckets`; bottom=3 returns 3 lightest ascending
+  with full metadata + correct decile tag; top + bottom
+  together remain independent; bottom respects the minInput
+  floor; bottom capped at bucketCount.
+
+### Live-smoke output
+
+`pew-insights input-token-decile-distribution --top 3 --bottom 3`
+against `~/.config/pew/queue.jsonl`:
+
+```
+top 3 heaviest individual buckets
+rank  hour_start                source       model            input-tokens  decile  share
+----  ------------------------  -----------  ---------------  ------------  ------  -----
+1     2026-04-21T01:00:00.000Z  claude-code  claude-opus-4.7  55,738,577    D10     1.65%
+2     2026-04-21T01:30:00.000Z  claude-code  claude-opus-4.7  45,231,898    D10     1.34%
+3     2026-04-20T15:00:00.000Z  claude-code  claude-opus-4.7  40,051,797    D10     1.18%
+
+bottom 3 lightest individual buckets
+rank  hour_start                source       model               input-tokens  decile  share
+----  ------------------------  -----------  ------------------  ------------  ------  -----
+1     2026-04-23T09:00:00.000Z  opencode     claude-opus-4.7     2,441         D1      0.00%
+2     2026-04-16T07:00:00.000Z  claude-code  claude-opus-4.6-1m  5,721         D1      0.00%
+3     2026-04-20T00:00:00.000Z  opencode     claude-opus-4.7     8,348         D1      0.00%
+```
+
+Headline: the **lightest 3 hours sit at 2.4K, 5.7K, and 8.3K
+input tokens — five orders of magnitude below the heaviest 3
+(55.7M, 45.2M, 40.1M)**. The floor is mixed-source (`opencode`
+twice, `claude-code` once) but the ceiling is uniformly
+`claude-code`, confirming the v0.5.3 observation that the
+heavy-input regime is a single agent. The single
+`claude-opus-4.6-1m` model variant only appears in the bottom
+list — its presence at the floor and absence at the ceiling
+suggests that either (a) it's used only for short
+exploratory prompts, or (b) the `-1m` 1M-context tier is
+gated and rarely touched. Either way, no D10 burden comes
+from the 1M-context model — useful negative evidence when
+debating whether to roll it out more aggressively.
+
 ## 0.5.3 — 2026-04-26
 
 ### Added
