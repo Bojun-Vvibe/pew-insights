@@ -334,3 +334,61 @@ test('active-span-per-day: minSpan combines with top cap', () => {
     ['2026-04-22', '2026-04-21'],
   );
 });
+
+// ---- schema sanity --------------------------------------------------------
+
+test('active-span-per-day: report shape includes all documented fields', () => {
+  const r = buildActiveSpanPerDay(
+    [
+      ql('2026-04-20T09:00:00Z'),
+      ql('2026-04-20T11:00:00Z'),
+    ],
+    { generatedAt: GEN, minSpan: 0 },
+  );
+  // Top-level fields
+  const expectedKeys = new Set([
+    'generatedAt',
+    'windowStart',
+    'windowEnd',
+    'source',
+    'top',
+    'sort',
+    'minSpan',
+    'distinctDays',
+    'totalTokens',
+    'spanHoursMin',
+    'spanHoursMax',
+    'spanHoursMean',
+    'spanHoursMedian',
+    'spanHoursP25',
+    'spanHoursP75',
+    'dutyCycleMin',
+    'dutyCycleMax',
+    'dutyCycleMean',
+    'dutyCycleMedian',
+    'dutyCycleP25',
+    'dutyCycleP75',
+    'droppedInvalidHourStart',
+    'droppedZeroTokens',
+    'droppedSourceFilter',
+    'droppedShortSpanDays',
+    'droppedTopDays',
+    'days',
+  ]);
+  for (const k of expectedKeys) {
+    assert.ok(k in r, `missing top-level key: ${k}`);
+  }
+  // Per-day row shape
+  const rowKeys = new Set([
+    'day',
+    'firstHour',
+    'lastHour',
+    'spanHours',
+    'activeBuckets',
+    'dutyCycle',
+    'tokensOnDay',
+  ]);
+  for (const k of rowKeys) {
+    assert.ok(k in r.days[0]!, `missing day row key: ${k}`);
+  }
+});
