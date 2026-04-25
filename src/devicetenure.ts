@@ -90,9 +90,18 @@ export interface DeviceTenureOptions {
    *   - 'density':        tokensPerSpanHour desc (densest first)
    *   - 'sources':        distinctSources desc (broadest CLI host first)
    *   - 'models':         distinctModels desc (broadest model router first)
+   *   - 'gap':            longestGapHours desc (longest dormancy first)
    * Tiebreak in all cases: device key asc (lex).
    */
-  sort?: 'span' | 'active' | 'tokens' | 'density' | 'sources' | 'models';
+  sort?: 'span' | 'active' | 'tokens' | 'density' | 'sources' | 'models' | 'gap';
+  /**
+   * Threshold in hours for the `recentlyActive` per-device flag and
+   * `recentlyActiveCount` summary. A device is `recentlyActive` iff
+   * `(generatedAt - lastSeen) < recentThresholdHours`. Display flag
+   * only — does not change which devices are kept. Default 24.
+   * Range > 0.
+   */
+  recentThresholdHours?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -118,6 +127,26 @@ export interface DeviceTenureRow {
   distinctSources: number;
   /** Number of distinct normalised models seen on this device. */
   distinctModels: number;
+  /**
+   * Longest contiguous idle gap (in hours) between consecutive
+   * active buckets for this device. 0 for a single-bucket device.
+   * Surfaces dormancy patterns within an otherwise-long tenure
+   * (e.g. a laptop that's been around 200 days but had a 60-day
+   * vacation gap).
+   */
+  longestGapHours: number;
+  /**
+   * Hours since `generatedAt - lastSeen`. Useful for ranking
+   * "stale" devices independent of `spanHours`. May be negative if
+   * the test injects a `generatedAt` before the data window.
+   */
+  hoursSinceLastSeen: number;
+  /**
+   * True iff `hoursSinceLastSeen < recentThresholdHours`. A device
+   * may have a long span but be dormant; this flag separates the
+   * two.
+   */
+  recentlyActive: boolean;
 }
 
 export interface DeviceTenureReport {
@@ -131,7 +160,11 @@ export interface DeviceTenureReport {
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
   /** Echo of the resolved `sort` key. */
-  sort: 'span' | 'active' | 'tokens' | 'density' | 'sources' | 'models';
+  sort: 'span' | 'active' | 'tokens' | 'density' | 'sources' | 'models' | 'gap';
+  /** Echo of the resolved `recentThresholdHours`. */
+  recentThresholdHours: number;
+  /** Count of devices flagged `recentlyActive` (full population, pre top cap). */
+  recentlyActiveCount: number;
   /** Distinct devices surviving filters (pre top cap). */
   totalDevices: number;
   /** Sum of activeBuckets across the *full* population (pre top cap). */
@@ -177,10 +210,17 @@ export function buildDeviceTenure(
     sort !== 'tokens' &&
     sort !== 'density' &&
     sort !== 'sources' &&
-    sort !== 'models'
+    sort !== 'models' &&
+    sort !== 'gap'
   ) {
     throw new Error(
-      `sort must be 'span' | 'active' | 'tokens' | 'density' | 'sources' | 'models' (got ${opts.sort})`,
+      `sort must be 'span' | 'active' | 'tokens' | 'density' | 'sources' | 'models' | 'gap' (got ${opts.sort})`,
+    );
+  }
+  const recentThresholdHours = opts.recentThresholdHours ?? 24;
+  if (!Number.isFinite(recentThresholdHours) || recentThresholdHours <= 0) {
+    throw new Error(
+      `recentThresholdHours must be > 0 (got ${opts.recentThresholdHours})`,
     );
   }
 
@@ -199,6 +239,10 @@ export function buildDeviceTenure(
     opts.model != null && opts.model !== '' ? normaliseModel(opts.model) : null;
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
+  const generatedMs = Date.parse(generatedAt);
+  if (!Number.isFinite(generatedMs)) {
+    throw new Error(`invalid generatedAt: ${opts.generatedAt}`);
+  }
 
   interface Acc {
     hours: Set<string>;
@@ -207,6 +251,8 @@ export function buildDeviceTenure(
     firstMs: number;
     lastMs: number;
     tokens: number;
+    /** Sorted list of distinct hour_start ms values for gap computation. */
+    hourMsList: number[];
   }
   const perDevice = new Map<string, Acc>();
 
@@ -257,10 +303,14 @@ export function buildDeviceTenure(
         firstMs: ms,
         lastMs: ms,
         tokens: 0,
+        hourMsList: [],
       };
       perDevice.set(device, acc);
     }
-    acc.hours.add(q.hour_start);
+    if (!acc.hours.has(q.hour_start)) {
+      acc.hours.add(q.hour_start);
+      acc.hourMsList.push(ms);
+    }
     acc.sources.add(source);
     acc.models.add(model);
     if (ms < acc.firstMs) acc.firstMs = ms;
@@ -272,6 +322,7 @@ export function buildDeviceTenure(
   let droppedSparseDevices = 0;
   let totalActiveBuckets = 0;
   let totalTokens = 0;
+  let recentlyActiveCount = 0;
 
   for (const [device, acc] of perDevice.entries()) {
     const activeBuckets = acc.hours.size;
@@ -283,6 +334,18 @@ export function buildDeviceTenure(
       continue;
     }
     const spanHours = (acc.lastMs - acc.firstMs) / HOUR_MS;
+    // Longest contiguous idle gap: scan sorted hour_start ms list.
+    let longestGapHours = 0;
+    if (acc.hourMsList.length >= 2) {
+      const sorted = [...acc.hourMsList].sort((a, b) => a - b);
+      for (let i = 1; i < sorted.length; i++) {
+        const gap = (sorted[i]! - sorted[i - 1]!) / HOUR_MS;
+        if (gap > longestGapHours) longestGapHours = gap;
+      }
+    }
+    const hoursSinceLastSeen = (generatedMs - acc.lastMs) / HOUR_MS;
+    const recentlyActive = hoursSinceLastSeen < recentThresholdHours;
+    if (recentlyActive) recentlyActiveCount += 1;
     devices.push({
       device,
       firstSeen: new Date(acc.firstMs).toISOString(),
@@ -294,6 +357,9 @@ export function buildDeviceTenure(
       tokensPerSpanHour: acc.tokens / Math.max(spanHours, 1),
       distinctSources: acc.sources.size,
       distinctModels: acc.models.size,
+      longestGapHours,
+      hoursSinceLastSeen,
+      recentlyActive,
     });
   }
 
@@ -305,7 +371,8 @@ export function buildDeviceTenure(
     else if (sort === 'density')
       primary = b.tokensPerSpanHour - a.tokensPerSpanHour;
     else if (sort === 'sources') primary = b.distinctSources - a.distinctSources;
-    else primary = b.distinctModels - a.distinctModels;
+    else if (sort === 'models') primary = b.distinctModels - a.distinctModels;
+    else primary = b.longestGapHours - a.longestGapHours;
     if (primary !== 0) return primary;
     return a.device < b.device ? -1 : a.device > b.device ? 1 : 0;
   });
@@ -326,9 +393,11 @@ export function buildDeviceTenure(
     minBuckets,
     top,
     sort,
+    recentThresholdHours,
     totalDevices: devices.length,
     totalActiveBuckets,
     totalTokens,
+    recentlyActiveCount,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,

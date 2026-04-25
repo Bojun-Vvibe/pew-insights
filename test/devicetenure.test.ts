@@ -210,3 +210,95 @@ test('device-tenure: empty device_id falls back to "unknown"', () => {
   assert.equal(r.devices.length, 1);
   assert.equal(r.devices[0]!.device, 'unknown');
 });
+
+// ---- refinement v0.4.90: longestGapHours + recentlyActive ---------------
+
+test('device-tenure: rejects bad recentThresholdHours', () => {
+  assert.throws(() => buildDeviceTenure([], { recentThresholdHours: 0 }));
+  assert.throws(() => buildDeviceTenure([], { recentThresholdHours: -5 }));
+  assert.throws(() =>
+    buildDeviceTenure([], { recentThresholdHours: Number.NaN }),
+  );
+});
+
+test('device-tenure: longestGapHours = 0 for single-bucket device', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+  ];
+  const r = buildDeviceTenure(rows, { generatedAt: GEN });
+  assert.equal(r.devices[0]!.longestGapHours, 0);
+});
+
+test('device-tenure: longestGapHours = max consecutive idle gap in hours', () => {
+  // active buckets: t=0, t=2h, t=10h, t=12h
+  // gaps: 2h, 8h, 2h -> longest = 8h
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+    ql('2026-04-20T02:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+    ql('2026-04-20T10:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+    ql('2026-04-20T12:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+  ];
+  const r = buildDeviceTenure(rows, { generatedAt: GEN });
+  assert.equal(r.devices[0]!.longestGapHours, 8);
+});
+
+test('device-tenure: recentlyActive flag respects recentThresholdHours', () => {
+  // GEN = 2026-04-25T12:00:00.000Z
+  // active: 2026-04-25T00:00:00 -> 12h ago
+  //         2026-04-23T00:00:00 -> 60h ago
+  const rows = [
+    ql('2026-04-25T00:00:00.000Z', 'fresh', 'codex', 'gpt-5', 100),
+    ql('2026-04-23T00:00:00.000Z', 'stale', 'codex', 'gpt-5', 100),
+  ];
+  const r24 = buildDeviceTenure(rows, {
+    generatedAt: GEN,
+    recentThresholdHours: 24,
+  });
+  const fresh = r24.devices.find((d) => d.device === 'fresh')!;
+  const stale = r24.devices.find((d) => d.device === 'stale')!;
+  assert.equal(fresh.recentlyActive, true);
+  assert.equal(stale.recentlyActive, false);
+  assert.equal(r24.recentlyActiveCount, 1);
+  assert.ok(Math.abs(fresh.hoursSinceLastSeen - 12) < 1e-9);
+  assert.ok(Math.abs(stale.hoursSinceLastSeen - 60) < 1e-9);
+
+  // Widen the threshold to 72h: both flip to recentlyActive.
+  const r72 = buildDeviceTenure(rows, {
+    generatedAt: GEN,
+    recentThresholdHours: 72,
+  });
+  assert.equal(r72.recentlyActiveCount, 2);
+  assert.equal(r72.recentThresholdHours, 72);
+});
+
+test('device-tenure: sort=gap orders by longestGapHours desc', () => {
+  const rows = [
+    // devA: gap 1h
+    ql('2026-04-20T00:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+    ql('2026-04-20T01:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+    // devB: gap 5h
+    ql('2026-04-20T00:00:00.000Z', 'devB', 'codex', 'gpt-5', 100),
+    ql('2026-04-20T05:00:00.000Z', 'devB', 'codex', 'gpt-5', 100),
+    // devC: gap 0h (single bucket)
+    ql('2026-04-20T00:00:00.000Z', 'devC', 'codex', 'gpt-5', 100),
+  ];
+  const r = buildDeviceTenure(rows, { generatedAt: GEN, sort: 'gap' });
+  assert.equal(r.devices[0]!.device, 'devB');
+  assert.equal(r.devices[0]!.longestGapHours, 5);
+  assert.equal(r.devices[1]!.device, 'devA');
+  assert.equal(r.devices[2]!.device, 'devC');
+  assert.equal(r.sort, 'gap');
+});
+
+test('device-tenure: longestGapHours dedupes repeated hour_start values', () => {
+  // Three rows on same hour_start -> single bucket -> gap=0
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'devA', 'codex', 'gpt-5', 100),
+    ql('2026-04-20T00:00:00.000Z', 'devA', 'codex', 'gpt-5', 200),
+    ql('2026-04-20T00:00:00.000Z', 'devA', 'codex', 'gpt-5', 300),
+  ];
+  const r = buildDeviceTenure(rows, { generatedAt: GEN });
+  assert.equal(r.devices[0]!.activeBuckets, 1);
+  assert.equal(r.devices[0]!.longestGapHours, 0);
+  assert.equal(r.devices[0]!.tokens, 600);
+});

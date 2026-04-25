@@ -4277,7 +4277,8 @@ program
   .option('--model <name>', 'restrict to a single normalised model; non-matching rows surface as droppedModelFilter')
   .option('--min-buckets <n>', 'drop devices with activeBuckets < n from devices[]; counts surface as droppedSparseDevices. Default 0 = keep every device.', '0')
   .option('--top <n>', 'truncate devices[] to the top N after sort; 0 = no cap. Default 0.', '0')
-  .option('--sort <key>', 'sort key: span | active | tokens | density | sources | models. Default span.', 'span')
+  .option('--sort <key>', 'sort key: span | active | tokens | density | sources | models | gap. Default span.', 'span')
+  .option('--recent-threshold-hours <h>', 'hours threshold for the recentlyActive flag. Default 24.', '24')
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4289,6 +4290,7 @@ program
         minBuckets: string;
         top: string;
         sort: string;
+        recentThresholdHours: string;
         json?: boolean;
       },
       cmd,
@@ -4311,9 +4313,14 @@ program
           sort !== 'tokens' &&
           sort !== 'density' &&
           sort !== 'sources' &&
-          sort !== 'models'
+          sort !== 'models' &&
+          sort !== 'gap'
         ) {
-          throw new Error(`--sort must be one of span | active | tokens | density | sources | models (got ${opts.sort})`);
+          throw new Error(`--sort must be one of span | active | tokens | density | sources | models | gap (got ${opts.sort})`);
+        }
+        const recentThresholdHours = Number(opts.recentThresholdHours);
+        if (!Number.isFinite(recentThresholdHours) || recentThresholdHours <= 0) {
+          throw new Error(`--recent-threshold-hours must be > 0 (got ${opts.recentThresholdHours})`);
         }
         const queue = await readQueue(paths);
         const report = buildDeviceTenure(queue, {
@@ -4324,6 +4331,7 @@ program
           minBuckets,
           top,
           sort,
+          recentThresholdHours,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

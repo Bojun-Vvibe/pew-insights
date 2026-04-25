@@ -3999,7 +3999,7 @@ export function renderDeviceTenure(r: DeviceTenureReport): string {
   lines.push(chalk.bold.cyan('pew-insights device-tenure'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    devices: ${formatNumber(r.totalDevices)} (shown ${formatNumber(r.devices.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    devices: ${formatNumber(r.totalDevices)} (shown ${formatNumber(r.devices.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}    recentThreshold: ${r.recentThresholdHours}h    recentlyActive: ${formatNumber(r.recentlyActiveCount)}/${formatNumber(r.totalDevices)}`,
     ),
   );
   lines.push(
@@ -4040,6 +4040,9 @@ export function renderDeviceTenure(r: DeviceTenureReport): string {
     'tok/span-hr',
     'sources',
     'models',
+    'longest-gap-hr',
+    'hr-since-last',
+    'recent',
   ];
   const rows: string[][] = r.devices.map((d) => [
     d.device,
@@ -4052,6 +4055,9 @@ export function renderDeviceTenure(r: DeviceTenureReport): string {
     formatNumber(Math.round(d.tokensPerSpanHour)),
     formatNumber(d.distinctSources),
     formatNumber(d.distinctModels),
+    d.longestGapHours.toFixed(1),
+    d.hoursSinceLastSeen.toFixed(1),
+    d.recentlyActive ? 'yes' : 'no',
   ]);
   lines.push(renderTableLocal(headers, rows));
 
