@@ -24,6 +24,7 @@ import type { TailShareReport } from './tailshare.js';
 import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
 import type { SourceTenureReport } from './sourcetenure.js';
 import type { BucketStreakLengthReport } from './bucketstreaklength.js';
+import type { BucketGapDistributionReport } from './bucketgapdistribution.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
 import type { InterSourceHandoffLatencyReport } from './intersourcehandofflatency.js';
@@ -3484,6 +3485,82 @@ export function renderBucketStreakLength(r: BucketStreakLengthReport): string {
     m.meanStreakLength.toFixed(2),
     m.longestStreakStart,
     m.longestStreakEnd,
+    formatNumber(m.tokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderBucketGapDistribution(
+  r: BucketGapDistributionReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights bucket-gap-distribution'));
+  const widthMin = (r.bucketWidthMs / 60_000).toFixed(0);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    gaps: ${formatNumber(r.totalGaps)}    tokens: ${formatNumber(r.totalTokens)}    bucket-width: ${widthMin}m${r.bucketWidthInferred ? ' (inferred)' : ''}    minGaps: ${formatNumber(r.minGaps)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedSparseSources)} sparse sources, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.model !== null) {
+    lines.push(chalk.dim(`model filter: ${r.model}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(gap = #bucket-widths between consecutive distinct active buckets per source; 1 = contiguous; percentiles nearest-rank R-1)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(
+      chalk.yellow(
+        '  no source rows in the window after filters. nothing to chart.',
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source bucket-gap distribution (sorted by ${r.sort} desc)`),
+  );
+  const headers = [
+    'source',
+    'buckets',
+    'gaps',
+    'minGap',
+    'p50Gap',
+    'p90Gap',
+    'p99Gap',
+    'maxGap',
+    'meanGap',
+    'contigShare',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((m) => [
+    m.source,
+    formatNumber(m.activeBuckets),
+    formatNumber(m.gapCount),
+    formatNumber(m.minGap),
+    formatNumber(m.p50Gap),
+    formatNumber(m.p90Gap),
+    formatNumber(m.p99Gap),
+    formatNumber(m.maxGap),
+    m.meanGap.toFixed(2),
+    m.contiguousShare.toFixed(3),
     formatNumber(m.tokens),
   ]);
   lines.push(renderTableLocal(headers, rows));

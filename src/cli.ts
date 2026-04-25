@@ -75,6 +75,7 @@ import {
   renderTenureDensityQuadrant,
   renderSourceTenure,
   renderBucketStreakLength,
+  renderBucketGapDistribution,
   renderSourceDecayHalfLife,
   renderBucketHandoffFrequency,
   renderInterSourceHandoffLatency,
@@ -185,6 +186,7 @@ import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
 import { buildSourceTenure } from './sourcetenure.js';
 import { buildBucketStreakLength } from './bucketstreaklength.js';
+import { buildBucketGapDistribution } from './bucketgapdistribution.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
 import { buildInterSourceHandoffLatency } from './intersourcehandofflatency.js';
@@ -4125,6 +4127,72 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketStreakLength(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('bucket-gap-distribution')
+  .description('Per-source distribution of gap sizes (in bucket-widths) between consecutive active buckets')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--model <name>', 'restrict analysis to a single model; non-matching rows surface as droppedModelFilter')
+  .option(
+    '--min-gaps <n>',
+    'drop sources whose gapCount < n; suppressed rows surface as droppedSparseSources (default 0 = no floor; 1 also suppresses single-bucket sources)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'tokens' (default) | 'gaps' | 'p50' | 'max' | 'contiguous'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        model?: string;
+        minGaps: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minGaps = Number.parseInt(opts.minGaps, 10);
+        if (!Number.isInteger(minGaps) || minGaps < 0) {
+          throw new Error(`--min-gaps must be a non-negative integer (got ${opts.minGaps})`);
+        }
+        if (
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'gaps' &&
+          opts.sort !== 'p50' &&
+          opts.sort !== 'max' &&
+          opts.sort !== 'contiguous'
+        ) {
+          throw new Error(
+            `--sort must be 'tokens' | 'gaps' | 'p50' | 'max' | 'contiguous' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildBucketGapDistribution(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          model: opts.model ?? null,
+          minGaps,
+          sort: opts.sort as 'tokens' | 'gaps' | 'p50' | 'max' | 'contiguous',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBucketGapDistribution(report) + '\n');
         }
       } catch (e) {
         die(e);
