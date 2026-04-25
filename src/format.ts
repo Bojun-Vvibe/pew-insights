@@ -21,6 +21,7 @@ import type { SessionLengthsReport } from './sessionlengths.js';
 import type { ModelTenureReport } from './modeltenure.js';
 import type { TailShareReport } from './tailshare.js';
 import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
+import type { SourceTenureReport } from './sourcetenure.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3354,6 +3355,65 @@ export function renderTenureDensityQuadrant(r: TenureDensityQuadrantReport): str
     lines.push(renderTableLocal(headers, rows));
     lines.push('');
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceTenure(r: SourceTenureReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-tenure'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedSparseSources)} sparse sources, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.model !== null) {
+    lines.push(chalk.dim(`model filter: ${r.model}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(spanHours = clock hours first->last; activeBuckets = distinct hour_start values; distinctModels = unique normalised models seen under this source)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source tenure (sorted by ${r.sort} desc)`));
+  const headers = [
+    'source',
+    'first-seen (UTC)',
+    'last-seen (UTC)',
+    'span-hr',
+    'active-buckets',
+    'tokens',
+    'tok/bucket',
+    'tok/span-hr',
+    'models',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstSeen,
+    s.lastSeen,
+    s.spanHours.toFixed(1),
+    formatNumber(s.activeBuckets),
+    formatNumber(s.tokens),
+    formatNumber(Math.round(s.tokensPerActiveBucket)),
+    formatNumber(Math.round(s.tokensPerSpanHour)),
+    formatNumber(s.distinctModels),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

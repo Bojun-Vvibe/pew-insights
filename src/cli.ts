@@ -69,6 +69,7 @@ import {
   renderModelTenure,
   renderTailShare,
   renderTenureDensityQuadrant,
+  renderSourceTenure,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -157,6 +158,7 @@ import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildBucketIntensity } from './bucketintensity.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
+import { buildSourceTenure } from './sourcetenure.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3525,6 +3527,83 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderTenureDensityQuadrant(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-tenure')
+  .description('Per-source active span: firstSeen, lastSeen, spanHours, activeBuckets, tokens, distinctModels (the source-axis analog of model-tenure)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--model <name>', 'restrict analysis to a single (normalised) model; non-matching rows surface as droppedModelFilter')
+  .option(
+    '--min-buckets <n>',
+    'drop sources whose activeBuckets < n; suppressed rows surface as droppedSparseSources (default 0 = no floor)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sorting; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'span' (default) | 'active' | 'tokens' | 'density' | 'models'",
+    'span',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        model?: string;
+        minBuckets: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'span' &&
+          opts.sort !== 'active' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'density' &&
+          opts.sort !== 'models'
+        ) {
+          throw new Error(
+            `--sort must be 'span' | 'active' | 'tokens' | 'density' | 'models' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceTenure(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          model: opts.model ?? null,
+          minBuckets,
+          top,
+          sort: opts.sort as 'span' | 'active' | 'tokens' | 'density' | 'models',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceTenure(report) + '\n');
         }
       } catch (e) {
         die(e);
