@@ -35,6 +35,12 @@ test('source-pair-cooccurrence: rejects bad minCount', () => {
   assert.throws(() => buildSourcePairCooccurrence([], { minCount: -1 }));
 });
 
+test('source-pair-cooccurrence: rejects bad minJaccard', () => {
+  assert.throws(() => buildSourcePairCooccurrence([], { minJaccard: -0.1 }));
+  assert.throws(() => buildSourcePairCooccurrence([], { minJaccard: 1.5 }));
+  assert.throws(() => buildSourcePairCooccurrence([], { minJaccard: NaN }));
+});
+
 test('source-pair-cooccurrence: rejects bad since/until', () => {
   assert.throws(() => buildSourcePairCooccurrence([], { since: 'nope' }));
   assert.throws(() => buildSourcePairCooccurrence([], { until: 'nope' }));
@@ -251,4 +257,98 @@ test('source-pair-cooccurrence: since/until trims buckets', () => {
   assert.equal(r.pairs[0]!.a, 'a');
   assert.equal(r.pairs[0]!.b, 'c');
   assert.equal(r.windowStart, '2026-04-21T00:00:00.000Z');
+});
+
+// ---- minJaccard filter ----------------------------------------------------
+
+test('source-pair-cooccurrence: minJaccard drops low-jaccard pairs only', () => {
+  // a in 3 buckets, b in 2, overlap 1 -> jaccard 0.25
+  // a + c overlap also 1 but c only appears once -> jaccard 1/(3+1-1)=0.333
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 1),
+    ql('2026-04-20T00:00:00.000Z', 'b', 1),
+    ql('2026-04-20T01:00:00.000Z', 'a', 1),
+    ql('2026-04-20T02:00:00.000Z', 'a', 1),
+    ql('2026-04-20T02:00:00.000Z', 'c', 1),
+    ql('2026-04-20T03:00:00.000Z', 'b', 1),
+  ];
+  const r = buildSourcePairCooccurrence(q, {
+    generatedAt: GEN,
+    minJaccard: 0.3,
+  });
+  // {a,b} jaccard 0.25 dropped; {a,c} jaccard ~0.333 survives.
+  assert.equal(r.distinctPairs, 2); // pre-filter
+  assert.equal(r.pairs.length, 1);
+  assert.equal(r.droppedBelowMinJaccard, 1);
+  assert.equal(r.pairs[0]!.a, 'a');
+  assert.equal(r.pairs[0]!.b, 'c');
+  assert.equal(r.minJaccard, 0.3);
+});
+
+test('source-pair-cooccurrence: minJaccard composes with minCount (count first, then jaccard, then top)', () => {
+  // Build:
+  //   {a,b}: count 2, jaccard high (a,b appear together in 2 of 2 buckets) -> 1.0
+  //   {a,c}: count 1, jaccard 1.0 (only buckets together)
+  //   {a,d}: count 1, jaccard low because d is everywhere else
+  const q = [
+    // bucket 0: a,b
+    ql('2026-04-20T00:00:00.000Z', 'a', 1),
+    ql('2026-04-20T00:00:00.000Z', 'b', 1),
+    // bucket 1: a,b
+    ql('2026-04-20T01:00:00.000Z', 'a', 1),
+    ql('2026-04-20T01:00:00.000Z', 'b', 1),
+    // bucket 2: a,c
+    ql('2026-04-20T02:00:00.000Z', 'a', 1),
+    ql('2026-04-20T02:00:00.000Z', 'c', 1),
+    // bucket 3: a,d
+    ql('2026-04-20T03:00:00.000Z', 'a', 1),
+    ql('2026-04-20T03:00:00.000Z', 'd', 1),
+    // d-everywhere noise
+    ql('2026-04-20T04:00:00.000Z', 'd', 1),
+    ql('2026-04-20T05:00:00.000Z', 'd', 1),
+    ql('2026-04-20T06:00:00.000Z', 'd', 1),
+  ];
+  const r = buildSourcePairCooccurrence(q, {
+    generatedAt: GEN,
+    minCount: 2,
+    minJaccard: 0.5,
+  });
+  // Pre-filter: 3 distinct pairs.
+  // After minCount=2: only {a,b} (count 2) survives -> droppedBelowMinCount=2.
+  // After minJaccard=0.5: {a,b} jaccard = 2/(4+2-2)=0.5 survives.
+  assert.equal(r.distinctPairs, 3);
+  assert.equal(r.droppedBelowMinCount, 2);
+  assert.equal(r.droppedBelowMinJaccard, 0);
+  assert.equal(r.pairs.length, 1);
+  assert.equal(r.pairs[0]!.a, 'a');
+  assert.equal(r.pairs[0]!.b, 'b');
+});
+
+test('source-pair-cooccurrence: minJaccard=0 is the no-op default', () => {
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 1),
+    ql('2026-04-20T00:00:00.000Z', 'b', 1),
+  ];
+  const r = buildSourcePairCooccurrence(q, { generatedAt: GEN });
+  assert.equal(r.minJaccard, 0);
+  assert.equal(r.droppedBelowMinJaccard, 0);
+  assert.equal(r.pairs.length, 1);
+});
+
+test('source-pair-cooccurrence: minJaccard boundary is inclusive (>=)', () => {
+  // {a,b}: count 1, jaccard exactly 0.5 (a:1 bucket, b:1 bucket... actually
+  // both in 1 of 1 bucket = jaccard 1). Force jaccard 0.5: a in 2 buckets,
+  // b in 1, overlap 1 -> 1/(2+1-1)=0.5
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 1),
+    ql('2026-04-20T00:00:00.000Z', 'b', 1),
+    ql('2026-04-20T01:00:00.000Z', 'a', 1),
+  ];
+  const r = buildSourcePairCooccurrence(q, {
+    generatedAt: GEN,
+    minJaccard: 0.5,
+  });
+  assert.equal(r.pairs.length, 1);
+  assert.equal(r.pairs[0]!.jaccard, 0.5);
+  assert.equal(r.droppedBelowMinJaccard, 0);
 });

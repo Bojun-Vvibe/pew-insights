@@ -4662,6 +4662,11 @@ program
     'drop pairs whose count is below n before applying --top-pairs; suppressed rows surface as droppedBelowMinCount (default 1 = no floor)',
     '1',
   )
+  .option(
+    '--min-jaccard <n>',
+    'drop pairs whose jaccard is below n (in [0,1]); applied after --min-count and before --top-pairs. Suppressed rows surface as droppedBelowMinJaccard. Use to filter out high-count low-jaccard "noise" pairs (a tool that runs everywhere and incidentally overlaps with everything). Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4670,6 +4675,7 @@ program
         until?: string;
         topPairs: string;
         minCount: string;
+        minJaccard: string;
         json?: boolean;
       },
       cmd,
@@ -4689,12 +4695,19 @@ program
             `--min-count must be a positive integer (got ${opts.minCount})`,
           );
         }
+        const minJaccard = Number.parseFloat(opts.minJaccard);
+        if (!Number.isFinite(minJaccard) || minJaccard < 0 || minJaccard > 1) {
+          throw new Error(
+            `--min-jaccard must be a finite number in [0, 1] (got ${opts.minJaccard})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourcePairCooccurrence(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           topPairs,
           minCount,
+          minJaccard,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.99 — 2026-04-26
+
+### Added
+
+- `source-pair-cooccurrence`: `--min-jaccard <n>` flag (range
+  `[0, 1]`, default `0` = no floor). Drops pair rows whose
+  `jaccard < n` from `pairs[]`. Display filter only — summary
+  stats (`activeBuckets`, `multiSourceBuckets`,
+  `cooccurrenceShare`, `totalPairs`, `distinctPairs`,
+  `dominantPair`) reflect the full pre-filter population.
+  Suppressed rows surface as `droppedBelowMinJaccard`. Applied
+  **after** `--min-count` and **before** `--top-pairs`.
+
+  Why a real flag (not a display tweak): the v0.4.98 baseline
+  showed that several `claude-code + X` rows have a high *count*
+  but a low *jaccard* (0.012 – 0.134). They are not "tools that
+  run together by design" — they are the long tail of a
+  high-volume tool incidentally overlapping with everything
+  else. `--min-jaccard 0.2` strips that noise and surfaces only
+  the genuinely-coupled pairs (i.e. tools that, when one is
+  active, the other has a real chance of being active too).
+
+  Boundary: inclusive. `jaccard == n` survives; `< n` drops.
+  Echoes as `minJaccard` in JSON. `dominantPair` is computed
+  pre-filter (so the headline still tells you the most-frequent
+  raw pair even when the table is restricted).
+
+  5 new tests (1212 total, up from 1207): rejects out-of-range
+  values (negative / > 1 / NaN); drops low-jaccard pairs only;
+  composes with `--min-count` (count first, then jaccard, then
+  top); default `0` is a no-op; boundary at `==` is inclusive.
+
+### Live-smoke output
+
+`pew-insights source-pair-cooccurrence --min-jaccard 0.2`
+against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights source-pair-cooccurrence
+as of: 2026-04-25T16:19:17.516Z    active-buckets: 902    multi-source: 302 (33.5%)    total-pairs: 639    distinct-pairs: 14    minCount: 1    minJaccard: 0.200    topPairs: 10
+dropped: 0 bad hour_start, 0 zero-tokens, 0 empty-source rows, 0 below min-count, 11 below min-jaccard, 0 below top cap
+dominant pair: openclaw + opencode (co-active in 192 buckets)
+(unordered pair {a,b}; count = buckets with both active; jaccard = |buckets(a) ∩ buckets(b)| / |union|; share = count / total-pairs)
+
+top source co-occurrences (sorted by count desc, then jaccard desc)
+source-a  source-b  count  share  jaccard
+--------  --------  -----  -----  -------
+openclaw  opencode  192    30.0%  0.530
+hermes    openclaw  138    21.6%  0.370
+hermes    opencode  71     11.1%  0.263
+```
+
+Reading: setting `--min-jaccard 0.2` cuts the table from 10
+rows (top-cap default) down to 3 — the only pairs whose
+intersection-over-union is at least 20%. This is the
+spec-kitty / runtime-routing triad: `openclaw + opencode`
+(0.53), `hermes + openclaw` (0.37), `hermes + opencode`
+(0.26). Everything else — the eight `claude-code + X` rows
+and the long-tail `vscode-copilot` row — gets dropped because
+their per-pair Jaccard is < 0.2 even when the raw count is
+respectable. The `droppedBelowMinJaccard: 11` figure is
+larger than the visible drop because it is computed *before*
+the top-10 cap (14 distinct pairs total - 3 surviving = 11
+filtered).
+
 ## 0.4.98 — 2026-04-26
 
 ### Added

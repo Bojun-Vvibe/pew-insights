@@ -70,6 +70,17 @@ export interface SourcePairCooccurrenceOptions {
    * Applied before `topPairs`.
    */
   minCount?: number;
+  /**
+   * Drop pair rows whose `jaccard < minJaccard` from `pairs[]`.
+   * Display filter only — summary stats unaffected. Suppressed rows
+   * surface as `droppedBelowMinJaccard`. Applied **after**
+   * `minCount` and **before** `topPairs`. Useful for stripping
+   * "this tool runs everywhere and incidentally overlaps with
+   * everything" noise pairs (high count, low jaccard) and keeping
+   * the genuinely-coupled pairs. Default 0 = keep every pair.
+   * Range: [0, 1]. `dominantPair` is computed pre-filter.
+   */
+  minJaccard?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -93,6 +104,8 @@ export interface SourcePairCooccurrenceReport {
   topPairs: number;
   /** Echo of the resolved `minCount` floor. */
   minCount: number;
+  /** Echo of the resolved `minJaccard` floor. */
+  minJaccard: number;
   /** Distinct active hour-buckets surviving filters. */
   activeBuckets: number;
   /** Subset of `activeBuckets` with >= 2 distinct sources active. */
@@ -115,6 +128,8 @@ export interface SourcePairCooccurrenceReport {
   droppedBelowTopCap: number;
   /** Rows hidden by the `minCount` floor (applied before the top cap). */
   droppedBelowMinCount: number;
+  /** Rows hidden by the `minJaccard` floor (applied after minCount, before top cap). */
+  droppedBelowMinJaccard: number;
   /** Top unordered source pairs. */
   pairs: SourcePairCooccurrenceRow[];
 }
@@ -133,6 +148,12 @@ export function buildSourcePairCooccurrence(
   if (!Number.isInteger(minCount) || minCount < 1) {
     throw new Error(
       `minCount must be a positive integer (got ${opts.minCount})`,
+    );
+  }
+  const minJaccard = opts.minJaccard ?? 0;
+  if (!Number.isFinite(minJaccard) || minJaccard < 0 || minJaccard > 1) {
+    throw new Error(
+      `minJaccard must be a finite number in [0, 1] (got ${opts.minJaccard})`,
     );
   }
 
@@ -248,10 +269,16 @@ export function buildSourcePairCooccurrence(
 
   let pairs = allRows;
   let droppedBelowMinCount = 0;
+  let droppedBelowMinJaccard = 0;
   let droppedBelowTopCap = 0;
   if (minCount > 1) {
     const survivors = pairs.filter((p) => p.count >= minCount);
     droppedBelowMinCount = pairs.length - survivors.length;
+    pairs = survivors;
+  }
+  if (minJaccard > 0) {
+    const survivors = pairs.filter((p) => p.jaccard >= minJaccard);
+    droppedBelowMinJaccard = pairs.length - survivors.length;
     pairs = survivors;
   }
   if (pairs.length > topPairs) {
@@ -265,6 +292,7 @@ export function buildSourcePairCooccurrence(
     windowEnd: opts.until ?? null,
     topPairs,
     minCount,
+    minJaccard,
     activeBuckets,
     multiSourceBuckets,
     cooccurrenceShare,
@@ -276,6 +304,7 @@ export function buildSourcePairCooccurrence(
     droppedEmptySource,
     droppedBelowTopCap,
     droppedBelowMinCount,
+    droppedBelowMinJaccard,
     pairs,
   };
 }

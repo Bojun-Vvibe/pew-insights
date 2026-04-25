@@ -3702,12 +3702,12 @@ export function renderSourcePairCooccurrence(
   lines.push(chalk.bold.cyan('pew-insights source-pair-cooccurrence'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    multi-source: ${formatNumber(r.multiSourceBuckets)} (${(r.cooccurrenceShare * 100).toFixed(1)}%)    total-pairs: ${formatNumber(r.totalPairs)}    distinct-pairs: ${formatNumber(r.distinctPairs)}    minCount: ${formatNumber(r.minCount)}    topPairs: ${formatNumber(r.topPairs)}`,
+      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    multi-source: ${formatNumber(r.multiSourceBuckets)} (${(r.cooccurrenceShare * 100).toFixed(1)}%)    total-pairs: ${formatNumber(r.totalPairs)}    distinct-pairs: ${formatNumber(r.distinctPairs)}    minCount: ${formatNumber(r.minCount)}    minJaccard: ${r.minJaccard.toFixed(3)}    topPairs: ${formatNumber(r.topPairs)}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptySource)} empty-source rows, ${formatNumber(r.droppedBelowMinCount)} below min-count, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptySource)} empty-source rows, ${formatNumber(r.droppedBelowMinCount)} below min-count, ${formatNumber(r.droppedBelowMinJaccard)} below min-jaccard, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
