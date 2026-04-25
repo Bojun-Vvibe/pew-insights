@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.7 — 2026-04-26
+
+### Added
+
+- `pew-insights hour-of-day-source-mix-entropy`: per-UTC-hour-of-day
+  Shannon entropy of per-source token share. For each occupied
+  hour-of-day bucket [0..23] (computed from `hour_start`), bin all
+  considered queue rows, sum `total_tokens` per (hour, source), then
+  compute `H = -Σ p_i log2 p_i` over the per-source share. Answers
+  a question none of the existing reports answer: at which UTC hour
+  am I monolithic on a single tool, vs spreading tokens across
+  several? Distinct from `hour-of-week` / `time-of-day` (token mass
+  per hour, no diversity), `model-mix-entropy` (per-source over
+  models, different axis), `peak-hour` (single peak by mass),
+  `source-mix` (global, no temporal slice), and the session-side
+  source-stickiness reports (`source-tenure`,
+  `source-decay-half-life`, `source-run-lengths`). Per-hour emits
+  `tokens`, `sourceCount`, `entropyBits`, `maxEntropyBits`
+  (`= log2(sourceCount)`), `normalizedEntropy` (in [0,1] when
+  `sourceCount > 1`), `effectiveSources` (`= 2^H`, "perplexity"),
+  `topSource`, and `topSourceShare`. Global rollup adds the
+  *token-weighted* mean of `entropyBits` and `normalizedEntropy`
+  across kept hours plus `monoSourceHourCount` (occupied hours
+  where exactly one source supplied all tokens). Pure deterministic
+  builder; rows with bad `hour_start` or non-positive
+  `total_tokens` are counted in dedicated dropped-counters and
+  excluded.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, default args)
+
+```
+pew-insights hour-of-day-source-mix-entropy
+as of: 2026-04-25T21:37:17.056Z    occupied hours: 24/24    tokens: 8.81B    minTokens: 0    filterSources: —
+dropped: 0 bad hour_start, 0 zero tokens, 0 by filter, 0 sparse hours
+(per UTC hour-of-day: H = -Σ p_i log2 p_i over per-source token share; max = log2(sources))
+
+global rollup (token-weighted across kept hours)
+summary                        value
+-----------------------------  -----
+occupiedHours                  24
+weightedMeanEntropyBits        1.718
+weightedMeanNormalizedEntropy  70.8%
+monoSourceHourCount            0
+
+per hour-of-day source-mix entropy (UTC, sorted by hour asc)
+hour   tokens   sources  H bits  maxH   normH  effSources  topSource    topShare
+-----  -------  -------  ------  -----  -----  ----------  -----------  --------
+00:00  196.54M  4        1.489   2.000  74.4%  2.806       opencode     56.2%
+01:00  552.19M  6        1.647   2.585  63.7%  3.131       claude-code  43.3%
+02:00  470.95M  6        1.971   2.585  76.2%  3.919       claude-code  43.0%
+03:00  301.49M  6        2.054   2.585  79.5%  4.153       openclaw     32.5%
+04:00  244.04M  6        1.644   2.585  63.6%  3.126       claude-code  47.4%
+05:00  341.57M  6        1.863   2.585  72.1%  3.638       claude-code  45.2%
+06:00  523.12M  6        1.849   2.585  71.5%  3.602       claude-code  53.2%
+07:00  582.77M  6        1.716   2.585  66.4%  3.285       claude-code  58.4%
+08:00  690.81M  6        1.434   2.585  55.5%  2.701       claude-code  67.5%
+09:00  322.30M  6        1.768   2.585  68.4%  3.405       claude-code  40.6%
+10:00  436.45M  6        1.825   2.585  70.6%  3.542       opencode     40.6%
+11:00  356.80M  6        1.835   2.585  71.0%  3.568       claude-code  45.7%
+12:00  398.02M  6        1.951   2.585  75.5%  3.867       claude-code  39.1%
+13:00  384.72M  6        1.851   2.585  71.6%  3.609       claude-code  49.2%
+14:00  458.78M  6        2.003   2.585  77.5%  4.008       claude-code  42.2%
+15:00  495.76M  5        1.984   2.322  85.5%  3.957       opencode     34.3%
+16:00  600.72M  5        1.963   2.322  84.5%  3.899       opencode     39.1%
+17:00  446.78M  4        1.303   2.000  65.2%  2.468       opencode     64.2%
+18:00  418.11M  4        1.316   2.000  65.8%  2.490       opencode     63.5%
+19:00  250.13M  4        1.191   2.000  59.6%  2.284       opencode     70.1%
+20:00  109.79M  3        0.997   1.585  62.9%  1.995       opencode     61.9%
+21:00  64.12M   3        1.097   1.585  69.2%  2.139       openclaw     51.2%
+22:00  72.47M   3        0.935   1.585  59.0%  1.911       openclaw     67.4%
+23:00  88.30M   3        1.300   1.585  82.0%  2.462       openclaw     53.8%
+```
+
 ## 0.6.6 — 2026-04-26
 
 ### Added
