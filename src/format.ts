@@ -18,6 +18,7 @@ import type { ConcurrencyReport } from './concurrency.js';
 import type { TransitionsReport } from './transitions.js';
 import type { AgentMixReport } from './agentmix.js';
 import type { SessionLengthsReport } from './sessionlengths.js';
+import type { ModelTenureReport } from './modeltenure.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3180,6 +3181,63 @@ export function renderBucketIntensity(r: BucketIntensityReport): string {
     ...m.histogram.map((b) => formatNumber(b.count)),
   ]);
   lines.push(renderTableLocal(hHeaders, hRows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderModelTenure(r: ModelTenureReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights model-tenure'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)}    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(spanHours = clock hours first->last, may be fractional; activeBuckets = distinct hour_start values; bucket width is whatever pew emits)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.models.length === 0) {
+    lines.push(chalk.yellow('  no model rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-model tenure (sorted by spanHours desc)'));
+  const headers = [
+    'model',
+    'first-seen (UTC)',
+    'last-seen (UTC)',
+    'span-hr',
+    'active-buckets',
+    'tokens',
+    'tok/bucket',
+    'tok/span-hr',
+  ];
+  const rows: string[][] = r.models.map((m) => [
+    m.model,
+    m.firstSeen,
+    m.lastSeen,
+    m.spanHours.toFixed(1),
+    formatNumber(m.activeBuckets),
+    formatNumber(m.tokens),
+    formatNumber(Math.round(m.tokensPerActiveBucket)),
+    formatNumber(Math.round(m.tokensPerSpanHour)),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

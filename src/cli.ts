@@ -66,6 +66,7 @@ import {
   renderModelCohabitation,
   renderInterarrivalTime,
   renderBucketIntensity,
+  renderModelTenure,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -152,6 +153,7 @@ import { buildCacheHitByHour } from './cachehitbyhour.js';
 import { buildModelCohabitation } from './modelcohabitation.js';
 import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildBucketIntensity } from './bucketintensity.js';
+import { buildModelTenure } from './modeltenure.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -3300,6 +3302,43 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketIntensity(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('model-tenure')
+  .description('Per-model active span: firstSeen, lastSeen, tenureHours, activeHours, density, idleHours, tokens')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const queue = await readQueue(paths);
+        const report = buildModelTenure(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderModelTenure(report) + '\n');
         }
       } catch (e) {
         die(e);
