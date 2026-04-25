@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.74 — 2026-04-25
+
+### Added
+
+- `source-decay-half-life`: `--top <n>` flag. Cap the number of
+  source rows emitted in `sources[]` after sorting and after the
+  `--min-buckets` floor. Suppressed rows surface as
+  `droppedBelowTopCap`. Display filter only — `totalSources`,
+  `totalActiveBuckets`, and `totalTokens` still reflect the
+  pre-cap surviving population (consistent with how `--min-buckets`
+  and other floors behave across this CLI).
+
+  Why: with the default `halflife` sort the table can grow long on
+  workspaces with many low-volume sources. Composing
+  `--min-buckets 50 --top 4 --sort frontload` cleanly isolates the
+  most front-loaded routers that actually carry mass, without
+  hand-grepping the table.
+
+  Order of operations is documented and tested:
+  `min-buckets` floor first (rows below the floor are
+  `droppedSparseSources`), then sort, then `top` cap (rows trimmed
+  here are `droppedBelowTopCap`). `top >= surviving count` is a
+  no-op; missing flag is also a no-op (`top: null` echoed in the
+  report).
+
+  5 new tests (988 total, up from 983): rejects bad `top`
+  (0, negative, fractional); cap trims after sort and surfaces
+  `droppedBelowTopCap` (with `totalSources` reflecting pre-cap);
+  composes with `--min-buckets` (floor first, cap second);
+  `top >= surviving` is a no-op; default `top` is `null` and
+  echoed as such.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--min-buckets 50 --top 4 --sort frontload`:
+
+  ```
+  pew-insights source-decay-half-life
+  as of: 2026-04-25T08:09:08.268Z    sources: 6 (shown 4)    active-buckets: 1,318    tokens: 8,458,082,355    minBuckets: 50    top: 4    sort: frontload
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by model filter, 0 sparse sources, 2 below top cap
+  (halfLifeFraction = clock-hours from firstSeen to the bucket where cumulative tokens >= 50% / spanHours; < 0.5 = front-loaded, > 0.5 = back-loaded; frontLoadIndex = 0.5 - halfLifeFraction)
+
+  per-source token half-life (sorted by frontload)
+  source          first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         half-life (UTC)           half-life-hr  half-life-frac  front-load-idx
+  --------------  ------------------------  ------------------------  -------  --------------  -------------  ------------------------  ------------  --------------  --------------
+  hermes          2026-04-17T06:30:00.000Z  2026-04-25T08:00:00.000Z  193.5    146             140,666,870    2026-04-20T06:30:00.000Z  72.0          0.372           +0.128
+  vscode-ext      2025-07-30T06:00:00.000Z  2026-04-20T01:30:00.000Z  6331.5   320             1,885,727      2025-11-26T11:00:00.000Z  2861.0        0.452           +0.048
+  opencode        2026-04-20T14:00:00.000Z  2026-04-25T08:00:00.000Z  114.0    176             2,411,109,047  2026-04-22T18:00:00.000Z  52.0          0.456           +0.044
+  openclaw        2026-04-17T02:30:00.000Z  2026-04-25T07:30:00.000Z  197.0    345             1,652,410,263  2026-04-21T02:00:00.000Z  95.5          0.485           +0.015
+  ```
+
+  Headline read: with the cap at 4 and `--sort frontload`, the
+  `+0.128` `hermes` row sits cleanly at the top — it is the most
+  front-loaded current source by a margin (the next three cluster
+  near the uniform line at +0.04 to +0.05). `codex` and
+  `claude-code` (the two back-loaded sources from v0.4.73) are
+  trimmed by the cap and surface only via the `2 below top cap`
+  counter — useful when you want to see "who is decelerating" in
+  isolation without the back-loaded noise.
+
 ## 0.4.73 — 2026-04-25
 
 ### Added

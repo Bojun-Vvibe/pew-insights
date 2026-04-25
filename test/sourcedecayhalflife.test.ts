@@ -286,3 +286,74 @@ test('source-decay-half-life: report echoes resolved options', () => {
   assert.equal(r.minBuckets, 3);
   assert.equal(r.sort, 'span');
 });
+
+// ---- --top cap (v0.4.74) -------------------------------------------------
+
+test('source-decay-half-life: rejects bad top', () => {
+  assert.throws(() => buildSourceDecayHalfLife([], { top: 0 }));
+  assert.throws(() => buildSourceDecayHalfLife([], { top: -1 }));
+  assert.throws(() => buildSourceDecayHalfLife([], { top: 1.5 }));
+});
+
+test('source-decay-half-life: top caps emitted rows after sort, surfaces droppedBelowTopCap, totalSources reflects pre-cap', () => {
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'aaa', 'm', 1000),
+    ql('2026-04-20T00:00:00.000Z', 'bbb', 'm', 500),
+    ql('2026-04-20T00:00:00.000Z', 'ccc', 'm', 100),
+    ql('2026-04-20T00:00:00.000Z', 'ddd', 'm', 10),
+  ];
+  const r = buildSourceDecayHalfLife(q, {
+    generatedAt: GEN,
+    sort: 'tokens',
+    top: 2,
+  });
+  assert.equal(r.top, 2);
+  assert.equal(r.totalSources, 4);
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowTopCap, 2);
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['aaa', 'bbb'],
+  );
+});
+
+test('source-decay-half-life: top composes with min-buckets (floor first, cap second)', () => {
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'sparse1', 'm', 9999),
+    ql('2026-04-20T00:00:00.000Z', 'dense_a', 'm', 100),
+    ql('2026-04-20T01:00:00.000Z', 'dense_a', 'm', 100),
+    ql('2026-04-20T00:00:00.000Z', 'dense_b', 'm', 50),
+    ql('2026-04-20T01:00:00.000Z', 'dense_b', 'm', 50),
+    ql('2026-04-20T00:00:00.000Z', 'dense_c', 'm', 10),
+    ql('2026-04-20T01:00:00.000Z', 'dense_c', 'm', 10),
+  ];
+  const r = buildSourceDecayHalfLife(q, {
+    generatedAt: GEN,
+    minBuckets: 2,
+    sort: 'tokens',
+    top: 2,
+  });
+  // sparse1 is dropped by the floor (not by the cap)
+  assert.equal(r.droppedSparseSources, 1);
+  // dense_c is dropped by the cap (kept dense_a + dense_b)
+  assert.equal(r.droppedBelowTopCap, 1);
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['dense_a', 'dense_b'],
+  );
+});
+
+test('source-decay-half-life: top >= surviving count is a no-op', () => {
+  const q = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'm', 100),
+    ql('2026-04-20T00:00:00.000Z', 'b', 'm', 50),
+  ];
+  const r = buildSourceDecayHalfLife(q, { generatedAt: GEN, top: 5 });
+  assert.equal(r.droppedBelowTopCap, 0);
+  assert.equal(r.sources.length, 2);
+});
+
+test('source-decay-half-life: top defaults to null and is echoed', () => {
+  const r = buildSourceDecayHalfLife([], { generatedAt: GEN });
+  assert.equal(r.top, null);
+});

@@ -66,6 +66,12 @@ export interface SourceDecayHalfLifeOptions {
    */
   minBuckets?: number;
   /**
+   * Cap the number of `sources[]` rows emitted after sorting and
+   * the `minBuckets` floor. Suppressed rows surface as
+   * `droppedBelowTopCap`. Default null = no cap.
+   */
+  top?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'halflife' (default): halfLifeFraction asc (most
    *     front-loaded first; ties on tokens desc, source asc).
@@ -101,6 +107,8 @@ export interface SourceDecayHalfLifeReport {
   model: string | null;
   /** Echo of the resolved `minBuckets` floor. */
   minBuckets: number;
+  /** Echo of the resolved `top` cap (null = no cap). */
+  top: number | null;
   /** Echo of the resolved `sort` key. */
   sort: 'halflife' | 'frontload' | 'tokens' | 'span' | 'active';
   /** Distinct sources surviving filters (pre min-buckets filter). */
@@ -117,6 +125,8 @@ export interface SourceDecayHalfLifeReport {
   droppedModelFilter: number;
   /** Source rows hidden by the `minBuckets` floor. */
   droppedSparseSources: number;
+  /** Source rows trimmed by the `top` cap (after sort + floor). */
+  droppedBelowTopCap: number;
   /** Per-source rows, sorted per opts.sort. */
   sources: SourceDecayHalfLifeRow[];
 }
@@ -132,6 +142,14 @@ export function buildSourceDecayHalfLife(
     throw new Error(
       `minBuckets must be a non-negative integer (got ${opts.minBuckets})`,
     );
+  }
+  const top = opts.top ?? null;
+  if (top !== null) {
+    if (!Number.isInteger(top) || top < 1) {
+      throw new Error(
+        `top must be a positive integer (got ${opts.top})`,
+      );
+    }
   }
   const sort = opts.sort ?? 'halflife';
   if (
@@ -289,12 +307,20 @@ export function buildSourceDecayHalfLife(
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   });
 
+  let droppedBelowTopCap = 0;
+  let finalSources = sources;
+  if (top !== null && sources.length > top) {
+    droppedBelowTopCap = sources.length - top;
+    finalSources = sources.slice(0, top);
+  }
+
   return {
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     model: modelFilter,
     minBuckets,
+    top,
     sort,
     totalSources: sources.length,
     totalActiveBuckets,
@@ -303,6 +329,7 @@ export function buildSourceDecayHalfLife(
     droppedZeroTokens,
     droppedModelFilter,
     droppedSparseSources,
-    sources,
+    droppedBelowTopCap,
+    sources: finalSources,
   };
 }

@@ -3703,6 +3703,10 @@ program
     '0',
   )
   .option(
+    '--top <n>',
+    'cap the number of source rows after sort and the min-buckets floor; suppressed rows surface as droppedBelowTopCap (default unset = no cap)',
+  )
+  .option(
     '--sort <key>',
     "sort key for sources[]: 'halflife' (default) | 'frontload' | 'tokens' | 'span' | 'active'",
     'halflife',
@@ -3715,6 +3719,7 @@ program
         until?: string;
         model?: string;
         minBuckets: string;
+        top?: string;
         sort: string;
         json?: boolean;
       },
@@ -3726,6 +3731,13 @@ program
         const minBuckets = Number.parseInt(opts.minBuckets, 10);
         if (!Number.isInteger(minBuckets) || minBuckets < 0) {
           throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        let top: number | null = null;
+        if (opts.top !== undefined) {
+          top = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(top) || top < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
         }
         if (
           opts.sort !== 'halflife' &&
@@ -3744,6 +3756,7 @@ program
           until: opts.until ?? null,
           model: opts.model ?? null,
           minBuckets,
+          top,
           sort: opts.sort as 'halflife' | 'frontload' | 'tokens' | 'span' | 'active',
         });
         if (opts.json || common.json) {
