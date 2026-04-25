@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.0 — 2026-04-26
+
+### Added
+
+- `output-token-decile-distribution`: rank every active bucket
+  by `output_tokens` ascending and partition into 10 equal-sized
+  deciles (D1 = lightest 10% of buckets, D10 = heaviest 10%).
+  Per-decile row reports `bucketCount`, `minOutput`, `meanOutput`,
+  `maxOutput`, `tokensInDecile`, and `shareOfTokens`. Window-wide
+  scalars: `gini` (classical formula on sorted ascending values,
+  clamped at 0), `p90Share` (top-10% concentration), `p99Share`
+  (top-1% concentration; ceil to never overshoot the requested
+  window, min 1 bucket).
+
+  Why this is orthogonal to what already ships:
+
+  - `output-size` reports per-model summary stats (mean/median/
+    max). It groups by model and never exposes a Lorenz-style
+    decile partition over the whole population.
+  - `tail-share` is *per-source*, *top-only* (K ∈ {1,5,10,20}),
+    and ranks by `total_tokens`. This lens is global, full-spectrum
+    (D1..D10), and ranks by `output_tokens` only.
+  - `bucket-intensity` is `total_tokens` distribution per bucket,
+    not output-only.
+  - `output-input-ratio` is a ratio lens, not an absolute mass
+    distribution.
+
+  Remainder distribution: `N % 10` extra rows spread onto the
+  *lowest* deciles (matches `numpy.array_split` / `pandas.qcut`).
+  Rejects bad `--since` / `--until`. Drops: bad hour_start,
+  bad output_tokens (negative/non-finite), zero-output rows
+  (kept out of the ranked population), and source-filter
+  exclusions are all surfaced as separate counters.
+
+  Determinism: pure builder, sorted ascending before partition,
+  wall clock only via `opts.generatedAt`. Round-trip-stable
+  under input reordering (covered by a regression test).
+
+  12 new tests (1238 total, up from 1226): rejects bad
+  since/until; empty queue gives null stats and ten zero-row
+  deciles; drop counters attribute correctly across the four
+  drop reasons; 10 buckets land exactly one per decile; 13 rows
+  produce the [2,2,2,1,1,1,1,1,1,1] remainder pattern; 3 rows
+  populate only D1..D3; per-decile min/mean/max correct;
+  uniform input -> gini ~ 0; near-Dirac input -> gini close to
+  classical max (n-1)/n = 0.9; top-10% share equals D10 share
+  when N % 10 == 0; window inclusive/exclusive boundary;
+  reversed input order produces byte-identical output.
+
+### Live-smoke output
+
+`pew-insights output-token-decile-distribution` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights output-token-decile-distribution
+as of: 2026-04-25T17:18:56.586Z    buckets: 1,457    output-tokens: 37,732,018
+concentration: gini=0.7511    top-10% share=60.40%    top-1% share=12.72%
+dropped: 0 bad hour_start, 0 bad output_tokens, 12 zero-output, 0 by source filter
+(rank all positive-output buckets ascending; partition into 10 equal-sized deciles; D1 = lightest, D10 = heaviest)
+
+per-decile output-token mass
+decile  buckets  min-out  mean-out  max-out  tokens-in-decile  share
+------  -------  -------  --------  -------  ----------------  ------
+D1      146      6        239       470      34,898            0.09%
+D2      146      472      768       1,061    112,114           0.30%
+D3      146      1,088    1,505     1,940    219,801           0.58%
+D4      146      1,958    2,696     3,563    393,603           1.04%
+D5      146      3,565    4,567     5,649    666,766           1.77%
+D6      146      5,696    7,167     9,079    1,046,420         2.77%
+D7      146      9,088    12,122    15,425   1,769,745         4.69%
+D8      145      15,835   22,440    33,539   3,253,832         8.62%
+D9      145      33,589   51,850    75,056   7,518,261         19.93%
+D10     145      75,312   156,666   416,890  22,716,578        60.21%
+```
+
+Headline: output-token mass is sharply concentrated. The top
+decile (D10) carries **60.21%** of all generated output across
+1,457 buckets, while the bottom 5 deciles combined account for
+under **3.78%**. Gini of **0.7511** sits firmly in
+"high-inequality" territory — well above the ~0.40 typical of
+income distributions. The heaviest single bucket emits **416,890**
+output tokens, **~1,743×** the mean of D1 (239). For
+output-priced vendors this is the clearest single signal that
+optimisation effort should target the long right tail of
+verbose generations, not the median call.
+
 ## 0.4.100 — 2026-04-26
 
 ### Added
