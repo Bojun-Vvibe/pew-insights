@@ -29,6 +29,7 @@ import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
 import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
+import type { BucketDensityPercentileReport } from './bucketdensitypercentile.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3858,6 +3859,72 @@ export function renderSourceBreadthPerDay(r: SourceBreadthPerDayReport): string 
     formatNumber(d.tokensOnDay),
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderBucketDensityPercentile(
+  r: BucketDensityPercentileReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights bucket-density-percentile'));
+  const fmtN = (n: number | null) => (n === null ? '-' : formatNumber(n));
+  const fmtPct = (n: number) => (n * 100).toFixed(1) + '%';
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    mean: ${r.mean === null ? '-' : formatNumber(Math.round(r.mean))}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinTokens)} below min-tokens floor`,
+    ),
+  );
+  if (r.minTokens > 0) {
+    lines.push(chalk.dim(`min-tokens floor: ${formatNumber(r.minTokens)} (drops buckets with total_tokens < ${formatNumber(r.minTokens)})`));
+  }
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push('');
+
+  if (r.totalBuckets === 0) {
+    lines.push(chalk.yellow('  no bucket observations after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('percentile ladder (tokens per bucket)'));
+  const pHeaders = ['p', 'tokens'];
+  const pRows: string[][] = [
+    ['min', fmtN(r.min)],
+    ['p1', fmtN(r.p1)],
+    ['p5', fmtN(r.p5)],
+    ['p10', fmtN(r.p10)],
+    ['p25', fmtN(r.p25)],
+    ['p50', fmtN(r.p50)],
+    ['p75', fmtN(r.p75)],
+    ['p90', fmtN(r.p90)],
+    ['p95', fmtN(r.p95)],
+    ['p99', fmtN(r.p99)],
+    ['p99.9', fmtN(r.p999)],
+    ['max', fmtN(r.max)],
+  ];
+  lines.push(renderTableLocal(pHeaders, pRows));
+  lines.push('');
+  lines.push(chalk.bold('decile mass distribution (D1 = smallest, D10 = top 10%)'));
+  const dHeaders = ['decile', 'count', 'tokens', 'share', 'lower', 'upper'];
+  const dRows: string[][] = r.deciles.map((d) => [
+    'D' + String(d.decile),
+    String(d.count),
+    formatNumber(d.tokens),
+    fmtPct(d.tokenShare),
+    formatNumber(d.lowerEdge),
+    formatNumber(d.upperEdge),
+  ]);
+  lines.push(renderTableLocal(dHeaders, dRows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

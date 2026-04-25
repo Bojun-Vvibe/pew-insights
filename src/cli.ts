@@ -77,6 +77,7 @@ import {
   renderFirstBucketOfDay,
   renderActiveSpanPerDay,
   renderSourceBreadthPerDay,
+  renderBucketDensityPercentile,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -173,6 +174,7 @@ import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
+import { buildBucketDensityPercentile } from './bucketdensitypercentile.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -4131,6 +4133,54 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceBreadthPerDay(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('bucket-density-percentile')
+  .description('Population-level distribution of total_tokens per bucket pooled across all rows: full percentile ladder (p1..p99.9, max) plus 10-decile mass shares (D1=smallest, D10=top 10%)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-tokens <n>',
+    'drop buckets whose total_tokens < n before percentile and decile computation; suppressed buckets surface as droppedBelowMinTokens. Default 0 = no floor.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isInteger(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildBucketDensityPercentile(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBucketDensityPercentile(report) + '\n');
         }
       } catch (e) {
         die(e);
