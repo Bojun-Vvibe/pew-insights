@@ -2246,6 +2246,7 @@ import { WEEKDAY_LABELS_MON_FIRST } from './weekdayshare.js';
 import type { BurstinessReport } from './burstiness.js';
 import type { DeviceShareReport } from './deviceshare.js';
 import type { OutputInputRatioReport } from './outputinputratio.js';
+import type { ModelMixEntropyReport } from './modelmixentropy.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2714,6 +2715,67 @@ export function renderOutputInputRatio(r: OutputInputRatioReport): string {
       );
     }
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderModelMixEntropy(r: ModelMixEntropyReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights model-mix-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)}    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero/invalid tokens, ${formatNumber(r.droppedMinTokens)} below min-tokens`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no sources in window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      'per-source model-mix entropy (Shannon bits over per-model token share; sorted by tokens desc)',
+    ),
+  );
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.rows),
+    String(s.distinctModels),
+    s.entropyBits.toFixed(4),
+    s.maxEntropyBits.toFixed(4),
+    s.normalizedEntropy.toFixed(4),
+    s.effectiveModels.toFixed(2),
+    s.topModel,
+    (s.topModelShare * 100).toFixed(1) + '%',
+  ]);
+  lines.push(
+    renderTableLocal(
+      [
+        'source',
+        'tokens',
+        'rows',
+        'k',
+        'H(bits)',
+        'Hmax',
+        'H/Hmax',
+        'eff-models',
+        'top-model',
+        'top-share',
+      ],
+      rows,
+    ),
+  );
 
   return lines.join('\n').replace(/\n+$/, '');
 }

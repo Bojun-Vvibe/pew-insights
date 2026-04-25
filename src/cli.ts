@@ -60,6 +60,7 @@ import {
   renderBurstiness,
   renderDeviceShare,
   renderOutputInputRatio,
+  renderModelMixEntropy,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -142,6 +143,7 @@ import { buildWeekdayShare } from './weekdayshare.js';
 import { buildBurstiness } from './burstiness.js';
 import { buildDeviceShare } from './deviceshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
+import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
@@ -2911,6 +2913,46 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderOutputInputRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('model-mix-entropy')
+  .description('Per-source Shannon entropy of model usage (mono- vs poly-model producers)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-tokens <n>',
+    'hide sources with fewer than n total tokens; their counts surface as droppedMinTokens (default 0)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; minTokens: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildModelMixEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minTokens,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderModelMixEntropy(report) + '\n');
         }
       } catch (e) {
         die(e);
