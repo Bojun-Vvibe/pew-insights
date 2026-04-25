@@ -247,3 +247,114 @@ test('tdq: report echoes options (minBuckets, top, sort, source)', () => {
   assert.equal(r.sort, 'density');
   assert.equal(r.source, 'codex');
 });
+
+// ---- --quadrant filter ----------------------------------------------------
+
+test('tdq: --quadrant filters report to a single quadrant', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-05T04:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-01T00:00:00Z', { model: 'ls', total_tokens: 100 }),
+    ql('2026-04-04T08:00:00Z', { model: 'ls', total_tokens: 100 }),
+    ql('2026-04-10T00:00:00Z', { model: 'sd', total_tokens: 2000 }),
+    ql('2026-04-10T02:00:00Z', { model: 'sd', total_tokens: 2000 }),
+    ql('2026-04-10T00:00:00Z', { model: 'ss', total_tokens: 50 }),
+    ql('2026-04-10T01:00:00Z', { model: 'ss', total_tokens: 50 }),
+  ];
+  const r = buildTenureDensityQuadrant(queue, { generatedAt: GEN, quadrant: 'long-dense' });
+  assert.equal(r.quadrants.length, 1);
+  assert.equal(r.quadrants[0]!.quadrant, 'long-dense');
+  assert.equal(r.quadrants[0]!.models[0]!.model, 'ld');
+});
+
+test('tdq: --quadrant filter preserves classification (medians use full population)', () => {
+  // Use the same 4-model fixture. medianSpan=41, medianDensity=550 regardless of filter.
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-05T04:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-01T00:00:00Z', { model: 'ls', total_tokens: 100 }),
+    ql('2026-04-04T08:00:00Z', { model: 'ls', total_tokens: 100 }),
+    ql('2026-04-10T00:00:00Z', { model: 'sd', total_tokens: 2000 }),
+    ql('2026-04-10T02:00:00Z', { model: 'sd', total_tokens: 2000 }),
+    ql('2026-04-10T00:00:00Z', { model: 'ss', total_tokens: 50 }),
+    ql('2026-04-10T01:00:00Z', { model: 'ss', total_tokens: 50 }),
+  ];
+  const r = buildTenureDensityQuadrant(queue, { generatedAt: GEN, quadrant: 'short-dense' });
+  // Medians are still computed over all 4 models.
+  assert.equal(r.medianSpanHours, 41);
+  assert.equal(r.medianDensity, 550);
+  assert.equal(r.totalModels, 4);
+});
+
+test('tdq: --quadrant filter records droppedQuadrantModels and droppedQuadrantTokens', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-05T04:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-01T00:00:00Z', { model: 'ls', total_tokens: 100 }),
+    ql('2026-04-04T08:00:00Z', { model: 'ls', total_tokens: 100 }),
+    ql('2026-04-10T00:00:00Z', { model: 'sd', total_tokens: 2000 }),
+    ql('2026-04-10T02:00:00Z', { model: 'sd', total_tokens: 2000 }),
+    ql('2026-04-10T00:00:00Z', { model: 'ss', total_tokens: 50 }),
+    ql('2026-04-10T01:00:00Z', { model: 'ss', total_tokens: 50 }),
+  ];
+  const r = buildTenureDensityQuadrant(queue, { generatedAt: GEN, quadrant: 'long-dense' });
+  // 3 quadrants suppressed: ls (200 tokens), sd (4000 tokens), ss (100 tokens) = 4300 tokens, 3 models.
+  assert.equal(r.droppedQuadrantModels, 3);
+  assert.equal(r.droppedQuadrantTokens, 4300);
+});
+
+test('tdq: --quadrant filter rejects invalid quadrant name', () => {
+  // @ts-expect-error invalid value
+  assert.throws(() => buildTenureDensityQuadrant([], { quadrant: 'sideways' }));
+});
+
+test('tdq: no --quadrant filter -> droppedQuadrant{Models,Tokens} both zero', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-05T04:00:00Z', { model: 'ld', total_tokens: 1000 }),
+    ql('2026-04-10T00:00:00Z', { model: 'ss', total_tokens: 50 }),
+    ql('2026-04-10T01:00:00Z', { model: 'ss', total_tokens: 50 }),
+  ];
+  const r = buildTenureDensityQuadrant(queue, { generatedAt: GEN });
+  assert.equal(r.droppedQuadrantModels, 0);
+  assert.equal(r.droppedQuadrantTokens, 0);
+  assert.equal(r.quadrants.length, 4);
+});
+
+test('tdq: --quadrant composes with --top (only the kept quadrant is truncated for display)', () => {
+  // 5 models all in long-dense (same span, same density).
+  const queue: QueueLine[] = [];
+  for (const name of ['m1', 'm2', 'm3', 'm4', 'm5']) {
+    queue.push(ql('2026-04-01T00:00:00Z', { model: name, total_tokens: 100 }));
+    queue.push(ql('2026-04-01T01:00:00Z', { model: name, total_tokens: 100 }));
+  }
+  const r = buildTenureDensityQuadrant(queue, {
+    generatedAt: GEN,
+    quadrant: 'long-dense',
+    top: 2,
+  });
+  assert.equal(r.quadrants.length, 1);
+  const ld = r.quadrants[0]!;
+  assert.equal(ld.count, 5);
+  assert.equal(ld.models.length, 2);
+  assert.equal(ld.droppedTop, 3);
+});
+
+test('tdq: --quadrant filter targeting an empty quadrant returns empty models[] but preserves count=0', () => {
+  // All 4 models cluster into long-dense (identical span, identical density).
+  const queue: QueueLine[] = [];
+  for (const name of ['m1', 'm2', 'm3', 'm4']) {
+    queue.push(ql('2026-04-01T00:00:00Z', { model: name, total_tokens: 100 }));
+    queue.push(ql('2026-04-01T01:00:00Z', { model: name, total_tokens: 100 }));
+  }
+  const r = buildTenureDensityQuadrant(queue, {
+    generatedAt: GEN,
+    quadrant: 'short-sparse',
+  });
+  assert.equal(r.quadrants.length, 1);
+  assert.equal(r.quadrants[0]!.quadrant, 'short-sparse');
+  assert.equal(r.quadrants[0]!.count, 0);
+  assert.equal(r.quadrants[0]!.models.length, 0);
+  // The 4 long-dense models were suppressed by the filter.
+  assert.equal(r.droppedQuadrantModels, 4);
+});
