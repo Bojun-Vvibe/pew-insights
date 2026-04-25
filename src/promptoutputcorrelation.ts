@@ -114,6 +114,15 @@ export interface PromptOutputCorrelationOptions {
    * population-narrowing semantics as `source` above.
    */
   model?: string | null;
+  /**
+   * When true, the y-axis becomes `output_tokens +
+   * reasoning_output_tokens` instead of plain `output_tokens`.
+   * For reasoning-heavy models (claude-opus, gpt with thinking)
+   * the visible output is only a fraction of the work the model
+   * did per bucket — folding reasoning tokens in gives a more
+   * honest "reply mass" signal. Default false (back-compat).
+   */
+  includeReasoning?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -169,6 +178,8 @@ export interface PromptOutputCorrelationReport {
   sourceFilter: string | null;
   /** Echo of the resolved `model` row filter (null = no filter). */
   modelFilter: string | null;
+  /** Echo of the resolved `includeReasoning` flag. */
+  includeReasoning: boolean;
   /** Sum of total_tokens across all kept rows in the window. */
   totalTokens: number;
   /** Sum of input_tokens across all kept rows in the window. */
@@ -318,6 +329,7 @@ export function buildPromptOutputCorrelation(
     opts.model != null && opts.model !== '' ? opts.model : null;
   const modelFilter =
     modelFilterRaw != null ? normaliseModel(modelFilterRaw) : null;
+  const includeReasoning = opts.includeReasoning === true;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -366,11 +378,17 @@ export function buildPromptOutputCorrelation(
       continue;
     }
     const inTok = Number(q.input_tokens);
-    const outTok = Number(q.output_tokens);
-    if (!Number.isFinite(inTok) || !Number.isFinite(outTok)) {
+    const outTokRaw = Number(q.output_tokens);
+    const reasoningTok = Number(q.reasoning_output_tokens);
+    if (
+      !Number.isFinite(inTok) ||
+      !Number.isFinite(outTokRaw) ||
+      (includeReasoning && !Number.isFinite(reasoningTok))
+    ) {
       droppedZeroTokens += 1;
       continue;
     }
+    const outTok = includeReasoning ? outTokRaw + reasoningTok : outTokRaw;
 
     const groupKey =
       by === 'source'
@@ -508,6 +526,7 @@ export function buildPromptOutputCorrelation(
     sort,
     sourceFilter,
     modelFilter,
+    includeReasoning,
     totalTokens,
     totalInputTokens,
     totalOutputTokens,

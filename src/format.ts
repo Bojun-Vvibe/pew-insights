@@ -4088,6 +4088,13 @@ export function renderPromptOutputCorrelation(
       ),
     );
   }
+  if (r.includeReasoning) {
+    lines.push(
+      chalk.dim(
+        'y-axis includes reasoning_output_tokens (totalOutputTokens = visible output + reasoning)',
+      ),
+    );
+  }
   lines.push(
     chalk.dim(
       '(pearson r in [-1,+1] over per-bucket (input_tokens, output_tokens) pairs; slope/intercept = OLS y = slope*x + intercept; degenerate=yes when stdInput or stdOutput is 0)',

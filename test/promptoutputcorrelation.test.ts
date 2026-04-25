@@ -428,3 +428,81 @@ test('prompt-output-correlation: source + model filters compose AND-style', () =
   assert.equal(r.totalActiveBuckets, 2);
   assert.equal(r.totalGroups, 1);
 });
+
+// ---- v0.4.93 refinement: --include-reasoning flag --------
+
+test('prompt-output-correlation: includeReasoning defaults to false (back-compat)', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-25T10:00:00Z', { input_tokens: 100, output_tokens: 50, reasoning_output_tokens: 950 }),
+    ql('2026-04-25T11:00:00Z', { input_tokens: 200, output_tokens: 100, reasoning_output_tokens: 1900 }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, { generatedAt: GEN });
+  assert.equal(r.includeReasoning, false);
+  // y-axis is just output_tokens, ignoring reasoning
+  assert.equal(r.totalOutputTokens, 50 + 100);
+});
+
+test('prompt-output-correlation: --include-reasoning folds reasoning into y-axis', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-25T10:00:00Z', { input_tokens: 100, output_tokens: 50, reasoning_output_tokens: 950 }),
+    ql('2026-04-25T11:00:00Z', { input_tokens: 200, output_tokens: 100, reasoning_output_tokens: 1900 }),
+    ql('2026-04-25T12:00:00Z', { input_tokens: 300, output_tokens: 150, reasoning_output_tokens: 2850 }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    includeReasoning: true,
+  });
+  assert.equal(r.includeReasoning, true);
+  // y is output + reasoning per bucket: 1000, 2000, 3000
+  assert.equal(r.totalOutputTokens, 1000 + 2000 + 3000);
+  const g = r.groups[0]!;
+  // perfect linear x in {100,200,300} vs y in {1000,2000,3000} → r=+1, slope=10
+  assert.ok(Math.abs(g.pearsonR - 1) < 1e-12);
+  assert.ok(Math.abs(g.slope - 10) < 1e-12);
+});
+
+test('prompt-output-correlation: --include-reasoning can flip sign vs default', () => {
+  // Construct case where output_tokens alone anti-correlates with input,
+  // but output + reasoning correlates positively.
+  // x in {100, 200, 300, 400}
+  // output_tokens in {400, 300, 200, 100} → strong negative
+  // reasoning in {0, 500, 1000, 1500} → strong positive
+  // sum in {400, 800, 1200, 1600} → perfect positive with x
+  const rows: QueueLine[] = [];
+  const xs = [100, 200, 300, 400];
+  const outs = [400, 300, 200, 100];
+  const reas = [0, 500, 1000, 1500];
+  for (let i = 0; i < 4; i++) {
+    rows.push(
+      ql(`2026-04-25T${String(10 + i).padStart(2, '0')}:00:00Z`, {
+        input_tokens: xs[i]!,
+        output_tokens: outs[i]!,
+        reasoning_output_tokens: reas[i]!,
+      }),
+    );
+  }
+  const rDefault = buildPromptOutputCorrelation(rows, { generatedAt: GEN });
+  const rWithReason = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    includeReasoning: true,
+  });
+  assert.ok(rDefault.groups[0]!.pearsonR < -0.99);
+  assert.ok(rWithReason.groups[0]!.pearsonR > 0.99);
+});
+
+test('prompt-output-correlation: --include-reasoning rejects non-finite reasoning_output_tokens', () => {
+  const rows: QueueLine[] = [
+    {
+      ...ql('2026-04-25T10:00:00Z', { input_tokens: 100, output_tokens: 50 }),
+      reasoning_output_tokens: Number.NaN,
+    },
+    ql('2026-04-25T11:00:00Z', { input_tokens: 200, output_tokens: 100, reasoning_output_tokens: 200 }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    includeReasoning: true,
+    minBuckets: 1,
+  });
+  assert.equal(r.droppedZeroTokens, 1);
+  assert.equal(r.totalActiveBuckets, 1);
+});

@@ -4386,6 +4386,10 @@ program
     '--model <name>',
     'only include rows whose model matches (post-normaliseModel; narrows global denominators too)',
   )
+  .option(
+    '--include-reasoning',
+    'add reasoning_output_tokens to the y-axis so the correlation describes total reply work, not just visible output (default false)',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4399,6 +4403,7 @@ program
         sort: string;
         source?: string;
         model?: string;
+        includeReasoning?: boolean;
         json?: boolean;
       },
       cmd,
@@ -4448,6 +4453,7 @@ program
           sort,
           source: opts.source ?? null,
           model: opts.model ?? null,
+          includeReasoning: opts.includeReasoning === true,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

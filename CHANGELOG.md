@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.93 — 2026-04-25
+
+### Added
+
+- `prompt-output-correlation`: `--include-reasoning` flag.
+  When set, the y-axis becomes `output_tokens +
+  reasoning_output_tokens` instead of plain `output_tokens`.
+  Default false (back-compat with v0.4.91/0.4.92 numbers).
+
+  Why: for reasoning-heavy models (claude-opus, gpt with
+  thinking), `output_tokens` is only the visible reply — the
+  model often did 10-30× more work in invisible reasoning
+  tokens. The default y-axis can therefore badly under-state
+  how big the reply actually was. Folding reasoning in lets
+  callers ask "did the model do proportionally more total
+  work?" rather than just "did the visible reply scale?".
+  Two real shapes the flag separates:
+
+  - A model that thinks more for bigger prompts but emits a
+    similar-length visible reply: r jumps up when reasoning is
+    folded in, slope rises.
+  - A model that emits a long visible reply but doesn't think
+    harder: r and slope barely move.
+
+  4 new tests (1155 total, up from 1151): default false
+  matches v0.4.92 behaviour bit-for-bit (back-compat); folds
+  reasoning into per-bucket y when set; flips sign in the
+  constructed case where output anti-correlates and reasoning
+  positively correlates with input (default → r ≈ -1, with
+  reasoning → r ≈ +1); rejects rows whose
+  `reasoning_output_tokens` is non-finite *only when the flag
+  is on* (default ignores the field).
+
+### Live-smoke output
+
+`pew-insights prompt-output-correlation --by source
+--min-buckets 5 --include-reasoning` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights prompt-output-correlation
+as of: 2026-04-25T13:42:42.695Z    groups: 6 (shown 6)    active-buckets: 897    tokens: 8,593,249,030    in: 3,368,979,760    out: 38,199,233    minBuckets: 5    minTokens: 0    sort: tokens    global r: 0.588    global slope: 0.006
+dropped: 0 bad hour_start, 0 zero/non-finite tokens, 0 by source filter, 0 by model filter, 0 below min-buckets, 0 below min-tokens, 0 below top cap
+y-axis includes reasoning_output_tokens (totalOutputTokens = visible output + reasoning)
+(pearson r in [-1,+1] over per-bucket (input_tokens, output_tokens) pairs; slope/intercept = OLS y = slope*x + intercept; degenerate=yes when stdInput or stdOutput is 0)
+
+per-source prompt→output correlation (sorted by tokens desc, lex tiebreak)
+source          tokens         in             out         buckets  mean-in    mean-out  std-in     std-out  r       slope   intercept  degen
+--------------  -------------  -------------  ----------  -------  ---------  --------  ---------  -------  ------  ------  ---------  -----
+claude-code     3,442,385,788  1,834,613,640  12,128,825  267      6,871,212  45,426    9,421,260  71,963   0.843   0.006   1161       no
+opencode        2,530,355,204  173,393,216    15,886,202  187      927,236    84,953    1,270,778  82,241   0.607   0.039   48515      no
+openclaw        1,668,047,731  894,771,378    4,764,097   357      2,506,362  13,345    2,780,091  20,001   0.654   0.005   1545       no
+codex           809,624,660    410,781,190    2,834,382   64       6,418,456  44,287    7,171,888  52,869   0.936   0.007   -13        no
+hermes          140,949,920    54,839,246     1,281,090   148      370,535    8,656     510,252    8,147    0.502   0.008   5688       no
+vscode-copilot  1,885,727      581,090        1,304,637   320      1,816      4,077     14,584     5,118    -0.027  -0.010  4094       no
+```
+
+Reading: comparing to the v0.4.91 default-y-axis baseline, the
+clearest diff is `codex` — slope rises from 0.005 to 0.007
+(40% more reply mass per prompt token once reasoning is folded
+in) and the OLS intercept goes from +302 to **-13** (effectively
+zero), which says the codex pipeline does close to a
+deterministic 0.7% of total reply work for every input token,
+with no fixed reply floor. The `out` total for codex jumped
+from 2.04M to 2.83M tokens — ~28% of codex's reply work is
+invisible reasoning that the v0.4.91 view didn't see. The
+`opencode` slope is unchanged at 0.039 but the intercept
+nudged 47620 → 48515, meaning that source has very little
+reasoning relative to its visible output (consistent with
+opencode being a streaming-chat surface that doesn't typically
+invoke thinking). `vscode` r stays effectively zero (-0.027)
+even with reasoning included — its hourly output volume really
+is uncoupled from prompt mass on this dataset, both for visible
+and invisible work.
+
 ## 0.4.92 — 2026-04-25
 
 ### Added
