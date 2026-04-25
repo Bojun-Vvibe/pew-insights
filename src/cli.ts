@@ -75,6 +75,7 @@ import {
   renderSourceDecayHalfLife,
   renderBucketHandoffFrequency,
   renderFirstBucketOfDay,
+  renderActiveSpanPerDay,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -169,6 +170,7 @@ import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
+import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3525,6 +3527,72 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderFirstBucketOfDay(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('active-span-per-day')
+  .description('Per UTC calendar day, the workday window: firstHour, lastHour, spanHours, activeBuckets, and dutyCycle (= activeBuckets / spanHours)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top <n>',
+    'cap days[] after sorting; remainder surface as droppedTopDays. Summary stats always reflect the full population. Default 0 = no cap.',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for days[]: 'day' (default, desc) | 'span' (desc) | 'duty' (desc) | 'tokens' (desc) | 'active' (desc)",
+    'day',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'day' &&
+          opts.sort !== 'span' &&
+          opts.sort !== 'duty' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'active'
+        ) {
+          throw new Error(
+            `--sort must be 'day' | 'span' | 'duty' | 'tokens' | 'active' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildActiveSpanPerDay(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          top,
+          sort: opts.sort as 'day' | 'span' | 'duty' | 'tokens' | 'active',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderActiveSpanPerDay(report) + '\n');
         }
       } catch (e) {
         die(e);

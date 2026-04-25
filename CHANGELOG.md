@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.81 — 2026-04-25
+
+### Added
+
+- `active-span-per-day`: per UTC calendar day, the *workday window*
+  — i.e. the span from the day's earliest active `hour_start` to its
+  latest, and how saturated that window is. For each day with at
+  least one positive-token row we report:
+
+  - `firstHour` — UTC hour 0..23 of earliest active bucket
+  - `lastHour` — UTC hour 0..23 of latest active bucket
+  - `spanHours` — `lastHour - firstHour + 1` (always >= 1)
+  - `activeBuckets` — distinct active hour_start values that day
+  - `dutyCycle` — `activeBuckets / spanHours`, in (0, 1] — how
+    saturated the window was. 1.0 = every hour in
+    `[firstHour, lastHour]` had activity.
+  - `tokensOnDay` — sum of total_tokens that day
+
+  Plus distribution stats over the full population: min / p25 /
+  median / mean / p75 / max for both `spanHours` and `dutyCycle`.
+  Standard `--since` / `--until` / `--source` / `--top` filters;
+  `--top` is display-only. Default sort `day desc` (newest first).
+
+  Why this is orthogonal to what already ships:
+
+  - `first-bucket-of-day` reports *when* the day starts (firstHour
+    only). This reports *how long* the workday window is and *how
+    saturated* it is.
+  - `time-of-day` / `which-hour` / `peak-hour-share` distribute mass
+    across hour-of-day across the whole window — not per-day
+    start/end/length.
+  - `bucket-streak-length` measures consecutive-hour runs but a
+    fragmented day (work at 09, 14, 21) has spanHours=13 with runs
+    of length 1; a focused day (09..13 contiguous) has spanHours=5
+    and runs of length 5. This lens captures the *containment*
+    signal a streak doesn't.
+  - `idle-gaps` / `interarrival` measure gaps between active
+    buckets but don't anchor to a calendar day.
+
+  14 new tests (1057 total, up from 1043): option validation
+  (since/until/top/sort), empty/drops, span-and-duty-cycle math,
+  same-hour dedupe, summary distribution stats, sort=span +
+  day-desc tiebreak, sort=duty most-saturated first, sort=tokens
+  + sort=active, top cap with full-population summary,
+  since/until window filtering, generatedAt honoured.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with `--top 8`:
+
+  ```
+  pew-insights active-span-per-day
+  as of: 2026-04-25T10:18:20.500Z    days: 105 (shown 8)    tokens: 8,518,593,487    sort: day
+  spanHours: min=1 p25=2 median=6 mean=6.75 p75=8 max=24
+  dutyCycle: min=25.0% p25=66.7% median=87.5% mean=79.2% p75=100.0% max=100.0%
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 97 below top cap
+
+  per-day active span (sorted by day desc)
+  day (UTC)   first-hour  last-hour  span-hours  active-buckets  duty-cycle  tokens-on-day
+  ----------  ----------  ---------  ----------  --------------  ----------  -------------
+  2026-04-25  00          10         11          11              100.0%      275,867,294
+  2026-04-24  00          23         24          24              100.0%      627,251,216
+  2026-04-23  00          23         24          24              100.0%      695,192,088
+  2026-04-22  00          23         24          24              100.0%      893,292,230
+  2026-04-21  00          23         24          24              100.0%      1,122,611,203
+  2026-04-20  00          23         24          24              100.0%      1,773,838,138
+  2026-04-19  00          23         24          24              100.0%      659,027,845
+  2026-04-18  01          23         23          21              91.3%       922,235,800
+  ```
+
+  Headline: every one of the last seven days is a fully saturated
+  24-hour window (dutyCycle=100%, spanHours=24) — across 105 days
+  the *median* spanHours is only 6 with median dutyCycle 87.5%, so
+  the recent week is a clear outlier where activity covers the
+  entire UTC clock (almost certainly automated/background usage,
+  not human-keyboard hours).
+
 ## 0.4.80 — 2026-04-25
 
 ### Added

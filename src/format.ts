@@ -27,6 +27,7 @@ import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
+import type { ActiveSpanPerDayReport } from './activespanperday.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3711,6 +3712,77 @@ export function renderFirstBucketOfDay(r: FirstBucketOfDayReport): string {
     d.firstBucket,
     d.firstHour.toString().padStart(2, '0'),
     formatNumber(d.bucketsOnDay),
+    formatNumber(d.tokensOnDay),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderActiveSpanPerDay(r: ActiveSpanPerDayReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights active-span-per-day'));
+  const fmtH = (h: number | null) => (h === null ? '-' : h.toString().padStart(2, '0'));
+  const fmtN = (n: number | null) => (n === null ? '-' : String(n));
+  const fmtF2 = (n: number | null) => (n === null ? '-' : n.toFixed(2));
+  const fmtPct = (n: number | null) => (n === null ? '-' : (n * 100).toFixed(1) + '%');
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.distinctDays)} (shown ${formatNumber(r.days.length)})    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `spanHours: min=${fmtN(r.spanHoursMin)} p25=${fmtN(r.spanHoursP25)} median=${fmtN(r.spanHoursMedian)} mean=${fmtF2(r.spanHoursMean)} p75=${fmtN(r.spanHoursP75)} max=${fmtN(r.spanHoursMax)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dutyCycle: min=${fmtPct(r.dutyCycleMin)} p25=${fmtPct(r.dutyCycleP25)} median=${fmtPct(r.dutyCycleMedian)} mean=${fmtPct(r.dutyCycleMean)} p75=${fmtPct(r.dutyCycleP75)} max=${fmtPct(r.dutyCycleMax)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopDays)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per UTC calendar day: spanHours = lastHour - firstHour + 1; dutyCycle = activeBuckets / spanHours, in (0, 1])`,
+    ),
+  );
+  lines.push('');
+
+  if (r.days.length === 0) {
+    lines.push(chalk.yellow('  no day rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  const sortLabel =
+    r.sort === 'day' ? 'day desc' : r.sort + ' desc';
+  lines.push(chalk.bold(`per-day active span (sorted by ${sortLabel})`));
+  const headers = [
+    'day (UTC)',
+    'first-hour',
+    'last-hour',
+    'span-hours',
+    'active-buckets',
+    'duty-cycle',
+    'tokens-on-day',
+  ];
+  const rows: string[][] = r.days.map((d) => [
+    d.day,
+    fmtH(d.firstHour),
+    fmtH(d.lastHour),
+    String(d.spanHours),
+    String(d.activeBuckets),
+    (d.dutyCycle * 100).toFixed(1) + '%',
     formatNumber(d.tokensOnDay),
   ]);
   lines.push(renderTableLocal(headers, rows));
