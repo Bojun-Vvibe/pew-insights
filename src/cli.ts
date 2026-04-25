@@ -59,6 +59,7 @@ import {
   renderWeekdayShare,
   renderBurstiness,
   renderDeviceShare,
+  renderOutputInputRatio,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -140,6 +141,7 @@ import { buildPeakHourShare } from './peakhour.js';
 import { buildWeekdayShare } from './weekdayshare.js';
 import { buildBurstiness } from './burstiness.js';
 import { buildDeviceShare } from './deviceshare.js';
+import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildTimeOfDay } from './timeofday.js';
 
 interface CommonOpts {
@@ -2854,5 +2856,60 @@ program
     },
   );
 
-program.parseAsync(process.argv).catch(die);
+program
+  .command('output-input-ratio')
+  .description('Per-model output/input token ratio (chatty vs terse) over a window')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-rows <n>',
+    'hide models with fewer than n considered rows; their counts surface as droppedModelRows (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n models by input volume; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minRows: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 0) {
+          throw new Error(`--min-rows must be a non-negative integer (got ${opts.minRows})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildOutputInputRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minRows,
+          top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderOutputInputRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
 
+program.parseAsync(process.argv).catch(die);

@@ -2245,6 +2245,7 @@ import type { WeekdayShareReport } from './weekdayshare.js';
 import { WEEKDAY_LABELS_MON_FIRST } from './weekdayshare.js';
 import type { BurstinessReport } from './burstiness.js';
 import type { DeviceShareReport } from './deviceshare.js';
+import type { OutputInputRatioReport } from './outputinputratio.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2639,6 +2640,52 @@ export function renderDeviceShare(r: DeviceShareReport): string {
     d.lastSeen.slice(0, 16) + 'Z',
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderOutputInputRatio(r: OutputInputRatioReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights output-input-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    rows: ${formatNumber(r.consideredRows)}    input: ${formatNumber(r.totalInputTokens)} tok    output: ${formatNumber(r.totalOutputTokens)} tok    overall: ${r.overallRatio.toFixed(4)}    min-rows: ${r.minRows}    top: ${r.top === 0 ? '∞' : r.top}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroInput)} zero-input, ${formatNumber(r.droppedInvalidTokens)} bad tokens, ${formatNumber(r.droppedModelRows)} below min-rows, ${formatNumber(r.droppedTopModels)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.consideredRows === 0 || r.models.length === 0) {
+    lines.push(chalk.yellow('  no rows with input_tokens > 0 in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      'per-model output/input ratio (token-weighted; sorted by input volume desc; chatty=high, terse=low)',
+    ),
+  );
+  const ratioRows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.rows),
+    formatNumber(m.inputTokens),
+    formatNumber(m.outputTokens),
+    m.ratio.toFixed(4),
+    m.meanRowRatio.toFixed(4),
+  ]);
+  lines.push(
+    renderTableLocal(
+      ['model', 'rows', 'input', 'output', 'ratio', 'mean-row-ratio'],
+      ratioRows,
+    ),
+  );
 
   return lines.join('\n').replace(/\n+$/, '');
 }
