@@ -65,6 +65,7 @@ import {
   renderCacheHitByHour,
   renderModelCohabitation,
   renderInterarrivalTime,
+  renderBucketIntensity,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -150,6 +151,7 @@ import { buildWeekendVsWeekday } from './weekendvsweekday.js';
 import { buildCacheHitByHour } from './cachehitbyhour.js';
 import { buildModelCohabitation } from './modelcohabitation.js';
 import { buildInterarrivalTime } from './interarrivaltime.js';
+import { buildBucketIntensity } from './bucketintensity.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -3209,6 +3211,82 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderInterarrivalTime(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('bucket-intensity')
+  .description('Per-model distribution of total_tokens per UTC hour bucket; percentiles + magnitude histogram')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-buckets <n>',
+    'hide model rows with fewer than n active buckets; counts surface as droppedMinBuckets (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n models after sorting; remainder surface as droppedTopModels (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for models[]: 'tokens' (default) | 'buckets' | 'p99' | 'spread'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minBuckets: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'buckets' &&
+          opts.sort !== 'p99' &&
+          opts.sort !== 'spread'
+        ) {
+          throw new Error(
+            `--sort must be 'tokens' | 'buckets' | 'p99' | 'spread' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildBucketIntensity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minBuckets,
+          top,
+          sort: opts.sort as 'tokens' | 'buckets' | 'p99' | 'spread',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBucketIntensity(report) + '\n');
         }
       } catch (e) {
         die(e);

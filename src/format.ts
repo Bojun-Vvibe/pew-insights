@@ -2251,6 +2251,10 @@ import type { WeekendVsWeekdayReport } from './weekendvsweekday.js';
 import type { CacheHitByHourReport } from './cachehitbyhour.js';
 import type { ModelCohabitationReport } from './modelcohabitation.js';
 import type { InterarrivalTimeReport } from './interarrivaltime.js';
+import {
+  BUCKET_INTENSITY_EDGES,
+  type BucketIntensityReport,
+} from './bucketintensity.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -3090,6 +3094,90 @@ export function renderInterarrivalTime(r: InterarrivalTimeReport): string {
   const hRows: string[][] = r.sources.map((s) => [
     s.source === '' ? '(empty)' : s.source,
     ...s.histogram.map((b) => formatNumber(b.count)),
+  ]);
+  lines.push(renderTableLocal(hHeaders, hRows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function fmtTokenEdge(t: number): string {
+  if (!Number.isFinite(t)) return '+inf';
+  if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(t % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (t >= 1_000) return `${(t / 1_000).toFixed(t % 1_000 === 0 ? 0 : 1)}k`;
+  return `${t}`;
+}
+
+export function renderBucketIntensity(r: BucketIntensityReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights bucket-intensity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)} (shown ${formatNumber(r.models.length)})    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopModels)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(observation = one (model, UTC hour_start) bucket; percentiles are nearest-rank R-1 over per-bucket total_tokens; spread = p99/p50)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.models.length === 0) {
+    lines.push(chalk.yellow('  no model rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-model bucket-size summary (sorted by ${r.sort} desc)`));
+  const headers = [
+    'model',
+    'buckets',
+    'tokens',
+    'min',
+    'p50',
+    'p90',
+    'p99',
+    'max',
+    'mean',
+    'spread',
+  ];
+  const rows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.buckets),
+    formatNumber(m.tokens),
+    formatNumber(m.min),
+    formatNumber(m.p50),
+    formatNumber(m.p90),
+    formatNumber(m.p99),
+    formatNumber(m.max),
+    m.mean.toFixed(0),
+    m.spread > 0 ? m.spread.toFixed(2) : '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  lines.push('');
+  lines.push(chalk.bold('per-model bucket-size histogram (counts per token-magnitude band)'));
+  const edges = BUCKET_INTENSITY_EDGES as readonly number[];
+  const hHeaders = [
+    'model',
+    ...edges.map((lo, i) => {
+      const hi = i + 1 < edges.length ? edges[i + 1] : Number.POSITIVE_INFINITY;
+      return `[${fmtTokenEdge(lo)},${fmtTokenEdge(hi as number)})`;
+    }),
+  ];
+  const hRows: string[][] = r.models.map((m) => [
+    m.model,
+    ...m.histogram.map((b) => formatNumber(b.count)),
   ]);
   lines.push(renderTableLocal(hHeaders, hRows));
 
