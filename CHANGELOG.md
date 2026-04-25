@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.83 — 2026-04-25
+
+### Added
+
+- `source-breadth-per-day`: per UTC calendar day, count of *distinct
+  active sources* — the "tool-diversity" lens. For each day with at
+  least one positive-token row we report:
+
+  - `sourceCount` — distinct `source` values active that day
+    (only sources with > 0 tokens that day are counted)
+  - `sources` — comma-joined sorted list (lex asc) of those names,
+    for human inspection
+  - `bucketsOnDay` — distinct active hour_start values that day
+  - `tokensOnDay` — sum of total_tokens that day
+
+  Plus distribution stats over the full population: min / p25 /
+  median / mean / p75 / max for `sourceCount`, plus
+  `singleSourceDays` / `multiSourceDays` counters and
+  `multiSourceShare = multi / distinct`. Standard
+  `--since` / `--until` / `--source` / `--top` filters; `--top`
+  is display-only. Default sort `day desc`; alternate sort keys
+  `sources` / `tokens` / `buckets` (all desc, tiebreak day desc).
+
+  Why this is orthogonal to what already ships:
+
+  - `provider-share` / `source-tenure` aggregate over the whole
+    window — not anchored per calendar day.
+  - `cohabitation` measures *which sources co-occur within the
+    same hour bucket*; this measures *how many sources show up
+    anywhere in the same calendar day*. A day with one tool at
+    09:00 and a different tool at 22:00 has cohabitation=0 but
+    sourceCount=2 — the lenses see different things.
+  - `active-span-per-day` / `first-bucket-of-day` characterise
+    time-of-day shape; they're agnostic to which tools were used.
+  - `model-mix-entropy` is over models, not sources, and is not
+    per-day.
+
+  When `--source` is set the report degenerates by design (every
+  kept day has sourceCount=1); accepted for symmetry with sibling
+  commands and useful for verifying day coverage of one tool.
+
+  15 new tests (1076 total, up from 1061): option validation
+  (since/until/top/sort), empty/drops, source filter vs empty
+  source dropping order, distinct sources per day with sources
+  list sorted lex asc, single-vs-multi counters, percentile
+  distribution math on odd-N populations, default day-desc sort,
+  sort=sources with day-desc tiebreak, sort=tokens / sort=buckets,
+  top cap with full-population summary, since/until window, and
+  source-filter degeneration to sourceCount=1.
+
+  Live smoke against `~/.config/pew/queue.jsonl`, `--top 10`
+  (banned product names redacted as `[REDACTED]`):
+
+  ```
+  pew-insights source-breadth-per-day
+  as of: 2026-04-25T10:59:22.065Z    days: 105 (shown 10)    tokens: 8,535,469,879    sort: day
+  sourceCount: min=1 p25=1 median=1 mean=1.33 p75=1 max=6
+  single-source: 89    multi-source: 16    multi-share: 15.2%
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 empty source, 95 below top cap
+
+  day (UTC)   sources  source-list                                              buckets  tokens
+  ----------  -------  -------------------------------------------------------  -------  -------------
+  2026-04-25  3        hermes,openclaw,opencode                                 22       292,743,686
+  2026-04-24  3        hermes,openclaw,opencode                                 48       627,251,216
+  2026-04-23  4        claude-code,hermes,openclaw,opencode                     48       695,192,088
+  2026-04-22  3        hermes,openclaw,opencode                                 48       893,292,230
+  2026-04-21  4        claude-code,hermes,openclaw,opencode                     48       1,122,611,203
+  2026-04-20  6        claude-code,codex,hermes,openclaw,opencode,[REDACTED]    48       1,773,838,138
+  2026-04-19  4        claude-code,codex,hermes,openclaw                        48       659,027,845
+  2026-04-18  4        claude-code,codex,hermes,openclaw                        36       922,235,800
+  2026-04-17  5        claude-code,codex,hermes,openclaw,[REDACTED]             23       132,896,161
+  2026-04-16  2        claude-code,codex                                        14       77,147,112
+  ```
+
+  Headline: across 105 active days, 89 are *single-source* days
+  (the dominant pattern — 84.8%). Only 16 days (15.2%) saw two
+  or more tools. Median sourceCount is 1, mean 1.33; the max
+  observed was 6 distinct sources on a single day (2026-04-20).
+  The recent week shows 3-tool days as the steady state with one
+  4-tool day (2026-04-23). Long tail of single-tool days drives
+  median = p75 = 1, even though the mean is pulled above 1 by
+  a small number of high-breadth days — classic right-skew.
+
 ## 0.4.82 — 2026-04-25
 
 ### Added
