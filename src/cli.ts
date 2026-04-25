@@ -85,6 +85,7 @@ import {
   renderHourOfWeek,
   renderDeviceTenure,
   renderPromptOutputCorrelation,
+  renderOutputTokenDecileDistribution,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -184,6 +185,7 @@ import { buildSourcePairCooccurrence } from './sourcepaircooccurrence.js';
 import { buildProviderSwitchingFrequency } from './providerswitchingfrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildLastBucketOfDay } from './lastbucketofday.js';
+import { buildOutputTokenDecileDistribution } from './outputtokendeciledistribution.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
 import { buildBucketDensityPercentile } from './bucketdensitypercentile.js';
@@ -3610,6 +3612,44 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderLastBucketOfDay(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('output-token-decile-distribution')
+  .description('Rank all positive-output buckets ascending and partition into 10 equal-sized deciles; report per-decile mass + Gini + top-10%/top-1% concentration')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const queue = await readQueue(paths);
+        const report = buildOutputTokenDecileDistribution(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderOutputTokenDecileDistribution(report) + '\n');
         }
       } catch (e) {
         die(e);

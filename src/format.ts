@@ -36,6 +36,7 @@ import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
 import type { BucketDensityPercentileReport } from './bucketdensitypercentile.js';
 import type { HourOfWeekReport } from './hourofweek.js';
 import type { DeviceTenureReport } from './devicetenure.js';
+import type { OutputTokenDecileDistributionReport } from './outputtokendeciledistribution.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -4444,6 +4445,79 @@ export function renderProviderSwitchingFrequency(
     ]);
     lines.push(renderTableLocal(headers, rows));
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderOutputTokenDecileDistribution(
+  r: OutputTokenDecileDistributionReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights output-token-decile-distribution'));
+  const fmtPctN = (n: number | null) =>
+    n === null ? '-' : (n * 100).toFixed(2) + '%';
+  const fmtGini = (n: number | null) => (n === null ? '-' : n.toFixed(4));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    buckets: ${formatNumber(r.bucketCount)}    output-tokens: ${formatNumber(r.totalOutputTokens)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `concentration: gini=${fmtGini(r.gini)}    top-10% share=${fmtPctN(r.p90Share)}    top-1% share=${fmtPctN(r.p99Share)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidOutput)} bad output_tokens, ${formatNumber(r.droppedZeroOutput)} zero-output, ${formatNumber(r.droppedSourceFilter)} by source filter`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(rank all positive-output buckets ascending; partition into 10 equal-sized deciles; D1 = lightest, D10 = heaviest)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.bucketCount === 0) {
+    lines.push(
+      chalk.yellow(
+        '  no positive-output bucket rows in the window after filters. nothing to chart.',
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-decile output-token mass'));
+  const headers = [
+    'decile',
+    'buckets',
+    'min-out',
+    'mean-out',
+    'max-out',
+    'tokens-in-decile',
+    'share',
+  ];
+  const rows: string[][] = r.deciles.map((d) => [
+    'D' + d.decile,
+    formatNumber(d.bucketCount),
+    formatNumber(d.minOutput),
+    d.bucketCount === 0 ? '0' : Math.round(d.meanOutput).toLocaleString('en-US'),
+    formatNumber(d.maxOutput),
+    formatNumber(d.tokensInDecile),
+    (d.shareOfTokens * 100).toFixed(2) + '%',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
