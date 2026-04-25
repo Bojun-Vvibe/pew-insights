@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.100 — 2026-04-26
+
+### Added
+
+- `last-bucket-of-day`: per UTC calendar day, the **latest**
+  active `hour_start` bucket — the symmetric "shutdown clock"
+  counterpart to `first-bucket-of-day`. Each day row exposes
+  `lastBucket` (ISO of the latest positive-token hour_start),
+  `lastHour` (0..23, UTC hour-of-day of `lastBucket`),
+  `bucketsOnDay`, and `tokensOnDay`. Summary stats over all
+  days include `lastHour` min / max / mean / median / p25 /
+  p75 / mode + mode count + mode share.
+
+  Why this is orthogonal to what already ships:
+
+  - `first-bucket-of-day` reports the *start* hour. A day with
+    first=09 / last=17 and a day with first=09 / last=23 land
+    identically there but very differently here.
+  - `active-span-per-day` reports first/last/span/duty as a
+    joint per-day record, but it is a wide-row dashboard, not
+    a focused **distribution** lens on the end-of-day hour. It
+    does not surface lastHour quantiles / mode / mode-share.
+  - `time-of-day` / `which-hour` / `peak-hour-share` are
+    window-wide hour distributions, not anchored to per-day
+    shutdown.
+  - `idle-gaps` / `interarrival` / `bucket-streak-length`
+    measure spacing or consecutive runs, not the calendar-day
+    stop anchor.
+
+  Mode tiebreak: **highest hour wins** (symmetric to
+  first-bucket-of-day's "lowest hour wins"). Flags:
+  `--since` / `--until` (window), `--source` (single-source
+  restriction), `--top <n>` (display cap; summary stats stay
+  full-population), `--sort day|last-hour|tokens|buckets`,
+  `--json`. Determinism: pure builder, wall clock only via
+  `opts.generatedAt`.
+
+  13 new tests (1226 total, up from 1213): rejects bad
+  since/until/top/sort; empty queue gives null stats; drop
+  counters (bad hour_start / zero tokens / source filter)
+  attribute correctly; per-day lastBucket really is the latest
+  positive-token row; a *zero-token* row at a later hour does
+  **not** extend lastBucket; lastHour summary stats use the
+  full population (not the windowed `kept`); mode tiebreak
+  picks the **higher** hour; `--top` drops surface as
+  `droppedTopDays` while summary stays full-population;
+  `--sort last-hour` orders desc with day-desc tiebreak;
+  `--sort tokens` orders by tokensOnDay desc; window
+  inclusive/exclusive boundary.
+
+### Live-smoke output
+
+`pew-insights last-bucket-of-day --top 5` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights last-bucket-of-day
+as of: 2026-04-25T17:06:47.311Z    days: 105 (shown 5)    tokens: 8,684,484,877    sort: day
+lastHour UTC: min=01 p25=07 median=08 mean=8.97 p75=10 max=23 mode=07 (n=20, share=19.0%)
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 100 below top cap
+(per UTC calendar day: lastBucket = latest hour_start with positive total_tokens; lastHour = its UTC hour-of-day; mode tiebreak: latest hour wins)
+
+per-day last bucket (sorted by day desc)
+day (UTC)   last-bucket (UTC)         last-hour  buckets-on-day  tokens-on-day
+----------  ------------------------  ---------  --------------  -------------
+2026-04-25  2026-04-25T17:00:00.000Z  17         35              441,758,684
+2026-04-24  2026-04-24T23:30:00.000Z  23         48              627,251,216
+2026-04-23  2026-04-23T23:30:00.000Z  23         48              695,192,088
+2026-04-22  2026-04-22T23:30:00.000Z  23         48              893,292,230
+2026-04-21  2026-04-21T23:30:00.000Z  23         48              1,122,611,203
+```
+
+Headline: median lastHour is **08 UTC** with mode **07 UTC**
+(19.0% of days), but max stretches to **23 UTC**. The mean of
+**8.97** sits between median and p75=10 — a long right tail of
+late-night sessions on the heavier days (the four most-recent
+weekdays all stop at 23:30 UTC with 48 buckets and ~600M–1.1B
+tokens each), pulling the average above the typical morning
+shutdown.
+
 ## 0.4.99 — 2026-04-26
 
 ### Added
