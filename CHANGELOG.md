@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.96 — 2026-04-25
+
+### Added
+
+- `inter-source-handoff-latency`: new subcommand. For each adjacent
+  pair of active hour-buckets whose **primary source** (the source
+  with the highest `total_tokens` in that bucket, ties broken lex)
+  *changed*, measure the wall-clock gap in hours. Emits
+  median/mean/min/max latency across all handoffs, a contiguous (1h
+  apart) vs gapped split, and a top `(from -> to)` table with
+  per-pair count, median/min/max latency, and share-of-handoffs.
+
+  Why a separate lens:
+
+  - `bucket-handoff-frequency` measures how *often* the primary
+    **model** changes; says nothing about *time* and operates on
+    model identity not source.
+  - `provider-switching-frequency` is also a count lens scoped to
+    provider; ignores latency.
+  - `interarrival` is a raw bucket-distance lens with no
+    conditioning on the primary source changing.
+  - `idle-gaps` is a generic quiet-stretch lens regardless of what
+    tool ran on either side.
+
+  Headline question: "when I switch from one CLI to another, how
+  long does the swap take? Are tool handoffs back-to-back live
+  swaps, or do they almost always cross an overnight gap?"
+
+  Sort order for `pairs[]`: count desc, then median-latency asc
+  (faster swaps first within tie), then `from` asc, then `to`
+  asc. `--top-handoffs` (default 10) caps the table after sort;
+  `--min-handoffs` (default 1) filters rows whose count is below
+  the floor *before* the cap. Latency stats always reflect the
+  full handoff population (display filters do not move them).
+
+  17 new tests (1187 total, up from 1170): option validation
+  (topHandoffs / minHandoffs / since / until), empty / single
+  bucket, all-same-source, alternating-source contiguous handoffs,
+  gapped handoffs with mixed wall-clock distances, max-tokens
+  primary with lex tie-break, empty-source bucket drop,
+  zero/negative token drop, bad hour_start drop, top-cap with
+  `droppedBelowTopCap`, min-handoffs floor with
+  `droppedBelowMinHandoffs`, window filter, and input-order
+  determinism.
+
+### Live-smoke output
+
+`pew-insights inter-source-handoff-latency` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights inter-source-handoff-latency
+as of: 2026-04-25T15:36:25.192Z    active-buckets: 901    pairs: 900    handoffs: 99 (11.0%)    minHandoffs: 1    topHandoffs: 10
+latency: median 0.50h    mean 6.52h    min 0.50h    max 292.00h    contiguous-handoffs (1h): 1    gapped: 98
+dropped: 0 bad hour_start, 0 zero-tokens, 0 empty-source buckets, 0 below min-handoffs, 5 below top cap
+dominant source: vscode-copilot (primary in 312 of 901 buckets)
+
+top source handoffs (sorted by count desc, then median-latency asc)
+from-source     to-source       count  share-of-handoffs  median-latency  min    max
+--------------  --------------  -----  -----------------  --------------  -----  -------
+openclaw        opencode        23     23.2%              0.50h           0.50h  0.50h
+opencode        openclaw        22     22.2%              0.50h           0.50h  0.50h
+claude-code     openclaw        10     10.1%              0.50h           0.50h  0.50h
+claude-code     codex           9      9.1%               0.50h           0.50h  112.50h
+openclaw        claude-code     9      9.1%               0.50h           0.50h  0.50h
+codex           claude-code     7      7.1%               0.50h           0.50h  2.00h
+vscode-copilot  claude-code     4      4.0%               21.50h          0.50h  116.00h
+hermes          claude-code     3      3.0%               0.50h           0.50h  1.00h
+claude-code     vscode-copilot  3      3.0%               15.50h          5.00h  292.00h
+hermes          openclaw        2      2.0%               0.50h           0.50h  0.50h
+```
+
+Reading: of 900 same-source-or-not adjacent pairs, only 99 (11.0%)
+crossed a tool boundary — the strong intra-day signal is that I
+stick with one CLI for long stretches. When I do swap, the median
+latency is 0.50h (i.e. the very next 30-min bucket), but the mean
+is dragged to 6.52h by a long tail (max 292h = 12 days for a
+`claude-code -> vscode-copilot` resumption). The two dominant
+swap pairs are the `openclaw <-> opencode` round-trip (45/99 = 45%
+of all handoffs), all at 0.50h median — those are live in-session
+tool swaps, not "next morning" gaps. Compare `claude-code ->
+codex` (median 0.5h, max 112.5h): also mostly live, but with
+occasional multi-day re-engagements. The contiguous-handoffs (1h)
+counter is 1 because the queue stores buckets at 30-min
+granularity, not hourly; the 0.50h handoffs are the actual
+"adjacent bucket" live swaps in this dataset.
+
 ## 0.4.95 — 2026-04-25
 
 ### Added
