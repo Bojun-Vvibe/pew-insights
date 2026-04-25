@@ -94,6 +94,7 @@ import {
   renderSourceRunLengths,
   renderHourOfDaySourceMixEntropy,
   renderBucketTokenGini,
+  renderHourOfDayTokenSkew,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -151,6 +152,7 @@ import {
 import { buildSourceRunLengths } from './sourcerunlengths.js';
 import { buildHourOfDaySourceMixEntropy } from './hourofdaysourcemixentropy.js';
 import { buildBucketTokenGini } from './buckettokengini.js';
+import { buildHourOfDayTokenSkew } from './hourofdaytokenskew.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2174,6 +2176,55 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketTokenGini(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('hour-of-day-token-skew')
+  .description(
+    'Per UTC hour-of-day, sample skewness (Fisher–Pearson g1) of per-day total_tokens — separates steady hours from rare-burst hours',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-days <n>',
+    'hide hours observed on fewer than n distinct UTC days; suppressed hours surface as droppedBelowMinDays (default 2 — structural minimum for a non-zero m2)',
+    '2',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minDays: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isFinite(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildHourOfDayTokenSkew(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minDays,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderHourOfDayTokenSkew(report) + '\n');
         }
       } catch (e) {
         die(e);

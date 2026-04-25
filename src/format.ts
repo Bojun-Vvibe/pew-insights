@@ -4913,6 +4913,10 @@ import type {
   BucketTokenGiniReport,
   BucketTokenGiniRow,
 } from './buckettokengini.js';
+import type {
+  HourOfDayTokenSkewReport,
+  HourOfDayTokenSkewRow,
+} from './hourofdaytokenskew.js';
 
 function fmtRunLen(n: number): string {
   if (Number.isInteger(n)) return String(n);
@@ -5162,6 +5166,86 @@ export function renderBucketTokenGini(r: BucketTokenGiniReport): string {
     formatPercentLocal(s.topBucketShare),
     s.activeWindowStart ?? '-',
     s.activeWindowEnd ?? '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function fmtSkew(n: number): string {
+  if (!Number.isFinite(n)) return '-';
+  return n.toFixed(3);
+}
+
+export function renderHourOfDayTokenSkew(r: HourOfDayTokenSkewReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights hour-of-day-token-skew'));
+  const topKDesc = r.topK === null ? '—' : String(r.topK);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    shown: ${formatNumber(r.hours.length)}    observed: ${formatNumber(r.observedHours)}    tokens: ${formatTokens(r.totalTokens)}    minDays: ${formatNumber(r.minDays)}    topK: ${topKDesc}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedBelowMinDays)} below minDays, ${formatNumber(r.droppedBelowTopK)} below topK`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(per UTC hour: g1 = m3/m2^1.5 on per-day token totals; >0 right-skewed (rare bursts), <0 left-skewed)',
+    ),
+  );
+  lines.push('');
+
+  if (r.hours.length === 0) {
+    lines.push(chalk.yellow('  no hours met the floor. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('global rollup (full kept set, pre-topK)'));
+  lines.push(
+    renderTableLocal(
+      ['summary', 'value'],
+      [
+        ['keptHours', formatNumber(r.hours.length + r.droppedBelowTopK)],
+        ['weightedMeanAbsSkewness', fmtSkew(r.weightedMeanAbsSkewness)],
+        ['unweightedMeanSkewness', fmtSkew(r.unweightedMeanSkewness)],
+        ['highlySkewedHourCount', formatNumber(r.highlySkewedHourCount)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(
+    chalk.bold(
+      r.topK === null
+        ? 'per hour-of-day: per-day token-total skewness (sorted by |skew| desc; ties: tokens desc, hour asc)'
+        : `top ${r.topK} hours-of-day by |skew| (|skew| desc; ties: tokens desc, hour asc)`,
+    ),
+  );
+  const headers = [
+    'hour',
+    'days',
+    'tokens',
+    'meanDay',
+    'stddevDay',
+    'skew',
+    'maxDay',
+    'minDay',
+  ];
+  const rows: string[][] = r.hours.map((h: HourOfDayTokenSkewRow) => [
+    String(h.hour).padStart(2, '0'),
+    formatNumber(h.observedDays),
+    formatTokens(h.totalTokens),
+    formatTokens(h.meanDailyTokens),
+    formatTokens(h.stddevDailyTokens),
+    fmtSkew(h.skewness),
+    formatTokens(h.maxDailyTokens),
+    formatTokens(h.minDailyTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
 
