@@ -75,6 +75,17 @@ export interface SourceRankChurnOptions {
    * `bucket-token-gini` / `hour-of-day-token-skew` convention.
    */
   topK?: number | null;
+  /**
+   * Drop day-pairs whose union size is below this many sources.
+   * Default 2 (the minimum at which the footrule is even defined
+   * — a single-source union always scores 0). Raising this to
+   * e.g. 3 filters out the degenerate `n=2` case where the
+   * normalised footrule is forced to either exactly 0 or
+   * exactly 1, which polarises the distribution and makes
+   * `meanFootrule` jumpy on small corpora. Suppressed pairs
+   * surface as `droppedBelowMinPairUnion`.
+   */
+  minPairUnion?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -131,6 +142,10 @@ export interface SourceRankChurnReport {
   droppedInvalidHourStart: number;
   /** Rows dropped because `total_tokens` was non-positive. */
   droppedZeroTokens: number;
+  /** Adjacent UTC-day pairs dropped because `unionSize < minPairUnion`. */
+  droppedBelowMinPairUnion: number;
+  /** Effective floor on union size for a day-pair to count. */
+  minPairUnion: number;
   /** Per-source rows, sorted by `meanRank` asc, source asc. */
   sources: SourceRankChurnSourceRow[];
 }
@@ -185,6 +200,16 @@ export function buildSourceRankChurn(
     if (!Number.isFinite(topK) || topK < 1 || !Number.isInteger(topK)) {
       throw new Error(`topK must be a positive integer or null (got ${opts.topK})`);
     }
+  }
+  const minPairUnion = opts.minPairUnion ?? 2;
+  if (
+    !Number.isFinite(minPairUnion) ||
+    minPairUnion < 2 ||
+    !Number.isInteger(minPairUnion)
+  ) {
+    throw new Error(
+      `minPairUnion must be an integer >= 2 (got ${opts.minPairUnion})`,
+    );
   }
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -268,6 +293,7 @@ export function buildSourceRankChurn(
 
   // ---- adjacent-day footrules -----------------------------------
   const footrules: number[] = [];
+  let droppedBelowMinPairUnion = 0;
   for (let i = 1; i < filteredPerDay.length; i++) {
     const prev = filteredPerDay[i - 1]!;
     const cur = filteredPerDay[i]!;
@@ -276,7 +302,10 @@ export function buildSourceRankChurn(
     const curRanks = dateToRanks.get(cur.date)!;
     const union = new Set<string>([...prevRanks.keys(), ...curRanks.keys()]);
     const n = union.size;
-    if (n < 2) continue; // footrule undefined on a single source
+    if (n < minPairUnion) {
+      droppedBelowMinPairUnion += 1;
+      continue;
+    }
     const absentRank = n; // one slot below the worst observed
     let raw = 0;
     for (const s of union) {
@@ -377,6 +406,8 @@ export function buildSourceRankChurn(
     droppedBelowMinDays,
     droppedInvalidHourStart,
     droppedZeroTokens,
+    droppedBelowMinPairUnion,
+    minPairUnion,
     sources,
   };
 }

@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.14 — 2026-04-26
+
+### Added
+
+- `source-rank-churn --min-pair-union <n>`: drop adjacent UTC-day
+  pairs whose union of sources is below `n` (default `2` — the
+  structural minimum at which the footrule is even defined).
+  Raising to `3` suppresses the polarising `n=2` case where the
+  normalised footrule is forced to either exactly `0` or
+  exactly `1`, which makes `meanFootrule` jumpy on small or
+  sparse-source corpora. Suppressed pairs surface as
+  `droppedBelowMinPairUnion` in the report header alongside the
+  effective `minPairUnion` floor — same convention as the
+  existing `droppedBelowMinDays` / `droppedBelowTopK` counters.
+  Notably, raising the floor *also* surfaces the previously
+  silent `unionSize < 2` (single-source) drops, so the dropped
+  counter doubles as a visibility tool for sparse days that the
+  0.6.13 build hid completely.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-pair-union 3`)
+
+Source names below are aliased; numeric values are verbatim.
+
+```
+pew-insights source-rank-churn --min-pair-union 3
+as of: 2026-04-25T23:55:24.129Z    shown: 6    keptSources: 6    consideredDays: 105    dayPairs: 10    minDays: 1    topK: —
+dropped: 0 bad hour_start, 0 zero tokens, 0 below minDays, 0 below topK, 55 pairs below minPairUnion (=3)
+(per UTC-day pair: normalised Spearman footrule on tokens-rank; 0 = identical leaderboard, 1 = full reversal)
+
+global rollup (full kept set, pre-topK)
+summary                          value
+-------------------------------  -----
+dayPairs                         10
+stableDayPairs (footrule == 0)   2
+chaosDayPairs (footrule >= 0.5)  4
+meanFootrule                     0.319
+medianFootrule                   0.278
+p90Footrule                      0.500
+maxFootrule                      0.583
+```
+
+Comparison vs the unfiltered 0.6.13 run on the same corpus:
+
+| metric          | 0.6.13 (no floor) | 0.6.14 `--min-pair-union 3` |
+| --------------- | ----------------- | --------------------------- |
+| dayPairs        | 16                | 10                          |
+| stableDayPairs  | 6                 | 2                           |
+| chaosDayPairs   | 6                 | 4                           |
+| meanFootrule    | 0.325             | 0.319                       |
+| medianFootrule  | 0.250             | 0.278                       |
+| p90Footrule     | 1.000             | 0.500                       |
+| maxFootrule     | 1.000             | 0.583                       |
+
+The headline insight: on this corpus, **every single
+`maxFootrule = 1.000` day-pair was a degenerate `n=2` union**.
+Filtering them out collapses both `p90Footrule` and `maxFootrule`
+to `0.500` / `0.583` — the corpus is *not* genuinely bimodal,
+it is "mostly mid-range churn with a sparse-day artefact tail".
+`meanFootrule` barely moves (`0.325 → 0.319`); `medianFootrule`
+edges *up* (`0.250 → 0.278`) as the artificial zeros from
+single-shared-source pairs leave the population. Net: the
+`--min-pair-union 3` lens is the right default for any "is my
+day-over-day source order really chaotic?" question on a
+narrow-source corpus, and `droppedBelowMinPairUnion 55` makes
+the size of the previously-hidden sparse-day population legible
+for the first time.
+
 ## 0.6.13 — 2026-04-26
 
 ### Added

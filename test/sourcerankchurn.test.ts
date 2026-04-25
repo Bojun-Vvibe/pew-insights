@@ -215,3 +215,47 @@ test('source-rank-churn: window filter via since/until is inclusive/exclusive', 
   assert.equal(r.observedDays, 1);
   assert.equal(r.dayPairs, 0);
 });
+
+test('source-rank-churn: rejects bad minPairUnion', () => {
+  assert.throws(() => buildSourceRankChurn([], { minPairUnion: 0 }));
+  assert.throws(() => buildSourceRankChurn([], { minPairUnion: 1 }));
+  assert.throws(() => buildSourceRankChurn([], { minPairUnion: 2.5 }));
+  assert.throws(() => buildSourceRankChurn([], { minPairUnion: Number.NaN }));
+});
+
+test('source-rank-churn: minPairUnion=3 drops degenerate n=2 pairs', () => {
+  // Two adjacent days, only s1 + s2 ever appear → unionSize=2.
+  // Default minPairUnion=2 keeps the pair; raising to 3 drops it
+  // and surfaces it as droppedBelowMinPairUnion.
+  const queue: QueueLine[] = [
+    ql('2026-04-20T09:00:00Z', 's1', 100),
+    ql('2026-04-20T10:00:00Z', 's2', 50),
+    ql('2026-04-21T09:00:00Z', 's1', 50),
+    ql('2026-04-21T10:00:00Z', 's2', 200),
+  ];
+  const def = buildSourceRankChurn(queue, { generatedAt: GEN });
+  assert.equal(def.dayPairs, 1);
+  assert.equal(def.minPairUnion, 2);
+  assert.equal(def.droppedBelowMinPairUnion, 0);
+  const tight = buildSourceRankChurn(queue, { minPairUnion: 3, generatedAt: GEN });
+  assert.equal(tight.dayPairs, 0);
+  assert.equal(tight.droppedBelowMinPairUnion, 1);
+  assert.equal(tight.meanFootrule, 0);
+  assert.equal(tight.maxFootrule, 0);
+});
+
+test('source-rank-churn: minPairUnion keeps n>=floor pairs intact', () => {
+  // Three sources across two adjacent days → unionSize=3.
+  const queue: QueueLine[] = [
+    ql('2026-04-20T09:00:00Z', 's1', 300),
+    ql('2026-04-20T10:00:00Z', 's2', 200),
+    ql('2026-04-20T11:00:00Z', 's3', 100),
+    ql('2026-04-21T09:00:00Z', 's1', 300),
+    ql('2026-04-21T10:00:00Z', 's2', 200),
+    ql('2026-04-21T11:00:00Z', 's3', 100),
+  ];
+  const r = buildSourceRankChurn(queue, { minPairUnion: 3, generatedAt: GEN });
+  assert.equal(r.dayPairs, 1);
+  assert.equal(r.droppedBelowMinPairUnion, 0);
+  assert.equal(r.meanFootrule, 0);
+});

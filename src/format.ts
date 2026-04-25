@@ -5277,7 +5277,7 @@ export function renderSourceRankChurn(r: SourceRankChurnReport): string {
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedBelowMinDays)} below minDays, ${formatNumber(r.droppedBelowTopK)} below topK`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedBelowMinDays)} below minDays, ${formatNumber(r.droppedBelowTopK)} below topK, ${formatNumber(r.droppedBelowMinPairUnion)} pairs below minPairUnion (=${formatNumber(r.minPairUnion)})`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

@@ -2264,6 +2264,11 @@ program
     '--top-k <n>',
     'cap sources[] to the top K by meanRank asc (then source asc); hidden sources surface as droppedBelowTopK; global rollup unchanged',
   )
+  .option(
+    '--min-pair-union <n>',
+    'drop adjacent UTC-day pairs whose union of sources is below n (default 2; raise to 3 to suppress the polarising n=2 case where footrule is forced to 0 or 1)',
+    '2',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2272,6 +2277,7 @@ program
         until?: string;
         minDays: string;
         topK?: string;
+        minPairUnion: string;
         json?: boolean;
       },
       cmd,
@@ -2293,12 +2299,19 @@ program
           }
           topK = t;
         }
+        const minPairUnion = Number.parseInt(opts.minPairUnion, 10);
+        if (!Number.isFinite(minPairUnion) || minPairUnion < 2) {
+          throw new Error(
+            `--min-pair-union must be an integer >= 2 (got ${opts.minPairUnion})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRankChurn(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minDays,
           topK,
+          minPairUnion,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
