@@ -3877,11 +3877,14 @@ export function renderBucketDensityPercentile(
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinTokens)} below min-tokens floor`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinTokens)} below min-tokens floor, ${formatNumber(r.droppedTrimTop)} by trim-top`,
     ),
   );
   if (r.minTokens > 0) {
     lines.push(chalk.dim(`min-tokens floor: ${formatNumber(r.minTokens)} (drops buckets with total_tokens < ${formatNumber(r.minTokens)})`));
+  }
+  if (r.trimTopPct > 0) {
+    lines.push(chalk.dim(`trim-top: ${r.trimTopPct}% (drops floor(N * pct/100) largest buckets before percentile/decile computation)`));
   }
   if (r.windowStart || r.windowEnd) {
     lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));

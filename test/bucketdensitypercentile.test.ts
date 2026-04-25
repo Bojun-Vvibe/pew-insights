@@ -178,3 +178,83 @@ test('bucket-density-percentile: --since/--until window narrows population', () 
   assert.equal(r.min, 100);
   assert.equal(r.max, 200);
 });
+
+// ---- --trim-top outlier trim --------------------------------------------
+
+test('bucket-density-percentile: rejects bad trimTopPct', () => {
+  assert.throws(() => buildBucketDensityPercentile([], { trimTopPct: -1 }));
+  assert.throws(() => buildBucketDensityPercentile([], { trimTopPct: 100 }));
+  assert.throws(() => buildBucketDensityPercentile([], { trimTopPct: 150 }));
+  assert.throws(() => buildBucketDensityPercentile([], { trimTopPct: NaN }));
+});
+
+test('bucket-density-percentile: trimTopPct=0 is a true no-op', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 50; i += 1) {
+    const day = 20 + Math.floor((i - 1) / 24);
+    const hour = ((i - 1) % 24).toString().padStart(2, '0');
+    queue.push(
+      ql(`2026-04-${String(day).padStart(2, '0')}T${hour}:00:00Z`, {
+        total_tokens: i,
+      }),
+    );
+  }
+  const a = buildBucketDensityPercentile(queue, { generatedAt: GEN });
+  const b = buildBucketDensityPercentile(queue, { trimTopPct: 0, generatedAt: GEN });
+  assert.equal(b.droppedTrimTop, 0);
+  assert.equal(b.totalBuckets, a.totalBuckets);
+  assert.equal(b.totalTokens, a.totalTokens);
+  assert.equal(b.max, a.max);
+  assert.equal(b.p50, a.p50);
+});
+
+test('bucket-density-percentile: trimTopPct=10 drops the 10 largest of 100 buckets', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 100; i += 1) {
+    const day = 20 + Math.floor((i - 1) / 24);
+    const hour = ((i - 1) % 24).toString().padStart(2, '0');
+    queue.push(
+      ql(`2026-04-${String(day).padStart(2, '0')}T${hour}:00:00Z`, {
+        total_tokens: i,
+      }),
+    );
+  }
+  const r = buildBucketDensityPercentile(queue, { trimTopPct: 10, generatedAt: GEN });
+  assert.equal(r.droppedTrimTop, 10);
+  assert.equal(r.totalBuckets, 90);
+  // After trim, surviving population is 1..90; max should be 90 not 100.
+  assert.equal(r.max, 90);
+  assert.equal(r.min, 1);
+  assert.equal(r.totalTokens, (90 * 91) / 2); // 4095
+  // Deciles still partition the post-trim 90 into 10 slices of 9 each.
+  let sumCount = 0;
+  for (const d of r.deciles) sumCount += d.count;
+  assert.equal(sumCount, 90);
+  assert.equal(r.deciles[9]!.upperEdge, 90);
+});
+
+test('bucket-density-percentile: trim is robust to one giant outlier (mean / p99 stabilise)', () => {
+  // 99 small buckets + 1 enormous outlier.
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 99; i += 1) {
+    const day = 20 + Math.floor((i - 1) / 24);
+    const hour = ((i - 1) % 24).toString().padStart(2, '0');
+    queue.push(
+      ql(`2026-04-${String(day).padStart(2, '0')}T${hour}:00:00Z`, {
+        total_tokens: 100,
+      }),
+    );
+  }
+  // Outlier on a fresh hour
+  queue.push(ql('2026-04-30T00:00:00Z', { total_tokens: 1_000_000 }));
+  const noTrim = buildBucketDensityPercentile(queue, { generatedAt: GEN });
+  const trimmed = buildBucketDensityPercentile(queue, { trimTopPct: 1, generatedAt: GEN });
+  // Without trim: max is 1M, mean is dragged way up by the outlier.
+  assert.equal(noTrim.max, 1_000_000);
+  // With 1% trim on N=100, drop 1 bucket (the outlier). Surviving pop is 99x100.
+  assert.equal(trimmed.droppedTrimTop, 1);
+  assert.equal(trimmed.totalBuckets, 99);
+  assert.equal(trimmed.max, 100);
+  assert.equal(trimmed.totalTokens, 9_900);
+  assert.equal(trimmed.mean, 100);
+});

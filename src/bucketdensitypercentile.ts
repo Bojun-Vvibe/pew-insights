@@ -65,6 +65,22 @@ export interface BucketDensityPercentileOptions {
    * buckets count).
    */
   minTokens?: number;
+  /**
+   * Outlier-trim flag: drop the top `trimTopPct` percent of
+   * buckets (by token mass) *before* computing percentiles and
+   * deciles. Useful for getting a robust read on the body of the
+   * distribution without one or two giant reasoning buckets
+   * dragging mean / p99 around. Suppressed buckets surface as
+   * `droppedTrimTop`. Range [0, 100). Default 0 = no trim.
+   *
+   * Note: this trims after window / source / minTokens filters
+   * are applied, on the surviving population. So the trim cap is
+   * always relative to the *post-filter* count, not the raw
+   * queue. The exact number of trimmed buckets is
+   * `floor(N * trimTopPct / 100)` so a trim of 1% on 1,443
+   * buckets drops the 14 largest.
+   */
+  trimTopPct?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -91,6 +107,8 @@ export interface BucketDensityPercentileReport {
   source: string | null;
   /** Echo of resolved minTokens floor (0 = no floor). */
   minTokens: number;
+  /** Echo of resolved trimTopPct (0 = no trim). */
+  trimTopPct: number;
   /** Total bucket observations after filters (pre-decile). */
   totalBuckets: number;
   /** Sum of total_tokens across the post-filter population. */
@@ -115,6 +133,8 @@ export interface BucketDensityPercentileReport {
   droppedZeroTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinTokens: number;
+  /** Buckets dropped by the --trim-top outlier trim (top P% of post-filter pop). */
+  droppedTrimTop: number;
   /** Always 10 entries when totalBuckets > 0; empty array otherwise. */
   deciles: BucketDensityDecile[];
 }
@@ -135,6 +155,12 @@ export function buildBucketDensityPercentile(
   const minTokens = opts.minTokens ?? 0;
   if (!Number.isFinite(minTokens) || minTokens < 0) {
     throw new Error(`minTokens must be a non-negative finite number (got ${opts.minTokens})`);
+  }
+  const trimTopPct = opts.trimTopPct ?? 0;
+  if (!Number.isFinite(trimTopPct) || trimTopPct < 0 || trimTopPct >= 100) {
+    throw new Error(
+      `trimTopPct must be a finite number in [0, 100) (got ${opts.trimTopPct})`,
+    );
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -187,6 +213,18 @@ export function buildBucketDensityPercentile(
   }
 
   observations.sort((a, b) => a - b);
+
+  // Outlier trim: drop the top trimTopPct percent of buckets after
+  // sorting. floor(N * pct / 100) — a 0% trim is a no-op, a 1% trim
+  // on 1,443 buckets drops the 14 largest.
+  let droppedTrimTop = 0;
+  if (trimTopPct > 0 && observations.length > 0) {
+    droppedTrimTop = Math.floor((observations.length * trimTopPct) / 100);
+    if (droppedTrimTop > 0) {
+      observations.length = observations.length - droppedTrimTop;
+    }
+  }
+
   const N = observations.length;
 
   let totalTokens = 0;
@@ -224,6 +262,7 @@ export function buildBucketDensityPercentile(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     minTokens,
+    trimTopPct,
     totalBuckets: N,
     totalTokens,
     min: N > 0 ? observations[0]! : null,
@@ -243,6 +282,7 @@ export function buildBucketDensityPercentile(
     droppedZeroTokens,
     droppedSourceFilter,
     droppedBelowMinTokens,
+    droppedTrimTop,
     deciles,
   };
 }

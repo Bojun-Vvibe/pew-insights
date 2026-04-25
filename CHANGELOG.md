@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.86 — 2026-04-25
+
+### Added
+
+- `bucket-density-percentile`: `--trim-top <pct>` outlier-trim
+  flag. Drops the top `pct` percent of buckets (by token mass)
+  *before* computing percentiles and deciles. Suppressed buckets
+  surface as `droppedTrimTop`. Range `[0, 100)`. Default 0 = no
+  trim. Drop count is exactly `floor(N * pct / 100)` over the
+  post-filter / post-`--min-tokens` population — so `--trim-top 1`
+  on 1,443 surviving buckets drops the 14 largest.
+
+  Why: the 0.4.85 baseline showed mean=5.93M vs p50=1.45M (4x
+  mean/median ratio) — heavy right-skew dragged by a small set of
+  giant reasoning buckets. `--trim-top` lets you ask "what does
+  the body of the distribution look like once I exclude the
+  outliers?" without filtering by an arbitrary token threshold
+  (which would also amputate the legitimate body).
+
+  Like `--min-tokens`, this affects both the percentile ladder
+  *and* the decile mass shares — the whole point is to recompute
+  the distribution shape on the trimmed population.
+
+  4 new tests (1092 total, up from 1088): rejects bad
+  trimTopPct (negative, >=100, NaN), `--trim-top=0` is a true
+  no-op, `--trim-top=10` on 100 buckets drops exactly the 10
+  largest with deciles re-partitioning the surviving 90, and a
+  one-giant-outlier robustness test where `--trim-top=1` on
+  99x100 + 1x1M brings mean / max from skewed back to the body
+  baseline.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--trim-top 1`:
+
+  ```
+  pew-insights bucket-density-percentile
+  as of: 2026-04-25T11:42:20.766Z    buckets: 1,430    tokens: 7,589,253,604    mean: 5,307,170
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-tokens floor, 14 by trim-top
+  trim-top: 1% (drops floor(N * pct/100) largest buckets before percentile/decile computation)
+
+  percentile ladder (tokens per bucket)
+  p      tokens
+  -----  ----------
+  min    20
+  p1     174
+  p5     722
+  p10    1,721
+  p25    52,762
+  p50    1,421,565
+  p75    5,429,447
+  p90    13,719,061
+  p95    29,567,935
+  p99    51,900,575
+  p99.9  58,840,552
+  max    59,093,095
+
+  decile mass distribution (D1 = smallest, D10 = top 10%)
+  decile  count  tokens         share  lower       upper
+  ------  -----  -------------  -----  ----------  ----------
+  D1      143    110,954        0.0%   20          1,721
+  D2      143    575,765        0.0%   1,721       8,235
+  D3      143    10,625,679     0.1%   8,294       195,097
+  D4      143    55,457,763     0.7%   197,889     628,897
+  D5      143    148,717,000    2.0%   630,673     1,421,565
+  D6      143    272,914,014    3.6%   1,425,418   2,498,010
+  D7      143    476,938,178    6.3%   2,508,649   4,254,663
+  D8      143    795,526,150    10.5%  4,268,560   7,020,524
+  D9      143    1,377,362,364  18.1%  7,048,004   13,719,061
+  D10     143    4,451,025,737  58.6%  13,747,361  59,093,095
+  ```
+
+  Headline: trimming just the top 1% (14 buckets out of 1,443)
+  removes ~961M tokens — i.e. those 14 buckets alone carried
+  ~11.2% of total mass (the 0.4.85 untrimmed total was 8.55B,
+  trimmed total is 7.59B). Mean drops from 5.93M to 5.31M
+  (-10.5%), max collapses from 107.6M to 59.1M (-45%), p99
+  drops from 59.1M to 51.9M (-12%). The decile pattern is
+  qualitatively unchanged — D10 still holds 58.6% of mass
+  (down from 61.4%) — so the right-skew is *not* purely
+  outlier-driven; it is structural. Even with the 14 worst
+  outliers removed, the top decile carries ~6x the mass of D9.
+
 ## 0.4.85 — 2026-04-25
 
 ### Added

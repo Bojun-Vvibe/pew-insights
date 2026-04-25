@@ -4151,6 +4151,11 @@ program
     'drop buckets whose total_tokens < n before percentile and decile computation; suppressed buckets surface as droppedBelowMinTokens. Default 0 = no floor.',
     '0',
   )
+  .option(
+    '--trim-top <pct>',
+    'outlier-trim: drop the top P percent of buckets (by token mass) before percentile and decile computation; suppressed buckets surface as droppedTrimTop. Range [0, 100). Default 0 = no trim.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4159,6 +4164,7 @@ program
         until?: string;
         source?: string;
         minTokens: string;
+        trimTop: string;
         json?: boolean;
       },
       cmd,
@@ -4170,12 +4176,17 @@ program
         if (!Number.isInteger(minTokens) || minTokens < 0) {
           throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
         }
+        const trimTopPct = Number.parseFloat(opts.trimTop);
+        if (!Number.isFinite(trimTopPct) || trimTopPct < 0 || trimTopPct >= 100) {
+          throw new Error(`--trim-top must be a finite number in [0, 100) (got ${opts.trimTop})`);
+        }
         const queue = await readQueue(paths);
         const report = buildBucketDensityPercentile(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
           minTokens,
+          trimTopPct,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
