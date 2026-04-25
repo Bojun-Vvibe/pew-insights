@@ -3117,7 +3117,7 @@ export function renderBucketIntensity(r: BucketIntensityReport): string {
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopModels)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBucketTokensMin)} below bucket-tokens-min, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopModels)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

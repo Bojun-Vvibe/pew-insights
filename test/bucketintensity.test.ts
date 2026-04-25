@@ -245,3 +245,94 @@ test('bucket-intensity: since/until window applied before bucketing', () => {
   assert.equal(r.totalBuckets, 2);
   assert.equal(r.totalTokens, 300);
 });
+
+// ---- bucketTokensMin (refinement v0.4.62) --------------------------------
+
+test('bucket-intensity: rejects bad bucketTokensMin', () => {
+  assert.throws(() => buildBucketIntensity([], { bucketTokensMin: -1 }));
+  assert.throws(() => buildBucketIntensity([], { bucketTokensMin: 1.5 }));
+});
+
+test('bucket-intensity: bucketTokensMin drops sub-threshold buckets and re-shapes percentiles', () => {
+  // Two models. tiny only has small buckets, real has all-medium buckets.
+  // With threshold 1000, tiny disappears entirely; real is unchanged.
+  const lines: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { model: 'tiny', total_tokens: 50 }),
+    ql('2026-04-20T02:00:00Z', { model: 'tiny', total_tokens: 80 }),
+    ql('2026-04-20T03:00:00Z', { model: 'tiny', total_tokens: 999 }),
+    ql('2026-04-20T01:00:00Z', { model: 'real', total_tokens: 5_000 }),
+    ql('2026-04-20T02:00:00Z', { model: 'real', total_tokens: 10_000 }),
+    ql('2026-04-20T03:00:00Z', { model: 'real', total_tokens: 20_000 }),
+  ];
+  const baseline = buildBucketIntensity(lines, { generatedAt: GEN });
+  assert.equal(baseline.totalModels, 2);
+  assert.equal(baseline.totalBuckets, 6);
+  assert.equal(baseline.droppedBucketTokensMin, 0);
+
+  const filtered = buildBucketIntensity(lines, {
+    bucketTokensMin: 1000,
+    generatedAt: GEN,
+  });
+  // tiny's 3 buckets all fall below 1000 -> tiny model row vanishes
+  assert.equal(filtered.droppedBucketTokensMin, 3);
+  assert.equal(filtered.totalModels, 1);
+  assert.equal(filtered.totalBuckets, 3);
+  assert.equal(filtered.totalTokens, 35_000);
+  assert.equal(filtered.models[0]!.model, 'real');
+  // real's percentiles are byte-identical to baseline real
+  const baseReal = baseline.models.find((m) => m.model === 'real')!;
+  assert.equal(filtered.models[0]!.p50, baseReal.p50);
+  assert.equal(filtered.models[0]!.p99, baseReal.p99);
+  assert.equal(filtered.models[0]!.spread, baseReal.spread);
+});
+
+test('bucket-intensity: bucketTokensMin partial filter alters surviving model percentiles', () => {
+  // single model, 5 small + 5 large; threshold drops the 5 small ones and
+  // rewrites percentiles from "two clumps" to "all-large".
+  const lines: QueueLine[] = [];
+  for (let i = 0; i < 5; i++) {
+    lines.push(
+      ql(`2026-04-${String(10 + i).padStart(2, '0')}T01:00:00Z`, {
+        total_tokens: 100,
+      }),
+    );
+  }
+  for (let i = 0; i < 5; i++) {
+    lines.push(
+      ql(`2026-04-${String(15 + i).padStart(2, '0')}T01:00:00Z`, {
+        total_tokens: 50_000 + i * 1000,
+      }),
+    );
+  }
+  const r = buildBucketIntensity(lines, {
+    bucketTokensMin: 10_000,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBucketTokensMin, 5);
+  assert.equal(r.totalBuckets, 5);
+  assert.equal(r.models[0]!.min, 50_000);
+  assert.equal(r.models[0]!.max, 54_000);
+});
+
+test('bucket-intensity: bucketTokensMin echoes through the report', () => {
+  const r = buildBucketIntensity([], { bucketTokensMin: 7, generatedAt: GEN });
+  assert.equal(r.bucketTokensMin, 7);
+});
+
+test('bucket-intensity: bucketTokensMin composes with source filter (source filter applied first)', () => {
+  // codex: 1 small + 1 large; opencode: 1 small (would survive but wrong source).
+  const lines: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { source: 'codex', total_tokens: 50 }),
+    ql('2026-04-20T02:00:00Z', { source: 'codex', total_tokens: 5_000 }),
+    ql('2026-04-20T03:00:00Z', { source: 'opencode', total_tokens: 5_000 }),
+  ];
+  const r = buildBucketIntensity(lines, {
+    source: 'codex',
+    bucketTokensMin: 1000,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedSourceFilter, 1, 'opencode row dropped by source filter, not threshold');
+  assert.equal(r.droppedBucketTokensMin, 1, 'codex 50-token bucket dropped by threshold');
+  assert.equal(r.totalBuckets, 1);
+  assert.equal(r.totalTokens, 5_000);
+});

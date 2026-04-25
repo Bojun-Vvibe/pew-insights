@@ -61,6 +61,27 @@ export interface BucketIntensityOptions {
    */
   minBuckets?: number;
   /**
+   * Drop individual *(model, hour) bucket observations* whose summed
+   * `total_tokens < bucketTokensMin` *after* multi-device aggregation
+   * within that hour. Counts surface as `droppedBucketTokensMin`.
+   * This is a noise-floor filter — useful for hiding tiny background
+   * pings (e.g. health probes, single-byte heartbeats) that would
+   * otherwise pull p50 toward zero and inflate `spread`.
+   *
+   * Distinct from `minBuckets`:
+   *   - `minBuckets` is a per-model display filter on the *count* of
+   *     observations.
+   *   - `bucketTokensMin` is a per-observation filter on each
+   *     bucket's *magnitude*, applied during aggregation. It alters
+   *     `totalBuckets`, `totalTokens`, every percentile, and can
+   *     remove a model entirely if all its buckets fall below the
+   *     threshold (the resulting model row will not appear in
+   *     `models[]` even before display filters).
+   *
+   * Default 0 = no filter. Must be a non-negative integer.
+   */
+  bucketTokensMin?: number;
+  /**
    * Truncate `models[]` to the top N after sorting. Display filter
    * only. Counts surface as `droppedTopModels`. Default 0 = no cap.
    */
@@ -122,6 +143,8 @@ export interface BucketIntensityReport {
   windowEnd: string | null;
   source: string | null;
   minBuckets: number;
+  /** Echo of the resolved `bucketTokensMin` threshold. */
+  bucketTokensMin: number;
   top: number;
   sort: 'tokens' | 'buckets' | 'p99' | 'spread';
   /** Distinct models observed in the window before display filters. */
@@ -136,6 +159,11 @@ export interface BucketIntensityReport {
   droppedZeroTokens: number;
   /** Rows excluded by the `source` filter. */
   droppedSourceFilter: number;
+  /**
+   * Aggregated (model, hour) buckets whose summed total_tokens fell
+   * below `bucketTokensMin`. Counted *after* multi-device summing.
+   */
+  droppedBucketTokensMin: number;
   /** Model rows hidden by `minBuckets`. */
   droppedMinBuckets: number;
   /** Model rows hidden by the `top` cap. */
@@ -182,6 +210,12 @@ export function buildBucketIntensity(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const bucketTokensMin = opts.bucketTokensMin ?? 0;
+  if (!Number.isInteger(bucketTokensMin) || bucketTokensMin < 0) {
+    throw new Error(
+      `bucketTokensMin must be a non-negative integer (got ${opts.bucketTokensMin})`,
+    );
   }
   const sort = opts.sort ?? 'tokens';
   if (sort !== 'tokens' && sort !== 'buckets' && sort !== 'p99' && sort !== 'spread') {
@@ -246,12 +280,22 @@ export function buildBucketIntensity(
   const allRows: BucketIntensityModelRow[] = [];
   let totalBuckets = 0;
   let totalTokens = 0;
+  let droppedBucketTokensMin = 0;
   for (const [model, buckets] of perModelBuckets.entries()) {
     const obs: number[] = [];
     let sum = 0;
     for (const v of buckets.values()) {
+      if (bucketTokensMin > 0 && v < bucketTokensMin) {
+        droppedBucketTokensMin += 1;
+        continue;
+      }
       obs.push(v);
       sum += v;
+    }
+    if (obs.length === 0) {
+      // All this model's buckets were filtered out; drop the model row
+      // entirely so it does not pollute totals or display.
+      continue;
     }
     obs.sort((a, b) => a - b);
     const n = obs.length;
@@ -324,6 +368,7 @@ export function buildBucketIntensity(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     minBuckets,
+    bucketTokensMin,
     top,
     sort,
     totalModels,
@@ -332,6 +377,7 @@ export function buildBucketIntensity(
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
+    droppedBucketTokensMin,
     droppedMinBuckets,
     droppedTopModels,
     models: kept,

@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.62 — 2026-04-25
+
+### Added
+
+- `bucket-intensity`: `--bucket-tokens-min <n>` flag (default 0
+  = no filter). Noise-floor: drops individual `(model, hour)`
+  bucket observations whose summed `total_tokens < n`, *after*
+  multi-device aggregation within that hour. Counts surface as
+  `droppedBucketTokensMin`. The threshold is echoed in the
+  report as `bucketTokensMin`.
+
+  Distinct from `--min-buckets`:
+    - `--min-buckets` is a per-model display filter on the
+      *count* of buckets — does not change percentiles, totals,
+      or any kept row's data.
+    - `--bucket-tokens-min` is a per-observation aggregation
+      filter on each bucket's *magnitude*. It alters
+      `totalBuckets`, `totalTokens`, and every percentile of
+      every surviving model row, and can remove a model
+      entirely from `models[]` if all its buckets fall below
+      the threshold.
+
+  5 new tests (874 total, up from 869): rejects bad input;
+  end-to-end shape with one model fully filtered out and another
+  unchanged, asserting the surviving model's percentiles are
+  byte-identical to the unfiltered baseline; partial filter on a
+  single model rewrites min/max correctly; threshold echoes
+  through `bucketTokensMin`; composes with `--source` (source
+  filter applied first, threshold second).
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--sort spread --bucket-tokens-min 10000 --min-buckets 5 --top 6`:
+
+  ```
+  pew-insights bucket-intensity
+  as of: 2026-04-25T04:23:30.929Z    models: 14 (shown 6)    buckets: 943    tokens: 8,350,085,001    sort: spread
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 293 below bucket-tokens-min, 7 below min-buckets, 1 below top cap
+
+  per-model bucket-size summary (sorted by spread desc)
+  model               buckets  tokens         min      p50        p90         p99         max          mean      spread
+  ------------------  -------  -------------  -------  ---------  ----------  ----------  -----------  --------  ------
+  unknown             56       35,575,800     55,502   400,731    628,897     8,368,144   8,368,144    635282    20.88
+  claude-opus-4.6.1m  166      1,108,972,689  17,659   3,244,687  16,660,674  51,557,347  55,962,051   6680558   15.89
+  gpt-5.4             371      2,473,826,947  47,317   3,780,578  14,625,762  46,466,936  65,604,896   6667997   12.29
+  claude-opus-4.7     272      4,647,097,376  37,358   7,897,263  50,695,274  79,856,882  108,008,474  17084917  10.11
+  claude-sonnet-4.6   9        12,601,545     352,886  704,086    3,938,865   3,938,865   3,938,865    1400172   5.59
+  claude-haiku-4.5    30       70,717,678     77,986   1,937,478  5,637,974   7,814,903   7,814,903    2357256   4.03
+
+  per-model bucket-size histogram (counts per token-magnitude band)
+  model               [1,1k)  [1k,10k)  [10k,100k)  [100k,1M)  [1M,10M)  [10M,+inf)
+  ------------------  ------  --------  ----------  ---------  --------  ----------
+  unknown             0       0         1           52         3         0
+  claude-opus-4.6.1m  0       0         10          33         88        35
+  gpt-5.4             0       0         2           41         267       61
+  claude-opus-4.7     0       0         10          36         111       115
+  claude-sonnet-4.6   0       0         0           6          3         0
+  claude-haiku-4.5    0       0         1           8          21        0
+  ```
+
+  Headline: a 10k-token noise floor strips **293 of 1,236**
+  total buckets (24%) but only **754k of 8.35B** tokens
+  (0.009% of mass) — the dropped buckets are pure spectator
+  pings. Compared with v0.4.61's smoke run, the spread
+  ranking re-orders cleanly: `claude-sonnet-4` (was 19.55)
+  and `gpt-5.1` (was 14.46) — both pure noise-floor models —
+  vanish from `models[]` entirely, and `gpt-5.4`'s p50 lifts
+  from 3.71M to 3.78M while its spread drops from 12.54 to
+  12.29 (one fewer micro-bucket pulling the median down).
+  This is exactly the right denoising behaviour: keep the
+  asymmetry signal, drop the `[1,1k)` and `[1k,10k)`
+  histogram bands.
+
 ## 0.4.61 — 2026-04-25
 
 ### Added

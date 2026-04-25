@@ -3230,6 +3230,11 @@ program
     '0',
   )
   .option(
+    '--bucket-tokens-min <n>',
+    'noise-floor: drop individual (model, hour) buckets whose summed total_tokens < n; counts surface as droppedBucketTokensMin (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n models after sorting; remainder surface as droppedTopModels (default 0 = no cap)',
     '0',
@@ -3247,6 +3252,7 @@ program
         until?: string;
         source?: string;
         minBuckets: string;
+        bucketTokensMin: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -3259,6 +3265,12 @@ program
         const minBuckets = Number.parseInt(opts.minBuckets, 10);
         if (!Number.isInteger(minBuckets) || minBuckets < 0) {
           throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const bucketTokensMin = Number.parseInt(opts.bucketTokensMin, 10);
+        if (!Number.isInteger(bucketTokensMin) || bucketTokensMin < 0) {
+          throw new Error(
+            `--bucket-tokens-min must be a non-negative integer (got ${opts.bucketTokensMin})`,
+          );
         }
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
@@ -3280,6 +3292,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minBuckets,
+          bucketTokensMin,
           top,
           sort: opts.sort as 'tokens' | 'buckets' | 'p99' | 'spread',
         });
