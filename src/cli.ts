@@ -3381,12 +3381,24 @@ program
   .description('Per-source Pareto: fraction of total tokens in the top 1/5/10/20% of buckets, with giniLike concentration scalar')
   .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
   .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-buckets <n>',
+    'drop sources whose bucketCount < n; suppressed rows surface as droppedSparseSources (default 0 = no floor)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sorting by giniLike desc; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
       opts: {
         since?: string;
         until?: string;
+        minBuckets: string;
+        top: string;
         json?: boolean;
       },
       cmd,
@@ -3394,10 +3406,20 @@ program
       try {
         const common = cmd.optsWithGlobals() as CommonOpts;
         const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
         const queue = await readQueue(paths);
         const report = buildTailShare(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
+          minBuckets,
+          top,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

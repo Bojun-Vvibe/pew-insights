@@ -195,3 +195,61 @@ test('tail-share: empty source string normalises to "unknown"', () => {
   assert.equal(r.sources.length, 1);
   assert.equal(r.sources[0]!.source, 'unknown');
 });
+
+// ---- minBuckets filter ---------------------------------------------------
+
+test('tail-share: --min-buckets drops sparse sources, totals reflect kept population', () => {
+  const lines: QueueLine[] = [];
+  // 'fat' has 12 buckets
+  for (let h = 0; h < 12; h += 1) {
+    lines.push(
+      ql(`2026-04-20T${String(h).padStart(2, '0')}:00:00Z`, {
+        source: 'fat',
+        total_tokens: 50,
+      }),
+    );
+  }
+  // 'thin' has just 2 buckets — should be dropped at minBuckets=10
+  lines.push(ql('2026-04-21T01:00:00Z', { source: 'thin', total_tokens: 9999 }));
+  lines.push(ql('2026-04-21T02:00:00Z', { source: 'thin', total_tokens: 9999 }));
+
+  const r = buildTailShare(lines, { minBuckets: 10, generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'fat');
+  assert.equal(r.droppedSparseSources, 1);
+  assert.equal(r.droppedSparseBuckets, 2);
+  assert.equal(r.totalSources, 1);
+  assert.equal(r.totalBuckets, 12);
+  assert.equal(r.totalTokens, 600); // sparse source tokens excluded from totals
+});
+
+// ---- top cap -------------------------------------------------------------
+
+test('tail-share: --top caps display rows; totals stay full-population, droppedTopSources surfaces remainder', () => {
+  const lines: QueueLine[] = [];
+  // 3 sources, each with a single bucket so giniLike == 0 for all,
+  // tiebreak is by name asc → aaa, bbb, ccc.
+  lines.push(ql('2026-04-20T01:00:00Z', { source: 'aaa', total_tokens: 100 }));
+  lines.push(ql('2026-04-20T02:00:00Z', { source: 'bbb', total_tokens: 100 }));
+  lines.push(ql('2026-04-20T03:00:00Z', { source: 'ccc', total_tokens: 100 }));
+
+  const r = buildTailShare(lines, { top: 2, generatedAt: GEN });
+  assert.equal(r.top, 2);
+  assert.equal(r.sources.length, 2);
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['aaa', 'bbb'],
+  );
+  assert.equal(r.droppedTopSources, 1);
+  // Totals reflect full surviving population, not just displayed.
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.totalBuckets, 3);
+  assert.equal(r.totalTokens, 300);
+});
+
+// ---- top option validation -----------------------------------------------
+
+test('tail-share: rejects bad top', () => {
+  assert.throws(() => buildTailShare([], { top: -1 }));
+  assert.throws(() => buildTailShare([], { top: 1.5 }));
+});

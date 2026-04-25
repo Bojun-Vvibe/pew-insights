@@ -51,6 +51,13 @@ export interface TailShareOptions {
    * Default 0 = no floor.
    */
   minBuckets?: number;
+  /**
+   * Truncate `sources[]` to the top N after sorting by giniLike desc.
+   * Display filter only — `totalSources`, `totalBuckets`, `totalTokens`
+   * always reflect the full population (post-minBuckets filter, pre-cap).
+   * Suppressed rows surface as `droppedTopSources`. Default 0 = no cap.
+   */
+  top?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -71,6 +78,8 @@ export interface TailShareReport {
   windowStart: string | null;
   windowEnd: string | null;
   minBuckets: number;
+  /** Echo of the resolved top cap (0 = no cap). */
+  top: number;
   /** Sources surviving filters. */
   totalSources: number;
   /** Sum of bucketCount across surviving sources. */
@@ -83,6 +92,8 @@ export interface TailShareReport {
   droppedSparseSources: number;
   /** Underlying buckets across those sparse sources. */
   droppedSparseBuckets: number;
+  /** Source rows hidden by the top cap. */
+  droppedTopSources: number;
   /** Per-source rows, sorted by giniLike desc, source-name asc tiebreak. */
   sources: TailShareRow[];
 }
@@ -112,6 +123,10 @@ export function buildTailShare(
   const minBuckets = opts.minBuckets ?? 0;
   if (!Number.isInteger(minBuckets) || minBuckets < 0) {
     throw new Error(`minBuckets must be a non-negative integer (got ${opts.minBuckets})`);
+  }
+  const top = opts.top ?? 0;
+  if (!Number.isInteger(top) || top < 0) {
+    throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -220,19 +235,30 @@ export function buildTailShare(
     totalBuckets += r.bucketCount;
     totalTokens += r.tokens;
   }
+  const totalSources = kept.length;
+
+  // Apply top cap. Totals already reflect the full surviving population.
+  let droppedTopSources = 0;
+  let displayed = kept;
+  if (top > 0 && kept.length > top) {
+    droppedTopSources = kept.length - top;
+    displayed = kept.slice(0, top);
+  }
 
   return {
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minBuckets,
-    totalSources: kept.length,
+    top,
+    totalSources,
     totalBuckets,
     totalTokens,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSparseSources,
     droppedSparseBuckets,
-    sources: kept,
+    droppedTopSources,
+    sources: displayed,
   };
 }

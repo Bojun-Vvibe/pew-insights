@@ -3248,12 +3248,12 @@ export function renderTailShare(r: TailShareReport): string {
   lines.push(chalk.bold.cyan('pew-insights tail-share'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)}    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSparseSources)} sparse sources (${formatNumber(r.droppedSparseBuckets)} buckets)`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSparseSources)} sparse sources (${formatNumber(r.droppedSparseBuckets)} buckets), ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
