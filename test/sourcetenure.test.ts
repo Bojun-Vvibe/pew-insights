@@ -263,3 +263,64 @@ test('source-tenure: tiebreak on source key is lex asc', () => {
     ['alpha', 'zeta'],
   );
 });
+
+// ---- minModels (refinement) ----------------------------------------------
+
+test('source-tenure: rejects bad minModels', () => {
+  assert.throws(() => buildSourceTenure([], { minModels: -1 }));
+  assert.throws(() => buildSourceTenure([], { minModels: 1.5 }));
+});
+
+test('source-tenure: minModels floor hides single-model sources but keeps totals', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'wide', 'gpt-5', 100),
+    ql('2026-04-20T01:00:00.000Z', 'wide', 'claude-opus-4.7', 100),
+    ql('2026-04-20T02:00:00.000Z', 'wide', 'claude-sonnet-4.5', 100),
+    ql('2026-04-20T00:00:00.000Z', 'narrow1', 'gpt-5', 1000),
+    ql('2026-04-20T00:00:00.000Z', 'narrow2', 'gpt-5', 500),
+  ];
+  const r = buildSourceTenure(rows, { generatedAt: GEN, minModels: 2 });
+  assert.equal(r.minModels, 2);
+  assert.equal(r.droppedNarrowSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'wide');
+  assert.equal(r.sources[0]!.distinctModels, 3);
+  // global denominators include the dropped rows
+  assert.equal(r.totalActiveBuckets, 5);
+  assert.equal(r.totalTokens, 1800);
+});
+
+test('source-tenure: minBuckets and minModels compose; minBuckets evaluated first', () => {
+  const rows = [
+    // sparse + narrow: dropped by minBuckets
+    ql('2026-04-20T00:00:00.000Z', 'sparse-narrow', 'gpt-5', 50),
+    // dense + narrow: dropped by minModels
+    ql('2026-04-20T00:00:00.000Z', 'dense-narrow', 'gpt-5', 100),
+    ql('2026-04-20T01:00:00.000Z', 'dense-narrow', 'gpt-5', 100),
+    ql('2026-04-20T02:00:00.000Z', 'dense-narrow', 'gpt-5', 100),
+    // dense + wide: kept
+    ql('2026-04-20T00:00:00.000Z', 'dense-wide', 'gpt-5', 100),
+    ql('2026-04-20T01:00:00.000Z', 'dense-wide', 'claude-opus-4.7', 100),
+    ql('2026-04-20T02:00:00.000Z', 'dense-wide', 'claude-sonnet-4.5', 100),
+  ];
+  const r = buildSourceTenure(rows, {
+    generatedAt: GEN,
+    minBuckets: 2,
+    minModels: 2,
+  });
+  assert.equal(r.droppedSparseSources, 1);
+  assert.equal(r.droppedNarrowSources, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'dense-wide');
+});
+
+test('source-tenure: minModels=0 (default) is a no-op', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'gpt-5', 100),
+    ql('2026-04-20T00:00:00.000Z', 'b', 'gpt-5', 100),
+  ];
+  const r = buildSourceTenure(rows, { generatedAt: GEN });
+  assert.equal(r.minModels, 0);
+  assert.equal(r.droppedNarrowSources, 0);
+  assert.equal(r.sources.length, 2);
+});

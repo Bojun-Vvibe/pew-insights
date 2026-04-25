@@ -3546,6 +3546,11 @@ program
     '0',
   )
   .option(
+    '--min-models <n>',
+    'drop sources whose distinctModels < n; suppressed rows surface as droppedNarrowSources (default 0 = no floor)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources after sorting; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
@@ -3563,6 +3568,7 @@ program
         until?: string;
         model?: string;
         minBuckets: string;
+        minModels: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -3575,6 +3581,10 @@ program
         const minBuckets = Number.parseInt(opts.minBuckets, 10);
         if (!Number.isInteger(minBuckets) || minBuckets < 0) {
           throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const minModels = Number.parseInt(opts.minModels, 10);
+        if (!Number.isInteger(minModels) || minModels < 0) {
+          throw new Error(`--min-models must be a non-negative integer (got ${opts.minModels})`);
         }
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
@@ -3597,6 +3607,7 @@ program
           until: opts.until ?? null,
           model: opts.model ?? null,
           minBuckets,
+          minModels,
           top,
           sort: opts.sort as 'span' | 'active' | 'tokens' | 'density' | 'models',
         });

@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.70 — 2026-04-25
+
+### Added
+
+- `source-tenure`: `--min-models <n>` flag. Drop sources whose
+  `distinctModels < n` from `sources[]`. Display filter only —
+  global denominators (`totalSources`, `totalActiveBuckets`,
+  `totalTokens`) still reflect the full population. Suppressed
+  rows surface as `droppedNarrowSources`.
+
+  Composes with `--min-buckets` (sparse-source floor evaluated
+  first) and `--top` (cap applied after both floors). Useful for
+  isolating the "router" sources — channels that actually
+  multi-route across model variants — and excluding fixed
+  single-model channels which trivially score `distinctModels=1`.
+
+  4 new tests (946 total, up from 942): rejects bad minModels;
+  minModels floor hides single-model sources while preserving
+  totals; minBuckets and minModels compose (sparse-narrow,
+  dense-narrow both dropped, dense-wide kept); minModels=0
+  default is a no-op.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--min-models 3 --sort models`:
+
+  ```
+  pew-insights source-tenure
+  as of: 2026-04-25T06:42:41Z    sources: 4 (shown 4)    active-buckets: 1,312    tokens: 8,428,164,410    minBuckets: 0    minModels: 3    sort: models
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by model filter, 0 sparse sources, 2 narrow sources (< minModels), 0 below top cap
+
+  per-source tenure (sorted by models desc)
+  source       first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         tok/bucket  tok/span-hr  models
+  -----------  ------------------------  ------------------------  -------  --------------  -------------  ----------  -----------  ------
+  vscode-ext   2025-07-30T06:00:00.000Z  2026-04-20T01:30:00.000Z  6331.5   320             1,885,727      5,893       298          9
+  opencode     2026-04-20T14:00:00.000Z  2026-04-25T06:30:00.000Z  112.5    173             2,386,318,461  13,793,748  21,211,720   6
+  claude-code  2026-02-11T02:30:00.000Z  2026-04-23T14:30:00.000Z  1716.0   267             3,442,385,788  12,892,831  2,006,052    4
+  hermes       2026-04-17T06:30:00.000Z  2026-04-25T05:30:00.000Z  191.0    145             140,424,600    968,446     735,207      3
+  ```
+
+  Headline read: filtering to `distinctModels >= 3` drops two
+  single-model sources (`openclaw`, `codex` — both pinned to
+  one model variant) and surfaces the four real multi-model
+  routers. `vscode-ext` routes through 9 distinct models (the
+  most diverse) but at near-zero density; `opencode` is the
+  highest-density multi-router at ~21M tokens/span-hr across
+  6 models.
+
 ## 0.4.69 — 2026-04-25
 
 ### Added

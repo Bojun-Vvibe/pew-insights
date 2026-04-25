@@ -74,6 +74,15 @@ export interface SourceTenureOptions {
    */
   minBuckets?: number;
   /**
+   * Drop sources whose `distinctModels` < `minModels` from
+   * `sources[]`. Display filter only — global denominators reflect
+   * the full population. Default 0 = keep every source. Counts
+   * surface as `droppedNarrowSources`. Useful for isolating the
+   * sources that actually multi-route across model variants
+   * (e.g. excluding single-model fixed-route channels).
+   */
+  minModels?: number;
+  /**
    * Truncate `sources[]` to the top N after sorting. Display filter
    * only — `totalSources`, `totalActiveBuckets`, `totalTokens`
    * always reflect the full population. Counts surface as
@@ -122,6 +131,8 @@ export interface SourceTenureReport {
   model: string | null;
   /** Echo of the resolved `minBuckets` floor. */
   minBuckets: number;
+  /** Echo of the resolved `minModels` floor. */
+  minModels: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
   /** Echo of the resolved `sort` key. */
@@ -140,6 +151,8 @@ export interface SourceTenureReport {
   droppedModelFilter: number;
   /** Source rows hidden by the `minBuckets` floor. */
   droppedSparseSources: number;
+  /** Source rows hidden by the `minModels` floor. */
+  droppedNarrowSources: number;
   /** Source rows hidden by the `top` cap. */
   droppedTopSources: number;
   /** Per-source tenure rows after sort + top cap. */
@@ -156,6 +169,12 @@ export function buildSourceTenure(
   if (!Number.isInteger(minBuckets) || minBuckets < 0) {
     throw new Error(
       `minBuckets must be a non-negative integer (got ${opts.minBuckets})`,
+    );
+  }
+  const minModels = opts.minModels ?? 0;
+  if (!Number.isInteger(minModels) || minModels < 0) {
+    throw new Error(
+      `minModels must be a non-negative integer (got ${opts.minModels})`,
     );
   }
   const top = opts.top ?? 0;
@@ -246,6 +265,7 @@ export function buildSourceTenure(
 
   const sources: SourceTenureRow[] = [];
   let droppedSparseSources = 0;
+  let droppedNarrowSources = 0;
   let totalActiveBuckets = 0;
   let totalTokens = 0;
 
@@ -256,6 +276,10 @@ export function buildSourceTenure(
     totalTokens += acc.tokens;
     if (activeBuckets < minBuckets) {
       droppedSparseSources += 1;
+      continue;
+    }
+    if (acc.models.size < minModels) {
+      droppedNarrowSources += 1;
       continue;
     }
     const spanHours = (acc.lastMs - acc.firstMs) / HOUR_MS;
@@ -297,6 +321,7 @@ export function buildSourceTenure(
     windowEnd: opts.until ?? null,
     model: modelFilter,
     minBuckets,
+    minModels,
     top,
     sort,
     totalSources: sources.length,
@@ -306,6 +331,7 @@ export function buildSourceTenure(
     droppedZeroTokens,
     droppedModelFilter,
     droppedSparseSources,
+    droppedNarrowSources,
     droppedTopSources,
     sources: kept,
   };
