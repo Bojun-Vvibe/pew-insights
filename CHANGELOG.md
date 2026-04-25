@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.51 — 2026-04-25
+
+### Added
+
+- `model-mix-entropy`: new subcommand reporting Shannon entropy
+  of model usage per `source` (the local producer CLI). For each
+  source we compute `H = -Σ p_i log2 p_i` over the per-model
+  share of `total_tokens`, plus `Hmax = log2(k)` (the perfectly-
+  even ceiling for the same k models), `H/Hmax` in [0,1] (how
+  close to even the mix is), and `effective-models = 2^H` (the
+  perplexity — "behaves like N evenly-weighted models").
+
+  Distinct lens vs. existing reports:
+
+  - `provider-share` reports token mass per source but not how
+    diverse each source's model fleet is.
+  - `model-switching` looks at sequential transitions; entropy is
+    a population-level diversity signal — orthogonal.
+  - `output-input-ratio --by-source` measures verbosity, not mix
+    concentration.
+
+  Use case: spot a source that is "wasting" a multi-model setup
+  by pinning to one model (low H, high top-share), vs. one that
+  is genuinely load-balancing (H/Hmax → 1). Inverse use case:
+  spot the source thrashing across many models when one would do.
+
+  Options: `--since`, `--until`, `--min-tokens` (display floor),
+  `--json`. Empty source strings fold into `"unknown"`. Sources
+  sorted by total tokens desc, then source asc on tie.
+
+  9 new tests (779 total, up from 770): option validation,
+  empty/dropped rows, single-model entropy = 0, even 2-model
+  split = 1 bit, even 4-model split = 2 bits, skewed mix
+  H < Hmax, per-source aggregation + sort, empty-source
+  folding, minTokens floor, since/until window.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights model-mix-entropy
+  as of: 2026-04-25T01:16:07.579Z    sources: 6    tokens: 8,267,810,873    min-tokens: 0
+  dropped: 0 bad hour_start, 0 zero/invalid tokens, 0 below min-tokens
+
+  per-source model-mix entropy (Shannon bits over per-model token share; sorted by tokens desc)
+  source          tokens         rows  k  H(bits)  Hmax    H/Hmax  eff-models  top-model        top-share
+  --------------  -------------  ----  -  -------  ------  ------  ----------  ---------------  ---------
+  claude-code     3,442,385,788  299   4  1.0497   2.0000  0.5249  2.07        claude-opus-4.7  65.6%
+  opencode        2,245,924,121  226   6  0.2283   2.5850  0.0883  1.17        claude-opus-4.7  97.2%
+  openclaw        1,629,451,942  332   1  0.0000   0.0000  0.0000  1.00        gpt-5.4          100.0%
+  codex           809,624,660    64    1  0.0000   0.0000  0.0000  1.00        gpt-5.4          100.0%
+  hermes          138,538,635    143   3  0.2732   1.5850  0.1724  1.21        claude-opus-4.7  95.3%
+  vscode-copilot  1,885,727      333   9  2.3302   3.1699  0.7351  5.03        gpt-5            45.1%
+  ```
+
+  Reads cleanly: `vscode-copilot` is the only true poly-model
+  producer (eff-models 5.03 across 9 distinct ids); `opencode`
+  and `hermes` are nominally multi-model but >95% pinned to a
+  single id; `openclaw` and `codex` are single-model by
+  construction.
+
 ## 0.4.50 — 2026-04-25
 
 ### Added
