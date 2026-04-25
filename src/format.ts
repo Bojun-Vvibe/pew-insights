@@ -2248,6 +2248,7 @@ import type { DeviceShareReport } from './deviceshare.js';
 import type { OutputInputRatioReport } from './outputinputratio.js';
 import type { ModelMixEntropyReport } from './modelmixentropy.js';
 import type { WeekendVsWeekdayReport } from './weekendvsweekday.js';
+import type { CacheHitByHourReport } from './cachehitbyhour.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -2887,6 +2888,62 @@ export function renderWeekendVsWeekday(r: WeekendVsWeekdayReport): string {
       lines.push(chalk.bold('per-model × source breakdown'));
       lines.push(renderTableLocal(subHeaders, subRows));
     }
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderCacheHitByHour(r: CacheHitByHourReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights cache-hit-by-hour'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    input: ${formatNumber(r.totalInputTokens)}    cached: ${formatNumber(r.totalCachedInputTokens)} (${(r.globalCacheRatio * 100).toFixed(2)}%)    sources: ${formatNumber(r.totalSources)}    shown: ${formatNumber(r.bySource.length)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroInput)} zero-input, ${formatNumber(r.droppedMinInputTokens)} below min-input, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(chalk.dim(`(hour-of-day in UTC; ratio = cached_input_tokens / input_tokens)`));
+  lines.push('');
+
+  if (r.totalInputTokens === 0) {
+    lines.push(chalk.yellow('  no rows in the window with positive input_tokens. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('global cache ratio by hour-of-day (UTC)'));
+  const headers = ['hr', 'input', 'cached', 'cache%', 'rows'];
+  const rows: string[][] = r.byHour.map((b) => [
+    String(b.hour).padStart(2, '0'),
+    formatNumber(b.inputTokens),
+    formatNumber(b.cachedInputTokens),
+    b.inputTokens > 0 ? (b.cacheRatio * 100).toFixed(1) + '%' : '—',
+    formatNumber(b.rows),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.bySource.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold('per-source summary (sorted by input tokens desc)'));
+    const sumHeaders = ['source', 'input', 'cached', 'daily%', 'peak hr', 'peak%', 'trough hr', 'trough%', 'spread'];
+    const sumRows: string[][] = r.bySource.map((s) => [
+      s.source,
+      formatNumber(s.inputTokens),
+      formatNumber(s.cachedInputTokens),
+      (s.cacheRatio * 100).toFixed(1) + '%',
+      s.peakHour >= 0 ? String(s.peakHour).padStart(2, '0') : '—',
+      s.peakHour >= 0 ? (s.peakRatio * 100).toFixed(1) + '%' : '—',
+      s.troughHour >= 0 ? String(s.troughHour).padStart(2, '0') : '—',
+      s.troughHour >= 0 ? (s.troughRatio * 100).toFixed(1) + '%' : '—',
+      (s.spread * 100).toFixed(1) + ' pp',
+    ]);
+    lines.push(renderTableLocal(sumHeaders, sumRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');

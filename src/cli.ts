@@ -62,6 +62,7 @@ import {
   renderOutputInputRatio,
   renderModelMixEntropy,
   renderWeekendVsWeekday,
+  renderCacheHitByHour,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -144,6 +145,7 @@ import { buildWeekdayShare } from './weekdayshare.js';
 import { buildBurstiness } from './burstiness.js';
 import { buildDeviceShare } from './deviceshare.js';
 import { buildWeekendVsWeekday } from './weekendvsweekday.js';
+import { buildCacheHitByHour } from './cachehitbyhour.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -3020,6 +3022,56 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderWeekendVsWeekday(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('cache-hit-by-hour')
+  .description('Prompt-cache effectiveness (cached/input ratio) bucketed by hour-of-day (UTC), per source')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-input <n>',
+    'hide sources whose total input_tokens is below n (display only; counts surface as droppedMinInputTokens) (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources by input tokens; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: { since?: string; until?: string; minInput: string; top: string; json?: boolean },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minInput = Number.parseFloat(opts.minInput);
+        if (!Number.isFinite(minInput) || minInput < 0) {
+          throw new Error(`--min-input must be a non-negative number (got ${opts.minInput})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildCacheHitByHour(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minInputTokens: minInput,
+          topSources: top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderCacheHitByHour(report) + '\n');
         }
       } catch (e) {
         die(e);
