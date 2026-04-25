@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.57 — 2026-04-25
+
+### Added
+
+- `model-cohabitation`: a fresh analytical lens that asks **which
+  model pairs share the same UTC `hour_start` bucket**. For every
+  bucket present in the queue we collect the set of distinct
+  normalised models with positive token mass, then aggregate
+  unordered model pairs across buckets. Reports per pair:
+  `coBuckets` (shared bucket count), `coTokens` (sum of
+  `min(tokens_in_bucket)` — a Jaccard-flavoured weight that stops
+  one giant model dominating every pair it touches), `cohabIndex`
+  (Jaccard on bucket-presence sets, in [0,1]), and the asymmetric
+  conditionals `P(B|A)` / `P(A|B)`.
+
+  Distinct from the existing surface:
+
+  - `model-switching` looks at *sequential* fallback inside one
+    `session_key` (A→B→A on SessionLine). Cohabitation is
+    bucket-parallel, not session-sequential, and operates on
+    QueueLine — so it surfaces "two producers / two routes are
+    using two models in the same wall-clock hour", which is
+    invisible to model-switching when the session keys differ.
+  - `model-mix-entropy` is a per-source diversity statistic; never
+    pairwise, never time-bucketed.
+  - `agent-mix` and `provider-share` are pure mass tallies with no
+    notion of co-occurrence.
+
+  17 new tests (831 total, up from 814): option validation,
+  empty/edge cases, single-bucket isolation, three-models-in-one
+  bucket fan-out, Jaccard arithmetic, `min`-based coTokens, same
+  model from multiple sources collapsing to one bucket, source
+  filter, window bounds, top cap, deterministic sort.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--top 15`:
+
+  ```
+  pew-insights model-cohabitation
+  as of: 2026-04-25T03:31:05.979Z    buckets: 877    multi-model: 296    models: 15    pairs: 23 (shown 15)    tokens: 8,320,680,844
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-co-buckets, 8 below top cap
+
+  per-model presence summary (sorted by tokens desc)
+  model                 tokens         buckets  cohabitants
+  --------------------  -------------  -------  -----------
+  claude-opus-4.7       4,620,759,456  271      7
+  gpt-5.4               2,470,012,313  370      8
+  claude-opus-4.6.1m    1,108,978,665  167      5
+  claude-haiku-4.5      70,717,678     30       4
+  unknown               35,575,800     56       2
+  claude-sonnet-4.6     12,601,545     9        3
+  gpt-5                 850,661        170      2
+  claude-opus-4.6       350,840        4        3
+
+  top model pairs by shared buckets
+  modelA              modelB              coBuckets  coTokens(min)  cohabIndex  P(B|A)  P(A|B)
+  ------------------  ------------------  ---------  -------------  ----------  ------  ------
+  claude-opus-4.7     gpt-5.4             259        1,333,172,648  0.678       95.6%   70.0%
+  gpt-5.4             unknown             54         31,187,117     0.145       14.6%   96.4%
+  claude-opus-4.7     unknown             53         28,947,973     0.193       19.6%   94.6%
+  claude-haiku-4.5    claude-opus-4.6.1m  8          21,972,028     0.042       26.7%   4.8%
+  claude-opus-4.6.1m  gpt-5.4             7          6,855,834      0.013       4.2%    1.9%
+  claude-sonnet-4.5   gemini-3-pro-prev.  5          14,916         0.072       13.5%   13.5%
+  claude-sonnet-4.6   gpt-5.4             4          4,106,116      0.011       44.4%   1.1%
+  claude-opus-4.7     claude-sonnet-4.6   3          2,838,126      0.011       1.1%    33.3%
+  ```
+
+  Headline finding: out of 877 distinct UTC hour buckets in the
+  corpus, 296 (33.8%) contain ≥ 2 models. One pair dominates —
+  `claude-opus-4.7` × `gpt-5.4` co-habit 259 buckets with a Jaccard
+  of 0.678; whenever opus-4.7 is active there's a 95.6% chance
+  gpt-5.4 is also active in the same hour. That's a *parallel*
+  usage signal (different producers running in parallel), not a
+  fallback signal — model-switching never sees it because the two
+  models live in different sessions. The next two pairs both bind
+  the `unknown` model, suggesting a labelling gap on the producer
+  side worth chasing separately.
+
 ## 0.4.56 — 2026-04-25
 
 ### Added
