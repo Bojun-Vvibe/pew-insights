@@ -4633,3 +4633,64 @@ export function renderInputTokenDecileDistribution(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderTokenVelocityPercentiles(
+  r: import('./tokenvelocitypercentiles.js').TokenVelocityPercentilesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights token-velocity-percentiles'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(observation = one (source, UTC hour_start) bucket; rate = total_tokens / 60 minutes; percentiles are nearest-rank R-1)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source tokens-per-minute summary (sorted by ${r.sort} desc)`));
+  const headers = [
+    'source',
+    'buckets',
+    'tokens',
+    'min/min',
+    'p50/min',
+    'p90/min',
+    'p99/min',
+    'max/min',
+    'mean/min',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.buckets),
+    formatNumber(s.tokens),
+    s.min.toFixed(1),
+    s.p50.toFixed(1),
+    s.p90.toFixed(1),
+    s.p99.toFixed(1),
+    s.max.toFixed(1),
+    s.mean.toFixed(1),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

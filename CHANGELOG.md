@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.5 — 2026-04-26
+
+### Added
+
+- `pew-insights token-velocity-percentiles` — per-source distribution
+  of tokens-per-minute computed at the single UTC hour bucket grain
+  (rate = `total_tokens / 60`). For every (source, hour_start) pair
+  with positive token mass we treat the bucket's tokens-per-minute
+  as one observation and report per-source percentiles (p50, p90,
+  p99), min, max, mean, sum of tokens, and bucket count. Distinct
+  from existing lenses:
+  - `velocity` reports rates over *contiguous active stretches* of
+    hours and emits one rate per stretch — it cannot show per-source
+    distribution shape or the spread *inside* a sprint.
+  - `bucket-intensity` reports magnitudes per *model* in raw tokens
+    (not normalised to per-minute) and never slices by source.
+  - `bucket-density-percentile` pools all buckets across sources and
+    models into one population and cannot answer "codex's typical
+    per-minute pace vs claude-code's".
+  Flags: `--since`, `--until`, `--source`, `--min-buckets`, `--top`,
+  `--sort tokens|buckets|p99|mean`, `--json`. Empty-string source
+  values are bucketed as `(unknown)`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, top 5 sources by tokens)
+
+```
+pew-insights token-velocity-percentiles
+as of: 2026-04-25T18:32:40.756Z    sources: 6 (shown 5)    buckets: 1,365    tokens: 8,725,651,212    sort: tokens
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-buckets, 1 below top cap
+(observation = one (source, UTC hour_start) bucket; rate = total_tokens / 60 minutes; percentiles are nearest-rank R-1)
+
+per-source tokens-per-minute summary (sorted by tokens desc)
+source       buckets  tokens         min/min  p50/min   p90/min   p99/min    max/min    mean/min
+-----------  -------  -------------  -------  --------  --------  ---------  ---------  --------
+claude-code  267      3,442,385,788  99.6     75072.2   722223.3  1304497.4  1815870.9  214880.5
+opencode     197      2,644,372,828  796.5    141102.6  736124.7  1072301.8  1158406.9  223720.2
+openclaw     366      1,685,600,445  1779.3   51494.2   151813.9  524151.4   751226.0   76757.8
+codex        64       809,624,660    788.6    102559.7  586159.6  980675.9   980675.9   210839.8
+hermes       151      141,781,764    388.0    7780.4    36841.5   69381.9    98311.9    15649.2
+```
+
+Reading: `claude-code` and `opencode` have nearly identical mean
+throughput (~215k vs ~224k tok/min) but very different distribution
+shapes — `opencode`'s p50 is ~88% higher (141k vs 75k), meaning a
+typical opencode hour is steadier while claude-code spends more
+hours on the low end and reaches its mean via the tail.
+`openclaw` does the most buckets (366) but at less than half the
+per-bucket pace of the top two. `codex` has the heaviest p50 of
+the bunch (~103k tok/min) on the smallest bucket count.
+
+### Tests
+
+- New suite `tokenvelocitypercentiles` (14 tests). Covers option
+  validation (minBuckets, top, sort, since/until), empty queue,
+  drops (bad hour_start, zero tokens, source filter), per-bucket
+  aggregation across devices/models within the same (source, hour),
+  empty-source `(unknown)` bucketing, nearest-rank percentile
+  semantics on a known 1..10 tok/min ladder, per-source isolation,
+  source filter accounting, sort=p99 ordering, minBuckets+top
+  composition, and since/until window pre-bucketing. Total test
+  count grew 1270 → 1284.
+
 ## 0.5.4 — 2026-04-26
 
 ### Added
