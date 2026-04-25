@@ -2,6 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.91 — 2026-04-25
+
+### Added
+
+- `prompt-output-correlation`: per-group Pearson correlation
+  between hour-bucket prompt-token mass (`input_tokens`) and
+  output-token mass (`output_tokens`), with companion OLS slope
+  and intercept. New analytical lens — none of the existing
+  ratio / size / share / variance subcommands relate the two
+  series per bucket.
+
+  For each (group, hour_start) cell, sums input and output
+  tokens. Per group, fits Pearson r over the resulting (x, y)
+  series and reports `pearsonR`, `slope`, `intercept`, plus
+  per-bucket population stats (`meanInput`, `meanOutput`,
+  `stdInput`, `stdOutput`, `activeBuckets`). A `degenerate` flag
+  flips when `stdInput == 0` or `stdOutput == 0` (Pearson is
+  undefined; we return r=0 and surface the flag so callers can
+  hide / footnote the row).
+
+  Why: `output-input-ratio` is a single scalar (totalOutput /
+  totalInput) that cannot tell you whether bigger prompts produce
+  proportionally bigger replies, or whether the model has a flat
+  output budget regardless of prompt size. Two models with an
+  identical 0.5 ratio can have r=+0.95 (output tracks prompt) or
+  r=-0.30 (output shrinks as prompt grows — usually a
+  context-truncation / refusal pattern). `burstiness` looks at
+  the variance of *one* series. `prompt-size` and `output-size`
+  are independent distributions with no per-bucket link.
+
+  Filters: `--since`, `--until`, `--by model|source` (default
+  `model`), `--min-buckets <n>` (default 2 — Pearson needs ≥ 2
+  points to be defined at all), `--top <n>` cap, `--sort
+  tokens|r|abs-r|buckets|slope` (default `tokens`, all desc with
+  lex tiebreak on group key). `--top` and `--min-buckets` are
+  display-only — global denominators (`totalGroups`,
+  `totalActiveBuckets`, `totalInputTokens`, `totalOutputTokens`,
+  `globalPearsonR`, `globalSlope`) always reflect the full
+  population. `globalDegenerate` flips when the global pool's
+  `stdInput == 0` or `stdOutput == 0`.
+
+  20 new tests (1145 total, up from 1125): rejects bad
+  `minBuckets` (0, negative, fractional); rejects bad `top`,
+  `by`, `sort`, `since`, `until`; empty queue returns zeros;
+  single bucket → degenerate, dropped at default `minBuckets=2`,
+  kept at `minBuckets=1` and flagged degenerate; perfect linear
+  y=2x → r=+1, slope=2, intercept=0 (within fp); perfect inverse
+  y=-x+C → r=-1, slope=-1; constant input → degenerate, r=0,
+  slope=0, intercept=0; same-hour rows coalesce by hour_start
+  (input/output sum into the cell); `--by source` switches axis;
+  `--since`/`--until` window applies and `droppedInvalidHourStart`
+  / `droppedZeroTokens` count rejected rows; `--sort abs-r` ranks
+  strongest correlations regardless of sign (perfect-positive and
+  perfect-negative tie at the top); `--sort r` is signed
+  (positive first); `--top 2` caps and surfaces
+  `droppedTopGroups` while `totalGroups`/`totalActiveBuckets`
+  stay full-population; `minBuckets=3` drops a 2-bucket group but
+  keeps its tokens in global denominators; deterministic JSON
+  roundtrip.
+
+### Live-smoke output
+
+`pew-insights prompt-output-correlation --by source --min-buckets 5`
+against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights prompt-output-correlation
+as of: 2026-04-25T13:36:45.094Z    groups: 6 (shown 6)    active-buckets: 897    tokens: 8,589,811,179    in: 3,368,772,219    out: 37,070,541    minBuckets: 5    sort: tokens    global r: 0.574    global slope: 0.006
+dropped: 0 bad hour_start, 0 zero/non-finite tokens, 0 below min-buckets, 0 below top cap
+(pearson r in [-1,+1] over per-bucket (input_tokens, output_tokens) pairs; slope/intercept = OLS y = slope*x + intercept; degenerate=yes when stdInput or stdOutput is 0)
+
+per-source prompt→output correlation (sorted by tokens desc, lex tiebreak)
+source          tokens         in             out         buckets  mean-in    mean-out  std-in     std-out  r       slope   intercept  degen
+--------------  -------------  -------------  ----------  -------  ---------  --------  ---------  -------  ------  ------  ---------  -----
+claude-code     3,442,385,788  1,834,613,640  12,128,825  267      6,871,212  45,426    9,421,260  71,963   0.843   0.006   1161       no
+opencode        2,527,081,125  173,349,426    15,716,319  187      927,002    84,044    1,270,915  82,340   0.606   0.039   47620      no
+openclaw        1,667,883,959  894,607,627    4,764,076   356      2,512,943  13,382    2,781,215  20,016   0.654   0.005   1557       no
+codex           809,624,660    410,781,190    2,045,042   64       6,418,456  31,954    7,171,888  37,319   0.948   0.005   302        no
+hermes          140,949,920    54,839,246     1,281,032   148      370,535    8,656     510,252    8,147    0.502   0.008   5687       no
+vscode-copilot  1,885,727      581,090        1,135,247   320      1,816      3,548     14,584     4,947    -0.029  -0.010  3566       no
+```
+
+Reading: the global pool sits at r=0.574 — moderately positive,
+i.e. across all (source, hour) cells bigger prompts do trend
+with bigger replies, but with substantial scatter. The headline
+finding is the *spread of r across sources*. `codex` is the
+tightest fit (r=0.948, slope=0.005, intercept=302) — almost
+deterministic 0.5% reply-per-prompt-token with a near-zero
+floor, a textbook "this CLI's output is a fixed fraction of its
+input" pattern. `claude-code` is similar shape (r=0.843, same
+slope ~0.006). `opencode` has a distinctly higher slope (0.039,
+~6.5× the others) and a 47.6k-token intercept, which says its
+replies have a structural baseline regardless of prompt size and
+then add ~4% of prompt on top — different generation-budget
+policy. `vscode` signal lands at r=-0.029 — effectively zero
+correlation between prompt and output for that source, meaning
+its hourly output volume is uncoupled from how much prompt it
+consumes (likely a different shaped traffic mix: many tiny
+inline completions whose output budget is fixed by the UI, not
+by what you typed). None of this is visible in
+`output-input-ratio`'s single scalar.
+
 ## 0.4.90 — 2026-04-25
 
 ### Added

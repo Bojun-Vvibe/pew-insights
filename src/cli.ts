@@ -80,6 +80,7 @@ import {
   renderBucketDensityPercentile,
   renderHourOfWeek,
   renderDeviceTenure,
+  renderPromptOutputCorrelation,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -161,6 +162,7 @@ import { buildPeakHourShare } from './peakhour.js';
 import { buildWeekdayShare } from './weekdayshare.js';
 import { buildBurstiness } from './burstiness.js';
 import { buildDeviceShare } from './deviceshare.js';
+import { buildPromptOutputCorrelation } from './promptoutputcorrelation.js';
 import { buildWeekendVsWeekday } from './weekendvsweekday.js';
 import { buildCacheHitByHour } from './cachehitbyhour.js';
 import { buildModelCohabitation } from './modelcohabitation.js';
@@ -4337,6 +4339,95 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDeviceTenure(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('prompt-output-correlation')
+  .description(
+    'Per-group Pearson correlation between hourly prompt-token mass and output-token mass (with OLS slope/intercept)',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--by <dim>',
+    'group rows by model | source (default model)',
+    'model',
+  )
+  .option(
+    '--min-buckets <n>',
+    'hide groups with fewer than n active hour buckets; their counts surface as droppedSparseGroups (default 2 — Pearson r needs >= 2 points)',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n groups by sort key; remainder surface as droppedTopGroups (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort by tokens|r|abs-r|buckets|slope (default tokens, all desc with lex tiebreak on group)',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        by: string;
+        minBuckets: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 1) {
+          throw new Error(
+            `--min-buckets must be a positive integer (got ${opts.minBuckets})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (opts.by !== 'model' && opts.by !== 'source') {
+          throw new Error(`--by must be 'model' or 'source' (got ${opts.by})`);
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'tokens' &&
+          sort !== 'r' &&
+          sort !== 'abs-r' &&
+          sort !== 'buckets' &&
+          sort !== 'slope'
+        ) {
+          throw new Error(
+            `--sort must be one of tokens|r|abs-r|buckets|slope (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildPromptOutputCorrelation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          by: opts.by as 'model' | 'source',
+          minBuckets,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderPromptOutputCorrelation(report) + '\n');
         }
       } catch (e) {
         die(e);

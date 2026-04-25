@@ -4063,3 +4063,77 @@ export function renderDeviceTenure(r: DeviceTenureReport): string {
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { PromptOutputCorrelationReport } from './promptoutputcorrelation.js';
+
+export function renderPromptOutputCorrelation(
+  r: PromptOutputCorrelationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights prompt-output-correlation'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    groups: ${formatNumber(r.totalGroups)} (shown ${formatNumber(r.groups.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    in: ${formatNumber(r.totalInputTokens)}    out: ${formatNumber(r.totalOutputTokens)}    minBuckets: ${r.minBuckets}    sort: ${r.sort}    global r: ${r.globalDegenerate ? '—' : r.globalPearsonR.toFixed(3)}    global slope: ${r.globalDegenerate ? '—' : r.globalSlope.toFixed(3)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero/non-finite tokens, ${formatNumber(r.droppedSparseGroups)} below min-buckets, ${formatNumber(r.droppedTopGroups)} below top cap`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      '(pearson r in [-1,+1] over per-bucket (input_tokens, output_tokens) pairs; slope/intercept = OLS y = slope*x + intercept; degenerate=yes when stdInput or stdOutput is 0)',
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push('');
+
+  if (r.groups.length === 0) {
+    lines.push(
+      chalk.yellow('  no groups passed the min-buckets floor. nothing to fit.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-${r.by} prompt→output correlation (sorted by ${r.sort} desc, lex tiebreak)`,
+    ),
+  );
+  const headers = [
+    r.by,
+    'tokens',
+    'in',
+    'out',
+    'buckets',
+    'mean-in',
+    'mean-out',
+    'std-in',
+    'std-out',
+    'r',
+    'slope',
+    'intercept',
+    'degen',
+  ];
+  const rows: string[][] = r.groups.map((g) => [
+    g.model,
+    formatNumber(g.totalTokens),
+    formatNumber(g.totalInputTokens),
+    formatNumber(g.totalOutputTokens),
+    String(g.activeBuckets),
+    formatNumber(Math.round(g.meanInput)),
+    formatNumber(Math.round(g.meanOutput)),
+    formatNumber(Math.round(g.stdInput)),
+    formatNumber(Math.round(g.stdOutput)),
+    g.degenerate ? '—' : g.pearsonR.toFixed(3),
+    g.degenerate ? '—' : g.slope.toFixed(3),
+    g.degenerate ? '—' : Math.round(g.intercept).toString(),
+    g.degenerate ? 'yes' : 'no',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
