@@ -67,6 +67,16 @@ export interface ActiveSpanPerDayOptions {
    * Tiebreak in all non-default cases: day desc.
    */
   sort?: 'day' | 'span' | 'duty' | 'tokens' | 'active';
+  /**
+   * Drop days whose `spanHours` is strictly less than this floor
+   * *before* computing summary stats and `days[]`. Suppressed days
+   * surface as `droppedShortSpanDays`. 0 (default) = no floor.
+   *
+   * Useful for stripping out days that are just one or two stray
+   * automated buckets and would otherwise pull `dutyCycleMean`
+   * artificially toward 1.0.
+   */
+  minSpan?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -97,6 +107,8 @@ export interface ActiveSpanPerDayReport {
   top: number;
   /** Echo of resolved `sort` key. */
   sort: 'day' | 'span' | 'duty' | 'tokens' | 'active';
+  /** Echo of resolved `minSpan` floor (0 = no floor). */
+  minSpan: number;
   /** Distinct UTC calendar days with at least one positive-token row. */
   distinctDays: number;
   /** Sum of total_tokens across the full population (pre top cap). */
@@ -122,6 +134,8 @@ export interface ActiveSpanPerDayReport {
   droppedInvalidHourStart: number;
   droppedZeroTokens: number;
   droppedSourceFilter: number;
+  /** Days suppressed by the `minSpan` floor. */
+  droppedShortSpanDays: number;
   droppedTopDays: number;
 
   /** Per-day rows after sort + top cap. */
@@ -146,6 +160,12 @@ export function buildActiveSpanPerDay(
   ) {
     throw new Error(
       `sort must be 'day' | 'span' | 'duty' | 'tokens' | 'active' (got ${opts.sort})`,
+    );
+  }
+  const minSpan = opts.minSpan ?? 0;
+  if (!Number.isInteger(minSpan) || minSpan < 0) {
+    throw new Error(
+      `minSpan must be a non-negative integer (got ${opts.minSpan})`,
     );
   }
 
@@ -217,9 +237,14 @@ export function buildActiveSpanPerDay(
 
   const allDays: ActiveSpanPerDayRow[] = [];
   let totalTokens = 0;
+  let droppedShortSpanDays = 0;
   for (const [day, acc] of perDay.entries()) {
     const spanHours = acc.maxHour - acc.minHour + 1;
     const activeBuckets = acc.activeHours.size;
+    if (minSpan > 0 && spanHours < minSpan) {
+      droppedShortSpanDays += 1;
+      continue;
+    }
     allDays.push({
       day,
       firstHour: acc.minHour,
@@ -291,6 +316,7 @@ export function buildActiveSpanPerDay(
     source: sourceFilter,
     top,
     sort,
+    minSpan,
     distinctDays,
     totalTokens,
     spanHoursMin,
@@ -308,6 +334,7 @@ export function buildActiveSpanPerDay(
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
+    droppedShortSpanDays,
     droppedTopDays,
     days: kept,
   };

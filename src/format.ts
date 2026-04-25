@@ -3743,9 +3743,12 @@ export function renderActiveSpanPerDay(r: ActiveSpanPerDayReport): string {
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopDays)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedShortSpanDays)} below min-span floor, ${formatNumber(r.droppedTopDays)} below top cap`,
     ),
   );
+  if (r.minSpan > 0) {
+    lines.push(chalk.dim(`min-span floor: ${r.minSpan} (drops days with spanHours < ${r.minSpan} from stats AND days[])`));
+  }
   if (r.windowStart || r.windowEnd) {
     lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
   }

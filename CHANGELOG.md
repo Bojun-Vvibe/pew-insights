@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.82 — 2026-04-25
+
+### Added
+
+- `active-span-per-day`: `--min-span <n>` flag. Drop days whose
+  `spanHours` is strictly less than the floor *before* computing
+  summary stats and `days[]`. Suppressed days surface as
+  `droppedShortSpanDays`. Default 0 = no floor.
+
+  Why: 0.4.81's `dutyCycleMean=79.2%` is dragged toward 100% by
+  the long tail of single-bucket days (spanHours=1, dutyCycle=1
+  trivially). A `--min-span 6` floor restricts the analysis to
+  days with at least a 6-hour active window — the population that
+  actually represents a "workday" rather than a stray automated
+  ping. Combined with `--sort duty` this surfaces the genuinely
+  most-saturated workdays, not single-bucket artifacts.
+
+  Note: unlike `--top` (which is display-only), `--min-span`
+  affects both `days[]` *and* every summary aggregate. This is
+  intentional — the whole point is to characterise the *workday*
+  distribution, so stats should reflect the post-floor population.
+
+  3 new tests (1060 total, up from 1057): rejects bad minSpan,
+  filters short days from both stats and days[], combines
+  correctly with `--top` (post-floor population is what `--top`
+  caps).
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--min-span 6 --sort duty --top 8`:
+
+  ```
+  pew-insights active-span-per-day
+  as of: 2026-04-25T10:21:38.192Z    days: 59 (shown 8)    tokens: 8,408,412,991    sort: duty
+  spanHours: min=6 p25=7 median=8 mean=10.15 p75=10 max=24
+  dutyCycle: min=25.0% p25=51.3% median=75.0% mean=70.8% p75=91.8% max=100.0%
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 46 below min-span floor, 51 below top cap
+  min-span floor: 6 (drops days with spanHours < 6 from stats AND days[])
+  ```
+
+  Headline: with the floor applied (46 sub-6-hour days excluded),
+  the 105-day population shrinks to 59 "real workday" days.
+  Median spanHours stays at 8 (typical workday is 8 active UTC
+  hours wide), and median dutyCycle drops from 87.5% (all days,
+  inflated by single-bucket trivials) to 75% — i.e. on a typical
+  workday, three out of every four hours inside the
+  start→end window actually contain activity. The seven days
+  shown at 100% duty are the same recent-week saturated runs
+  noted in 0.4.81.
+
 ## 0.4.81 — 2026-04-25
 
 ### Added

@@ -267,3 +267,70 @@ test('active-span-per-day: generatedAt is honoured', () => {
   const r = buildActiveSpanPerDay([], { generatedAt: GEN });
   assert.equal(r.generatedAt, GEN);
 });
+
+// ---- minSpan filter -------------------------------------------------------
+
+test('active-span-per-day: rejects bad minSpan', () => {
+  assert.throws(() => buildActiveSpanPerDay([], { minSpan: -1 }));
+  assert.throws(() => buildActiveSpanPerDay([], { minSpan: 1.5 }));
+});
+
+test('active-span-per-day: minSpan filters short days from stats AND days[]', () => {
+  const queue = [
+    // span 1
+    ql('2026-04-20T15:00:00Z'),
+    // span 3
+    ql('2026-04-21T09:00:00Z'),
+    ql('2026-04-21T11:00:00Z'),
+    // span 13
+    ql('2026-04-22T09:00:00Z'),
+    ql('2026-04-22T21:00:00Z'),
+  ];
+  // No floor: 3 days, min span 1
+  const baseline = buildActiveSpanPerDay(queue, { generatedAt: GEN });
+  assert.equal(baseline.distinctDays, 3);
+  assert.equal(baseline.spanHoursMin, 1);
+  assert.equal(baseline.droppedShortSpanDays, 0);
+  assert.equal(baseline.minSpan, 0);
+
+  // Floor 3: drops the span-1 day
+  const floored = buildActiveSpanPerDay(queue, {
+    generatedAt: GEN,
+    minSpan: 3,
+  });
+  assert.equal(floored.distinctDays, 2);
+  assert.equal(floored.droppedShortSpanDays, 1);
+  assert.equal(floored.spanHoursMin, 3);
+  assert.equal(floored.spanHoursMax, 13);
+  assert.equal(floored.minSpan, 3);
+  assert.deepEqual(
+    floored.days.map((d) => d.day).sort(),
+    ['2026-04-21', '2026-04-22'],
+  );
+});
+
+test('active-span-per-day: minSpan combines with top cap', () => {
+  const queue = [
+    ql('2026-04-19T15:00:00Z'), // span 1, dropped by floor
+    ql('2026-04-20T09:00:00Z'),
+    ql('2026-04-20T11:00:00Z'), // span 3, kept
+    ql('2026-04-21T08:00:00Z'),
+    ql('2026-04-21T12:00:00Z'), // span 5, kept
+    ql('2026-04-22T09:00:00Z'),
+    ql('2026-04-22T21:00:00Z'), // span 13, kept
+  ];
+  const r = buildActiveSpanPerDay(queue, {
+    generatedAt: GEN,
+    minSpan: 2,
+    top: 2,
+  });
+  assert.equal(r.droppedShortSpanDays, 1);
+  assert.equal(r.distinctDays, 3); // post-floor population
+  assert.equal(r.days.length, 2); // top cap applied
+  assert.equal(r.droppedTopDays, 1);
+  // sort default (day desc) -> top 2 = 22, 21
+  assert.deepEqual(
+    r.days.map((d) => d.day),
+    ['2026-04-22', '2026-04-21'],
+  );
+});

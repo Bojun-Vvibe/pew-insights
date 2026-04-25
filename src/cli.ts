@@ -3550,6 +3550,11 @@ program
     "sort key for days[]: 'day' (default, desc) | 'span' (desc) | 'duty' (desc) | 'tokens' (desc) | 'active' (desc)",
     'day',
   )
+  .option(
+    '--min-span <n>',
+    'drop days whose spanHours < n before computing summary stats; suppressed days surface as droppedShortSpanDays. Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3559,6 +3564,7 @@ program
         source?: string;
         top: string;
         sort: string;
+        minSpan: string;
         json?: boolean;
       },
       cmd,
@@ -3569,6 +3575,10 @@ program
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minSpan = Number.parseInt(opts.minSpan, 10);
+        if (!Number.isInteger(minSpan) || minSpan < 0) {
+          throw new Error(`--min-span must be a non-negative integer (got ${opts.minSpan})`);
         }
         if (
           opts.sort !== 'day' &&
@@ -3588,6 +3598,7 @@ program
           source: opts.source ?? null,
           top,
           sort: opts.sort as 'day' | 'span' | 'duty' | 'tokens' | 'active',
+          minSpan,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
