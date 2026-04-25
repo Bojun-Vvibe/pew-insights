@@ -2250,6 +2250,7 @@ import type { ModelMixEntropyReport } from './modelmixentropy.js';
 import type { WeekendVsWeekdayReport } from './weekendvsweekday.js';
 import type { CacheHitByHourReport } from './cachehitbyhour.js';
 import type { ModelCohabitationReport } from './modelcohabitation.js';
+import type { InterarrivalTimeReport } from './interarrivaltime.js';
 
 function formatBucketLabel(from: number, to: number | null): string {
   const fmt = (n: number): string => {
@@ -3023,6 +3024,74 @@ export function renderModelCohabitation(r: ModelCohabitationReport): string {
     (p.coShareB * 100).toFixed(1) + '%',
   ]);
   lines.push(renderTableLocal(pHeaders, pRows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function fmtHoursEdge(h: number): string {
+  if (!Number.isFinite(h)) return '+inf';
+  if (h % 168 === 0 && h >= 168) return `${h / 168}w`;
+  if (h % 24 === 0 && h >= 24) return `${h / 24}d`;
+  return `${h}h`;
+}
+
+export function renderInterarrivalTime(r: InterarrivalTimeReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights interarrival-time'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    activeBuckets: ${formatNumber(r.totalActiveBuckets)}    gaps: ${formatNumber(r.totalGaps)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(gaps measured between consecutive distinct UTC hour_start values per source, in hours; min observable = 1h)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no sources with positive tokens in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source gap summary (sorted by ${r.sort} desc)`));
+  const sHeaders = ['source', 'buckets', 'gaps', 'min(h)', 'p50(h)', 'p90(h)', 'max(h)', 'mean(h)', 'sum(h)'];
+  const sRows: string[][] = r.sources.map((s) => [
+    s.source === '' ? '(empty)' : s.source,
+    formatNumber(s.activeBuckets),
+    formatNumber(s.gapCount),
+    formatNumber(s.minHours),
+    formatNumber(s.p50Hours),
+    formatNumber(s.p90Hours),
+    formatNumber(s.maxHours),
+    s.meanHours.toFixed(2),
+    formatNumber(s.sumHours),
+  ]);
+  lines.push(renderTableLocal(sHeaders, sRows));
+
+  lines.push('');
+  lines.push(chalk.bold('per-source gap histogram'));
+  const hHeaders = ['source', ...r.histogramEdgesHours.slice(0, -1).map((lo, i) => {
+    const hi = r.histogramEdgesHours[i + 1] as number;
+    return `[${fmtHoursEdge(lo)},${fmtHoursEdge(hi)})`;
+  })];
+  const hRows: string[][] = r.sources.map((s) => [
+    s.source === '' ? '(empty)' : s.source,
+    ...s.histogram.map((b) => formatNumber(b.count)),
+  ]);
+  lines.push(renderTableLocal(hHeaders, hRows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

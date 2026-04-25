@@ -64,6 +64,7 @@ import {
   renderWeekendVsWeekday,
   renderCacheHitByHour,
   renderModelCohabitation,
+  renderInterarrivalTime,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -148,6 +149,7 @@ import { buildDeviceShare } from './deviceshare.js';
 import { buildWeekendVsWeekday } from './weekendvsweekday.js';
 import { buildCacheHitByHour } from './cachehitbyhour.js';
 import { buildModelCohabitation } from './modelcohabitation.js';
+import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
 import { buildTimeOfDay } from './timeofday.js';
@@ -3138,6 +3140,64 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderModelCohabitation(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('interarrival-time')
+  .description('Per-source distribution of gaps (hours) between consecutive distinct UTC hour buckets with positive token mass')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top <n>',
+    'show only the top n sources after sorting; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'buckets' (default) | 'gaps' | 'p90'",
+    'buckets',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (opts.sort !== 'buckets' && opts.sort !== 'gaps' && opts.sort !== 'p90') {
+          throw new Error(`--sort must be 'buckets' | 'gaps' | 'p90' (got ${opts.sort})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildInterarrivalTime(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          top,
+          sort: opts.sort as 'buckets' | 'gaps' | 'p90',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderInterarrivalTime(report) + '\n');
         }
       } catch (e) {
         die(e);
