@@ -3159,6 +3159,11 @@ program
     '0',
   )
   .option(
+    '--min-active-buckets <n>',
+    'hide sources with fewer than n active hour buckets; counts surface as droppedMinActiveBuckets (default 0)',
+    '0',
+  )
+  .option(
     '--sort <key>',
     "sort key for sources[]: 'buckets' (default) | 'gaps' | 'p90'",
     'buckets',
@@ -3171,6 +3176,7 @@ program
         until?: string;
         source?: string;
         top: string;
+        minActiveBuckets: string;
         sort: string;
         json?: boolean;
       },
@@ -3183,6 +3189,10 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const minActiveBuckets = Number.parseInt(opts.minActiveBuckets, 10);
+        if (!Number.isInteger(minActiveBuckets) || minActiveBuckets < 0) {
+          throw new Error(`--min-active-buckets must be a non-negative integer (got ${opts.minActiveBuckets})`);
+        }
         if (opts.sort !== 'buckets' && opts.sort !== 'gaps' && opts.sort !== 'p90') {
           throw new Error(`--sort must be 'buckets' | 'gaps' | 'p90' (got ${opts.sort})`);
         }
@@ -3192,6 +3202,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           top,
+          minActiveBuckets,
           sort: opts.sort as 'buckets' | 'gaps' | 'p90',
         });
         if (opts.json || common.json) {

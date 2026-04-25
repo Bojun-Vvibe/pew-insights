@@ -235,3 +235,56 @@ test('interarrival-time: window filter applied before bucket dedup', () => {
   assert.equal(s.gapCount, 1);
   assert.equal(s.minHours, 2);
 });
+
+// ---- minActiveBuckets refinement ------------------------------------------
+
+test('interarrival-time: rejects bad minActiveBuckets', () => {
+  assert.throws(() => buildInterarrivalTime([], { minActiveBuckets: -1 }));
+  assert.throws(() => buildInterarrivalTime([], { minActiveBuckets: 1.5 }));
+});
+
+test('interarrival-time: --min-active-buckets hides small sources and surfaces drops', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { source: 'big' }),
+    ql('2026-04-20T02:00:00Z', { source: 'big' }),
+    ql('2026-04-20T03:00:00Z', { source: 'big' }),
+    ql('2026-04-20T01:00:00Z', { source: 'small' }), // only 1 bucket
+    ql('2026-04-20T01:00:00Z', { source: 'tiny' }),
+    ql('2026-04-20T02:00:00Z', { source: 'tiny' }),
+  ];
+  const r = buildInterarrivalTime(queue, {
+    generatedAt: GEN,
+    minActiveBuckets: 3,
+  });
+  // totals reflect full population
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.totalActiveBuckets, 6);
+  // only 'big' (3 buckets) survives
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0].source, 'big');
+  assert.equal(r.droppedMinActiveBuckets, 2);
+});
+
+test('interarrival-time: minActiveBuckets composes with top (min applied first)', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { source: 'a' }),
+    ql('2026-04-20T02:00:00Z', { source: 'a' }),
+    ql('2026-04-20T03:00:00Z', { source: 'a' }),
+    ql('2026-04-20T04:00:00Z', { source: 'a' }), // 4 buckets
+    ql('2026-04-20T01:00:00Z', { source: 'b' }),
+    ql('2026-04-20T02:00:00Z', { source: 'b' }), // 2 buckets — dropped by min
+    ql('2026-04-20T01:00:00Z', { source: 'c' }),
+    ql('2026-04-20T02:00:00Z', { source: 'c' }),
+    ql('2026-04-20T03:00:00Z', { source: 'c' }), // 3 buckets
+  ];
+  const r = buildInterarrivalTime(queue, {
+    generatedAt: GEN,
+    minActiveBuckets: 3,
+    top: 1,
+  });
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.droppedMinActiveBuckets, 1); // 'b'
+  assert.equal(r.droppedTopSources, 1);        // 'c' kicked by top after min
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0].source, 'a');
+});

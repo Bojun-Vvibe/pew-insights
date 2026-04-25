@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.60 — 2026-04-25
+
+### Added
+
+- `interarrival-time`: `--min-active-buckets <n>` flag (default 0
+  = no filter). Hides source rows whose `activeBuckets < n`;
+  drops surface as `droppedMinActiveBuckets`. Display filter only
+  — `totalSources`, `totalActiveBuckets`, `totalGaps`, and the
+  `droppedInvalidHourStart`/`droppedZeroTokens`/`droppedSourceFilter`
+  counts are byte-identical to the unfiltered run. Composes
+  with `--top` (min applied first, top second).
+
+  3 new tests (853 total, up from 850): rejects bad input;
+  hides small sources and surfaces drops while preserving totals;
+  composes correctly with `--top`.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--min-active-buckets 200 --sort p90`:
+
+  ```
+  pew-insights interarrival-time
+  as of: 2026-04-25T03:57:11.381Z    sources: 6 (shown 3)    activeBuckets: 1,299    gaps: 1,293    sort: p90
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 3 below min-active-buckets, 0 below top cap
+
+  per-source gap summary (sorted by p90 desc)
+  source          buckets  gaps  min(h)  p50(h)  p90(h)  max(h)  mean(h)  sum(h)
+  --------------  -------  ----  ------  ------  ------  ------  -------  ------
+  vscode-copilot  320      319   1       1       48      568     20.21    6,448
+  claude-code     267      266   1       1       16      316     6.87     1,827
+  openclaw        337      336   1       1       1       13      1.07     359
+  ```
+
+  Headline: combining `--min-active-buckets 200` (drops
+  `opencode`/`hermes`/`codex` — the three producers with <200
+  active hour buckets) with `--sort p90` cleanly inverts the
+  default ordering and isolates the long-tail spacing pattern:
+  vscode-copilot's p90 of 48h is **48× higher** than openclaw's
+  1h, even though both have comparable active-bucket counts
+  (320 vs 337). The `--sort p90` lens turns this from "openclaw
+  has the most data" to "vscode-copilot has the longest dark
+  intervals" without changing any underlying number.
+
 ## 0.4.59 — 2026-04-25
 
 ### Added

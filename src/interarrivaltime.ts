@@ -54,6 +54,13 @@ export interface InterarrivalTimeOptions {
    */
   top?: number;
   /**
+   * Hide source rows whose `activeBuckets < minActiveBuckets`.
+   * Counts surface as `droppedMinActiveBuckets`. Display filter
+   * only — `totalSources` and `totalActiveBuckets` reflect the
+   * full population. Applied *before* the `top` cap. Default 0.
+   */
+  minActiveBuckets?: number;
+  /**
    * Sort key for `sources[]`. Default 'buckets' (activeBuckets desc).
    * 'gaps' = gapCount desc. 'p90' = p90 desc.
    */
@@ -102,6 +109,7 @@ export interface InterarrivalTimeReport {
   windowEnd: string | null;
   source: string | null;
   top: number;
+  minActiveBuckets: number;
   sort: 'buckets' | 'gaps' | 'p90';
   /** Total distinct sources observed across kept rows. */
   totalSources: number;
@@ -117,6 +125,8 @@ export interface InterarrivalTimeReport {
   droppedSourceFilter: number;
   /** Source rows hidden by the `top` cap. */
   droppedTopSources: number;
+  /** Source rows hidden by the `minActiveBuckets` threshold. */
+  droppedMinActiveBuckets: number;
   /** Edges used for every per-source histogram, in hours. */
   histogramEdgesHours: number[];
   /** Per-source rows. */
@@ -145,6 +155,12 @@ export function buildInterarrivalTime(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minActiveBuckets = opts.minActiveBuckets ?? 0;
+  if (!Number.isInteger(minActiveBuckets) || minActiveBuckets < 0) {
+    throw new Error(
+      `minActiveBuckets must be a non-negative integer (got ${opts.minActiveBuckets})`,
+    );
   }
   const sort = opts.sort ?? 'buckets';
   if (sort !== 'buckets' && sort !== 'gaps' && sort !== 'p90') {
@@ -275,11 +291,24 @@ export function buildInterarrivalTime(
   });
 
   const totalSources = allRows.length;
+  let droppedMinActiveBuckets = 0;
+  let afterMin = allRows;
+  if (minActiveBuckets > 0) {
+    const next: InterarrivalTimeSourceRow[] = [];
+    for (const row of allRows) {
+      if (row.activeBuckets < minActiveBuckets) {
+        droppedMinActiveBuckets += 1;
+      } else {
+        next.push(row);
+      }
+    }
+    afterMin = next;
+  }
   let droppedTopSources = 0;
-  let kept = allRows;
-  if (top > 0 && allRows.length > top) {
-    droppedTopSources = allRows.length - top;
-    kept = allRows.slice(0, top);
+  let kept = afterMin;
+  if (top > 0 && afterMin.length > top) {
+    droppedTopSources = afterMin.length - top;
+    kept = afterMin.slice(0, top);
   }
 
   return {
@@ -288,6 +317,7 @@ export function buildInterarrivalTime(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     top,
+    minActiveBuckets,
     sort,
     totalSources,
     totalActiveBuckets,
@@ -296,6 +326,7 @@ export function buildInterarrivalTime(
     droppedZeroTokens,
     droppedSourceFilter,
     droppedTopSources,
+    droppedMinActiveBuckets,
     histogramEdgesHours: edges,
     sources: kept,
   };
