@@ -27,6 +27,7 @@ import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
 import type { InterSourceHandoffLatencyReport } from './intersourcehandofflatency.js';
+import type { SourcePairCooccurrenceReport } from './sourcepaircooccurrence.js';
 import type { ProviderSwitchingFrequencyReport } from './providerswitchingfrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
@@ -3688,6 +3689,73 @@ export function renderInterSourceHandoffLatency(
     p.medianLatencyHours.toFixed(2) + 'h',
     p.minLatencyHours.toFixed(2) + 'h',
     p.maxLatencyHours.toFixed(2) + 'h',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourcePairCooccurrence(
+  r: SourcePairCooccurrenceReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-pair-cooccurrence'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    multi-source: ${formatNumber(r.multiSourceBuckets)} (${(r.cooccurrenceShare * 100).toFixed(1)}%)    total-pairs: ${formatNumber(r.totalPairs)}    distinct-pairs: ${formatNumber(r.distinctPairs)}    minCount: ${formatNumber(r.minCount)}    topPairs: ${formatNumber(r.topPairs)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedEmptySource)} empty-source rows, ${formatNumber(r.droppedBelowMinCount)} below min-count, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.dominantPair !== null) {
+    lines.push(
+      chalk.dim(
+        `dominant pair: ${r.dominantPair.a} + ${r.dominantPair.b} (co-active in ${formatNumber(r.dominantPair.count)} buckets)`,
+      ),
+    );
+  }
+  lines.push(
+    chalk.dim(
+      `(unordered pair {a,b}; count = buckets with both active; jaccard = |buckets(a) ∩ buckets(b)| / |union|; share = count / total-pairs)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.activeBuckets === 0) {
+    lines.push(
+      chalk.yellow('  no active buckets in the window after filters. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+  if (r.pairs.length === 0) {
+    lines.push(
+      chalk.yellow(
+        '  no source co-occurrences detected (every bucket has a single source, or topPairs=0).',
+      ),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `top source co-occurrences (sorted by count desc, then jaccard desc)`,
+    ),
+  );
+  const headers = ['source-a', 'source-b', 'count', 'share', 'jaccard'];
+  const rows: string[][] = r.pairs.map((p) => [
+    p.a,
+    p.b,
+    formatNumber(p.count),
+    (p.share * 100).toFixed(1) + '%',
+    p.jaccard.toFixed(3),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

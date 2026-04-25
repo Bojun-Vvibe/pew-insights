@@ -75,6 +75,7 @@ import {
   renderSourceDecayHalfLife,
   renderBucketHandoffFrequency,
   renderInterSourceHandoffLatency,
+  renderSourcePairCooccurrence,
   renderProviderSwitchingFrequency,
   renderFirstBucketOfDay,
   renderActiveSpanPerDay,
@@ -178,6 +179,7 @@ import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
 import { buildInterSourceHandoffLatency } from './intersourcehandofflatency.js';
+import { buildSourcePairCooccurrence } from './sourcepaircooccurrence.js';
 import { buildProviderSwitchingFrequency } from './providerswitchingfrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
@@ -4636,6 +4638,68 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderPromptOutputCorrelation(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-pair-cooccurrence')
+  .description(
+    'Unordered pairs of sources (CLI tools) that are co-active in the same hour-bucket — multi-tool concurrency lens with raw count, share-of-pairs, and Jaccard similarity per pair, plus a multi-source-bucket share',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--top-pairs <n>',
+    'cap the number of {a,b} co-occurrence pairs in the table (default 10; use 0 to suppress the table)',
+    '10',
+  )
+  .option(
+    '--min-count <n>',
+    'drop pairs whose count is below n before applying --top-pairs; suppressed rows surface as droppedBelowMinCount (default 1 = no floor)',
+    '1',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        topPairs: string;
+        minCount: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topPairs = Number.parseInt(opts.topPairs, 10);
+        if (!Number.isInteger(topPairs) || topPairs < 0) {
+          throw new Error(
+            `--top-pairs must be a non-negative integer (got ${opts.topPairs})`,
+          );
+        }
+        const minCount = Number.parseInt(opts.minCount, 10);
+        if (!Number.isInteger(minCount) || minCount < 1) {
+          throw new Error(
+            `--min-count must be a positive integer (got ${opts.minCount})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourcePairCooccurrence(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          topPairs,
+          minCount,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourcePairCooccurrence(report) + '\n');
         }
       } catch (e) {
         die(e);
