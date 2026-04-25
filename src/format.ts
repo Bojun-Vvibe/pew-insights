@@ -19,6 +19,7 @@ import type { TransitionsReport } from './transitions.js';
 import type { AgentMixReport } from './agentmix.js';
 import type { SessionLengthsReport } from './sessionlengths.js';
 import type { ModelTenureReport } from './modeltenure.js';
+import type { ProviderTenureReport } from './providertenure.js';
 import type { TailShareReport } from './tailshare.js';
 import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
 import type { SourceTenureReport } from './sourcetenure.js';
@@ -3594,6 +3595,65 @@ export function renderBucketHandoffFrequency(r: BucketHandoffFrequencyReport): s
     p.to,
     formatNumber(p.count),
     r.handoffPairs > 0 ? ((p.count / r.handoffPairs) * 100).toFixed(1) + '%' : '0.0%',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderProviderTenure(r: ProviderTenureReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights provider-tenure'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    providers: ${formatNumber(r.totalProviders)} (shown ${formatNumber(r.providers.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopProviders)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(provider rolled up from normalised model id; spanHours = clock hours first->last across any model from this vendor; activeBuckets = distinct hour_start values touched)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.providers.length === 0) {
+    lines.push(chalk.yellow('  no provider rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-provider tenure (sorted by ${r.sort} desc)`));
+  const headers = [
+    'provider',
+    'first-seen (UTC)',
+    'last-seen (UTC)',
+    'span-hr',
+    'active-buckets',
+    'distinct-models',
+    'tokens',
+    'tok/bucket',
+    'tok/span-hr',
+  ];
+  const rows: string[][] = r.providers.map((p) => [
+    p.provider,
+    p.firstSeen,
+    p.lastSeen,
+    p.spanHours.toFixed(1),
+    formatNumber(p.activeBuckets),
+    formatNumber(p.distinctModels),
+    formatNumber(p.tokens),
+    formatNumber(Math.round(p.tokensPerActiveBucket)),
+    formatNumber(Math.round(p.tokensPerSpanHour)),
   ]);
   lines.push(renderTableLocal(headers, rows));
 
