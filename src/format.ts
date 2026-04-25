@@ -3545,7 +3545,7 @@ export function renderBucketHandoffFrequency(r: BucketHandoffFrequencyReport): s
   lines.push(chalk.bold.cyan('pew-insights bucket-handoff-frequency'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    pairs: ${formatNumber(r.consideredPairs)}    handoffs: ${formatNumber(r.handoffPairs)} (${(r.handoffShare * 100).toFixed(1)}%)    topHandoffs: ${formatNumber(r.topHandoffs)}`,
+      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    pairs: ${formatNumber(r.consideredPairs)}    handoffs: ${formatNumber(r.handoffPairs)} (${(r.handoffShare * 100).toFixed(1)}%)    minHandoffs: ${formatNumber(r.minHandoffs)}    topHandoffs: ${formatNumber(r.topHandoffs)}`,
     ),
   );
   lines.push(
@@ -3555,7 +3555,7 @@ export function renderBucketHandoffFrequency(r: BucketHandoffFrequencyReport): s
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptyModelBuckets)} empty-model buckets, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptyModelBuckets)} empty-model buckets, ${formatNumber(r.droppedBelowMinHandoffs)} below min-handoffs, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

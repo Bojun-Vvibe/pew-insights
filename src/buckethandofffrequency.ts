@@ -69,6 +69,15 @@ export interface BucketHandoffFrequencyOptions {
    * the table entirely (still echoes `topHandoffs: 0`).
    */
   topHandoffs?: number;
+  /**
+   * Drop `(from -> to)` pair rows whose `count < minHandoffs` from
+   * `pairs[]`. Display filter only — `handoffPairs`, `handoffShare`,
+   * and the contiguous/gapped totals still reflect the full
+   * pre-filter population. Suppressed rows surface as
+   * `droppedBelowMinHandoffs`. Default 1 = keep every pair.
+   * Applied *before* `topHandoffs`.
+   */
+  minHandoffs?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -86,6 +95,8 @@ export interface BucketHandoffFrequencyReport {
   source: string | null;
   /** Echo of the resolved `topHandoffs` cap. */
   topHandoffs: number;
+  /** Echo of the resolved `minHandoffs` floor. */
+  minHandoffs: number;
   /** Distinct active hour-buckets surviving filters. */
   activeBuckets: number;
   /** activeBuckets - 1 (0 if activeBuckets <= 1). */
@@ -116,6 +127,8 @@ export interface BucketHandoffFrequencyReport {
   droppedEmptyModelBuckets: number;
   /** Handoff rows trimmed by the `topHandoffs` cap. */
   droppedBelowTopCap: number;
+  /** Handoff rows hidden by the `minHandoffs` floor (applied before the top cap). */
+  droppedBelowMinHandoffs: number;
   /** Top directed (from -> to) primary-model handoffs. */
   pairs: BucketHandoffPair[];
 }
@@ -130,6 +143,12 @@ export function buildBucketHandoffFrequency(
   if (!Number.isInteger(topHandoffs) || topHandoffs < 0) {
     throw new Error(
       `topHandoffs must be a non-negative integer (got ${opts.topHandoffs})`,
+    );
+  }
+  const minHandoffs = opts.minHandoffs ?? 1;
+  if (!Number.isInteger(minHandoffs) || minHandoffs < 1) {
+    throw new Error(
+      `minHandoffs must be a positive integer (got ${opts.minHandoffs})`,
     );
   }
 
@@ -292,10 +311,16 @@ export function buildBucketHandoffFrequency(
   });
 
   let droppedBelowTopCap = 0;
+  let droppedBelowMinHandoffs = 0;
   let pairs = sortedPairs;
-  if (sortedPairs.length > topHandoffs) {
-    droppedBelowTopCap = sortedPairs.length - topHandoffs;
-    pairs = sortedPairs.slice(0, topHandoffs);
+  if (minHandoffs > 1) {
+    const survivors = pairs.filter((p) => p.count >= minHandoffs);
+    droppedBelowMinHandoffs = pairs.length - survivors.length;
+    pairs = survivors;
+  }
+  if (pairs.length > topHandoffs) {
+    droppedBelowTopCap = pairs.length - topHandoffs;
+    pairs = pairs.slice(0, topHandoffs);
   }
 
   return {
@@ -304,6 +329,7 @@ export function buildBucketHandoffFrequency(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     topHandoffs,
+    minHandoffs,
     activeBuckets,
     consideredPairs,
     handoffPairs,
@@ -319,6 +345,7 @@ export function buildBucketHandoffFrequency(
     droppedSourceFilter,
     droppedEmptyModelBuckets,
     droppedBelowTopCap,
+    droppedBelowMinHandoffs,
     pairs,
   };
 }

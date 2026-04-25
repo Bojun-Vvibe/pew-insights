@@ -3783,6 +3783,11 @@ program
     'cap the number of (from -> to) handoff pairs in the table (default 10; use 0 to suppress the table)',
     '10',
   )
+  .option(
+    '--min-handoffs <n>',
+    'drop pairs whose count is below n before applying --top-handoffs; suppressed rows surface as droppedBelowMinHandoffs (default 1 = no floor)',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3791,6 +3796,7 @@ program
         until?: string;
         source?: string;
         topHandoffs: string;
+        minHandoffs: string;
         json?: boolean;
       },
       cmd,
@@ -3804,12 +3810,19 @@ program
             `--top-handoffs must be a non-negative integer (got ${opts.topHandoffs})`,
           );
         }
+        const minHandoffs = Number.parseInt(opts.minHandoffs, 10);
+        if (!Number.isInteger(minHandoffs) || minHandoffs < 1) {
+          throw new Error(
+            `--min-handoffs must be a positive integer (got ${opts.minHandoffs})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildBucketHandoffFrequency(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
           topHandoffs,
+          minHandoffs,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

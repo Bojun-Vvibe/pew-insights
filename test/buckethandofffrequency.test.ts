@@ -221,3 +221,84 @@ test('bucket-handoff-frequency: stickiest model = most-bucket primary, tiebreak 
   assert.equal(r.stickiestModel, 'opus');
   assert.equal(r.stickiestModelBuckets, 2);
 });
+
+// ---- minHandoffs floor ----------------------------------------------------
+
+test('bucket-handoff-frequency: rejects bad minHandoffs', () => {
+  assert.throws(() =>
+    buildBucketHandoffFrequency([], { minHandoffs: 0 }),
+  );
+  assert.throws(() =>
+    buildBucketHandoffFrequency([], { minHandoffs: -1 }),
+  );
+  assert.throws(() =>
+    buildBucketHandoffFrequency([], { minHandoffs: 1.5 }),
+  );
+});
+
+test('bucket-handoff-frequency: minHandoffs floor hides low-count pairs and surfaces droppedBelowMinHandoffs; totals untouched', () => {
+  // Build: opus->sonnet x3 (3 instances), then sonnet->opus x1, gpt->opus x1.
+  // Use gapped pairs so primary models match deterministically.
+  const q: QueueLine[] = [
+    // opus -> sonnet x3 (each pair separated by gaps so they're distinct
+    // but still counted as adjacent in time order)
+    ql('2026-04-20T00:00:00.000Z', 's', 'opus', 100),
+    ql('2026-04-20T05:00:00.000Z', 's', 'sonnet', 100),
+    ql('2026-04-20T10:00:00.000Z', 's', 'opus', 100),
+    ql('2026-04-20T15:00:00.000Z', 's', 'sonnet', 100),
+    ql('2026-04-20T20:00:00.000Z', 's', 'opus', 100),
+    ql('2026-04-21T01:00:00.000Z', 's', 'sonnet', 100),
+    // sonnet -> gpt x1 (only one)
+    ql('2026-04-21T06:00:00.000Z', 's', 'gpt', 100),
+  ];
+  const r = buildBucketHandoffFrequency(q, {
+    minHandoffs: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.activeBuckets, 7);
+  // 6 consecutive pairs, all are model handoffs in this construction.
+  assert.equal(r.handoffPairs, 6);
+  assert.equal(r.handoffShare, 1);
+  // Distinct directed pairs counted across the full sequence:
+  //   opus -> sonnet x3
+  //   sonnet -> opus x2
+  //   sonnet -> gpt x1
+  // After minHandoffs=2: opus->sonnet (3) and sonnet->opus (2) survive,
+  // sonnet->gpt (1) gets dropped.
+  assert.equal(r.minHandoffs, 2);
+  assert.equal(r.droppedBelowMinHandoffs, 1);
+  assert.equal(r.pairs.length, 2);
+  assert.deepEqual(r.pairs[0], { from: 'opus', to: 'sonnet', count: 3 });
+  assert.deepEqual(r.pairs[1], { from: 'sonnet', to: 'opus', count: 2 });
+});
+
+test('bucket-handoff-frequency: minHandoffs default is 1 (no-op) and is echoed in report', () => {
+  const r = buildBucketHandoffFrequency([], { generatedAt: GEN });
+  assert.equal(r.minHandoffs, 1);
+  assert.equal(r.droppedBelowMinHandoffs, 0);
+});
+
+test('bucket-handoff-frequency: minHandoffs is applied before topHandoffs cap', () => {
+  // 5 distinct pairs, counts 5,4,3,2,1. minHandoffs=3 -> 3 survive, top=2 -> drop 1 more.
+  const q: QueueLine[] = [];
+  // pair (a,b) x5
+  for (let i = 0; i < 5; i += 1) {
+    q.push(ql(`2026-04-20T${String(i * 2).padStart(2, '0')}:00:00.000Z`, 's', 'a', 100));
+    q.push(ql(`2026-04-20T${String(i * 2 + 1).padStart(2, '0')}:00:00.000Z`, 's', 'b', 100));
+  }
+  // The above already gives a->b x5 and b->a x4 (because they alternate
+  // and there are 10 buckets -> 9 pairs). Good enough for a multi-pair test.
+  const r = buildBucketHandoffFrequency(q, {
+    minHandoffs: 3,
+    topHandoffs: 1,
+    generatedAt: GEN,
+  });
+  // a->b: 5, b->a: 4 -> both survive minHandoffs=3.
+  // topHandoffs=1 -> keep 1, drop 1.
+  assert.equal(r.droppedBelowMinHandoffs, 0);
+  assert.equal(r.droppedBelowTopCap, 1);
+  assert.equal(r.pairs.length, 1);
+  assert.equal(r.pairs[0]!.from, 'a');
+  assert.equal(r.pairs[0]!.to, 'b');
+  assert.equal(r.pairs[0]!.count, 5);
+});

@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.76 — 2026-04-25
+
+### Added
+
+- `bucket-handoff-frequency`: `--min-handoffs <n>` flag. Drop
+  `(from -> to)` pair rows whose `count < n` from `pairs[]` *before*
+  applying `--top-handoffs`. Display filter only — `handoffPairs`,
+  `handoffShare`, `contiguousHandoffs`, and `gappedHandoffs` still
+  reflect the full pre-filter population (consistent with how
+  `--min-buckets` and similar floors behave across this CLI).
+  Suppressed rows surface as `droppedBelowMinHandoffs`.
+
+  Why: with the default 887-bucket workspace the long tail of
+  one-shot handoff pairs (e.g. `claude-haiku -> gemini-3-pro` x1)
+  pads the table and obscures the recurring routes. Composing
+  `--min-handoffs 3 --top-handoffs 10` cleanly isolates handoff
+  pairs that are an established workflow rather than a fluke.
+
+  Order of operations is documented and tested:
+  `min-handoffs` floor first (rows below the floor are
+  `droppedBelowMinHandoffs`), then `top-handoffs` cap (rows
+  trimmed here are `droppedBelowTopCap`). Default 1 = no-op,
+  echoed as `minHandoffs: 1` in the report.
+
+  4 new tests (1006 total, up from 1002): rejects bad
+  `minHandoffs` (0, negative, fractional); floor hides low-count
+  pairs and surfaces `droppedBelowMinHandoffs` while leaving
+  `handoffPairs` / `handoffShare` untouched; default is 1 and
+  echoed as such; floor is applied *before* the top cap so both
+  drop-counters are honoured.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--min-handoffs 3`:
+
+  ```
+  pew-insights bucket-handoff-frequency
+  as of: 2026-04-25T08:48:50.393Z    active-buckets: 887    pairs: 886    handoffs: 132 (14.9%)    minHandoffs: 3    topHandoffs: 10
+  split: 32 contiguous pairs (5 handoffs), 854 gapped pairs (127 handoffs)
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 empty-model buckets, 19 below min-handoffs, 4 below top cap
+  stickiest model: gpt-5.4 (primary in 204 of 887 buckets)
+  (primary model per bucket = max-tokens model, ties broken lex; contiguous pair = exactly 1h apart; handoff = primary changed)
+
+  top model handoffs (sorted by count desc)
+  from-model                 to-model                   count  share-of-handoffs
+  -------------------------  -------------------------  -----  -----------------
+  claude-opus-4.7            gpt-5.4                    34     25.8%
+  gpt-5.4                    claude-opus-4.7            34     25.8%
+  claude-opus-4.6-1m         gpt-5.4                    6      4.5%
+  gpt-5.4                    claude-opus-4.6-1m         5      3.8%
+  claude-sonnet-4            gpt-5                      4      3.0%
+  gpt-5                      claude-sonnet-4            4      3.0%
+  claude-haiku-4-5-20251001  gemini-3-pro-preview       3      2.3%
+  claude-opus-4-7            gpt-5.4                    3      2.3%
+  claude-sonnet-4.5          gemini-3-pro-preview       3      2.3%
+  gemini-3-pro-preview       claude-haiku-4-5-20251001  3      2.3%
+  ```
+
+  Reading: the `minHandoffs: 3` floor scrubs 19 noise pairs
+  (each occurring 1-2 times) so the surviving 10 rows are
+  workflows we'd actually call recurring. The `top-handoffs: 10`
+  cap then trims 4 more `count == 3` rows that lost the
+  lex tiebreak. The headline `claude-opus-4.7 <-> gpt-5.4` swap
+  remains 51.6% of all handoffs even after both filters.
+
 ## 0.4.75 — 2026-04-25
 
 ### Added
