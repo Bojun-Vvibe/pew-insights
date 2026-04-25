@@ -207,3 +207,71 @@ test('rolling-bucket-cv: zero/negative tokens dropped', () => {
   assert.equal(r.droppedZeroTokens, 2);
   assert.equal(r.sources[0]!.activeBuckets, 2);
 });
+
+// ---- minWindowCv refinement ------------------------------------------------
+
+test('rolling-bucket-cv: rejects bad minWindowCv', () => {
+  assert.throws(() => buildRollingBucketCv([], { minWindowCv: -0.1 }));
+  assert.throws(() => buildRollingBucketCv([], { minWindowCv: Number.NaN }));
+});
+
+test('rolling-bucket-cv: minWindowCv re-shapes percentiles to spiky tail', () => {
+  // Five flat-100 buckets followed by a spike-then-recovery ramp.
+  const series = [100, 100, 100, 100, 100, 1000, 100, 100, 100, 100, 100];
+  const queue = series.map((tt, i) => {
+    const hh = i.toString().padStart(2, '0');
+    return ql(`2026-04-01T${hh}:00:00.000Z`, 'spiky', tt);
+  });
+  const noFloor = buildRollingBucketCv(queue, {
+    windowSize: 3,
+    generatedAt: GEN,
+  });
+  const floored = buildRollingBucketCv(queue, {
+    windowSize: 3,
+    minWindowCv: 0.5,
+    generatedAt: GEN,
+  });
+  // Flat windows have CV=0; floor at 0.5 drops them all.
+  assert.ok(floored.droppedLowCvWindows > 0);
+  assert.equal(floored.sources[0]!.windowCount, noFloor.sources[0]!.windowCount - floored.droppedLowCvWindows);
+  // p50 of remaining (spiky) windows must be >= floor.
+  assert.ok(floored.sources[0]!.p50Cv >= 0.5);
+  // Max unchanged across the floor (the spike windows survive).
+  assert.equal(floored.sources[0]!.maxCv, noFloor.sources[0]!.maxCv);
+  // Echo on report.
+  assert.equal(floored.minWindowCv, 0.5);
+});
+
+test('rolling-bucket-cv: source whose every window falls below minWindowCv is droppedAllWindowsFloored', () => {
+  const queue: QueueLine[] = [];
+  for (let h = 0; h < 6; h++)
+    queue.push(ql(`2026-04-01T0${h}:00:00.000Z`, 'flat', 100));
+  const r = buildRollingBucketCv(queue, {
+    windowSize: 3,
+    minWindowCv: 0.1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedAllWindowsFloored, 1);
+  assert.equal(r.droppedSparseSources, 0);
+});
+
+test('rolling-bucket-cv: sparse-source vs all-floored counters are distinct', () => {
+  const queue: QueueLine[] = [
+    // sparse: only 2 buckets, windowSize 5
+    ql('2026-04-01T00:00:00.000Z', 'sparse', 100),
+    ql('2026-04-01T01:00:00.000Z', 'sparse', 100),
+    // floored: 6 flat buckets
+    ...Array.from({ length: 6 }, (_, h) =>
+      ql(`2026-04-01T0${h}:00:00.000Z`, 'flatBig', 100),
+    ),
+  ];
+  const r = buildRollingBucketCv(queue, {
+    windowSize: 5,
+    minWindowCv: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedSparseSources, 1);
+  assert.equal(r.droppedAllWindowsFloored, 1);
+  assert.equal(r.sources.length, 0);
+});

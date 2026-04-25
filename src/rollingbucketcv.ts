@@ -91,6 +91,23 @@ export interface RollingBucketCvOptions {
    * from `sources[]`. Display filter only. Default 0.
    */
   minBuckets?: number;
+  /**
+   * Noise-floor on individual rolling windows: drop any window
+   * whose CV is `< minWindowCv` *before* per-source aggregation.
+   * Counts surface as `droppedLowCvWindows`. The remaining
+   * windows re-shape `min`/`p50`/`p90`/`max`/`mean` so the
+   * report describes only the spiky tail per source. A source
+   * whose windows all fall below the floor disappears from
+   * `sources[]` and is counted in `droppedAllWindowsFloored`.
+   * Default 0 keeps every window.
+   *
+   * Distinct from `minBuckets` (a structural filter on the
+   * source's own active-bucket count) and from `top` (a display
+   * cap on the source list, not a filter on windows). The right
+   * tool for "what does the spiky-half of each source's tenure
+   * actually look like" questions.
+   */
+  minWindowCv?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -137,6 +154,8 @@ export interface RollingBucketCvReport {
   top: number;
   /** Echo of resolved minBuckets floor. */
   minBuckets: number;
+  /** Echo of resolved minWindowCv floor. */
+  minWindowCv: number;
   /** Echo of source filter (null when not set). */
   source: string | null;
   /** Sum of total_tokens across all kept rows. */
@@ -152,6 +171,10 @@ export interface RollingBucketCvReport {
   droppedSparseSources: number;
   /** Source rows hidden by the minBuckets floor. */
   droppedMinBuckets: number;
+  /** Individual rolling windows dropped by the minWindowCv floor. */
+  droppedLowCvWindows: number;
+  /** Sources whose every window fell below minWindowCv. */
+  droppedAllWindowsFloored: number;
   /** Source rows hidden by the `top` cap (counted after floors). */
   droppedTopSources: number;
   /** One row per kept source. Sorted by totalTokens desc, then source asc. */
@@ -203,6 +226,10 @@ export function buildRollingBucketCv(
   const minBuckets = opts.minBuckets ?? 0;
   if (!Number.isInteger(minBuckets) || minBuckets < 0) {
     throw new Error(`minBuckets must be a non-negative integer (got ${opts.minBuckets})`);
+  }
+  const minWindowCv = opts.minWindowCv ?? 0;
+  if (!Number.isFinite(minWindowCv) || minWindowCv < 0) {
+    throw new Error(`minWindowCv must be a non-negative finite number (got ${opts.minWindowCv})`);
   }
   const sourceFilter = opts.source ?? null;
   if (sourceFilter !== null && typeof sourceFilter !== 'string') {
@@ -259,6 +286,8 @@ export function buildRollingBucketCv(
   const rows: RollingBucketCvSourceRow[] = [];
   let droppedSparseSources = 0;
   let droppedMinBuckets = 0;
+  let droppedLowCvWindows = 0;
+  let droppedAllWindowsFloored = 0;
   let totalTokens = 0;
   let totalWindows = 0;
 
@@ -277,26 +306,38 @@ export function buildRollingBucketCv(
     const globalCv = globalMean > 0 ? globalStddev / globalMean : 0;
 
     const cvs: number[] = [];
-    let peakIdx = -1;
-    let peakCv = -Infinity;
+    const peakKeys: string[] = [];
     if (activeBuckets >= windowSize) {
       for (let i = 0; i + windowSize <= activeBuckets; i++) {
         const slice = series.slice(i, i + windowSize);
         const mu = popMean(slice);
         const sd = popStddev(slice, mu);
         const cv = mu > 0 ? sd / mu : 0;
-        cvs.push(cv);
-        if (cv > peakCv) {
-          peakCv = cv;
-          peakIdx = i;
+        if (cv < minWindowCv) {
+          droppedLowCvWindows += 1;
+          continue;
         }
+        cvs.push(cv);
+        peakKeys.push(sortedKeys[i]!);
       }
     }
 
     if (cvs.length === 0) {
-      droppedSparseSources += 1;
-      // Skip from sources[] but still count globally so totals tally.
+      // Two reasons: source too sparse for window, or every window
+      // fell below minWindowCv. Distinguish in the report so the
+      // operator can read the right denominator.
+      if (activeBuckets < windowSize) {
+        droppedSparseSources += 1;
+      } else {
+        droppedAllWindowsFloored += 1;
+      }
       continue;
+    }
+
+    // Identify peak window after floor (max cv, ties -> earliest).
+    let peakIdx = 0;
+    for (let i = 1; i < cvs.length; i++) {
+      if (cvs[i]! > cvs[peakIdx]!) peakIdx = i;
     }
 
     totalWindows += cvs.length;
@@ -312,7 +353,7 @@ export function buildRollingBucketCv(
       p90Cv: nearestRank(sorted, 0.9),
       maxCv: sorted[sorted.length - 1]!,
       meanCv: popMean(cvs),
-      peakWindowStart: peakIdx >= 0 ? sortedKeys[peakIdx]! : null,
+      peakWindowStart: peakKeys[peakIdx]!,
     });
   }
 
@@ -335,6 +376,7 @@ export function buildRollingBucketCv(
     windowSize,
     top,
     minBuckets,
+    minWindowCv,
     source: sourceFilter,
     totalTokens,
     totalSources,
@@ -344,6 +386,8 @@ export function buildRollingBucketCv(
     droppedSourceFilter,
     droppedSparseSources,
     droppedMinBuckets,
+    droppedLowCvWindows,
+    droppedAllWindowsFloored,
     droppedTopSources,
     sources: kept,
   };

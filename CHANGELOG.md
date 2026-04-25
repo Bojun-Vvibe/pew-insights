@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.3 — 2026-04-26
+
+### Added
+
+- `rolling-bucket-cv --min-window-cv <x>`: noise-floor on the
+  individual rolling windows that drops any window whose CV is
+  `< x` *before* per-source aggregation. Counts surface as
+  `droppedLowCvWindows`. Sources whose every window falls below
+  the floor surface as `droppedAllWindowsFloored` (distinct from
+  `droppedSparseSources`, which counts sources too sparse for
+  the window at all). The remaining windows re-shape
+  `min`/`p50`/`p90`/`max`/`mean` so the report describes only
+  the spiky tail per source. Distinct from `--min-buckets` (a
+  structural floor on the source's own active-bucket count) and
+  from `--top` (a display cap on the source list, not a filter
+  on windows). Default 0 = no floor.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, top 5 sources, `--min-window-cv 1.0`)
+
+```
+pew-insights rolling-bucket-cv
+as of: 2026-04-25T19:55:09.960Z    sources: 6 (shown 5)    windows: 365    tokens: 8,768,503,855    window-size: 12 active buckets
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 sources too sparse for window, 939 below min-window-cv, 0 sources with all windows floored, 0 below min-buckets, 1 below top cap
+(observation = CV (stddev/mean, pop) of token-per-bucket within a window of 12 consecutive active buckets per source; window slides by one active bucket; percentiles nearest-rank R-1)
+
+per-source rolling-window CV distribution (sorted by tokens desc)
+source       buckets  windows  globalCv  minCv  p50Cv  p90Cv  maxCv  meanCv  peak window start
+-----------  -------  -------  --------  -----  -----  -----  -----  ------  ------------------------
+claude-code  267      112      1.422     1.004  1.160  1.400  1.752  1.200   2026-04-08T09:00:00.000Z
+opencode     199      31       1.158     1.004  1.204  1.826  2.013  1.291   2026-04-23T14:30:00.000Z
+openclaw     369      57       1.136     1.020  1.152  1.507  1.660  1.211   2026-04-18T16:00:00.000Z
+codex        64       25       1.127     1.005  1.210  1.457  1.675  1.221   2026-04-14T07:30:00.000Z
+hermes       151      61       1.086     1.004  1.333  1.751  2.150  1.382   2026-04-22T16:00:00.000Z
+```
+
+Reading: zooming onto each source's CV >= 1.0 windows collapses
+1,304 windows to 365 (28%). 939 windows fall below the floor —
+roughly three quarters of every source's tenure is *not* a spiky
+window by this definition. The floor is most exclusionary for
+`opencode` (188 -> 31, 16% retained) and `hermes` (140 -> 61,
+44% retained); `claude-code` retains the largest *fraction* at
+44% (256 -> 112), matching its higher-than-others global CV
+(1.42). The floored p50 jumps for every source (e.g. `hermes`
+0.91 -> 1.33, +0.42 absolute), confirming the floor is doing
+real work — the unfloored median was being pulled down by long
+quiet stretches the operator already knew about and didn't need
+the report to re-confirm.
+
+### Tests
+
+- 4 new tests on `rollingbucketcv`: `minWindowCv` validation,
+  percentile re-shaping under the floor with the spike-window
+  max preserved, source-with-all-windows-floored bucketed as
+  `droppedAllWindowsFloored` (not `droppedSparseSources`), and
+  the sparse-vs-all-floored distinction is preserved when both
+  conditions apply to different sources in the same call. Total
+  tests grew from 1328 -> 1332.
+
 ## 0.6.2 — 2026-04-26
 
 ### Added

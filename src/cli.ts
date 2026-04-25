@@ -5131,6 +5131,11 @@ program
     '0',
   )
   .option(
+    '--min-window-cv <x>',
+    'noise-floor: drop individual rolling windows whose CV is < x before per-source aggregation; counts surface as droppedLowCvWindows. Sources whose every window falls below the floor surface as droppedAllWindowsFloored. Default 0 keeps every window.',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources by total tokens; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
@@ -5144,6 +5149,7 @@ program
         source?: string;
         windowSize: string;
         minBuckets: string;
+        minWindowCv: string;
         top: string;
         json?: boolean;
       },
@@ -5160,6 +5166,10 @@ program
         if (!Number.isInteger(minBuckets) || minBuckets < 0) {
           throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
         }
+        const minWindowCv = Number.parseFloat(opts.minWindowCv);
+        if (!Number.isFinite(minWindowCv) || minWindowCv < 0) {
+          throw new Error(`--min-window-cv must be a non-negative finite number (got ${opts.minWindowCv})`);
+        }
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
@@ -5171,6 +5181,7 @@ program
           source: opts.source ?? null,
           windowSize,
           minBuckets,
+          minWindowCv,
           top,
         });
         if (opts.json || common.json) {

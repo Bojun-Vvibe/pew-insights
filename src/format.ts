@@ -4776,7 +4776,7 @@ export function renderRollingBucketCv(
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} sources too sparse for window, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} sources too sparse for window, ${formatNumber(r.droppedLowCvWindows)} below min-window-cv, ${formatNumber(r.droppedAllWindowsFloored)} sources with all windows floored, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
