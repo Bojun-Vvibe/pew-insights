@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.69 — 2026-04-25
+
+### Added
+
+- New subcommand: `source-tenure`. The source-axis analog of
+  `model-tenure`: for every `source` (the upstream agent CLI /
+  channel that emitted the row — `claude-code`, `opencode`,
+  `codex`, `hermes`, etc.) compute the active-span profile:
+  - `firstSeen` / `lastSeen`: ISO of first and last active bucket.
+  - `spanHours`: clock hours first→last (may be fractional, 0 for
+    a single-bucket source).
+  - `activeBuckets`: distinct `hour_start` values.
+  - `tokens`: sum of `total_tokens`.
+  - `tokensPerActiveBucket`, `tokensPerSpanHour`: mean intensity
+    per touched bucket and per clock-hour of tenure.
+  - `distinctModels`: number of unique normalised models routed
+    through this source over its tenure — answers "how
+    multi-model is this CLI?", which `model-tenure` cannot
+    surface from per-model rows because the same `hour_start`
+    is double-counted across models.
+
+  Why a separate subcommand:
+  - `model-tenure` is per-model; aggregating its rows by hand to
+    the source level double-counts hour buckets.
+  - `source-mix` and `provider-share` are mass tallies — no
+    firstSeen / lastSeen / span axis at all.
+  - `tail-share` reports per-source Pareto/Gini concentration
+    across buckets — magnitude *distribution*, not temporal extent.
+
+  Options: `--since`, `--until`, `--model` (restrict to a single
+  normalised model; non-matching rows surface as
+  `droppedModelFilter`), `--sort` (`span` default, `active`,
+  `tokens`, `density`, `models`), `--json`.
+
+  19 new tests (942 total, up from 923): option validation,
+  empty input, multi-bucket span/density math, single-bucket
+  spanHours=0 with finite density, distinctModels per source,
+  empty source string → "unknown", invalid-hour and zero-token
+  drops, model filter accounting, sort by tokens / span /
+  models, top cap with totals reflecting full population,
+  since/until windowing, lex tiebreak.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-tenure
+  as of: 2026-04-25T06:40:29Z    sources: 6 (shown 6)    active-buckets: 1,311    tokens: 8,423,677,351    minBuckets: 0    sort: span
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by model filter, 0 sparse sources, 0 below top cap
+
+  per-source tenure (sorted by span desc)
+  source       first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         tok/bucket  tok/span-hr  models
+  -----------  ------------------------  ------------------------  -------  --------------  -------------  ----------  -----------  ------
+  vscode-ext   2025-07-30T06:00:00.000Z  2026-04-20T01:30:00.000Z  6331.5   320             1,885,727      5,893       298          9
+  claude-code  2026-02-11T02:30:00.000Z  2026-04-23T14:30:00.000Z  1716.0   267             3,442,385,788  12,892,831  2,006,052    4
+  openclaw     2026-04-17T02:30:00.000Z  2026-04-25T06:00:00.000Z  195.5    342             1,647,386,404  4,816,919   8,426,529    1
+  hermes       2026-04-17T06:30:00.000Z  2026-04-25T05:30:00.000Z  191.0    145             140,424,600    968,446     735,207      3
+  codex        2026-04-13T01:30:00.000Z  2026-04-20T16:30:00.000Z  183.0    64              809,624,660    12,650,385  4,424,178    1
+  opencode     2026-04-20T14:00:00.000Z  2026-04-25T06:30:00.000Z  112.5    173             2,381,970,172  13,768,614  21,173,068   6
+  ```
+
+  Headline read: `vscode-ext` has by far the longest tenure
+  (~6332h ≈ 264 days) but the *lowest* density at 298
+  tokens/span-hr — it's a long-tail keepalive channel, not a
+  workhorse. The actual workhorse on a per-clock-hour basis is
+  `opencode` at ~21M tokens/span-hr (70× denser than `vscode-ext`,
+  10× denser than `claude-code`), despite a tenure under 5 days.
+  `claude-code` and `opencode` both route through 4–6 distinct
+  models; `openclaw` and `codex` are single-model sources.
+
 ## 0.4.68 — 2026-04-25
 
 ### Added
