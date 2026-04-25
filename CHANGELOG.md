@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.52 — 2026-04-25
+
+### Added
+
+- `model-mix-entropy`: `--top-k <n>` flag (default 0). When set,
+  each kept source row carries a `topModels` array of the top K
+  models for that source, sorted by tokens desc then model asc,
+  with raw `tokens` and `share` (in [0,1]). Display only — every
+  entropy figure (`entropyBits`, `maxEntropyBits`,
+  `normalizedEntropy`, `effectiveModels`, `topModelShare`,
+  `topModel`, `distinctModels`) is byte-identical to the
+  un-flagged run; only the new array is populated.
+
+  Use case: the un-flagged report tells you a source has H = 0.23
+  bits — strongly mono-model — but to act on it you need to know
+  *which* model is dominant and what the long tail looks like.
+  `--top-k 3` answers both in one pass.
+
+  4 new tests (783 total, up from 779): topK=0 leaves array
+  empty + entropy unchanged; topK lists per-source models sorted
+  desc with correct shares; topK does not perturb any entropy
+  scalar; bad topK values rejected.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--top-k 3 --min-tokens 100000000`:
+
+  ```
+  per-source top-3 models (sorted by tokens desc within each source)
+  source       model               tokens         share
+  -----------  ------------------  -------------  ------
+  claude-code  claude-opus-4.7     2,259,457,858  65.6%
+               claude-opus-4.6.1m  1,108,978,665  32.2%
+               claude-haiku-4.5    70,717,678     2.1%
+  opencode     claude-opus-4.7     2,182,407,617  97.2%
+               unknown             29,125,919     1.3%
+               gpt-5.4             24,611,376     1.1%
+  openclaw     gpt-5.4             1,629,451,942  100.0%
+  codex        gpt-5.4             809,624,660    100.0%
+  hermes       claude-opus-4.7     132,073,229    95.3%
+               unknown             6,449,881      4.7%
+               gpt-5.4             15,525         0.0%
+  ```
+
+  Reads cleanly: `claude-code`'s 1.05-bit entropy is now visibly
+  a 2:1 mix of two opus generations + a haiku tail; `opencode`'s
+  near-zero entropy is the long unknown/gpt-5.4 tail under a
+  97.2% opus-4.7 monoculture; `hermes`'s gpt-5.4 share is
+  literally 15,525 tokens — a stale config artifact, not real
+  usage. None of these would surface in `provider-share`.
+
 ## 0.4.51 — 2026-04-25
 
 ### Added

@@ -55,8 +55,23 @@ export interface ModelMixEntropyOptions {
    * the full population. Default 0 (keep every source).
    */
   minTokens?: number;
+  /**
+   * If > 0, also include the top K models for each source on the
+   * row's `topModels` array (sorted by tokens desc, then name asc).
+   * Display only — entropy / effectiveModels / topModelShare are
+   * byte-identical to the un-flagged run; only the new array is
+   * populated. Default 0 (no per-model breakdown).
+   */
+  topK?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
+}
+
+export interface ModelMixModelEntry {
+  model: string;
+  tokens: number;
+  /** tokens / source.totalTokens in [0,1]. */
+  share: number;
 }
 
 export interface ModelMixEntropyRow {
@@ -90,6 +105,11 @@ export interface ModelMixEntropyRow {
   topModelShare: number;
   /** Normalised id of the most-used model for this source. */
   topModel: string;
+  /**
+   * Top-K models for this source by token mass, when `topK > 0`.
+   * Sorted by tokens desc, then model asc. Empty array when topK=0.
+   */
+  topModels: ModelMixModelEntry[];
 }
 
 export interface ModelMixEntropyReport {
@@ -98,6 +118,8 @@ export interface ModelMixEntropyReport {
   windowEnd: string | null;
   /** Echo of resolved minTokens. */
   minTokens: number;
+  /** Echo of resolved topK. */
+  topK: number;
   /** Sum of total_tokens across all considered rows. */
   totalTokens: number;
   /** Distinct sources observed before display filters. */
@@ -122,6 +144,10 @@ export function buildModelMixEntropy(
   const minTokens = opts.minTokens ?? 0;
   if (!Number.isFinite(minTokens) || minTokens < 0) {
     throw new Error(`minTokens must be a non-negative number (got ${opts.minTokens})`);
+  }
+  const topK = opts.topK ?? 0;
+  if (!Number.isInteger(topK) || topK < 0) {
+    throw new Error(`topK must be a non-negative integer (got ${opts.topK})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -206,6 +232,17 @@ export function buildModelMixEntropy(
       distinctModels > 1 && maxEntropy > 0 ? entropy / maxEntropy : 0;
     const effective = distinctModels > 0 ? Math.pow(2, entropy) : 0;
 
+    const topModels: ModelMixModelEntry[] = [];
+    if (topK > 0 && a.total > 0) {
+      const sorted = Array.from(a.models.entries()).sort((x, y) => {
+        if (y[1] !== x[1]) return y[1] - x[1];
+        return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0;
+      });
+      for (const [m, t] of sorted.slice(0, topK)) {
+        topModels.push({ model: m, tokens: t, share: t / a.total });
+      }
+    }
+
     all.push({
       source: a.source,
       totalTokens: a.total,
@@ -217,6 +254,7 @@ export function buildModelMixEntropy(
       effectiveModels: effective,
       topModelShare: topShare,
       topModel,
+      topModels,
     });
   }
 
@@ -239,6 +277,7 @@ export function buildModelMixEntropy(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minTokens,
+    topK,
     totalTokens: globalTotal,
     totalSources,
     droppedInvalidHourStart,

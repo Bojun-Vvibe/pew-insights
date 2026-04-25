@@ -2777,5 +2777,32 @@ export function renderModelMixEntropy(r: ModelMixEntropyReport): string {
     ),
   );
 
+  if (r.topK > 0) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `per-source top-${r.topK} models (sorted by tokens desc within each source)`,
+      ),
+    );
+    const tkRows: string[][] = [];
+    for (const s of r.sources) {
+      if (s.topModels.length === 0) continue;
+      for (let i = 0; i < s.topModels.length; i++) {
+        const m = s.topModels[i]!;
+        tkRows.push([
+          i === 0 ? s.source : '',
+          m.model,
+          formatNumber(m.tokens),
+          (m.share * 100).toFixed(1) + '%',
+        ]);
+      }
+    }
+    if (tkRows.length === 0) {
+      lines.push(chalk.dim('  (no model data)'));
+    } else {
+      lines.push(renderTableLocal(['source', 'model', 'tokens', 'share'], tkRows));
+    }
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

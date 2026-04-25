@@ -197,3 +197,54 @@ test('model-mix-entropy: respects since/until window', () => {
   assert.equal(r.sources[0]!.distinctModels, 1);
   assert.equal(r.sources[0]!.topModel, 'mb');
 });
+
+// ---- topK flag -------------------------------------------------------------
+
+test('model-mix-entropy: topK=0 leaves topModels empty; entropy unchanged', () => {
+  const r = buildModelMixEntropy(
+    [
+      ql('2026-04-20T01:00:00Z', 'codex', 'ma', 100),
+      ql('2026-04-20T02:00:00Z', 'codex', 'mb', 100),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.topK, 0);
+  assert.equal(r.sources[0]!.topModels.length, 0);
+});
+
+test('model-mix-entropy: topK lists per-source top models, sorted desc, with share', () => {
+  const r = buildModelMixEntropy(
+    [
+      ql('2026-04-20T01:00:00Z', 'codex', 'ma', 600),
+      ql('2026-04-20T02:00:00Z', 'codex', 'mb', 300),
+      ql('2026-04-20T03:00:00Z', 'codex', 'mc', 100),
+    ],
+    { generatedAt: GEN, topK: 2 },
+  );
+  const row = r.sources[0]!;
+  assert.equal(row.topModels.length, 2);
+  assert.equal(row.topModels[0]!.model, 'ma');
+  assert.equal(row.topModels[0]!.tokens, 600);
+  assert.ok(Math.abs(row.topModels[0]!.share - 0.6) < 1e-9);
+  assert.equal(row.topModels[1]!.model, 'mb');
+  assert.ok(Math.abs(row.topModels[1]!.share - 0.3) < 1e-9);
+});
+
+test('model-mix-entropy: topK does not change entropy/effective/topModelShare', () => {
+  const queue = [
+    ql('2026-04-20T01:00:00Z', 'codex', 'ma', 600),
+    ql('2026-04-20T02:00:00Z', 'codex', 'mb', 300),
+    ql('2026-04-20T03:00:00Z', 'codex', 'mc', 100),
+  ];
+  const a = buildModelMixEntropy(queue, { generatedAt: GEN });
+  const b = buildModelMixEntropy(queue, { generatedAt: GEN, topK: 5 });
+  assert.equal(a.sources[0]!.entropyBits, b.sources[0]!.entropyBits);
+  assert.equal(a.sources[0]!.effectiveModels, b.sources[0]!.effectiveModels);
+  assert.equal(a.sources[0]!.topModelShare, b.sources[0]!.topModelShare);
+  assert.equal(a.sources[0]!.distinctModels, b.sources[0]!.distinctModels);
+});
+
+test('model-mix-entropy: topK rejects bad values', () => {
+  assert.throws(() => buildModelMixEntropy([], { topK: -1 }));
+  assert.throws(() => buildModelMixEntropy([], { topK: 1.5 }));
+});

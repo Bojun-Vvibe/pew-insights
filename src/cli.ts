@@ -2930,10 +2930,15 @@ program
     'hide sources with fewer than n total tokens; their counts surface as droppedMinTokens (default 0)',
     '0',
   )
+  .option(
+    '--top-k <n>',
+    'also list the top k models per source (display only; entropy figures unchanged) (default 0 = no breakdown)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minTokens: string; json?: boolean },
+      opts: { since?: string; until?: string; minTokens: string; topK: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2943,11 +2948,16 @@ program
         if (!Number.isFinite(minTokens) || minTokens < 0) {
           throw new Error(`--min-tokens must be a non-negative integer (got ${opts.minTokens})`);
         }
+        const topK = Number.parseInt(opts.topK, 10);
+        if (!Number.isInteger(topK) || topK < 0) {
+          throw new Error(`--top-k must be a non-negative integer (got ${opts.topK})`);
+        }
         const queue = await readQueue(paths);
         const report = buildModelMixEntropy(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minTokens,
+          topK,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
