@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.89 — 2026-04-25
+
+### Added
+
+- `device-tenure`: per-device active-span lens. Same shape as
+  `model-tenure` / `provider-tenure` / `source-tenure`, but reduced
+  on the `device_id` axis. Completes the tenure family on the fourth
+  and last categorical axis available in `QueueLine`.
+
+  Reports per-device `firstSeen`, `lastSeen`, `spanHours`,
+  `activeBuckets`, `tokens`, `tokensPerActiveBucket`,
+  `tokensPerSpanHour`, plus `distinctSources` and `distinctModels`
+  — the natural follow-up questions once the axis is the host:
+  "how many CLIs runs on this device?" and "how many models flow
+  through it?". Neither is answered by any other report —
+  `device-share` is a mass tally with no temporal axis;
+  `model-/provider-/source-tenure` are on the wrong axis and
+  cannot be aggregated by hand without double-counting hour_starts.
+
+  Sort keys: `span` (default), `active`, `tokens`, `density`,
+  `sources`, `models`. `--min-buckets` floor and `--top` cap are
+  display-only — global denominators (`totalDevices`,
+  `totalActiveBuckets`, `totalTokens`) always reflect the full
+  population. Filters: `--source`, `--model`, `--since`, `--until`.
+
+  14 new tests (1119 total, up from 1105): empty input, ISO
+  weekday/hour aggregation, sort variants (tokens, sources with
+  lex tiebreak), source + model filters, `--min-buckets` floor
+  preserving global denominators, `--top` cap, bad hour_start +
+  zero tokens drops, fallback to `'unknown'` when device_id is
+  empty, plus option validation (negative/fractional minBuckets/top,
+  bad sort, bad since/until).
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--top 5 --sort span`:
+
+  ```
+  pew-insights device-tenure
+  as of: 2026-04-25T12:39:06.975Z    devices: 1 (shown 1)    active-buckets: 895    tokens: 8,570,065,698    minBuckets: 0    sort: span
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 by model filter, 0 sparse devices, 0 below top cap
+  (spanHours = clock hours first->last; activeBuckets = distinct hour_start values; distinctSources/Models = unique tags seen on this device)
+
+  per-device tenure (sorted by span desc)
+  device                                first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         tok/bucket  tok/span-hr  sources  models
+  ------------------------------------  ------------------------  ------------------------  -------  --------------  -------------  ----------  -----------  -------  ------
+  [REDACTED]                            2025-07-30T06:00:00.000Z  2026-04-25T12:30:00.000Z  6462.5   895             8,570,065,698  9,575,492   1,326,122    6        15
+  ```
+
+  Reading: this host is the *only* device pew has ever seen — a
+  single laptop tenure of ~6463 clock hours (~269 days) since
+  2025-07-30, carrying every observation in the dataset. 895
+  distinct hour_start buckets means roughly 13.8% bucket coverage
+  over the span (895 / 6462.5h, treating buckets as 1h wide).
+  Density ~1.33M tok/span-hour aligns with the observed
+  bucket-density-percentile baseline. The `sources=6, models=15`
+  numbers confirm this single device is the multi-CLI multi-model
+  router for the entire account — useful baseline if a second
+  device ever shows up (a new laptop, a VM, a CI runner): the
+  `--sort span` view will immediately surface the split, and
+  `--sort sources` / `--sort models` will rank by breadth-of-use.
+
+  (device_id redacted to `[REDACTED]` per host policy — the live
+  value is a stable UUID.)
+
 ## 0.4.88 — 2026-04-25
 
 ### Added
