@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.97 — 2026-04-25
+
+### Added
+
+- `inter-source-handoff-latency`: `--max-latency-hours <n>` flag.
+  Excludes handoffs whose latency strictly exceeds `n` hours from
+  **all** counters and stats (`handoffPairs`, `handoffShare`,
+  `medianLatencyHours` / `meanLatencyHours` / `minLatencyHours` /
+  `maxLatencyHours`, the `pairs[]` table, contiguous/gapped split).
+  Suppressed handoffs surface as `droppedAboveMaxLatency`. The
+  underlying `activeBuckets` and `consideredPairs` are unchanged —
+  only the *handoff* counters refuse to count the suppressed pairs.
+
+  Why a real cap (not a display filter): "live in-session swap"
+  vs "next-morning re-engagement" are qualitatively different
+  events. The default unfiltered run mixes both and lets a single
+  12-day gap pull the mean to 6.52h while the median sits at
+  0.50h. With `--max-latency-hours 4`, the analysis is restricted
+  to swaps that happened within a working session window.
+
+  Boundary: inclusive. Latency `== n` survives; `> n` drops.
+  Default unset = no cap. Echoes as `maxLatencyCap` in JSON
+  (separate field from the `maxLatencyHours` distribution stat to
+  avoid name collision).
+
+  6 new tests (1193 total, up from 1187): rejects bad values
+  (0 / negative / NaN / Infinity); default null = no cap;
+  excludes long handoffs from all stats and pair table; boundary
+  is inclusive at `==`; preserves `consideredPairs` and
+  `activeBuckets`; composes correctly with `--min-handoffs` (cap
+  applied first, then min, then top).
+
+### Live-smoke output
+
+`pew-insights inter-source-handoff-latency --max-latency-hours 4`
+against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights inter-source-handoff-latency
+as of: 2026-04-25T15:40:22.880Z    active-buckets: 901    pairs: 900    handoffs: 91 (10.1%)    minHandoffs: 1    topHandoffs: 10    maxLatency: 4.00h
+latency: median 0.50h    mean 0.55h    min 0.50h    max 2.00h    contiguous-handoffs (1h): 1    gapped: 90
+dropped: 0 bad hour_start, 0 zero-tokens, 0 empty-source buckets, 8 above max-latency, 0 below min-handoffs, 4 below top cap
+dominant source: vscode-copilot (primary in 312 of 901 buckets)
+
+top source handoffs (sorted by count desc, then median-latency asc)
+from-source  to-source    count  share-of-handoffs  median-latency  min    max
+-----------  -----------  -----  -----------------  --------------  -----  -----
+openclaw     opencode     23     25.3%              0.50h           0.50h  0.50h
+opencode     openclaw     22     24.2%              0.50h           0.50h  0.50h
+claude-code  openclaw     10     11.0%              0.50h           0.50h  0.50h
+openclaw     claude-code  9      9.9%               0.50h           0.50h  0.50h
+claude-code  codex        8      8.8%               0.50h           0.50h  0.50h
+codex        claude-code  7      7.7%               0.50h           0.50h  2.00h
+hermes       claude-code  3      3.3%               0.50h           0.50h  1.00h
+hermes       openclaw     2      2.2%               0.50h           0.50h  0.50h
+openclaw     hermes       2      2.2%               0.50h           0.50h  0.50h
+codex        hermes       1      1.1%               0.50h           0.50h  0.50h
+```
+
+Reading: setting `--max-latency-hours 4` drops 8 of the 99
+unfiltered handoffs (the long-tail re-engagements), leaving 91
+in-session swaps. The headline numbers move dramatically:
+
+- `handoffPairs`: 99 → 91 (only 8% of handoffs were >4h)
+- `meanLatencyHours`: 6.52h → 0.55h (the long tail was dragging
+  the unfiltered mean by ~12x)
+- `maxLatencyHours` stat: 292h → 2h (clipped to the surviving
+  population)
+- `medianLatencyHours`: 0.50h (unchanged — most swaps were
+  already live)
+- `claude-code -> vscode-copilot` (median 15.50h, max 292h) and
+  `claude-code -> codex` (max 112.5h) drop out of the table
+  entirely; `claude-code -> codex` survives only with its 8 short
+  handoffs (max 0.50h instead of 112.5h)
+
+The dominant signal — `openclaw <-> opencode` round-trip — remains
+the top of the table (45/91 = 49.5% of in-session swaps), now
+even more starkly visible without the long-tail noise.
+
 ## 0.4.96 — 2026-04-25
 
 ### Added
