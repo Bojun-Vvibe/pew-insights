@@ -4364,6 +4364,11 @@ program
     '2',
   )
   .option(
+    '--min-tokens <n>',
+    'hide groups whose totalTokens is < n; their counts surface as droppedLowTokenGroups (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n groups by sort key; remainder surface as droppedTopGroups (default 0 = no cap)',
     '0',
@@ -4373,6 +4378,14 @@ program
     'sort by tokens|r|abs-r|buckets|slope (default tokens, all desc with lex tiebreak on group)',
     'tokens',
   )
+  .option(
+    '--source <name>',
+    'only include rows whose source matches exactly (narrows global denominators too)',
+  )
+  .option(
+    '--model <name>',
+    'only include rows whose model matches (post-normaliseModel; narrows global denominators too)',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4381,8 +4394,11 @@ program
         until?: string;
         by: string;
         minBuckets: string;
+        minTokens: string;
         top: string;
         sort: string;
+        source?: string;
+        model?: string;
         json?: boolean;
       },
       cmd,
@@ -4394,6 +4410,12 @@ program
         if (!Number.isInteger(minBuckets) || minBuckets < 1) {
           throw new Error(
             `--min-buckets must be a positive integer (got ${opts.minBuckets})`,
+          );
+        }
+        const minTokens = Number.parseInt(opts.minTokens, 10);
+        if (!Number.isInteger(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative integer (got ${opts.minTokens})`,
           );
         }
         const top = Number.parseInt(opts.top, 10);
@@ -4421,8 +4443,11 @@ program
           until: opts.until ?? null,
           by: opts.by as 'model' | 'source',
           minBuckets,
+          minTokens,
           top,
           sort,
+          source: opts.source ?? null,
+          model: opts.model ?? null,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

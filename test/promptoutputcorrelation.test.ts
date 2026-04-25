@@ -333,3 +333,98 @@ test('prompt-output-correlation: deterministic JSON roundtrip', () => {
   const b = JSON.stringify(buildPromptOutputCorrelation(rows, { generatedAt: GEN, minBuckets: 1 }));
   assert.equal(a, b);
 });
+
+// ---- v0.4.92 refinement: --source / --model / --min-tokens filters --------
+
+test('prompt-output-correlation: rejects bad minTokens', () => {
+  assert.throws(() => buildPromptOutputCorrelation([], { minTokens: -1 }));
+  assert.throws(() =>
+    buildPromptOutputCorrelation([], { minTokens: Number.NaN }),
+  );
+});
+
+test('prompt-output-correlation: --source filter narrows global denominators', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-25T10:00:00Z', { source: 'codex', input_tokens: 100, output_tokens: 200 }),
+    ql('2026-04-25T11:00:00Z', { source: 'codex', input_tokens: 200, output_tokens: 400 }),
+    ql('2026-04-25T10:00:00Z', { source: 'cli-x', input_tokens: 999, output_tokens: 999 }),
+    ql('2026-04-25T11:00:00Z', { source: 'cli-x', input_tokens: 999, output_tokens: 999 }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    source: 'codex',
+  });
+  assert.equal(r.sourceFilter, 'codex');
+  assert.equal(r.droppedBySourceFilter, 2);
+  // global denominators reflect ONLY codex rows (population-narrowing semantics)
+  assert.equal(r.totalInputTokens, 100 + 200);
+  assert.equal(r.totalOutputTokens, 200 + 400);
+  assert.equal(r.totalActiveBuckets, 2);
+  assert.equal(r.totalGroups, 1);
+});
+
+test('prompt-output-correlation: --model filter applies post-normaliseModel', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-25T10:00:00Z', { model: 'gpt-5', input_tokens: 100, output_tokens: 200 }),
+    ql('2026-04-25T11:00:00Z', { model: 'gpt-5', input_tokens: 200, output_tokens: 400 }),
+    ql('2026-04-25T10:00:00Z', { model: 'claude-x', input_tokens: 99, output_tokens: 99 }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    model: 'gpt-5',
+  });
+  assert.equal(r.modelFilter, 'gpt-5');
+  assert.equal(r.droppedByModelFilter, 1);
+  assert.equal(r.totalGroups, 1);
+});
+
+test('prompt-output-correlation: --min-tokens drops below-floor groups but keeps them in global denoms', () => {
+  const rows: QueueLine[] = [
+    // 'big' totals 600 tokens
+    ql('2026-04-25T10:00:00Z', { model: 'big', input_tokens: 100, output_tokens: 200 }),
+    ql('2026-04-25T11:00:00Z', { model: 'big', input_tokens: 100, output_tokens: 200 }),
+    // 'small' totals 60 tokens
+    ql('2026-04-25T10:00:00Z', { model: 'small', input_tokens: 10, output_tokens: 20 }),
+    ql('2026-04-25T11:00:00Z', { model: 'small', input_tokens: 10, output_tokens: 20 }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    minTokens: 100,
+  });
+  assert.equal(r.minTokens, 100);
+  assert.equal(r.droppedLowTokenGroups, 1);
+  assert.equal(r.groups.length, 1);
+  assert.equal(r.groups[0]!.model, 'big');
+  // global pool still includes small's tokens
+  assert.equal(r.totalInputTokens, 100 + 100 + 10 + 10);
+  assert.equal(r.totalGroups, 2);
+});
+
+test('prompt-output-correlation: empty source filter == no filter', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-25T10:00:00Z', { source: 'codex' }),
+    ql('2026-04-25T11:00:00Z', { source: 'codex' }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, { generatedAt: GEN, source: '' });
+  assert.equal(r.sourceFilter, null);
+  assert.equal(r.droppedBySourceFilter, 0);
+});
+
+test('prompt-output-correlation: source + model filters compose AND-style', () => {
+  const rows: QueueLine[] = [
+    ql('2026-04-25T10:00:00Z', { source: 'codex', model: 'gpt-5' }),
+    ql('2026-04-25T11:00:00Z', { source: 'codex', model: 'gpt-5' }),
+    ql('2026-04-25T10:00:00Z', { source: 'codex', model: 'other' }),
+    ql('2026-04-25T10:00:00Z', { source: 'cli-x', model: 'gpt-5' }),
+  ];
+  const r = buildPromptOutputCorrelation(rows, {
+    generatedAt: GEN,
+    source: 'codex',
+    model: 'gpt-5',
+  });
+  // source filter runs first, drops 1 (cli-x); model filter then drops 1 (other)
+  assert.equal(r.droppedBySourceFilter, 1);
+  assert.equal(r.droppedByModelFilter, 1);
+  assert.equal(r.totalActiveBuckets, 2);
+  assert.equal(r.totalGroups, 1);
+});

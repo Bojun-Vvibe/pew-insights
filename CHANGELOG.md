@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.92 — 2026-04-25
+
+### Added
+
+- `prompt-output-correlation`: row-filter + low-mass refinement.
+  Three additions, all aligned with the `device-tenure`
+  refinement pattern from v0.4.90:
+
+  - `--source <name>` and `--model <name>`: pre-aggregation row
+    filters with **population-narrowing semantics** — when set,
+    they shrink global denominators (`totalGroups`,
+    `totalActiveBuckets`, `totalInputTokens`,
+    `totalOutputTokens`, `globalPearsonR`, `globalSlope`) too.
+    This is deliberate: the headline `global r` should describe
+    the population the user asked about, not the unfiltered
+    superset. `--model` runs through `normaliseModel` so users
+    can pass either the raw or the normalised name. Two new
+    drop counters: `droppedBySourceFilter`,
+    `droppedByModelFilter`. The two filters compose AND-style
+    (source first, then model).
+  - `--min-tokens <n>`: post-aggregation group-row floor that
+    hides groups with `totalTokens < n`. Display-only — global
+    denominators remain at the full filtered population.
+    Surfaces as `droppedLowTokenGroups`. Useful before sorting
+    by `r` / `abs-r`, where a 3-bucket / 100-token group can
+    trivially produce |r|=1.0 noise that crowds out the headline.
+  - Report shape now also echoes `minTokens`, `sourceFilter`,
+    `modelFilter` so JSON consumers see the resolved filter
+    state.
+
+  Why now: v0.4.91 gave a global `r` and per-group `r`, but
+  there was no way to ask a focused question like "inside
+  `claude-code`, which model has the strongest input→output
+  coupling?" without piping the JSON through external tooling.
+  The same applied to model-side filtering. These flags make
+  the subcommand composable with the rest of the family on the
+  same axes (every other size/share/tenure subcommand already
+  exposes some form of `--source` / `--model`).
+
+  6 new tests (1151 total, up from 1145): rejects bad
+  `minTokens` (negative, NaN); `--source` filter narrows global
+  denominators (drops cli-x rows from totals, not just from
+  group rows); `--model` filter applies post-`normaliseModel`;
+  `--min-tokens` drops the low-mass group but keeps its tokens
+  in the global pool; empty `--source` string is treated as no
+  filter (idempotent); `--source` + `--model` compose AND-style
+  with the source filter running first.
+
+### Live-smoke output
+
+`pew-insights prompt-output-correlation --source claude-code
+--by model --sort abs-r --min-tokens 1000000` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights prompt-output-correlation
+as of: 2026-04-25T13:40:30.556Z    groups: 4 (shown 4)    active-buckets: 267    tokens: 3,442,385,788    in: 1,834,613,640    out: 12,128,825    minBuckets: 2    minTokens: 1,000,000    sort: abs-r    global r: 0.849    global slope: 0.007
+dropped: 0 bad hour_start, 0 zero/non-finite tokens, 1,154 by source filter, 0 by model filter, 0 below min-buckets, 0 below min-tokens, 0 below top cap
+filters: source=claude-code    model=*
+(pearson r in [-1,+1] over per-bucket (input_tokens, output_tokens) pairs; slope/intercept = OLS y = slope*x + intercept; degenerate=yes when stdInput or stdOutput is 0)
+
+per-model prompt→output correlation (sorted by abs-r desc, lex tiebreak)
+model               tokens         in             out        buckets  mean-in     mean-out  std-in      std-out  r       slope   intercept  degen
+------------------  -------------  -------------  ---------  -------  ----------  --------  ----------  -------  ------  ------  ---------  -----
+claude-opus-4.7     2,259,457,858  1,159,017,656  8,538,187  77       15,052,177  110,886   12,264,760  85,009   0.917   0.006   15189      no
+claude-sonnet-4.6   3,231,587      3,140,104      6,853      5        628,021     1,371     219,951     2,051    -0.763  -0.007  5837       no
+claude-haiku-4.5    70,717,678     66,264,788     133,160    30       2,208,826   4,439     1,999,608   4,698    0.495   0.001   1871       no
+claude-opus-4.6.1m  1,108,978,665  606,191,092    3,450,625  167      3,629,887   20,662    4,995,667   45,586   0.493   0.004   4338       no
+```
+
+Reading: with the population narrowed to `claude-code` only,
+`global r` jumps from the unfiltered 0.578 to 0.849 — the
+within-source coupling between prompt and output mass is much
+tighter than the across-source pool implied. The headline
+finding the refinement makes possible: `claude-sonnet-4.6`
+inside `claude-code` posts r=-0.763 over 5 active buckets — a
+real anti-correlation (bigger prompts → smaller replies). That
+shape is consistent with refusal / context-truncation behaviour
+on long inputs and is the kind of model-specific issue the
+unfiltered v0.4.91 view smeared into the global 0.578. The
+1,154 source-filtered drop count shows the lens working as
+intended (the full queue had 6 sources; we're now describing 1).
+
 ## 0.4.91 — 2026-04-25
 
 ### Added

@@ -78,6 +78,17 @@ export interface PromptOutputCorrelationOptions {
    */
   minBuckets?: number;
   /**
+   * Drop group rows whose `totalTokens` is `< minTokens`. Display
+   * filter only — global denominators reflect the full population.
+   * Default 0 (keep every group).
+   *
+   * Useful for sweeping out the long tail of low-mass groups
+   * before sorting by `r` / `abs-r`, where a group with 3 buckets
+   * and ~100 tokens trivially produces a high-magnitude r that
+   * crowds out the headline.
+   */
+  minTokens?: number;
+  /**
    * Truncate `groups[]` to the top N by total tokens (post-sort).
    * Display filter only. Default 0 (no truncation).
    */
@@ -89,6 +100,20 @@ export interface PromptOutputCorrelationOptions {
    * want strongest correlations regardless of sign.
    */
   sort?: PromptOutputCorrelationSort;
+  /**
+   * Pre-aggregation row filter on `source`. When set, only rows
+   * whose `source` exactly matches are included. null/undefined =
+   * no filter. Affects both group rows AND global denominators
+   * (the filter narrows the population we're describing — same
+   * convention as `device-tenure`'s `--source`).
+   */
+  source?: string | null;
+  /**
+   * Pre-aggregation row filter on `model` (compared after
+   * `normaliseModel`). null/undefined = no filter. Same
+   * population-narrowing semantics as `source` above.
+   */
+  model?: string | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -137,8 +162,13 @@ export interface PromptOutputCorrelationReport {
   windowEnd: string | null;
   by: PromptOutputCorrelationDimension;
   minBuckets: number;
+  minTokens: number;
   top: number;
   sort: PromptOutputCorrelationSort;
+  /** Echo of the resolved `source` row filter (null = no filter). */
+  sourceFilter: string | null;
+  /** Echo of the resolved `model` row filter (null = no filter). */
+  modelFilter: string | null;
   /** Sum of total_tokens across all kept rows in the window. */
   totalTokens: number;
   /** Sum of input_tokens across all kept rows in the window. */
@@ -161,9 +191,15 @@ export interface PromptOutputCorrelationReport {
   droppedInvalidHourStart: number;
   /** Rows with total_tokens <= 0 or non-finite. */
   droppedZeroTokens: number;
+  /** Rows dropped by the --source filter. */
+  droppedBySourceFilter: number;
+  /** Rows dropped by the --model filter. */
+  droppedByModelFilter: number;
   /** Group rows hidden by the minBuckets floor. */
   droppedSparseGroups: number;
-  /** Group rows hidden by the `top` cap (counted after minBuckets). */
+  /** Group rows hidden by the minTokens floor. */
+  droppedLowTokenGroups: number;
+  /** Group rows hidden by the `top` cap (counted after the floors). */
   droppedTopGroups: number;
   /**
    * One row per kept group. Sorted per `sort` (desc) with lex
@@ -250,6 +286,12 @@ export function buildPromptOutputCorrelation(
       `minBuckets must be a positive integer (got ${opts.minBuckets})`,
     );
   }
+  const minTokens = opts.minTokens ?? 0;
+  if (!Number.isFinite(minTokens) || minTokens < 0) {
+    throw new Error(
+      `minTokens must be a non-negative number (got ${opts.minTokens})`,
+    );
+  }
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
@@ -270,6 +312,12 @@ export function buildPromptOutputCorrelation(
       `sort must be one of tokens|r|abs-r|buckets|slope (got ${opts.sort})`,
     );
   }
+  const sourceFilter =
+    opts.source != null && opts.source !== '' ? opts.source : null;
+  const modelFilterRaw =
+    opts.model != null && opts.model !== '' ? opts.model : null;
+  const modelFilter =
+    modelFilterRaw != null ? normaliseModel(modelFilterRaw) : null;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -288,6 +336,8 @@ export function buildPromptOutputCorrelation(
   const totalTokensByGroup = new Map<string, number>();
   let droppedInvalidHourStart = 0;
   let droppedZeroTokens = 0;
+  let droppedBySourceFilter = 0;
+  let droppedByModelFilter = 0;
 
   for (const q of queue) {
     const ms = Date.parse(q.hour_start);
@@ -297,6 +347,18 @@ export function buildPromptOutputCorrelation(
     }
     if (sinceMs !== null && ms < sinceMs) continue;
     if (untilMs !== null && ms >= untilMs) continue;
+
+    if (sourceFilter !== null && q.source !== sourceFilter) {
+      droppedBySourceFilter += 1;
+      continue;
+    }
+    if (modelFilter !== null) {
+      const normM = normaliseModel(typeof q.model === 'string' ? q.model : '');
+      if (normM !== modelFilter) {
+        droppedByModelFilter += 1;
+        continue;
+      }
+    }
 
     const tt = Number(q.total_tokens);
     if (!Number.isFinite(tt) || tt <= 0) {
@@ -338,6 +400,7 @@ export function buildPromptOutputCorrelation(
   const totalGroups = agg.size;
   const groupsAll: PromptOutputCorrelationGroupRow[] = [];
   let droppedSparseGroups = 0;
+  let droppedLowTokenGroups = 0;
 
   // global pool of (x, y) across every (group, bucket)
   const globalXs: number[] = [];
@@ -375,6 +438,10 @@ export function buildPromptOutputCorrelation(
 
     if (xs.length < minBuckets) {
       droppedSparseGroups += 1;
+      continue;
+    }
+    if (tok < minTokens) {
+      droppedLowTokenGroups += 1;
       continue;
     }
     groupsAll.push({
@@ -436,8 +503,11 @@ export function buildPromptOutputCorrelation(
     windowEnd: opts.until ?? null,
     by,
     minBuckets,
+    minTokens,
     top,
     sort,
+    sourceFilter,
+    modelFilter,
     totalTokens,
     totalInputTokens,
     totalOutputTokens,
@@ -449,7 +519,10 @@ export function buildPromptOutputCorrelation(
     globalDegenerate: globalStats.degenerate,
     droppedInvalidHourStart,
     droppedZeroTokens,
+    droppedBySourceFilter,
+    droppedByModelFilter,
     droppedSparseGroups,
+    droppedLowTokenGroups,
     droppedTopGroups,
     groups: kept,
   };
