@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.79 — 2026-04-25
+
+### Added
+
+- `first-bucket-of-day`: per UTC calendar day, the earliest
+  active `hour_start` bucket — a "wake-up clock" lens. For
+  every day with at least one positive-token row, we report:
+
+  - `firstBucket` — ISO of the earliest active `hour_start`
+  - `firstHour` — UTC hour-of-day 0..23 of that bucket
+  - `bucketsOnDay` — distinct active `hour_start` values that day
+  - `tokensOnDay` — sum of total_tokens that day
+
+  Plus a single-row firstHour distribution: `min`, `p25`,
+  `median`, `mean`, `p75`, `max`, and `mode` (lowest-hour
+  tiebreak) with its day count and share. Standard `--since`
+  / `--until` / `--source` / `--top` filters; `--top` is
+  display-only — `distinctDays`, `totalTokens`, and every
+  `firstHour*` aggregate always reflect the full pre-cap
+  population, with hidden rows surfacing as `droppedTopDays`.
+  Default sort is `day desc` (newest first).
+
+  Why this is orthogonal to what already ships:
+
+  - `time-of-day` / `which-hour` / `peak-hour-share`
+    distribute tokens or buckets across hour-of-day across the
+    *whole* window — they tell you where mass lands, not when
+    each individual day starts.
+  - `weekday-share` / `weekend-vs-weekday` are day-of-week
+    lenses, not start-of-day lenses.
+  - `idle-gaps` / `interarrival` measure spacing between
+    active buckets; they don't anchor to "first bucket of the
+    calendar day".
+  - `bucket-streak-length` counts consecutive-hour runs but a
+    streak that crosses midnight isn't the same signal as
+    "what hour did this day's work begin".
+
+  12 new tests (1037 total, up from 1025): option validation
+  (since/until/top), empty/drops, per-day firstBucket selects
+  the earliest active hour_start (verifies sort-day-desc and
+  bucketsOnDay/tokensOnDay), summary stats with mode-tiebreak
+  rule, single-day collapses all stats to one value, top cap
+  is display-only with summary stats untouched, since/until
+  inclusive-lower / exclusive-upper window, determinism.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--top 10`:
+
+  ```
+  pew-insights first-bucket-of-day
+  as of: 2026-04-25T09:54:35.276Z    days: 105 (shown 10)    tokens: 8,510,577,154
+  firstHour UTC: min=00 p25=01 median=02 mean=3.15 p75=05 max=10 mode=02 (n=28, share=26.7%)
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 95 below top cap
+  (per UTC calendar day: firstBucket = earliest hour_start with positive total_tokens; firstHour = its UTC hour-of-day)
+
+  per-day first bucket (sorted by day desc)
+  day (UTC)   first-bucket (UTC)        first-hour  buckets-on-day  tokens-on-day
+  ----------  ------------------------  ----------  --------------  -------------
+  2026-04-25  2026-04-25T00:00:00.000Z  00          20              267,850,961
+  2026-04-24  2026-04-24T00:00:00.000Z  00          48              627,251,216
+  2026-04-23  2026-04-23T00:00:00.000Z  00          48              695,192,088
+  2026-04-22  2026-04-22T00:00:00.000Z  00          48              893,292,230
+  2026-04-21  2026-04-21T00:00:00.000Z  00          48              1,122,611,203
+  2026-04-20  2026-04-20T00:00:00.000Z  00          48              1,773,838,138
+  2026-04-19  2026-04-19T00:00:00.000Z  00          48              659,027,845
+  2026-04-18  2026-04-18T01:30:00.000Z  01          36              922,235,800
+  2026-04-17  2026-04-17T01:30:00.000Z  01          23              132,896,161
+  2026-04-16  2026-04-16T01:30:00.000Z  01          14              77,147,112
+  ```
+
+  Headline: across 105 active UTC days, the median wake-up
+  hour is 02:00 UTC and the modal hour is 02:00 (28/105 days,
+  26.7%); the most-recent dense stretch (2026-04-19 .. 04-25)
+  has firstHour=00 every day at full 48-half-hour-bucket
+  saturation, while older sparser days cluster around 01-02
+  UTC — i.e. the workday has been starting *earlier* and
+  running *longer* over the last week.
+
 ## 0.4.78 — 2026-04-25
 
 ### Added
