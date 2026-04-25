@@ -4917,6 +4917,10 @@ import type {
   HourOfDayTokenSkewReport,
   HourOfDayTokenSkewRow,
 } from './hourofdaytokenskew.js';
+import type {
+  SourceRankChurnReport,
+  SourceRankChurnSourceRow,
+} from './sourcerankchurn.js';
 
 function fmtRunLen(n: number): string {
   if (Number.isInteger(n)) return String(n);
@@ -5246,6 +5250,98 @@ export function renderHourOfDayTokenSkew(r: HourOfDayTokenSkewReport): string {
     fmtSkew(h.skewness),
     formatTokens(h.maxDailyTokens),
     formatTokens(h.minDailyTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function fmtFootrule(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(3);
+}
+
+function fmtRank(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+export function renderSourceRankChurn(r: SourceRankChurnReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-rank-churn'));
+  const topKDesc = r.topK === null ? '—' : String(r.topK);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    shown: ${formatNumber(r.sources.length)}    keptSources: ${formatNumber(r.keptSources)}    consideredDays: ${formatNumber(r.consideredDays)}    dayPairs: ${formatNumber(r.dayPairs)}    minDays: ${formatNumber(r.minDays)}    topK: ${topKDesc}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedBelowMinDays)} below minDays, ${formatNumber(r.droppedBelowTopK)} below topK`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(per UTC-day pair: normalised Spearman footrule on tokens-rank; 0 = identical leaderboard, 1 = full reversal)',
+    ),
+  );
+  lines.push('');
+
+  if (r.dayPairs === 0) {
+    lines.push(chalk.yellow('  no adjacent UTC-day pairs survived the filter. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('global rollup (full kept set, pre-topK)'));
+  lines.push(
+    renderTableLocal(
+      ['summary', 'value'],
+      [
+        ['dayPairs', formatNumber(r.dayPairs)],
+        ['stableDayPairs (footrule == 0)', formatNumber(r.stableDayPairs)],
+        ['chaosDayPairs (footrule >= 0.5)', formatNumber(r.chaosDayPairs)],
+        ['meanFootrule', fmtFootrule(r.meanFootrule)],
+        ['medianFootrule', fmtFootrule(r.medianFootrule)],
+        ['p90Footrule', fmtFootrule(r.p90Footrule)],
+        ['maxFootrule', fmtFootrule(r.maxFootrule)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    return lines.join('\n').replace(/\n+$/, '');
+  }
+
+  lines.push(
+    chalk.bold(
+      r.topK === null
+        ? 'per-source rank volatility (sorted by meanRank asc; ties: source asc)'
+        : `top ${r.topK} sources by meanRank asc (ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'days',
+    'meanRank',
+    'stddevRank',
+    'bestRank',
+    'worstRank',
+    'distinctRanks',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRankChurnSourceRow) => [
+    s.source,
+    formatNumber(s.daysObserved),
+    fmtRank(s.meanRank),
+    fmtRank(s.stddevRank),
+    fmtRank(s.bestRank),
+    fmtRank(s.worstRank),
+    formatNumber(s.distinctRanks),
+    formatTokens(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

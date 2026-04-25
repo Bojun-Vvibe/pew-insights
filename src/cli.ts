@@ -95,6 +95,7 @@ import {
   renderHourOfDaySourceMixEntropy,
   renderBucketTokenGini,
   renderHourOfDayTokenSkew,
+  renderSourceRankChurn,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -153,6 +154,7 @@ import { buildSourceRunLengths } from './sourcerunlengths.js';
 import { buildHourOfDaySourceMixEntropy } from './hourofdaysourcemixentropy.js';
 import { buildBucketTokenGini } from './buckettokengini.js';
 import { buildHourOfDayTokenSkew } from './hourofdaytokenskew.js';
+import { buildSourceRankChurn } from './sourcerankchurn.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2239,6 +2241,69 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderHourOfDayTokenSkew(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-rank-churn')
+  .description(
+    'Day-over-day instability of the source-by-tokens leaderboard via normalised Spearman footrule on adjacent UTC dates',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-days <n>',
+    'drop sources observed on fewer than n distinct UTC days; suppressed sources surface as droppedBelowMinDays (default 1)',
+    '1',
+  )
+  .option(
+    '--top-k <n>',
+    'cap sources[] to the top K by meanRank asc (then source asc); hidden sources surface as droppedBelowTopK; global rollup unchanged',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minDays: string;
+        topK?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isFinite(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be an integer >= 1 (got ${opts.minDays})`,
+          );
+        }
+        let topK: number | null = null;
+        if (opts.topK != null) {
+          const t = Number.parseFloat(opts.topK);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top-k must be a positive integer (got ${opts.topK})`);
+          }
+          topK = t;
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRankChurn(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minDays,
+          topK,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRankChurn(report) + '\n');
         }
       } catch (e) {
         die(e);
