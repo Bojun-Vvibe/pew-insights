@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.75 — 2026-04-25
+
+### Added
+
+- `bucket-handoff-frequency`: new subcommand. For each consecutive
+  pair of active hour-buckets in `hour_start` ascending order,
+  measure how often the bucket's *primary model* (the
+  highest-token model in that bucket; ties broken lex on model
+  name) changes. Reports `handoffPairs / consideredPairs` as
+  `handoffShare`, splits pairs into `contiguousPairs` (exactly
+  1h apart) vs `gappedPairs` (anything else), further splits
+  `handoffPairs` into `contiguousHandoffs` / `gappedHandoffs`,
+  surfaces the `stickiestModel` (most-frequent primary across
+  buckets, tiebreak tokens desc, then name asc), and emits a
+  capped `pairs[]` table of directed `(from -> to)` model
+  handoffs sorted by count desc, then `from` asc, then `to` asc.
+
+  Why orthogonal to existing subcommands:
+
+  - `model-switching` measures intra-`session_key` model swaps;
+    it never crosses bucket / session boundaries.
+  - `transitions` keys session-to-session adjacency on `source` /
+    `kind` / `project_ref` — model identity is not part of its
+    key.
+  - `model-mix-entropy` reports a global Shannon mix across
+    buckets but says nothing about *order* — two corpora with
+    identical entropy can have very different handoff cadences.
+
+  Headline question: "across my active hours, how often does the
+  model I'm primarily using change from one hour to the next, and
+  what are the most common handoff pairs?"
+
+  Flags: `--since <iso>`, `--until <iso>`, `--source <name>` (only
+  rows from this source contribute; non-matching surface as
+  `droppedSourceFilter`), `--top-handoffs <n>` (default 10; 0
+  suppresses the table; trimmed rows surface as
+  `droppedBelowTopCap`), `--json`. Determinism: pure builder,
+  wall clock only via `opts.generatedAt`.
+
+  14 new tests (1002 total, up from 988): rejects bad
+  `topHandoffs` and bad `since` / `until`; empty queue → zero
+  everything; single bucket → 0 pairs; same-primary buckets → 0
+  handoffs; alternating models → all-pair handoffs with deterministic
+  pair ordering; ties in bucket totals broken lex; contiguous vs
+  gapped split; `top-handoffs` cap including 0; source filter;
+  since/until window; drops zero-token / bad `hour_start`; empty
+  model name surfaces `droppedEmptyModelBuckets`; stickiest model
+  picks most-bucket primary with token tiebreak.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights bucket-handoff-frequency
+  as of: 2026-04-25T08:46:03.553Z    active-buckets: 887    pairs: 886    handoffs: 132 (14.9%)    topHandoffs: 10
+  split: 32 contiguous pairs (5 handoffs), 854 gapped pairs (127 handoffs)
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 empty-model buckets, 23 below top cap
+  stickiest model: gpt-5.4 (primary in 204 of 887 buckets)
+  (primary model per bucket = max-tokens model, ties broken lex; contiguous pair = exactly 1h apart; handoff = primary changed)
+
+  top model handoffs (sorted by count desc)
+  from-model                 to-model                   count  share-of-handoffs
+  -------------------------  -------------------------  -----  -----------------
+  claude-opus-4.7            gpt-5.4                    34     25.8%
+  gpt-5.4                    claude-opus-4.7            34     25.8%
+  claude-opus-4.6-1m         gpt-5.4                    6      4.5%
+  gpt-5.4                    claude-opus-4.6-1m         5      3.8%
+  claude-sonnet-4            gpt-5                      4      3.0%
+  gpt-5                      claude-sonnet-4            4      3.0%
+  claude-haiku-4-5-20251001  gemini-3-pro-preview       3      2.3%
+  claude-opus-4-7            gpt-5.4                    3      2.3%
+  claude-sonnet-4.5          gemini-3-pro-preview       3      2.3%
+  gemini-3-pro-preview       claude-haiku-4-5-20251001  3      2.3%
+  ```
+
+  Reading: across 887 distinct active hour-buckets only 14.9% of
+  consecutive-bucket pairs cross a primary-model boundary —
+  long-running sticky model use dominates. But of the pairs that
+  *are* handoffs, 51.6% are the symmetric `claude-opus-4.7
+  <-> gpt-5.4` swap (34 + 34 of 132), confirming a routine
+  bi-modal workflow between those two. Only 5 of 132 handoffs are
+  contiguous (1h apart) — the vast majority happen across an idle
+  gap, suggesting handoffs are session-boundary events, not
+  in-flight model swaps.
+
 ## 0.4.74 — 2026-04-25
 
 ### Added
