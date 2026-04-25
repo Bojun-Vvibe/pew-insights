@@ -2,6 +2,98 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.4 — 2026-04-26
+
+### Added
+
+- `pew-insights bucket-gap-distribution` — per-source distribution
+  of gap sizes (in bucket-widths) between consecutive distinct
+  active buckets. For each source, sorts its active `hour_start`
+  buckets, computes the gap between each consecutive pair as a
+  count of bucket-widths (1 = contiguous, 5 = 4 idle buckets in
+  between), then reports per-source `gapCount`, `minGap`,
+  `p50Gap`, `p90Gap`, `p99Gap`, `maxGap`, `meanGap`,
+  `contiguousGaps`, and `contiguousShare` (= contiguousGaps /
+  gapCount). Bucket-width inferred from the smallest positive
+  inter-bucket gap across all filtered rows; falls back to 60m
+  if only one bucket exists. Distinct from existing lenses:
+  - `idle-gaps` aggregates idle time into a single per-source /
+    global number; it does not surface the per-source percentile
+    *shape* of gap sizes.
+  - `bucket-streak-length` reports the *longest contiguous run*
+    per model — the inverse view (asks how long a streak gets,
+    not how big the gaps between streaks get). It does not
+    expose the gap distribution or the contiguous-share fraction.
+  - `interarrival-time` reports gaps in seconds, not bucket-
+    widths, and is computed across all events globally rather
+    than across the per-source distinct-bucket timeline. It
+    cannot answer "what fraction of this source's gaps are
+    actually contiguous?".
+  - `burstiness` collapses the entire shape to one CV scalar.
+
+  Headline question: "for each source, when it is *not*
+  contiguous, how big are the idle gaps — typical, tail, and
+  worst — and what fraction of all gaps are actually contiguous?"
+
+  Options: `--since` / `--until` (ISO window), `--model` (filter
+  to one model, drops surface as `droppedModelFilter`),
+  `--min-gaps <n>` (drop sources whose `gapCount < n` from
+  display; surfaced as `droppedSparseSources`; setting `n=1`
+  also suppresses single-bucket sources), `--sort` (one of
+  `tokens` (default) | `gaps` | `p50` | `max` | `contiguous`),
+  `--json` (machine-readable). Determinism: pure builder; wall
+  clock only via `opts.generatedAt`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-gaps 1`)
+
+```
+pew-insights bucket-gap-distribution
+as of: 2026-04-25T20:32:14.217Z    sources: 6 (shown 6)    active-buckets: 1,374    gaps: 1,368    tokens: 8,785,470,384    bucket-width: 30m (inferred)    minGaps: 1    top: -    sort: tokens
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by model filter, 0 sparse sources, 0 below top cap
+(gap = #bucket-widths between consecutive distinct active buckets per source; 1 = contiguous; percentiles nearest-rank R-1)
+
+per-source bucket-gap distribution (sorted by tokens desc)
+source          buckets  gaps  minGap  p50Gap  p90Gap  p99Gap  maxGap  meanGap  contigShare  tokens
+--------------  -------  ----  ------  ------  ------  ------  ------  -------  -----------  -------------
+claude-code     267      266   1       1       32      240     631     12.90    0.722        3,442,385,788
+opencode        201      200   1       1       1       7       19      1.26     0.925        2,691,686,450
+openclaw        370      369   1       1       1       4       25      1.14     0.981        1,697,898,988
+codex           64       63    1       1       25      55      55      5.81     0.730        809,624,660
+hermes          152      151   1       2       5       16      22      2.72     0.424        141,988,771
+vscode-copilot  320      319   1       1       95      623     1,136   39.70    0.539        1,885,727
+```
+
+Reading: `openclaw` and `opencode` are the most-contiguous
+sources (98% and 92% of their gaps are exactly one bucket-width)
+even though `openclaw` has the most buckets (370). `claude-code`
+has high token mass and a 72% contig-share but a long worst-tail
+(`p99 = 240` widths ≈ 5 days of idleness between two active
+buckets, `max = 631`), confirming the operator's daily-driver
+narrative with multi-day quiet stretches mixed in. `hermes` is
+the most fragmented (`contigShare = 0.424`, `p50 = 2`) — its
+*typical* gap is two bucket-widths, i.e. it almost never lands
+two consecutive 30-minute buckets. `vscode-copilot` has the
+extreme worst-tail (`max = 1,136` widths ≈ 23 days dark) but
+the largest mass of recent contiguous activity (`p50 = 1`,
+`contigShare = 0.539`) — both signals visible in one row, which
+no existing lens surfaces together.
+
+### Tests
+
+- 18 new tests on `bucketgapdistribution`: option validation
+  (minGaps / top / bucketWidthMs / since-until / sort), empty
+  input, single-bucket source (sentinel zeros + minGaps=1
+  hides it), 4-contiguous-bucket exact-percentile assertion,
+  mixed-gap percentile + meanGap + contiguousShare arithmetic,
+  bucket-width inference (30m wins over 60m when both present),
+  `--model` filter dropping non-matching rows, `--since` window
+  narrowing, zero-token row exclusion creating an apparent
+  larger gap, `--sort=max` ordering by worst-tail, `--sort=
+  contiguous` ordering by most-contiguous, `--top` cap surfacing
+  `droppedBelowTopCap`, and bad-hour_start rows surfacing as
+  `droppedInvalidHourStart`. Total tests grew from 1332 -> 1350
+  (+18).
+
 ## 0.6.3 — 2026-04-26
 
 ### Added
