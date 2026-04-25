@@ -272,3 +272,80 @@ test('bucket-streak-length: bucket-width inferred as smallest positive gap (30m)
   assert.equal(row.streakCount, 2);
   assert.equal(row.longestStreak, 3);
 });
+
+// ---- sort ------------------------------------------------------------------
+
+test('bucket-streak-length: rejects bad sort', () => {
+  // @ts-expect-error testing runtime guard
+  assert.throws(() => buildBucketStreakLength([], { sort: 'nope' }));
+});
+
+test('bucket-streak-length: --sort tokens orders by token mass desc', () => {
+  const rows = [
+    // gpt-A: 3 buckets, 1000 tokens, longest 3
+    ql('2026-04-20T00:00:00.000Z', 's', 'gpt-A', 1000),
+    ql('2026-04-20T01:00:00.000Z', 's', 'gpt-A', 0.0001), // dropped
+    ql('2026-04-20T02:00:00.000Z', 's', 'gpt-A', 1),
+    // gpt-B: 2 buckets, 50000 tokens, longest 2
+    ql('2026-04-20T00:00:00.000Z', 's', 'gpt-B', 25000),
+    ql('2026-04-20T01:00:00.000Z', 's', 'gpt-B', 25000),
+  ];
+  const r = buildBucketStreakLength(rows, {
+    generatedAt: GEN,
+    bucketWidthMs: HOUR,
+    sort: 'tokens',
+  });
+  assert.equal(r.sort, 'tokens');
+  // gpt-B has more tokens despite shorter streak
+  assert.equal(r.models[0]!.model, 'gpt-b');
+  assert.equal(r.models[1]!.model, 'gpt-a');
+});
+
+test('bucket-streak-length: --sort active orders by activeBuckets desc with lex tiebreak', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 's', 'm-a', 1),
+    ql('2026-04-20T01:00:00.000Z', 's', 'm-a', 1),
+    ql('2026-04-20T02:00:00.000Z', 's', 'm-a', 1),
+    ql('2026-04-20T00:00:00.000Z', 's', 'm-b', 1),
+    ql('2026-04-20T01:00:00.000Z', 's', 'm-b', 1),
+    ql('2026-04-20T02:00:00.000Z', 's', 'm-b', 1),
+    ql('2026-04-20T00:00:00.000Z', 's', 'm-c', 1),
+  ];
+  const r = buildBucketStreakLength(rows, {
+    generatedAt: GEN,
+    bucketWidthMs: HOUR,
+    sort: 'active',
+  });
+  assert.equal(r.models[0]!.model, 'm-a');
+  assert.equal(r.models[1]!.model, 'm-b');
+  assert.equal(r.models[2]!.model, 'm-c');
+});
+
+test('bucket-streak-length: --sort mean orders by meanStreakLength desc', () => {
+  const rows = [
+    // marathon: 1 streak of 4 -> mean 4
+    ql('2026-04-20T00:00:00.000Z', 's', 'marathon', 1),
+    ql('2026-04-20T01:00:00.000Z', 's', 'marathon', 1),
+    ql('2026-04-20T02:00:00.000Z', 's', 'marathon', 1),
+    ql('2026-04-20T03:00:00.000Z', 's', 'marathon', 1),
+    // spiky: 4 streaks of 1 -> mean 1
+    ql('2026-04-20T00:00:00.000Z', 's', 'spiky', 1),
+    ql('2026-04-20T05:00:00.000Z', 's', 'spiky', 1),
+    ql('2026-04-20T10:00:00.000Z', 's', 'spiky', 1),
+    ql('2026-04-20T15:00:00.000Z', 's', 'spiky', 1),
+  ];
+  const r = buildBucketStreakLength(rows, {
+    generatedAt: GEN,
+    bucketWidthMs: HOUR,
+    sort: 'mean',
+  });
+  assert.equal(r.models[0]!.model, 'marathon');
+  assert.equal(r.models[0]!.meanStreakLength, 4);
+  assert.equal(r.models[1]!.model, 'spiky');
+  assert.equal(r.models[1]!.meanStreakLength, 1);
+});
+
+test('bucket-streak-length: default sort is length and is echoed in report', () => {
+  const r = buildBucketStreakLength([], { generatedAt: GEN });
+  assert.equal(r.sort, 'length');
+});

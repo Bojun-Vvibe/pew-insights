@@ -3425,7 +3425,7 @@ export function renderBucketStreakLength(r: BucketStreakLengthReport): string {
   const widthMin = (r.bucketWidthMs / 60_000).toFixed(0);
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)} (shown ${formatNumber(r.models.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    bucket-width: ${widthMin}m${r.bucketWidthInferred ? ' (inferred)' : ''}    minBuckets: ${formatNumber(r.minBuckets)}`,
+      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)} (shown ${formatNumber(r.models.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    bucket-width: ${widthMin}m${r.bucketWidthInferred ? ' (inferred)' : ''}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
     ),
   );
   lines.push(
@@ -3451,7 +3451,7 @@ export function renderBucketStreakLength(r: BucketStreakLengthReport): string {
     return lines.join('\n');
   }
 
-  lines.push(chalk.bold('per-model bucket streaks (sorted by longestStreak desc)'));
+  lines.push(chalk.bold(`per-model bucket streaks (sorted by ${r.sort} desc)`));
   const headers = [
     'model',
     'active-buckets',

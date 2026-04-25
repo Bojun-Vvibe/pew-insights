@@ -3635,6 +3635,11 @@ program
     'drop models whose activeBuckets < n; suppressed rows surface as droppedSparseModels (default 0 = no floor)',
     '0',
   )
+  .option(
+    '--sort <key>',
+    "sort key for models[]: 'length' (default) | 'tokens' | 'active' | 'mean'",
+    'length',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3643,6 +3648,7 @@ program
         until?: string;
         source?: string;
         minBuckets: string;
+        sort: string;
         json?: boolean;
       },
       cmd,
@@ -3654,12 +3660,23 @@ program
         if (!Number.isInteger(minBuckets) || minBuckets < 0) {
           throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
         }
+        if (
+          opts.sort !== 'length' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'active' &&
+          opts.sort !== 'mean'
+        ) {
+          throw new Error(
+            `--sort must be 'length' | 'tokens' | 'active' | 'mean' (got ${opts.sort})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildBucketStreakLength(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
           minBuckets,
+          sort: opts.sort as 'length' | 'tokens' | 'active' | 'mean',
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

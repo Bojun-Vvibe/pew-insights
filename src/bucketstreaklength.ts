@@ -66,6 +66,15 @@ export interface BucketStreakLengthOptions {
    * `droppedSparseModels`.
    */
   minBuckets?: number;
+  /**
+   * Sort key for `models[]`:
+   *   - 'length' (default): longestStreak desc (longest run first)
+   *   - 'tokens':           tokens desc (highest mass first)
+   *   - 'active':           activeBuckets desc (most-touched first)
+   *   - 'mean':             meanStreakLength desc (most-sustained first)
+   * Tiebreak in all cases: model key asc (lex).
+   */
+  sort?: 'length' | 'tokens' | 'active' | 'mean';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
   /**
@@ -96,6 +105,8 @@ export interface BucketStreakLengthReport {
   source: string | null;
   /** Echo of the resolved `minBuckets` floor. */
   minBuckets: number;
+  /** Echo of the resolved `sort` key. */
+  sort: 'length' | 'tokens' | 'active' | 'mean';
   /** Bucket-width (ms) used to decide consecutiveness. */
   bucketWidthMs: number;
   /** True if `bucketWidthMs` was inferred from the data. */
@@ -140,6 +151,17 @@ export function buildBucketStreakLength(
         `bucketWidthMs must be a positive integer (got ${opts.bucketWidthMs})`,
       );
     }
+  }
+  const sort = opts.sort ?? 'length';
+  if (
+    sort !== 'length' &&
+    sort !== 'tokens' &&
+    sort !== 'active' &&
+    sort !== 'mean'
+  ) {
+    throw new Error(
+      `sort must be 'length' | 'tokens' | 'active' | 'mean' (got ${opts.sort})`,
+    );
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -295,9 +317,12 @@ export function buildBucketStreakLength(
   }
 
   models.sort((a, b) => {
-    if (b.longestStreak !== a.longestStreak) {
-      return b.longestStreak - a.longestStreak;
-    }
+    let primary = 0;
+    if (sort === 'length') primary = b.longestStreak - a.longestStreak;
+    else if (sort === 'tokens') primary = b.tokens - a.tokens;
+    else if (sort === 'active') primary = b.activeBuckets - a.activeBuckets;
+    else primary = b.meanStreakLength - a.meanStreakLength;
+    if (primary !== 0) return primary;
     return a.model < b.model ? -1 : a.model > b.model ? 1 : 0;
   });
 
@@ -307,6 +332,7 @@ export function buildBucketStreakLength(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     minBuckets,
+    sort,
     bucketWidthMs,
     bucketWidthInferred,
     totalModels: models.length,

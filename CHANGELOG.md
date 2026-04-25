@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.72 — 2026-04-25
+
+### Added
+
+- `bucket-streak-length`: `--sort <key>` flag. Choose how to
+  order `models[]`: `length` (default; longestStreak desc),
+  `tokens` (token mass desc), `active` (activeBuckets desc),
+  `mean` (meanStreakLength desc — most-sustained first). All
+  ties break on model key asc (lex). Composes with
+  `--min-buckets`; floor still applies before sorting and
+  `droppedSparseModels` counts the suppressed rows.
+
+  Why: with the default `length` sort, a model with a single
+  freak 300-bucket streak dominates the table even if its
+  total mass is tiny. `--sort tokens` re-anchors the view on
+  where the actual work happened. `--sort mean` is the cleanest
+  proxy for "is this model used in sustained sessions or in
+  one-off touches" — independent of total volume.
+
+  5 new tests (965 total, up from 960): rejects bad sort;
+  `--sort tokens` re-orders past longestStreak (high-mass model
+  with shorter streak ranks first); `--sort active` orders by
+  activeBuckets with lex tiebreak; `--sort mean` puts a
+  marathon model (1 streak of 4) above a spiky one (4 streaks
+  of 1) at the same active-bucket count; default sort is
+  `length` and is echoed in the report.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--sort tokens --min-buckets 5`:
+
+  ```
+  pew-insights bucket-streak-length
+  as of: 2026-04-25T07:27:42.324Z    models: 11 (shown 11)    active-buckets: 1,248    tokens: 8,445,982,893    bucket-width: 30m (inferred)    minBuckets: 5    sort: tokens
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 4 sparse models
+
+  per-model bucket streaks (sorted by tokens desc)
+  model                 active-buckets  streaks  longest  mean-streak  longest-start (UTC)       longest-end (UTC)         tokens
+  --------------------  --------------  -------  -------  -----------  ------------------------  ------------------------  -------------
+  claude-opus-4.7       278             41       68       6.78         2026-04-23T21:30:00.000Z  2026-04-25T07:00:00.000Z  4,730,615,064
+  gpt-5.4               378             19       325      19.89        2026-04-18T13:00:00.000Z  2026-04-25T07:00:00.000Z  2,485,458,754
+  claude-opus-4.6.1m    167             44       15       3.80         2026-04-15T05:00:00.000Z  2026-04-15T12:00:00.000Z  1,108,978,665
+  claude-haiku-4.5      30              23       5        1.30         2026-03-18T05:00:00.000Z  2026-03-18T07:00:00.000Z  70,717,678
+  unknown               56              4        49       14.00        2026-04-23T15:00:00.000Z  2026-04-24T15:00:00.000Z  35,575,800
+  ```
+
+  Headline read: re-sorting by token mass flips the leader from
+  `gpt-5.4` (the marathon-streak champion at 325 contiguous
+  buckets but ~2.5B tokens) to `claude-opus-4.7` (~4.7B tokens
+  in 41 short streaks, longest only 68). The `length` sort
+  identifies the most-sustained workloads; the `tokens` sort
+  identifies where the bulk of the cost actually accrues — and
+  on this data they are not the same model. The `--min-buckets 5`
+  floor drops the four single-touch experiment models
+  (`gpt-4.1`, `gpt-5-nano`, `gpt-5.2`, `claude-opus-4.6`).
+
 ## 0.4.71 — 2026-04-25
 
 ### Added
