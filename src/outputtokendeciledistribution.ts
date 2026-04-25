@@ -49,6 +49,13 @@ export interface OutputTokenDecileDistributionOptions {
   until?: string | null;
   /** Restrict to a single source. Non-matching rows -> droppedSourceFilter. */
   source?: string | null;
+  /**
+   * Drop bucket rows whose `output_tokens` < this floor *before*
+   * partitioning into deciles. Suppressed rows surface as
+   * `droppedBelowMinOutput`. Default 0 = no floor (zero-output rows
+   * are still excluded separately as `droppedZeroOutput`).
+   */
+  minOutput?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -75,6 +82,8 @@ export interface OutputTokenDecileDistributionReport {
   windowStart: string | null;
   windowEnd: string | null;
   source: string | null;
+  /** Echo of the resolved `minOutput` floor (0 = no floor). */
+  minOutput: number;
   /** Number of bucket rows kept for the analysis. */
   bucketCount: number;
   /** Sum of output_tokens across all kept rows. */
@@ -91,6 +100,8 @@ export interface OutputTokenDecileDistributionReport {
   droppedInvalidOutput: number;
   /** Rows with output_tokens == 0 (kept out of the ranked population). */
   droppedZeroOutput: number;
+  /** Rows with output_tokens > 0 but below the `minOutput` floor. */
+  droppedBelowMinOutput: number;
   /** Rows excluded by the `source` filter. */
   droppedSourceFilter: number;
   /** Per-decile rows, always D1..D10. Empty deciles report zeros. */
@@ -112,11 +123,16 @@ export function buildOutputTokenDecileDistribution(
 
   const sourceFilter =
     opts.source != null && opts.source !== '' ? opts.source : null;
+  const minOutput = opts.minOutput ?? 0;
+  if (!Number.isFinite(minOutput) || minOutput < 0) {
+    throw new Error(`minOutput must be a non-negative finite number (got ${opts.minOutput})`);
+  }
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
 
   let droppedInvalidHourStart = 0;
   let droppedInvalidOutput = 0;
   let droppedZeroOutput = 0;
+  let droppedBelowMinOutput = 0;
   let droppedSourceFilter = 0;
 
   const outputs: number[] = [];
@@ -144,6 +160,11 @@ export function buildOutputTokenDecileDistribution(
 
     if (out === 0) {
       droppedZeroOutput += 1;
+      continue;
+    }
+
+    if (minOutput > 0 && out < minOutput) {
+      droppedBelowMinOutput += 1;
       continue;
     }
 
@@ -223,6 +244,7 @@ export function buildOutputTokenDecileDistribution(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     source: sourceFilter,
+    minOutput,
     bucketCount,
     totalOutputTokens,
     gini,
@@ -231,6 +253,7 @@ export function buildOutputTokenDecileDistribution(
     droppedInvalidHourStart,
     droppedInvalidOutput,
     droppedZeroOutput,
+    droppedBelowMinOutput,
     droppedSourceFilter,
     deciles,
   };

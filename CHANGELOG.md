@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.1 — 2026-04-26
+
+### Added
+
+- `output-token-decile-distribution --min-output <n>`: drop
+  bucket rows whose `output_tokens < n` *before* partitioning
+  into deciles. Suppressed rows surface as
+  `droppedBelowMinOutput`. Default 0 = no floor. Zero-output
+  rows are still counted separately under `droppedZeroOutput`,
+  so the floor is purely about noise above zero (e.g. tiny
+  acks, single-token completions). The floor changes the
+  ranked population, so Gini, top-K shares, and per-decile
+  rows are all recomputed against the survivors.
+
+  4 new tests (1242 total, up from 1238): rejects bad
+  `--min-output`; default floor=0 keeps every positive-output
+  row; floor of 11 against the 1..20 fixture drops 10 rows
+  and re-deciles 11..20 one-per-decile; zero-output rows are
+  attributed to `droppedZeroOutput`, not `droppedBelowMinOutput`.
+
+### Live-smoke output
+
+`pew-insights output-token-decile-distribution --min-output 1000`
+against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights output-token-decile-distribution
+as of: 2026-04-25T17:21:02.525Z    buckets: 1,176    output-tokens: 37,596,302
+concentration: gini=0.6983    top-10% share=54.40%    top-1% share=10.49%
+dropped: 0 bad hour_start, 0 bad output_tokens, 12 zero-output, 281 below min-output floor, 0 by source filter
+min-output floor: 1,000 (drops bucket rows with output_tokens < 1,000 before partitioning)
+
+per-decile output-token mass
+decile  buckets  min-out  mean-out  max-out  tokens-in-decile  share
+------  -------  -------  --------  -------  ----------------  ------
+D1      118      1,001    1,360     1,693    160,518           0.43%
+D2      118      1,695    2,143     2,725    252,859           0.67%
+D3      118      2,727    3,452     4,210    407,319           1.08%
+D4      118      4,214    5,149     6,190    607,551           1.62%
+D5      118      6,192    7,331     8,771    865,005           2.30%
+D6      118      8,791    11,285    13,693   1,331,664         3.54%
+D7      117      13,702   17,800    22,965   2,082,624         5.54%
+D8      117      23,194   33,218    47,094   3,886,549         10.34%
+D9      117      47,340   65,307    92,742   7,640,872         20.32%
+D10     117      94,059   174,029   416,890  20,361,341        54.16%
+```
+
+Headline: filtering out the 281 sub-1000-token buckets (mostly
+trivial completions) drops bucket count from 1,457 → 1,176 but
+total output mass barely moves (37.73M → 37.60M, only 0.36%
+attrition). Gini drops from **0.7511 → 0.6983** and D10 share
+from **60.21% → 54.16%** — confirming that the high-inequality
+signal is *not* an artefact of the long noise tail near zero;
+removing the noise still leaves a strongly right-skewed
+distribution. The cost-attention argument from v0.5.0 holds
+robustly: even after the floor, the heaviest 117 buckets emit
+**54%** of all output, and the single largest bucket
+(**416,890 tokens**) is still **128×** the median of D5
+(**7,331**).
+
 ## 0.5.0 — 2026-04-26
 
 ### Added

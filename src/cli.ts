@@ -3626,6 +3626,11 @@ program
   .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
   .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
   .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-output <n>',
+    'drop bucket rows whose output_tokens < n before partitioning; suppressed rows surface as droppedBelowMinOutput. Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3633,6 +3638,7 @@ program
         since?: string;
         until?: string;
         source?: string;
+        minOutput: string;
         json?: boolean;
       },
       cmd,
@@ -3640,11 +3646,16 @@ program
       try {
         const common = cmd.optsWithGlobals() as CommonOpts;
         const paths = resolvePewPaths(common.pewHome);
+        const minOutput = Number.parseInt(opts.minOutput, 10);
+        if (!Number.isInteger(minOutput) || minOutput < 0) {
+          throw new Error(`--min-output must be a non-negative integer (got ${opts.minOutput})`);
+        }
         const queue = await readQueue(paths);
         const report = buildOutputTokenDecileDistribution(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
+          minOutput,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

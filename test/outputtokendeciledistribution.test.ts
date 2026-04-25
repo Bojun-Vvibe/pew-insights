@@ -183,3 +183,52 @@ test('output-token-decile-distribution: input order does not affect output', () 
   const rb = buildOutputTokenDecileDistribution(b, { generatedAt: GEN });
   assert.deepEqual(ra, rb);
 });
+
+// ---- min-output floor refinement ------------------------------------------
+
+test('output-token-decile-distribution: rejects bad minOutput', () => {
+  assert.throws(() => buildOutputTokenDecileDistribution([], { minOutput: -1 }));
+  assert.throws(() =>
+    buildOutputTokenDecileDistribution([], { minOutput: NaN }),
+  );
+});
+
+test('output-token-decile-distribution: minOutput=0 default keeps all positive-output rows', () => {
+  const rows: QueueLine[] = [];
+  for (let i = 1; i <= 10; i++) rows.push(ql(i));
+  const r = buildOutputTokenDecileDistribution(rows, { generatedAt: GEN });
+  assert.equal(r.minOutput, 0);
+  assert.equal(r.droppedBelowMinOutput, 0);
+  assert.equal(r.bucketCount, 10);
+});
+
+test('output-token-decile-distribution: minOutput floor drops below-floor rows and re-deciles the survivors', () => {
+  const rows: QueueLine[] = [];
+  // 1..20 — floor of 11 should keep 11..20 (10 rows, exactly one per decile)
+  for (let i = 1; i <= 20; i++) rows.push(ql(i));
+  const r = buildOutputTokenDecileDistribution(rows, {
+    minOutput: 11,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minOutput, 11);
+  assert.equal(r.droppedBelowMinOutput, 10);
+  assert.equal(r.droppedZeroOutput, 0);
+  assert.equal(r.bucketCount, 10);
+  assert.equal(r.totalOutputTokens, 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20);
+  // After flooring: D1..D10 = 11..20 (one each)
+  for (let d = 0; d < 10; d++) {
+    assert.equal(r.deciles[d]!.bucketCount, 1);
+    assert.equal(r.deciles[d]!.tokensInDecile, 11 + d);
+  }
+});
+
+test('output-token-decile-distribution: minOutput does NOT count zero-output rows (those go to droppedZeroOutput)', () => {
+  const r = buildOutputTokenDecileDistribution(
+    [ql(0), ql(0), ql(50), ql(200)],
+    { minOutput: 100, generatedAt: GEN },
+  );
+  assert.equal(r.droppedZeroOutput, 2);
+  assert.equal(r.droppedBelowMinOutput, 1); // only the out=50 row
+  assert.equal(r.bucketCount, 1);
+  assert.equal(r.totalOutputTokens, 200);
+});

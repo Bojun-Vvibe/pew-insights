@@ -4469,9 +4469,12 @@ export function renderOutputTokenDecileDistribution(
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidOutput)} bad output_tokens, ${formatNumber(r.droppedZeroOutput)} zero-output, ${formatNumber(r.droppedSourceFilter)} by source filter`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidOutput)} bad output_tokens, ${formatNumber(r.droppedZeroOutput)} zero-output, ${formatNumber(r.droppedBelowMinOutput)} below min-output floor, ${formatNumber(r.droppedSourceFilter)} by source filter`,
     ),
   );
+  if (r.minOutput > 0) {
+    lines.push(chalk.dim(`min-output floor: ${formatNumber(r.minOutput)} (drops bucket rows with output_tokens < ${formatNumber(r.minOutput)} before partitioning)`));
+  }
   if (r.windowStart || r.windowEnd) {
     lines.push(
       chalk.dim(
