@@ -2118,6 +2118,10 @@ program
     '--filter-source <list>',
     'comma-separated source allowlist; rows whose source is not in the list are dropped before per-source aggregation',
   )
+  .option(
+    '--top-k <n>',
+    'cap sources[] to the top K by gini desc (then tokens desc, source asc); hidden sources surface as droppedBelowTopK; global rollup unchanged',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2126,6 +2130,7 @@ program
         until?: string;
         minBuckets: string;
         filterSource?: string;
+        topK?: string;
         json?: boolean;
       },
       cmd,
@@ -2138,6 +2143,14 @@ program
           throw new Error(
             `--min-buckets must be a positive integer (got ${opts.minBuckets})`,
           );
+        }
+        let topK: number | null = null;
+        if (opts.topK != null) {
+          const t = Number.parseFloat(opts.topK);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top-k must be a positive integer (got ${opts.topK})`);
+          }
+          topK = t;
         }
         let filterSources: string[] | undefined;
         if (opts.filterSource != null && opts.filterSource.trim().length > 0) {
@@ -2155,6 +2168,7 @@ program
           until: opts.until ?? null,
           minBuckets,
           filterSources,
+          topK,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

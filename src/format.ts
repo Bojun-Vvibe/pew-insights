@@ -5094,14 +5094,15 @@ export function renderBucketTokenGini(r: BucketTokenGiniReport): string {
   const lines: string[] = [];
   lines.push(chalk.bold.cyan('pew-insights bucket-token-gini'));
   const filterDesc = r.filterSources === null ? '—' : `[${r.filterSources.join(',')}]`;
+  const topKDesc = r.topK === null ? '—' : String(r.topK);
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.sources.length)}    observed: ${formatNumber(r.observedSources)}    tokens: ${formatTokens(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    filterSources: ${filterDesc}`,
+      `as of: ${r.generatedAt}    shown: ${formatNumber(r.sources.length)}    observed: ${formatNumber(r.observedSources)}    tokens: ${formatTokens(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    topK: ${topKDesc}    filterSources: ${filterDesc}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedBelowMinBuckets)} below minBuckets`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedBelowMinBuckets)} below minBuckets, ${formatNumber(r.droppedBelowTopK)} below topK`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -5119,12 +5120,12 @@ export function renderBucketTokenGini(r: BucketTokenGiniReport): string {
     return lines.join('\n');
   }
 
-  lines.push(chalk.bold('global rollup (kept set)'));
+  lines.push(chalk.bold('global rollup (full kept set, pre-topK)'));
   lines.push(
     renderTableLocal(
       ['summary', 'value'],
       [
-        ['keptSources', formatNumber(r.sources.length)],
+        ['keptSources', formatNumber(r.sources.length + r.droppedBelowTopK)],
         ['weightedMeanGini', fmtGini(r.weightedMeanGini)],
         ['unweightedMeanGini', fmtGini(r.unweightedMeanGini)],
         ['singleBucketSourceCount', formatNumber(r.singleBucketSourceCount)],
@@ -5135,7 +5136,9 @@ export function renderBucketTokenGini(r: BucketTokenGiniReport): string {
 
   lines.push(
     chalk.bold(
-      'per source: temporal token-distribution gini (sorted by gini desc; ties: tokens desc, source asc)',
+      r.topK === null
+        ? 'per source: temporal token-distribution gini (sorted by gini desc; ties: tokens desc, source asc)'
+        : `top ${r.topK} sources by temporal token-distribution gini (gini desc; ties: tokens desc, source asc)`,
     ),
   );
   const headers = [

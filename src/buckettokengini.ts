@@ -93,6 +93,21 @@ export interface BucketTokenGiniOptions {
    * considered. Dropped rows surface as `droppedByFilterSource`.
    */
   filterSources?: string[];
+  /**
+   * Optional cap on `sources[]`. When set, the report keeps
+   * only the top K sources sorted by `gini` desc (then
+   * `totalTokens` desc, then `source` asc — the same order as
+   * the default ranking). Hidden sources surface as
+   * `droppedBelowTopK`. Crucially, the global rollup
+   * (`weightedMeanGini`, `unweightedMeanGini`,
+   * `singleBucketSourceCount`) is computed across the full
+   * kept set *before* the topK cap so the population summary
+   * stays invariant under the display filter — only the
+   * rendered table shrinks. Mirrors the `--top-k` cap
+   * convention from `hour-of-day-source-mix-entropy`. Default
+   * unset = no cap.
+   */
+  topK?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -127,6 +142,8 @@ export interface BucketTokenGiniReport {
   minBuckets: number;
   /** Resolved source filter (null = no filter). */
   filterSources: string[] | null;
+  /** Resolved topK cap (null = no cap). */
+  topK: number | null;
   /** Sum of total_tokens across all considered rows (post-filter). */
   totalTokens: number;
   /** Distinct sources observed (pre-minBuckets, post-filter). */
@@ -139,6 +156,8 @@ export interface BucketTokenGiniReport {
   droppedByFilterSource: number;
   /** Sources hidden by the `minBuckets` floor. */
   droppedBelowMinBuckets: number;
+  /** Sources hidden by the `topK` display cap (applied after `minBuckets`). */
+  droppedBelowTopK: number;
   /** Token-weighted mean of `gini` across kept sources.
    *  0 when there are no considered tokens. */
   weightedMeanGini: number;
@@ -182,6 +201,13 @@ export function buildBucketTokenGini(
   const minBuckets = opts.minBuckets ?? 1;
   if (!Number.isFinite(minBuckets) || minBuckets < 1 || !Number.isInteger(minBuckets)) {
     throw new Error(`minBuckets must be a positive integer (got ${opts.minBuckets})`);
+  }
+
+  const topK = opts.topK ?? null;
+  if (topK !== null) {
+    if (!Number.isInteger(topK) || topK < 1) {
+      throw new Error(`topK must be a positive integer (got ${opts.topK})`);
+    }
   }
 
   let filterSet: Set<string> | null = null;
@@ -321,11 +347,28 @@ export function buildBucketTokenGini(
   const unweightedMeanGini = kept.length === 0 ? 0 : unweightedSum / kept.length;
 
   // Sort: gini desc → totalTokens desc → source asc.
-  const display = [...kept].sort((a, b) => {
+  const ranked = [...kept].sort((a, b) => {
     if (b.gini !== a.gini) return b.gini - a.gini;
     if (b.totalTokens !== a.totalTokens) return b.totalTokens - a.totalTokens;
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   });
+
+  // topK display cap (applied after the minBuckets floor and the
+  // ranked sort so droppedBelowTopK reflects only sources that
+  // already passed the structural floor). Crucially, the global
+  // rollup above already used the full `kept` set, so the
+  // population summary is invariant under the display cap —
+  // only the rendered table shrinks.
+  let droppedBelowTopK = 0;
+  let display: BucketTokenGiniRow[];
+  if (topK === null) {
+    display = ranked;
+  } else if (ranked.length > topK) {
+    droppedBelowTopK = ranked.length - topK;
+    display = ranked.slice(0, topK);
+  } else {
+    display = ranked;
+  }
 
   return {
     generatedAt,
@@ -333,12 +376,14 @@ export function buildBucketTokenGini(
     windowEnd: opts.until ?? null,
     minBuckets,
     filterSources: filterSet === null ? null : [...filterSet].sort(),
+    topK,
     totalTokens: globalTotal,
     observedSources,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedByFilterSource,
     droppedBelowMinBuckets,
+    droppedBelowTopK,
     weightedMeanGini,
     unweightedMeanGini,
     singleBucketSourceCount,

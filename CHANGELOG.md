@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.10 — 2026-04-26
+
+### Added
+
+- `bucket-token-gini --top-k <n>`: cap the displayed `sources[]`
+  to the top K by `gini` desc (ties resolved by `totalTokens`
+  desc, then `source` asc — the same order as the default
+  ranking, so `--top-k` does not change which sources rank
+  ahead of which). Hidden sources surface as `droppedBelowTopK`.
+  Crucially, the global rollup (`weightedMeanGini`,
+  `unweightedMeanGini`, `singleBucketSourceCount`) is computed
+  on the full post-`minBuckets` kept set *before* the topK cap
+  so the population summary stays invariant under the display
+  filter — only the rendered table shrinks. Header line gains
+  a `shown` count that distinguishes the post-topK display
+  count from the pre-topK `observed` count, mirroring the
+  convention introduced in 0.6.8 for
+  `hour-of-day-source-mix-entropy`. Default unset = no cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top-k 3`)
+
+```
+pew-insights bucket-token-gini --top-k 3
+as of: 2026-04-25T22:17:50.653Z    shown: 3    observed: 6    tokens: 8.83B    minBuckets: 1    topK: 3    filterSources: —
+dropped: 0 bad hour_start, 0 zero tokens, 0 by filter, 0 below minBuckets, 3 below topK
+(per source: G = Σ(2i−n−1)x_i / (n·Σx_i) on ascending per-bucket totals; 0 = even, 1 = single bucket)
+
+global rollup (full kept set, pre-topK)
+summary                  value
+-----------------------  -----
+keptSources              6
+weightedMeanGini         0.580
+unweightedMeanGini       0.582
+singleBucketSourceCount  0
+
+top 3 sources by temporal token-distribution gini (gini desc; ties: tokens desc, source asc)
+source          buckets  tokens   gini   meanTokens  maxBucket  topShare  firstActive               lastActive
+--------------  -------  -------  -----  ----------  ---------  --------  ------------------------  ------------------------
+vscode-copilot  320      1.89M    0.682  5.89K       174.63K    9.3%      2025-07-30T06:00:00.000Z  2026-04-20T01:30:00.000Z
+claude-code     267      3.44B    0.664  12.89M      108.95M    3.2%      2026-02-11T02:30:00.000Z  2026-04-23T14:30:00.000Z
+codex           64       809.62M  0.577  12.65M      58.84M     7.3%      2026-04-13T01:30:00.000Z  2026-04-20T16:30:00.000Z
+```
+
+The top-3 lens isolates the three most temporally-skewed
+sources at G ≥ 0.577 and confirms a non-obvious finding: the
+ordering by `gini` (vscode-copilot → claude-code → codex) is
+*not* the same as the ordering by `totalTokens`
+(claude-code → codex → vscode-copilot). The scrappy
+`vscode-copilot` source has only 1.89M tokens but the highest
+temporal Gini (0.682) — meaning its small budget is
+disproportionately concentrated in a thin tail of high-token
+hours. The headline `weightedMeanGini` (0.580) and
+`singleBucketSourceCount` (0) are unchanged from the
+default-ordering view in 0.6.9 — confirming the rollup is
+invariant under the `--top-k` display cap, exactly as
+documented.
+
 ## 0.6.9 — 2026-04-26
 
 ### Added

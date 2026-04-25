@@ -53,6 +53,86 @@ test('bucket-token-gini: rejects bad filterSources', () => {
   );
 });
 
+test('bucket-token-gini: rejects bad topK', () => {
+  assert.throws(() => buildBucketTokenGini([], { topK: 0 }));
+  assert.throws(() => buildBucketTokenGini([], { topK: -1 }));
+  assert.throws(() => buildBucketTokenGini([], { topK: 1.5 }));
+});
+
+test('bucket-token-gini: topK keeps highest-gini sources and re-uses default ranking', () => {
+  // Three sources with carefully crafted distributions.
+  const queue: QueueLine[] = [
+    // a: even (gini 0)
+    ql('2026-04-20T09:00:00Z', 'a', 100),
+    ql('2026-04-20T10:00:00Z', 'a', 100),
+    // b: skewed (gini 0.3)
+    ql('2026-04-20T09:00:00Z', 'b', 200),
+    ql('2026-04-20T10:00:00Z', 'b', 800),
+    // c: extreme
+    ql('2026-04-20T09:00:00Z', 'c', 1_000_000),
+    ql('2026-04-20T10:00:00Z', 'c', 1),
+    ql('2026-04-20T11:00:00Z', 'c', 1),
+  ];
+  const r = buildBucketTokenGini(queue, { topK: 2, generatedAt: GEN });
+  assert.equal(r.topK, 2);
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.sources[0]!.source, 'c');
+  assert.equal(r.sources[1]!.source, 'b');
+  assert.equal(r.droppedBelowTopK, 1);
+});
+
+test('bucket-token-gini: topK does not change global rollup (computed on full kept set)', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T09:00:00Z', 'a', 100),
+    ql('2026-04-20T10:00:00Z', 'a', 100),
+    ql('2026-04-20T09:00:00Z', 'b', 200),
+    ql('2026-04-20T10:00:00Z', 'b', 800),
+  ];
+  const noCap = buildBucketTokenGini(queue, { generatedAt: GEN });
+  const capped = buildBucketTokenGini(queue, { topK: 1, generatedAt: GEN });
+  assert.equal(noCap.weightedMeanGini, capped.weightedMeanGini);
+  assert.equal(noCap.unweightedMeanGini, capped.unweightedMeanGini);
+  assert.equal(noCap.singleBucketSourceCount, capped.singleBucketSourceCount);
+  assert.equal(noCap.totalTokens, capped.totalTokens);
+  assert.equal(capped.sources.length, 1);
+  assert.equal(capped.droppedBelowTopK, 1);
+});
+
+test('bucket-token-gini: topK >= kept count does not drop anything', () => {
+  const r = buildBucketTokenGini(
+    [
+      ql('2026-04-20T09:00:00Z', 'a', 100),
+      ql('2026-04-20T10:00:00Z', 'a', 100),
+      ql('2026-04-20T09:00:00Z', 'b', 200),
+      ql('2026-04-20T10:00:00Z', 'b', 800),
+    ],
+    { topK: 99, generatedAt: GEN },
+  );
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowTopK, 0);
+});
+
+test('bucket-token-gini: topK applies after minBuckets floor', () => {
+  // Source 'tiny' has only 1 bucket → dropped by minBuckets=2,
+  // so topK=1 should pick from the survivors only.
+  const queue: QueueLine[] = [
+    ql('2026-04-20T09:00:00Z', 'tiny', 100), // dropped by minBuckets
+    ql('2026-04-20T09:00:00Z', 'a', 100),
+    ql('2026-04-20T10:00:00Z', 'a', 100),
+    ql('2026-04-20T09:00:00Z', 'b', 200),
+    ql('2026-04-20T10:00:00Z', 'b', 800),
+  ];
+  const r = buildBucketTokenGini(queue, {
+    minBuckets: 2,
+    topK: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinBuckets, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.droppedBelowTopK, 1);
+});
+
 test('bucket-token-gini: single bucket source has gini 0 and is counted in singleBucketSourceCount', () => {
   const r = buildBucketTokenGini(
     [ql('2026-04-20T09:00:00Z', 'a', 1000)],
