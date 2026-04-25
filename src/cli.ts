@@ -68,6 +68,7 @@ import {
   renderBucketIntensity,
   renderTokenVelocityPercentiles,
   renderCostPerBucketPercentiles,
+  renderRollingBucketCv,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -178,6 +179,7 @@ import { buildInterarrivalTime } from './interarrivaltime.js';
 import { buildBucketIntensity } from './bucketintensity.js';
 import { buildTokenVelocityPercentiles } from './tokenvelocitypercentiles.js';
 import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
+import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -5103,6 +5105,78 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderCostPerBucketPercentiles(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('rolling-bucket-cv')
+  .description(
+    'Per-source distribution of rolling-window coefficient-of-variation (CV) of token-per-bucket; reveals how spikiness evolves over a source\'s tenure rather than collapsing it to a single scalar like burstiness',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--window-size <n>',
+    'rolling window width measured in consecutive active buckets (default 12, must be >= 2)',
+    '12',
+  )
+  .option(
+    '--min-buckets <n>',
+    'hide source rows with fewer than n active buckets; counts surface as droppedMinBuckets (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources by total tokens; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        windowSize: string;
+        minBuckets: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const windowSize = Number.parseInt(opts.windowSize, 10);
+        if (!Number.isInteger(windowSize) || windowSize < 2) {
+          throw new Error(`--window-size must be an integer >= 2 (got ${opts.windowSize})`);
+        }
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildRollingBucketCv(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          windowSize,
+          minBuckets,
+          top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderRollingBucketCv(report) + '\n');
         }
       } catch (e) {
         die(e);

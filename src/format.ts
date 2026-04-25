@@ -4763,3 +4763,66 @@ export function renderCostPerBucketPercentiles(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderRollingBucketCv(
+  r: import('./rollingbucketcv.js').RollingBucketCvReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights rolling-bucket-cv'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    windows: ${formatNumber(r.totalWindows)}    tokens: ${formatNumber(r.totalTokens)}    window-size: ${r.windowSize} active buckets`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} sources too sparse for window, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(observation = CV (stddev/mean, pop) of token-per-bucket within a window of ${r.windowSize} consecutive active buckets per source; window slides by one active bucket; percentiles nearest-rank R-1)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-source rolling-window CV distribution (sorted by tokens desc)'));
+  const headers = [
+    'source',
+    'buckets',
+    'windows',
+    'globalCv',
+    'minCv',
+    'p50Cv',
+    'p90Cv',
+    'maxCv',
+    'meanCv',
+    'peak window start',
+  ];
+  const rowsR: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.activeBuckets),
+    formatNumber(s.windowCount),
+    s.globalCv.toFixed(3),
+    s.minCv.toFixed(3),
+    s.p50Cv.toFixed(3),
+    s.p90Cv.toFixed(3),
+    s.maxCv.toFixed(3),
+    s.meanCv.toFixed(3),
+    s.peakWindowStart ?? '-',
+  ]);
+  lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
