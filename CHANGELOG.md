@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.6 — 2026-04-26
+
+### Added
+
+- `pew-insights source-run-lengths`: distribution of consecutive
+  same-source session run-lengths. A "run" is a maximal contiguous
+  stretch of sessions whose `source` is identical when sessions
+  are ordered by `started_at` ascending (with `session_key` as
+  the deterministic tie-break). Answers a question none of the
+  existing reports answer: when the operator sits down with
+  source X, how many sessions in a row do they spend on X before
+  switching? Distinct from `transitions` /
+  `inter-source-handoff-latency` (boundary-centric, not
+  stretch-centric), `source-tenure` (calendar tenure, not burst
+  length), `source-mix` / `source-decay-half-life` (share over
+  time, not uninterrupted bursts), and `bucket-streak-length`
+  (active token buckets from the queue, not consecutive
+  sessions). Per-source emits `runCount`, `sessionCount`, `mean`
+  / `p50` / `p90` / `p99` / `maxRunLength` (nearest-rank,
+  matching `gaps` / `session-lengths` conventions),
+  `singleSessionRunShare` (share of source's sessions that
+  landed in length-1 runs — the immediate-switch share), and
+  `longestRunStartedAt` (so the operator can locate the longest
+  run). Global rollup adds the same percentiles plus
+  `globalSingleSessionRunShare` across all runs. Sources with
+  fewer than `--min-runs` runs (default 1) surface as
+  `droppedSparseSources`. Window filter on `started_at` matches
+  `transitions` / `gaps` / `session-lengths`. Pure deterministic
+  builder; sessions with bad / missing `started_at` or empty
+  `source` are counted in dedicated dropped-counters and
+  excluded from runs.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, default args)
+
+```
+pew-insights source-run-lengths
+as of: 2026-04-25T21:12:30.622Z    sessions: 6,556    runs: 1,450    sources: 4    minRuns: 1    top: —    filterSources: —
+dropped: 0 bad started_at, 0 empty source, 0 by filter, 0 sparse sources, 0 below top cap
+(run = maximal contiguous stretch of same-source sessions ordered by started_at; percentiles nearest-rank)
+
+global run-length rollup
+summary                value
+---------------------  -----
+totalRuns              1,450
+mean                   4.52
+p50                    2
+p90                    5
+p99                    59
+max                    311
+singleSessionRunShare  6.5%
+
+per-source run-length distribution (sorted by maxRunLength desc)
+source       runs  sessions  mean  p50  p90  p99  max  singleShare  longest run started_at
+-----------  ----  --------  ----  ---  ---  ---  ---  -----------  ------------------------
+opencode     586   3,873     6.61  2    11   143  311  1.1%         2026-04-21T06:51:59.378Z
+claude-code  147   1,080     7.35  1    11   152  234  7.1%         2026-04-23T10:35:40.513Z
+codex        126   478       3.79  2    7    37   75   10.7%        2026-04-19T08:40:25.451Z
+openclaw     591   1,125     1.90  2    3    6    16   22.5%        2026-04-21T20:01:58.544Z
+```
+
+Reading: across 6,556 sessions in the queue, 1,450 distinct
+same-source runs — global mean 4.52 sessions per run, p50 just
+2, but p99 of 59 and max of 311 confirm a long fat tail of
+multi-hour same-source batches. Only 6.5% of sessions are
+length-1 runs (immediate-switch), so the operator is overwhelmingly
+sticky on whatever tool they sit down with. Per source the story
+splits sharply: `opencode` and `claude-code` are batch-heavy
+(mean 6.6 / 7.4, max runs of 311 / 234 — long autonomous
+sessions), while `openclaw` is the opposite (mean 1.90, p90 only
+3, 22.5% length-1) — a "drop in for one quick session and switch
+out" tool. `codex` sits in the middle.
+
 ## 0.6.5 — 2026-04-26
 
 ### Added
