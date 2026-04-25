@@ -26,7 +26,7 @@ import type { SourceTenureReport } from './sourcetenure.js';
 import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
-
+import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3654,6 +3654,64 @@ export function renderProviderTenure(r: ProviderTenureReport): string {
     formatNumber(p.tokens),
     formatNumber(Math.round(p.tokensPerActiveBucket)),
     formatNumber(Math.round(p.tokensPerSpanHour)),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderFirstBucketOfDay(r: FirstBucketOfDayReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights first-bucket-of-day'));
+  const fmtH = (h: number | null) => (h === null ? '-' : h.toString().padStart(2, '0'));
+  const fmtHF = (h: number | null) => (h === null ? '-' : h.toFixed(2));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.distinctDays)} (shown ${formatNumber(r.days.length)})    tokens: ${formatNumber(r.totalTokens)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `firstHour UTC: min=${fmtH(r.firstHourMin)} p25=${fmtH(r.firstHourP25)} median=${fmtH(r.firstHourMedian)} mean=${fmtHF(r.firstHourMean)} p75=${fmtH(r.firstHourP75)} max=${fmtH(r.firstHourMax)} mode=${fmtH(r.firstHourMode)} (n=${formatNumber(r.firstHourModeCount)}, share=${(r.firstHourModeShare * 100).toFixed(1)}%)`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTopDays)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per UTC calendar day: firstBucket = earliest hour_start with positive total_tokens; firstHour = its UTC hour-of-day)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.days.length === 0) {
+    lines.push(chalk.yellow('  no day rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-day first bucket (sorted by day desc)`));
+  const headers = [
+    'day (UTC)',
+    'first-bucket (UTC)',
+    'first-hour',
+    'buckets-on-day',
+    'tokens-on-day',
+  ];
+  const rows: string[][] = r.days.map((d) => [
+    d.day,
+    d.firstBucket,
+    d.firstHour.toString().padStart(2, '0'),
+    formatNumber(d.bucketsOnDay),
+    formatNumber(d.tokensOnDay),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

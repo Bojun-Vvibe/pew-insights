@@ -74,6 +74,7 @@ import {
   renderBucketStreakLength,
   renderSourceDecayHalfLife,
   renderBucketHandoffFrequency,
+  renderFirstBucketOfDay,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -167,6 +168,7 @@ import { buildSourceTenure } from './sourcetenure.js';
 import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
+import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3458,6 +3460,54 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderProviderTenure(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('first-bucket-of-day')
+  .description('Per UTC calendar day, the earliest active hour bucket — wake-up clock lens with min/max/mean/median/p25/p75/mode firstHour stats')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top <n>',
+    'show only the most-recent n days; remainder surface as droppedTopDays. Summary stats always reflect the full population. Default 0 = no cap.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildFirstBucketOfDay(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderFirstBucketOfDay(report) + '\n');
         }
       } catch (e) {
         die(e);
