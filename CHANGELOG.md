@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.77 — 2026-04-25
+
+### Added
+
+- `provider-tenure`: per-provider active-span lens (the
+  vendor-axis analog of `model-tenure`). For each inference
+  vendor (anthropic / openai / google / xai / meta / mistral /
+  deepseek / qwen / cohere / unknown — classified by
+  `classifyProvider` from `provider-share`) we report:
+
+  - `firstSeen`, `lastSeen` — earliest and latest active
+    `hour_start` touched by any model from this provider
+  - `spanHours` — clock hours from firstSeen to lastSeen
+    (fractional, 0 for single-bucket providers)
+  - `activeBuckets` — distinct `hour_start` values with at
+    least one positive-token row from any model of this provider
+  - `distinctModels` — how many distinct (normalised) model ids
+    contributed
+  - `tokens`, `tokensPerActiveBucket`, `tokensPerSpanHour`
+    (1-hour floor on span keeps single-bucket providers finite)
+
+  Why this is orthogonal to what already ships:
+
+  - `model-tenure` reports per individual model id, so `gpt-5`,
+    `gpt-5.4`, and `gpt-5-mini` are three separate rows. That
+    hides the fact they're the same vendor and that the vendor's
+    tenure is wider than any single model's.
+  - `provider-share` reports session-count and message-share per
+    provider but never anchors to firstSeen / lastSeen and never
+    measures a tenure span.
+  - `source-tenure` is producer-axis (which CLI was active when),
+    not vendor-axis.
+
+  Sort keys: `span` (default) | `active` | `tokens` | `density`
+  | `models`. Standard `--since` / `--until` / `--source` /
+  `--top` filters; `--top` is display-only — `totalProviders`,
+  `totalActiveBuckets`, and `totalTokens` always reflect the
+  full population, with hidden rows surfacing as
+  `droppedTopProviders`.
+
+  16 new tests (1022 total, up from 1006): option validation
+  (since/until/top/sort), empty/drops, provider rollup
+  (multiple model ids -> one provider; four-vendor separation
+  across openai / anthropic / google / xai), single-bucket 1h
+  floor, multi-device dedupe, source filter, since/until window,
+  sort keys (default span / tokens / models), top cap with
+  full-population totals preserved, unknown-bucket fallback.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights provider-tenure
+  as of: 2026-04-25T09:18:33.684Z    providers: 4 (shown 4)    active-buckets: 1,234    tokens: 8,494,792,191    sort: span
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below top cap
+  (provider rolled up from normalised model id; spanHours = clock hours first->last across any model from this vendor; activeBuckets = distinct hour_start values touched)
+
+  per-provider tenure (sorted by span desc)
+  provider   first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  distinct-models  tokens         tok/bucket  tok/span-hr
+  ---------  ------------------------  ------------------------  -------  --------------  ---------------  -------------  ----------  -----------
+  anthropic  2025-07-30T06:00:00.000Z  2026-04-25T09:00:00.000Z  6459.0   535             7                5,966,464,260  11,152,270  923,744
+  openai     2025-08-18T06:30:00.000Z  2026-04-25T09:00:00.000Z  6002.5   606             6                2,492,597,635  4,113,197   415,260
+  google     2025-11-20T04:30:00.000Z  2026-03-05T06:00:00.000Z  2521.5   37              1                154,496        4,176       61
+  unknown    2026-04-17T06:30:00.000Z  2026-04-24T15:00:00.000Z  176.5    56              1                35,575,800     635,282     201,563
+  ```
+
+  Headline: anthropic leads on tenure (6,459h ≈ 269 days) and
+  token mass (5.97B), but openai narrowly leads on
+  `active-buckets` (606 vs 535) — openai is *more frequently*
+  touched even though anthropic has the longer continuous
+  history and ~2.4× the cumulative tokens.
+
 ## 0.4.76 — 2026-04-25
 
 ### Added
