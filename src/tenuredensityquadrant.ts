@@ -70,6 +70,15 @@ export interface TenureDensityQuadrantOptions {
    * Tiebreak in all cases: model name asc.
    */
   sort?: 'tokens' | 'span' | 'density' | 'active';
+  /**
+   * Restrict the displayed report to a single quadrant. The medians
+   * are still computed over the full surviving population (so the
+   * filter does NOT change which models are classified into which
+   * quadrant) — it only suppresses the other three quadrants from
+   * `quadrants[]` for display. Suppressed quadrants surface as
+   * `droppedQuadrants` (count + tokens). Default null = show all four.
+   */
+  quadrant?: Quadrant | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -108,6 +117,8 @@ export interface TenureDensityQuadrantReport {
   top: number;
   /** Echo of the resolved sort key. */
   sort: 'tokens' | 'span' | 'density' | 'active';
+  /** Echo of the resolved quadrant filter (null = no filter). */
+  quadrant: Quadrant | null;
   /** Distinct models surviving filters (after minBuckets). */
   totalModels: number;
   /** Sum of activeBuckets across the surviving population. */
@@ -132,7 +143,14 @@ export interface TenureDensityQuadrantReport {
   droppedSparseModels: number;
   /** Buckets lost via the minBuckets floor. */
   droppedSparseBuckets: number;
-  /** Quadrants in fixed order: LD, LS, SD, SS. */
+  /**
+   * Quadrants suppressed by the `quadrant` filter. Always 0 if
+   * `quadrant` is null. Aggregates over the suppressed quadrants:
+   * sum of model counts and sum of tokens.
+   */
+  droppedQuadrantModels: number;
+  droppedQuadrantTokens: number;
+  /** Quadrants in fixed order: LD, LS, SD, SS (filtered if requested). */
   quadrants: QuadrantBucket[];
 }
 
@@ -170,6 +188,18 @@ export function buildTenureDensityQuadrant(
   if (sort !== 'tokens' && sort !== 'span' && sort !== 'density' && sort !== 'active') {
     throw new Error(
       `sort must be 'tokens' | 'span' | 'density' | 'active' (got ${opts.sort})`,
+    );
+  }
+  const quadrantFilter = opts.quadrant ?? null;
+  if (
+    quadrantFilter !== null &&
+    quadrantFilter !== 'long-dense' &&
+    quadrantFilter !== 'long-sparse' &&
+    quadrantFilter !== 'short-dense' &&
+    quadrantFilter !== 'short-sparse'
+  ) {
+    throw new Error(
+      `quadrant must be one of 'long-dense' | 'long-sparse' | 'short-dense' | 'short-sparse' (got ${opts.quadrant})`,
     );
   }
 
@@ -335,6 +365,23 @@ export function buildTenureDensityQuadrant(
     }
   }
 
+  // Apply quadrant display filter (does NOT change classification —
+  // only suppresses other quadrants from the report). Suppressed
+  // quadrants are aggregated into droppedQuadrant{Models,Tokens}.
+  const allQuadrants = QUADRANT_ORDER.map((q) => quadrantAcc.get(q)!);
+  let visibleQuadrants: QuadrantBucket[] = allQuadrants;
+  let droppedQuadrantModels = 0;
+  let droppedQuadrantTokens = 0;
+  if (quadrantFilter !== null) {
+    visibleQuadrants = allQuadrants.filter((b) => b.quadrant === quadrantFilter);
+    for (const b of allQuadrants) {
+      if (b.quadrant !== quadrantFilter) {
+        droppedQuadrantModels += b.count;
+        droppedQuadrantTokens += b.tokens;
+      }
+    }
+  }
+
   return {
     generatedAt,
     windowStart: opts.since ?? null,
@@ -343,6 +390,7 @@ export function buildTenureDensityQuadrant(
     minBuckets,
     top,
     sort,
+    quadrant: quadrantFilter,
     totalModels,
     totalActiveBuckets,
     totalTokens,
@@ -353,6 +401,8 @@ export function buildTenureDensityQuadrant(
     droppedSourceFilter,
     droppedSparseModels,
     droppedSparseBuckets,
-    quadrants: QUADRANT_ORDER.map((q) => quadrantAcc.get(q)!),
+    droppedQuadrantModels,
+    droppedQuadrantTokens,
+    quadrants: visibleQuadrants,
   };
 }

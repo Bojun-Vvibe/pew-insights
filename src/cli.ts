@@ -3455,6 +3455,10 @@ program
     "sort key inside each quadrant's models[]: 'tokens' (default) | 'span' | 'density' | 'active'",
     'tokens',
   )
+  .option(
+    '--quadrant <q>',
+    "restrict the report to a single quadrant: 'long-dense' | 'long-sparse' | 'short-dense' | 'short-sparse' (medians still computed over the full population)",
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3465,6 +3469,7 @@ program
         minBuckets: string;
         top: string;
         sort: string;
+        quadrant?: string;
         json?: boolean;
       },
       cmd,
@@ -3490,6 +3495,17 @@ program
             `--sort must be 'tokens' | 'span' | 'density' | 'active' (got ${opts.sort})`,
           );
         }
+        if (
+          opts.quadrant !== undefined &&
+          opts.quadrant !== 'long-dense' &&
+          opts.quadrant !== 'long-sparse' &&
+          opts.quadrant !== 'short-dense' &&
+          opts.quadrant !== 'short-sparse'
+        ) {
+          throw new Error(
+            `--quadrant must be 'long-dense' | 'long-sparse' | 'short-dense' | 'short-sparse' (got ${opts.quadrant})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildTenureDensityQuadrant(queue, {
           since: opts.since ?? null,
@@ -3498,6 +3514,12 @@ program
           minBuckets,
           top,
           sort: opts.sort as 'tokens' | 'span' | 'density' | 'active',
+          quadrant: (opts.quadrant ?? null) as
+            | 'long-dense'
+            | 'long-sparse'
+            | 'short-dense'
+            | 'short-sparse'
+            | null,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

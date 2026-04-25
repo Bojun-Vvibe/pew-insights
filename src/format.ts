@@ -3307,7 +3307,7 @@ export function renderTenureDensityQuadrant(r: TenureDensityQuadrantReport): str
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseModels)} sparse models (${formatNumber(r.droppedSparseBuckets)} buckets)`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseModels)} sparse models (${formatNumber(r.droppedSparseBuckets)} buckets), ${formatNumber(r.droppedQuadrantModels)} models in suppressed quadrants (${formatNumber(r.droppedQuadrantTokens)} tokens)`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -3315,6 +3315,9 @@ export function renderTenureDensityQuadrant(r: TenureDensityQuadrantReport): str
   }
   if (r.source !== null) {
     lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  if (r.quadrant !== null) {
+    lines.push(chalk.dim(`quadrant filter: ${r.quadrant}`));
   }
   lines.push('');
 
