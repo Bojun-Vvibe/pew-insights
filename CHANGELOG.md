@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.71 — 2026-04-25
+
+### Added
+
+- `bucket-streak-length`: per-model lens for the longest run of
+  consecutive-active buckets. Sorts active buckets per model on
+  the time axis and breaks them into "streaks" — maximal runs
+  where each step is exactly one bucket-width apart. Reports
+  `activeBuckets`, `streakCount`, `longestStreak`,
+  `meanStreakLength`, `longestStreakStart`/`End`, `tokens`.
+
+  Bucket-width is inferred from the smallest positive inter-bucket
+  gap across the filtered queue (typically 30m or 60m depending on
+  what `pew` writes); test override via `bucketWidthMs`.
+
+  Why a new lens: `model-tenure` collapses everything into one
+  span — it cannot distinguish "200 active buckets in one
+  marathon" from "200 isolated single-bucket touches".
+  `burstiness` and `interarrival` describe gap *distributions*
+  but never surface the longest sustained run as a single number.
+  `idle-gaps` is the complement (inactivity) view.
+
+  Flags: `--since`, `--until`, `--source`, `--min-buckets`,
+  `--json`. 14 new tests (960 total, up from 946): option
+  validation; empty/single-bucket; contiguous streak; gap split;
+  multi-model sort + lex tiebreak; window clip; source filter;
+  minBuckets floor preserves global totals; bad/zero-token row
+  drops; duplicate-bucket token accumulation; bucket-width
+  inference at 30m.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights bucket-streak-length
+  as of: 2026-04-25T07:25:29.006Z    models: 15 (shown 15)    active-buckets: 1,248    tokens: 8,445,982,893    bucket-width: 30m (inferred)    minBuckets: 0
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 sparse models
+  (streak = maximal run of consecutive active buckets where each step is exactly bucketWidth apart; longestStreak is per-model)
+
+  per-model bucket streaks (sorted by longestStreak desc)
+  model                 active-buckets  streaks  longest  mean-streak  longest-start (UTC)       longest-end (UTC)         tokens
+  --------------------  --------------  -------  -------  -----------  ------------------------  ------------------------  -------------
+  gpt-5.4               378             19       325      19.89        2026-04-18T13:00:00.000Z  2026-04-25T07:00:00.000Z  2,485,458,754
+  claude-opus-4.7       278             41       68       6.78         2026-04-23T21:30:00.000Z  2026-04-25T07:00:00.000Z  4,730,615,064
+  unknown               56              4        49       14.00        2026-04-23T15:00:00.000Z  2026-04-24T15:00:00.000Z  35,575,800
+  claude-opus-4.6.1m    167             44       15       3.80         2026-04-15T05:00:00.000Z  2026-04-15T12:00:00.000Z  1,108,978,665
+  gpt-5                 170             62       15       2.74         2025-09-18T01:30:00.000Z  2025-09-18T08:30:00.000Z  850,661
+  gemini-3-pro-preview  37              21       7        1.76         2026-01-26T06:00:00.000Z  2026-01-26T09:00:00.000Z  154,496
+  claude-haiku-4.5      30              23       5        1.30         2026-03-18T05:00:00.000Z  2026-03-18T07:00:00.000Z  70,717,678
+  claude-sonnet-4.5     37              22       5        1.68         2026-02-05T07:30:00.000Z  2026-02-05T09:30:00.000Z  105,382
+  ```
+
+  Headline read: `gpt-5.4` is the marathon model — 325-bucket
+  longest streak (~163 contiguous half-hours, ~6.8 days) and a
+  mean streak length of ~20, far above any other model. Compare
+  `claude-opus-4.7` at 278 active buckets but split across 41
+  streaks (longest 68, mean 6.8) — same scale of usage,
+  fundamentally spikier shape. The long-tail models
+  (`gpt-4.1`, `gpt-5-nano`, `gpt-5.2`) are pure single-touch
+  experiments.
+
 ## 0.4.70 — 2026-04-25
 
 ### Added
