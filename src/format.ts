@@ -26,6 +26,7 @@ import type { SourceTenureReport } from './sourcetenure.js';
 import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
+import type { ProviderSwitchingFrequencyReport } from './providerswitchingfrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
 import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
@@ -4149,6 +4150,86 @@ export function renderPromptOutputCorrelation(
     g.degenerate ? 'yes' : 'no',
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderProviderSwitchingFrequency(
+  r: ProviderSwitchingFrequencyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights provider-switching-frequency'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    active-days: ${formatNumber(r.activeDays)}    active-buckets: ${formatNumber(r.activeBuckets)}    same-day-pairs: ${formatNumber(r.consideredPairs)}    switches: ${formatNumber(r.switchPairs)} (${(r.switchShare * 100).toFixed(1)}%)    mean/day: ${r.meanSwitchesPerActiveDay.toFixed(2)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `cross-day: ${formatNumber(r.crossDayPairs)} pairs, ${formatNumber(r.crossDaySwitches)} switches    days-with-any-switch: ${formatNumber(r.daysWithAnySwitch)}/${formatNumber(r.activeDays)} (${(r.dayCoverage * 100).toFixed(1)}%)    sort: ${r.sort}    topPairs: ${formatNumber(r.topPairs)}    topDays: ${formatNumber(r.topDays)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptyModelBuckets)} empty-model buckets, ${formatNumber(r.droppedBelowTopCap)} pairs below top cap, ${formatNumber(r.droppedTopDays)} days below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(primary provider per bucket = classifyProvider of max-tokens model; switch = same-day adjacent buckets with different primary provider)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.activeBuckets === 0) {
+    lines.push(chalk.yellow('  no active buckets in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  if (r.pairs.length > 0) {
+    lines.push(chalk.bold(`top provider switches (sorted by count desc)`));
+    const headers = ['from-provider', 'to-provider', 'count', 'share-of-switches'];
+    const rows: string[][] = r.pairs.map((p) => [
+      p.from,
+      p.to,
+      formatNumber(p.count),
+      r.switchPairs > 0 ? ((p.count / r.switchPairs) * 100).toFixed(1) + '%' : '0.0%',
+    ]);
+    lines.push(renderTableLocal(headers, rows));
+    lines.push('');
+  } else {
+    lines.push(chalk.yellow('  no same-day provider switches detected.'));
+    lines.push('');
+  }
+
+  if (r.days.length > 0) {
+    lines.push(chalk.bold(`per-day rows (sort: ${r.sort})`));
+    const headers = [
+      'day',
+      'buckets',
+      'pairs',
+      'switches',
+      'switch-share',
+      'dominant-provider',
+      'dom-buckets',
+    ];
+    const rows: string[][] = r.days.map((d) => [
+      d.day,
+      formatNumber(d.activeBuckets),
+      formatNumber(d.consideredPairs),
+      formatNumber(d.switchPairs),
+      (d.switchShare * 100).toFixed(1) + '%',
+      d.dominantProvider,
+      formatNumber(d.dominantProviderBuckets),
+    ]);
+    lines.push(renderTableLocal(headers, rows));
+  }
 
   return lines.join('\n').replace(/\n+$/, '');
 }

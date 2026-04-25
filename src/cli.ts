@@ -74,6 +74,7 @@ import {
   renderBucketStreakLength,
   renderSourceDecayHalfLife,
   renderBucketHandoffFrequency,
+  renderProviderSwitchingFrequency,
   renderFirstBucketOfDay,
   renderActiveSpanPerDay,
   renderSourceBreadthPerDay,
@@ -175,6 +176,7 @@ import { buildSourceTenure } from './sourcetenure.js';
 import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
+import { buildProviderSwitchingFrequency } from './providerswitchingfrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
@@ -4063,6 +4065,58 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketHandoffFrequency(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('provider-switching-frequency')
+  .description(
+    'Per UTC day, how often the primary provider (anthropic / openai / ...) of consecutive active hour-buckets changes — same-day vendor-churn lens with cross-day swap split, top (from -> to) pairs, and per-day rows',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top-pairs <n>',
+    'cap the number of (from -> to) provider-switch pairs in the table (default 10; use 0 to suppress the table)',
+    '10',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        topPairs: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topPairs = Number.parseInt(opts.topPairs, 10);
+        if (!Number.isInteger(topPairs) || topPairs < 0) {
+          throw new Error(
+            `--top-pairs must be a non-negative integer (got ${opts.topPairs})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildProviderSwitchingFrequency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          topPairs,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderProviderSwitchingFrequency(report) + '\n');
         }
       } catch (e) {
         die(e);
