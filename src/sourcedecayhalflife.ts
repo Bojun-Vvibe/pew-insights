@@ -46,6 +46,12 @@
  * early in the source's lifetime, late, or evenly?" — i.e., is this
  * source still ramping up, plateauing, or already declining?
  *
+ * Caveat: single-bucket sources (`activeBuckets == 1`) collapse to
+ * `halfLifeFraction = 0` and `frontLoadIndex = +0.5` by definition
+ * (there is no tenure span to be early or late in). The index is
+ * degenerate in that case — filter such rows out via
+ * `--min-buckets 2` if you want only multi-bucket comparisons.
+ *
  * Determinism: pure builder. Wall clock only via `opts.generatedAt`.
  */
 import type { QueueLine } from './types.js';
