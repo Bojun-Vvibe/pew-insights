@@ -303,3 +303,59 @@ test('source-run-lengths: report echoes window + minRuns + top + filter', () => 
   assert.deepEqual(r.filterSources, ['a', 'b']);
   assert.equal(r.generatedAt, GEN);
 });
+
+test('source-run-lengths: top + minRuns compose — minRuns runs first, then top caps the survivors', () => {
+  // 4 sources: a (3 runs), b (2 runs), c (2 runs), d (1 run, sparse)
+  const sessions: SessionLine[] = [
+    sl('2026-04-20T10:00:00Z', 'a'),
+    sl('2026-04-20T10:01:00Z', 'b'),
+    sl('2026-04-20T10:02:00Z', 'a'),
+    sl('2026-04-20T10:03:00Z', 'b'),
+    sl('2026-04-20T10:04:00Z', 'a'),
+    sl('2026-04-20T10:05:00Z', 'c'),
+    sl('2026-04-20T10:06:00Z', 'b'), // not used to stay simple — extra c
+    sl('2026-04-20T10:07:00Z', 'c'),
+    sl('2026-04-20T10:08:00Z', 'd'), // d only ever appears once → 1 run
+  ];
+  const r = buildSourceRunLengths(sessions, { minRuns: 2, top: 2, generatedAt: GEN });
+  // d (1 run) dropped by minRuns → droppedSparseSources = 1.
+  // Then top=2 keeps the 2 sources with largest maxRunLength;
+  // a,b,c all have max 1 here so sort tiebreak (source asc) keeps a,b → c dropped by top.
+  assert.equal(r.droppedSparseSources, 1);
+  assert.equal(r.droppedBelowTopCap, 1);
+  assert.equal(r.sources.length, 2);
+});
+
+test('source-run-lengths: filterSources + top compose — filter runs before run computation', () => {
+  // Only b and c remain after filter; their sessions get re-coalesced into runs
+  // *as if the dropped sessions never existed*.
+  const r = buildSourceRunLengths(
+    [
+      sl('2026-04-20T10:00:00Z', 'a'),
+      sl('2026-04-20T10:01:00Z', 'b'),
+      sl('2026-04-20T10:02:00Z', 'a'),
+      sl('2026-04-20T10:03:00Z', 'b'), // after filter, b's two sessions are now contiguous!
+      sl('2026-04-20T10:04:00Z', 'c'),
+    ],
+    { filterSources: ['b', 'c'], top: 1, generatedAt: GEN },
+  );
+  assert.equal(r.droppedByFilterSource, 2); // 2 a's dropped
+  assert.equal(r.consideredSessions, 3);
+  // After filter, ordered: b, b, c → runs: [b,b] (length 2), [c] (length 1) = 2 runs total
+  assert.equal(r.totalRuns, 2);
+  // top=1 → only the source with largest max stays (b, max=2)
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.sources[0]!.maxRunLength, 2);
+  assert.equal(r.droppedBelowTopCap, 1);
+});
+
+test('source-run-lengths: top larger than source count — no drops, no error', () => {
+  const r = buildSourceRunLengths(
+    [sl('2026-04-20T10:00:00Z', 'a'), sl('2026-04-20T10:01:00Z', 'b')],
+    { top: 10, generatedAt: GEN },
+  );
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowTopCap, 0);
+  assert.equal(r.top, 10);
+});

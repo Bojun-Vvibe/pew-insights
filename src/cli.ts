@@ -1974,6 +1974,14 @@ program
     'drop sources whose post-window run-count is < n (default 1; sparse sources counted as droppedSparseSources)',
     '1',
   )
+  .option(
+    '--top <n>',
+    'display cap on the per-source list after sort + min-runs filter; hidden rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--filter-source <list>',
+    'comma-separated source allowlist; sessions whose source is not in the list are dropped before run computation and counted as droppedByFilterSource',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -1981,6 +1989,8 @@ program
         since?: string;
         until?: string;
         minRuns: string;
+        top?: string;
+        filterSource?: string;
         json?: boolean;
       },
       cmd,
@@ -1992,12 +2002,32 @@ program
         if (!Number.isFinite(minRuns) || minRuns < 1) {
           throw new Error(`--min-runs must be a finite number >= 1 (got ${opts.minRuns})`);
         }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        let filterSources: string[] | undefined;
+        if (opts.filterSource != null && opts.filterSource.trim().length > 0) {
+          filterSources = opts.filterSource
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (filterSources.length === 0) {
+            throw new Error(`--filter-source must contain at least one non-empty source`);
+          }
+        }
 
         const sessions = await readSessionQueue(paths);
         const report = buildSourceRunLengths(sessions, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minRuns,
+          top,
+          filterSources,
         });
 
         if (opts.json || common.json) {
