@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.87 — 2026-04-25
+
+### Added
+
+- `hour-of-week`: 168-cell joint (weekday × hour-of-day, UTC)
+  concentration lens. Distinct from existing temporal lenses:
+  `time-of-day` collapses to 24 hour-of-day cells (loses weekday),
+  `weekday-share` collapses to 7 weekday cells (loses hour),
+  `weekend-vs-weekday` is binary (loses both axes), `peak-hour-share`
+  is a single hour, `which-hour` is a per-bucket pick. Hour-of-week
+  is the joint shape: which (weekday, hour) cells are routine peaks
+  vs the dead zones, and how concentrated the weekly clock is overall.
+
+  Reports per-cell tokens / buckets / share, plus four concentration
+  metrics over the full 168-cell population:
+
+  - Shannon entropy in bits (max log2(168) = 7.392)
+  - normalised entropy (entropy / 7.392, 1.0 = uniform)
+  - Gini over cell token mass (0 = uniform, ~1 = single-cell)
+  - top-K mass share (default K=10, configurable via `--top-k`)
+
+  Plus a `topCells[]` table of the hottest cells by tokens
+  (configurable via `--top`, default 10), and a `populatedCells` /
+  `deadCells` split (cells with > 0 tokens vs zero).
+
+  Weekday convention: ISO — Monday=1 .. Sunday=7. Hour: 0..23 UTC.
+  No local-timezone interpretation; rows bucketed by the UTC clock
+  from `hour_start`. Bucket counts use distinct `hour_start` strings
+  so duplicate-row sources (multiple sources in one bucket) don't
+  inflate the buckets axis.
+
+  9 new tests (1102 total, up from 1093): option validation
+  (`--top` and `--top-k` ranges, since/until parsing), empty input
+  shape, ISO weekday mapping (Mon=1..Sun=7 in UTC, including the
+  Sunday=7 wraparound from JS getUTCDay=0), uniform 168-bucket
+  population yields entropy=log2(168) and gini=0, single-cell
+  concentration yields entropy=0 and gini=167/168, top-K share is
+  computed over the full sorted cell set independent of the
+  display `top` cap, source filter, and bad-row counting.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights hour-of-week
+  as of: 2026-04-25T11:59:18.746Z    buckets: 893    tokens: 8,557,460,927    populated: 168/168    dead: 0
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 by model filter
+
+  concentration metrics
+  metric                  value
+  ----------------------  -------------------------------------
+  entropy (bits)          6.764 / 7.392 max
+  normalised entropy      0.915  (1.0 = uniform)
+  gini                    0.511  (0 = uniform, 1 = single-cell)
+  top-10 cell mass share  21.0%
+
+  top 10 cells (UTC weekday × hour)
+  weekday  hour (UTC)  tokens       share  buckets
+  -------  ----------  -----------  -----  -------
+  Mon      15:00       235,594,447  2.8%   2
+  Tue      01:00       222,095,901  2.6%   8
+  Mon      14:00       188,925,721  2.2%   2
+  Mon      12:00       177,277,703  2.1%   2
+  Mon      08:00       174,589,342  2.0%   14
+  Mon      16:00       166,175,034  1.9%   2
+  Wed      06:00       162,225,481  1.9%   20
+  Thu      01:00       157,045,510  1.8%   10
+  Wed      08:00       156,754,431  1.8%   18
+  Mon      13:00       154,771,510  1.8%   2
+  ```
+
+  Reading: every one of the 168 weekly hour cells has at least one
+  observation (populated 168/168, dead 0) — usage covers the entire
+  weekly clock. Normalised entropy 0.915 says the distribution is
+  nowhere near a single hot spot, but Gini 0.511 still flags
+  meaningful skew. The top 10 cells together account for only 21%
+  of the mass — the load is genuinely spread, with no individual
+  cell above 2.8%. The hottest cells cluster heavily on Monday's
+  workday band (12:00–16:00 UTC), with a secondary Tue/Wed/Thu
+  early-morning UTC pocket.
+
 ## 0.4.86 — 2026-04-25
 
 ### Added
