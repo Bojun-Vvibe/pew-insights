@@ -167,3 +167,42 @@ test('hour-of-week: bad hour_start and zero tokens are dropped and counted', () 
   assert.equal(r.totalBuckets, 1);
   assert.equal(r.totalTokens, 50);
 });
+
+// ---- minCellTokens floor (refinement v0.4.88) -----------------------------
+
+test('hour-of-week: rejects bad minCellTokens', () => {
+  assert.throws(() => buildHourOfWeek([], { minCellTokens: -1 }));
+  assert.throws(() => buildHourOfWeek([], { minCellTokens: 1.5 }));
+});
+
+test('hour-of-week: minCellTokens floor hides sparse cells from topCells but preserves population metrics', () => {
+  // 3 cells with 700 / 200 / 50; floor=100 should drop the 50-cell.
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'codex', 'gpt-5', 700),
+    ql('2026-04-21T00:00:00.000Z', 'codex', 'gpt-5', 200),
+    ql('2026-04-22T00:00:00.000Z', 'codex', 'gpt-5', 50),
+  ];
+  const r = buildHourOfWeek(rows, {
+    generatedAt: GEN,
+    minCellTokens: 100,
+  });
+  assert.equal(r.minCellTokens, 100);
+  assert.equal(r.droppedSparseCells, 1);
+  assert.equal(r.topCells.length, 2);
+  // populated/dead and totals reflect the FULL population, not the floored display
+  assert.equal(r.populatedCells, 3);
+  assert.equal(r.totalTokens, 950);
+  // topKShare uses the unfiltered sorted list — top 10 of 3 cells = all 3 = 100%
+  assert.ok(Math.abs(r.topKShare - 1) < 1e-9);
+});
+
+test('hour-of-week: minCellTokens=0 is a true no-op', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'codex', 'gpt-5', 700),
+    ql('2026-04-21T00:00:00.000Z', 'codex', 'gpt-5', 50),
+  ];
+  const baseline = buildHourOfWeek(rows, { generatedAt: GEN });
+  const floored = buildHourOfWeek(rows, { generatedAt: GEN, minCellTokens: 0 });
+  assert.deepEqual(floored, baseline);
+  assert.equal(floored.droppedSparseCells, 0);
+});

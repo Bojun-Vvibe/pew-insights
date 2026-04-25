@@ -50,6 +50,14 @@ export interface HourOfWeekOptions {
    * cells. Default 10. Range 1..168. Surfaces as `topKShare`.
    */
   topK?: number;
+  /**
+   * Drop cells whose `tokens` < `minCellTokens` from `topCells[]`.
+   * Display filter only — concentration metrics (entropy, gini,
+   * topKShare) and `populatedCells` / `deadCells` are always
+   * computed over the full 168-cell population. Suppressed cells
+   * surface as `droppedSparseCells`. Default 0 = keep every cell.
+   */
+  minCellTokens?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -77,6 +85,8 @@ export interface HourOfWeekReport {
   top: number;
   /** Echo of resolved `topK`. */
   topK: number;
+  /** Echo of resolved `minCellTokens` floor. */
+  minCellTokens: number;
   /** Distinct hour_start buckets surviving filters. */
   totalBuckets: number;
   /** Sum of total_tokens surviving filters. */
@@ -101,6 +111,8 @@ export interface HourOfWeekReport {
   droppedSourceFilter: number;
   /** Rows excluded by the `model` filter. */
   droppedModelFilter: number;
+  /** Cells hidden from `topCells[]` by the `minCellTokens` floor. */
+  droppedSparseCells: number;
   /** Top cells by tokens desc, capped at `top`. */
   topCells: HourOfWeekCell[];
 }
@@ -120,6 +132,12 @@ export function buildHourOfWeek(
   if (!Number.isInteger(topK) || topK < 1 || topK > TOTAL_CELLS) {
     throw new Error(
       `topK must be an integer in [1, 168] (got ${opts.topK})`,
+    );
+  }
+  const minCellTokens = opts.minCellTokens ?? 0;
+  if (!Number.isInteger(minCellTokens) || minCellTokens < 0) {
+    throw new Error(
+      `minCellTokens must be a non-negative integer (got ${opts.minCellTokens})`,
     );
   }
 
@@ -248,7 +266,18 @@ export function buildHourOfWeek(
   for (let i = 0; i < Math.min(topK, sortedDesc.length); i++) {
     topKShare += sortedDesc[i]!.tokenShare;
   }
-  const topCells = sortedDesc.slice(0, top);
+  let droppedSparseCells = 0;
+  let displayCells = sortedDesc;
+  if (minCellTokens > 0) {
+    displayCells = sortedDesc.filter((c) => {
+      if (c.tokens < minCellTokens) {
+        droppedSparseCells += 1;
+        return false;
+      }
+      return true;
+    });
+  }
+  const topCells = displayCells.slice(0, top);
 
   return {
     generatedAt,
@@ -258,6 +287,7 @@ export function buildHourOfWeek(
     model: modelFilter,
     top,
     topK,
+    minCellTokens,
     totalBuckets: allBuckets.size,
     totalTokens,
     populatedCells,
@@ -270,6 +300,7 @@ export function buildHourOfWeek(
     droppedZeroTokens,
     droppedSourceFilter,
     droppedModelFilter,
+    droppedSparseCells,
     topCells,
   };
 }

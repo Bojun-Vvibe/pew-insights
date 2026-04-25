@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.88 — 2026-04-25
+
+### Added
+
+- `hour-of-week`: `--min-cell-tokens <n>` cell-mass floor flag.
+  Drops cells whose `tokens < n` from `topCells[]`. Suppressed
+  cells surface as `droppedSparseCells`. Display filter only —
+  the concentration metrics (entropy, normalised entropy, Gini,
+  topKShare) and the `populatedCells` / `deadCells` split are
+  always computed over the full 168-cell population. Default
+  0 = no floor.
+
+  Why: the v0.4.87 baseline showed `populated 168/168` (every
+  weekly hour cell has at least one observation), so the default
+  topCells view of "10 hottest cells" gives no information about
+  the body of the distribution. `--min-cell-tokens` lets you ask
+  "show me the cells with at least N tokens worth of activity"
+  without amputating the entropy / Gini computation, which still
+  needs every cell (including the long-tail dead-quiet ones).
+
+  3 new tests (1105 total, up from 1102): rejects bad
+  `minCellTokens` (negative, fractional), `--min-cell-tokens 100`
+  on three cells of 700/200/50 hides the 50-cell from `topCells`
+  while preserving `populatedCells=3`, `totalTokens=950`, and
+  `topKShare=1.0` (all unfiltered), and `--min-cell-tokens 0`
+  is a strict no-op against the baseline.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--min-cell-tokens 50000000 --top 5`:
+
+  ```
+  pew-insights hour-of-week
+  as of: 2026-04-25T12:01:09.927Z    buckets: 894    tokens: 8,560,493,601    populated: 168/168    dead: 0
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 by model filter, 110 cells by min-cell-tokens floor
+  min-cell-tokens floor: 50,000,000 (drops cells with tokens < 50,000,000 from topCells[])
+
+  concentration metrics
+  metric                  value
+  ----------------------  -------------------------------------
+  entropy (bits)          6.764 / 7.392 max
+  normalised entropy      0.915  (1.0 = uniform)
+  gini                    0.511  (0 = uniform, 1 = single-cell)
+  top-10 cell mass share  21.0%
+
+  top 5 cells (UTC weekday × hour)
+  weekday  hour (UTC)  tokens       share  buckets
+  -------  ----------  -----------  -----  -------
+  Mon      15:00       235,594,447  2.8%   2
+  Tue      01:00       222,095,901  2.6%   8
+  Mon      14:00       188,925,721  2.2%   2
+  Mon      12:00       177,277,703  2.1%   2
+  Mon      08:00       174,589,342  2.0%   14
+  ```
+
+  Reading: of 168 weekly cells, 110 fall below the 50M-token floor
+  — i.e. 58 cells (35%) carry the bulk of all activity. The
+  concentration metrics are unchanged from v0.4.87 (entropy 6.764,
+  Gini 0.511) because they always reflect the full population, as
+  designed. The floor is doing exactly its job: cleanly partitioning
+  "meaningful" cells from "background trickle" cells without
+  distorting the underlying distribution shape.
+
 ## 0.4.87 — 2026-04-25
 
 ### Added

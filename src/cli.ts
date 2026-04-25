@@ -4210,6 +4210,11 @@ program
   .option('--model <name>', 'restrict analysis to a single normalised model; non-matching rows surface as droppedModelFilter')
   .option('--top <n>', 'truncate topCells[] to the top N by tokens desc; concentration metrics always reflect the full 168-cell population. Default 10.', '10')
   .option('--top-k <n>', 'mass-share concentration window: report tokenShare of the top K cells. Range [1, 168]. Default 10.', '10')
+  .option(
+    '--min-cell-tokens <n>',
+    'drop cells whose total_tokens < n from topCells[]; suppressed cells surface as droppedSparseCells. Display filter only — entropy / gini / topKShare always reflect the full 168-cell population. Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4220,6 +4225,7 @@ program
         model?: string;
         top: string;
         topK: string;
+        minCellTokens: string;
         json?: boolean;
       },
       cmd,
@@ -4235,6 +4241,10 @@ program
         if (!Number.isInteger(topK) || topK < 1 || topK > 168) {
           throw new Error(`--top-k must be an integer in [1, 168] (got ${opts.topK})`);
         }
+        const minCellTokens = Number.parseInt(opts.minCellTokens, 10);
+        if (!Number.isInteger(minCellTokens) || minCellTokens < 0) {
+          throw new Error(`--min-cell-tokens must be a non-negative integer (got ${opts.minCellTokens})`);
+        }
         const queue = await readQueue(paths);
         const report = buildHourOfWeek(queue, {
           since: opts.since ?? null,
@@ -4243,6 +4253,7 @@ program
           model: opts.model ?? null,
           top,
           topK,
+          minCellTokens,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

@@ -3946,9 +3946,12 @@ export function renderHourOfWeek(r: HourOfWeekReport): string {
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedModelFilter)} by model filter`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedSparseCells)} cells by min-cell-tokens floor`,
     ),
   );
+  if (r.minCellTokens > 0) {
+    lines.push(chalk.dim(`min-cell-tokens floor: ${formatNumber(r.minCellTokens)} (drops cells with tokens < ${formatNumber(r.minCellTokens)} from topCells[])`));
+  }
   if (r.windowStart || r.windowEnd) {
     lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
   }
