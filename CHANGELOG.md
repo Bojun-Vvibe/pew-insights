@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.49 — 2026-04-25
+
+### Added
+
+- `output-input-ratio`: per-model ratio of `output_tokens` to
+  `input_tokens` aggregated across `QueueLine` rows. The
+  "verbosity per call" lens — answers "which models are chatty
+  (lots of completion per unit of prompt) and which are terse
+  (short answers to long prompts)?" Also flags tool-loop agents
+  that ship huge prompts and get tiny answers, i.e. spend going
+  to context being re-shipped instead of new generation.
+
+  Distinct from existing reports:
+
+  - `prompt-size` and `output-size` are *univariate* distribution
+    views — they bucket the input or output side, but never
+    correlate the two. A model with mean prompt 100k / mean
+    completion 200 looks identical there to one with mean
+    prompt 100k / mean completion 20k.
+  - `cost` collapses both sides into a single dollar figure with
+    vendor-specific weights, so a chatty cheap model and a terse
+    expensive one can land on the same $ bar.
+  - `cache-hit-ratio` is a ratio over the input side only.
+  - `reasoning-share` reports `reasoning / output` within the
+    output side; never looks at input at all.
+
+  Two ratios surfaced per model:
+
+  - `ratio` = token-weighted: `sum(output) / sum(input)`. A
+    handful of long completions can dominate this number.
+  - `mean-row-ratio` = mean of per-row ratios. Equally weights
+    every call. The gap between the two surfaces whether the
+    verbosity signal is concentrated in a few outlier rows or
+    is the model's typical behaviour.
+
+  Window semantics: filter by `hour_start` (the row's own
+  timestamp), exactly like `cost`, `forecast`, `cache-hit-ratio`.
+  Drops rows whose `input_tokens === 0` (cannot define a ratio);
+  their counts surface as `droppedZeroInput` for visibility.
+
+  Flags: `--since`, `--until`, `--min-rows`, `--top`, `--json`.
+  Display filters do not shrink the global denominators —
+  `consideredRows`, `totalInputTokens`, `totalOutputTokens`,
+  `overallRatio` always reflect the full population, mirroring
+  the family-wide convention.
+
+  10 new test cases (763 total, up from 753): option validation,
+  empty-input edge case, drop counters for bad hour_start /
+  zero-input / bad tokens, per-model token-weighted ratio +
+  mean-row-ratio with hand-checked expectations, sort by
+  inputTokens desc, exclusive upper-bound window semantics,
+  minRows hides without shrinking denominators, top cap with
+  droppedTopModels, all-zero-output corner case.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`:
+
+```
+$ npx tsx src/cli.ts output-input-ratio
+pew-insights output-input-ratio
+as of: 2026-04-25T00:37:45.803Z    rows: 1,067    input: 3,331,018,189 tok    output: 33,371,359 tok    overall: 0.0100    min-rows: 0    top: ∞
+dropped: 0 bad hour_start, 327 zero-input, 0 bad tokens, 0 below min-rows, 0 below top cap
+
+per-model output/input ratio (token-weighted; sorted by input volume desc; chatty=high, terse=low)
+model               rows  input          output      ratio   mean-row-ratio
+------------------  ----  -------------  ----------  ------  --------------
+claude-opus-4.7     377   1,345,507,379  22,496,048  0.0167  0.0925
+gpt-5.4             406   1,284,376,594  6,799,886   0.0053  0.0060
+claude-opus-4.6.1m  182   606,191,092    3,450,625   0.0057  0.0108
+claude-haiku-4.5    31    66,264,788     133,160     0.0020  0.0028
+unknown             56    18,262,497     410,432     0.0225  0.0342
+claude-sonnet-4.6   9     9,943,726      73,444      0.0074  0.0060
+claude-opus-4.6     4     343,761        5,787       0.0168  0.0181
+gpt-5.2             1     90,545         1,690       0.0187  0.0187
+gpt-5-nano          1     37,807         287         0.0076  0.0076
+```
+
+Sharp signal: `claude-opus-4.7` has a 5.5× higher `mean-row-ratio`
+(0.0925) than `ratio` (0.0167). The token-weighted view is
+dragged down by a few enormous prompt-cached rows; per-call,
+opus is by far the chattiest model in the population. Compare
+to `gpt-5.4`, where both numbers collapse to ~0.006 — its
+verbosity is uniform across calls. `claude-haiku-4.5` is the
+terse end of the spectrum (0.0020 token-weighted), as expected
+for a small fast model used for tool-call replies.
+
 ## 0.4.48 — 2026-04-25
 
 ### Added
