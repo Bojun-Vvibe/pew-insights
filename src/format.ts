@@ -3500,12 +3500,12 @@ export function renderBucketGapDistribution(
   const widthMin = (r.bucketWidthMs / 60_000).toFixed(0);
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    gaps: ${formatNumber(r.totalGaps)}    tokens: ${formatNumber(r.totalTokens)}    bucket-width: ${widthMin}m${r.bucketWidthInferred ? ' (inferred)' : ''}    minGaps: ${formatNumber(r.minGaps)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    gaps: ${formatNumber(r.totalGaps)}    tokens: ${formatNumber(r.totalTokens)}    bucket-width: ${widthMin}m${r.bucketWidthInferred ? ' (inferred)' : ''}    minGaps: ${formatNumber(r.minGaps)}    minGap: ${formatNumber(r.minGap)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedSparseSources)} sparse sources, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedBelowMinGap)} gaps below min-gap floor, ${formatNumber(r.droppedAllGapsFloored)} sources with all gaps floored, ${formatNumber(r.droppedSparseSources)} sparse sources, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

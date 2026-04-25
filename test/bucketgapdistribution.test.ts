@@ -317,3 +317,91 @@ test('bucket-gap-distribution: bad hour_start rows surface as droppedInvalidHour
   assert.equal(row.activeBuckets, 2);
   assert.equal(row.gapCount, 1);
 });
+
+// ---- minGap (per-gap floor) refinement -----------------------------------
+
+test('bucket-gap-distribution: rejects bad minGap', () => {
+  assert.throws(() => buildBucketGapDistribution([], { minGap: -1 }));
+  assert.throws(() => buildBucketGapDistribution([], { minGap: 1.5 }));
+});
+
+test('bucket-gap-distribution: minGap=2 floors contiguous gaps and reshapes percentiles', () => {
+  // Buckets 0,1,2,5,10,11 -> gaps in widths: 1,1,3,5,1 ; minGap=2 keeps 3,5
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'a', 'gpt-5', 1),
+    ql('2026-04-20T01:00:00.000Z', 'a', 'gpt-5', 1),
+    ql('2026-04-20T02:00:00.000Z', 'a', 'gpt-5', 1),
+    ql('2026-04-20T05:00:00.000Z', 'a', 'gpt-5', 1),
+    ql('2026-04-20T10:00:00.000Z', 'a', 'gpt-5', 1),
+    ql('2026-04-20T11:00:00.000Z', 'a', 'gpt-5', 1),
+  ];
+  const r = buildBucketGapDistribution(rows, {
+    generatedAt: GEN,
+    bucketWidthMs: HOUR,
+    minGap: 2,
+  });
+  assert.equal(r.droppedBelowMinGap, 3); // three 1-width gaps floored
+  assert.equal(r.droppedAllGapsFloored, 0);
+  const row = r.sources[0]!;
+  assert.equal(row.gapCount, 2);
+  assert.equal(row.minGap, 3);
+  assert.equal(row.maxGap, 5);
+  assert.equal(row.p50Gap, 3); // sorted [3,5], rank=ceil(0.5*2)=1 -> 3
+  assert.equal(row.contiguousGaps, 0);
+  assert.equal(row.contiguousShare, 0);
+  assert.equal(row.meanGap, 4);
+});
+
+test('bucket-gap-distribution: minGap=2 source whose every gap is contiguous -> droppedAllGapsFloored', () => {
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'tight', 'gpt-5', 1),
+    ql('2026-04-20T01:00:00.000Z', 'tight', 'gpt-5', 1),
+    ql('2026-04-20T02:00:00.000Z', 'tight', 'gpt-5', 1),
+    // a second source so report isn't empty
+    ql('2026-04-20T00:00:00.000Z', 'gappy', 'gpt-5', 1),
+    ql('2026-04-20T05:00:00.000Z', 'gappy', 'gpt-5', 1),
+  ];
+  const r = buildBucketGapDistribution(rows, {
+    generatedAt: GEN,
+    bucketWidthMs: HOUR,
+    minGap: 2,
+  });
+  assert.equal(r.droppedBelowMinGap, 2); // 'tight' had 2 contiguous gaps
+  assert.equal(r.droppedAllGapsFloored, 1);
+  const tight = r.sources.find((s) => s.source === 'tight')!;
+  // Row still emitted (gapCount became 0); minGaps default 0 keeps it.
+  assert.equal(tight.gapCount, 0);
+  assert.equal(tight.contiguousShare, 0);
+  const gappy = r.sources.find((s) => s.source === 'gappy')!;
+  assert.equal(gappy.gapCount, 1);
+  assert.equal(gappy.minGap, 5);
+});
+
+test('bucket-gap-distribution: minGap interacts with minGaps cleanly', () => {
+  // Same input as above; minGap=2 floors 'tight's 2 gaps (-> gapCount 0),
+  // then minGaps=1 should suppress 'tight' as sparse.
+  const rows = [
+    ql('2026-04-20T00:00:00.000Z', 'tight', 'gpt-5', 1),
+    ql('2026-04-20T01:00:00.000Z', 'tight', 'gpt-5', 1),
+    ql('2026-04-20T02:00:00.000Z', 'tight', 'gpt-5', 1),
+    ql('2026-04-20T00:00:00.000Z', 'gappy', 'gpt-5', 1),
+    ql('2026-04-20T05:00:00.000Z', 'gappy', 'gpt-5', 1),
+  ];
+  const r = buildBucketGapDistribution(rows, {
+    generatedAt: GEN,
+    bucketWidthMs: HOUR,
+    minGap: 2,
+    minGaps: 1,
+  });
+  assert.equal(r.droppedAllGapsFloored, 1); // 'tight'
+  assert.equal(r.droppedSparseSources, 1); // 'tight' (gapCount=0 < minGaps=1)
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'gappy');
+});
+
+test('bucket-gap-distribution: minGap=0 default unchanged; report exposes minGap echo', () => {
+  const r = buildBucketGapDistribution([], { generatedAt: GEN });
+  assert.equal(r.minGap, 0);
+  assert.equal(r.droppedBelowMinGap, 0);
+  assert.equal(r.droppedAllGapsFloored, 0);
+});

@@ -69,6 +69,19 @@ export interface BucketGapDistributionOptions {
    */
   top?: number | null;
   /**
+   * Floor on individual gaps in *bucket-widths*. Any gap whose
+   * size is `< minGap` is dropped from the per-source gap list
+   * *before* percentile / mean / contiguousShare computation.
+   * Counts surface as `droppedBelowMinGap` (global). Sources
+   * whose every gap falls below the floor surface as
+   * `droppedAllGapsFloored` (distinct from `droppedSparseSources`,
+   * which counts sources whose `gapCount < minGaps` *after* the
+   * floor). Default 0 = no per-gap floor. Setting `2` is the
+   * common "ignore contiguous gaps, only describe true idle
+   * stretches" mode.
+   */
+  minGap?: number;
+  /**
    * Sort key for `sources[]`:
    *   - 'tokens' (default): tokens desc (highest mass first)
    *   - 'gaps':             gapCount desc (most gappy first)
@@ -111,6 +124,7 @@ export interface BucketGapDistributionReport {
   windowEnd: string | null;
   model: string | null;
   minGaps: number;
+  minGap: number;
   top: number | null;
   sort: 'tokens' | 'gaps' | 'p50' | 'max' | 'contiguous';
   bucketWidthMs: number;
@@ -119,13 +133,17 @@ export interface BucketGapDistributionReport {
   totalSources: number;
   /** Sum of activeBuckets across the *full* population. */
   totalActiveBuckets: number;
-  /** Sum of gapCount across the *full* population. */
+  /** Sum of gapCount across the *full* population (post-minGap floor). */
   totalGaps: number;
   /** Sum of total_tokens across the *full* population. */
   totalTokens: number;
   droppedInvalidHourStart: number;
   droppedZeroTokens: number;
   droppedModelFilter: number;
+  /** Individual gaps dropped by the per-gap minGap floor. */
+  droppedBelowMinGap: number;
+  /** Sources whose every gap fell below the minGap floor. */
+  droppedAllGapsFloored: number;
   droppedSparseSources: number;
   droppedBelowTopCap: number;
   sources: BucketGapDistributionRow[];
@@ -149,6 +167,12 @@ export function buildBucketGapDistribution(
   if (!Number.isInteger(minGaps) || minGaps < 0) {
     throw new Error(
       `minGaps must be a non-negative integer (got ${opts.minGaps})`,
+    );
+  }
+  const minGap = opts.minGap ?? 0;
+  if (!Number.isInteger(minGap) || minGap < 0) {
+    throw new Error(
+      `minGap must be a non-negative integer (got ${opts.minGap})`,
     );
   }
   const top = opts.top ?? null;
@@ -265,6 +289,8 @@ export function buildBucketGapDistribution(
   let totalActiveBuckets = 0;
   let totalGaps = 0;
   let totalTokens = 0;
+  let droppedBelowMinGap = 0;
+  let droppedAllGapsFloored = 0;
 
   for (const [source, acc] of perSource.entries()) {
     const sortedMs = [...acc.bucketMs.keys()].sort((a, b) => a - b);
@@ -277,18 +303,31 @@ export function buildBucketGapDistribution(
     totalActiveBuckets += activeBuckets;
     totalTokens += srcTokens;
 
-    const gaps: number[] = [];
+    const rawGaps: number[] = [];
     for (let i = 1; i < sortedMs.length; i += 1) {
       const deltaMs = sortedMs[i]! - sortedMs[i - 1]!;
-      // Express in bucket-widths. Round to nearest integer to be
-      // tolerant of any sub-second drift in hour_start values; in
-      // practice deltas are exact multiples of bucketWidthMs.
       const widths = Math.round(deltaMs / bucketWidthMs);
-      // Guard against pathological zero/neg widths if input is
-      // sorted and width inference produced something larger than
-      // the actual delta.
-      gaps.push(widths > 0 ? widths : 1);
+      rawGaps.push(widths > 0 ? widths : 1);
     }
+
+    // Apply per-gap minGap floor.
+    const gaps: number[] = [];
+    let flooredHere = 0;
+    for (const g of rawGaps) {
+      if (g < minGap) {
+        flooredHere += 1;
+        continue;
+      }
+      gaps.push(g);
+    }
+    droppedBelowMinGap += flooredHere;
+
+    // Track the case where the source had raw gaps but all of
+    // them were floored away.
+    if (rawGaps.length > 0 && gaps.length === 0) {
+      droppedAllGapsFloored += 1;
+    }
+
     totalGaps += gaps.length;
 
     if (gaps.length === 0) {
@@ -373,6 +412,7 @@ export function buildBucketGapDistribution(
     windowEnd: opts.until ?? null,
     model: modelFilter,
     minGaps,
+    minGap,
     top,
     sort,
     bucketWidthMs,
@@ -384,6 +424,8 @@ export function buildBucketGapDistribution(
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedModelFilter,
+    droppedBelowMinGap,
+    droppedAllGapsFloored,
     droppedSparseSources,
     droppedBelowTopCap,
     sources: displayed,

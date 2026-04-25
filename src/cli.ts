@@ -4146,6 +4146,15 @@ program
     '0',
   )
   .option(
+    '--min-gap <n>',
+    'floor on individual gap size in bucket-widths; gaps below n are dropped before percentile/mean/contiguousShare; counts surface as droppedBelowMinGap and droppedAllGapsFloored (default 0 = no per-gap floor; 2 = "ignore contiguous gaps, describe only true idle stretches")',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap displayed sources to top n after sort and the min-gaps filter; suppressed rows surface as droppedBelowTopCap (default unset = no cap)',
+  )
+  .option(
     '--sort <key>',
     "sort key for sources[]: 'tokens' (default) | 'gaps' | 'p50' | 'max' | 'contiguous'",
     'tokens',
@@ -4158,6 +4167,8 @@ program
         until?: string;
         model?: string;
         minGaps: string;
+        minGap: string;
+        top?: string;
         sort: string;
         json?: boolean;
       },
@@ -4169,6 +4180,17 @@ program
         const minGaps = Number.parseInt(opts.minGaps, 10);
         if (!Number.isInteger(minGaps) || minGaps < 0) {
           throw new Error(`--min-gaps must be a non-negative integer (got ${opts.minGaps})`);
+        }
+        const minGap = Number.parseInt(opts.minGap, 10);
+        if (!Number.isInteger(minGap) || minGap < 0) {
+          throw new Error(`--min-gap must be a non-negative integer (got ${opts.minGap})`);
+        }
+        let top: number | null = null;
+        if (opts.top !== undefined) {
+          top = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(top) || top < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
         }
         if (
           opts.sort !== 'tokens' &&
@@ -4187,6 +4209,8 @@ program
           until: opts.until ?? null,
           model: opts.model ?? null,
           minGaps,
+          minGap,
+          top,
           sort: opts.sort as 'tokens' | 'gaps' | 'p50' | 'max' | 'contiguous',
         });
         if (opts.json || common.json) {

@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.5 — 2026-04-26
+
+### Added
+
+- `bucket-gap-distribution --min-gap <n>`: per-gap floor on the
+  individual gaps (in bucket-widths) that drops any gap whose
+  size is `< n` *before* per-source percentile / mean /
+  contiguousShare computation. Counts surface as
+  `droppedBelowMinGap` (global). Sources whose every raw gap
+  falls below the floor surface as `droppedAllGapsFloored`
+  (distinct from `droppedSparseSources`, which counts sources
+  whose post-floor `gapCount < minGaps`). The remaining gaps
+  re-shape `min`/`p50`/`p90`/`p99`/`max`/`mean` so the report
+  describes only the substantive idle stretches per source.
+  Default 0 = no per-gap floor. Setting `2` is the canonical
+  "ignore contiguous gaps, describe only true idle stretches"
+  mode. Distinct from `--min-gaps` (a structural floor on the
+  source's own *post-floor* gap count) and from `--top` (a
+  display cap on the source list, not a filter on gaps).
+- `bucket-gap-distribution --top <n>`: display cap on the
+  `sources[]` list after sort + the `--min-gaps` filter. Hidden
+  rows surface as `droppedBelowTopCap`. Was supported by the
+  builder in 0.6.4 but not exposed via CLI.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-gap 2 --top 5 --sort max`)
+
+```
+pew-insights bucket-gap-distribution
+as of: 2026-04-25T20:36:00.028Z    sources: 6 (shown 5)    active-buckets: 1,374    gaps: 347    tokens: 8,789,124,549    bucket-width: 30m (inferred)    minGaps: 0    minGap: 2    top: 5    sort: max
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by model filter, 1,021 gaps below min-gap floor, 0 sources with all gaps floored, 0 sparse sources, 1 below top cap
+(gap = #bucket-widths between consecutive distinct active buckets per source; 1 = contiguous; percentiles nearest-rank R-1)
+
+per-source bucket-gap distribution (sorted by max desc)
+source          buckets  gaps  minGap  p50Gap  p90Gap  p99Gap  maxGap  meanGap  contigShare  tokens
+--------------  -------  ----  ------  ------  ------  ------  ------  -------  -----------  -------------
+vscode-copilot  320      147   2       12      242     955     1,136   84.97    0.000        1,885,727
+claude-code     267      74    2       8       124     631     631     43.78    0.000        3,442,385,788
+codex           64       17    2       15      38      55      55      18.82    0.000        809,624,660
+openclaw        370      7     2       4       25      25      25      8.14     0.000        1,697,898,988
+hermes          152      87    2       4       6       22      22      3.99     0.000        142,170,594
+```
+
+Reading: floored to substantive idle stretches (gap >= 2 widths
+= idle for at least one full bucket), 1,021 of 1,368 gaps
+(74.6%) get dropped — confirming the unfloored 0.6.4 view was
+dominated by contiguous "1-width" gaps that are not idle at
+all. The post-floor distribution swings the per-source story:
+`openclaw` collapses from 369 gaps to 7 (98% of its gaps were
+contiguous), and its remaining 7 substantive idle gaps cluster
+tightly (p50=4, max=25 widths ≈ 12.5 hours). `hermes` retains
+87 of 151 gaps (58%, the most among non-trivial sources)
+matching its already-low contigShare of 0.424 in the unfloored
+view. The worst-tail ranking now ignores contiguity noise:
+`vscode-copilot` (max 1136 widths ≈ 23 days) and `claude-code`
+(max 631 widths ≈ 13 days) head the list. The `--top 5` cap
+suppressed `opencode` (the source with the lowest substantive-
+gap mass) and surfaces it as `droppedBelowTopCap=1`.
+
+### Tests
+
+- 5 new tests on `bucketgapdistribution`: `minGap` validation,
+  per-gap floor reshaping percentiles + meanGap with the
+  spike-window max preserved, source-with-all-gaps-floored
+  bucketed as `droppedAllGapsFloored` (not
+  `droppedSparseSources`), the all-floored vs sparse distinction
+  preserved when both conditions apply to different sources in
+  the same call, and default-0 echo. Total tests grew from
+  1350 -> 1355.
+
 ## 0.6.4 — 2026-04-26
 
 ### Added
