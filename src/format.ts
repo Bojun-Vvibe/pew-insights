@@ -4897,9 +4897,93 @@ export function renderRollingBucketCv(
     s.p90Cv.toFixed(3),
     s.maxCv.toFixed(3),
     s.meanCv.toFixed(3),
-    s.peakWindowStart ?? '-',
+     s.peakWindowStart ?? '-',
   ]);
   lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type { SourceRunLengthsReport } from './sourcerunlengths.js';
+
+function fmtRunLen(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2);
+}
+
+export function renderSourceRunLengths(r: SourceRunLengthsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-run-lengths'));
+  const filterDesc = r.filterSources === null ? '—' : `[${r.filterSources.join(',')}]`;
+  const topDesc = r.top === null ? '—' : String(r.top);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sessions: ${formatNumber(r.consideredSessions)}    runs: ${formatNumber(r.totalRuns)}    sources: ${formatNumber(r.sources.length)}    minRuns: ${r.minRuns}    top: ${topDesc}    filterSources: ${filterDesc}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidStart)} bad started_at, ${formatNumber(r.droppedEmptySource)} empty source, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedSparseSources)} sparse sources, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(run = maximal contiguous stretch of same-source sessions ordered by started_at; percentiles nearest-rank)',
+    ),
+  );
+  lines.push('');
+
+  if (r.totalRuns === 0) {
+    lines.push(chalk.yellow('  no runs in the window. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('global run-length rollup'));
+  lines.push(
+    renderTableLocal(
+      ['summary', 'value'],
+      [
+        ['totalRuns', formatNumber(r.totalRuns)],
+        ['mean', fmtRunLen(r.globalMeanRunLength)],
+        ['p50', fmtRunLen(r.globalP50RunLength)],
+        ['p90', fmtRunLen(r.globalP90RunLength)],
+        ['p99', fmtRunLen(r.globalP99RunLength)],
+        ['max', fmtRunLen(r.globalMaxRunLength)],
+        ['singleSessionRunShare', formatPercentLocal(r.globalSingleSessionRunShare)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(chalk.bold('per-source run-length distribution (sorted by maxRunLength desc)'));
+  const headers = [
+    'source',
+    'runs',
+    'sessions',
+    'mean',
+    'p50',
+    'p90',
+    'p99',
+    'max',
+    'singleShare',
+    'longest run started_at',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.runCount),
+    formatNumber(s.sessionCount),
+    fmtRunLen(s.meanRunLength),
+    fmtRunLen(s.p50RunLength),
+    fmtRunLen(s.p90RunLength),
+    fmtRunLen(s.p99RunLength),
+    fmtRunLen(s.maxRunLength),
+    formatPercentLocal(s.singleSessionRunShare),
+    s.longestRunStartedAt,
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

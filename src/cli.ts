@@ -91,6 +91,7 @@ import {
   renderPromptOutputCorrelation,
   renderOutputTokenDecileDistribution,
   renderInputTokenDecileDistribution,
+  renderSourceRunLengths,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -145,6 +146,7 @@ import {
   DEFAULT_CADENCE_EDGES_SECONDS,
   type TurnCadenceDimension,
 } from './turncadence.js';
+import { buildSourceRunLengths } from './sourcerunlengths.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -1953,6 +1955,55 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderTurnCadence(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-run-lengths')
+  .description(
+    'Distribution of consecutive same-source session run-lengths (operator stickiness on a source before switching)',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on started_at')
+  .option('--until <iso>', 'exclusive ISO upper bound on started_at')
+  .option(
+    '--min-runs <n>',
+    'drop sources whose post-window run-count is < n (default 1; sparse sources counted as droppedSparseSources)',
+    '1',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minRuns: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRuns = Number.parseFloat(opts.minRuns);
+        if (!Number.isFinite(minRuns) || minRuns < 1) {
+          throw new Error(`--min-runs must be a finite number >= 1 (got ${opts.minRuns})`);
+        }
+
+        const sessions = await readSessionQueue(paths);
+        const report = buildSourceRunLengths(sessions, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minRuns,
+        });
+
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRunLengths(report) + '\n');
         }
       } catch (e) {
         die(e);
