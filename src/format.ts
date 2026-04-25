@@ -31,6 +31,7 @@ import type { ActiveSpanPerDayReport } from './activespanperday.js';
 import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
 import type { BucketDensityPercentileReport } from './bucketdensitypercentile.js';
 import type { HourOfWeekReport } from './hourofweek.js';
+import type { DeviceTenureReport } from './devicetenure.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3989,6 +3990,70 @@ export function renderHourOfWeek(r: HourOfWeekReport): string {
     String(c.buckets),
   ]);
   lines.push(renderTableLocal(tHeaders, tRows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDeviceTenure(r: DeviceTenureReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights device-tenure'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    devices: ${formatNumber(r.totalDevices)} (shown ${formatNumber(r.devices.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedSparseDevices)} sparse devices, ${formatNumber(r.droppedTopDevices)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  if (r.model !== null) {
+    lines.push(chalk.dim(`model filter: ${r.model}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(spanHours = clock hours first->last; activeBuckets = distinct hour_start values; distinctSources/Models = unique tags seen on this device)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.devices.length === 0) {
+    lines.push(chalk.yellow('  no device rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-device tenure (sorted by ${r.sort} desc)`));
+  const headers = [
+    'device',
+    'first-seen (UTC)',
+    'last-seen (UTC)',
+    'span-hr',
+    'active-buckets',
+    'tokens',
+    'tok/bucket',
+    'tok/span-hr',
+    'sources',
+    'models',
+  ];
+  const rows: string[][] = r.devices.map((d) => [
+    d.device,
+    d.firstSeen,
+    d.lastSeen,
+    d.spanHours.toFixed(1),
+    formatNumber(d.activeBuckets),
+    formatNumber(d.tokens),
+    formatNumber(Math.round(d.tokensPerActiveBucket)),
+    formatNumber(Math.round(d.tokensPerSpanHour)),
+    formatNumber(d.distinctSources),
+    formatNumber(d.distinctModels),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

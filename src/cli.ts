@@ -79,6 +79,7 @@ import {
   renderSourceBreadthPerDay,
   renderBucketDensityPercentile,
   renderHourOfWeek,
+  renderDeviceTenure,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -177,6 +178,7 @@ import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
 import { buildBucketDensityPercentile } from './bucketdensitypercentile.js';
 import { buildHourOfWeek } from './hourofweek.js';
+import { buildDeviceTenure } from './devicetenure.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -4259,6 +4261,74 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderHourOfWeek(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('device-tenure')
+  .description('Per-device active-span lens: firstSeen / lastSeen / spanHours / activeBuckets / tokens / density / distinctSources / distinctModels — completes the tenure family on the device_id axis')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict to a single source; non-matching rows surface as droppedSourceFilter')
+  .option('--model <name>', 'restrict to a single normalised model; non-matching rows surface as droppedModelFilter')
+  .option('--min-buckets <n>', 'drop devices with activeBuckets < n from devices[]; counts surface as droppedSparseDevices. Default 0 = keep every device.', '0')
+  .option('--top <n>', 'truncate devices[] to the top N after sort; 0 = no cap. Default 0.', '0')
+  .option('--sort <key>', 'sort key: span | active | tokens | density | sources | models. Default span.', 'span')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        model?: string;
+        minBuckets: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'span' &&
+          sort !== 'active' &&
+          sort !== 'tokens' &&
+          sort !== 'density' &&
+          sort !== 'sources' &&
+          sort !== 'models'
+        ) {
+          throw new Error(`--sort must be one of span | active | tokens | density | sources | models (got ${opts.sort})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDeviceTenure(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          model: opts.model ?? null,
+          minBuckets,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDeviceTenure(report) + '\n');
         }
       } catch (e) {
         die(e);
