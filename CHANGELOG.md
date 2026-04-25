@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.1 — 2026-04-26
+
+### Added
+
+- `cost-per-bucket-percentiles --top-buckets <n>`: tail-zoom filter
+  that, after per-bucket aggregation but *before* percentile
+  computation, keeps only the top-N highest-cost buckets *per
+  source* (sorted by cost desc, hour asc as tiebreak). Counts
+  surface as `droppedTopBuckets`. Distinct from the existing
+  `--top` (truncates the source *list*, not buckets within a
+  source) and from `--min-cost` (a fixed dollar threshold rather
+  than a relative top-N). Right tool for "what does the worst-N
+  hours of each source actually look like" questions: it reshapes
+  `p50`/`p90`/`p99`/`mean`/`cost` to describe only the tail.
+  Default 0 = no cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, top 5 sources, `--top-buckets 5`)
+
+```
+pew-insights cost-per-bucket-percentiles
+as of: 2026-04-25T19:14:50.250Z    sources: 6 (shown 5)    buckets: 30    cost: $5833.62    sort: cost
+dropped: 0 bad hour_start, 0 by source filter, 597 unknown-model rows, 506 zero-cost buckets, 0 below min-cost, 832 below top-buckets cap, 0 below min-buckets, 1 below top cap
+(observation = one (source, UTC hour_start) bucket; cost summed across rows in that bucket; percentiles are nearest-rank R-1)
+
+per-source dollars-per-bucket summary (sorted by cost desc)
+source       buckets  cost      min      p50      p90      p99      max      mean
+-----------  -------  --------  -------  -------  -------  -------  -------  -------
+claude-code  5        $3554.02  $539.97  $680.50  $947.82  $947.82  $947.82  $710.80
+opencode     5        $896.50   $173.65  $178.14  $189.42  $189.42  $189.42  $179.30
+codex        5        $680.72   $107.11  $129.30  $165.72  $165.72  $165.72  $136.14
+openclaw     5        $518.86   $79.13   $106.17  $129.14  $129.14  $129.14  $103.77
+hermes       5        $179.42   $28.87   $32.64   $52.98   $52.98   $52.98   $35.88
+```
+
+Reading: zooming onto each source's top-5 hours collapses 862
+total buckets to 30 and reveals where the spend actually lives.
+`claude-code`'s top-5 hours alone account for $3,554 — 18.1% of
+its full $19,673 total ($35,200 grand total) compressed into 5
+hours of activity, so 5/82 = 6.1% of buckets. The five-bucket
+mean of $710.80 is ~3x its full-distribution mean of $239.92,
+confirming the spend tail is the story for `claude-code`.
+`opencode`'s top-5 mean ($179.30) is only ~5x its full mean
+($36.93) — flatter, less tail-driven.
+
+### Tests
+
+- 7 new tests on `costperbucketpercentiles`: validation of
+  `topBuckets`, basic top-N selection, *per-source* (not global)
+  scope, no-op when `topBuckets >= bucket count`, percentile
+  re-shaping under tail-zoom, composition with `minCost` (minCost
+  applied first, topBuckets after), and report echo. Total
+  `test(` declarations grew 1291 → 1298.
+
 ## 0.6.0 — 2026-04-26
 
 ### Added

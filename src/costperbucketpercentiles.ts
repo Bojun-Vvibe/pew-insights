@@ -84,6 +84,20 @@ export interface CostPerBucketPercentilesOptions {
    * Tiebreak in all cases: source name asc (lex).
    */
   sort?: 'cost' | 'buckets' | 'p99' | 'mean';
+  /**
+   * Tail-zoom filter: after per-bucket aggregation but before
+   * percentile computation, keep only the top `topBuckets`
+   * highest-cost buckets *per source* (sorted by cost desc, hour
+   * asc as tiebreak). The remaining buckets surface as
+   * `droppedTopBuckets`. Default 0 = no cap. This is the right
+   * filter for "what does the tail of my spend look like?"
+   * questions: setting `--top-buckets 10` reshapes p50 / p90 / p99
+   * to describe the top-10 worst hours per source rather than the
+   * full distribution. Distinct from `minCost` (a fixed dollar
+   * threshold) and from the source-level `top` (which truncates
+   * the source list, not buckets within a source).
+   */
+  topBuckets?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -117,6 +131,8 @@ export interface CostPerBucketPercentilesReport {
   top: number;
   /** Echo of the resolved `minCost` threshold (USD). */
   minCost: number;
+  /** Echo of the resolved `topBuckets` cap (per-source). */
+  topBuckets: number;
   sort: 'cost' | 'buckets' | 'p99' | 'mean';
   /** Distinct sources observed in the window before display filters. */
   totalSources: number;
@@ -141,6 +157,12 @@ export interface CostPerBucketPercentilesReport {
    * Counted *after* multi-device/multi-model summing.
    */
   droppedMinCost: number;
+  /**
+   * Aggregated (source, hour) buckets discarded by the per-source
+   * `topBuckets` tail-zoom filter (kept only the top-N highest-cost
+   * buckets per source).
+   */
+  droppedTopBuckets: number;
   /** Source rows hidden by `minBuckets`. */
   droppedMinBuckets: number;
   /** Source rows hidden by the `top` cap. */
@@ -199,6 +221,12 @@ export function buildCostPerBucketPercentiles(
   if (!Number.isFinite(minCost) || minCost < 0) {
     throw new Error(
       `minCost must be a non-negative finite number (got ${opts.minCost})`,
+    );
+  }
+  const topBuckets = opts.topBuckets ?? 0;
+  if (!Number.isInteger(topBuckets) || topBuckets < 0) {
+    throw new Error(
+      `topBuckets must be a non-negative integer (got ${opts.topBuckets})`,
     );
   }
   const sort = opts.sort ?? 'cost';
@@ -262,9 +290,9 @@ export function buildCostPerBucketPercentiles(
   let totalCost = 0;
   let droppedZeroCost = 0;
   let droppedMinCost = 0;
+  let droppedTopBuckets = 0;
   for (const [source, buckets] of perSourceBuckets.entries()) {
     const costs: number[] = [];
-    let sum = 0;
     for (const v of buckets.values()) {
       if (!Number.isFinite(v) || v <= 0) {
         droppedZeroCost += 1;
@@ -275,11 +303,22 @@ export function buildCostPerBucketPercentiles(
         continue;
       }
       costs.push(v);
-      sum += v;
     }
     if (costs.length === 0) continue;
-    costs.sort((a, b) => a - b);
-    const n = costs.length;
+    // Apply per-source top-buckets tail-zoom: keep only the
+    // top-N highest-cost buckets for this source. Done before
+    // percentile computation so p50/p90/p99 describe the tail.
+    let kept = costs;
+    if (topBuckets > 0 && costs.length > topBuckets) {
+      // sort desc, slice, then re-sort asc for percentile work.
+      const desc = costs.slice().sort((a, b) => b - a);
+      kept = desc.slice(0, topBuckets);
+      droppedTopBuckets += costs.length - topBuckets;
+    }
+    kept.sort((a, b) => a - b);
+    const n = kept.length;
+    let sum = 0;
+    for (const v of kept) sum += v;
     totalBuckets += n;
     totalCost += sum;
 
@@ -287,11 +326,11 @@ export function buildCostPerBucketPercentiles(
       source,
       buckets: n,
       cost: sum,
-      min: costs[0]!,
-      p50: nearestRank(costs, 0.5),
-      p90: nearestRank(costs, 0.9),
-      p99: nearestRank(costs, 0.99),
-      max: costs[n - 1]!,
+      min: kept[0]!,
+      p50: nearestRank(kept, 0.5),
+      p90: nearestRank(kept, 0.9),
+      p99: nearestRank(kept, 0.99),
+      max: kept[n - 1]!,
       mean: sum / n,
     });
   }
@@ -336,6 +375,7 @@ export function buildCostPerBucketPercentiles(
     minBuckets,
     top,
     minCost,
+    topBuckets,
     sort,
     totalSources,
     totalBuckets,
@@ -345,6 +385,7 @@ export function buildCostPerBucketPercentiles(
     unknownModelRows,
     droppedZeroCost,
     droppedMinCost,
+    droppedTopBuckets,
     droppedMinBuckets,
     droppedTopSources,
     sources: kept,

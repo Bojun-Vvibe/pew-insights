@@ -315,3 +315,154 @@ test('cost-per-bucket-percentiles: echoes window, source, sort, and minCost into
   assert.equal(r.minBuckets, 2);
   assert.equal(r.generatedAt, GEN);
 });
+
+// ---- topBuckets tail-zoom -----------------------------------------------
+
+test('cost-per-bucket-percentiles: rejects bad topBuckets', () => {
+  assert.throws(() => buildCostPerBucketPercentiles([], RATES, { topBuckets: -1 }));
+  assert.throws(() => buildCostPerBucketPercentiles([], RATES, { topBuckets: 1.5 }));
+});
+
+test('cost-per-bucket-percentiles: topBuckets keeps only the top-N highest-cost buckets per source', () => {
+  const lines: QueueLine[] = [];
+  for (let i = 1; i <= 10; i++) {
+    lines.push(
+      ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00Z`, {
+        source: 's1',
+        input_tokens: i * 1_000_000,
+      }),
+    );
+  }
+  const r = buildCostPerBucketPercentiles(lines, RATES, {
+    generatedAt: GEN,
+    topBuckets: 3,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.buckets, 3);
+  assert.equal(r.droppedTopBuckets, 7);
+  // Top-3 highest are $8, $9, $10
+  assert.equal(row.min, 8);
+  assert.equal(row.max, 10);
+  assert.equal(row.cost, 27);
+  assert.equal(row.mean, 9);
+});
+
+test('cost-per-bucket-percentiles: topBuckets is per-source, not global', () => {
+  const lines: QueueLine[] = [];
+  // s1: $1..$5
+  for (let i = 1; i <= 5; i++) {
+    lines.push(
+      ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00Z`, {
+        source: 's1',
+        input_tokens: i * 1_000_000,
+      }),
+    );
+  }
+  // s2: $1..$5 (same shape)
+  for (let i = 1; i <= 5; i++) {
+    lines.push(
+      ql(`2026-04-21T${String(i).padStart(2, '0')}:00:00Z`, {
+        source: 's2',
+        input_tokens: i * 1_000_000,
+      }),
+    );
+  }
+  const r = buildCostPerBucketPercentiles(lines, RATES, {
+    generatedAt: GEN,
+    topBuckets: 2,
+  });
+  // Each source keeps top-2 ($4, $5), so totalBuckets = 4 not 2
+  assert.equal(r.totalBuckets, 4);
+  assert.equal(r.droppedTopBuckets, 6);
+  for (const row of r.sources) {
+    assert.equal(row.buckets, 2);
+    assert.equal(row.min, 4);
+    assert.equal(row.max, 5);
+  }
+});
+
+test('cost-per-bucket-percentiles: topBuckets >= bucket count is a no-op', () => {
+  const lines: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', { source: 's1', input_tokens: 1_000_000 }),
+    ql('2026-04-20T02:00:00Z', { source: 's1', input_tokens: 2_000_000 }),
+  ];
+  const r = buildCostPerBucketPercentiles(lines, RATES, {
+    generatedAt: GEN,
+    topBuckets: 100,
+  });
+  assert.equal(r.droppedTopBuckets, 0);
+  assert.equal(r.sources[0]!.buckets, 2);
+  assert.equal(r.totalCost, 3);
+});
+
+test('cost-per-bucket-percentiles: topBuckets reshapes p50 toward the tail', () => {
+  // 100 buckets: 99 at $1, 1 at $100. Without topBuckets p50=$1.
+  // With topBuckets=10 we keep [$100, $1, $1, ..., $1] -> p50 still
+  // $1 (since 9 of 10 are $1) but max=$100 stays, mean climbs.
+  const lines: QueueLine[] = [];
+  for (let i = 1; i <= 99; i++) {
+    const day = String(20 + Math.floor((i - 1) / 24)).padStart(2, '0');
+    const hour = String((i - 1) % 24).padStart(2, '0');
+    lines.push(
+      ql(`2026-04-${day}T${hour}:00:00Z`, {
+        source: 's1',
+        input_tokens: 1_000_000,
+      }),
+    );
+  }
+  lines.push(
+    ql('2026-05-15T00:00:00Z', {
+      source: 's1',
+      input_tokens: 100_000_000,
+    }),
+  );
+  const baseline = buildCostPerBucketPercentiles(lines, RATES, { generatedAt: GEN });
+  assert.equal(baseline.sources[0]!.p50, 1);
+  assert.equal(baseline.sources[0]!.mean, (99 * 1 + 100) / 100);
+
+  const zoomed = buildCostPerBucketPercentiles(lines, RATES, {
+    generatedAt: GEN,
+    topBuckets: 10,
+  });
+  const row = zoomed.sources[0]!;
+  assert.equal(row.buckets, 10);
+  // Sorted asc: nine $1 + one $100 => p50 = sorted[ceil(0.5*10)-1] = sorted[4] = 1
+  assert.equal(row.p50, 1);
+  assert.equal(row.max, 100);
+  // Mean climbed dramatically once we zoomed onto the tail
+  assert.equal(row.mean, (9 * 1 + 100) / 10);
+  assert.equal(zoomed.droppedTopBuckets, 90);
+});
+
+test('cost-per-bucket-percentiles: topBuckets composes with minCost', () => {
+  // 6 buckets at $1..$6, minCost $3 keeps [$3,$4,$5,$6], topBuckets 2 then keeps [$5,$6]
+  const lines: QueueLine[] = [];
+  for (let i = 1; i <= 6; i++) {
+    lines.push(
+      ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00Z`, {
+        source: 's1',
+        input_tokens: i * 1_000_000,
+      }),
+    );
+  }
+  const r = buildCostPerBucketPercentiles(lines, RATES, {
+    generatedAt: GEN,
+    minCost: 3,
+    topBuckets: 2,
+  });
+  assert.equal(r.droppedMinCost, 2); // $1, $2
+  assert.equal(r.droppedTopBuckets, 2); // $3, $4
+  const row = r.sources[0]!;
+  assert.equal(row.buckets, 2);
+  assert.equal(row.min, 5);
+  assert.equal(row.max, 6);
+});
+
+test('cost-per-bucket-percentiles: topBuckets echoes into the report', () => {
+  const r = buildCostPerBucketPercentiles([], RATES, {
+    generatedAt: GEN,
+    topBuckets: 7,
+  });
+  assert.equal(r.topBuckets, 7);
+  assert.equal(r.droppedTopBuckets, 0);
+});

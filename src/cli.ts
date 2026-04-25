@@ -5029,6 +5029,11 @@ program
     '0',
   )
   .option(
+    '--top-buckets <n>',
+    'tail-zoom: keep only the top n highest-cost buckets *per source* before percentile computation; counts surface as droppedTopBuckets (default 0 = no cap)',
+    '0',
+  )
+  .option(
     '--sort <key>',
     "sort key for sources[]: 'cost' (default) | 'buckets' | 'p99' | 'mean'",
     'cost',
@@ -5044,6 +5049,7 @@ program
         minBuckets: string;
         top: string;
         minCost: string;
+        topBuckets: string;
         sort: string;
         rates?: string;
         json?: boolean;
@@ -5064,6 +5070,10 @@ program
         const minCost = Number.parseFloat(opts.minCost);
         if (!Number.isFinite(minCost) || minCost < 0) {
           throw new Error(`--min-cost must be a non-negative finite number (got ${opts.minCost})`);
+        }
+        const topBuckets = Number.parseInt(opts.topBuckets, 10);
+        if (!Number.isInteger(topBuckets) || topBuckets < 0) {
+          throw new Error(`--top-buckets must be a non-negative integer (got ${opts.topBuckets})`);
         }
         if (
           opts.sort !== 'cost' &&
@@ -5086,6 +5096,7 @@ program
           minBuckets,
           top,
           minCost,
+          topBuckets,
           sort: opts.sort as 'cost' | 'buckets' | 'p99' | 'mean',
         });
         if (opts.json || common.json) {

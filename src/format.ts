@@ -4715,7 +4715,7 @@ export function renderCostPerBucketPercentiles(
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.unknownModelRows)} unknown-model rows, ${formatNumber(r.droppedZeroCost)} zero-cost buckets, ${formatNumber(r.droppedMinCost)} below min-cost, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.unknownModelRows)} unknown-model rows, ${formatNumber(r.droppedZeroCost)} zero-cost buckets, ${formatNumber(r.droppedMinCost)} below min-cost, ${formatNumber(r.droppedTopBuckets)} below top-buckets cap, ${formatNumber(r.droppedMinBuckets)} below min-buckets, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
