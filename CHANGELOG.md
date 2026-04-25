@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.65 — 2026-04-25
+
+### Added
+
+- `tail-share`: per-source Pareto / token-mass concentration lens.
+
+  For each source, collects every (hour_start) bucket that produced
+  positive `total_tokens` (collapsing across models within the same
+  hour), sorts buckets by token count desc, and reports what fraction
+  of the source's total tokens lives in the heaviest 1%, 5%, 10%, and
+  20% of buckets — i.e. the Pareto check. Also emits a coarse
+  `giniLike` scalar in `[0, 1]`: 0 = uniform, →1 = one bucket holds
+  all the mass. The scalar is a uniform-baseline-corrected mean of
+  the four shares, so it stays meaningful at all bucket counts.
+
+  Distinct from `bucket-intensity` (per-bucket distribution shape:
+  mean/p50/p95/max), `peak-hour-share` (clock-hour concentration, not
+  bucket concentration), `burstiness` (CoV — conflates "many small +
+  one big" with "wildly variable"), and `model-mix-entropy` (model
+  concentration, not bucket concentration).
+
+  10 new tests (900 total, up from 890): rejects bad
+  since/until/minBuckets; empty queue zeros; drops zero-token rows
+  and bad hour_start; single-bucket source has top1=...=top20=1.0
+  and giniLike=0 (degenerate); uniform 100-bucket source has
+  top10≈10% and giniLike≈0; heavily skewed source gets
+  top1≈99% and giniLike>0.9; multi-source sort by giniLike desc with
+  source-name tiebreak; window filter excludes out-of-range buckets;
+  multi-model in same hour collapses to one bucket per source;
+  empty source string normalises to `unknown`.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights tail-share
+  as of: 2026-04-25T05:40:20.274Z    sources: 6    buckets: 1,305    tokens: 8,387,867,906    minBuckets: 0
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 sparse sources (0 buckets)
+
+  per-source token concentration (sorted by giniLike desc)
+  source       buckets  tokens         top1%  top5%  top10%  top20%  giniLike
+  -----------  -------  -------------  -----  -----  ------  ------  --------
+  vscode-ext   320      1,885,727      26.1%  44.2%  56.4%   71.1%   0.444
+  claude-code  267      3,442,385,788  8.0%   26.9%  44.9%   70.3%   0.312
+  opencode     170      2,350,021,635  5.7%   22.9%  39.9%   64.1%   0.265
+  codex        64       809,624,660    7.3%   25.1%  38.7%   58.5%   0.251
+  openclaw     340      1,643,717,902  9.2%   23.3%  34.4%   50.6%   0.224
+  hermes       144      140,232,194    7.2%   21.4%  34.0%   54.1%   0.219
+  ```
+
+  Headline read: the small-volume editor source (`vscode-ext`,
+  ~1.9M tokens across 320 buckets) is the most concentrated
+  (giniLike 0.444) — most of its bytes ride in a handful of heavy
+  hours. The large-volume CLI sources (`claude-code`, `opencode`,
+  `codex`) all land in the 0.25–0.31 band: long-tailed but with
+  clear daily peaks (top 10% of hours = ~40% of mass). `openclaw`
+  and `hermes` are flattest (giniLike ~0.22), consistent with
+  steady background traffic rather than heavy-burst usage.
+
 ## 0.4.64 — 2026-04-25
 
 ### Added
