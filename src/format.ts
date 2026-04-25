@@ -23,6 +23,7 @@ import type { TailShareReport } from './tailshare.js';
 import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
 import type { SourceTenureReport } from './sourcetenure.js';
 import type { BucketStreakLengthReport } from './bucketstreaklength.js';
+import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3471,6 +3472,67 @@ export function renderBucketStreakLength(r: BucketStreakLengthReport): string {
     m.longestStreakStart,
     m.longestStreakEnd,
     formatNumber(m.tokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceDecayHalfLife(r: SourceDecayHalfLifeReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-decay-half-life'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedModelFilter)} by model filter, ${formatNumber(r.droppedSparseSources)} sparse sources`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.model !== null) {
+    lines.push(chalk.dim(`model filter: ${r.model}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(halfLifeFraction = clock-hours from firstSeen to the bucket where cumulative tokens >= 50% / spanHours; < 0.5 = front-loaded, > 0.5 = back-loaded; frontLoadIndex = 0.5 - halfLifeFraction)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source token half-life (sorted by ${r.sort})`));
+  const headers = [
+    'source',
+    'first-seen (UTC)',
+    'last-seen (UTC)',
+    'span-hr',
+    'active-buckets',
+    'tokens',
+    'half-life (UTC)',
+    'half-life-hr',
+    'half-life-frac',
+    'front-load-idx',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstSeen,
+    s.lastSeen,
+    s.spanHours.toFixed(1),
+    formatNumber(s.activeBuckets),
+    formatNumber(s.tokens),
+    s.halfLifeIso,
+    s.halfLifeHours.toFixed(1),
+    s.halfLifeFraction.toFixed(3),
+    (s.frontLoadIndex >= 0 ? '+' : '') + s.frontLoadIndex.toFixed(3),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

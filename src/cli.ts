@@ -71,6 +71,7 @@ import {
   renderTenureDensityQuadrant,
   renderSourceTenure,
   renderBucketStreakLength,
+  renderSourceDecayHalfLife,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -161,6 +162,7 @@ import { buildModelTenure } from './modeltenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
 import { buildSourceTenure } from './sourcetenure.js';
 import { buildBucketStreakLength } from './bucketstreaklength.js';
+import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3682,6 +3684,72 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketStreakLength(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-decay-half-life')
+  .description('Per-source token "half-life" along the tenure axis (front-loaded vs back-loaded usage)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--model <name>', 'restrict analysis to a single model; non-matching rows surface as droppedModelFilter')
+  .option(
+    '--min-buckets <n>',
+    'drop sources whose activeBuckets < n; suppressed rows surface as droppedSparseSources (default 0 = no floor)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'halflife' (default) | 'frontload' | 'tokens' | 'span' | 'active'",
+    'halflife',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        model?: string;
+        minBuckets: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        if (
+          opts.sort !== 'halflife' &&
+          opts.sort !== 'frontload' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'span' &&
+          opts.sort !== 'active'
+        ) {
+          throw new Error(
+            `--sort must be 'halflife' | 'frontload' | 'tokens' | 'span' | 'active' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceDecayHalfLife(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          model: opts.model ?? null,
+          minBuckets,
+          sort: opts.sort as 'halflife' | 'frontload' | 'tokens' | 'span' | 'active',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceDecayHalfLife(report) + '\n');
         }
       } catch (e) {
         die(e);
