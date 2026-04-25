@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.2 — 2026-04-26
+
+### Added
+
+- `pew-insights rolling-bucket-cv` — per-source distribution of
+  *rolling-window* coefficient-of-variation (CV) of token-per-bucket.
+  For each source, slides a window of N consecutive active buckets
+  (default 12) across the source's own active-bucket sequence,
+  computes population CV (stddev / mean) inside each window, then
+  reports per-source `windowCount`, `minCv`, `p50Cv`, `p90Cv`,
+  `maxCv`, `meanCv`, plus the whole-source `globalCv` and the ISO
+  timestamp of the *peak window* (when the source went through its
+  spikiest stretch). Distinct from existing lenses:
+  - `burstiness` collapses an entire source's tenure into ONE
+    scalar `cv`. A source whose first 100 hours are pin-flat and
+    whose last 5 hours are 10x spikes scores the same single `cv`
+    as a uniformly-noisy source. Rolling CV reveals the time
+    evolution of spikiness and identifies *when* it happened.
+  - `bucket-intensity` is per-bucket token mass with no dispersion
+    structure across local windows.
+  - `bucket-streak-length` and `inter-bucket-gap` are about
+    contiguity of activity, not magnitude variance within a local
+    time window.
+  - `tail-share` is a global concentration scalar (Pareto / Gini)
+    that ignores time order.
+  Slides on the active-bucket index (not the wall clock), so a
+  source with a 24h gap still slides cleanly across that gap —
+  the question being answered is "what does N consecutive
+  observations look like", not "how spiky is each calendar day"
+  (which `weekday-share` and `time-of-day` already cover).
+  Percentiles use nearest-rank R-1 to match `bucket-intensity`,
+  `cost-per-bucket-percentiles`, and `interarrival-time` so
+  numbers reconcile across reports. Flags: `--since`, `--until`,
+  `--source`, `--window-size`, `--min-buckets`, `--top`, `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, top 5 sources by tokens)
+
+```
+pew-insights rolling-bucket-cv
+as of: 2026-04-25T19:52:20.006Z    sources: 6 (shown 5)    windows: 1,304    tokens: 8,768,503,855    window-size: 12 active buckets
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 sources too sparse for window, 0 below min-buckets, 1 below top cap
+(observation = CV (stddev/mean, pop) of token-per-bucket within a window of 12 consecutive active buckets per source; window slides by one active bucket; percentiles nearest-rank R-1)
+
+per-source rolling-window CV distribution (sorted by tokens desc)
+source       buckets  windows  globalCv  minCv  p50Cv  p90Cv  maxCv  meanCv  peak window start
+-----------  -------  -------  --------  -----  -----  -----  -----  ------  ------------------------
+claude-code  267      256      1.422     0.309  0.954  1.326  1.752  0.937   2026-04-08T09:00:00.000Z
+opencode     199      188      1.158     0.182  0.575  1.156  2.013  0.628   2026-04-23T14:30:00.000Z
+openclaw     369      358      1.136     0.185  0.484  1.133  1.660  0.631   2026-04-18T16:00:00.000Z
+codex        64       53       1.127     0.522  0.963  1.295  1.675  0.981   2026-04-14T07:30:00.000Z
+hermes       151      140      1.086     0.409  0.910  1.689  2.150  1.024   2026-04-22T16:00:00.000Z
+```
+
+Reading: `claude-code` has a global CV of 1.42 *and* a rolling
+p90 of 1.33 — its spikiness is broadly distributed, not localised
+to one window. Compare to `hermes` whose global CV is 1.09 (the
+calmest by global) but whose rolling p90 is 1.69 and max 2.15 —
+so `hermes` looks calm in aggregate but has localised spikes
+roughly 60% wider than its global CV would suggest. The peak
+window for `claude-code` lands on `2026-04-08T09:00:00.000Z` and
+for `hermes` on `2026-04-22T16:00:00.000Z` — different operators
+with different burst calendars even though their global CVs are
+adjacent. This is precisely the time-evolution signal that
+`burstiness` cannot expose.
+
+### Tests
+
+- 13 new tests on `rollingbucketcv`: option validation
+  (`windowSize` must be int >= 2, `top` / `minBuckets` integral
+  and non-negative, since/until parseable), empty / sparse
+  population shape, flat-series produces zero CV in every
+  window, known-spike isolates a peak window with deterministic
+  tie-break by earliest start, per-source isolation (windows do
+  not cross source boundaries), `--source` filter, `--top` cap
+  with `droppedTopSources` accounting, knob echo on the report,
+  empty source string buckets as `(unknown)`, and zero/negative
+  token rows accounted as `droppedZeroTokens`.
+
 ## 0.6.1 — 2026-04-26
 
 ### Added
