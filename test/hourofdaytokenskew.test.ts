@@ -223,3 +223,24 @@ test('hour-of-day-token-skew: default sort is |skew| desc → tokens desc → ho
   assert.equal(r.hours[0]!.hour, 10);
   assert.equal(r.hours[1]!.hour, 9);
 });
+
+test('hour-of-day-token-skew: topK==exact-count is a no-op', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T08:00:00Z', 100),
+    ql('2026-04-21T08:00:00Z', 200),
+    ql('2026-04-22T08:00:00Z', 300),
+    ql('2026-04-20T09:00:00Z', 1),
+    ql('2026-04-21T09:00:00Z', 1),
+    ql('2026-04-22T09:00:00Z', 100),
+  ];
+  const r = buildHourOfDayTokenSkew(queue, { topK: 2, generatedAt: GEN });
+  assert.equal(r.hours.length, 2);
+  assert.equal(r.droppedBelowTopK, 0);
+});
+
+test('hour-of-day-token-skew: topK echoes in report', () => {
+  const r = buildHourOfDayTokenSkew([], { topK: 7, generatedAt: GEN });
+  assert.equal(r.topK, 7);
+  const r2 = buildHourOfDayTokenSkew([], { generatedAt: GEN });
+  assert.equal(r2.topK, null);
+});

@@ -2195,6 +2195,10 @@ program
     'hide hours observed on fewer than n distinct UTC days; suppressed hours surface as droppedBelowMinDays (default 2 — structural minimum for a non-zero m2)',
     '2',
   )
+  .option(
+    '--top-k <n>',
+    'cap hours[] to the top K by |skew| desc (then tokens desc, hour asc); hidden hours surface as droppedBelowTopK; global rollup unchanged',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2202,6 +2206,7 @@ program
         since?: string;
         until?: string;
         minDays: string;
+        topK?: string;
         json?: boolean;
       },
       cmd,
@@ -2215,11 +2220,20 @@ program
             `--min-days must be an integer >= 2 (got ${opts.minDays})`,
           );
         }
+        let topK: number | null = null;
+        if (opts.topK != null) {
+          const t = Number.parseFloat(opts.topK);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top-k must be a positive integer (got ${opts.topK})`);
+          }
+          topK = t;
+        }
         const queue = await readQueue(paths);
         const report = buildHourOfDayTokenSkew(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minDays,
+          topK,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

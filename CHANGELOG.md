@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.12 — 2026-04-26
+
+### Added
+
+- `hour-of-day-token-skew --top-k <n>`: cap the displayed
+  `hours[]` to the top K by `|skewness|` desc (ties resolved by
+  `totalTokens` desc, then `hour` asc — the same order as the
+  default ranking, so `--top-k` does not change which hours rank
+  ahead of which). Hidden hours surface as `droppedBelowTopK`.
+  Crucially, the global rollup (`weightedMeanAbsSkewness`,
+  `unweightedMeanSkewness`, `highlySkewedHourCount`) is computed
+  on the full post-`minDays` kept set *before* the topK cap so
+  the population summary stays invariant under the display
+  filter — only the rendered table shrinks. Header line
+  distinguishes the post-topK `shown` count from the pre-topK
+  `observed` count, mirroring the convention from
+  `bucket-token-gini` (0.6.10) and `hour-of-day-source-mix-entropy`
+  (0.6.8). Default unset = no cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top-k 5`)
+
+```
+pew-insights hour-of-day-token-skew --top-k 5
+as of: 2026-04-25T22:56:42.008Z    shown: 5    observed: 24    tokens: 8.85B    minDays: 2    topK: 5
+dropped: 0 bad hour_start, 0 zero tokens, 0 below minDays, 19 below topK
+(per UTC hour: g1 = m3/m2^1.5 on per-day token totals; >0 right-skewed (rare bursts), <0 left-skewed)
+
+global rollup (full kept set, pre-topK)
+summary                  value
+-----------------------  -----
+keptHours                24
+weightedMeanAbsSkewness  2.031
+unweightedMeanSkewness   1.835
+highlySkewedHourCount    19
+
+top 5 hours-of-day by |skew| (|skew| desc; ties: tokens desc, hour asc)
+hour  days  tokens   meanDay  stddevDay  skew   maxDay   minDay
+----  ----  -------  -------  ---------  -----  -------  ------
+07    65    582.77M  8.97M    20.99M     3.714  116.84M  20
+01    32    552.19M  17.26M   44.54M     3.273  209.21M  264
+08    51    690.81M  13.55M   28.49M     3.214  140.82M  143
+04    19    244.04M  12.84M   26.39M     3.068  115.18M  494
+02    55    470.95M  8.56M    16.89M     2.786  83.00M   54
+```
+
+The top-5 lens isolates the five most asymmetric UTC hours at
+`g1 ≥ 2.786`, all strongly right-tilted (rare-burst pattern).
+The headline rollup (`weightedMeanAbsSkewness 2.031`,
+`highlySkewedHourCount 19`) is byte-for-byte identical to the
+no-cap 0.6.11 run — confirming the rollup is invariant under
+the `--top-k` display cap, exactly as documented. Hour 07 UTC
+remains the most extreme: 65 observed days, mean 8.97M tokens
+per day, stddev 20.99M, max-day 116.84M, min-day 20 tokens —
+`max / mean ≈ 13×`. Note hour 04 UTC (`g1 = 3.068` over only 19
+days) jumps from rank 4 to fully visible under the lens; its
+`min-day = 494 tokens` next to `max-day = 115.18M` is the
+sparsest signature in the top-5 and the cleanest example of the
+lens's value: a relatively low-traffic hour (244M total tokens)
+that hides one of the highest spike-to-floor ratios in the
+entire dataset.
+
 ## 0.6.11 — 2026-04-26
 
 ### Added
