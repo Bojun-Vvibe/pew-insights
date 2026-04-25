@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.54 — 2026-04-25
+
+### Added
+
+- `weekend-vs-weekday`: `--by-source` flag (default false). When
+  set, each kept model row carries a `bySource` array giving the
+  weekend/weekday split *per source* (the local producer CLI),
+  sorted by total tokens desc then source asc. Display only —
+  every top-level number (`totalTokens`, `weekendTokens`,
+  `weekdayTokens`, `weekendShare`, `weekendToWeekdayRatio`, and
+  every per-model field except the new `bySource` array) is
+  byte-identical to the un-flagged run.
+
+  Use case: the un-flagged report shows `claude-opus-4.7` is 22%
+  weekend overall, but it conflates *very* different producer
+  behaviours. `--by-source` reveals one producer drives almost all
+  weekend activity for that model (we/wd = 0.698, ~41% weekend)
+  while another stays strictly weekday (we/wd = 0.019, ~2%
+  weekend). The headline is an average that hides the bimodal
+  distribution.
+
+  2 new tests (790 total, up from 788): bySource defaults to empty
+  arrays per model; bySource splits per source, sorts by total
+  desc, preserves all top-level numbers byte-for-byte against the
+  baseline build.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--by-source --top 3`:
+
+  ```
+  pew-insights weekend-vs-weekday
+  as of: 2026-04-25T02:15:35.848Z    tokens: 8,292,835,592    weekend: 1,631,448,282 (19.67%)    weekday: 6,661,387,310    ratio (we/wd): 0.245    models: 15    shown: 3
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 below min-rows, 12 below top cap
+
+  per-model weekend vs weekday split (sorted by total tokens desc)
+  model               tokens         we tok         wd tok         we%    we/wd
+  ------------------  -------------  -------------  -------------  -----  -----
+  claude-opus-4.7     4,596,479,669  1,017,023,935  3,579,455,734  22.1%  0.284
+  gpt-5.4             2,466,446,848    614,349,109  1,852,097,739  24.9%  0.332
+  claude-opus-4.6.1m  1,108,978,665              0  1,108,978,665   0.0%  0.000
+
+  per-model × source breakdown (excerpt)
+  claude-opus-4.7    producer-A   2,259,457,858  929,045,420  1,330,412,438  41.1%  0.698
+  claude-opus-4.7    producer-B   2,203,505,953   41,364,188  2,162,141,765   1.9%  0.019
+  gpt-5.4            producer-C   1,632,176,426  460,731,597  1,171,444,829  28.2%  0.393
+  gpt-5.4            producer-D     809,624,660  153,617,512    656,007,148  19.0%  0.234
+  ```
+
+  Headline: `claude-opus-4.7`'s 22% weekend share is the average
+  of two producers with we/wd ratios that differ by **37×**
+  (0.698 vs 0.019). Same model, totally different operator
+  habits. `gpt-5.4` shows the same shape on a smaller scale (0.393
+  vs 0.234, ~1.7×). Without `--by-source` you would mistake an
+  averaged-out distribution for a uniform one.
+
 ## 0.4.53 — 2026-04-25
 
 ### Added

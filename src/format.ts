@@ -2864,5 +2864,30 @@ export function renderWeekendVsWeekday(r: WeekendVsWeekdayReport): string {
   ]);
   lines.push(renderTableLocal(headers, rows));
 
+  if (r.bySource) {
+    const subHeaders = ['model', 'source', 'tokens', 'we tok', 'wd tok', 'we%', 'we/wd', 'we rows', 'wd rows'];
+    const subRows: string[][] = [];
+    for (const m of r.models) {
+      for (const s of m.bySource) {
+        subRows.push([
+          m.model,
+          s.source,
+          formatNumber(s.totalTokens),
+          formatNumber(s.weekendTokens),
+          formatNumber(s.weekdayTokens),
+          (s.weekendShare * 100).toFixed(1) + '%',
+          !Number.isFinite(s.weekendToWeekdayRatio) ? '∞' : s.weekendToWeekdayRatio.toFixed(3),
+          formatNumber(s.weekendRows),
+          formatNumber(s.weekdayRows),
+        ]);
+      }
+    }
+    if (subRows.length > 0) {
+      lines.push('');
+      lines.push(chalk.bold('per-model × source breakdown'));
+      lines.push(renderTableLocal(subHeaders, subRows));
+    }
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

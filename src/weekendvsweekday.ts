@@ -48,6 +48,16 @@ export interface WeekendVsWeekdayOptions {
    * (weekend + weekday). Display filter only. Default 0 = no cap.
    */
   top?: number;
+  /**
+   * When true, each kept model row carries a `bySource` array
+   * giving the weekend/weekday split *per source*, sorted by
+   * total tokens desc then source asc. Display only — every
+   * top-level number is byte-identical to the un-flagged run.
+   * Default false. Useful when one model is reached from multiple
+   * producers (e.g. `claude-code` weekday-only vs `codex` mixed)
+   * and the per-model headline averages them together.
+   */
+  bySource?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -77,6 +87,22 @@ export interface WeekendVsWeekdayModelRow {
   firstSeen: string;
   /** Latest `hour_start` seen for this model (ISO). */
   lastSeen: string;
+  /**
+   * Per-source split for this model. Empty when `--by-source` was
+   * not set. Sorted by total tokens desc then source asc.
+   */
+  bySource: WeekendVsWeekdaySourceRow[];
+}
+
+export interface WeekendVsWeekdaySourceRow {
+  source: string;
+  weekendTokens: number;
+  weekdayTokens: number;
+  totalTokens: number;
+  weekendShare: number;
+  weekendToWeekdayRatio: number;
+  weekendRows: number;
+  weekdayRows: number;
 }
 
 export interface WeekendVsWeekdayReport {
@@ -87,6 +113,8 @@ export interface WeekendVsWeekdayReport {
   minRows: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
+  /** Echo of the resolved bySource flag. */
+  bySource: boolean;
   /** Sum of total_tokens across all kept rows. */
   totalTokens: number;
   /** Sum of total_tokens across kept rows whose hour_start is Sat/Sun (UTC). */
@@ -131,6 +159,7 @@ export function buildWeekendVsWeekday(
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
+  const bySource = opts.bySource ?? false;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -143,6 +172,14 @@ export function buildWeekendVsWeekday(
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
 
+  interface SourceAcc {
+    source: string;
+    weekendTokens: number;
+    weekdayTokens: number;
+    weekendRows: number;
+    weekdayRows: number;
+  }
+
   interface Acc {
     model: string;
     weekendTokens: number;
@@ -150,6 +187,7 @@ export function buildWeekendVsWeekday(
     weekendRows: number;
     weekdayRows: number;
     sources: Set<string>;
+    sourceAgg: Map<string, SourceAcc>;
     firstSeenMs: number;
     lastSeenMs: number;
     firstSeen: string;
@@ -190,6 +228,7 @@ export function buildWeekendVsWeekday(
         weekendRows: 0,
         weekdayRows: 0,
         sources: new Set<string>(),
+        sourceAgg: new Map<string, SourceAcc>(),
         firstSeenMs: ms,
         lastSeenMs: ms,
         firstSeen: q.hour_start,
@@ -209,6 +248,27 @@ export function buildWeekendVsWeekday(
     a.sources.add(
       typeof q.source === 'string' && q.source !== '' ? q.source : 'unknown',
     );
+    if (bySource) {
+      const srcKey = typeof q.source === 'string' && q.source !== '' ? q.source : 'unknown';
+      let s = a.sourceAgg.get(srcKey);
+      if (!s) {
+        s = {
+          source: srcKey,
+          weekendTokens: 0,
+          weekdayTokens: 0,
+          weekendRows: 0,
+          weekdayRows: 0,
+        };
+        a.sourceAgg.set(srcKey, s);
+      }
+      if (isWeekend) {
+        s.weekendTokens += tt;
+        s.weekendRows += 1;
+      } else {
+        s.weekdayTokens += tt;
+        s.weekdayRows += 1;
+      }
+    }
     if (ms < a.firstSeenMs) {
       a.firstSeenMs = ms;
       a.firstSeen = q.hour_start;
@@ -223,6 +283,26 @@ export function buildWeekendVsWeekday(
   const all: WeekendVsWeekdayModelRow[] = [];
   for (const a of agg.values()) {
     const tot = a.weekendTokens + a.weekdayTokens;
+    const sourceRows: WeekendVsWeekdaySourceRow[] = [];
+    if (bySource) {
+      for (const s of a.sourceAgg.values()) {
+        const sTot = s.weekendTokens + s.weekdayTokens;
+        sourceRows.push({
+          source: s.source,
+          weekendTokens: s.weekendTokens,
+          weekdayTokens: s.weekdayTokens,
+          totalTokens: sTot,
+          weekendShare: sTot > 0 ? s.weekendTokens / sTot : 0,
+          weekendToWeekdayRatio: ratio(s.weekendTokens, s.weekdayTokens),
+          weekendRows: s.weekendRows,
+          weekdayRows: s.weekdayRows,
+        });
+      }
+      sourceRows.sort((x, y) => {
+        if (y.totalTokens !== x.totalTokens) return y.totalTokens - x.totalTokens;
+        return x.source < y.source ? -1 : x.source > y.source ? 1 : 0;
+      });
+    }
     all.push({
       model: a.model,
       weekendTokens: a.weekendTokens,
@@ -236,6 +316,7 @@ export function buildWeekendVsWeekday(
       distinctSources: a.sources.size,
       firstSeen: a.firstSeen,
       lastSeen: a.lastSeen,
+      bySource: sourceRows,
     });
   }
 
@@ -271,6 +352,7 @@ export function buildWeekendVsWeekday(
     windowEnd: opts.until ?? null,
     minRows,
     top,
+    bySource,
     totalTokens,
     weekendTokens: globalWeekend,
     weekdayTokens: globalWeekday,

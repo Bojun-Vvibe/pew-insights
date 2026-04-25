@@ -204,3 +204,41 @@ test('weekend-vs-weekday: firstSeen/lastSeen bracket activity', () => {
   assert.equal(r.models[0].firstSeen, '2026-04-25T01:00:00Z');
   assert.equal(r.models[0].lastSeen, '2026-04-28T22:00:00Z');
 });
+
+// ---- bySource flag ---------------------------------------------------------
+
+test('weekend-vs-weekday: bySource defaults to empty arrays', () => {
+  const queue = [
+    ql('2026-04-25T01:00:00Z', { source: 'codex', total_tokens: 100 }),
+    ql('2026-04-27T01:00:00Z', { source: 'claude-code', total_tokens: 100 }),
+  ];
+  const r = buildWeekendVsWeekday(queue, { generatedAt: GEN });
+  assert.equal(r.bySource, false);
+  assert.deepEqual(r.models[0].bySource, []);
+});
+
+test('weekend-vs-weekday: bySource splits per source and preserves top-level numbers', () => {
+  const queue = [
+    ql('2026-04-25T01:00:00Z', { model: 'm', source: 'codex', total_tokens: 100 }),
+    ql('2026-04-26T01:00:00Z', { model: 'm', source: 'codex', total_tokens: 200 }),
+    ql('2026-04-27T01:00:00Z', { model: 'm', source: 'claude-code', total_tokens: 700 }),
+  ];
+  const baseline = buildWeekendVsWeekday(queue, { generatedAt: GEN });
+  const r = buildWeekendVsWeekday(queue, { bySource: true, generatedAt: GEN });
+  assert.equal(r.bySource, true);
+  // Top-level totals identical to baseline.
+  assert.equal(r.totalTokens, baseline.totalTokens);
+  assert.equal(r.weekendTokens, baseline.weekendTokens);
+  assert.equal(r.weekdayTokens, baseline.weekdayTokens);
+  assert.equal(r.models[0].totalTokens, baseline.models[0].totalTokens);
+  // Per-source rows present, sorted by total desc (claude-code 700 > codex 300).
+  assert.equal(r.models[0].bySource.length, 2);
+  assert.equal(r.models[0].bySource[0].source, 'claude-code');
+  assert.equal(r.models[0].bySource[0].totalTokens, 700);
+  assert.equal(r.models[0].bySource[0].weekendTokens, 0);
+  assert.equal(r.models[0].bySource[0].weekdayTokens, 700);
+  assert.equal(r.models[0].bySource[1].source, 'codex');
+  assert.equal(r.models[0].bySource[1].weekendTokens, 300);
+  assert.equal(r.models[0].bySource[1].weekdayTokens, 0);
+  assert.equal(r.models[0].bySource[1].weekendToWeekdayRatio, Number.POSITIVE_INFINITY);
+});

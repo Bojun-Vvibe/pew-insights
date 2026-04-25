@@ -2987,10 +2987,14 @@ program
     'show only the top n models by total tokens; remainder surface as droppedTopModels (default 0 = no cap)',
     '0',
   )
+  .option(
+    '--by-source',
+    'also break down each kept model row by source (display only; top-level numbers unchanged)',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minRows: string; top: string; json?: boolean },
+      opts: { since?: string; until?: string; minRows: string; top: string; bySource?: boolean; json?: boolean },
       cmd,
     ) => {
       try {
@@ -3010,6 +3014,7 @@ program
           until: opts.until ?? null,
           minRows,
           top,
+          bySource: opts.bySource ?? false,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
