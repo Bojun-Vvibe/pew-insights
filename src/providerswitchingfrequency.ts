@@ -112,6 +112,19 @@ export interface ProviderSwitchingFrequencyOptions {
    * output stable.
    */
   sort?: ProviderSwitchingSort;
+  /**
+   * Drop rows from `days[]` whose `switchPairs < minSwitches`.
+   * Display filter only — summary stats (`switchPairs`,
+   * `switchShare`, `daysWithAnySwitch`, ...) always reflect the
+   * full active-days population. Suppressed rows surface as
+   * `droppedBelowMinSwitches`. Default 0 = keep every day.
+   * Applied *before* `topDays` (sort, then filter, then cap).
+   *
+   * Useful when chasing high-churn days only: `--min-switches 5`
+   * hides quiet single-vendor days so the table is just the
+   * vendor-bouncy ones. Must be a non-negative integer.
+   */
+  minSwitches?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -144,6 +157,8 @@ export interface ProviderSwitchingFrequencyReport {
   topPairs: number;
   topDays: number;
   sort: ProviderSwitchingSort;
+  /** Echo of the resolved minSwitches floor. */
+  minSwitches: number;
   /** Distinct UTC calendar days with ≥1 active bucket. */
   activeDays: number;
   /** Distinct active hour-buckets surviving filters. */
@@ -176,6 +191,8 @@ export interface ProviderSwitchingFrequencyReport {
   droppedBelowTopCap: number;
   /** Rows of `days[]` trimmed by `topDays`. */
   droppedTopDays: number;
+  /** Rows of `days[]` hidden by the `minSwitches` floor. */
+  droppedBelowMinSwitches: number;
   /** Top directed (from -> to) same-day provider switches. */
   pairs: ProviderSwitchingPair[];
   /** Per-day rows; sort governed by `sort`. */
@@ -208,6 +225,12 @@ export function buildProviderSwitchingFrequency(
   if (sort !== 'day' && sort !== 'switches' && sort !== 'buckets' && sort !== 'share') {
     throw new Error(
       `sort must be 'day' | 'switches' | 'buckets' | 'share' (got ${String(opts.sort)})`,
+    );
+  }
+  const minSwitches = opts.minSwitches ?? 0;
+  if (!Number.isInteger(minSwitches) || minSwitches < 0) {
+    throw new Error(
+      `minSwitches must be a non-negative integer (got ${opts.minSwitches})`,
     );
   }
 
@@ -425,7 +448,13 @@ export function buildProviderSwitchingFrequency(
   });
 
   let droppedTopDays = 0;
+  let droppedBelowMinSwitches = 0;
   let days = dayRows;
+  if (minSwitches > 0) {
+    const survivors = days.filter((d) => d.switchPairs >= minSwitches);
+    droppedBelowMinSwitches = days.length - survivors.length;
+    days = survivors;
+  }
   if (topDays > 0 && days.length > topDays) {
     droppedTopDays = days.length - topDays;
     days = days.slice(0, topDays);
@@ -452,6 +481,7 @@ export function buildProviderSwitchingFrequency(
     topPairs,
     topDays,
     sort,
+    minSwitches,
     activeDays,
     activeBuckets,
     consideredPairs,
@@ -468,6 +498,7 @@ export function buildProviderSwitchingFrequency(
     droppedEmptyModelBuckets,
     droppedBelowTopCap,
     droppedTopDays,
+    droppedBelowMinSwitches,
     pairs,
     days,
   };

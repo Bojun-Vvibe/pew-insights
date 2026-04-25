@@ -199,3 +199,110 @@ test('provider-switching-frequency: deterministic top-N with tie-break on from t
   assert.equal(r.pairs[0]!.to, 'openai');
   assert.equal(r.droppedBelowTopCap, 1);
 });
+
+// ---- refinement: --min-switches and --sort/--top-days --------------------
+
+test('provider-switching-frequency: minSwitches floor hides quiet days but preserves summary stats', () => {
+  const q: QueueLine[] = [];
+  // Day A: 3 switches (anth -> openai -> anth -> openai)
+  q.push(ql('2026-04-10T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-10T11:00:00.000Z', 'src', 'gpt-5', 500));
+  q.push(ql('2026-04-10T12:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-10T13:00:00.000Z', 'src', 'gpt-5', 500));
+  // Day B: 1 switch
+  q.push(ql('2026-04-11T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-11T11:00:00.000Z', 'src', 'gpt-5', 500));
+  // Day C: 0 switches
+  q.push(ql('2026-04-12T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-12T11:00:00.000Z', 'src', 'claude-sonnet-4.5', 500));
+
+  const r = buildProviderSwitchingFrequency(q, {
+    minSwitches: 2,
+    generatedAt: GEN,
+  });
+  // Summary stats reflect *all* days.
+  assert.equal(r.activeDays, 3);
+  assert.equal(r.switchPairs, 4);
+  assert.equal(r.daysWithAnySwitch, 2);
+  // days[] only keeps Day A (switches=3 >= 2).
+  assert.equal(r.days.length, 1);
+  assert.equal(r.days[0]!.day, '2026-04-10');
+  assert.equal(r.days[0]!.switchPairs, 3);
+  assert.equal(r.droppedBelowMinSwitches, 2);
+  assert.equal(r.minSwitches, 2);
+});
+
+test('provider-switching-frequency: sort=switches orders days by switch count desc', () => {
+  const q: QueueLine[] = [];
+  // Day-low: 1 switch
+  q.push(ql('2026-04-10T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-10T11:00:00.000Z', 'src', 'gpt-5', 500));
+  // Day-high: 3 switches
+  q.push(ql('2026-04-11T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-11T11:00:00.000Z', 'src', 'gpt-5', 500));
+  q.push(ql('2026-04-11T12:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-11T13:00:00.000Z', 'src', 'gpt-5', 500));
+  // Day-mid: 2 switches
+  q.push(ql('2026-04-12T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-12T11:00:00.000Z', 'src', 'gpt-5', 500));
+  q.push(ql('2026-04-12T12:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+
+  const r = buildProviderSwitchingFrequency(q, {
+    sort: 'switches',
+    generatedAt: GEN,
+  });
+  assert.equal(r.days.length, 3);
+  assert.equal(r.days[0]!.day, '2026-04-11'); // 3 switches
+  assert.equal(r.days[1]!.day, '2026-04-12'); // 2 switches
+  assert.equal(r.days[2]!.day, '2026-04-10'); // 1 switch
+});
+
+test('provider-switching-frequency: topDays caps days[] after sort and surfaces droppedTopDays', () => {
+  const q: QueueLine[] = [];
+  for (const day of ['2026-04-10', '2026-04-11', '2026-04-12', '2026-04-13']) {
+    q.push(ql(`${day}T10:00:00.000Z`, 'src', 'claude-opus-4.7', 500));
+    q.push(ql(`${day}T11:00:00.000Z`, 'src', 'gpt-5', 500));
+  }
+  const r = buildProviderSwitchingFrequency(q, {
+    topDays: 2,
+    sort: 'day',
+    generatedAt: GEN,
+  });
+  // Sort=day desc, top 2 -> 04-13 and 04-12.
+  assert.equal(r.days.length, 2);
+  assert.equal(r.days[0]!.day, '2026-04-13');
+  assert.equal(r.days[1]!.day, '2026-04-12');
+  assert.equal(r.droppedTopDays, 2);
+  // activeDays still reflects the full population.
+  assert.equal(r.activeDays, 4);
+});
+
+test('provider-switching-frequency: minSwitches and topDays compose; min applied first', () => {
+  const q: QueueLine[] = [];
+  // Day A (high churn, 3 switches)
+  q.push(ql('2026-04-10T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-10T11:00:00.000Z', 'src', 'gpt-5', 500));
+  q.push(ql('2026-04-10T12:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-10T13:00:00.000Z', 'src', 'gpt-5', 500));
+  // Day B (high churn, 3 switches)
+  q.push(ql('2026-04-11T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-11T11:00:00.000Z', 'src', 'gpt-5', 500));
+  q.push(ql('2026-04-11T12:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-11T13:00:00.000Z', 'src', 'gpt-5', 500));
+  // Day C (low churn, 1 switch) — should be filtered by minSwitches=2.
+  q.push(ql('2026-04-12T10:00:00.000Z', 'src', 'claude-opus-4.7', 500));
+  q.push(ql('2026-04-12T11:00:00.000Z', 'src', 'gpt-5', 500));
+
+  const r = buildProviderSwitchingFrequency(q, {
+    minSwitches: 2,
+    topDays: 1,
+    sort: 'day',
+    generatedAt: GEN,
+  });
+  // Day C dropped by min-switches (1 < 2), so remaining pool is
+  // {A, B}; sort=day desc keeps Day B as #1; topDays=1 caps to it.
+  assert.equal(r.days.length, 1);
+  assert.equal(r.days[0]!.day, '2026-04-11');
+  assert.equal(r.droppedBelowMinSwitches, 1);
+  assert.equal(r.droppedTopDays, 1); // Day A trimmed by topDays
+});

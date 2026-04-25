@@ -4166,12 +4166,12 @@ export function renderProviderSwitchingFrequency(
   );
   lines.push(
     chalk.dim(
-      `cross-day: ${formatNumber(r.crossDayPairs)} pairs, ${formatNumber(r.crossDaySwitches)} switches    days-with-any-switch: ${formatNumber(r.daysWithAnySwitch)}/${formatNumber(r.activeDays)} (${(r.dayCoverage * 100).toFixed(1)}%)    sort: ${r.sort}    topPairs: ${formatNumber(r.topPairs)}    topDays: ${formatNumber(r.topDays)}`,
+      `cross-day: ${formatNumber(r.crossDayPairs)} pairs, ${formatNumber(r.crossDaySwitches)} switches    days-with-any-switch: ${formatNumber(r.daysWithAnySwitch)}/${formatNumber(r.activeDays)} (${(r.dayCoverage * 100).toFixed(1)}%)    sort: ${r.sort}    topPairs: ${formatNumber(r.topPairs)}    topDays: ${formatNumber(r.topDays)}    minSwitches: ${formatNumber(r.minSwitches)}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptyModelBuckets)} empty-model buckets, ${formatNumber(r.droppedBelowTopCap)} pairs below top cap, ${formatNumber(r.droppedTopDays)} days below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptyModelBuckets)} empty-model buckets, ${formatNumber(r.droppedBelowTopCap)} pairs below top cap, ${formatNumber(r.droppedBelowMinSwitches)} days below min-switches, ${formatNumber(r.droppedTopDays)} days below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

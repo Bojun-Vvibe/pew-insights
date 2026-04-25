@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.95 — 2026-04-25
+
+### Added
+
+- `provider-switching-frequency`: `--top-days <n>`, `--sort <key>`,
+  and `--min-switches <n>` flags surfaced on the CLI (the builder
+  already supported `topDays` and `sort` internally; this commit
+  exposes them and adds a new `minSwitches` display filter).
+
+  - `--sort {day|switches|buckets|share}`: pick the ordering of
+    `days[]`. Defaults to `day` desc (the previous behaviour).
+    `switches` desc is the operator-friendly view for "show me
+    my noisiest vendor-bouncy days first".
+  - `--top-days <n>`: cap the table to the top N rows after the
+    sort. Default 0 = no cap. Suppressed rows surface as
+    `droppedTopDays`.
+  - `--min-switches <n>`: drop `days[]` rows whose `switchPairs <
+    n` *before* applying `--top-days`. Display filter only —
+    summary stats (`switchPairs`, `daysWithAnySwitch`, ...)
+    always reflect the full population. Suppressed rows surface
+    as `droppedBelowMinSwitches`. Default 0 = no floor.
+
+  The three flags compose: `--min-switches 5 --sort switches
+  --top-days 8` filters to "high-churn days only", orders them by
+  intra-day churn descending, and caps the table at 8 rows. This
+  is the canonical "find me the days I should investigate" lens.
+
+  4 new tests (1170 total, up from 1166): minSwitches floor hides
+  quiet days but preserves global summary stats; sort=switches
+  orders days by switch count desc; topDays caps days[] after
+  sort and surfaces droppedTopDays; minSwitches and topDays
+  compose in the documented order (min applied first, then sort,
+  then top cap).
+
+### Live-smoke output
+
+`pew-insights provider-switching-frequency --sort switches
+--top-days 8 --min-switches 5` against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights provider-switching-frequency
+as of: 2026-04-25T14:42:28.764Z    active-days: 105    active-buckets: 899    same-day-pairs: 794    switches: 103 (13.0%)    mean/day: 0.98
+cross-day: 104 pairs, 17 switches    days-with-any-switch: 25/105 (23.8%)    sort: switches    topPairs: 10    topDays: 8    minSwitches: 5
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 empty-model buckets, 0 pairs below top cap, 97 days below min-switches, 0 days below top cap
+(primary provider per bucket = classifyProvider of max-tokens model; switch = same-day adjacent buckets with different primary provider)
+
+top provider switches (sorted by count desc)
+from-provider  to-provider  count  share-of-switches
+-------------  -----------  -----  -----------------
+openai         anthropic    47     45.6%
+anthropic      openai       45     43.7%
+google         anthropic    3      2.9%
+anthropic      google       2      1.9%
+google         openai       2      1.9%
+openai         google       2      1.9%
+openai         unknown      1      1.0%
+unknown        anthropic    1      1.0%
+
+per-day rows (sort: switches)
+day         buckets  pairs  switches  switch-share  dominant-provider  dom-buckets
+----------  -------  -----  --------  ------------  -----------------  -----------
+2026-04-24  48       47     15        31.9%         anthropic          28
+2026-04-20  48       47     11        23.4%         anthropic          24
+2026-04-23  48       47     11        23.4%         openai             30
+2026-04-21  48       47     10        21.3%         anthropic          28
+2026-04-22  48       47     9         19.1%         anthropic          28
+2026-04-17  23       22     8         36.4%         openai             15
+2026-04-19  48       47     8         17.0%         openai             40
+2026-04-18  36       35     5         14.3%         anthropic          24
+```
+
+Reading: 97 of 105 active days had fewer than 5 vendor switches (the
+quiet days). The 8 surviving days are the actual vendor-bouncy ones,
+peaking at 04-24 with 15 switches across 47 same-day pairs (31.9%).
+Note 2026-04-17 sits at 36.4% switch-share — the *highest* churn rate
+in the table — even though it only had 23 active buckets; the
+combination of `--sort switches` and `--min-switches` correctly keeps
+it visible while higher-volume but lower-rate days like 04-19 still
+make the cut on absolute count.
+
 ## 0.4.94 — 2026-04-25
 
 ### Added

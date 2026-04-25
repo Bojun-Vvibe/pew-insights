@@ -4085,6 +4085,21 @@ program
     'cap the number of (from -> to) provider-switch pairs in the table (default 10; use 0 to suppress the table)',
     '10',
   )
+  .option(
+    '--top-days <n>',
+    'cap the number of days[] rows after sort; remainder surface as droppedTopDays. Summary stats always reflect the full population. Default 0 = no cap.',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for days[]: 'day' (default, desc) | 'switches' (desc) | 'buckets' (desc) | 'share' (desc)",
+    'day',
+  )
+  .option(
+    '--min-switches <n>',
+    'drop days[] rows whose switchPairs count is below n. Display filter only — summary stats still reflect the full population. Suppressed rows surface as droppedBelowMinSwitches. Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -4093,6 +4108,9 @@ program
         until?: string;
         source?: string;
         topPairs: string;
+        topDays: string;
+        sort: string;
+        minSwitches: string;
         json?: boolean;
       },
       cmd,
@@ -4106,12 +4124,37 @@ program
             `--top-pairs must be a non-negative integer (got ${opts.topPairs})`,
           );
         }
+        const topDays = Number.parseInt(opts.topDays, 10);
+        if (!Number.isInteger(topDays) || topDays < 0) {
+          throw new Error(
+            `--top-days must be a non-negative integer (got ${opts.topDays})`,
+          );
+        }
+        const minSwitches = Number.parseInt(opts.minSwitches, 10);
+        if (!Number.isInteger(minSwitches) || minSwitches < 0) {
+          throw new Error(
+            `--min-switches must be a non-negative integer (got ${opts.minSwitches})`,
+          );
+        }
+        if (
+          opts.sort !== 'day' &&
+          opts.sort !== 'switches' &&
+          opts.sort !== 'buckets' &&
+          opts.sort !== 'share'
+        ) {
+          throw new Error(
+            `--sort must be 'day' | 'switches' | 'buckets' | 'share' (got ${opts.sort})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildProviderSwitchingFrequency(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
           topPairs,
+          topDays,
+          sort: opts.sort as 'day' | 'switches' | 'buckets' | 'share',
+          minSwitches,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
