@@ -33,6 +33,23 @@ All notable changes to this project will be documented in this file.
   builder; sessions with bad / missing `started_at` or empty
   `source` are counted in dedicated dropped-counters and
   excluded from runs.
+- `source-run-lengths --top <n>`: display cap on the per-source
+  list after sort + the `--min-runs` filter. Hidden rows surface
+  as `droppedBelowTopCap`. Mirrors the cap on
+  `bucket-gap-distribution --top`. Default unset = no cap.
+- `source-run-lengths --filter-source <list>`: comma-separated
+  source allowlist. Sessions whose `source` is not in the list
+  are dropped *before* run computation and counted as
+  `droppedByFilterSource`. Crucially this re-coalesces the
+  surviving sessions into runs as if the dropped ones never
+  existed, so two `opencode` sessions separated by an `openclaw`
+  session become a single length-2 run when `--filter-source
+  opencode,claude-code` is set. This lets the operator answer
+  "if I only ever used opencode and claude-code, how would my
+  run-length distribution actually look?" without manually
+  pre-filtering the queue. Distinct from `--min-runs` (a
+  structural floor on a source's *post-filter* run count) and
+  from `--top` (a display cap, not a filter on sessions).
 
 ### Live smoke (against `~/.config/pew/queue.jsonl`, default args)
 
@@ -73,6 +90,49 @@ splits sharply: `opencode` and `claude-code` are batch-heavy
 sessions), while `openclaw` is the opposite (mean 1.90, p90 only
 3, 22.5% length-1) — a "drop in for one quick session and switch
 out" tool. `codex` sits in the middle.
+
+### Live smoke (refinement — `--filter-source opencode,claude-code --top 2`)
+
+```
+pew-insights source-run-lengths --filter-source opencode,claude-code --top 2
+as of: 2026-04-25T21:14:22.550Z    sessions: 4,956    runs: 30    sources: 2    minRuns: 1    top: 2    filterSources: [claude-code,opencode]
+dropped: 0 bad started_at, 0 empty source, 1,603 by filter, 0 sparse sources, 0 below top cap
+
+global run-length rollup
+summary                value
+---------------------  ------
+totalRuns              30
+mean                   165.20
+p50                    5
+p90                    241
+p99                    2196
+max                    2196
+singleSessionRunShare  0.2%
+
+per-source run-length distribution (sorted by maxRunLength desc)
+source       runs  sessions  mean    p50  p90   p99   max   singleShare  longest run started_at
+-----------  ----  --------  ------  ---  ----  ----  ----  -----------  ------------------------
+opencode     15    3,876     258.40  2    1636  2196  2196  0.2%         2026-04-21T06:51:59.378Z
+claude-code  15    1,080     72      12   241   441   441   0.2%         2026-02-11T02:49:02.371Z
+```
+
+Reading: this is the killer use of `--filter-source`. Restricting
+to just `opencode` + `claude-code` re-coalesces the surviving
+4,956 sessions into only **30 runs** (down from 733 for those two
+sources in the unfiltered view) — the global mean run-length
+explodes from 4.52 to 165.20, and `opencode`'s longest run jumps
+from 311 to **2,196 sessions**. The interpretation: the 1,450
+runs in the unfiltered view were inflated by `openclaw` /
+`codex` fragmenting otherwise-contiguous opencode/claude-code
+work. Once you remove that fragmentation, the picture is "two
+massive blocks of opencode/claude-code work, occasionally
+interleaved with each other but rarely with anything else." The
+length-1 share collapses from 6.5% global → 0.2% — confirming
+that almost no opencode↔claude-code switch is a "one-and-done"
+detour. The `--top 2` cap is no-op here (only 2 sources match
+the filter) but documents that the cap composes correctly with
+the filter.
+
 
 ## 0.6.5 — 2026-04-26
 
