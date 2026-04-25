@@ -2871,6 +2871,10 @@ program
     'show only the top n models by input volume; remainder surface as droppedTopModels (default 0 = no cap)',
     '0',
   )
+  .option(
+    '--by-source',
+    'also break down each per-model row by source (the local producer CLI); display only, global ratios unchanged',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2879,6 +2883,7 @@ program
         until?: string;
         minRows: string;
         top: string;
+        bySource?: boolean;
         json?: boolean;
       },
       cmd,
@@ -2900,6 +2905,7 @@ program
           until: opts.until ?? null,
           minRows,
           top,
+          bySource: opts.bySource ?? false,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

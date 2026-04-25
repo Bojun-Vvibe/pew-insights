@@ -104,6 +104,7 @@ test('output-input-ratio: per-model token-weighted ratio + mean-row-ratio, sorte
   assert.equal(opus.outputTokens, 1000);
   assert.equal(opus.ratio, 0.5);
   assert.equal(opus.meanRowRatio, 0.5);
+  assert.deepEqual(opus.bySource, {});
 
   const gpt = r.models.find((m) => m.model === 'gpt-5')!;
   assert.equal(gpt.ratio, 0.02);
@@ -189,4 +190,76 @@ test('output-input-ratio: ratio of 0 when output is 0; mean-row-ratio matches', 
   assert.equal(r.models[0]!.ratio, 0);
   assert.equal(r.models[0]!.meanRowRatio, 0);
   assert.equal(r.overallRatio, 0);
+});
+
+// ---- bySource refinement ---------------------------------------------------
+
+test('output-input-ratio: bySource splits each model into per-source stats sorted by input desc', () => {
+  const r = buildOutputInputRatio(
+    [
+      // claude-opus-4.7 from claude-code: in=1000, out=500 → ratio 0.5
+      ql('2026-04-20T01:00:00Z', 'claude-opus-4.7', {
+        source: 'claude-code',
+        input_tokens: 1000,
+        output_tokens: 500,
+      }),
+      // claude-opus-4.7 from opencode: in=4000, out=200 → ratio 0.05
+      ql('2026-04-20T02:00:00Z', 'claude-opus-4.7', {
+        source: 'opencode',
+        input_tokens: 4000,
+        output_tokens: 200,
+      }),
+    ],
+    { bySource: true, generatedAt: GEN },
+  );
+  assert.equal(r.bySource, true);
+  assert.equal(r.models.length, 1);
+  const opus = r.models[0]!;
+  // sources sorted by input desc: opencode (4000) > claude-code (1000)
+  assert.deepEqual(Object.keys(opus.bySource), ['opencode', 'claude-code']);
+  assert.equal(opus.bySource.opencode!.ratio, 0.05);
+  assert.equal(opus.bySource['claude-code']!.ratio, 0.5);
+  assert.equal(opus.bySource.opencode!.rows, 1);
+  assert.equal(opus.bySource.opencode!.inputTokens, 4000);
+  assert.equal(opus.bySource.opencode!.outputTokens, 200);
+});
+
+test('output-input-ratio: bySource defaults to false; bySource map is empty', () => {
+  const r = buildOutputInputRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'm', { source: 'a', input_tokens: 100, output_tokens: 10 }),
+      ql('2026-04-20T02:00:00Z', 'm', { source: 'b', input_tokens: 100, output_tokens: 10 }),
+    ],
+    { generatedAt: GEN },
+  );
+  assert.equal(r.bySource, false);
+  assert.deepEqual(r.models[0]!.bySource, {});
+});
+
+test('output-input-ratio: bySource preserves global ratios identically vs default', () => {
+  const lines: QueueLine[] = [
+    ql('2026-04-20T01:00:00Z', 'a', { source: 's1', input_tokens: 1000, output_tokens: 200 }),
+    ql('2026-04-20T02:00:00Z', 'a', { source: 's2', input_tokens: 2000, output_tokens: 100 }),
+    ql('2026-04-20T03:00:00Z', 'b', { source: 's1', input_tokens: 500, output_tokens: 50 }),
+  ];
+  const plain = buildOutputInputRatio(lines, { generatedAt: GEN });
+  const split = buildOutputInputRatio(lines, { bySource: true, generatedAt: GEN });
+  assert.equal(plain.consideredRows, split.consideredRows);
+  assert.equal(plain.totalInputTokens, split.totalInputTokens);
+  assert.equal(plain.totalOutputTokens, split.totalOutputTokens);
+  assert.equal(plain.overallRatio, split.overallRatio);
+  for (let i = 0; i < plain.models.length; i++) {
+    assert.equal(plain.models[i]!.ratio, split.models[i]!.ratio);
+    assert.equal(plain.models[i]!.meanRowRatio, split.models[i]!.meanRowRatio);
+  }
+});
+
+test('output-input-ratio: bySource folds missing/empty source string into "unknown"', () => {
+  const r = buildOutputInputRatio(
+    [
+      ql('2026-04-20T01:00:00Z', 'm', { source: '', input_tokens: 100, output_tokens: 10 }),
+    ],
+    { bySource: true, generatedAt: GEN },
+  );
+  assert.deepEqual(Object.keys(r.models[0]!.bySource), ['unknown']);
 });

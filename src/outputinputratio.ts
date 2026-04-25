@@ -61,8 +61,23 @@ export interface OutputInputRatioOptions {
    * Default 0 (no truncation).
    */
   top?: number;
+  /**
+   * Also break down each per-model row by `source` (the local
+   * producer CLI). When true, each `ModelRatioRow` carries a
+   * `bySource` map of `source -> { rows, inputTokens,
+   * outputTokens, ratio }`. Default false.
+   */
+  bySource?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
+}
+
+export interface SourceRatioStats {
+  rows: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** outputTokens / inputTokens, 0 when inputTokens === 0. */
+  ratio: number;
 }
 
 export interface ModelRatioRow {
@@ -88,6 +103,12 @@ export interface ModelRatioRow {
    * signal the way it would in `ratio`. Zero when rows === 0.
    */
   meanRowRatio: number;
+  /**
+   * Per-source breakdown for this model. Empty object when
+   * `bySource` is false. Sources sorted by inputTokens desc,
+   * then source asc — same convention as cache-hit-ratio.
+   */
+  bySource: Record<string, SourceRatioStats>;
 }
 
 export interface OutputInputRatioReport {
@@ -98,6 +119,8 @@ export interface OutputInputRatioReport {
   minRows: number;
   /** Echo of the resolved `top` cap (0 = no cap). */
   top: number;
+  /** Echo of `bySource`. */
+  bySource: boolean;
   /** Rows considered (input_tokens > 0 and inside window). */
   consideredRows: number;
   /** Sum of input_tokens across consideredRows. */
@@ -149,10 +172,17 @@ export function buildOutputInputRatio(
   }
 
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
+  const bySource = opts.bySource === true;
 
   const agg = new Map<
     string,
-    { rows: number; input: number; output: number; rowRatioSum: number }
+    {
+      rows: number;
+      input: number;
+      output: number;
+      rowRatioSum: number;
+      sources: Map<string, { rows: number; input: number; output: number }>;
+    }
   >();
   let consideredRows = 0;
   let totalInput = 0;
@@ -188,13 +218,25 @@ export function buildOutputInputRatio(
 
     let row = agg.get(model);
     if (!row) {
-      row = { rows: 0, input: 0, output: 0, rowRatioSum: 0 };
+      row = { rows: 0, input: 0, output: 0, rowRatioSum: 0, sources: new Map() };
       agg.set(model, row);
     }
     row.rows += 1;
     row.input += inT;
     row.output += outT;
     row.rowRatioSum += outT / inT;
+    if (bySource) {
+      const src =
+        typeof q.source === 'string' && q.source.length > 0 ? q.source : 'unknown';
+      let sRow = row.sources.get(src);
+      if (!sRow) {
+        sRow = { rows: 0, input: 0, output: 0 };
+        row.sources.set(src, sRow);
+      }
+      sRow.rows += 1;
+      sRow.input += inT;
+      sRow.output += outT;
+    }
   }
 
   const models: ModelRatioRow[] = [];
@@ -204,6 +246,21 @@ export function buildOutputInputRatio(
       droppedModelRows += 1;
       continue;
     }
+    const sourceOut: Record<string, SourceRatioStats> = {};
+    if (bySource) {
+      const entries = Array.from(row.sources.entries()).sort((a, b) => {
+        if (b[1].input !== a[1].input) return b[1].input - a[1].input;
+        return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+      });
+      for (const [src, s] of entries) {
+        sourceOut[src] = {
+          rows: s.rows,
+          inputTokens: s.input,
+          outputTokens: s.output,
+          ratio: s.input === 0 ? 0 : s.output / s.input,
+        };
+      }
+    }
     models.push({
       model,
       rows: row.rows,
@@ -211,6 +268,7 @@ export function buildOutputInputRatio(
       outputTokens: row.output,
       ratio: row.input === 0 ? 0 : row.output / row.input,
       meanRowRatio: row.rows === 0 ? 0 : row.rowRatioSum / row.rows,
+      bySource: sourceOut,
     });
   }
   models.sort((a, b) => {
@@ -231,6 +289,7 @@ export function buildOutputInputRatio(
     windowEnd: opts.until ?? null,
     minRows,
     top,
+    bySource,
     consideredRows,
     totalInputTokens: totalInput,
     totalOutputTokens: totalOutput,

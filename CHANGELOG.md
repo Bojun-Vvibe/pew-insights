@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.50 — 2026-04-25
+
+### Added
+
+- `output-input-ratio`: `--by-source` flag (default false). Also
+  breaks down each per-model row by `source` (the local producer
+  CLI). When set, every kept `ModelRatioRow` carries a `bySource`
+  map of `source -> { rows, inputTokens, outputTokens, ratio }`.
+  Sources are sorted by input volume desc, then source asc —
+  same convention as `cache-hit-ratio --by-source`.
+
+  Use case: separating "is opus chatty everywhere?" from "is opus
+  chatty *when called from one specific producer*?". The bulk
+  ratio collapses every producer together; the per-source view
+  exposes whether the verbosity signal is uniform across the
+  fleet or driven by one client's prompting style.
+
+  Display only — global denominators (`consideredRows`,
+  `totalInputTokens`, `totalOutputTokens`, `overallRatio`) and
+  per-model `ratio` / `meanRowRatio` are byte-identical to the
+  un-split run; only the new `bySource` map is populated.
+  Empty source strings fold into `"unknown"`, mirroring the
+  family-wide convention.
+
+  4 new test cases (767 total, up from 763): split run produces
+  per-source rows sorted by input desc; default value is false
+  with empty `bySource` map; `bySource: true` does NOT change
+  global denominators or per-model ratios vs the plain run;
+  empty source strings collapse to `"unknown"`.
+
+### Live-smoke output
+
+Run against `~/.config/pew/queue.jsonl`, recent window:
+
+```
+$ npx tsx src/cli.ts output-input-ratio --by-source --since 2026-04-22T00:00:00Z --top 3
+pew-insights output-input-ratio
+as of: 2026-04-25T00:40:27.901Z    rows: 386    input: 483,761,360 tok    output: 13,170,656 tok    overall: 0.0272    min-rows: 0    top: 3
+dropped: 0 bad hour_start, 0 zero-input, 0 bad tokens, 0 below min-rows, 3 below top cap
+window: 2026-04-22T00:00:00Z → +∞
+
+per-model output/input ratio (token-weighted; sorted by input volume desc; chatty=high, terse=low)
+model            rows  input        output     ratio   mean-row-ratio
+---------------  ----  -----------  ---------  ------  --------------
+gpt-5.4          146   373,057,660  3,005,106  0.0081  0.0071
+claude-opus-4.7  181   86,025,043   9,730,056  0.1131  0.1656
+unknown          53    17,746,683   366,926    0.0207  0.0220
+
+per-source breakdown (sources sorted by input volume desc)
+model            source       rows  input        output     ratio
+---------------  -----------  ----  -----------  ---------  ------
+gpt-5.4          openclaw     145   373,042,260  3,005,039  0.0081
+                 hermes       1     15,400       67         0.0044
+claude-opus-4.7  opencode     119   74,865,619   8,877,453  0.1186
+                 claude-code  5     6,799,703    370,680    0.0545
+                 hermes       57    4,359,721    481,923    0.1105
+unknown          opencode     53    17,746,683   366,926    0.0207
+```
+
+Sharper signal than the bulk view: `claude-opus-4.7` runs at
+ratio 0.1186 from `opencode` and 0.1105 from `hermes`, but
+collapses to 0.0545 when called from `claude-code` — opus is
+~2× as chatty per input token under tool-loop producers vs
+the interactive REPL. `gpt-5.4` is uniform across `openclaw`
+and `hermes` (~0.008), confirming its terse-completion
+profile is a model property, not a client-prompting artefact.
+
 ## 0.4.49 — 2026-04-25
 
 ### Added

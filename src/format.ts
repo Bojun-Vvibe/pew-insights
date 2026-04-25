@@ -2687,5 +2687,33 @@ export function renderOutputInputRatio(r: OutputInputRatioReport): string {
     ),
   );
 
+  if (r.bySource) {
+    lines.push('');
+    lines.push(chalk.bold('per-source breakdown (sources sorted by input volume desc)'));
+    const srcRows: string[][] = [];
+    for (const m of r.models) {
+      const entries = Object.entries(m.bySource);
+      if (entries.length === 0) continue;
+      for (let i = 0; i < entries.length; i++) {
+        const [src, s] = entries[i]!;
+        srcRows.push([
+          i === 0 ? m.model : '',
+          src,
+          formatNumber(s.rows),
+          formatNumber(s.inputTokens),
+          formatNumber(s.outputTokens),
+          s.ratio.toFixed(4),
+        ]);
+      }
+    }
+    if (srcRows.length === 0) {
+      lines.push(chalk.dim('  (no source data)'));
+    } else {
+      lines.push(
+        renderTableLocal(['model', 'source', 'rows', 'input', 'output', 'ratio'], srcRows),
+      );
+    }
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }
