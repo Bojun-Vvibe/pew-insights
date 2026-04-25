@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.13 — 2026-04-26
+
+### Added
+
+- `pew-insights source-rank-churn`: day-over-day instability of
+  the source-by-tokens leaderboard via the **normalised Spearman
+  footrule** on adjacent UTC dates. For every consecutive
+  `(d, d+1)` pair, rank sources by `total_tokens` on each day
+  (desc, source asc as deterministic tiebreak), take the union,
+  assign absent sources a rank of `unionSize` (one slot below
+  the worst observed rank, symmetric on both sides), and compute
+  `sum_i |rank_d(i) - rank_{d+1}(i)| / floor(n^2 / 2)`. The
+  result lives in `[0, 1]`: `0` = leaderboard byte-identical
+  day-over-day, `1` = perfect reversal. Headline rollup:
+  `dayPairs`, `stableDayPairs` (footrule == 0), `chaosDayPairs`
+  (footrule >= 0.5), `meanFootrule`, `medianFootrule`,
+  `p90Footrule`, `maxFootrule`. Per-source row reports
+  `daysObserved`, `meanRank`, `stddevRank`, `bestRank`,
+  `worstRank`, `distinctRanks` and `totalTokens`. Distinct lens
+  vs:
+  - `source-mix` / `provider-share` / `agent-mix` — share-
+    concentration on the *whole window*, blind to which source
+    holds rank-2 today vs yesterday.
+  - `source-tenure` / `provider-tenure` — first-seen-to-last-seen
+    spans, single scalar per source, no day-pair structure.
+  - `source-decay-half-life` — within-source decay model, never
+    compares sources against each other.
+  - `transitions` / `inter-source-handoff-latency` — session-
+    adjacency matrices over `started_at`, not daily-aggregate
+    leaderboard reshuffles.
+  - `weekday-share` / `hour-of-day-source-mix-entropy` — collapse
+    across weeks/hours, never measure adjacent-day reshuffles.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+Source names below are aliased (`<srcN>`) to keep the changelog
+brand-neutral; all numeric values are verbatim from the run.
+
+```
+pew-insights source-rank-churn
+as of: 2026-04-25T23:52:15.981Z    shown: 6    keptSources: 6    consideredDays: 105    dayPairs: 16    minDays: 1    topK: —
+dropped: 0 bad hour_start, 0 zero tokens, 0 below minDays, 0 below topK
+(per UTC-day pair: normalised Spearman footrule on tokens-rank; 0 = identical leaderboard, 1 = full reversal)
+
+global rollup (full kept set, pre-topK)
+summary                          value
+-------------------------------  -----
+dayPairs                         16
+stableDayPairs (footrule == 0)   6
+chaosDayPairs (footrule >= 0.5)  6
+meanFootrule                     0.325
+medianFootrule                   0.250
+p90Footrule                      1.000
+maxFootrule                      1.000
+
+per-source rank volatility (sorted by meanRank asc; ties: source asc)
+source  days  meanRank  stddevRank  bestRank  worstRank  distinctRanks  tokens
+------  ----  --------  ----------  --------  ---------  -------------  -------
+<src1>  73    1.19      0.79        1         6          5              1.89M
+<src2>  35    1.23      0.54        1         3          3              3.44B
+<src3>  6     1.67      1.49        1         5          2              2.76B
+<src4>  8     1.88      0.60        1         3          3              809.62M
+<src5>  9     2.11      0.74        1         3          3              1.71B
+<src6>  9     3.67      0.47        3         4          2              142.32M
+```
+
+Headline reading: of `16` adjacent UTC-day pairs in the corpus,
+`6` are byte-identical carryovers (`stableDayPairs`) and `6` are
+full or near-full reversals (`chaosDayPairs ≥ 0.5`). The
+distribution is bimodal — `medianFootrule = 0.250` is well below
+`meanFootrule = 0.325`, and `p90Footrule == maxFootrule == 1.000`
+shows the upper decile is *all* full reversals. The leaderboard
+is not "noisy around a stable order"; it is "stable for a few
+days, then snaps". `<src1>` is the modal rank-1 source
+(`meanRank 1.19`, on `73 / 105` considered days) but reaches
+rank 6 on at least one day (`worstRank = 6`), the widest swing
+in the dataset. `<src6>` is the *only* never-rank-1 source
+(`bestRank = 3`), sitting at rank 3 or 4 on all 9 days it
+appeared — a structural baseline-traffic source. The token
+totals also reveal the rank metric is genuinely orthogonal to
+mass: `<src1>` (rank-1 most days) carries only `1.89M` total
+tokens, vs `<src2>` (`meanRank 1.23`, second place by mean rank)
+at `3.44B` — a ~1800× spread. A pure mass-share view would
+collapse these two sources to wildly different shares; the
+rank-churn lens treats them as near-peers because they trade
+the top slot day-to-day.
+
 ## 0.6.12 — 2026-04-26
 
 ### Added
