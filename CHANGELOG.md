@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.90 — 2026-04-25
+
+### Added
+
+- `device-tenure`: dormancy + freshness refinement. Adds three
+  per-device fields and one summary count:
+
+  - `longestGapHours`: max contiguous idle gap (hours) between
+    consecutive active hour_start buckets. 0 for a single-bucket
+    device. Surfaces dormancy patterns inside an otherwise-long
+    tenure (e.g. a laptop that's been around 269 days but had a
+    20-day vacation gap mid-tenure).
+  - `hoursSinceLastSeen`: `(generatedAt - lastSeen)` in hours.
+    Useful for ranking "stale" devices independent of `spanHours`.
+  - `recentlyActive`: boolean, true iff `hoursSinceLastSeen <
+    recentThresholdHours`. A device may have a long span but be
+    dormant; this flag separates the two.
+  - `recentlyActiveCount`: summary count over the full population.
+
+  Plus a new `--sort gap` key (longestGapHours desc) and a
+  `--recent-threshold-hours <h>` flag (default 24h, range > 0).
+
+  Why: `device-tenure` v0.4.89 told you span and breadth but
+  conflated "active long-tenured" with "abandoned long-tenured".
+  A 6462.5h span looks identical for a host that quit a year ago
+  vs one that ran 5 minutes ago. The freshness/gap dimension fixes
+  that without changing the existing rows — pure additive.
+
+  6 new tests (1125 total, up from 1119): rejects bad
+  `recentThresholdHours` (0, negative, NaN); single-bucket
+  `longestGapHours=0`; multi-bucket gap = max consecutive idle
+  (e.g. {0h, 2h, 10h, 12h} -> 8h); `recentlyActive` flips with
+  threshold widening (12h-stale device flips from no->yes when
+  threshold goes 24h->72h, recentlyActiveCount tracks it);
+  `--sort gap` orders devices by longest gap desc; repeated
+  hour_start values dedupe (no spurious 0h gaps inflating the
+  bucket count).
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--sort gap --recent-threshold-hours 24`:
+
+  ```
+  pew-insights device-tenure
+  as of: 2026-04-25T12:41:36.646Z    devices: 1 (shown 1)    active-buckets: 895    tokens: 8,574,241,821    minBuckets: 0    sort: gap    recentThreshold: 24h    recentlyActive: 1/1
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 by model filter, 0 sparse devices, 0 below top cap
+  (spanHours = clock hours first->last; activeBuckets = distinct hour_start values; distinctSources/Models = unique tags seen on this device)
+
+  per-device tenure (sorted by gap desc)
+  device      first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         tok/bucket  tok/span-hr  sources  models  longest-gap-hr  hr-since-last  recent
+  ----------  ------------------------  ------------------------  -------  --------------  -------------  ----------  -----------  -------  ------  --------------  -------------  ------
+  [REDACTED]  2025-07-30T06:00:00.000Z  2026-04-25T12:30:00.000Z  6462.5   895             8,574,241,821  9,580,158   1,326,769    6        15      477.5           0.2            yes
+  ```
+
+  Reading: the single-host dataset shows a 477.5h longest contiguous
+  idle gap — that's ~19.9 days of consecutive dormancy somewhere in
+  the 269-day tenure. Last activity 0.2h before the snapshot, so
+  `recentlyActive=yes`. Without this refinement v0.4.89 reported
+  identical numbers whether the laptop was active right now or had
+  been retired in February — a real failure mode the moment a
+  second device appears (a new laptop, a VM, a CI runner). The
+  `longest-gap-hr` column also explains the 13.8% bucket-coverage
+  number from v0.4.89: 895 active buckets out of 6462.5 wall-clock
+  hours is consistent with multi-day dormancy stretches like the
+  observed 477.5h gap, plus the natural sleep/work cadence.
+
+  (device_id redacted to `[REDACTED]` per host policy.)
+
 ## 0.4.89 — 2026-04-25
 
 ### Added
