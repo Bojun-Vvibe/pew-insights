@@ -2,6 +2,106 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.98 — 2026-04-26
+
+### Added
+
+- `source-pair-cooccurrence`: new subcommand. For each
+  `hour_start` bucket, build the **set of distinct sources** that
+  posted any positive `total_tokens` in that bucket. For every
+  unordered `{a, b}` pair of distinct sources both present in the
+  same bucket, increment the pair's co-occurrence count. Emits:
+  `activeBuckets`, `multiSourceBuckets`, `cooccurrenceShare`
+  (multi / total), `totalPairs` (sum of `C(k,2)` across multi-
+  source buckets), `distinctPairs`, `dominantPair`, plus a
+  `pairs[]` table with `{a, b, count, jaccard, share}` sorted by
+  count desc, then jaccard desc, then `a` asc, then `b` asc.
+
+  Why a new lens (and not just re-running existing ones):
+
+  - `cohabitation` is **model-level** (which model versions run
+    together) and emits one figure per pair — it does not surface
+    *tool* combinations.
+  - `inter-source-handoff-latency` is **sequential** — it only
+    fires when the primary source *changes* between adjacent
+    buckets, and ignores buckets where two sources are
+    concurrently active (the bucket's primary "wins").
+  - `bucket-handoff-frequency` is also a sequential / model-level
+    transition lens.
+  - `source-breadth-per-day` aggregates distinct-source counts to
+    the day, but says nothing about *which* tool combinations are
+    real (e.g. `openclaw + opencode` vs `claude-code + hermes`).
+
+  Headline question: "when I'm running multiple CLI tools at
+  once, which combinations are real, and which never happen?"
+
+  Jaccard is included so you can distinguish "a runs everywhere
+  and b sometimes coincides with it" (high count, low jaccard)
+  from "a and b are always co-launched" (lower count, high
+  jaccard). `share` is `count / totalPairs` so you can spot the
+  pair that owns the bulk of the multi-tool weight.
+
+  Flags: `--since`, `--until`, `--top-pairs <n>` (default 10,
+  use 0 to suppress the table), `--min-count <n>` (default 1,
+  display filter only — `totalPairs` / `distinctPairs` /
+  `cooccurrenceShare` still reflect the unfiltered population),
+  `--json`.
+
+  14 new tests (1207 total, up from 1193): option validation
+  (bad topPairs / bad minCount / bad since/until); empty queue
+  → zero everything; single-source buckets → 0 pairs;
+  2-source bucket → 1 pair, jaccard 1; 3-source bucket → C(3,2)
+  = 3 pairs; asymmetric overlap → jaccard 0.25; sort by count
+  desc then jaccard desc; minCount drops display rows but keeps
+  pre-filter `distinctPairs`; topPairs cap drops surface as
+  `droppedBelowTopCap`; topPairs=0 keeps stats; drops for
+  invalid `hour_start` / zero tokens / empty source; window
+  filter via `--since`.
+
+### Live-smoke output
+
+`pew-insights source-pair-cooccurrence` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights source-pair-cooccurrence
+as of: 2026-04-25T16:16:42.616Z    active-buckets: 902    multi-source: 302 (33.5%)    total-pairs: 639    distinct-pairs: 14    minCount: 1    topPairs: 10
+dropped: 0 bad hour_start, 0 zero-tokens, 0 empty-source rows, 0 below min-count, 4 below top cap
+dominant pair: openclaw + opencode (co-active in 192 buckets)
+(unordered pair {a,b}; count = buckets with both active; jaccard = |buckets(a) ∩ buckets(b)| / |union|; share = count / total-pairs)
+
+top source co-occurrences (sorted by count desc, then jaccard desc)
+source-a     source-b        count  share  jaccard
+-----------  --------------  -----  -----  -------
+openclaw     opencode        192    30.0%  0.530
+hermes       openclaw        138    21.6%  0.370
+hermes       opencode        71     11.1%  0.263
+claude-code  openclaw        67     10.5%  0.119
+claude-code  hermes          46     7.2%   0.124
+claude-code  codex           39     6.1%   0.134
+codex        openclaw        31     4.9%   0.078
+codex        hermes          25     3.9%   0.133
+claude-code  opencode        13     2.0%   0.029
+claude-code  vscode-copilot  7      1.1%   0.012
+```
+
+Reading: 33.5% of active hour-buckets have at least two CLI
+tools running concurrently — that is far higher than I would
+have guessed without measuring it. The dominant pair is
+`openclaw + opencode` (192 buckets, jaccard 0.53), which is
+intuitive because both are spec-kitty-style runtimes that often
+get triggered in tandem during a mission. `hermes + openclaw`
+(138 buckets, 0.37) is the next-strongest signal — hermes acts
+as the routing proxy, so any time openclaw is busy hermes tends
+to be too. The `claude-code` row is interesting: high *count*
+against several partners but uniformly *low* Jaccard
+(0.012 - 0.134). That means `claude-code` runs in many buckets
+on its own, and the buckets where it overlaps with anything
+else are a thin slice of its total footprint — i.e.
+`claude-code` is not a "co-driver" tool, it's a "lead" tool.
+The 4 pairs hidden by the top-10 cap are long-tail (≤ 5
+buckets each) and don't change the shape.
+
 ## 0.4.97 — 2026-04-25
 
 ### Added
