@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.61 — 2026-04-25
+
+### Added
+
+- `bucket-intensity`: per-model distribution of `total_tokens`
+  per UTC `hour_start` bucket. For every (model, hour) pair with
+  positive token mass we record one observation — the bucket's
+  total token count — then report per-model `min`, `p50`, `p90`,
+  `p99`, `max`, `mean`, `spread = p99/p50`, and a fixed-edge
+  magnitude histogram over `[1, 1k, 10k, 100k, 1M, 10M, +inf)`.
+
+  Distinct from existing tools:
+    - `velocity` collapses contiguous active hours into stretches
+      and reports tokens/minute over the stretch — bucket-intensity
+      stays at the single-hour grain so a 4-hour sprint is 4
+      observations, not one rate.
+    - `agent-mix`, `provider-share`, `cost`, `model-mix-entropy`
+      are mass tallies / single-scalar concentration metrics.
+      They cannot tell a model with one giant 5M-token hour from
+      a model with 50 hours of 100k each — but those two have a
+      50× p99 ratio.
+    - `burstiness` is a single concentration scalar across all
+      buckets, not broken out per-model and not surfacing
+      percentile bands.
+    - `interarrival-time` measures *time between* active buckets,
+      not *magnitude inside* a bucket.
+
+  bucket-intensity is the per-model "how big is a typical hour
+  vs your heaviest hour" lens.
+
+  Pure deterministic builder. Percentiles use nearest-rank (R-1)
+  to match `interarrival-time` and `velocity`. Flags: `--since`,
+  `--until`, `--source`, `--min-buckets`, `--top`,
+  `--sort tokens|buckets|p99|spread`, `--json`.
+
+  14 new tests (869 total, up from 855): option validation,
+  empty/edge handling, zero-token + bad hour_start drops,
+  same-model+hour multi-device collapse into one observation,
+  R-1 percentile semantics on a synthetic 10-bucket sequence,
+  exact histogram bucketing across all 6 magnitude bands,
+  per-model isolation, source filter accounting, sort=spread
+  surfaces tail-heavy models above flat ones, minBuckets+top
+  composition with full-population totals, and window
+  filter applied before bucketing.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--sort spread --min-buckets 5 --top 6`:
+
+  ```
+  pew-insights bucket-intensity
+  as of: 2026-04-25T04:20:40.569Z    models: 15 (shown 6)    buckets: 1,236    tokens: 8,350,838,579    sort: spread
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 4 below min-buckets, 5 below top cap
+
+  per-model bucket-size summary (sorted by spread desc)
+  model               buckets  tokens         min     p50        p90         p99         max          mean      spread
+  ------------------  -------  -------------  ------  ---------  ----------  ----------  -----------  --------  ------
+  unknown             56       35,575,800     55,502  400,731    628,897     8,368,144   8,368,144    635282    20.88
+  claude-sonnet-4     26       53,062         20      871        3,346       17,028      17,028       2041      19.55
+  claude-opus-4.6.1m  167      1,108,978,665  5,976   3,244,687  16,660,674  51,557,347  55,962,051   6640591   15.89
+  gpt-5.1             53       111,623        92      1,178      5,464       17,031      17,031       2106      14.46
+  gpt-5.4             372      2,473,832,128  5,181   3,706,295  14,625,762  46,466,936  65,604,896   6650086   12.54
+  claude-opus-4.7     272      4,647,097,376  37,358  7,897,263  50,695,274  79,856,882  108,008,474  17084917  10.11
+
+  per-model bucket-size histogram (counts per token-magnitude band)
+  model               [1,1k)  [1k,10k)  [10k,100k)  [100k,1M)  [1M,10M)  [10M,+inf)
+  ------------------  ------  --------  ----------  ---------  --------  ----------
+  unknown             0       0         1           52         3         0
+  claude-sonnet-4     13      12        1           0          0         0
+  claude-opus-4.6.1m  0       1         10          33         88        35
+  gpt-5.1             24      26        3           0          0         0
+  gpt-5.4             0       1         2           41         267       61
+  claude-opus-4.7     0       0         10          36         111       115
+  ```
+
+  Headline: `unknown` and `claude-sonnet-4` have the highest
+  spread (20.88× and 19.55× p99/p50) but live in completely
+  different magnitude bands — `unknown` clusters in `[100k,1M)`
+  with rare 8M spikes, while `claude-sonnet-4` is almost entirely
+  sub-10k with a single 17k spike. Without the per-model
+  histogram these two would look like the same "tail-heavy"
+  story; bucket-intensity surfaces them as one runaway-prompt
+  pattern (sonnet) and one occasional-large-context pattern
+  (unknown). Heavy-traffic models like `claude-opus-4.7` (4.6B
+  total tokens across 272 hours) keep a more moderate 10× spread
+  with consistent multi-million-token hours — load is sustained,
+  not bursty.
+
 ## 0.4.60 — 2026-04-25
 
 ### Added
