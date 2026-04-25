@@ -2055,10 +2055,14 @@ program
     'hide hours with fewer than n total tokens; their counts surface as droppedSparseHours (default 0)',
     '0',
   )
+  .option(
+    '--top-k <n>',
+    'cap hours[] to the top K by entropyBits desc (most poly-source hours first); ties by hour asc; hidden hours surface as droppedBelowTopK; global rollup unchanged',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
-      opts: { since?: string; until?: string; minTokens: string; json?: boolean },
+      opts: { since?: string; until?: string; minTokens: string; topK?: string; json?: boolean },
       cmd,
     ) => {
       try {
@@ -2070,11 +2074,20 @@ program
             `--min-tokens must be a non-negative finite number (got ${opts.minTokens})`,
           );
         }
+        let topK: number | null = null;
+        if (opts.topK != null) {
+          const t = Number.parseFloat(opts.topK);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top-k must be a positive integer (got ${opts.topK})`);
+          }
+          topK = t;
+        }
         const queue = await readQueue(paths);
         const report = buildHourOfDaySourceMixEntropy(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           minTokens,
+          topK,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

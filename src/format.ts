@@ -4930,14 +4930,15 @@ export function renderHourOfDaySourceMixEntropy(
   const lines: string[] = [];
   lines.push(chalk.bold.cyan('pew-insights hour-of-day-source-mix-entropy'));
   const filterDesc = r.filterSources === null ? '—' : `[${r.filterSources.join(',')}]`;
+  const topKDesc = r.topK === null ? '—' : String(r.topK);
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    occupied hours: ${formatNumber(r.hours.length)}/24    tokens: ${formatTokens(r.totalTokens)}    minTokens: ${formatNumber(r.minTokens)}    filterSources: ${filterDesc}`,
+      `as of: ${r.generatedAt}    shown: ${formatNumber(r.hours.length)}    occupied: ${formatNumber(r.occupiedHours)}/24    tokens: ${formatTokens(r.totalTokens)}    minTokens: ${formatNumber(r.minTokens)}    topK: ${topKDesc}    filterSources: ${filterDesc}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedSparseHours)} sparse hours`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedSparseHours)} sparse hours, ${formatNumber(r.droppedBelowTopK)} below topK`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -4955,12 +4956,12 @@ export function renderHourOfDaySourceMixEntropy(
     return lines.join('\n');
   }
 
-  lines.push(chalk.bold('global rollup (token-weighted across kept hours)'));
+  lines.push(chalk.bold('global rollup (token-weighted, computed on full kept set pre-topK)'));
   lines.push(
     renderTableLocal(
       ['summary', 'value'],
       [
-        ['occupiedHours', formatNumber(r.hours.length)],
+        ['occupiedHours', formatNumber(r.occupiedHours)],
         ['weightedMeanEntropyBits', fmtBits(r.weightedMeanEntropyBits)],
         ['weightedMeanNormalizedEntropy', formatPercentLocal(r.weightedMeanNormalizedEntropy)],
         ['monoSourceHourCount', formatNumber(r.monoSourceHourCount)],
@@ -4969,7 +4970,13 @@ export function renderHourOfDaySourceMixEntropy(
   );
   lines.push('');
 
-  lines.push(chalk.bold('per hour-of-day source-mix entropy (UTC, sorted by hour asc)'));
+  lines.push(
+    chalk.bold(
+      r.topK === null
+        ? 'per hour-of-day source-mix entropy (UTC, sorted by hour asc)'
+        : `top ${r.topK} hour-of-day buckets by entropy bits desc (UTC, ties: hour asc)`,
+    ),
+  );
   const headers = [
     'hour',
     'tokens',

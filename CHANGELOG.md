@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.8 — 2026-04-26
+
+### Added
+
+- `hour-of-day-source-mix-entropy --top-k <n>`: cap the displayed
+  hours[] to the top K by `entropyBits` desc (most poly-source
+  hours first; ties on `hour` asc). Default ordering is
+  chronological (hour asc); `--top-k` switches to a *ranked* lens
+  on the same dataset, answering "which UTC hours are the most
+  diverse?" instead of "what does my day-shape look like?".
+  Hidden hours surface as `droppedBelowTopK`. Crucially, the
+  global rollup (`weightedMeanEntropyBits`,
+  `weightedMeanNormalizedEntropy`, `monoSourceHourCount`,
+  `occupiedHours`) is computed on the full post-sparse kept set
+  *before* the topK cap so the population summary is invariant
+  under the display filter — only the rendered table shrinks.
+  Also: header line now distinguishes `shown` (post-topK display
+  count) from `occupied` (pre-topK total), and rollup table label
+  clarifies it's the full kept set. Mirrors the
+  `--top` cap convention from `bucket-gap-distribution` and
+  `source-run-lengths`. Default unset = no cap, chronological
+  order preserved.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top-k 5`)
+
+```
+pew-insights hour-of-day-source-mix-entropy --top-k 5
+as of: 2026-04-25T21:40:22.599Z    shown: 5    occupied: 24/24    tokens: 8.81B    minTokens: 0    topK: 5    filterSources: —
+dropped: 0 bad hour_start, 0 zero tokens, 0 by filter, 0 sparse hours, 19 below topK
+(per UTC hour-of-day: H = -Σ p_i log2 p_i over per-source token share; max = log2(sources))
+
+global rollup (token-weighted, computed on full kept set pre-topK)
+summary                        value
+-----------------------------  -----
+occupiedHours                  24
+weightedMeanEntropyBits        1.718
+weightedMeanNormalizedEntropy  70.7%
+monoSourceHourCount            0
+
+top 5 hour-of-day buckets by entropy bits desc (UTC, ties: hour asc)
+hour   tokens   sources  H bits  maxH   normH  effSources  topSource    topShare
+-----  -------  -------  ------  -----  -----  ----------  -----------  --------
+03:00  301.49M  6        2.054   2.585  79.5%  4.153       openclaw     32.5%
+14:00  458.78M  6        2.003   2.585  77.5%  4.008       claude-code  42.2%
+15:00  495.76M  5        1.984   2.322  85.5%  3.957       opencode     34.3%
+02:00  470.95M  6        1.971   2.585  76.2%  3.919       claude-code  43.0%
+16:00  600.72M  5        1.963   2.322  84.5%  3.899       opencode     39.1%
+```
+
+The rolling top-5 confirms a key insight not visible in the
+default chronological view: the most poly-source hours sit *both*
+overnight (02:00, 03:00 UTC — six concurrent sources) *and* in
+the early afternoon (14:00, 15:00, 16:00 UTC), separated by the
+"workday core" 08:00–13:00 which is dominated by `claude-code`
+at 40-67% top-share. The token-weighted normalized entropy
+(70.7%) means on average across the day the operator is using
+~70% of the theoretically achievable per-source diversity — never
+mono-source for a full hour (`monoSourceHourCount = 0`).
+
 ## 0.6.7 — 2026-04-26
 
 ### Added

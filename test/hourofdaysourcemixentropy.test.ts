@@ -51,6 +51,85 @@ test('hour-of-day-source-mix-entropy: rejects bad filterSources', () => {
   );
 });
 
+test('hour-of-day-source-mix-entropy: rejects bad topK', () => {
+  assert.throws(() => buildHourOfDaySourceMixEntropy([], { topK: 0 }));
+  assert.throws(() => buildHourOfDaySourceMixEntropy([], { topK: -1 }));
+  assert.throws(() => buildHourOfDaySourceMixEntropy([], { topK: 1.5 }));
+});
+
+test('hour-of-day-source-mix-entropy: topK keeps highest-entropy hours and re-sorts by H desc', () => {
+  // Hour 9: mono (entropy 0).
+  // Hour 10: 4-way even (entropy 2).
+  // Hour 11: 2-way even (entropy 1).
+  // Hour 12: 3-way even (entropy log2(3) ≈ 1.585).
+  const queue = [
+    ql('2026-04-20T09:00:00Z', 'a', 100),
+    ql('2026-04-20T10:00:00Z', 'a', 25),
+    ql('2026-04-20T10:00:00Z', 'b', 25),
+    ql('2026-04-20T10:00:00Z', 'c', 25),
+    ql('2026-04-20T10:00:00Z', 'd', 25),
+    ql('2026-04-20T11:00:00Z', 'a', 50),
+    ql('2026-04-20T11:00:00Z', 'b', 50),
+    ql('2026-04-20T12:00:00Z', 'a', 33),
+    ql('2026-04-20T12:00:00Z', 'b', 33),
+    ql('2026-04-20T12:00:00Z', 'c', 33),
+  ];
+  const r = buildHourOfDaySourceMixEntropy(queue, { topK: 2, generatedAt: GEN });
+  assert.equal(r.topK, 2);
+  assert.equal(r.hours.length, 2);
+  // Sorted by entropy desc: hour 10 (H=2), hour 12 (H≈1.585).
+  assert.equal(r.hours[0]!.hour, 10);
+  assert.equal(r.hours[1]!.hour, 12);
+  assert.equal(r.droppedBelowTopK, 2);
+});
+
+test('hour-of-day-source-mix-entropy: topK does not change global rollup (computed on full kept set)', () => {
+  const queue = [
+    ql('2026-04-20T09:00:00Z', 'a', 100),
+    ql('2026-04-20T10:00:00Z', 'a', 50),
+    ql('2026-04-20T10:00:00Z', 'b', 50),
+    ql('2026-04-20T11:00:00Z', 'a', 50),
+    ql('2026-04-20T11:00:00Z', 'b', 50),
+  ];
+  const noCap = buildHourOfDaySourceMixEntropy(queue, { generatedAt: GEN });
+  const capped = buildHourOfDaySourceMixEntropy(queue, { topK: 1, generatedAt: GEN });
+  assert.equal(noCap.weightedMeanEntropyBits, capped.weightedMeanEntropyBits);
+  assert.equal(noCap.monoSourceHourCount, capped.monoSourceHourCount);
+  assert.equal(noCap.totalTokens, capped.totalTokens);
+  assert.equal(capped.hours.length, 1);
+  assert.equal(capped.droppedBelowTopK, 2);
+});
+
+test('hour-of-day-source-mix-entropy: topK >= kept count does not drop anything', () => {
+  const r = buildHourOfDaySourceMixEntropy(
+    [
+      ql('2026-04-20T09:00:00Z', 'a', 100),
+      ql('2026-04-20T10:00:00Z', 'b', 100),
+    ],
+    { topK: 99, generatedAt: GEN },
+  );
+  assert.equal(r.hours.length, 2);
+  assert.equal(r.droppedBelowTopK, 0);
+});
+
+test('hour-of-day-source-mix-entropy: topK applies after minTokens floor', () => {
+  const queue = [
+    ql('2026-04-20T08:00:00Z', 'a', 5), // dropped by minTokens
+    ql('2026-04-20T09:00:00Z', 'a', 100), // mono, H=0
+    ql('2026-04-20T10:00:00Z', 'a', 50), // 2-way, H=1
+    ql('2026-04-20T10:00:00Z', 'b', 50),
+  ];
+  const r = buildHourOfDaySourceMixEntropy(queue, {
+    minTokens: 50,
+    topK: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedSparseHours, 1);
+  assert.equal(r.hours.length, 1);
+  assert.equal(r.hours[0]!.hour, 10);
+  assert.equal(r.droppedBelowTopK, 1);
+});
+
 test('hour-of-day-source-mix-entropy: single-source hour → entropy 0, mono', () => {
   const r = buildHourOfDaySourceMixEntropy(
     [ql('2026-04-20T09:00:00Z', 'a', 100), ql('2026-04-21T09:00:00Z', 'a', 200)],

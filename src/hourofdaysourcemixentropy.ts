@@ -81,6 +81,21 @@ export interface HourOfDaySourceMixEntropyOptions {
    * source filter.
    */
   filterSources?: string[];
+  /**
+   * Optional cap on the `hours[]` list. When set, the report keeps
+   * only the top K hours sorted by `entropyBits` descending (then
+   * by `hour` ascending as the deterministic tie-break) — the
+   * "most poly-source hours" view, which is the second canonical
+   * angle on this dataset (chronological is the first). The cap
+   * is applied *after* the `minTokens` floor so it never hides a
+   * row that already passed the structural floor by accident.
+   * Hidden hours surface as `droppedBelowTopK`. Crucially, the
+   * `weightedMean*` figures and `monoSourceHourCount` are still
+   * computed across the full kept set *before* the topK cap —
+   * they describe the population, not the cap. Default unset =
+   * no cap, default chronological order preserved.
+   */
+  topK?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -120,6 +135,8 @@ export interface HourOfDaySourceMixEntropyReport {
   minTokens: number;
   /** Resolved source filter (null = no filter). */
   filterSources: string[] | null;
+  /** Resolved topK cap (null = no cap; default chronological order). */
+  topK: number | null;
   /** Sum of total_tokens across all considered rows (post-filter). */
   totalTokens: number;
   /** Distinct UTC hour-of-day buckets that had any considered tokens. */
@@ -132,6 +149,8 @@ export interface HourOfDaySourceMixEntropyReport {
   droppedByFilterSource: number;
   /** Hours hidden by the `minTokens` floor. */
   droppedSparseHours: number;
+  /** Hours hidden by the `topK` display cap (applied after `minTokens`). */
+  droppedBelowTopK: number;
   /** Token-weighted mean of entropyBits across occupied hours.
    *  0 when there are no considered tokens. */
   weightedMeanEntropyBits: number;
@@ -154,6 +173,13 @@ export function buildHourOfDaySourceMixEntropy(
   const minTokens = opts.minTokens ?? 0;
   if (!Number.isFinite(minTokens) || minTokens < 0) {
     throw new Error(`minTokens must be a non-negative number (got ${opts.minTokens})`);
+  }
+
+  const topK = opts.topK ?? null;
+  if (topK !== null) {
+    if (!Number.isInteger(topK) || topK < 1) {
+      throw new Error(`topK must be a positive integer (got ${opts.topK})`);
+    }
   }
 
   let filterSet: Set<string> | null = null;
@@ -274,10 +300,9 @@ export function buildHourOfDaySourceMixEntropy(
     }
     kept.push(row);
   }
-  kept.sort((a, b) => a.hour - b.hour);
 
-  // Global rollup (token-weighted across the *kept* rows). The
-  // weights live in the same population the user is looking at.
+  // Global rollup is computed on `kept` (post-sparse, pre-topK) so
+  // the population summary is stable regardless of the display cap.
   let weightedEntropyNumerator = 0;
   let weightedNormalizedNumerator = 0;
   let weightedDenominator = 0;
@@ -293,21 +318,42 @@ export function buildHourOfDaySourceMixEntropy(
   const weightedMeanNormalizedEntropy =
     weightedDenominator === 0 ? 0 : weightedNormalizedNumerator / weightedDenominator;
 
+  // Default sort: hour asc. With topK: re-sort by entropyBits desc
+  // (then hour asc as tie-break) and slice; record drops.
+  let droppedBelowTopK = 0;
+  let display: HourOfDaySourceMixEntropyRow[];
+  if (topK === null) {
+    display = [...kept].sort((a, b) => a.hour - b.hour);
+  } else {
+    const ranked = [...kept].sort((a, b) => {
+      if (b.entropyBits !== a.entropyBits) return b.entropyBits - a.entropyBits;
+      return a.hour - b.hour;
+    });
+    if (ranked.length > topK) {
+      droppedBelowTopK = ranked.length - topK;
+      display = ranked.slice(0, topK);
+    } else {
+      display = ranked;
+    }
+  }
+
   return {
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minTokens,
     filterSources: filterSet === null ? null : [...filterSet].sort(),
+    topK,
     totalTokens: globalTotal,
     occupiedHours,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedByFilterSource,
     droppedSparseHours,
+    droppedBelowTopK,
     weightedMeanEntropyBits,
     weightedMeanNormalizedEntropy,
     monoSourceHourCount,
-    hours: kept,
+    hours: display,
   };
 }
