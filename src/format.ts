@@ -4909,6 +4909,10 @@ import type {
   HourOfDaySourceMixEntropyReport,
   HourOfDaySourceMixEntropyRow,
 } from './hourofdaysourcemixentropy.js';
+import type {
+  BucketTokenGiniReport,
+  BucketTokenGiniRow,
+} from './buckettokengini.js';
 
 function fmtRunLen(n: number): string {
   if (Number.isInteger(n)) return String(n);
@@ -5075,6 +5079,86 @@ export function renderSourceRunLengths(r: SourceRunLengthsReport): string {
     fmtRunLen(s.maxRunLength),
     formatPercentLocal(s.singleSessionRunShare),
     s.longestRunStartedAt,
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function fmtGini(n: number): string {
+  if (!Number.isFinite(n)) return '-';
+  return n.toFixed(3);
+}
+
+export function renderBucketTokenGini(r: BucketTokenGiniReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights bucket-token-gini'));
+  const filterDesc = r.filterSources === null ? '—' : `[${r.filterSources.join(',')}]`;
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.sources.length)}    observed: ${formatNumber(r.observedSources)}    tokens: ${formatTokens(r.totalTokens)}    minBuckets: ${formatNumber(r.minBuckets)}    filterSources: ${filterDesc}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedByFilterSource)} by filter, ${formatNumber(r.droppedBelowMinBuckets)} below minBuckets`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(per source: G = Σ(2i−n−1)x_i / (n·Σx_i) on ascending per-bucket totals; 0 = even, 1 = single bucket)',
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no sources met the floor. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('global rollup (kept set)'));
+  lines.push(
+    renderTableLocal(
+      ['summary', 'value'],
+      [
+        ['keptSources', formatNumber(r.sources.length)],
+        ['weightedMeanGini', fmtGini(r.weightedMeanGini)],
+        ['unweightedMeanGini', fmtGini(r.unweightedMeanGini)],
+        ['singleBucketSourceCount', formatNumber(r.singleBucketSourceCount)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  lines.push(
+    chalk.bold(
+      'per source: temporal token-distribution gini (sorted by gini desc; ties: tokens desc, source asc)',
+    ),
+  );
+  const headers = [
+    'source',
+    'buckets',
+    'tokens',
+    'gini',
+    'meanTokens',
+    'maxBucket',
+    'topShare',
+    'firstActive',
+    'lastActive',
+  ];
+  const rows: string[][] = r.sources.map((s: BucketTokenGiniRow) => [
+    s.source,
+    formatNumber(s.bucketCount),
+    formatTokens(s.totalTokens),
+    fmtGini(s.gini),
+    formatTokens(s.meanTokens),
+    formatTokens(s.maxBucketTokens),
+    formatPercentLocal(s.topBucketShare),
+    s.activeWindowStart ?? '-',
+    s.activeWindowEnd ?? '-',
   ]);
   lines.push(renderTableLocal(headers, rows));
 

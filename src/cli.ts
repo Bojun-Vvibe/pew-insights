@@ -93,6 +93,7 @@ import {
   renderInputTokenDecileDistribution,
   renderSourceRunLengths,
   renderHourOfDaySourceMixEntropy,
+  renderBucketTokenGini,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -149,6 +150,7 @@ import {
 } from './turncadence.js';
 import { buildSourceRunLengths } from './sourcerunlengths.js';
 import { buildHourOfDaySourceMixEntropy } from './hourofdaysourcemixentropy.js';
+import { buildBucketTokenGini } from './buckettokengini.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2093,6 +2095,71 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderHourOfDaySourceMixEntropy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('bucket-token-gini')
+  .description(
+    "Per-source Gini coefficient of token mass across the source's active UTC hour buckets (steady vs bursty tools)",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--min-buckets <n>',
+    'hide sources active in fewer than n hour buckets; suppressed sources surface as droppedBelowMinBuckets (default 1)',
+    '1',
+  )
+  .option(
+    '--filter-source <list>',
+    'comma-separated source allowlist; rows whose source is not in the list are dropped before per-source aggregation',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        minBuckets: string;
+        filterSource?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isFinite(minBuckets) || minBuckets < 1) {
+          throw new Error(
+            `--min-buckets must be a positive integer (got ${opts.minBuckets})`,
+          );
+        }
+        let filterSources: string[] | undefined;
+        if (opts.filterSource != null && opts.filterSource.trim().length > 0) {
+          filterSources = opts.filterSource
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (filterSources.length === 0) {
+            throw new Error('--filter-source must contain at least one non-empty source');
+          }
+        }
+        const queue = await readQueue(paths);
+        const report = buildBucketTokenGini(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          minBuckets,
+          filterSources,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBucketTokenGini(report) + '\n');
         }
       } catch (e) {
         die(e);
