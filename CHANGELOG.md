@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.3 — 2026-04-26
+
+### Added
+
+- `input-token-decile-distribution --top <n>`: surface the
+  heaviest N individual buckets after all filters and the
+  `--min-input` floor, sorted descending by input_tokens. Each
+  entry carries `hourStart`, `source`, `model`, `inputTokens`,
+  `decile` (which decile it landed in), and `shareOfTotal`.
+  Default 0 = no top list. Capped at the surviving population.
+  Ascending sort uses `(input_tokens, hour_start)` so tie-broken
+  ordering is deterministic regardless of input row order.
+
+  Why: D10 alone holds 58% of all input mass and has a 7.8×
+  spread internally (min 7.1M → max 55.7M). The decile aggregate
+  hides which specific hours and which agent/model combinations
+  drive that mass — `--top` lets you click straight into them
+  for cache-prune / context-trim work.
+
+  6 new tests (1264 total, up from 1258): rejects bad `--top`
+  (negative, fractional, NaN); default 0 emits empty `topBuckets`;
+  top=3 returns 3 heaviest descending with full metadata + correct
+  decile tag; top capped at bucketCount; tie-break by hour_start
+  is order-independent; top respects the minInput floor (only
+  floor survivors are eligible).
+
+### Live-smoke output
+
+`pew-insights input-token-decile-distribution --top 5` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights input-token-decile-distribution
+as of: 2026-04-25T17:44:39.833Z    buckets: 1,144    input-tokens: 3,380,940,585
+concentration: gini=0.7107    top-10% share=58.14%    top-1% share=12.41%
+dropped: 0 bad hour_start, 0 bad input_tokens, 327 zero-input, 0 below min-input floor, 0 by source filter
+(rank all positive-input buckets ascending; partition into 10 equal-sized deciles; D1 = lightest, D10 = heaviest)
+
+per-decile input-token mass
+decile  buckets  min-in     mean-in     max-in      tokens-in-decile  share
+------  -------  ---------  ----------  ----------  ----------------  ------
+D1      115      2,441      32,967      65,160      3,791,187         0.11%
+D2      115      65,191     142,379     227,275     16,373,539        0.48%
+D3      115      227,904    310,938     388,837     35,757,833        1.06%
+D4      115      391,119    497,908     627,174     57,259,470        1.69%
+D5      114      629,159    753,401     899,039     85,887,740        2.54%
+D6      114      899,141    1,165,285   1,434,133   132,842,433       3.93%
+D7      114      1,437,972  1,842,866   2,287,825   210,086,715       6.21%
+D8      114      2,291,558  2,814,511   3,418,895   320,854,224       9.49%
+D9      114      3,426,945  4,908,841   7,082,242   559,607,882       16.55%
+D10     114      7,145,484  17,179,645  55,738,577  1,958,479,562     57.93%
+
+top 5 heaviest individual buckets
+rank  hour_start                source       model            input-tokens  decile  share
+----  ------------------------  -----------  ---------------  ------------  ------  -----
+1     2026-04-21T01:00:00.000Z  claude-code  claude-opus-4.7  55,738,577    D10     1.65%
+2     2026-04-21T01:30:00.000Z  claude-code  claude-opus-4.7  45,231,898    D10     1.34%
+3     2026-04-20T15:00:00.000Z  claude-code  claude-opus-4.7  40,051,797    D10     1.18%
+4     2026-04-20T13:30:00.000Z  claude-code  claude-opus-4.7  36,693,559    D10     1.09%
+5     2026-04-20T04:30:00.000Z  claude-code  claude-opus-4.7  32,175,255    D10     0.95%
+```
+
+Headline: the heaviest 5 hours alone burn **209.9M input
+tokens — 6.2% of the entire 3.38B all-time input budget**.
+All 5 land in D10, all 5 are `claude-code` + `claude-opus-4.7`,
+and 4 of 5 cluster in two adjacent days (2026-04-20 ..
+2026-04-21). The single biggest hour (2026-04-21T01:00:00Z,
+55.7M input) is **1,690× the median bucket** in D5 (753,401).
+This is exactly the drill-down the decile aggregate suppressed:
+the entire long-context burden is one agent on one model on a
+two-day burst — making it a sharply targetable cache-hit /
+context-prune candidate rather than a diffuse workload problem.
+
 ## 0.5.2 — 2026-04-26
 
 ### Added

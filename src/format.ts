@@ -4599,5 +4599,21 @@ export function renderInputTokenDecileDistribution(
   ]);
   lines.push(renderTableLocal(headers, rows));
 
+  if (r.topBuckets.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold(`top ${r.topBuckets.length} heaviest individual buckets`));
+    const topHeaders = ['rank', 'hour_start', 'source', 'model', 'input-tokens', 'decile', 'share'];
+    const topRows: string[][] = r.topBuckets.map((b, i) => [
+      String(i + 1),
+      b.hourStart,
+      b.source,
+      b.model,
+      formatNumber(b.inputTokens),
+      'D' + b.decile,
+      (b.shareOfTotal * 100).toFixed(2) + '%',
+    ]);
+    lines.push(renderTableLocal(topHeaders, topRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

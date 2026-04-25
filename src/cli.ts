@@ -3682,6 +3682,11 @@ program
     'drop bucket rows whose input_tokens < n before partitioning; suppressed rows surface as droppedBelowMinInput. Default 0 = no floor.',
     '0',
   )
+  .option(
+    '--top <n>',
+    'surface the heaviest N individual buckets (with hour_start/source/model/decile) under topBuckets, for D10 outlier drill-down. Default 0 = no top list.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -3690,6 +3695,7 @@ program
         until?: string;
         source?: string;
         minInput: string;
+        top: string;
         json?: boolean;
       },
       cmd,
@@ -3701,12 +3707,17 @@ program
         if (!Number.isInteger(minInput) || minInput < 0) {
           throw new Error(`--min-input must be a non-negative integer (got ${opts.minInput})`);
         }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
         const queue = await readQueue(paths);
         const report = buildInputTokenDecileDistribution(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
           minInput,
+          top,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

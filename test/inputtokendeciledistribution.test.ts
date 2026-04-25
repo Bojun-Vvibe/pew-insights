@@ -220,3 +220,81 @@ test('input-token-decile-distribution: minInput does NOT count zero-input rows (
   assert.equal(r.bucketCount, 1);
   assert.equal(r.totalInputTokens, 200);
 });
+
+// ---- top heaviest buckets refinement (v0.5.3) -----------------------------
+
+test('input-token-decile-distribution: rejects bad top', () => {
+  assert.throws(() => buildInputTokenDecileDistribution([], { top: -1 }));
+  assert.throws(() => buildInputTokenDecileDistribution([], { top: 1.5 }));
+  assert.throws(() => buildInputTokenDecileDistribution([], { top: NaN }));
+});
+
+test('input-token-decile-distribution: top=0 default emits empty topBuckets', () => {
+  const rows: QueueLine[] = [];
+  for (let i = 1; i <= 5; i++) rows.push(ql(i * 100));
+  const r = buildInputTokenDecileDistribution(rows, { generatedAt: GEN });
+  assert.equal(r.top, 0);
+  assert.deepEqual(r.topBuckets, []);
+});
+
+test('input-token-decile-distribution: top=3 returns 3 heaviest buckets descending with metadata + decile tag', () => {
+  const rows: QueueLine[] = [
+    ql(100, { hour_start: '2026-04-20T00:00:00.000Z', source: 'codex', model: 'gpt-5' }),
+    ql(900, { hour_start: '2026-04-20T01:00:00.000Z', source: 'cli-a', model: 'm-a' }),
+    ql(500, { hour_start: '2026-04-20T02:00:00.000Z', source: 'cli-b', model: 'm-b' }),
+    ql(800, { hour_start: '2026-04-20T03:00:00.000Z', source: 'cli-c', model: 'm-c' }),
+    ql(200, { hour_start: '2026-04-20T04:00:00.000Z', source: 'cli-d', model: 'm-d' }),
+  ];
+  const r = buildInputTokenDecileDistribution(rows, { top: 3, generatedAt: GEN });
+  assert.equal(r.topBuckets.length, 3);
+  assert.equal(r.topBuckets[0]!.inputTokens, 900);
+  assert.equal(r.topBuckets[0]!.source, 'cli-a');
+  assert.equal(r.topBuckets[0]!.model, 'm-a');
+  assert.equal(r.topBuckets[0]!.hourStart, '2026-04-20T01:00:00.000Z');
+  assert.equal(r.topBuckets[1]!.inputTokens, 800);
+  assert.equal(r.topBuckets[2]!.inputTokens, 500);
+  // share = 900 / (100+900+500+800+200) = 900 / 2500
+  assert.ok(Math.abs(r.topBuckets[0]!.shareOfTotal - 900 / 2500) < 1e-12);
+  // Each entry tagged with its decile (5 rows -> sizes [1,1,1,1,1,0,0,0,0,0]):
+  // sorted asc = [100,200,500,800,900] -> deciles 1..5
+  // 900 -> D5, 800 -> D4, 500 -> D3
+  assert.equal(r.topBuckets[0]!.decile, 5);
+  assert.equal(r.topBuckets[1]!.decile, 4);
+  assert.equal(r.topBuckets[2]!.decile, 3);
+});
+
+test('input-token-decile-distribution: top capped at bucketCount', () => {
+  const r = buildInputTokenDecileDistribution(
+    [ql(10), ql(20)],
+    { top: 99, generatedAt: GEN },
+  );
+  assert.equal(r.topBuckets.length, 2);
+  assert.equal(r.topBuckets[0]!.inputTokens, 20);
+  assert.equal(r.topBuckets[1]!.inputTokens, 10);
+});
+
+test('input-token-decile-distribution: top tie-break by hour_start is deterministic across input order', () => {
+  const a: QueueLine[] = [
+    ql(100, { hour_start: '2026-04-20T03:00:00.000Z' }),
+    ql(100, { hour_start: '2026-04-20T01:00:00.000Z' }),
+    ql(100, { hour_start: '2026-04-20T02:00:00.000Z' }),
+  ];
+  const b = [...a].reverse();
+  const ra = buildInputTokenDecileDistribution(a, { top: 3, generatedAt: GEN });
+  const rb = buildInputTokenDecileDistribution(b, { top: 3, generatedAt: GEN });
+  assert.deepEqual(ra, rb);
+});
+
+test('input-token-decile-distribution: top respects minInput floor (only floor survivors are eligible)', () => {
+  const rows: QueueLine[] = [];
+  for (let i = 1; i <= 20; i++) rows.push(ql(i, { hour_start: `2026-04-20T${String(i).padStart(2, '0')}:00:00.000Z` }));
+  const r = buildInputTokenDecileDistribution(rows, {
+    minInput: 15,
+    top: 3,
+    generatedAt: GEN,
+  });
+  assert.equal(r.topBuckets.length, 3);
+  assert.equal(r.topBuckets[0]!.inputTokens, 20);
+  assert.equal(r.topBuckets[1]!.inputTokens, 19);
+  assert.equal(r.topBuckets[2]!.inputTokens, 18);
+});

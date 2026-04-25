@@ -60,6 +60,13 @@ export interface InputTokenDecileDistributionOptions {
    * are still excluded separately as `droppedZeroInput`).
    */
   minInput?: number;
+  /**
+   * Surface the heaviest N individual buckets (after all filters
+   * and the minInput floor) as `topBuckets`. Useful for drilling
+   * into D10 outliers. Default 0 = no top list. Capped at the
+   * actual surviving population.
+   */
+  top?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -88,6 +95,8 @@ export interface InputTokenDecileDistributionReport {
   source: string | null;
   /** Echo of the resolved `minInput` floor (0 = no floor). */
   minInput: number;
+  /** Echo of the resolved `top` cap (0 = no top list). */
+  top: number;
   /** Number of bucket rows kept for the analysis. */
   bucketCount: number;
   /** Sum of input_tokens across all kept rows. */
@@ -110,6 +119,22 @@ export interface InputTokenDecileDistributionReport {
   droppedSourceFilter: number;
   /** Per-decile rows, always D1..D10. Empty deciles report zeros. */
   deciles: InputDecileRow[];
+  /**
+   * Heaviest individual buckets, sorted descending by input_tokens.
+   * Length == min(top, bucketCount). Empty when top=0 or no rows.
+   */
+  topBuckets: InputBucketRow[];
+}
+
+export interface InputBucketRow {
+  hourStart: string;
+  source: string;
+  model: string;
+  inputTokens: number;
+  /** Which decile this bucket landed in (1..10). */
+  decile: number;
+  /** inputTokens / totalInputTokens (0 if total is 0). */
+  shareOfTotal: number;
 }
 
 export function buildInputTokenDecileDistribution(
@@ -131,6 +156,10 @@ export function buildInputTokenDecileDistribution(
   if (!Number.isFinite(minInput) || minInput < 0) {
     throw new Error(`minInput must be a non-negative finite number (got ${opts.minInput})`);
   }
+  const top = opts.top ?? 0;
+  if (!Number.isFinite(top) || top < 0 || !Number.isInteger(top)) {
+    throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
 
   let droppedInvalidHourStart = 0;
@@ -139,7 +168,16 @@ export function buildInputTokenDecileDistribution(
   let droppedBelowMinInput = 0;
   let droppedSourceFilter = 0;
 
-  const inputs: number[] = [];
+  // Collect both the value (for ranking/decile math) and the row
+  // metadata (for the topBuckets list). Same iteration, no extra
+  // pass over the queue.
+  interface Kept {
+    inp: number;
+    hourStart: string;
+    source: string;
+    model: string;
+  }
+  const kept: Kept[] = [];
 
   for (const q of queue) {
     const ms = Date.parse(q.hour_start);
@@ -172,10 +210,22 @@ export function buildInputTokenDecileDistribution(
       continue;
     }
 
-    inputs.push(inp);
+    kept.push({
+      inp,
+      hourStart: q.hour_start,
+      source: src,
+      model: typeof q.model === 'string' ? q.model : '',
+    });
   }
 
-  inputs.sort((a, b) => a - b);
+  // Stable sort ascending by inp; tie-break by hourStart so the
+  // ordering is deterministic regardless of input row order.
+  kept.sort((a, b) => {
+    if (a.inp !== b.inp) return a.inp - b.inp;
+    return a.hourStart < b.hourStart ? -1 : a.hourStart > b.hourStart ? 1 : 0;
+  });
+
+  const inputs = kept.map((k) => k.inp);
 
   const bucketCount = inputs.length;
   const totalInputTokens = inputs.reduce((s, x) => s + x, 0);
@@ -197,9 +247,12 @@ export function buildInputTokenDecileDistribution(
   let p90Share: number | null = null;
   let p99Share: number | null = null;
 
+  // Per-index decile assignment (0-based -> decile 1..10), computed
+  // once and reused both for deciles[] aggregation and for tagging
+  // entries that bubble into topBuckets.
+  const decileOf: number[] = new Array(bucketCount).fill(0);
+
   if (bucketCount > 0) {
-    // Equal-bin-by-rank; remainder onto lowest deciles
-    // (matches numpy.array_split / pandas.qcut).
     const base = Math.floor(bucketCount / 10);
     const remainder = bucketCount - base * 10;
     let cursor = 0;
@@ -208,6 +261,7 @@ export function buildInputTokenDecileDistribution(
       if (size === 0) continue;
       const slice = inputs.slice(cursor, cursor + size);
       const sum = slice.reduce((s, x) => s + x, 0);
+      for (let i = cursor; i < cursor + size; i++) decileOf[i] = d + 1;
       deciles[d] = {
         decile: d + 1,
         bucketCount: size,
@@ -235,12 +289,31 @@ export function buildInputTokenDecileDistribution(
     p99Share = topKShare(inputs, totalInputTokens, 0.01);
   }
 
+  const topBuckets: InputBucketRow[] = [];
+  if (top > 0 && bucketCount > 0) {
+    const k = Math.min(top, bucketCount);
+    // Pull from the high end of the sorted array; reverse so the
+    // result is descending by inputTokens (heaviest first).
+    for (let i = bucketCount - 1; i >= bucketCount - k; i--) {
+      const e = kept[i]!;
+      topBuckets.push({
+        hourStart: e.hourStart,
+        source: e.source,
+        model: e.model,
+        inputTokens: e.inp,
+        decile: decileOf[i]!,
+        shareOfTotal: totalInputTokens > 0 ? e.inp / totalInputTokens : 0,
+      });
+    }
+  }
+
   return {
     generatedAt,
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     minInput,
+    top,
     bucketCount,
     totalInputTokens,
     gini,
@@ -252,6 +325,7 @@ export function buildInputTokenDecileDistribution(
     droppedBelowMinInput,
     droppedSourceFilter,
     deciles,
+    topBuckets,
   };
 }
 
