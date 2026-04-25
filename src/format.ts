@@ -28,6 +28,7 @@ import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
 import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
 import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
+import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3786,6 +3787,71 @@ export function renderActiveSpanPerDay(r: ActiveSpanPerDayReport): string {
     String(d.spanHours),
     String(d.activeBuckets),
     (d.dutyCycle * 100).toFixed(1) + '%',
+    formatNumber(d.tokensOnDay),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceBreadthPerDay(r: SourceBreadthPerDayReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-breadth-per-day'));
+  const fmtN = (n: number | null) => (n === null ? '-' : String(n));
+  const fmtF2 = (n: number | null) => (n === null ? '-' : n.toFixed(2));
+  const fmtPct = (n: number) => (n * 100).toFixed(1) + '%';
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    days: ${formatNumber(r.distinctDays)} (shown ${formatNumber(r.days.length)})    tokens: ${formatNumber(r.totalTokens)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `sourceCount: min=${fmtN(r.sourceCountMin)} p25=${fmtN(r.sourceCountP25)} median=${fmtN(r.sourceCountMedian)} mean=${fmtF2(r.sourceCountMean)} p75=${fmtN(r.sourceCountP75)} max=${fmtN(r.sourceCountMax)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `single-source: ${formatNumber(r.singleSourceDays)}    multi-source: ${formatNumber(r.multiSourceDays)}    multi-share: ${fmtPct(r.multiSourceShare)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptySource)} empty source, ${formatNumber(r.droppedTopDays)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}    (note: degenerates sourceCount to 1 by definition)`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per UTC calendar day: distinct sources with > 0 tokens; sourceCount in [1, N])`,
+    ),
+  );
+  lines.push('');
+
+  if (r.days.length === 0) {
+    lines.push(chalk.yellow('  no day rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  const sortLabel = r.sort === 'day' ? 'day desc' : r.sort + ' desc';
+  lines.push(chalk.bold(`per-day source breadth (sorted by ${sortLabel})`));
+  const headers = [
+    'day (UTC)',
+    'sources',
+    'source-list',
+    'buckets',
+    'tokens',
+  ];
+  const rows: string[][] = r.days.map((d) => [
+    d.day,
+    String(d.sourceCount),
+    d.sources,
+    String(d.bucketsOnDay),
     formatNumber(d.tokensOnDay),
   ]);
   lines.push(renderTableLocal(headers, rows));

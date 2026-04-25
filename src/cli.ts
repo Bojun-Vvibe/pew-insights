@@ -76,6 +76,7 @@ import {
   renderBucketHandoffFrequency,
   renderFirstBucketOfDay,
   renderActiveSpanPerDay,
+  renderSourceBreadthPerDay,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -171,6 +172,7 @@ import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
 import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
+import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -4053,6 +4055,71 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketHandoffFrequency(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-breadth-per-day')
+  .description('Per UTC calendar day, count of distinct active sources — tool-diversity lens with min/p25/median/mean/p75/max sourceCount stats and single/multi-source day split')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter (degenerates sourceCount to 1)')
+  .option(
+    '--top <n>',
+    'cap days[] after sorting; remainder surface as droppedTopDays. Summary stats always reflect the full population. Default 0 = no cap.',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for days[]: 'day' (default, desc) | 'sources' (desc) | 'tokens' (desc) | 'buckets' (desc)",
+    'day',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        if (
+          opts.sort !== 'day' &&
+          opts.sort !== 'sources' &&
+          opts.sort !== 'tokens' &&
+          opts.sort !== 'buckets'
+        ) {
+          throw new Error(
+            `--sort must be 'day' | 'sources' | 'tokens' | 'buckets' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceBreadthPerDay(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          top,
+          sort: opts.sort as 'day' | 'sources' | 'tokens' | 'buckets',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceBreadthPerDay(report) + '\n');
         }
       } catch (e) {
         die(e);
