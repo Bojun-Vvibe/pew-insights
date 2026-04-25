@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.68 — 2026-04-25
+
+### Added
+
+- `tenure-vs-density-quadrant`: `--quadrant <q>` flag. Restrict the
+  report to a single quadrant: `long-dense` | `long-sparse` |
+  `short-dense` | `short-sparse`. Medians are still computed over the
+  *full* surviving population, so the filter does not change which
+  models land in which quadrant — it only suppresses the other three
+  quadrants for display. Suppressed quadrants surface as
+  `droppedQuadrantModels` and `droppedQuadrantTokens` (aggregates over
+  the hidden quadrants).
+
+  Composes with `--top` (cap inside the surviving quadrant) and
+  `--sort` (re-order within the surviving quadrant).
+
+  7 new tests (923 total, up from 916): filter restricts to one
+  quadrant; medians/classification unaffected by filter;
+  droppedQuadrantModels/Tokens accounting; invalid quadrant name
+  rejected; null filter leaves all four quadrants visible;
+  composes with --top; targeting a quadrant that turned out empty
+  still returns it with count=0.
+
+  Live smoke test against `~/.config/pew/queue.jsonl` with
+  `--quadrant short-dense --top 3 --sort density`:
+
+  ```
+  pew-insights tenure-vs-density-quadrant
+  as of: 2026-04-25T06:08:15Z    models: 15    active-buckets: 1,243    tokens: 8,409,584,829    minBuckets: 0    sort: density
+  splits: medianSpanHours=1044.00    medianDensity=109646    (>= medianSpanHours -> long; >= medianDensity -> dense; ties go long/dense)
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 sparse models (0 buckets), 10 models in suppressed quadrants (1,193,924,024 tokens)
+  quadrant filter: short-dense
+
+  quadrant summary
+  quadrant     models  tokens         active-buckets
+  -----------  ------  -------------  --------------
+  short-dense  5       7,215,660,805  709
+
+  short-dense (shown 3 of 5; 2 below top cap)
+  model            span-hr  active-buckets  tokens         density
+  ---------------  -------  --------------  -------------  ----------
+  claude-opus-4.7  196.0    276             4,700,643,866  17,031,318
+  gpt-5.4          859.5    375             2,479,031,888  6,610,752
+  unknown          176.5    56              35,575,800     635,282
+  ```
+
+  Headline read: filtering to short-dense + sorting by density
+  isolates the burst-style heavy hitters — claude-opus-4.7 dominates
+  at 17M tokens / active-bucket over a ~196h tenure, dwarfing every
+  other model in the short-tenure half by ~2.6x.
+
 ## 0.4.67 — 2026-04-25
 
 ### Added
