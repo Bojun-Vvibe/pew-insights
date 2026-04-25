@@ -78,6 +78,7 @@ import {
   renderActiveSpanPerDay,
   renderSourceBreadthPerDay,
   renderBucketDensityPercentile,
+  renderHourOfWeek,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -175,6 +176,7 @@ import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
 import { buildBucketDensityPercentile } from './bucketdensitypercentile.js';
+import { buildHourOfWeek } from './hourofweek.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -4192,6 +4194,60 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderBucketDensityPercentile(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('hour-of-week')
+  .description('168-cell joint (weekday × hour-of-day, UTC) concentration lens: Shannon entropy in bits, normalised entropy, Gini, top-K mass share, populated vs dead cells, and top cells by token mass')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option('--model <name>', 'restrict analysis to a single normalised model; non-matching rows surface as droppedModelFilter')
+  .option('--top <n>', 'truncate topCells[] to the top N by tokens desc; concentration metrics always reflect the full 168-cell population. Default 10.', '10')
+  .option('--top-k <n>', 'mass-share concentration window: report tokenShare of the top K cells. Range [1, 168]. Default 10.', '10')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        model?: string;
+        top: string;
+        topK: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 1) {
+          throw new Error(`--top must be a positive integer (got ${opts.top})`);
+        }
+        const topK = Number.parseInt(opts.topK, 10);
+        if (!Number.isInteger(topK) || topK < 1 || topK > 168) {
+          throw new Error(`--top-k must be an integer in [1, 168] (got ${opts.topK})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildHourOfWeek(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          model: opts.model ?? null,
+          top,
+          topK,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderHourOfWeek(report) + '\n');
         }
       } catch (e) {
         die(e);

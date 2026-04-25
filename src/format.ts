@@ -30,6 +30,7 @@ import type { FirstBucketOfDayReport } from './firstbucketofday.js';
 import type { ActiveSpanPerDayReport } from './activespanperday.js';
 import type { SourceBreadthPerDayReport } from './sourcebreadthperday.js';
 import type { BucketDensityPercentileReport } from './bucketdensitypercentile.js';
+import type { HourOfWeekReport } from './hourofweek.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3928,6 +3929,63 @@ export function renderBucketDensityPercentile(
     formatNumber(d.upperEdge),
   ]);
   lines.push(renderTableLocal(dHeaders, dRows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+export function renderHourOfWeek(r: HourOfWeekReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights hour-of-week'));
+  const fmtPct = (n: number) => (n * 100).toFixed(1) + '%';
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    buckets: ${formatNumber(r.totalBuckets)}    tokens: ${formatNumber(r.totalTokens)}    populated: ${r.populatedCells}/168    dead: ${r.deadCells}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedModelFilter)} by model filter`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  if (r.model !== null) {
+    lines.push(chalk.dim(`model filter: ${r.model}`));
+  }
+  lines.push('');
+
+  if (r.totalTokens === 0) {
+    lines.push(chalk.yellow('  no token observations after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('concentration metrics'));
+  const cHeaders = ['metric', 'value'];
+  const cRows: string[][] = [
+    ['entropy (bits)', r.entropyBits.toFixed(3) + ' / 7.392 max'],
+    ['normalised entropy', r.normalisedEntropy.toFixed(3) + '  (1.0 = uniform)'],
+    ['gini', r.gini.toFixed(3) + '  (0 = uniform, 1 = single-cell)'],
+    [`top-${r.topK} cell mass share`, fmtPct(r.topKShare)],
+  ];
+  lines.push(renderTableLocal(cHeaders, cRows));
+  lines.push('');
+
+  lines.push(chalk.bold(`top ${r.topCells.length} cells (UTC weekday × hour)`));
+  const tHeaders = ['weekday', 'hour (UTC)', 'tokens', 'share', 'buckets'];
+  const tRows: string[][] = r.topCells.map((c) => [
+    WEEKDAY_LABELS[c.weekday - 1] ?? String(c.weekday),
+    String(c.hour).padStart(2, '0') + ':00',
+    formatNumber(c.tokens),
+    fmtPct(c.tokenShare),
+    String(c.buckets),
+  ]);
+  lines.push(renderTableLocal(tHeaders, tRows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
