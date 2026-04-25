@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.63 — 2026-04-25
+
+### Added
+
+- `model-tenure`: per-model active-span lens. For each model
+  computes `firstSeen`, `lastSeen`, `spanHours` (clock hours
+  first→last, may be fractional), `activeBuckets` (distinct
+  `hour_start` values), `tokens`, `tokensPerActiveBucket`, and
+  `tokensPerSpanHour` (with a 1-hour floor for single-bucket
+  models).
+
+  Distinct from existing lenses:
+    - `model-mix-entropy` is a single concentration scalar per
+      window — does not surface per-model first/last seen or span.
+    - `model-cohabitation` reports co-presence of *pairs* of
+      models in the same hour, not lifetime span of any one model.
+    - `agent-mix` / `provider-share` / `cost` are window-mass
+      tallies — a one-day burst and a 30-day continuous run with
+      the same total volume look identical.
+    - `bucket-intensity` reports per-bucket *magnitude*
+      distribution per model — never surfaces firstSeen,
+      lastSeen, or span.
+    - `interarrival-time` reports gaps *between* active buckets
+      per model but does not anchor to firstSeen/lastSeen and
+      does not yield a tenure span.
+
+  Honest about bucket granularity: `hour_start` values from pew
+  may be sub-hourly (real data shows `:00` and `:30` both
+  present). `model-tenure` does not assume any fixed bucket
+  width — it counts distinct timestamp strings as
+  `activeBuckets` and measures the clock span in hours as
+  `spanHours`. This means `activeBuckets` can exceed `spanHours`
+  on dense workloads (multiple sub-hour buckets per clock hour);
+  the test `half-hour hour_start values are distinct active
+  buckets` pins this behaviour.
+
+  10 new tests (884 total, up from 874): rejects bad since/until;
+  empty queue; drops zero-token + bad hour_start rows;
+  single-bucket model has spanHours == 0 and tok/span-hr uses
+  the 1h floor; spanHours is fractional with no inclusive +1;
+  multi-model sort by spanHours desc with model asc tiebreak;
+  multi-device same-hour rows count as one active bucket;
+  half-hour buckets are distinct (and activeBuckets > spanHours
+  is allowed); source filter excludes non-matching rows; since/
+  until windowing trims firstSeen/lastSeen.
+
+  Live smoke test against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights model-tenure
+  as of: 2026-04-25T04:46:04.285Z    models: 15    active-buckets: 1,238    tokens: 8,369,923,336
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter
+
+  per-model tenure (sorted by spanHours desc)
+  model                 first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         tok/bucket  tok/span-hr
+  --------------------  ------------------------  ------------------------  -------  --------------  -------------  ----------  -----------
+  claude-sonnet-4.5     2025-10-09T09:00:00.000Z  2026-02-05T09:30:00.000Z  2856.5   37              105,382        2,848       37
+  gemini-3-pro-preview  2025-11-20T04:30:00.000Z  2026-03-05T06:00:00.000Z  2521.5   37              154,496        4,176       61
+  gpt-5                 2025-08-18T06:30:00.000Z  2025-11-26T11:30:00.000Z  2405.0   170             850,661        5,004       354
+  claude-sonnet-4       2025-07-30T06:00:00.000Z  2025-10-11T08:30:00.000Z  1754.5   26              53,062         2,041       30
+  claude-haiku-4.5      2026-02-11T02:30:00.000Z  2026-04-21T01:00:00.000Z  1654.5   30              70,717,678     2,357,256   42,743
+  gpt-5.1               2025-11-20T07:00:00.000Z  2026-01-27T09:00:00.000Z  1634.0   53              111,623        2,106       68
+  claude-sonnet-4.6     2026-02-25T06:30:00.000Z  2026-04-23T04:00:00.000Z  1365.5   9               12,601,545     1,400,172   9,229
+  claude-opus-4.6.1m    2026-03-04T14:00:00.000Z  2026-04-17T02:00:00.000Z  1044.0   167             1,108,978,665  6,640,591   1,062,240
+  gpt-5.4               2026-03-20T10:00:00.000Z  2026-04-25T04:30:00.000Z  858.5    373             2,474,950,345  6,635,256   2,882,878
+  claude-opus-4.6       2026-03-05T06:30:00.000Z  2026-03-20T10:00:00.000Z  363.5    4               350,840        87,710      965
+  claude-opus-4.7       2026-04-17T02:00:00.000Z  2026-04-25T04:30:00.000Z  194.5    273             4,665,063,916  17,088,146  23,984,904
+  unknown               2026-04-17T06:30:00.000Z  2026-04-24T15:00:00.000Z  176.5    56              35,575,800     635,282     201,563
+  gpt-4.1               2025-08-22T03:00:00.000Z  2025-08-22T03:00:00.000Z  0.0      1               72             72          72
+  gpt-5-nano            2026-04-23T08:30:00.000Z  2026-04-23T08:30:00.000Z  0.0      1               109,646        109,646     109,646
+  gpt-5.2               2026-04-23T02:30:00.000Z  2026-04-23T02:30:00.000Z  0.0      1               299,605        299,605     299,605
+  ```
+
+  Headline insight on real data: `gpt-5.4` is the workhorse —
+  858.5 clock hours span, 373 active buckets, 2.88M tok/span-hr;
+  `claude-opus-4.7` is the new dominant model (194.5h span but
+  24M tok/span-hr — densest by an order of magnitude). Three
+  one-shot models (`gpt-4.1`, `gpt-5-nano`, `gpt-5.2`) are
+  visible as `spanHours == 0` rows.
+
 ## 0.4.62 — 2026-04-25
 
 ### Added
