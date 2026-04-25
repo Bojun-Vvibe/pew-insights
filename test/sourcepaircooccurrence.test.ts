@@ -352,3 +352,31 @@ test('source-pair-cooccurrence: minJaccard boundary is inclusive (>=)', () => {
   assert.equal(r.pairs[0]!.jaccard, 0.5);
   assert.equal(r.droppedBelowMinJaccard, 0);
 });
+
+// ---- determinism / JSON-shape regression ---------------------------------
+
+test('source-pair-cooccurrence: report shape is JSON-stable across runs', () => {
+  // Build a fixed corpus and verify two builds with the same opts emit
+  // byte-identical JSON. Guards against accidental Map iteration order
+  // leaks into output (Map iteration is insertion-ordered, but if we ever
+  // start sourcing from a Set inside a hot loop without an explicit
+  // .sort() the output becomes platform-dependent).
+  const q = [
+    ql('2026-04-20T05:00:00.000Z', 'zeta', 7),
+    ql('2026-04-20T05:00:00.000Z', 'alpha', 3),
+    ql('2026-04-20T03:00:00.000Z', 'mu', 1),
+    ql('2026-04-20T03:00:00.000Z', 'alpha', 5),
+    ql('2026-04-20T01:00:00.000Z', 'zeta', 2),
+    ql('2026-04-20T01:00:00.000Z', 'mu', 4),
+  ];
+  const a = buildSourcePairCooccurrence(q, { generatedAt: GEN });
+  const b = buildSourcePairCooccurrence(q, { generatedAt: GEN });
+  assert.equal(JSON.stringify(a), JSON.stringify(b));
+  // Spot-check the actual ordering: count is uniform (1) across all 3 pairs,
+  // so jaccard desc then a asc breaks ties. All pairs have jaccard 1
+  // (each source appears in exactly 1 bucket), so a-asc, b-asc wins.
+  assert.deepEqual(
+    a.pairs.map((p) => `${p.a}|${p.b}`),
+    ['alpha|mu', 'alpha|zeta', 'mu|zeta'],
+  );
+});
