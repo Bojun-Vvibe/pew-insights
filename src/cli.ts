@@ -86,6 +86,7 @@ import {
   renderDeviceTenure,
   renderPromptOutputCorrelation,
   renderOutputTokenDecileDistribution,
+  renderInputTokenDecileDistribution,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -186,6 +187,7 @@ import { buildProviderSwitchingFrequency } from './providerswitchingfrequency.js
 import { buildFirstBucketOfDay } from './firstbucketofday.js';
 import { buildLastBucketOfDay } from './lastbucketofday.js';
 import { buildOutputTokenDecileDistribution } from './outputtokendeciledistribution.js';
+import { buildInputTokenDecileDistribution } from './inputtokendeciledistribution.js';
 import { buildActiveSpanPerDay } from './activespanperday.js';
 import { buildSourceBreadthPerDay } from './sourcebreadthperday.js';
 import { buildBucketDensityPercentile } from './bucketdensitypercentile.js';
@@ -3661,6 +3663,55 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderOutputTokenDecileDistribution(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('input-token-decile-distribution')
+  .description('Rank all positive-input buckets ascending and partition into 10 equal-sized deciles; report per-decile mass + Gini + top-10%/top-1% concentration on input_tokens (the context/prompt side of cost)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-input <n>',
+    'drop bucket rows whose input_tokens < n before partitioning; suppressed rows surface as droppedBelowMinInput. Default 0 = no floor.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minInput: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minInput = Number.parseInt(opts.minInput, 10);
+        if (!Number.isInteger(minInput) || minInput < 0) {
+          throw new Error(`--min-input must be a non-negative integer (got ${opts.minInput})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildInputTokenDecileDistribution(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minInput,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderInputTokenDecileDistribution(report) + '\n');
         }
       } catch (e) {
         die(e);

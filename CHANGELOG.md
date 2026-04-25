@@ -2,6 +2,98 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.2 — 2026-04-26
+
+### Added
+
+- `input-token-decile-distribution`: rank every active bucket by
+  `input_tokens` ascending and partition into 10 equal-sized
+  deciles (D1 = lightest 10%, D10 = heaviest 10%). Per-decile
+  row reports `bucketCount`, `minInput`, `meanInput`, `maxInput`,
+  `tokensInDecile`, and `shareOfTokens`. Window-wide scalars:
+  `gini`, `p90Share` (top-10% concentration), `p99Share`
+  (top-1% concentration; ceil to never overshoot the requested
+  window, min 1 bucket).
+
+  Why this is orthogonal to what already ships:
+
+  - `output-token-decile-distribution` ranks on `output_tokens`
+    (the *generation* side of cost). This one ranks on
+    `input_tokens` (the *context/prompt* side). The two are
+    weakly correlated at best — long-context read-only tasks
+    (file scans, search) emit huge input but tiny output;
+    long generations (essays, code synthesis) do the opposite.
+  - `prompt-size` reports per-source summary stats (mean /
+    median / max / p95). It groups by source and never exposes
+    a Lorenz-style decile partition over the whole population.
+  - `output-input-ratio`, `prompt-output-correlation` are
+    *ratio* / *correlation* lenses, not absolute input-mass
+    distributions.
+  - `cache-hit-ratio` looks at `cached_input_tokens /
+    input_tokens` *within* each row; it never ranks the
+    population.
+
+  Same equal-bin-by-rank algorithm as the output-token cousin
+  (matches `numpy.array_split` / `pandas.qcut`): `N % 10`
+  extras spread onto the lowest deciles. Drops: bad hour_start,
+  bad input_tokens, zero-input rows (kept out of the ranked
+  population), source-filter exclusions all surface as separate
+  counters.
+
+  16 new tests (1258 total, up from 1242): option validation,
+  drop attribution, partitioning correctness for N=10/13/3/20,
+  Gini convergence (uniform → 0; one-bucket-takes-all → (n-1)/n),
+  top-K share alignment with D10, since/until window respect,
+  determinism under input reordering.
+
+### Live-smoke output
+
+`pew-insights input-token-decile-distribution` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights input-token-decile-distribution
+as of: 2026-04-25T17:41:37.340Z    buckets: 1,144    input-tokens: 3,380,580,712
+concentration: gini=0.7108    top-10% share=58.14%    top-1% share=12.41%
+dropped: 0 bad hour_start, 0 bad input_tokens, 327 zero-input, 0 below min-input floor, 0 by source filter
+(rank all positive-input buckets ascending; partition into 10 equal-sized deciles; D1 = lightest, D10 = heaviest)
+
+per-decile input-token mass
+decile  buckets  min-in     mean-in     max-in      tokens-in-decile  share
+------  -------  ---------  ----------  ----------  ----------------  ------
+D1      115      2,441      32,967      65,160      3,791,187         0.11%
+D2      115      65,191     141,168     225,939     16,234,314        0.48%
+D3      115      227,275    310,478     388,837     35,704,960        1.06%
+D4      115      391,031    496,450     627,174     57,091,695        1.69%
+D5      114      629,159    753,401     899,039     85,887,740        2.54%
+D6      114      899,141    1,165,285   1,434,133   132,842,433       3.93%
+D7      114      1,437,972  1,842,866   2,287,825   210,086,715       6.21%
+D8      114      2,291,558  2,814,511   3,418,895   320,854,224       9.49%
+D9      114      3,426,945  4,908,841   7,082,242   559,607,882       16.55%
+D10     114      7,145,484  17,179,645  55,738,577  1,958,479,562     57.93%
+```
+
+Headline: **input-token mass is even more concentrated than
+output-token mass**. Direct comparison against v0.5.1's
+output-token snapshot:
+
+|              | gini  | top-10% | top-1% | max single bucket | D5 mean |
+| ------------ | ----- | ------- | ------ | ----------------- | ------- |
+| output (v0.5.1) | 0.751 | 60.21%  | -      | 416,890           | 7,331   |
+| **input (v0.5.2)**  | **0.711** | **57.93%**  | **12.41%** | **55,738,577**   | **753,401** |
+
+Two things stand out. (1) The single biggest **input** bucket
+weighs in at **55.7M tokens** — that's **134×** larger than the
+biggest **output** bucket (416,890), confirming that on this
+device the heaviest hours are dominated by *reading* (long
+context windows full of file content + tool output) rather than
+*generating*. (2) D10 alone burns **1.96B input tokens** —
+**52×** the entire all-time output budget (37.6M). Per-token
+provider pricing usually charges input < output, but at this
+ratio the input column dominates absolute cost. Recommendation:
+chase D10 input first when looking for cache-hit / context-prune
+savings, not D10 output.
+
 ## 0.5.1 — 2026-04-26
 
 ### Added
