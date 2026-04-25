@@ -72,6 +72,7 @@ import {
   renderSourceTenure,
   renderBucketStreakLength,
   renderSourceDecayHalfLife,
+  renderBucketHandoffFrequency,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -163,6 +164,7 @@ import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
 import { buildSourceTenure } from './sourcetenure.js';
 import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildSourceDecayHalfLife } from './sourcedecayhalflife.js';
+import { buildBucketHandoffFrequency } from './buckethandofffrequency.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3763,6 +3765,56 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceDecayHalfLife(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('bucket-handoff-frequency')
+  .description('How often the primary model changes between consecutive active hour-buckets in time order')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--top-handoffs <n>',
+    'cap the number of (from -> to) handoff pairs in the table (default 10; use 0 to suppress the table)',
+    '10',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        topHandoffs: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topHandoffs = Number.parseInt(opts.topHandoffs, 10);
+        if (!Number.isInteger(topHandoffs) || topHandoffs < 0) {
+          throw new Error(
+            `--top-handoffs must be a non-negative integer (got ${opts.topHandoffs})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildBucketHandoffFrequency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          topHandoffs,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBucketHandoffFrequency(report) + '\n');
         }
       } catch (e) {
         die(e);

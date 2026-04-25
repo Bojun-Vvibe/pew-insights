@@ -24,6 +24,7 @@ import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
 import type { SourceTenureReport } from './sourcetenure.js';
 import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 import type { SourceDecayHalfLifeReport } from './sourcedecayhalflife.js';
+import type { BucketHandoffFrequencyReport } from './buckethandofffrequency.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3533,6 +3534,66 @@ export function renderSourceDecayHalfLife(r: SourceDecayHalfLifeReport): string 
     s.halfLifeHours.toFixed(1),
     s.halfLifeFraction.toFixed(3),
     (s.frontLoadIndex >= 0 ? '+' : '') + s.frontLoadIndex.toFixed(3),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderBucketHandoffFrequency(r: BucketHandoffFrequencyReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights bucket-handoff-frequency'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    active-buckets: ${formatNumber(r.activeBuckets)}    pairs: ${formatNumber(r.consideredPairs)}    handoffs: ${formatNumber(r.handoffPairs)} (${(r.handoffShare * 100).toFixed(1)}%)    topHandoffs: ${formatNumber(r.topHandoffs)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `split: ${formatNumber(r.contiguousPairs)} contiguous pairs (${formatNumber(r.contiguousHandoffs)} handoffs), ${formatNumber(r.gappedPairs)} gapped pairs (${formatNumber(r.gappedHandoffs)} handoffs)`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedEmptyModelBuckets)} empty-model buckets, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  if (r.stickiestModel !== null) {
+    lines.push(
+      chalk.dim(
+        `stickiest model: ${r.stickiestModel} (primary in ${formatNumber(r.stickiestModelBuckets)} of ${formatNumber(r.activeBuckets)} buckets)`,
+      ),
+    );
+  }
+  lines.push(
+    chalk.dim(
+      `(primary model per bucket = max-tokens model, ties broken lex; contiguous pair = exactly 1h apart; handoff = primary changed)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.activeBuckets === 0) {
+    lines.push(chalk.yellow('  no active buckets in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+  if (r.pairs.length === 0) {
+    lines.push(chalk.yellow('  no model handoffs detected (all consecutive buckets share a primary model, or topHandoffs=0).'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`top model handoffs (sorted by count desc)`));
+  const headers = ['from-model', 'to-model', 'count', 'share-of-handoffs'];
+  const rows: string[][] = r.pairs.map((p) => [
+    p.from,
+    p.to,
+    formatNumber(p.count),
+    r.handoffPairs > 0 ? ((p.count / r.handoffPairs) * 100).toFixed(1) + '%' : '0.0%',
   ]);
   lines.push(renderTableLocal(headers, rows));
 
