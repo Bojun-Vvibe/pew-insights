@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.85 — 2026-04-25
+
+### Added
+
+- `bucket-density-percentile`: population-level distribution of
+  `total_tokens` per single bucket pooled across all rows that
+  survive filters. Reports the full percentile ladder (`min`,
+  `p1`, `p5`, `p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `p99`,
+  `p99.9`, `max`) plus a 10-decile mass partition where each
+  decile surfaces `count`, `tokens`, `tokenShare`, `lowerEdge`,
+  and `upperEdge`. Standard `--since` / `--until` / `--source`
+  filters; nearest-rank (R-1) percentile convention to match
+  `bucket-intensity` / `interarrival-time` / `velocity`.
+
+  Why this is orthogonal to what already ships:
+
+  - `bucket-intensity` reports the same magnitude axis but
+    *per model*. A model with 3 huge buckets gets its own row
+    and never enters a pooled p99. This subcommand answers
+    "across *all* my buckets regardless of model/source, what
+    does the size distribution look like" — there is no per-key
+    breakdown, just the global distribution.
+  - `burstiness` collapses spread into a single Gini /
+    coefficient-of-variation scalar. It tells you *how* uneven
+    things are but never surfaces the percentile values or the
+    decile mass shares themselves.
+  - `tail-share` reports a single "top N% holds X% of tokens"
+    pair. `bucket-density-percentile` gives the full decile
+    distribution (D1..D10), so you can see whether the tail is
+    a sharp 99th-percentile cliff or a gentle slope across the
+    top three deciles.
+
+  8 new tests (1088 total, up from 1080): rejects bad
+  since/until/minTokens, empty queue handling, drop accounting
+  for bad hour_start / zero-tokens / source filter, percentile
+  correctness on a synthetic 1..100 population, decile
+  partitioning conservation (counts sum to N, tokens sum to
+  totalTokens, shares sum to 1.0), small-population handling
+  (5 buckets, every observation lands in exactly one decile,
+  D10 always contains the max), and `--since`/`--until` window
+  filtering.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (banned product
+  names redacted as `[REDACTED]`):
+
+  ```
+  pew-insights bucket-density-percentile
+  as of: 2026-04-25T11:39:40.362Z    buckets: 1,443    tokens: 8,550,018,262    mean: 5,925,169
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-tokens floor
+
+  percentile ladder (tokens per bucket)
+  p      tokens
+  -----  -----------
+  min    20
+  p1     174
+  p5     722
+  p10    1,729
+  p25    59,346
+  p50    1,449,566
+  p75    5,686,454
+  p90    14,747,056
+  p95    31,948,907
+  p99    59,093,095
+  p99.9  87,339,377
+  max    107,646,380
+
+  decile mass distribution (D1 = smallest, D10 = top 10%)
+  decile  count  tokens         share  lower       upper
+  ------  -----  -------------  -----  ----------  -----------
+  D1      144    112,675        0.0%   20          1,721
+  D2      144    590,678        0.0%   1,729       8,340
+  D3      144    11,147,598     0.1%   8,609       199,015
+  D4      145    58,048,658     0.7%   200,241     648,575
+  D5      144    154,155,813    1.8%   652,441     1,445,492
+  D6      144    282,025,834    3.3%   1,449,566   2,542,276
+  D7      145    498,895,766    5.8%   2,554,115   4,502,438
+  D8      144    831,029,109    9.7%   4,504,333   7,353,211
+  D9      144    1,468,032,805  17.2%  7,358,150   14,593,390
+  D10     145    5,245,979,326  61.4%  14,747,056  107,646,380
+  ```
+
+  Headline: across 1,443 active buckets totalling 8.55B tokens,
+  the distribution is grotesquely top-heavy. Median bucket is
+  ~1.45M tokens but mean is ~5.93M — a 4x mean/median ratio
+  flagging massive right-skew. The bottom 30% of buckets (D1+D2+D3,
+  432 buckets) hold a combined ~12M tokens — 0.14% of all mass,
+  i.e. essentially noise. The top decile alone (145 buckets) holds
+  61.4% of *all* tokens (5.25B), and the p99 bucket is ~59M tokens
+  while max is ~107M — a single bucket carries ~1.3% of total
+  mass. This is the picture of a workload dominated by a small
+  number of extremely heavy reasoning/long-context buckets, with
+  a long tail of trivial heartbeat traffic.
+
 ## 0.4.84 — 2026-04-25
 
 ### Added
