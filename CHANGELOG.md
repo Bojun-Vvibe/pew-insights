@@ -2,7 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.94 — 2026-04-25
+
+### Added
+
+- `provider-switching-frequency`: per UTC calendar day, how often the
+  *primary provider* (anthropic / openai / google / ...) of the active
+  hour-buckets changes from one bucket to the next *within the same
+  day*, in `hour_start` order. Per-bucket primary provider is
+  `classifyProvider(normaliseModel)` applied to the max-`total_tokens`
+  model in that bucket (ties broken on model name asc).
+
+  Why a separate subcommand:
+
+  - `bucket-handoff-frequency` already counts model-level handoffs,
+    but ignores day structure and collapses every model identity
+    (so `claude-opus-4.7` → `claude-sonnet-4.5` looks like a
+    "handoff" even though the vendor stayed put). This command
+    classifies to provider first, so we count *vendor* swaps only.
+  - `provider-share` and `provider-tenure` are mass tallies — no
+    time order, no adjacency.
+  - `model-switching` is intra-session and never crosses bucket
+    boundaries.
+
+  Headline question: "on a typical active day, how many times do I
+  bounce between inference vendors?" — useful for routing-stability
+  analysis, vendor-lock-in risk, and explaining cost variance.
+
+  Output also splits cross-day pairs (overnight gap) from same-day
+  pairs so the operator can compare overnight churn vs intra-day
+  churn, and surfaces `daysWithAnySwitch` / `dayCoverage` for the
+  fraction of active days that saw ≥1 vendor swap.
+
+  9 new tests (1166 total, up from 1155): option validation,
+  empty queue, single-bucket day, intra-day swap counting (with
+  same-provider model swaps correctly *not* counted as switches),
+  cross-day boundary not counted as same-day, malformed-input
+  drop counters, source filter exclusion, deterministic top-N
+  with lex tie-break.
+
+### Live-smoke output
+
+`pew-insights provider-switching-frequency` against
+`~/.config/pew/queue.jsonl`:
+
+```
+pew-insights provider-switching-frequency
+as of: 2026-04-25T14:39:25.296Z    active-days: 105    active-buckets: 899    same-day-pairs: 794    switches: 103 (13.0%)    mean/day: 0.98
+cross-day: 104 pairs, 17 switches    days-with-any-switch: 25/105 (23.8%)    sort: day    topPairs: 10    topDays: 0
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 empty-model buckets, 0 pairs below top cap, 0 days below top cap
+(primary provider per bucket = classifyProvider of max-tokens model; switch = same-day adjacent buckets with different primary provider)
+
+top provider switches (sorted by count desc)
+from-provider  to-provider  count  share-of-switches
+-------------  -----------  -----  -----------------
+openai         anthropic    47     45.6%
+anthropic      openai       45     43.7%
+google         anthropic    3      2.9%
+anthropic      google       2      1.9%
+google         openai       2      1.9%
+openai         google       2      1.9%
+openai         unknown      1      1.0%
+unknown        anthropic    1      1.0%
+
+per-day rows (sort: day)
+day         buckets  pairs  switches  switch-share  dominant-provider  dom-buckets
+----------  -------  -----  --------  ------------  -----------------  -----------
+2026-04-25  30       29     0         0.0%          anthropic          30
+2026-04-24  48       47     15        31.9%         anthropic          28
+2026-04-23  48       47     11        23.4%         openai             30
+2026-04-22  48       47     9         19.1%         anthropic          28
+2026-04-21  48       47     10        21.3%         anthropic          28
+2026-04-20  48       47     11        23.4%         anthropic          24
+2026-04-19  48       47     8         17.0%         openai             40
+2026-04-18  36       35     5         14.3%         anthropic          24
+2026-04-17  23       22     8         36.4%         openai             15
+2026-04-16  14       13     2         15.4%         anthropic          13
+2026-04-15  21       20     2         10.0%         anthropic          19
+```
+
+Reading: across 105 active UTC days, the primary inference vendor
+flipped between hour-buckets on the same day 103 times in 794 pairs
+(13.0%), averaging just under one swap per active day. ~24% of
+active days saw any swap at all — the rest were single-vendor days.
+The top two pairs (`openai → anthropic`, `anthropic → openai`) sit
+within ~2 counts of each other, consistent with bidirectional
+fallback rather than one-way migration.
+
 ## 0.4.93 — 2026-04-25
+
 
 ### Added
 
