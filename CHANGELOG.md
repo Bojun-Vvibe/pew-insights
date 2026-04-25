@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.73 — 2026-04-25
+
+### Added
+
+- New subcommand: `source-decay-half-life`. The temporal-shape
+  complement to `source-tenure`. For every source, sort its
+  active buckets in time order, walk the cumulative-token curve,
+  and find the first bucket where the running sum reaches
+  >= 50% of the source's total mass. Reports `firstSeen`,
+  `lastSeen`, `spanHours`, `activeBuckets`, `tokens`,
+  `halfLifeIso`, `halfLifeHours`, `halfLifeFraction`
+  (= halfLifeHours / spanHours, in `[0, 1]`), and
+  `frontLoadIndex` (= `0.5 - halfLifeFraction`).
+
+  Reading: `halfLifeFraction < 0.5` -> front-loaded (most tokens
+  landed early in the source's life — likely declining or one-shot
+  experiment); `~ 0.5` -> uniform token-rate across tenure;
+  `> 0.5` -> back-loaded (the source is still ramping up — recent
+  half of tenure carries more than half the mass).
+
+  Why a separate subcommand:
+  - `source-tenure` reports first/last/span/active-buckets/tokens
+    but treats tenure as one span — silent on *where in the span*
+    the mass actually accrued.
+  - `bucket-streak-length` measures contiguity, not where in the
+    tenure window the mass landed.
+  - `tail-share`, `provider-share`, `source-mix` are pure mass
+    tallies with no tenure axis.
+  - `idle-gaps` measures inactivity *gaps* between buckets — the
+    complement on the time axis.
+
+  Single-bucket sources collapse to `halfLifeFraction = 0`,
+  `frontLoadIndex = +0.5` (all mass in the only bucket -> trivially
+  "front-loaded" by definition; flagged via `activeBuckets = 1`).
+
+  Flags: `--since`, `--until`, `--model` (restrict to a single
+  model — non-matching rows surface as `droppedModelFilter`),
+  `--min-buckets` (drop sparse sources, surfaced as
+  `droppedSparseSources`), `--sort`
+  (`halflife` default | `frontload` | `tokens` | `span` | `active`),
+  `--json`. 18 new tests (983 total, up from 965): option
+  validation (sort, minBuckets, since/until); empty queue;
+  single-bucket source; front-loaded math; back-loaded math;
+  uniform 25/25/25/25 case (halfLifeFraction = 1/3); default sort
+  with token + lex tiebreak; `--sort tokens` ordering;
+  `--sort frontload` orders most-front-loaded first;
+  `--min-buckets` floor preserves global totals; `--model` filter;
+  window clip; bad/zero-token row drops; duplicate-bucket
+  accumulation; empty source name normalised to `unknown`; report
+  echoes resolved options.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-decay-half-life
+  as of: 2026-04-25T08:05:56.027Z    sources: 6 (shown 6)    active-buckets: 1,318    tokens: 8,458,082,355    minBuckets: 0    sort: halflife
+  dropped: 0 bad hour_start, 0 zero-tokens, 0 by model filter, 0 sparse sources
+  (halfLifeFraction = clock-hours from firstSeen to the bucket where cumulative tokens >= 50% / spanHours; < 0.5 = front-loaded, > 0.5 = back-loaded; frontLoadIndex = 0.5 - halfLifeFraction)
+
+  per-source token half-life (sorted by halflife)
+  source          first-seen (UTC)          last-seen (UTC)           span-hr  active-buckets  tokens         half-life (UTC)           half-life-hr  half-life-frac  front-load-idx
+  --------------  ------------------------  ------------------------  -------  --------------  -------------  ------------------------  ------------  --------------  --------------
+  hermes          2026-04-17T06:30:00.000Z  2026-04-25T08:00:00.000Z  193.5    146             140,666,870    2026-04-20T06:30:00.000Z  72.0          0.372           +0.128
+  vscode-ext      2025-07-30T06:00:00.000Z  2026-04-20T01:30:00.000Z  6331.5   320             1,885,727      2025-11-26T11:00:00.000Z  2861.0        0.452           +0.048
+  opencode        2026-04-20T14:00:00.000Z  2026-04-25T08:00:00.000Z  114.0    176             2,411,109,047  2026-04-22T18:00:00.000Z  52.0          0.456           +0.044
+  openclaw        2026-04-17T02:30:00.000Z  2026-04-25T07:30:00.000Z  197.0    345             1,652,410,263  2026-04-21T02:00:00.000Z  95.5          0.485           +0.015
+  codex           2026-04-13T01:30:00.000Z  2026-04-20T16:30:00.000Z  183.0    64              809,624,660    2026-04-19T06:30:00.000Z  149.0         0.814           -0.314
+  claude-code     2026-02-11T02:30:00.000Z  2026-04-23T14:30:00.000Z  1716.0   267             3,442,385,788  2026-04-18T17:00:00.000Z  1598.5        0.932           -0.432
+  ```
+
+  Headline read: the six active sources split cleanly into three
+  shapes. `hermes` is the most front-loaded current source
+  (halfLifeFraction = 0.372, +0.128 index) — half its mass landed
+  in the first ~37% of its 8-day tenure, suggesting an early burst
+  that has since tapered. `vscode-ext`, `opencode`, and `openclaw`
+  sit near the uniform line (~0.45, +0.04 to +0.05) — flat token
+  rate across their lifetimes. The two clear back-loaded sources
+  are `codex` (0.814) and especially `claude-code` (0.932): for
+  `claude-code`, half its 3.4B tokens landed in the *last 7%* of
+  its 1,716-hour tenure — the source spent two months at low
+  intensity then exploded recently. This is the kind of regime
+  shift `source-tenure` cannot surface from first/last alone.
+
 ## 0.4.72 — 2026-04-25
 
 ### Added
