@@ -22,6 +22,7 @@ import type { ModelTenureReport } from './modeltenure.js';
 import type { TailShareReport } from './tailshare.js';
 import type { TenureDensityQuadrantReport } from './tenuredensityquadrant.js';
 import type { SourceTenureReport } from './sourcetenure.js';
+import type { BucketStreakLengthReport } from './bucketstreaklength.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3412,6 +3413,64 @@ export function renderSourceTenure(r: SourceTenureReport): string {
     formatNumber(Math.round(s.tokensPerActiveBucket)),
     formatNumber(Math.round(s.tokensPerSpanHour)),
     formatNumber(s.distinctModels),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderBucketStreakLength(r: BucketStreakLengthReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights bucket-streak-length'));
+  const widthMin = (r.bucketWidthMs / 60_000).toFixed(0);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    models: ${formatNumber(r.totalModels)} (shown ${formatNumber(r.models.length)})    active-buckets: ${formatNumber(r.totalActiveBuckets)}    tokens: ${formatNumber(r.totalTokens)}    bucket-width: ${widthMin}m${r.bucketWidthInferred ? ' (inferred)' : ''}    minBuckets: ${formatNumber(r.minBuckets)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseModels)} sparse models`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(streak = maximal run of consecutive active buckets where each step is exactly bucketWidth apart; longestStreak is per-model)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.models.length === 0) {
+    lines.push(chalk.yellow('  no model rows in the window after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-model bucket streaks (sorted by longestStreak desc)'));
+  const headers = [
+    'model',
+    'active-buckets',
+    'streaks',
+    'longest',
+    'mean-streak',
+    'longest-start (UTC)',
+    'longest-end (UTC)',
+    'tokens',
+  ];
+  const rows: string[][] = r.models.map((m) => [
+    m.model,
+    formatNumber(m.activeBuckets),
+    formatNumber(m.streakCount),
+    formatNumber(m.longestStreak),
+    m.meanStreakLength.toFixed(2),
+    m.longestStreakStart,
+    m.longestStreakEnd,
+    formatNumber(m.tokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

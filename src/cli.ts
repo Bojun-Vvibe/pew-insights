@@ -70,6 +70,7 @@ import {
   renderTailShare,
   renderTenureDensityQuadrant,
   renderSourceTenure,
+  renderBucketStreakLength,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -159,6 +160,7 @@ import { buildBucketIntensity } from './bucketintensity.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
 import { buildSourceTenure } from './sourcetenure.js';
+import { buildBucketStreakLength } from './bucketstreaklength.js';
 import { buildTailShare } from './tailshare.js';
 import { buildOutputInputRatio } from './outputinputratio.js';
 import { buildModelMixEntropy } from './modelmixentropy.js';
@@ -3615,6 +3617,54 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceTenure(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('bucket-streak-length')
+  .description('Per-model longest consecutive-active-bucket runs (sustained vs spiky usage)')
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-buckets <n>',
+    'drop models whose activeBuckets < n; suppressed rows surface as droppedSparseModels (default 0 = no floor)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minBuckets: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isInteger(minBuckets) || minBuckets < 0) {
+          throw new Error(`--min-buckets must be a non-negative integer (got ${opts.minBuckets})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildBucketStreakLength(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minBuckets,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderBucketStreakLength(report) + '\n');
         }
       } catch (e) {
         die(e);
