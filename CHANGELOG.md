@@ -2,6 +2,98 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.38 — 2026-04-26
+
+### Added
+
+- `source-hour-of-day-topk-mass-share`: per-source share of total
+  token mass concentrated in the K busiest hours-of-day (default
+  K = 3) on the 24-hour clock. For each source we collapse all
+  hourly buckets in the window into a length-24 vector
+
+  ```
+  H_h = sum_{rows with hour-of-day = h} total_tokens     (h in 0..23)
+  ```
+
+  and report
+
+  ```
+  share_K = ( sum of the K largest H_h ) / ( sum_h H_h ).
+  ```
+
+  Range `[K/24, 1]`:
+  - `share_K = K/24` iff token mass is *perfectly uniform* across
+    all 24 hours-of-day (the lower bound is echoed on the report
+    as `uniformBaseline`).
+  - `share_K = 1` iff the source only ever produces tokens in
+    `<= K` hours-of-day.
+
+  For K = 3 the lower bound is 0.125; a source with `share_3 = 0.5`
+  concentrates half its lifetime mass into just three clock hours.
+
+  Why a fresh subcommand instead of folding into existing reports:
+
+  - `peak-hour-share` is a *per-day per-model* spikiness aggregate
+    (each day's busiest 1-hour window). A source that always
+    works 03:00-05:00 and a source that always works 14:00-16:00
+    can have identical peak-hour-share but very different
+    `topK-mass-share` signatures — the question here is the
+    *clock-hour* signature, not within-day spikiness.
+  - `source-token-mass-hour-centroid` reports the *position* of
+    the circular mean (centroidHour) and resultant length R. R
+    is a smooth concentration index across all 24 bins; top-K
+    share is a discrete top-K cumulative share. Two sources can
+    share R but differ in top-K share (unimodal with a fat
+    shoulder vs. bimodal with two narrow peaks).
+  - `hour-of-day-token-skew` is the 3rd standardised moment —
+    asymmetry, not concentration magnitude.
+  - `bucket-token-gini` Ginis hourly buckets in the window
+    directly, conflating *which clock-hour* with *which day*.
+    This subcommand collapses to the hour-of-day axis first.
+  - `daily-token-gini-coefficient` Ginis the per-*day* totals.
+
+  Knobs: `--since` / `--until` (ISO window on `hour_start`),
+  `--source <name>` (single-source restriction; non-matching
+  surface as `droppedSourceFilter`), `--top-hours <k>` (default
+  3; integer in [1, 24]), `--min-tokens` (default 1000; counts
+  surface as `droppedSparseSources`), `--min-hours` (default 2;
+  hides degenerate single-hour sources whose share is trivially
+  1; counts surface as `droppedBelowMinHours`), `--top` (default
+  0 = no cap; counts surface as `droppedTopSources`), `--sort`
+  (`share` default | `tokens` | `hours` | `source`), `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+pew-insights source-hour-of-day-topk-mass-share
+as of: 2026-04-26T08:09:36.844Z    sources: 6 (shown 6)    tokens: 9,065,511,856    K: 3    uniformBaseline: 0.1250    min-tokens: 1,000    min-hours: 2    top: —    sort: share
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-hours, 0 below top cap
+(per-source share of total token mass in the K busiest hours-of-day; share_K in [K/24, 1]; UTC hours)
+
+per-source top-3 hour-of-day mass share (sorted by share; ties: source asc)
+source           firstDay    lastDay     hoursActive  top3Share  topHours                    tokens
+---------------  ----------  ----------  -----------  ---------  --------------------------  -------------
+ide-assistant-A  2025-07-30  2026-04-20  14           0.4893     02:0.217 06:0.141 08:0.131  1,885,727
+codex            2026-04-13  2026-04-20  16           0.3647     12:0.128 16:0.119 15:0.118  809,624,660
+claude-code      2026-02-11  2026-04-23  20           0.3153     08:0.136 07:0.099 06:0.081  3,442,385,788
+hermes           2026-04-17  2026-04-26  24           0.3085     14:0.109 06:0.104 08:0.095  143,443,069
+opencode         2026-04-20  2026-04-26  24           0.2672     17:0.097 18:0.090 16:0.080  2,946,391,872
+openclaw         2026-04-17  2026-04-26  24           0.1911     01:0.075 02:0.058 03:0.058  1,721,780,740
+```
+
+Reading: `ide-assistant-A` (a sparse 1.9M-token IDE-side source)
+shows the strongest clock-hour concentration (`share_3 = 0.4893`
+over 14 active hours), with hours 02, 06, 08 carrying ~49% of its
+lifetime mass — well above the 0.125 uniform baseline. At the
+other end, `openclaw` is essentially flat across the whole
+24-hour clock (`share_3 = 0.1911`, only ~1.5x the uniform
+baseline) despite its concentrated 10-day window. `claude-code`
+and `hermes` cluster around `share_3 ≈ 0.31` — moderately
+concentrated mornings (06-08 UTC) for `claude-code`, two-peak
+mid-day/evening shape for `hermes`. The `topHours` column shows
+the explicit (hour, share) signature so you can read the
+dominant clock-hour signature at a glance without inspecting JSON.
+
 ## 0.6.37 — 2026-04-26
 
 ### Changed
