@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.79 — 2026-04-27
+
+### Added
+
+- `source-first-vs-last-quartile-output-mean-shift`: per-source
+  non-parametric chronological drift detector for `output_tokens`.
+  For each source, sort its rows by `hour_start` ascending, split
+  into chronological quartiles, and compare `mean(output_tokens)`
+  of the first 25% (Q1) vs the last 25% (Q4). Reports
+  `meanShift = lastQMean - firstQMean` (positive = source is
+  generating fatter replies now than at debut; negative = thinner)
+  and `relShift = meanShift / firstQMean` as the unitless
+  cross-source comparator.
+
+  Quartile size is `q = floor(n / 4)` rows on each end, so Q1 and
+  Q4 are always equal-sized and disjoint for `n >= 4` (the absolute
+  floor for non-degenerate quartiles). The middle 50% is
+  deliberately ignored — this lens is about the **endpoints**, not
+  the trajectory.
+
+  Why this is genuinely orthogonal to existing per-source lenses:
+
+  - `source-daily-token-trend-slope` fits OLS over **daily
+    aggregates** of `total_tokens` and assumes linearity. A source
+    with a U-shaped trajectory has near-zero OLS slope but also
+    near-zero `meanShift`; a source that suddenly jumped late in
+    life has near-zero slope but large `meanShift`. Different
+    statistic, different question.
+  - `source-output-tokens-per-row-percentiles` pools the whole
+    window — destroys chronological information.
+  - `source-decay-half-life` assumes monotone decay; cannot express
+    growth.
+  - `source-cumulative-mass-half-life-day` is a centroid on **mass**
+    (`total_tokens`), not on **mean reply size** (`output_tokens`).
+  - `source-input-output-correlation-coefficient` is per-row
+    association pooled over the whole window — orthogonal to
+    per-period mean shift.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (one IDE-assistant
+  source name redacted to `ide-assistant-A` per banned-string
+  policy):
+
+  ```
+  pew-insights source-first-vs-last-quartile-output-mean-shift
+  as of: 2026-04-26T23:10:53.073Z    sources: 6 (shown 6)    rows: 1,604    min-rows: 4    top: —    sort: shift-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 4-row quartile floor, 0 below min-rows, 0 below top cap
+
+  per-source first-vs-last quartile output_tokens mean shift (sorted by shift-desc; ties: source asc)
+  source           rows  qRows  firstQMean  lastQMean  meanShift  relShift  degen
+  ---------------  ----  -----  ----------  ---------  ---------  --------  -----
+  claude-code      299   74     8566.23     114618.18  106051.95  12.3802   -
+  codex            64    16     21846.38    64236.81   42390.44   1.9404    -
+  opencode         318   79     82335.68    93132.27   10796.58   0.1311    -
+  hermes           166   41     8232.17     8046.61    -185.56    -0.0225   -
+  ide-assistant-A  333   83     2967.51     1929.01    -1038.49   -0.3500   -
+  openclaw         424   106    13096.42    1973.15    -11123.27  -0.8493   -
+  ```
+
+  Read across the table:
+
+  - `claude-code` shows the most dramatic growth: its typical reply
+    grew from `~8.6k` output tokens in the earliest 25% of its rows
+    to `~115k` in the latest 25% — a `relShift` of `+12.4` (i.e.
+    Q4 mean is `13.4x` Q1 mean). This is consistent with a shift
+    from short interactive Q&A to long agentic completions.
+  - `codex` shows the second-largest growth (`+42k`, `relShift +1.9`)
+    on a smaller sample (64 rows; only 16 per quartile end).
+  - `openclaw` shows the most dramatic shrink: Q1 mean `~13.1k`, Q4
+    mean `~2.0k` — a `relShift` of `-0.85` (Q4 is only 15% of Q1).
+    Output behaviour fundamentally changed mid-life.
+  - `hermes` is essentially stationary (`relShift -0.02`), which
+    makes it the natural baseline for noise.
+
+  Companion smoke (`--sort abs-shift`, ranks by absolute drift
+  magnitude regardless of direction):
+
+  ```
+  pew-insights source-first-vs-last-quartile-output-mean-shift
+  as of: 2026-04-26T23:10:53.682Z    sources: 6 (shown 6)    rows: 1,604    min-rows: 4    top: —    sort: abs-shift
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 4-row quartile floor, 0 below min-rows, 0 below top cap
+
+  per-source first-vs-last quartile output_tokens mean shift (sorted by abs-shift; ties: source asc)
+  source           rows  qRows  firstQMean  lastQMean  meanShift  relShift  degen
+  ---------------  ----  -----  ----------  ---------  ---------  --------  -----
+  claude-code      299   74     8566.23     114618.18  106051.95  12.3802   -
+  codex            64    16     21846.38    64236.81   42390.44   1.9404    -
+  openclaw         424   106    13096.42    1973.15    -11123.27  -0.8493   -
+  opencode         318   79     82335.68    93132.27   10796.58   0.1311    -
+  ide-assistant-A  333   83     2967.51     1929.01    -1038.49   -0.3500   -
+  hermes           166   41     8232.17     8046.61    -185.56    -0.0225   -
+  ```
+
+  By absolute drift magnitude: `claude-code` (+106k) and `openclaw`
+  (-11k) are the two structurally-changed sources — the "things
+  look different now" cohort. `hermes` ranks last by `|meanShift|`,
+  confirming its near-zero-drift baseline status.
+
+---
+
 ## 0.6.78 — 2026-04-27
 
 ### Changed
