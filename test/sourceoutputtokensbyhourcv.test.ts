@@ -486,3 +486,77 @@ test('source-output-tokens-by-hour-cv: minMeanHourMean composes with minHours an
   assert.equal(r.droppedBelowMinHours, 1);
   assert.equal(r.droppedBelowMinMeanHourMean, 1);
 });
+
+test('source-output-tokens-by-hour-cv: report shape is JSON-serializable and stable', () => {
+  // Guards against accidental Map/Set leakage into the report.
+  const queue: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'srcA', 100),
+    ql('2026-04-20T06:00:00Z', 'srcA', 200),
+    ql('2026-04-20T12:00:00Z', 'srcA', 300),
+  ];
+  const r = buildSourceOutputTokensByHourCv(queue, {
+    generatedAt: GEN,
+    minHours: 3,
+  });
+  const round = JSON.parse(JSON.stringify(r));
+  assert.deepEqual(round, r);
+  // Required top-level keys for downstream JSON consumers.
+  for (const k of [
+    'generatedAt',
+    'windowStart',
+    'windowEnd',
+    'source',
+    'minHours',
+    'minRows',
+    'minMeanHourMean',
+    'top',
+    'sort',
+    'totalSources',
+    'totalTokens',
+    'droppedInvalidHourStart',
+    'droppedSourceFilter',
+    'droppedBelowMinHours',
+    'droppedBelowMinRows',
+    'droppedBelowMinMeanHourMean',
+    'droppedBelowTopCap',
+    'sources',
+  ]) {
+    assert.ok(k in r, `missing key: ${k}`);
+  }
+  // Required per-row keys.
+  for (const k of [
+    'source',
+    'tokens',
+    'outputTokens',
+    'rowCount',
+    'hoursPopulated',
+    'meanHourMean',
+    'stdHourMean',
+    'hourCv',
+    'flatZero',
+    'singleHour',
+  ]) {
+    assert.ok(k in r.sources[0]!, `missing row key: ${k}`);
+  }
+});
+
+test('source-output-tokens-by-hour-cv: totalTokens is sum of per-source tokens before display filters', () => {
+  // Global totalTokens accounts for sources later dropped by display
+  // filters — denominator stability is critical for downstream % math.
+  const queue: QueueLine[] = [
+    // dropped by minHours
+    ql('2026-04-20T00:00:00Z', 'thin', 999),
+    // survives
+    ql('2026-04-20T00:00:00Z', 'good', 100, { input_tokens: 50 }),
+    ql('2026-04-20T06:00:00Z', 'good', 200, { input_tokens: 50 }),
+    ql('2026-04-20T12:00:00Z', 'good', 300, { input_tokens: 50 }),
+  ];
+  const r = buildSourceOutputTokensByHourCv(queue, {
+    generatedAt: GEN,
+    minHours: 3,
+  });
+  // thin totals: 999+100=1099; good per-row total 50+output: 150+250+350=750
+  assert.equal(r.totalTokens, 1099 + 750);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinHours, 1);
+});
