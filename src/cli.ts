@@ -93,6 +93,7 @@ import {
   renderSourceCumulativeMassHalfLifeDay,
   renderSourceColdWarmRowRatio,
   renderSourceReasoningShareByDayCv,
+  renderSourceCacheShareByDayCv,
   renderSourceInputTokenTopRowShare,
   renderSourceZeroOutputRowShare,
   renderModelTenure,
@@ -247,6 +248,7 @@ import { buildSourceSingleDayMassConcentration } from './sourcesingledaymassconc
 import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalflifeday.js';
 import { buildSourceColdWarmRowRatio } from './sourcecoldwarmrowratio.js';
 import { buildSourceReasoningShareByDayCv } from './sourcereasoningsharebydaycv.js';
+import { buildSourceCacheShareByDayCv } from './sourcecachesharebydaycv.js';
 import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.js';
 import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
 import { buildModelTenure } from './modeltenure.js';
@@ -8727,6 +8729,102 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceReasoningShareByDayCv(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-cache-share-by-day-cv')
+  .description(
+    "Per-source coefficient of variation of the daily cached_input_tokens / input_tokens share across the source's active calendar UTC days. Low CV = stable cache reuse day-over-day; high CV = swings between cold-prompt days and warm-context days. Distinct from source-cold-warm-row-ratio (row-count split, no day axis), source-weekend-weekday-cache-share-gap (collapses time into two buckets), cache-hit-ratio / cache-hit-by-hour (global, no per-source view), and source-io-ratio-stability (CV of output/input, orthogonal axis).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows with daysWithShare below n (default 3); counts surface as droppedBelowMinDays',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedBelowTopCap (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: tokens (default) | cv | mean | days | source. cv asc = most stable first. mean desc = highest cache hitter first. ties: source asc.",
+    'tokens',
+  )
+  .option(
+    '--min-mean-share <n>',
+    'display filter: hide sources whose meanShare is strictly below n. n in [0, 1]. Default 0 = no filter. Useful for suppressing the mathematically-loud-but-substantively-cold regime (e.g. --min-mean-share 0.05 hides anything below 5% average cache share). Counts surface as droppedBelowMinMeanShare.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minMeanShare: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['tokens', 'cv', 'mean', 'days', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const minMeanShare = Number.parseFloat(opts.minMeanShare);
+        if (
+          !Number.isFinite(minMeanShare) ||
+          minMeanShare < 0 ||
+          minMeanShare > 1
+        ) {
+          throw new Error(
+            `--min-mean-share must be a finite number in [0, 1] (got ${opts.minMeanShare})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceCacheShareByDayCv(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top: top === 0 ? null : top,
+          sort: opts.sort as 'tokens' | 'cv' | 'mean' | 'days' | 'source',
+          minMeanShare,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceCacheShareByDayCv(report) + '\n');
         }
       } catch (e) {
         die(e);

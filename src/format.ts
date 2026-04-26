@@ -57,6 +57,10 @@ import type {
   SourceReasoningShareByDayCvReport,
   SourceReasoningShareByDayCvRow,
 } from './sourcereasoningsharebydaycv.js';
+import type {
+  SourceCacheShareByDayCvReport,
+  SourceCacheShareByDayCvRow,
+} from './sourcecachesharebydaycv.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -7571,6 +7575,79 @@ export function renderSourceZeroOutputRowShare(
     ],
   );
   lines.push(renderTableLocal(headers, rows3));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceCacheShareByDayCv(
+  r: SourceCacheShareByDayCvReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-cache-share-by-day-cv'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    min-mean-share: ${r.minMeanShare.toFixed(4)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinMeanShare)} below min-mean-share, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(shareCv = stddev(daily cached_input/input) / mean of same; low CV = stable cache reuse day-over-day; flat=y means every kept day had cached=0; pure=y means every kept day was 100% cached)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source cache-share daily CV (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'tokens',
+    'inTok',
+    'cachedTok',
+    'activeD',
+    'shareD',
+    'zeroInD',
+    'meanShare',
+    'stdShare',
+    'shareCv',
+    'flat',
+    'pure',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceCacheShareByDayCvRow) => [
+    s.source,
+    formatNumber(s.tokens),
+    formatNumber(s.inputTokens),
+    formatNumber(s.cachedInputTokens),
+    formatNumber(s.activeDays),
+    formatNumber(s.daysWithShare),
+    formatNumber(s.daysWithZeroInput),
+    s.meanShare.toFixed(4),
+    s.stdShare.toFixed(4),
+    s.shareCv.toFixed(4),
+    s.flatCold ? 'y' : '-',
+    s.pureWarm ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
