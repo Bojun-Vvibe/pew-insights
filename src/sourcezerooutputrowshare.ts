@@ -134,6 +134,18 @@ export interface SourceZeroOutputRowShareOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: 'zero-share' | 'zero-input-share' | 'zero-rows' | 'rows' | 'source';
+  /**
+   * If true, drop rows with `input_tokens == 0` before computing
+   * `zeroShare`. The metric then reads "of rows that actually had
+   * a prompt assembled, what fraction produced no output?" — which
+   * isolates the aborted-after-prompt-shipped failure mode from
+   * pure accounting artifacts (rows recorded with neither input nor
+   * output tokens). When the flag is on, `rows` reports the count
+   * of positive-input rows only; `excludedZeroInput` (per-source)
+   * tallies how many rows were dropped under this gate. Default
+   * false. Independent of every other gate.
+   */
+  excludeZeroInput?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -148,6 +160,11 @@ export interface SourceZeroOutputRowShareRow {
   zeroInputShare: number;
   /** True iff every row had output == 0. */
   zeroOnly: boolean;
+  /**
+   * Count of rows with input_tokens == 0 that were excluded by
+   * `excludeZeroInput`. Always 0 when the flag is off.
+   */
+  excludedZeroInput: number;
 }
 
 export interface SourceZeroOutputRowShareReport {
@@ -160,6 +177,7 @@ export interface SourceZeroOutputRowShareReport {
   minZeroInputShare: number;
   top: number | null;
   sort: 'zero-share' | 'zero-input-share' | 'zero-rows' | 'rows' | 'source';
+  excludeZeroInput: boolean;
   /** Distinct sources seen pre-filter. */
   totalSources: number;
   /** Sum of all kept rows across all sources. */
@@ -170,6 +188,8 @@ export interface SourceZeroOutputRowShareReport {
   totalInputTokens: number;
   /** Sum of input_tokens over all zero-output rows. */
   totalZeroInputTokens: number;
+  /** Sum of rows excluded by `excludeZeroInput` across all sources. */
+  totalExcludedZeroInput: number;
   droppedInvalidHourStart: number;
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
@@ -228,6 +248,7 @@ export function buildSourceZeroOutputRowShare(
       `sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
     );
   }
+  const excludeZeroInput = opts.excludeZeroInput ?? false;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -248,6 +269,7 @@ export function buildSourceZeroOutputRowShare(
     zeroRows: number;
     zeroInputSum: number;
     totalInputSum: number;
+    excludedZeroInput: number;
   }
   const perSource = new Map<string, Bucket>();
 
@@ -277,8 +299,18 @@ export function buildSourceZeroOutputRowShare(
 
     let b = perSource.get(source);
     if (!b) {
-      b = { rows: 0, zeroRows: 0, zeroInputSum: 0, totalInputSum: 0 };
+      b = {
+        rows: 0,
+        zeroRows: 0,
+        zeroInputSum: 0,
+        totalInputSum: 0,
+        excludedZeroInput: 0,
+      };
       perSource.set(source, b);
+    }
+    if (excludeZeroInput && inTok === 0) {
+      b.excludedZeroInput += 1;
+      continue;
     }
     b.rows += 1;
     b.totalInputSum += inTok;
@@ -293,6 +325,7 @@ export function buildSourceZeroOutputRowShare(
   let totalZeroRows = 0;
   let totalInputTokens = 0;
   let totalZeroInputTokens = 0;
+  let totalExcludedZeroInput = 0;
   const allRows: SourceZeroOutputRowShareRow[] = [];
 
   for (const [source, b] of perSource.entries()) {
@@ -303,6 +336,7 @@ export function buildSourceZeroOutputRowShare(
     totalZeroRows += b.zeroRows;
     totalInputTokens += b.totalInputSum;
     totalZeroInputTokens += b.zeroInputSum;
+    totalExcludedZeroInput += b.excludedZeroInput;
     allRows.push({
       source,
       rows: b.rows,
@@ -312,6 +346,7 @@ export function buildSourceZeroOutputRowShare(
       totalInputSum: b.totalInputSum,
       zeroInputShare,
       zeroOnly: b.rows > 0 && b.zeroRows === b.rows,
+      excludedZeroInput: b.excludedZeroInput,
     });
   }
 
@@ -364,11 +399,13 @@ export function buildSourceZeroOutputRowShare(
     minZeroInputShare,
     top,
     sort,
+    excludeZeroInput,
     totalSources,
     totalRows,
     totalZeroRows,
     totalInputTokens,
     totalZeroInputTokens,
+    totalExcludedZeroInput,
     droppedInvalidHourStart,
     droppedSourceFilter,
     droppedBelowMinRows,

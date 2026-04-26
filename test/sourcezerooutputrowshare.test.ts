@@ -439,3 +439,114 @@ test('source-zero-output-row-share: zeroShare exact arithmetic', () => {
   assert.equal(a.zeroRows, 7);
   assert.equal(a.zeroShare, 0.7);
 });
+
+test('source-zero-output-row-share: --exclude-zero-input default is false; excludedZeroInput == 0', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T01:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T02:00:00Z', 'a', 100, 5),
+  ];
+  const r = buildSourceZeroOutputRowShare(q, { generatedAt: GEN });
+  assert.equal(r.excludeZeroInput, false);
+  assert.equal(r.totalExcludedZeroInput, 0);
+  const a = r.sources.find((s) => s.source === 'a')!;
+  assert.equal(a.excludedZeroInput, 0);
+  assert.equal(a.rows, 3);
+  assert.equal(a.zeroRows, 2);
+});
+
+test('source-zero-output-row-share: --exclude-zero-input drops zero-input rows from rows + zeroRows', () => {
+  const q = [
+    // 2 rows with input==0 and output==0 (pure accounting artifacts)
+    ql('2026-04-20T00:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T01:00:00Z', 'a', 0, 0),
+    // 1 row with input>0 and output==0 (genuine aborted-after-prompt)
+    ql('2026-04-20T02:00:00Z', 'a', 500, 0),
+    // 2 rows with input>0 and output>0 (normal turns)
+    ql('2026-04-20T03:00:00Z', 'a', 100, 5),
+    ql('2026-04-20T04:00:00Z', 'a', 200, 5),
+  ];
+  // without flag: 5 rows, 3 zero -> zeroShare 0.6
+  const off = buildSourceZeroOutputRowShare(q, { generatedAt: GEN });
+  const aOff = off.sources.find((s) => s.source === 'a')!;
+  assert.equal(aOff.rows, 5);
+  assert.equal(aOff.zeroRows, 3);
+  assert.equal(aOff.zeroShare, 0.6);
+  // with flag: 3 positive-input rows, 1 zero -> zeroShare 1/3
+  const on = buildSourceZeroOutputRowShare(q, {
+    generatedAt: GEN,
+    excludeZeroInput: true,
+  });
+  const aOn = on.sources.find((s) => s.source === 'a')!;
+  assert.equal(aOn.rows, 3);
+  assert.equal(aOn.zeroRows, 1);
+  assert.equal(Math.abs(aOn.zeroShare - 1 / 3) < 1e-12, true);
+  assert.equal(aOn.excludedZeroInput, 2);
+  assert.equal(on.totalExcludedZeroInput, 2);
+  assert.equal(on.excludeZeroInput, true);
+});
+
+test('source-zero-output-row-share: --exclude-zero-input rolls totals correctly across sources', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T01:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T02:00:00Z', 'a', 100, 5),
+    ql('2026-04-20T03:00:00Z', 'a', 100, 5),
+    ql('2026-04-20T04:00:00Z', 'a', 100, 5),
+    ql('2026-04-20T00:00:00Z', 'b', 0, 0),
+    ql('2026-04-20T01:00:00Z', 'b', 50, 5),
+    ql('2026-04-20T02:00:00Z', 'b', 50, 5),
+    ql('2026-04-20T03:00:00Z', 'b', 50, 5),
+  ];
+  const r = buildSourceZeroOutputRowShare(q, {
+    generatedAt: GEN,
+    excludeZeroInput: true,
+  });
+  assert.equal(r.totalRows, 6); // 3 + 3
+  assert.equal(r.totalExcludedZeroInput, 3); // 2 + 1
+  assert.equal(r.totalInputTokens, 450); // 300 + 150
+});
+
+test('source-zero-output-row-share: --exclude-zero-input interacts with min-rows on positive-input count', () => {
+  const q = [
+    // a: 5 rows, but 4 are zero-input -> only 1 positive -> below min-rows 2
+    ql('2026-04-20T00:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T01:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T02:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T03:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T04:00:00Z', 'a', 100, 5),
+    // b: 3 positive-input rows survive
+    ql('2026-04-20T00:00:00Z', 'b', 50, 0),
+    ql('2026-04-20T01:00:00Z', 'b', 50, 5),
+    ql('2026-04-20T02:00:00Z', 'b', 50, 5),
+  ];
+  const r = buildSourceZeroOutputRowShare(q, {
+    generatedAt: GEN,
+    excludeZeroInput: true,
+    minRows: 2,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.droppedBelowMinRows, 1);
+});
+
+test('source-zero-output-row-share: --exclude-zero-input deterministic + JSON-stable', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a', 0, 0),
+    ql('2026-04-20T01:00:00Z', 'a', 100, 0),
+    ql('2026-04-20T02:00:00Z', 'a', 200, 5),
+  ];
+  const r1 = buildSourceZeroOutputRowShare(q, {
+    generatedAt: GEN,
+    excludeZeroInput: true,
+  });
+  const r2 = buildSourceZeroOutputRowShare(q, {
+    generatedAt: GEN,
+    excludeZeroInput: true,
+  });
+  assert.equal(JSON.stringify(r1), JSON.stringify(r2));
+  // explicit shape: excludeZeroInput surfaced at top level
+  const obj = JSON.parse(JSON.stringify(r1));
+  assert.equal(obj.excludeZeroInput, true);
+  assert.equal(obj.totalExcludedZeroInput, 1);
+});

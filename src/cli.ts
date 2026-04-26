@@ -8913,6 +8913,10 @@ program
     "sort key: 'zero-share' (default) | 'zero-input-share' | 'zero-rows' | 'rows' | 'source'",
     'zero-share',
   )
+  .option(
+    '--exclude-zero-input',
+    'drop rows with input_tokens==0 before computing zeroShare; isolates aborted-after-prompt-shipped failures from pure accounting artifacts (rows recorded with neither input nor output tokens)',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -8925,6 +8929,7 @@ program
         minZeroInputShare: string;
         top?: string;
         sort: string;
+        excludeZeroInput?: boolean;
         json?: boolean;
       },
       cmd,
@@ -8993,6 +8998,7 @@ program
             | 'zero-rows'
             | 'rows'
             | 'source',
+          excludeZeroInput: opts.excludeZeroInput === true,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

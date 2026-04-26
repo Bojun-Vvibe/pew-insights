@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.70 — 2026-04-27
+
+### Changed
+
+- `source-zero-output-row-share`: refinement flag
+  `--exclude-zero-input`. When set, drops rows with
+  `input_tokens == 0` from the per-source counters before computing
+  `zeroShare`. The metric then reads "of rows that actually had a
+  prompt assembled, what fraction produced no output?" — which
+  isolates the **aborted-after-prompt-shipped** failure mode from
+  pure accounting artifacts (rows recorded with neither input nor
+  output tokens).
+
+  This matters because the v0.6.69 default smoke showed 12
+  zero-output rows concentrated in one source, all with
+  `zInTok = 0`. With the default counter, those 12 rows look like
+  a 3.6% zero-output rate — but they are not turns where the model
+  was invoked and failed; they are queue rows with no model
+  invocation at all. `--exclude-zero-input` separates the two
+  populations cleanly.
+
+  Per-source field `excludedZeroInput` and top-level
+  `totalExcludedZeroInput` surface how many rows the gate removed,
+  so the redaction is auditable. The flag is independent of every
+  other gate and composes with `--min-rows`, `--min-zero-share`,
+  `--min-zero-input-share`, `--top`, `--sort`, and the window
+  filters. Default off (preserves v0.6.69 semantics exactly).
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-zero-output-row-share --exclude-zero-input
+pew-insights source-zero-output-row-share
+as of: 2026-04-26T19:39:32.493Z    sources: 6 (shown 6)    rows: 1,262    zero-rows: 0    in-tok: 3,453,399,145    zero-in-tok: 0    min-rows: 3    min-zero: 0.0000    min-zero-in: 0.0000    top: -    sort: zero-share    exclude-zero-input: y    excluded: 327
+dropped: 0 bad hour_start, 0 by source filter, 0 below min-rows, 0 below min-zero-share, 0 below min-zero-input-share, 0 below top cap
+
+per-source zero-output row share (sorted by zero-share; ties: source asc)
+source           rows  zeroR  zeroSh  zInTok  inTok          zInSh   zOnly
+---------------  ----  -----  ------  ------  -------------  ------  -----
+claude-code      299   0      0.0000  0       1,834,613,640  0.0000  -
+codex            64    0      0.0000  0       410,781,190    0.0000  -
+hermes           165   0      0.0000  0       55,482,039     0.0000  -
+openclaw         417   0      0.0000  0       945,100,079    0.0000  -
+opencode         311   0      0.0000  0       206,841,107    0.0000  -
+ide-assistant-A  6     0      0.0000  0       581,090        0.0000  -
+```
+
+Reading: with `--exclude-zero-input`, **327 rows globally are
+removed** as zero-input artifacts (1,588 -> 1,262 surviving). Among
+the 1,262 rows that actually had a prompt assembled, **zero
+produced an empty output**. Every source goes from whatever its
+v0.6.69 `zeroShare` was down to exactly 0.0000.
+
+This is the operationally interesting answer: there are **no
+genuine aborted-after-prompt-shipped failures** in the captured
+history across any source. The 12 zero-output rows that
+v0.6.69 surfaced on `ide-assistant-A` were entirely accounting
+artifacts (rows logged with neither input nor output tokens) —
+exactly as the `zInTok = 0` column hinted. Note `ide-assistant-A`'s
+row count drops from 333 to 6, confirming that 327 of its 333
+lifetime rows are zero-input accounting rows; only 6 rows actually
+shipped a prompt, and all 6 produced output.
+
+The flag turns the qualitative observation ("are these zero-output
+rows real failures or accounting noise?") into a one-knob,
+falsifiable filter. The two populations are now numerically
+separable in a single command invocation.
+
+ide-assistant-A redaction applied to one source name in the smoke
+output to comply with the local repo's banned-strings policy.
+
 ## 0.6.69 — 2026-04-27
 
 ### Added

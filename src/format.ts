@@ -7515,7 +7515,7 @@ export function renderSourceZeroOutputRowShare(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    zero-rows: ${formatNumber(r.totalZeroRows)}    in-tok: ${formatNumber(r.totalInputTokens)}    zero-in-tok: ${formatNumber(r.totalZeroInputTokens)}    min-rows: ${r.minRows}    min-zero: ${r.minZeroShare.toFixed(4)}    min-zero-in: ${r.minZeroInputShare.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    zero-rows: ${formatNumber(r.totalZeroRows)}    in-tok: ${formatNumber(r.totalInputTokens)}    zero-in-tok: ${formatNumber(r.totalZeroInputTokens)}    min-rows: ${r.minRows}    min-zero: ${r.minZeroShare.toFixed(4)}    min-zero-in: ${r.minZeroInputShare.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}    exclude-zero-input: ${r.excludeZeroInput ? 'y' : '-'}    excluded: ${formatNumber(r.totalExcludedZeroInput)}`,
     ),
   );
   lines.push(
