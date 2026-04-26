@@ -2636,6 +2636,11 @@ program
     'drop rows whose longestDrySpell is strictly below n; non-negative integer (default 0 = no-op); use 1 to hide perfect-attendance sources',
     '0',
   )
+  .option(
+    '--min-fraction <f>',
+    'drop rows whose drySpellFraction (inactiveDays/tenureDays) is strictly below f; must be in [0, 1) (default 0 = no-op); use 0.5 to keep only sources whose inactivity dominates tenure',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2648,6 +2653,7 @@ program
         top?: string;
         sort: string;
         minLongest: string;
+        minFraction: string;
         json?: boolean;
       },
       cmd,
@@ -2692,6 +2698,16 @@ program
             `--min-longest must be a non-negative integer (got ${opts.minLongest})`,
           );
         }
+        const minFraction = Number.parseFloat(opts.minFraction);
+        if (
+          !Number.isFinite(minFraction) ||
+          minFraction < 0 ||
+          minFraction >= 1
+        ) {
+          throw new Error(
+            `--min-fraction must be in [0, 1) (got ${opts.minFraction})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceDrySpell(queue, {
           since: opts.since ?? null,
@@ -2708,6 +2724,7 @@ program
             | 'mean'
             | 'source',
           minLongest,
+          minFraction,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

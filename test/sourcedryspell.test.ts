@@ -35,6 +35,34 @@ test('source-dry-spell: empty input → zero rows, defaults echoed', () => {
   assert.equal(r.minLongest, 0);
 });
 
+test('source-dry-spell: minFraction default 0; rejects out-of-range', () => {
+  const r = buildSourceDrySpell([], { generatedAt: GEN });
+  assert.equal(r.minFraction, 0);
+  assert.equal(r.droppedBelowMinFraction, 0);
+  assert.throws(() => buildSourceDrySpell([], { minFraction: -0.01 }));
+  assert.throws(() => buildSourceDrySpell([], { minFraction: 1 }));
+  assert.throws(() => buildSourceDrySpell([], { minFraction: 1.5 }));
+});
+
+test('source-dry-spell: minFraction filter keeps only dominant gappers', () => {
+  const q: QueueLine[] = [
+    // dense: 04-01..04-05 every day → fraction 0
+    ql('2026-04-01T00:00:00Z', 'dense', 10),
+    ql('2026-04-02T00:00:00Z', 'dense', 10),
+    ql('2026-04-03T00:00:00Z', 'dense', 10),
+    ql('2026-04-04T00:00:00Z', 'dense', 10),
+    ql('2026-04-05T00:00:00Z', 'dense', 10),
+    // sparse: 04-01 and 04-10 → tenure 10, inactive 8, fraction 0.8
+    ql('2026-04-01T00:00:00Z', 'sparse', 10),
+    ql('2026-04-10T00:00:00Z', 'sparse', 10),
+  ];
+  const r = buildSourceDrySpell(q, { generatedAt: GEN, minFraction: 0.5 });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'sparse');
+  assert.equal(r.droppedBelowMinFraction, 1);
+});
+
 test('source-dry-spell: rejects bad opts', () => {
   assert.throws(() => buildSourceDrySpell([], { minDays: 0 }));
   assert.throws(() => buildSourceDrySpell([], { minDays: -1 }));

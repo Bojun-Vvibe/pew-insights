@@ -120,6 +120,15 @@ export interface SourceDrySpellOptions {
    * from the per-source table. Default 0 (no-op).
    */
   minLongest?: number;
+  /**
+   * Drop rows whose drySpellFraction is strictly below this fraction
+   * from the per-source table. Display filter only — `totalSources`
+   * and `totalTokens` reflect the full kept population. Suppressed
+   * rows surface as `droppedBelowMinFraction`. Must be in `[0, 1)`.
+   * Default 0 (no-op). Use 0.5 to surface only sources whose
+   * inactive days dominate their tenure.
+   */
+  minFraction?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -150,6 +159,7 @@ export interface SourceDrySpellReport {
   top: number | null;
   sort: SourceDrySpellSort;
   minLongest: number;
+  minFraction: number;
   totalSources: number;
   totalTokens: number;
   droppedInvalidHourStart: number;
@@ -158,6 +168,7 @@ export interface SourceDrySpellReport {
   droppedSourceFilter: number;
   droppedBelowMinDays: number;
   droppedBelowMinLongest: number;
+  droppedBelowMinFraction: number;
   droppedBelowTopCap: number;
   sources: SourceDrySpellRow[];
 }
@@ -207,6 +218,12 @@ export function buildSourceDrySpell(
   if (!Number.isInteger(minLongest) || minLongest < 0) {
     throw new Error(
       `minLongest must be a non-negative integer (got ${opts.minLongest})`,
+    );
+  }
+  const minFraction = opts.minFraction ?? 0;
+  if (!Number.isFinite(minFraction) || minFraction < 0 || minFraction >= 1) {
+    throw new Error(
+      `minFraction must be in [0, 1) (got ${opts.minFraction})`,
     );
   }
 
@@ -338,6 +355,7 @@ export function buildSourceDrySpell(
   const survived: SourceDrySpellRow[] = [];
   let droppedBelowMinDays = 0;
   let droppedBelowMinLongest = 0;
+  let droppedBelowMinFraction = 0;
   for (const row of allRows) {
     if (row.activeDays < minDays) {
       droppedBelowMinDays += 1;
@@ -345,6 +363,10 @@ export function buildSourceDrySpell(
     }
     if (row.longestDrySpell < minLongest) {
       droppedBelowMinLongest += 1;
+      continue;
+    }
+    if (row.drySpellFraction < minFraction) {
+      droppedBelowMinFraction += 1;
       continue;
     }
     survived.push(row);
@@ -379,6 +401,7 @@ export function buildSourceDrySpell(
     top,
     sort,
     minLongest,
+    minFraction,
     totalSources: allRows.length,
     totalTokens,
     droppedInvalidHourStart,
@@ -387,6 +410,7 @@ export function buildSourceDrySpell(
     droppedSourceFilter,
     droppedBelowMinDays,
     droppedBelowMinLongest,
+    droppedBelowMinFraction,
     droppedBelowTopCap,
     sources: finalSources,
   };

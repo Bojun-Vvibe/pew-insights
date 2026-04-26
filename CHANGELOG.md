@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## 0.6.27 — 2026-04-26
 
+### Changed
+
+- `source-dry-spell`: new display filter `--min-fraction <f>` drops
+  rows whose `drySpellFraction` (inactiveDays/tenureDays) is
+  strictly below `f`. Must be in `[0, 1)` (1 is impossible by
+  construction since firstDay and lastDay are always active).
+  Default 0 = no-op. Suppressed rows surface as
+  `droppedBelowMinFraction`. Filter order:
+  `since`/`until` window → `model`/`source` filter → `minDays` →
+  `minLongest` → `minFraction` → sort → `top` cap.
+
+  Headline use: `--min-fraction 0.5 --sort fraction` keeps only
+  sources whose inactive days dominate their tenure — the truly
+  bursty / abandoned ones — and orders them by exactly that
+  signal.
+
+### Live smoke (refinement, against `~/.config/pew/queue.jsonl`, `--min-fraction 0.5 --sort fraction`; one source key redacted from output below)
+
+```
+pew-insights source-dry-spell
+as of: 2026-04-26T04:56:51.102Z    sources: 6 (shown 2)    tokens: 8,994,257,165    min-days: 1    min-longest: 0    min-fraction: 0.500    top: —    sort: fraction
+dropped: 0 bad hour_start, 0 zero tokens, 0 model-filter, 0 source-filter, 0 below min-days, 0 below min-longest, 4 below min-fraction, 0 below top cap
+(longestDrySpell = max consecutive UTC inactive days strictly inside tenure; drySpellFraction = inactiveDays/tenureDays; firstDay and lastDay are by definition active so fraction < 1)
+
+per-source dry spells (sorted by fraction; ties: source asc)
+source          firstDay    lastDay     tenureD  activeD  inactD  longestDry  dryStart    dryEnd      nDry  meanDry  dryFrac  tokens
+--------------  ----------  ----------  -------  -------  ------  ----------  ----------  ----------  ----  -------  -------  -------------
+vscode-redact   2025-07-30  2026-04-20  265      73       192     23          2026-03-21  2026-04-12  36    5.33     0.725    1,885,727
+claude-code     2026-02-11  2026-04-23  72       35       37      12          2026-02-13  2026-02-24  10    3.70     0.514    3,442,385,788
+```
+
+`--min-fraction 0.5` collapses the six-source population down to
+exactly the two sources whose inactivity dominates their tenure;
+the four perfect-attendance newcomers are dropped (surfaced as
+`droppedBelowMinFraction=4`). Sorted by `fraction` rather than
+`longest`, the redacted IDE source still leads (`0.725` vs
+`0.514`) but now the ordering reflects *proportion* of dead time
+rather than longest single gap — which would be the right knob if
+you're auditing "which sources have I effectively abandoned" vs
+"which sources had one bad month".
+
 ### Added
 
 - `source-dry-spell`: per-source longest run of consecutive UTC
