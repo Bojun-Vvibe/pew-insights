@@ -7259,6 +7259,11 @@ program
     'display filter: hide sources whose deadHours is strictly below n. n in [0,24]. Default 0 = no filter. Useful for surfacing only sparse sources (e.g. --min-dead-hours 12 hides any source that uses more than half the 24-hour clock). Counts surface as droppedBelowMinDeadHours.',
     '0',
   )
+  .option(
+    '--min-longest-run <n>',
+    'display filter: hide sources whose longestDeadRun is strictly below n. n in [0,24]. Default 0 = no filter. Complementary to --min-dead-hours: catches sources whose dead hours form a real contiguous sleep block rather than scattered missing hours. Counts surface as droppedBelowMinLongestRun.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -7270,6 +7275,7 @@ program
         top: string;
         sort: string;
         minDeadHours: string;
+        minLongestRun: string;
         json?: boolean;
       },
       cmd,
@@ -7297,6 +7303,16 @@ program
             `--min-dead-hours must be an integer in [0, 24] (got ${opts.minDeadHours})`,
           );
         }
+        const minLongestRun = Number.parseInt(opts.minLongestRun, 10);
+        if (
+          !Number.isInteger(minLongestRun) ||
+          minLongestRun < 0 ||
+          minLongestRun > 24
+        ) {
+          throw new Error(
+            `--min-longest-run must be an integer in [0, 24] (got ${opts.minLongestRun})`,
+          );
+        }
         const validSorts = ['tokens', 'dead', 'live', 'run', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -7311,6 +7327,7 @@ program
           minTokens,
           top,
           minDeadHours,
+          minLongestRun,
           sort: opts.sort as 'tokens' | 'dead' | 'live' | 'run' | 'source',
         });
         if (opts.json || common.json) {

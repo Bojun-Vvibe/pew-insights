@@ -6468,12 +6468,12 @@ export function renderSourceDeadHourCount(
   lines.push(chalk.bold.cyan('pew-insights source-dead-hour-count'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-dead-hours: ${r.minDeadHours === 0 ? '\u2014' : r.minDeadHours}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-dead-hours: ${r.minDeadHours === 0 ? '\u2014' : r.minDeadHours}    min-longest-run: ${r.minLongestRun === 0 ? '\u2014' : r.minLongestRun}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDeadHours)} below min-dead-hours, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDeadHours)} below min-dead-hours, ${formatNumber(r.droppedBelowMinLongestRun)} below min-longest-run, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

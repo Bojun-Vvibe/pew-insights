@@ -87,6 +87,18 @@ export interface SourceDeadHourCountOptions {
    * Range 0..24; default 0 = no filter.
    */
   minDeadHours?: number;
+  /**
+   * Display filter (refinement, v0.6.43): drop rows whose
+   * `longestDeadRun` is strictly below this integer threshold.
+   * Complementary to `minDeadHours`: catches sources whose dead
+   * hours form a real *contiguous* sleep block rather than being
+   * scattered. A source with deadHours=12 split into 6 disjoint
+   * runs of length 2 has longestDeadRun=2 and will be filtered
+   * out by `--min-longest-run 6`, while a source with deadHours=8
+   * forming a single 8-hour sleep block will pass.
+   * Range 0..24; default 0 = no filter.
+   */
+  minLongestRun?: number;
   generatedAt?: string;
 }
 
@@ -120,6 +132,7 @@ export interface SourceDeadHourCountReport {
   top: number;
   sort: SourceDeadHourCountSort;
   minDeadHours: number;
+  minLongestRun: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -128,6 +141,7 @@ export interface SourceDeadHourCountReport {
   droppedSourceFilter: number;
   droppedSparseSources: number;
   droppedBelowMinDeadHours: number;
+  droppedBelowMinLongestRun: number;
   droppedTopSources: number;
   sources: SourceDeadHourCountSourceRow[];
 }
@@ -206,6 +220,16 @@ export function buildSourceDeadHourCount(
   ) {
     throw new Error(
       `minDeadHours must be an integer in [0, 24] (got ${opts.minDeadHours})`,
+    );
+  }
+  const minLongestRun = opts.minLongestRun ?? 0;
+  if (
+    !Number.isInteger(minLongestRun) ||
+    minLongestRun < 0 ||
+    minLongestRun > 24
+  ) {
+    throw new Error(
+      `minLongestRun must be an integer in [0, 24] (got ${opts.minLongestRun})`,
     );
   }
   const sort: SourceDeadHourCountSort = opts.sort ?? 'tokens';
@@ -330,6 +354,17 @@ export function buildSourceDeadHourCount(
     filtered = next;
   }
 
+  // refinement filter (v0.6.43): single contiguous quiet block
+  let droppedBelowMinLongestRun = 0;
+  if (minLongestRun > 0) {
+    const next: SourceDeadHourCountSourceRow[] = [];
+    for (const r of filtered) {
+      if (r.longestDeadRun >= minLongestRun) next.push(r);
+      else droppedBelowMinLongestRun += 1;
+    }
+    filtered = next;
+  }
+
   filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
@@ -369,6 +404,7 @@ export function buildSourceDeadHourCount(
     top,
     sort,
     minDeadHours,
+    minLongestRun,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -377,6 +413,7 @@ export function buildSourceDeadHourCount(
     droppedSourceFilter,
     droppedSparseSources,
     droppedBelowMinDeadHours,
+    droppedBelowMinLongestRun,
     droppedTopSources,
     sources: kept,
   };

@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.43 — 2026-04-26
+
+### Changed
+
+- `source-dead-hour-count`: new display filter
+  `--min-longest-run <n>` drops rows whose `longestDeadRun` is
+  strictly below `n`. `n` in `[0, 24]`. Default 0 = no filter.
+  Suppressed rows surface as `droppedBelowMinLongestRun`.
+
+  Complementary to `--min-dead-hours`: catches sources whose
+  dead hours form a real *contiguous* sleep block rather than
+  scattered missing hours. A source with `deadHours=12` split
+  into 6 disjoint runs of length 2 has `longestDeadRun=2` and is
+  filtered out by `--min-longest-run 6`, while a source with
+  `deadHours=8` forming a single 8-hour block passes.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `minDeadHours` -> `minLongestRun` -> sort ->
+  `top` cap. The two filters compose by intersection, so
+  `--min-dead-hours 4 --min-longest-run 6` keeps only sources
+  with at least 4 dead hours *and* a run of at least 6
+  consecutive zeros somewhere on the circular 24-cycle.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-longest-run 6 --sort run`)
+
+Source labels containing the IDE-assistant product name are
+redacted to `ide-assistant-A` per the repo's published-content
+policy.
+
+```
+pew-insights source-dead-hour-count --min-longest-run 6 --sort run
+as of: 2026-04-26T09:31:41.377Z    sources: 6 (shown 2)    tokens: 9,103,923,357    min-tokens: 1,000    min-dead-hours: —    min-longest-run: 6    top: —    sort: run
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-dead-hours, 4 below min-longest-run, 0 below top cap
+(per-source count of UTC hours-of-day with zero token mass over the window; longestDeadRun and deadRunCount on the circular 24-cycle)
+
+per-source dead-hour count by UTC hour-of-day (sorted by run; ties: source asc)
+source          firstDay    lastDay     buckets  deadHours  liveHours  deadShare  longestDeadRun  deadRunCount  tokens
+--------------  ----------  ----------  -------  ---------  ---------  ---------  --------------  ------------  -----------
+ide-assistant-A 2025-07-30  2026-04-20  333      10         14         0.4167     10              1             1,885,727
+codex           2026-04-13  2026-04-20  64       8          16         0.3333     8               1             809,624,660
+```
+
+Reading: with `--min-longest-run 6`, four of six sources are
+filtered out (the three full-clock sources from 0.6.42's smoke
+have `longestDeadRun = 0`, and `claude-code` has only a 4-hour
+block). What remains is the two sources with a true sleep
+window: `ide-assistant-A` (10 contiguous quiet UTC hours) and
+`codex` (8). Both have `deadRunCount = 1`, confirming the quiet
+zones are single blocks rather than fragmented across the day.
+
 ## 0.6.42 — 2026-04-26
 
 ### Added

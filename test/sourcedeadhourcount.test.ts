@@ -341,3 +341,79 @@ test('build: minDeadHours=24 keeps no one (since real sources always have at lea
   assert.equal(r.sources.length, 0);
   assert.equal(r.droppedBelowMinDeadHours, 1);
 });
+
+// ---- refinement (v0.6.43): --min-longest-run -------------------------------
+
+test('build: rejects minLongestRun out of [0,24]', () => {
+  assert.throws(() => buildSourceDeadHourCount([], { minLongestRun: -1 }));
+  assert.throws(() => buildSourceDeadHourCount([], { minLongestRun: 25 }));
+  assert.throws(() => buildSourceDeadHourCount([], { minLongestRun: 1.5 }));
+});
+
+test('build: minLongestRun=0 is no-op (default)', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-10T09:00:00.000Z', 'a', 5000),
+    ql('2026-04-10T10:00:00.000Z', 'b', 5000),
+  ];
+  const r = buildSourceDeadHourCount(q, {
+    generatedAt: GEN,
+    minLongestRun: 0,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinLongestRun, 0);
+});
+
+test('build: minLongestRun catches a real sleep block, drops scattered dead hours', () => {
+  const q: QueueLine[] = [];
+  // source 'block': 8-hour contiguous quiet window -> longestDeadRun=16
+  // (live hours = 0..15, dead hours = 16..23)
+  for (let h = 0; h < 16; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'block', 1500));
+  }
+  // source 'scatter': dead at every other hour -> longestDeadRun=1, deadHours=12
+  for (let h = 0; h < 24; h += 2) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'scatter', 1500));
+  }
+  const all = buildSourceDeadHourCount(q, {
+    generatedAt: GEN,
+    minTokens: 1000,
+  });
+  assert.equal(all.sources.length, 2);
+
+  // both have deadHours=12; min-dead-hours alone can't separate them
+  const r = buildSourceDeadHourCount(q, {
+    generatedAt: GEN,
+    minLongestRun: 6,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'block');
+  assert.equal(r.droppedBelowMinLongestRun, 1);
+});
+
+test('build: minLongestRun and minDeadHours compose (intersection)', () => {
+  const q: QueueLine[] = [];
+  // 'a' covers all 24h: deadHours=0, longestDeadRun=0
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'a', 1000));
+  }
+  // 'b' covers hours 0..15: deadHours=8, longestDeadRun=8
+  for (let h = 0; h < 16; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'b', 1000));
+  }
+  const r = buildSourceDeadHourCount(q, {
+    generatedAt: GEN,
+    minDeadHours: 4,
+    minLongestRun: 6,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.droppedBelowMinDeadHours, 1); // 'a' fails first gate
+  assert.equal(r.droppedBelowMinLongestRun, 0); // 'a' never reached second gate
+});
