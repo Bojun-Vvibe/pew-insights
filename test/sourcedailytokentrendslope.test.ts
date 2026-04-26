@@ -365,3 +365,127 @@ test('builder: top=0 means no cap (all rows kept)', () => {
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedTopSources, 0);
 });
+
+// ---- v0.6.52 refinement: --min-r2 ---------------------------------------
+
+test('builder v0.6.52: minR2 drops sources below the r2 floor', () => {
+  // A: clean linear (r2 = 1)
+  // B: noisy (r2 < 0.6 typically)
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'A', 100),
+    ql('2026-04-21T05:00:00.000Z', 'A', 200),
+    ql('2026-04-22T05:00:00.000Z', 'A', 300),
+    ql('2026-04-23T05:00:00.000Z', 'A', 400),
+    ql('2026-04-20T05:00:00.000Z', 'B', 100),
+    ql('2026-04-21T05:00:00.000Z', 'B', 350),
+    ql('2026-04-22T05:00:00.000Z', 'B', 200),
+    ql('2026-04-23T05:00:00.000Z', 'B', 410),
+  ];
+  const r = buildSourceDailyTokenTrendSlope(q, {
+    minR2: 0.95,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minR2, 0.95);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'A');
+  assert.equal(r.droppedBelowMinR2, 1);
+});
+
+test('builder v0.6.52: minR2 = 0 is no-op (default)', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 's', 100),
+    ql('2026-04-21T05:00:00.000Z', 's', 200),
+    ql('2026-04-22T05:00:00.000Z', 's', 300),
+  ];
+  const r = buildSourceDailyTokenTrendSlope(q, { generatedAt: GEN });
+  assert.equal(r.minR2, 0);
+  assert.equal(r.droppedBelowMinR2, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('builder v0.6.52: minR2 always suppresses null-r2 (flat) sources when > 0', () => {
+  // Flat constant series -> r2 = null
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'flat', 200),
+    ql('2026-04-21T05:00:00.000Z', 'flat', 200),
+    ql('2026-04-22T05:00:00.000Z', 'flat', 200),
+  ];
+  const r = buildSourceDailyTokenTrendSlope(q, {
+    minR2: 0.0001, // any positive floor
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinR2, 1);
+  assert.equal(r.sources.length, 0);
+});
+
+test('builder v0.6.52: minR2 out of [0,1] throws', () => {
+  assert.throws(
+    () =>
+      buildSourceDailyTokenTrendSlope([], {
+        minR2: 1.5,
+        generatedAt: GEN,
+      }),
+    /minR2 must be/,
+  );
+  assert.throws(
+    () =>
+      buildSourceDailyTokenTrendSlope([], {
+        minR2: -0.1,
+        generatedAt: GEN,
+      }),
+    /minR2 must be/,
+  );
+});
+
+test('builder v0.6.52: minR2 applied AFTER minActiveDays (filter order)', () => {
+  // A: only 2 days -> dropped as below-min-active-days, NOT counted as below-r2
+  // B: 3 days, flat (r2=null) -> dropped as below-r2
+  // C: 3 days, clean linear -> kept
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'A', 100),
+    ql('2026-04-21T05:00:00.000Z', 'A', 200),
+    ql('2026-04-20T05:00:00.000Z', 'B', 200),
+    ql('2026-04-21T05:00:00.000Z', 'B', 200),
+    ql('2026-04-22T05:00:00.000Z', 'B', 200),
+    ql('2026-04-20T05:00:00.000Z', 'C', 100),
+    ql('2026-04-21T05:00:00.000Z', 'C', 200),
+    ql('2026-04-22T05:00:00.000Z', 'C', 300),
+  ];
+  const r = buildSourceDailyTokenTrendSlope(q, {
+    minActiveDays: 3,
+    minR2: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinActiveDays, 1); // A
+  assert.equal(r.droppedBelowMinR2, 1); // B
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'C');
+});
+
+test('builder v0.6.52: minR2 cooperates with top cap (filter then sort then cap)', () => {
+  // 3 sources all with r2 = 1 (clean linear); top=2 keeps 2, drops 1 as top
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'A', 100),
+    ql('2026-04-21T05:00:00.000Z', 'A', 200),
+    ql('2026-04-22T05:00:00.000Z', 'A', 300), // slope 100
+    ql('2026-04-20T05:00:00.000Z', 'B', 100),
+    ql('2026-04-21T05:00:00.000Z', 'B', 150),
+    ql('2026-04-22T05:00:00.000Z', 'B', 200), // slope 50
+    ql('2026-04-20T05:00:00.000Z', 'C', 100),
+    ql('2026-04-21T05:00:00.000Z', 'C', 110),
+    ql('2026-04-22T05:00:00.000Z', 'C', 120), // slope 10
+  ];
+  const r = buildSourceDailyTokenTrendSlope(q, {
+    minR2: 0.99,
+    sort: 'absslope',
+    top: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinR2, 0);
+  assert.equal(r.droppedTopSources, 1);
+  assert.equal(r.sources.length, 2);
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['A', 'B'],
+  );
+});

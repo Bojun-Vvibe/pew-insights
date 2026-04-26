@@ -6833,12 +6833,12 @@ export function renderSourceDailyTokenTrendSlope(
   lines.push(chalk.bold.cyan('pew-insights source-daily-token-trend-slope'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-active-days: ${formatNumber(r.minActiveDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-active-days: ${formatNumber(r.minActiveDays)}    min-r2: ${r.minR2 === 0 ? '\u2014' : r.minR2.toFixed(3)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinActiveDays)} below min-active-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinActiveDays)} below min-active-days, ${formatNumber(r.droppedBelowMinR2)} below min-r2, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

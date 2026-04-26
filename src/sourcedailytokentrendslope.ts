@@ -102,6 +102,20 @@ export interface SourceDailyTokenTrendSlopeOptions {
   until?: string | null;
   source?: string | null;
   minActiveDays?: number;
+  /**
+   * Display filter (refinement, v0.6.52): require `r2 >= n` for a
+   * source row to be reported. Default 0 = no r2 floor. Sources
+   * with `r2 == null` (zero variance: a perfectly flat daily
+   * series) are always suppressed when `minR2 > 0`, since a flat
+   * series has slope 0 and the "trend" is structurally
+   * meaningless. Suppressed sources surface as
+   * `droppedBelowMinR2`. Use this to filter out the noise
+   * floor — a +21M tokens/day slope with `r2 = 0.005` is
+   * indistinguishable from a flat line over the sample size.
+   * Filter order: `since`/`until` window -> `source` filter ->
+   * `minActiveDays` -> `minR2` -> sort -> `top`.
+   */
+  minR2?: number;
   top?: number;
   sort?: SourceDailyTokenTrendSlopeSort;
   generatedAt?: string;
@@ -129,6 +143,7 @@ export interface SourceDailyTokenTrendSlopeReport {
   windowStart: string | null;
   windowEnd: string | null;
   minActiveDays: number;
+  minR2: number;
   top: number;
   sort: SourceDailyTokenTrendSlopeSort;
   source: string | null;
@@ -138,6 +153,7 @@ export interface SourceDailyTokenTrendSlopeReport {
   droppedNonPositiveTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinActiveDays: number;
+  droppedBelowMinR2: number;
   droppedTopSources: number;
   sources: SourceDailyTokenTrendSlopeSourceRow[];
 }
@@ -166,6 +182,12 @@ export function buildSourceDailyTokenTrendSlope(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minR2 = opts.minR2 ?? 0;
+  if (!Number.isFinite(minR2) || minR2 < 0 || minR2 > 1) {
+    throw new Error(
+      `minR2 must be a finite number in [0, 1] (got ${opts.minR2})`,
+    );
   }
   const sort: SourceDailyTokenTrendSlopeSort = opts.sort ?? 'absslope';
   const validSorts: SourceDailyTokenTrendSlopeSort[] = [
@@ -291,6 +313,23 @@ export function buildSourceDailyTokenTrendSlope(
     totalTokens += total;
   }
 
+  // refinement filter (v0.6.52): require r2 >= minR2; null r2 (flat
+  // series) is always suppressed when minR2 > 0 because a flat series
+  // has slope 0 and the "trend" is structurally meaningless.
+  let droppedBelowMinR2 = 0;
+  let filtered = rows;
+  if (minR2 > 0) {
+    const next: SourceDailyTokenTrendSlopeSourceRow[] = [];
+    for (const r of rows) {
+      if (r.r2 !== null && r.r2 >= minR2) {
+        next.push(r);
+      } else {
+        droppedBelowMinR2 += 1;
+      }
+    }
+    filtered = next;
+  }
+
   // sort: nulls always go last on numeric keys; ties broken by source asc
   const cmpNullableDesc = (a: number | null, b: number | null): number => {
     const aNull = a === null;
@@ -342,12 +381,13 @@ export function buildSourceDailyTokenTrendSlope(
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   };
   rows.sort(cmpRow);
+  filtered.sort(cmpRow);
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -355,6 +395,7 @@ export function buildSourceDailyTokenTrendSlope(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minActiveDays,
+    minR2,
     top,
     sort,
     source: sourceFilter,
@@ -364,6 +405,7 @@ export function buildSourceDailyTokenTrendSlope(
     droppedNonPositiveTokens,
     droppedSourceFilter,
     droppedBelowMinActiveDays,
+    droppedBelowMinR2,
     droppedTopSources,
     sources: kept,
   };

@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.52 — 2026-04-26
+
+### Changed
+
+- `source-daily-token-trend-slope`: refinement filter
+  `--min-r2 <n>` requires `r2 >= n` (n in `[0, 1]`) for a source
+  row to be reported. Default 0 = no r2 floor. Sources with
+  `r2 == null` (a perfectly flat daily series, zero variance)
+  are always suppressed when `--min-r2 > 0`, since a flat series
+  has slope 0 and the "trend" is structurally meaningless.
+
+  Why this matters: in the v0.6.51 baseline, three sources
+  (`opencode` r2=0.006, `openclaw` r2=0.033,
+  `ide-assistant-A` r2=0.034) had non-trivial *raw* slopes but
+  near-zero r2 — their slopes are effectively indistinguishable
+  from a flat line over the sample. `--min-r2` is the sample-fit
+  guardrail that lets you say "show me only sources whose linear
+  trend is actually a meaningful linear trend."
+
+  Suppressed sources surface as `droppedBelowMinR2`. Filter
+  order: `since`/`until` window -> `source` filter ->
+  `minActiveDays` -> `minR2` -> sort -> `top` cap. Validates
+  that `minR2` is finite and inside `[0, 1]`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-r2 0.1 --sort norm`)
+
+```
+pew-insights source-daily-token-trend-slope --min-r2 0.1 --sort norm
+as of: 2026-04-26T13:41:16.307Z    sources: 6 (shown 3)    total-tokens: 9,223,689,684    min-active-days: 3    min-r2: 0.100    top: —    sort: norm
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-active-days, 3 below min-r2, 0 below top cap
+(per source: OLS y=a+b*t over (active-day-index, daily total_tokens); slope b reported as tokens-per-active-day; normalized = b / mean; r2 in [0,1])
+
+per-source daily-token OLS trend (sorted by norm; ties: source asc; null normalized/r2 sorted last)
+source       totalTokens    days  firstDay    lastDay     meanDaily    slope        normSlope  r2
+-----------  -------------  ----  ----------  ----------  -----------  -----------  ---------  ------
+codex        809,624,660    8     2026-04-13  2026-04-20  101,203,083  +21,159,196  +0.2091    0.1561
+claude-code  3,442,385,788  35    2026-02-11  2026-04-23  98,353,880   +10,420,380  +0.1059    0.2533
+hermes       144,498,780    10    2026-04-17  2026-04-26  14,449,878   -2,045,556   -0.1416    0.3148
+```
+
+Reading: with `--min-r2 0.1`, three of the six sources from
+the v0.6.51 baseline drop out — `opencode` (r2=0.006),
+`openclaw` (r2=0.033), and `ide-assistant-A` (r2=0.034) — their
+raw slopes are dwarfed by day-to-day noise relative to the
+fitted line. The remaining 3 sources, sorted by `normalizedSlope`
+desc, give a sharpened picture: `codex` (+0.21/day, r2=0.156)
+and `claude-code` (+0.11/day, r2=0.253) are the queue's two
+*statistically meaningful* growth signals; `hermes`
+(-0.14/day, r2=0.315) is the queue's one *statistically
+meaningful* shrink signal. `hermes` is also the cleanest
+trend on the queue (highest r2 among non-flat sources). The
+two-knob composition — `--min-active-days` (sample-size
+guardrail) and `--min-r2` (sample-fit guardrail) — is the
+standard pair of floors you want on any per-source regression
+report so you don't sort the headline by sources where the
+regression itself is not justified by the data.
+
 ## 0.6.51 — 2026-04-26
 
 ### Added

@@ -7840,6 +7840,11 @@ program
     '3',
   )
   .option(
+    '--min-r2 <n>',
+    'display filter (refinement, v0.6.52): require r2 >= n in [0, 1] for a source row to be reported. Default 0 = no r2 floor. Sources with r2 == null (flat daily series, zero variance) are always suppressed when --min-r2 > 0. Surfaces only sources with statistically meaningful trends — a +21M tokens/day slope at r2=0.005 is indistinguishable from a flat line. Suppressed surface as droppedBelowMinR2. Filter order: window -> source -> minActiveDays -> minR2 -> sort -> top.',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
@@ -7857,6 +7862,7 @@ program
         until?: string;
         source?: string;
         minActiveDays: string;
+        minR2: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -7870,6 +7876,12 @@ program
         if (!Number.isInteger(minActiveDays) || minActiveDays < 2) {
           throw new Error(
             `--min-active-days must be an integer >= 2 (got ${opts.minActiveDays})`,
+          );
+        }
+        const minR2 = Number.parseFloat(opts.minR2);
+        if (!Number.isFinite(minR2) || minR2 < 0 || minR2 > 1) {
+          throw new Error(
+            `--min-r2 must be a number in [0, 1] (got ${opts.minR2})`,
           );
         }
         const top = Number.parseInt(opts.top, 10);
@@ -7897,6 +7909,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minActiveDays,
+          minR2,
           top,
           sort: opts.sort as
             | 'absslope'
