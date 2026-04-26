@@ -7722,3 +7722,75 @@ export function renderSourceOutputTokensByHourCv(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceGapHoursCvReport,
+  SourceGapHoursCvRow,
+} from './sourcegaphourscv.js';
+
+export function renderSourceGapHoursCv(
+  r: SourceGapHoursCvReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-gap-hours-cv'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-hrs: ${formatNumber(r.totalActiveHours)}    gaps: ${formatNumber(r.totalGaps)}    min-active-hrs: ${r.minActiveHours}    min-mean-gap: ${r.minMeanGap.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokenMass)} zero-mass rows, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinActiveHours)} below min-active-hrs, ${formatNumber(r.droppedBelowMinMeanGap)} below min-mean-gap, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CV of inter-bucket gap distribution; gapCv = stddev(gaps) / mean(gaps) over distinct active UTC hour buckets; ~0 = clocked-regular, ~1 = Poisson-ish, >>1 = bursty/heavy-tailed; flat=y means every gap is identical)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source gap-hours CV (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'activeHrs',
+    'gaps',
+    'meanGap',
+    'stdGap',
+    'gapCv',
+    'minGap',
+    'maxGap',
+    'flat',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceGapHoursCvRow) => [
+    s.source,
+    formatNumber(s.hoursActive),
+    formatNumber(s.gaps),
+    s.meanGap.toFixed(2),
+    s.stdGap.toFixed(2),
+    s.gapCv.toFixed(4),
+    formatNumber(s.minGap),
+    formatNumber(s.maxGap),
+    s.flat ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

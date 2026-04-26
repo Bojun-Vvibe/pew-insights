@@ -97,6 +97,7 @@ import {
   renderSourceOutputTokensByHourCv,
   renderSourceInputTokenTopRowShare,
   renderSourceZeroOutputRowShare,
+  renderSourceGapHoursCv,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -253,6 +254,7 @@ import { buildSourceCacheShareByDayCv } from './sourcecachesharebydaycv.js';
 import { buildSourceOutputTokensByHourCv } from './sourceoutputtokensbyhourcv.js';
 import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.js';
 import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
+import { buildSourceGapHoursCv } from './sourcegaphourscv.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -9228,6 +9230,103 @@ program
           process.stdout.write(
             renderSourceZeroOutputRowShare(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-gap-hours-cv')
+  .description(
+    "Per-source coefficient of variation of the inter-bucket gap distribution (gaps in hours between consecutive distinct active UTC hour buckets where the source had token mass > 0). gapCv = stddev(gaps) / mean(gaps). ~0 = clocked-regular, ~1 = Poisson-ish, >>1 = bursty/heavy-tailed. Distinct from interarrival-time (same gap sequence but reported as min/p50/p90/max + histogram, no CV — CV compresses spread into a single ranking number that p50/p90 cannot), source-burstiness-fano-factor (variance-to-mean of per-bucket counts; different statistic), source-active-day-streak (run length on day grain, not gap dispersion), and idle-gaps (per-session message gaps in seconds, not per-source bucket gaps).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-active-hours <n>',
+    'drop sources with fewer than n distinct active hour buckets (default 3; need >=2 gaps for non-degenerate CV)',
+    '3',
+  )
+  .option(
+    '--min-mean-gap <f>',
+    'drop sources whose meanGap (in hours) is strictly below f, finite & non-negative (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'cv' (default) | 'mean-gap' | 'max-gap' | 'active-hours' | 'source'",
+    'cv',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minActiveHours: string;
+        minMeanGap: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minActiveHours = Number.parseInt(opts.minActiveHours, 10);
+        if (!Number.isInteger(minActiveHours) || minActiveHours < 1) {
+          throw new Error(
+            `--min-active-hours must be a positive integer (got ${opts.minActiveHours})`,
+          );
+        }
+        const minMeanGap = Number.parseFloat(opts.minMeanGap);
+        if (!Number.isFinite(minMeanGap) || minMeanGap < 0) {
+          throw new Error(
+            `--min-mean-gap must be a finite, non-negative number (got ${opts.minMeanGap})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['cv', 'mean-gap', 'max-gap', 'active-hours', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceGapHoursCv(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minActiveHours,
+          minMeanGap,
+          top,
+          sort: opts.sort as
+            | 'cv'
+            | 'mean-gap'
+            | 'max-gap'
+            | 'active-hours'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceGapHoursCv(report) + '\n');
         }
       } catch (e) {
         die(e);
