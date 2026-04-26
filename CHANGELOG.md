@@ -6,6 +6,48 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `daily-token-autocorrelation-lag1--sort <key>`: sort key for the
+  per-source table (display only). One of `tokens` (default,
+  preserves prior behaviour), `rho1active`, `rho1filled`, or
+  `ndays`. Sort is applied **before** `--top`, so swapping the
+  sort under a non-zero `--top` cap surfaces a different shortlist
+  — e.g. `--sort rho1active --top 5` answers "which 5 sources have
+  the *stickiest* day-to-day token mass" rather than "which 5 are
+  the heaviest".
+
+  Echoed back as `sort` in the report header and JSON payload so
+  downstream tooling can verify the resolved key.
+
+### Live smoke addendum (against `~/.config/pew/queue.jsonl`, `--top 5 --min-days 5 --sort rho1active --since 2026-04-01T00:00:00Z`)
+
+```
+pew-insights daily-token-autocorrelation-lag1
+as of: 2026-04-26T01:00:39.015Z    sources: 6 (shown 5)    tokens: 8,508,184,795    min-days: 5    sort: rho1active
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 1 below min-days, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(observation = lag-1 Pearson autocorrelation of per-source daily total_tokens; rho1Active uses consecutive *active* days, rho1Filled gap-fills missing calendar days inside [first, last] with 0; constant series surface as flat=true with rho1=0)
+
+per-source lag-1 autocorrelation (sorted by rho1active desc)
+source       tokens         nActive  nFilled  mean         stddev       rho1Active  flatA  rho1Filled  flatF  first       last
+-----------  -------------  -------  -------  -----------  -----------  ----------  -----  ----------  -----  ----------  ----------
+hermes       142,614,057    10       10       14261405.7   10704635.2   0.402       -      0.402       -      2026-04-17  2026-04-26
+openclaw     1,708,742,556  10       10       170874255.6  105407186.6  0.201       -      0.201       -      2026-04-17  2026-04-26
+claude-code  3,058,006,887  15       23       203867125.8  286313694.0  0.064       -      0.213       -      2026-04-01  2026-04-23
+codex        809,624,660    8        8        101203082.5  122703257.3  -0.019      -      -0.019      -      2026-04-13  2026-04-20
+opencode     2,788,942,225  7        7        398420317.9  263213240.3  -0.172      -      -0.172      -      2026-04-20  2026-04-26
+```
+
+Re-sorting by `rho1active` flips the leaderboard reading entirely:
+the by-tokens view crowned `claude-code`/`opencode` as the
+operationally-dominant sources, but the by-persistence view shows
+`hermes` (`0.402`) is the actually-stickiest day-over-day signal.
+`claude-code` drops to mid-table on persistence even though it
+still owns the largest `rho1Filled` jump (`0.064 → 0.213`),
+confirming the gap-fill view captures activity-cluster persistence
+that the active-only view misses.
+
+### Added (initial cut)
+
 - `daily-token-autocorrelation-lag1`: per-source lag-1 (Pearson)
   autocorrelation of *daily* total-token totals. Reveals day-to-day
   persistence (does today's token mass actually predict tomorrow's?)

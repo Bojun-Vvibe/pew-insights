@@ -5816,6 +5816,11 @@ program
     'show only the top n sources by total tokens; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
   )
+  .option(
+    '--sort <key>',
+    'sort key for the per-source table: tokens | rho1active | rho1filled | ndays (default tokens). Applied before --top so it changes which sources are kept under a non-zero cap.',
+    'tokens',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -5825,6 +5830,7 @@ program
         source?: string;
         minDays: string;
         top: string;
+        sort: string;
         json?: boolean;
       },
       cmd,
@@ -5840,6 +5846,10 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const sort = opts.sort as 'tokens' | 'rho1active' | 'rho1filled' | 'ndays';
+        if (!['tokens', 'rho1active', 'rho1filled', 'ndays'].includes(sort)) {
+          throw new Error(`--sort must be one of tokens|rho1active|rho1filled|ndays (got ${opts.sort})`);
+        }
         const queue = await readQueue(paths);
         const report = buildDailyTokenAutocorrelationLag1(queue, {
           since: opts.since ?? null,
@@ -5847,6 +5857,7 @@ program
           source: opts.source ?? null,
           minDays,
           top,
+          sort,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

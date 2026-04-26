@@ -90,6 +90,16 @@ export interface DailyTokenAutocorrelationLag1Options {
    * reflect the full population. Default 0 = no cap.
    */
   top?: number;
+  /**
+   * Sort key for the per-source table (display only). One of:
+   *   - 'tokens' (default): total tokens desc, source asc.
+   *   - 'rho1active': rho1Active desc, source asc.
+   *   - 'rho1filled': rho1Filled desc, source asc.
+   *   - 'ndays':     nActiveDays desc, source asc.
+   * The `top` cap is applied *after* the sort, so changing the
+   * sort changes which sources are kept under a non-zero cap.
+   */
+  sort?: 'tokens' | 'rho1active' | 'rho1filled' | 'ndays';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -136,6 +146,8 @@ export interface DailyTokenAutocorrelationLag1Report {
   minDays: number;
   /** Echo of resolved top cap (0 = no cap). */
   top: number;
+  /** Echo of resolved sort key. */
+  sort: 'tokens' | 'rho1active' | 'rho1filled' | 'ndays';
   /** Echo of source filter (null when not set). */
   source: string | null;
   /** Sum of total_tokens across all kept rows. */
@@ -226,6 +238,10 @@ export function buildDailyTokenAutocorrelationLag1(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const sort = opts.sort ?? 'tokens';
+  if (!['tokens', 'rho1active', 'rho1filled', 'ndays'].includes(sort)) {
+    throw new Error(`sort must be one of tokens|rho1active|rho1filled|ndays (got ${opts.sort})`);
   }
   const sourceFilter = opts.source ?? null;
   if (sourceFilter !== null && typeof sourceFilter !== 'string') {
@@ -329,7 +345,23 @@ export function buildDailyTokenAutocorrelationLag1(
   }
 
   rows.sort((a, b) => {
-    if (b.totalTokens !== a.totalTokens) return b.totalTokens - a.totalTokens;
+    let primary = 0;
+    switch (sort) {
+      case 'rho1active':
+        primary = b.rho1Active - a.rho1Active;
+        break;
+      case 'rho1filled':
+        primary = b.rho1Filled - a.rho1Filled;
+        break;
+      case 'ndays':
+        primary = b.nActiveDays - a.nActiveDays;
+        break;
+      case 'tokens':
+      default:
+        primary = b.totalTokens - a.totalTokens;
+        break;
+    }
+    if (primary !== 0) return primary;
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   });
 
@@ -346,6 +378,7 @@ export function buildDailyTokenAutocorrelationLag1(
     windowEnd: opts.until ?? null,
     minDays,
     top,
+    sort,
     source: sourceFilter,
     totalTokens,
     totalSources,

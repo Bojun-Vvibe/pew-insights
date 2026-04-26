@@ -4911,7 +4911,7 @@ export function renderDailyTokenAutocorrelationLag1(
   lines.push(chalk.bold.cyan('pew-insights daily-token-autocorrelation-lag1'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
     ),
   );
   lines.push(
@@ -4937,7 +4937,7 @@ export function renderDailyTokenAutocorrelationLag1(
     return lines.join('\n');
   }
 
-  lines.push(chalk.bold('per-source lag-1 autocorrelation (sorted by tokens desc)'));
+  lines.push(chalk.bold(`per-source lag-1 autocorrelation (sorted by ${r.sort} desc)`));
   const headers2 = [
     'source',
     'tokens',

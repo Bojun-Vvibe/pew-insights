@@ -249,3 +249,94 @@ test('daily-token-autocorrelation-lag1: rows sorted by tokens desc then source a
     ['a', 'm', 'z'],
   );
 });
+
+// ---- --sort flag (refinement) ---------------------------------------------
+
+test('daily-token-autocorrelation-lag1: rejects bad sort', () => {
+  assert.throws(() =>
+    buildDailyTokenAutocorrelationLag1([], { sort: 'bogus' as never }),
+  );
+});
+
+test('daily-token-autocorrelation-lag1: sort=rho1active orders by autocorrelation desc', () => {
+  const queue: QueueLine[] = [];
+  // mono (positive rho1)
+  [100, 200, 300, 400, 500].forEach((t, i) => {
+    const dd = (i + 1).toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'mono', t));
+  });
+  // zigzag (negative rho1)
+  [100, 1000, 100, 1000, 100].forEach((t, i) => {
+    const dd = (i + 1).toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'zigzag', t));
+  });
+  // small flat (rho1=0, flat)
+  [50, 50, 50, 50, 50].forEach((t, i) => {
+    const dd = (i + 1).toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'flat', t));
+  });
+  const byRho = buildDailyTokenAutocorrelationLag1(queue, {
+    sort: 'rho1active',
+    generatedAt: GEN,
+  });
+  // mono > flat > zigzag (positive > 0 > negative)
+  assert.deepEqual(
+    byRho.sources.map((s) => s.source),
+    ['mono', 'flat', 'zigzag'],
+  );
+  assert.equal(byRho.sort, 'rho1active');
+});
+
+test('daily-token-autocorrelation-lag1: --sort interacts with --top correctly', () => {
+  const queue: QueueLine[] = [];
+  // big tokens, weak persistence
+  [1000, 1100, 1000, 1100, 1000].forEach((t, i) => {
+    const dd = (i + 1).toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'big', t));
+  });
+  // tiny tokens, strong persistence (monotone)
+  [1, 2, 3, 4, 5].forEach((t, i) => {
+    const dd = (i + 1).toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'tiny', t));
+  });
+  // sort by tokens, top 1 -> "big"
+  const byTok = buildDailyTokenAutocorrelationLag1(queue, {
+    sort: 'tokens',
+    top: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(byTok.sources.length, 1);
+  assert.equal(byTok.sources[0]!.source, 'big');
+  assert.equal(byTok.droppedTopSources, 1);
+  // sort by rho1active, top 1 -> "tiny" (monotone wins on persistence)
+  const byRho = buildDailyTokenAutocorrelationLag1(queue, {
+    sort: 'rho1active',
+    top: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(byRho.sources.length, 1);
+  assert.equal(byRho.sources[0]!.source, 'tiny');
+  assert.equal(byRho.droppedTopSources, 1);
+});
+
+test('daily-token-autocorrelation-lag1: sort=ndays orders by active-day count desc', () => {
+  const queue: QueueLine[] = [];
+  // long: 6 active days
+  for (let d = 1; d <= 6; d++) {
+    const dd = d.toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'long', 100 * d));
+  }
+  // short: 3 active days
+  for (let d = 1; d <= 3; d++) {
+    const dd = d.toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'short', 1000 * d));
+  }
+  const r = buildDailyTokenAutocorrelationLag1(queue, {
+    sort: 'ndays',
+    generatedAt: GEN,
+  });
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['long', 'short'],
+  );
+});
