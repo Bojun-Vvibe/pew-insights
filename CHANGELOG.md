@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.18 — 2026-04-26
+
+### Added
+
+- `cumulative-tokens-midpoint`: per-source diagnostic that locates,
+  on each source's own gap-filled calendar tenure
+  `[firstActiveDay, lastActiveDay]`, the day at which **cumulative
+  total_tokens first crosses 50%** of the source's lifetime token
+  total, then expresses that day as `midpointPctTenure` in `[0, 1]`.
+
+  - `<0.5` = **front-loaded**: half the lifetime mass burned before
+    the calendar midpoint of the tenure.
+  - `~0.5` = **uniform**: roughly flat daily emission rate.
+  - `>0.5` = **back-loaded**: source warmed up slowly and most of
+    the mass piled into the late portion of its life.
+
+  Why a separate subcommand: existing intra-tenure diagnostics
+  measure something else.
+  - `source-debut-recency` reports `debutShare` over the **first
+    25% (fixed window)** of tenure — it cannot tell `midPct=0.30`
+    from `midPct=0.45` because both fall outside the first quartile.
+  - `bucket-token-gini` is a single global inequality scalar; it
+    does not localise *where* on each source's timeline the
+    inequality concentrates.
+  - `daily-token-autocorrelation-lag1` measures day-to-day
+    persistence, not life-cycle mass concentration.
+
+  Three companion fields on each row: `midpointDayIndex` (0-based
+  index inside the tenure span), `midpointDayIso` (UTC ISO date of
+  that day), and `singleDay` (true iff `tenureDays === 1`, in which
+  case `midPct` is reported as 0 by convention).
+
+  Knobs: `--since`, `--until`, `--source`, `--min-days` (>=1,
+  display floor on distinct active days), `--top` (display cap),
+  `--sort` (`tokens` default, or `midpoint` / `tenure` / `source`),
+  `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top 8 --min-days 3 --since 2026-04-01T00:00:00Z`)
+
+```
+pew-insights cumulative-tokens-midpoint
+as of: 2026-04-26T01:47:37.739Z    sources: 6 (shown 6)    tokens: 8,523,233,315    min-days: 3    sort: tokens
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-days, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(midpointPctTenure = position in [firstActiveDay, lastActiveDay] (gap-filled with 0) where cumulative tokens first crosses 50%; <0.5 = front-loaded, ~0.5 = uniform, >0.5 = back-loaded; singleDay sources reported as 0 with singleDay=y)
+
+per-source cumulative-tokens midpoint (sorted by tokens; ties: source asc)
+source          tokens         firstDay    lastDay     tenureD  activeD  midIdx  midDay      midPct  single
+--------------  -------------  ----------  ----------  -------  -------  ------  ----------  ------  ------
+claude-code     3,058,006,887  2026-04-01  2026-04-23  23       15       18      2026-04-19  0.818   -
+opencode        2,803,213,286  2026-04-20  2026-04-26  7        7        3       2026-04-23  0.500   -
+openclaw        1,709,520,015  2026-04-17  2026-04-26  10       10       4       2026-04-21  0.444   -
+codex           809,624,660    2026-04-13  2026-04-20  8        8        6       2026-04-19  0.857   -
+hermes          142,614,057    2026-04-17  2026-04-26  10       10       3       2026-04-20  0.333   -
+vscode-***      254,410        2026-04-13  2026-04-20  8        3        4       2026-04-17  0.571   -
+```
+
+(One source row had its name redacted to comply with the project's
+banned-strings guardrail; the underlying datum is preserved.)
+
+Reading the leaderboard: the top-mass source `claude-code` is
+sharply **back-loaded** (`midPct = 0.818`) — half its
+April mass landed only in the last ~18% of its tenure window,
+i.e. a late surge dominates the period. `codex` is even more
+extreme (`0.857`) but on a much shorter tenure. `opencode` is
+textbook **uniform** (`0.500`) over its 7-day life. `hermes`
+is the only **front-loaded** source on the leaderboard
+(`0.333` — half the mass burned in the first third), suggesting
+the operator drove a heavy initial spike and then tapered.
+`openclaw` (`0.444`) reads as mildly front-loaded but essentially
+uniform. The numbers are directly actionable: front-loaded sources
+are good capacity-planning candidates (mass already sunk), while
+back-loaded sources warn that recent days dominate the spend and
+the trend is still climbing.
+
 ## 0.6.17 — 2026-04-26
 
 ### Added
