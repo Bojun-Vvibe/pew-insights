@@ -436,3 +436,58 @@ test('maxSpread + top: maxSpread is applied BEFORE top cap', () => {
   assert.equal(r.droppedAboveMaxSpread, 1);
   assert.equal(r.droppedTopSources, 0);
 });
+
+// ---- minR refinement (v0.6.34) --------------------------------------------
+
+test('option validation: minR must be in [0,1]', () => {
+  assert.throws(() => buildSourceTokenMassHourCentroid([], { minR: -0.1 }));
+  assert.throws(() => buildSourceTokenMassHourCentroid([], { minR: 1.1 }));
+  assert.throws(() => buildSourceTokenMassHourCentroid([], { minR: NaN }));
+});
+
+test('report echoes minR and droppedBelowMinR defaults to 0', () => {
+  const r = buildSourceTokenMassHourCentroid([], { generatedAt: GEN });
+  assert.equal(r.minR, 0);
+  assert.equal(r.droppedBelowMinR, 0);
+});
+
+test('minR: drops loose sources, keeps tight ones', () => {
+  const queue = [
+    ql('2026-04-20T10:00:00.000Z', 'tight', 9000),
+    ql('2026-04-20T01:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T07:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T13:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T19:00:00.000Z', 'loose', 500),
+  ];
+  const r = buildSourceTokenMassHourCentroid(queue, {
+    generatedAt: GEN,
+    minR: 0.9,
+    minTokens: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'tight');
+  assert.equal(r.droppedBelowMinR, 1);
+});
+
+test('minR + maxSpread: maxSpread runs first, then minR', () => {
+  // A: super-tight (R=1, spread=0)
+  // B: medium (single hour but with FP spread=0)
+  // For two sources with R=1 each, neither is dropped by minR=0.9
+  const queue = [
+    ql('2026-04-20T10:00:00.000Z', 'A', 5000),
+    ql('2026-04-20T11:00:00.000Z', 'B', 5000),
+    ql('2026-04-20T01:00:00.000Z', 'C', 500),
+    ql('2026-04-20T07:00:00.000Z', 'C', 500),
+    ql('2026-04-20T13:00:00.000Z', 'C', 500),
+  ];
+  const r = buildSourceTokenMassHourCentroid(queue, {
+    generatedAt: GEN,
+    maxSpread: 1,
+    minR: 0.9,
+    minTokens: 1,
+  });
+  // C dropped by maxSpread; A and B both have R=1 and pass minR.
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxSpread, 1);
+  assert.equal(r.droppedBelowMinR, 0);
+});

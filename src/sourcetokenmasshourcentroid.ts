@@ -119,6 +119,20 @@ export interface SourceTokenMassHourCentroidOptions {
    * always dropped when this filter is active.
    */
   maxSpread?: number;
+  /**
+   * Display filter (refinement, v0.6.34): drop rows whose
+   * `resultantLength` (R) is strictly below this value. R is the
+   * canonical concentration measure on the circle — values close
+   * to 1 indicate a sharp hour-of-day peak. 0 = no filter.
+   *
+   * Note this is the dual of `maxSpread`: spread = sqrt(-2*ln(R))
+   * scaled to hours, so they are monotonically related but not
+   * identical filters numerically (R is bounded in [0,1] and
+   * therefore robust against the FP-noise edge case where the
+   * spread-from-R conversion can blow up). Both filters can be
+   * applied together; `minR` runs after `maxSpread`.
+   */
+  minR?: number;
   generatedAt?: string;
 }
 
@@ -154,6 +168,8 @@ export interface SourceTokenMassHourCentroidReport {
   sort: SourceTokenMassHourCentroidSort;
   /** Echo of resolved maxSpread filter (0 = no filter). */
   maxSpread: number;
+  /** Echo of resolved minR filter (0 = no filter). */
+  minR: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -163,6 +179,8 @@ export interface SourceTokenMassHourCentroidReport {
   droppedSparseSources: number;
   /** Source rows hidden by the `maxSpread` filter. */
   droppedAboveMaxSpread: number;
+  /** Source rows hidden by the `minR` filter. */
+  droppedBelowMinR: number;
   droppedTopSources: number;
   sources: SourceTokenMassHourCentroidSourceRow[];
 }
@@ -247,6 +265,12 @@ export function buildSourceTokenMassHourCentroid(
   if (!Number.isFinite(maxSpread) || maxSpread < 0) {
     throw new Error(
       `maxSpread must be a non-negative finite number (got ${opts.maxSpread})`,
+    );
+  }
+  const minR = opts.minR ?? 0;
+  if (!Number.isFinite(minR) || minR < 0 || minR > 1) {
+    throw new Error(
+      `minR must be a finite number in [0, 1] (got ${opts.minR})`,
     );
   }
   const sort: SourceTokenMassHourCentroidSort = opts.sort ?? 'tokens';
@@ -388,6 +412,17 @@ export function buildSourceTokenMassHourCentroid(
     filtered = next;
   }
 
+  // minR refinement filter (v0.6.34)
+  let droppedBelowMinR = 0;
+  if (minR > 0) {
+    const next: SourceTokenMassHourCentroidSourceRow[] = [];
+    for (const r of filtered) {
+      if (r.resultantLength >= minR) next.push(r);
+      else droppedBelowMinR += 1;
+    }
+    filtered = next;
+  }
+
   filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
@@ -430,6 +465,7 @@ export function buildSourceTokenMassHourCentroid(
     top,
     sort,
     maxSpread,
+    minR,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -438,6 +474,7 @@ export function buildSourceTokenMassHourCentroid(
     droppedSourceFilter,
     droppedSparseSources,
     droppedAboveMaxSpread,
+    droppedBelowMinR,
     droppedTopSources,
     sources: kept,
   };

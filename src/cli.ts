@@ -6822,6 +6822,11 @@ program
     'display filter: hide sources whose circular spread (hours) strictly exceeds this value. Useful for surfacing only sources with tightly-clustered hour-of-day token mass. Default 0 = no filter. Rows with R=0 (spread=infinity) are also dropped when active.',
     '0',
   )
+  .option(
+    '--min-r <r>',
+    'display filter: hide sources whose resultant length R is strictly below this value. R in [0,1] is the canonical circular concentration measure (1=sharp peak, 0=uniform). Default 0 = no filter. Counts surface as droppedBelowMinR. Applied after --max-spread.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6833,6 +6838,7 @@ program
         top: string;
         sort: string;
         maxSpread: string;
+        minR: string;
         json?: boolean;
       },
       cmd,
@@ -6856,6 +6862,12 @@ program
             `--max-spread must be a non-negative number (got ${opts.maxSpread})`,
           );
         }
+        const minR = Number.parseFloat(opts.minR);
+        if (!Number.isFinite(minR) || minR < 0 || minR > 1) {
+          throw new Error(
+            `--min-r must be a number in [0, 1] (got ${opts.minR})`,
+          );
+        }
         const validSorts = ['tokens', 'centroid', 'r', 'spread', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -6870,6 +6882,7 @@ program
           minTokens,
           top,
           maxSpread,
+          minR,
           sort: opts.sort as 'tokens' | 'centroid' | 'r' | 'spread' | 'source',
         });
         if (opts.json || common.json) {

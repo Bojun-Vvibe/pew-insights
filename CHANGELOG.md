@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.34 — 2026-04-26
+
+### Changed
+
+- `source-token-mass-hour-centroid`: new display filter
+  `--min-r <r>` drops rows whose `resultantLength` (R) is strictly
+  below the given threshold. R in `[0, 1]` is the canonical
+  circular concentration measure (1 = sharp single-hour peak,
+  0 = uniform around the clock). Default 0 = no filter. Suppressed
+  rows surface as `droppedBelowMinR`.
+
+  This is the **dual** of `--max-spread`: spread is the Mardia/Jupp
+  circular SD `sqrt(-2 ln R)` rescaled to hours, so the two filters
+  are monotonically related. They are not numerically identical
+  though — `R` is naturally bounded in `[0, 1]` and therefore robust
+  against the FP-noise edge case where the spread-from-R conversion
+  blows up (a perfectly uniform 24-bucket distribution has
+  theoretical R = 0 but FP gives R approx 1e-16, which yields a
+  finite-but-enormous spread). For "is this source actually
+  concentrated at all?" questions, `--min-r 0.3` is more
+  numerically stable than picking a `--max-spread` cutoff.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `maxSpread` -> `minR` -> sort -> `top` cap.
+  Both refinement filters can be combined.
+
+### Live smoke (refinement, against `~/.config/pew/queue.jsonl`, `--min-r 0.3 --sort r`)
+
+```
+pew-insights source-token-mass-hour-centroid
+as of: 2026-04-26T06:46:14.009Z    sources: 6 (shown 4)    tokens: 9,038,142,407    min-tokens: 1,000    max-spread: -    min-r: 0.3    top: -    sort: r
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 above max-spread, 2 below min-r, 0 below top cap
+
+per-source token-mass-weighted hour-of-day centroid (sorted by r; ties: source asc)
+source           firstDay    lastDay     days  buckets  centroidHr  R       spreadHrs  peakHr  peakTokens   tokens
+---------------  ----------  ----------  ----  -------  ----------  ------  ---------  ------  -----------  -------------
+ide-assistant-A  2025-07-30  2026-04-20  73    14       6.10        0.7274  3.05       2       410,051      1,885,727
+codex            2026-04-13  2026-04-20  8     16       11.13       0.4359  4.92       12      103,439,933  809,624,660
+claude-code      2026-02-11  2026-04-23  35    20       8.47        0.3969  5.19       8       466,586,192  3,442,385,788
+hermes           2026-04-17  2026-04-26  10    24       7.85        0.3044  5.89       14      15,687,670   143,258,290
+```
+
+The `--min-r 0.3` cut keeps **4 of 6** sources — `opencode`
+(R = 0.166) and `openclaw` (R = 0.108) are dropped as too diffusely
+diurnal to have a meaningful "centroid hour". Of the survivors,
+**three of four** centroids cluster in a tight 6.10 - 8.47 UTC band
+(`ide-assistant-A`, `claude-code`, `hermes`), and the fourth (`codex`)
+sits noon-side at 11.13 UTC. The R column shows concentration spans
+nearly 2.4x (from 0.30 to 0.73) inside a single workspace, but
+centroid hours span < 5 hours — i.e. *when* the work happens is
+substantially more uniform across sources than *how concentrated*
+the daily pattern is.
+
 ## 0.6.33 — 2026-04-26
 
 ### Changed
