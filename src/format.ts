@@ -7195,3 +7195,79 @@ export function renderSourceSingleDayMassConcentration(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceCumulativeMassHalfLifeDayReport,
+  SourceCumulativeMassHalfLifeDayRow,
+} from './sourcecumulativemasshalflifeday.js';
+
+export function renderSourceCumulativeMassHalfLifeDay(
+  r: SourceCumulativeMassHalfLifeDayReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-cumulative-mass-half-life-day'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    max-ratio: ${r.maxHalfLifeRatio.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedZeroMass)} zero-mass sources, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedAboveMaxHalfLifeRatio)} above max-ratio, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source cumulative-mass half-life: smallest k of UTC days, sorted desc by token mass, whose cumulative share crosses 25% / 50% / 75%; ratio = halfLifeDays / daysActive)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source cumulative-mass half-life (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'days',
+    'tokenSum',
+    'q25',
+    'half',
+    'q75',
+    'top1Share',
+    'top3Share',
+    'halfRatio',
+  ];
+  const rows2: string[][] = r.sources.map(
+    (s: SourceCumulativeMassHalfLifeDayRow) => [
+      s.source,
+      formatNumber(s.daysActive),
+      formatNumber(s.tokenSum),
+      formatNumber(s.quartileLifeDays),
+      formatNumber(s.halfLifeDays),
+      formatNumber(s.threeQuarterLifeDays),
+      s.top1Share.toFixed(4),
+      s.top3Share.toFixed(4),
+      s.halfLifeRatio.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

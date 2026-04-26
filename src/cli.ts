@@ -90,6 +90,7 @@ import {
   renderSourceIoRatioStability,
   renderSourceOutputTokensPerRowPercentiles,
   renderSourceSingleDayMassConcentration,
+  renderSourceCumulativeMassHalfLifeDay,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -239,6 +240,7 @@ import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
 import { buildSourceOutputTokensPerRowPercentiles } from './sourceoutputtokensperrowpercentiles.js';
 import { buildSourceSingleDayMassConcentration } from './sourcesingledaymassconcentration.js';
+import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalflifeday.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -6829,6 +6831,102 @@ program
         } else {
           process.stdout.write(
             renderSourceSingleDayMassConcentration(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-cumulative-mass-half-life-day')
+  .description(
+    "Per-source smallest number of UTC days (sorted desc by token mass) whose cumulative share first crosses 50% (`halfLifeDays`), plus the same for 25% and 75% thresholds, plus halfLifeRatio = halfLifeDays/daysActive. A threshold-crossing index orthogonal to fixed-k shares (top1/top2/top3 in single-day-mass-concentration), sum-of-squares (HHI), pooled gini (daily-token-gini-coefficient), and chronological half-life (decay-half-life). Two sources can share top3Share but differ in halfLifeDays.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-days <n>',
+    'drop sources with fewer than n active UTC days (default 2; half-life is degenerate at 1 day)',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'half' (default, asc) | 'ratio' (asc) | 'tokens' (desc) | 'days' (desc) | 'quartile' (asc) | 'threequarter' (asc) | 'source' (asc)",
+    'half',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'half',
+          'ratio',
+          'tokens',
+          'days',
+          'quartile',
+          'threequarter',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceCumulativeMassHalfLifeDay(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: opts.sort as
+            | 'half'
+            | 'ratio'
+            | 'tokens'
+            | 'days'
+            | 'quartile'
+            | 'threequarter'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceCumulativeMassHalfLifeDay(report) + '\n',
           );
         }
       } catch (e) {
