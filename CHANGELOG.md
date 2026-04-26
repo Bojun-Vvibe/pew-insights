@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.77 — 2026-04-27
+
+### Added
+
+- `source-input-output-correlation-coefficient`: per-source
+  Pearson correlation coefficient `r` between per-row
+  `input_tokens` and per-row `output_tokens`, computed only over
+  rows where both axes are strictly positive. Reports `r`
+  alongside `meanIn`, `meanOut`, `stdIn`, `stdOut`,
+  `positivePairs`, `rows`, and a `degenerate=y` flag for sources
+  where `r` is mathematically undefined (`positivePairs < 2` or
+  zero variance on either axis — `r` is reported as `0` in that
+  case for JSON shape stability).
+
+  Pearson `r` on `(in_i, out_i)` is the standard linear
+  association statistic:
+
+  - `r ~ +1`: output scales tightly with input (Q&A or
+    doc-completion shape — bigger prompt predicts bigger
+    response).
+  - `r ~ 0`:  prompt and response sizes are decoupled (typical
+    of agentic loops where a giant context produces a tiny tool
+    call, or a tiny prompt unleashes a long generation).
+  - `r < 0`:  anti-scaling — unusual, worth a closer look.
+
+  Why positive-pairs only: rows with a zero on either axis
+  collapse the variance estimate misleadingly. A source whose
+  every "small" prompt produces 0 output would otherwise show a
+  spurious `r ~ 1` because every `(0, 0)` pair sits exactly on
+  the regression line. Restricting to `in > 0 AND out > 0` is the
+  standard denoising step for IO correlation in usage telemetry.
+
+  Distinct from every existing lens:
+
+  - `prompt-output-correlation` reports a single workspace-wide
+    Pearson `r` aggregated across all sources; it does not rank
+    or compare sources. Two workspaces with identical global `r`
+    can have wildly different per-source `r` values
+    (Simpson's-paradox-style mixing). This subcommand exposes
+    the per-source breakdown so you can see which producers
+    are the "scales-with-prompt" cohort vs the "decoupled"
+    cohort.
+  - `source-output-input-ratio` is a level statistic on `out/in`
+    (dominated by mean) — a source can have a high mean ratio
+    with near-zero correlation, or a low mean ratio with strong
+    correlation.
+  - `source-io-ratio-stability` is the CV of the per-row
+    `out/in` ratio — a dispersion statistic on the ratio, not
+    a linear-association statistic on the raw pair.
+  - `source-input-token-top-row-share` is input-mass
+    concentration only; says nothing about whether output
+    co-moves with input.
+
+  Display gates: `--min-rows` (default 3), `--min-positive-pairs`
+  (default 2 — the minimum that makes `r` defined), `--top` (no
+  cap by default), `--sort` (one of `r-desc` (default), `r-asc`,
+  `abs-r`, `positive-pairs`, `rows`, `source`).
+
+  Live smoke against `~/.config/pew/queue.jsonl` (default sort,
+  one IDE-assistant source name redacted to `ide-assistant-A`
+  per banned-string policy):
+
+  ```
+  pew-insights source-input-output-correlation-coefficient
+  as of: 2026-04-26T22:12:41.402Z    sources: 6 (shown 6)    rows: 1,600    pos-pairs: 1,273    min-rows: 3    min-pos-pairs: 2    top: -    sort: r-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below min-rows, 0 below min-pos-pairs, 0 below top cap
+
+  per-source input-output Pearson r (sorted by r-desc; ties: source asc)
+  source           rows  posPairs  meanIn      meanOut   stdIn       stdOut    r       degen
+  ---------------  ----  --------  ----------  --------  ----------  --------  ------  -----
+  codex            64    64        6418456.09  31953.78  7171887.59  37319.41  0.9477  -
+  claude-code      299   299       6135831.57  40564.63  9004344.25  67410.70  0.8609  -
+  ide-assistant-A  333   6         96848.33    1531.33   46254.12    780.81    0.7600  -
+  openclaw         422   422       2255670.14  11492.36  2628350.61  18912.69  0.6714  -
+  opencode         316   316       661803.43   69316.45  1022356.18  72972.70  0.6173  -
+  hermes           166   166       334401.17   8500.63   492832.83   7811.68   0.4962  -
+  ```
+
+  Two-cohort read across the 6 sources:
+
+  - **Tightly scales-with-prompt** (`r > 0.85`): `codex`
+    (`r = 0.9477` over 64 pairs) and `claude-code`
+    (`r = 0.8609` over 299 pairs). These are the producers
+    where prompt size is the dominant predictor of response
+    size — classic Q&A / completion-style usage.
+  - **Loosely coupled** (`r in [0.6, 0.77]`): `openclaw`,
+    `opencode`, and the redacted `ide-assistant-A` (whose `r`
+    is suspect — see below). Output size is partly explained by
+    input but plenty of variance lives elsewhere (model choice,
+    user-driven length, tool use).
+  - **Most decoupled in this dataset**: `hermes` (`r = 0.4962`).
+    Roughly half its output variance is unexplained by input
+    size — consistent with a router/agentic role where the
+    model's job isn't proportional to the context it received.
+
+  Sample-size caveat: `ide-assistant-A` reports `r = 0.7600` but
+  on only **6 positive pairs** out of 333 rows (`pos-pairs / rows
+  ~ 1.8%` — the source is dominated by zero-output or zero-input
+  rows, almost certainly accounting-only telemetry). A Pearson
+  `r` over n=6 has a 95% CI roughly `[-0.10, +0.97]` — the point
+  estimate is essentially unconstrained and should not be
+  compared to the full-sample `r` values from the other sources.
+  This is exactly the failure mode the upcoming `--min-positive-
+  pairs` refinement is built to surface and filter.
+
+---
+
 ## 0.6.76 — 2026-04-27
 
 ### Changed

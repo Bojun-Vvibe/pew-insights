@@ -7794,3 +7794,79 @@ export function renderSourceGapHoursCv(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceInputOutputCorrelationCoefficientReport,
+  SourceInputOutputCorrelationCoefficientRow,
+} from './sourceinputoutputcorrelationcoefficient.js';
+
+export function renderSourceInputOutputCorrelationCoefficient(
+  r: SourceInputOutputCorrelationCoefficientReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-input-output-correlation-coefficient'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    pos-pairs: ${formatNumber(r.totalPositivePairs)}    min-rows: ${r.minRows}    min-pos-pairs: ${r.minPositivePairs}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinPositivePairs)} below min-pos-pairs, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Pearson r between input_tokens and output_tokens over rows where both > 0; r ~ +1 = output scales tightly with input, r ~ 0 = decoupled, r < 0 = anti-scaling; degen=y means positive-pairs<2 or zero-variance and r is reported as 0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source input-output Pearson r (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'posPairs',
+    'meanIn',
+    'meanOut',
+    'stdIn',
+    'stdOut',
+    'r',
+    'degen',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceInputOutputCorrelationCoefficientRow) => [
+      s.source,
+      formatNumber(s.rows),
+      formatNumber(s.positivePairs),
+      s.meanIn.toFixed(2),
+      s.meanOut.toFixed(2),
+      s.stdIn.toFixed(2),
+      s.stdOut.toFixed(2),
+      s.r.toFixed(4),
+      s.degenerate ? 'y' : '-',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

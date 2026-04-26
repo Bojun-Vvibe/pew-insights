@@ -98,6 +98,7 @@ import {
   renderSourceInputTokenTopRowShare,
   renderSourceZeroOutputRowShare,
   renderSourceGapHoursCv,
+  renderSourceInputOutputCorrelationCoefficient,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -255,6 +256,7 @@ import { buildSourceOutputTokensByHourCv } from './sourceoutputtokensbyhourcv.js
 import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.js';
 import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
 import { buildSourceGapHoursCv } from './sourcegaphourscv.js';
+import { buildSourceInputOutputCorrelationCoefficient } from './sourceinputoutputcorrelationcoefficient.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -9340,6 +9342,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceGapHoursCv(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-input-output-correlation-coefficient')
+  .description(
+    "Per-source Pearson correlation coefficient (r) between per-row input_tokens and per-row output_tokens (computed over rows where both > 0). r ~ +1 means a longer prompt predicts a longer response (Q&A / doc-completion shape); r ~ 0 means prompt and response sizes are decoupled (agentic loops where giant context yields tiny tool calls); r < 0 is unusual. Distinct from prompt-output-correlation (single workspace-wide r, no per-source breakdown — Simpson's-paradox risk), source-output-input-ratio (level statistic on out/in, dominated by mean), source-io-ratio-stability (CV of per-row out/in, dispersion not association), and source-input-token-top-row-share (input mass concentration only).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows (default 3)',
+    '3',
+  )
+  .option(
+    '--min-positive-pairs <n>',
+    'drop sources with fewer than n positive (in>0, out>0) pairs; r needs >=2 (default 2)',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'r-desc' (default) | 'r-asc' | 'abs-r' | 'positive-pairs' | 'rows' | 'source'",
+    'r-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minPositivePairs: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const minPositivePairs = Number.parseInt(opts.minPositivePairs, 10);
+        if (!Number.isInteger(minPositivePairs) || minPositivePairs < 2) {
+          throw new Error(
+            `--min-positive-pairs must be an integer >= 2 (got ${opts.minPositivePairs})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'r-desc',
+          'r-asc',
+          'abs-r',
+          'positive-pairs',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceInputOutputCorrelationCoefficient(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minPositivePairs,
+          top,
+          sort: opts.sort as
+            | 'r-desc'
+            | 'r-asc'
+            | 'abs-r'
+            | 'positive-pairs'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceInputOutputCorrelationCoefficient(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
