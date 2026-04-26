@@ -5661,3 +5661,85 @@ export function renderCumulativeTokensMidpoint(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceActiveDayStreakReport,
+  SourceActiveDayStreakRow,
+} from './sourceactivedaystreak.js';
+
+export function renderSourceActiveDayStreak(
+  r: SourceActiveDayStreakReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-active-day-streak'));
+  const topDesc = r.top === null ? '—' : String(r.top);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    density-min: ${fmtFraction(r.densityMin)}    top: ${topDesc}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedModelFilter)} model-filter, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowDensityMin)} below density-min, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`),
+    );
+  }
+  lines.push(
+    chalk.dim(
+      '(longestStreak = max consecutive UTC calendar days the source had a positive-token bucket; density = activeDays / tenureDays; currentStreak = streak ending on lastDay)',
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(
+      chalk.yellow('  no sources survived the filter. nothing to chart.'),
+    );
+    return lines.join('\n').replace(/\n+$/, '');
+  }
+
+  lines.push(
+    chalk.bold(
+      r.top === null
+        ? `per-source active-day streaks (sorted by ${r.sort}; ties: source asc)`
+        : `top ${r.top} sources by ${r.sort} (ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenureD',
+    'activeD',
+    'streaks',
+    'meanRun',
+    'longest',
+    'longestStart',
+    'longestEnd',
+    'currentStreak',
+    'density',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceActiveDayStreakRow) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.tenureDays),
+    formatNumber(s.activeDays),
+    formatNumber(s.streaks),
+    s.meanStreak.toFixed(2),
+    formatNumber(s.longestStreak),
+    s.longestStreakStart,
+    s.longestStreakEnd,
+    formatNumber(s.currentStreak),
+    fmtFraction(s.density),
+    formatNumber(s.tokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

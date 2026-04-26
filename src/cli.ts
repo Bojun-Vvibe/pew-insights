@@ -100,6 +100,7 @@ import {
   renderHourOfDayTokenSkew,
   renderSourceRankChurn,
   renderSourceDebutRecency,
+  renderSourceActiveDayStreak,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -160,6 +161,7 @@ import { buildBucketTokenGini } from './buckettokengini.js';
 import { buildHourOfDayTokenSkew } from './hourofdaytokenskew.js';
 import { buildSourceRankChurn } from './sourcerankchurn.js';
 import { buildSourceDebutRecency } from './sourcedebutrecency.js';
+import { buildSourceActiveDayStreak } from './sourceactivedaystreak.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2468,6 +2470,114 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceDebutRecency(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-active-day-streak')
+  .description(
+    "Per-source longest run of consecutive UTC calendar days with at least one positive-token bucket (habit-consistency lens orthogonal to source-tenure / source-run-lengths / bucket-streak-length)",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--model <id>', 'restrict to a single normalised model id')
+  .option('--source <key>', 'restrict to a single source key')
+  .option(
+    '--min-days <n>',
+    'drop sources with fewer than n active days from the per-source table (default 1); display filter only',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + min-days; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'tokens' (default) | 'streak' | 'density' | 'current' | 'days' | 'source'",
+    'tokens',
+  )
+  .option(
+    '--density-min <f>',
+    'drop rows whose density (activeDays/tenureDays) is below f from the per-source table; must be in [0, 1] (default 0); suppressed rows surface as droppedBelowDensityMin',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        model?: string;
+        source?: string;
+        minDays: string;
+        top?: string;
+        sort: string;
+        densityMin: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isFinite(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'tokens' &&
+          sort !== 'streak' &&
+          sort !== 'density' &&
+          sort !== 'current' &&
+          sort !== 'days' &&
+          sort !== 'source'
+        ) {
+          throw new Error(
+            `--sort must be 'tokens' | 'streak' | 'density' | 'current' | 'days' | 'source' (got ${opts.sort})`,
+          );
+        }
+        const densityMin = Number.parseFloat(opts.densityMin);
+        if (!Number.isFinite(densityMin) || densityMin < 0 || densityMin > 1) {
+          throw new Error(
+            `--density-min must be in [0, 1] (got ${opts.densityMin})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceActiveDayStreak(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          model: opts.model ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: sort as
+            | 'tokens'
+            | 'streak'
+            | 'density'
+            | 'current'
+            | 'days'
+            | 'source',
+          densityMin,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceActiveDayStreak(report) + '\n');
         }
       } catch (e) {
         die(e);
