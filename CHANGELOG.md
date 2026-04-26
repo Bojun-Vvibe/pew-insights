@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.33 — 2026-04-26
+
+### Changed
+
+- `source-token-mass-hour-centroid`: new display filter
+  `--max-spread <hrs>` drops rows whose `spreadHours` is strictly
+  above the given threshold. Useful for surfacing only sources
+  whose token mass is *tightly* clustered around their centroid
+  hour-of-day. Default 0 = no filter. Suppressed rows surface as
+  `droppedAboveMaxSpread`.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `maxSpread` -> sort -> `top` cap.
+
+  Note on the limit case: a perfectly uniform 24-bucket
+  distribution has theoretical R = 0 (and therefore
+  `spreadHours = +infinity`), but FP arithmetic drives R into the
+  `~1e-16` regime, which yields a finite-but-enormous `spreadHours`
+  near 30+. The filter still catches these correctly because any
+  reasonable `--max-spread` (e.g. 6 or 8) will be exceeded.
+
+### Live smoke (refinement, against `~/.config/pew/queue.jsonl`, `--max-spread 5 --sort r`)
+
+```
+pew-insights source-token-mass-hour-centroid
+as of: 2026-04-26T06:44:33.505Z    sources: 6 (shown 2)    tokens: 9,038,142,407    min-tokens: 1,000    max-spread: 5    top: -    sort: r
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 4 above max-spread, 0 below top cap
+
+per-source token-mass-weighted hour-of-day centroid (sorted by r; ties: source asc)
+source           firstDay    lastDay     days  buckets  centroidHr  R       spreadHrs  peakHr  peakTokens   tokens
+---------------  ----------  ----------  ----  -------  ----------  ------  ---------  ------  -----------  -----------
+ide-assistant-A  2025-07-30  2026-04-20  73    14       6.10        0.7274  3.05       2       410,051      1,885,727
+codex            2026-04-13  2026-04-20  8     16       11.13       0.4359  4.92       12      103,439,933  809,624,660
+```
+
+The `--max-spread 5` filter cleanly reduces the 6-source workspace
+to its **two** tightly-concentrated sources: `ide-assistant-A`
+(centroid 6.10 UTC, spread 3.05h, R = 0.727 — a sharp ~02:10 PT
+morning cluster across 73 days) and `codex` (centroid 11.13 UTC,
+spread 4.92h, R = 0.436 — a ~04:00 PT pre-noon cluster across 8
+days). Everything else (`claude-code`, `opencode`, `openclaw`,
+`hermes`) has spread > 5h and was dropped — their token mass is
+diurnally smeared rather than peaked. The fact that *both*
+surviving sources have a centroid that maps to early-morning local
+time, despite vastly different token volumes (1.9M vs 810M) and
+date ranges (273 days vs 8 days), is a real cross-source phase
+alignment that the linear `peak-hour` statistic cannot detect.
+
 ## 0.6.32 — 2026-04-26
 
 ### Added

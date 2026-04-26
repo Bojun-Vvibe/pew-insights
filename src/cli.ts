@@ -6817,6 +6817,11 @@ program
     'sort key: tokens (default) | centroid | r | spread | source. Applied before --top.',
     'tokens',
   )
+  .option(
+    '--max-spread <hrs>',
+    'display filter: hide sources whose circular spread (hours) strictly exceeds this value. Useful for surfacing only sources with tightly-clustered hour-of-day token mass. Default 0 = no filter. Rows with R=0 (spread=infinity) are also dropped when active.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6827,6 +6832,7 @@ program
         minTokens: string;
         top: string;
         sort: string;
+        maxSpread: string;
         json?: boolean;
       },
       cmd,
@@ -6844,6 +6850,12 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const maxSpread = Number.parseFloat(opts.maxSpread);
+        if (!Number.isFinite(maxSpread) || maxSpread < 0) {
+          throw new Error(
+            `--max-spread must be a non-negative number (got ${opts.maxSpread})`,
+          );
+        }
         const validSorts = ['tokens', 'centroid', 'r', 'spread', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -6857,6 +6869,7 @@ program
           source: opts.source ?? null,
           minTokens,
           top,
+          maxSpread,
           sort: opts.sort as 'tokens' | 'centroid' | 'r' | 'spread' | 'source',
         });
         if (opts.json || common.json) {

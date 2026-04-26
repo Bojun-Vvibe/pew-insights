@@ -109,6 +109,16 @@ export interface SourceTokenMassHourCentroidOptions {
   minTokens?: number;
   top?: number;
   sort?: SourceTokenMassHourCentroidSort;
+  /**
+   * Display filter (refinement, v0.6.33): drop rows whose
+   * `spreadHours` is strictly above this value. 0 = no filter.
+   * Useful for surfacing only sources whose token mass is
+   * *tightly* clustered around their centroid hour.
+   *
+   * Note: rows with R = 0 have spreadHours = +Infinity and are
+   * always dropped when this filter is active.
+   */
+  maxSpread?: number;
   generatedAt?: string;
 }
 
@@ -142,6 +152,8 @@ export interface SourceTokenMassHourCentroidReport {
   minTokens: number;
   top: number;
   sort: SourceTokenMassHourCentroidSort;
+  /** Echo of resolved maxSpread filter (0 = no filter). */
+  maxSpread: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -149,6 +161,8 @@ export interface SourceTokenMassHourCentroidReport {
   droppedNonPositiveTokens: number;
   droppedSourceFilter: number;
   droppedSparseSources: number;
+  /** Source rows hidden by the `maxSpread` filter. */
+  droppedAboveMaxSpread: number;
   droppedTopSources: number;
   sources: SourceTokenMassHourCentroidSourceRow[];
 }
@@ -228,6 +242,12 @@ export function buildSourceTokenMassHourCentroid(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const maxSpread = opts.maxSpread ?? 0;
+  if (!Number.isFinite(maxSpread) || maxSpread < 0) {
+    throw new Error(
+      `maxSpread must be a non-negative finite number (got ${opts.maxSpread})`,
+    );
   }
   const sort: SourceTokenMassHourCentroidSort = opts.sort ?? 'tokens';
   const validSorts: SourceTokenMassHourCentroidSort[] = [
@@ -353,7 +373,22 @@ export function buildSourceTokenMassHourCentroid(
     totalTokensSum += acc.totalTokens;
   }
 
-  rows.sort((a, b) => {
+  // maxSpread refinement filter (v0.6.33)
+  let droppedAboveMaxSpread = 0;
+  let filtered = rows;
+  if (maxSpread > 0) {
+    const next: SourceTokenMassHourCentroidSourceRow[] = [];
+    for (const r of rows) {
+      if (Number.isFinite(r.spreadHours) && r.spreadHours <= maxSpread) {
+        next.push(r);
+      } else {
+        droppedAboveMaxSpread += 1;
+      }
+    }
+    filtered = next;
+  }
+
+  filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
       case 'centroid':
@@ -381,10 +416,10 @@ export function buildSourceTokenMassHourCentroid(
   });
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -394,6 +429,7 @@ export function buildSourceTokenMassHourCentroid(
     minTokens,
     top,
     sort,
+    maxSpread,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -401,6 +437,7 @@ export function buildSourceTokenMassHourCentroid(
     droppedNonPositiveTokens,
     droppedSourceFilter,
     droppedSparseSources,
+    droppedAboveMaxSpread,
     droppedTopSources,
     sources: kept,
   };

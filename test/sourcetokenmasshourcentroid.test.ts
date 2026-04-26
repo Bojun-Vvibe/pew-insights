@@ -342,3 +342,97 @@ test('builder: sort=source is alphabetical by source asc', () => {
     ['alpha', 'mango', 'zebra'],
   );
 });
+
+// ---- maxSpread refinement (v0.6.33) ---------------------------------------
+
+test('option validation: maxSpread', () => {
+  assert.throws(() =>
+    buildSourceTokenMassHourCentroid([], { maxSpread: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceTokenMassHourCentroid([], { maxSpread: NaN }),
+  );
+});
+
+test('report echoes maxSpread and droppedAboveMaxSpread defaults to 0', () => {
+  const r = buildSourceTokenMassHourCentroid([], { generatedAt: GEN });
+  assert.equal(r.maxSpread, 0);
+  assert.equal(r.droppedAboveMaxSpread, 0);
+});
+
+test('maxSpread: drops loose sources, keeps tight ones', () => {
+  // tight: all 9000 at one hour -> spread = 0
+  // loose: spread across many hours -> spread > 5h
+  const queue = [
+    ql('2026-04-20T10:00:00.000Z', 'tight', 9000),
+    ql('2026-04-20T01:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T07:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T13:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T19:00:00.000Z', 'loose', 500),
+  ];
+  const r = buildSourceTokenMassHourCentroid(queue, {
+    generatedAt: GEN,
+    maxSpread: 2,
+    minTokens: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'tight');
+  assert.equal(r.droppedAboveMaxSpread, 1);
+});
+
+test('maxSpread: drops near-uniform (R~0) sources with very large finite spread', () => {
+  // 24 buckets of equal mass -> R approx 0 (FP noise gives R ~ 1e-16),
+  // spreadHours computed from sqrt(-2 ln R) is enormous (~30h+).
+  const queue: QueueLine[] = [];
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    queue.push(ql(`2026-04-20T${hh}:00:00.000Z`, 'flat', 100));
+  }
+  const r = buildSourceTokenMassHourCentroid(queue, {
+    generatedAt: GEN,
+    maxSpread: 20,
+    minTokens: 1,
+  });
+  // flat source spread far exceeds 20h, should be dropped
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedAboveMaxSpread, 1);
+});
+
+test('maxSpread: 0 disables the filter (default behaviour)', () => {
+  const queue = [
+    ql('2026-04-20T10:00:00.000Z', 'tight', 9000),
+    ql('2026-04-20T01:00:00.000Z', 'loose', 500),
+    ql('2026-04-20T13:00:00.000Z', 'loose', 500),
+  ];
+  const r = buildSourceTokenMassHourCentroid(queue, {
+    generatedAt: GEN,
+    minTokens: 1,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxSpread, 0);
+});
+
+test('maxSpread + top: maxSpread is applied BEFORE top cap', () => {
+  // A: tight (spread small)
+  // B: tight (spread small)
+  // C: loose (spread large)
+  const queue = [
+    ql('2026-04-20T10:00:00.000Z', 'A', 9000),
+    ql('2026-04-20T11:00:00.000Z', 'B', 8000),
+    ql('2026-04-20T01:00:00.000Z', 'C', 500),
+    ql('2026-04-20T07:00:00.000Z', 'C', 500),
+    ql('2026-04-20T13:00:00.000Z', 'C', 500),
+    ql('2026-04-20T19:00:00.000Z', 'C', 500),
+  ];
+  const r = buildSourceTokenMassHourCentroid(queue, {
+    generatedAt: GEN,
+    maxSpread: 2,
+    top: 5,
+    minTokens: 1,
+  });
+  // C dropped by maxSpread, then top=5 leaves both A and B,
+  // so droppedTopSources stays 0 (C was already removed).
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxSpread, 1);
+  assert.equal(r.droppedTopSources, 0);
+});
