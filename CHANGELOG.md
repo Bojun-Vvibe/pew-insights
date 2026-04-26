@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.75 — 2026-04-27
+
+### Added
+
+- `source-gap-hours-cv`: per-source coefficient of variation of
+  the inter-bucket gap distribution (gaps in hours between
+  consecutive distinct UTC hour buckets where the source had
+  `total_tokens > 0`). Reports `gapCv = stddev(gaps) / mean(gaps)`
+  along with `meanGap`, `stdGap`, `minGap`, `maxGap`,
+  `hoursActive`, `gaps`, and a `flat=y` flag for perfectly-clocked
+  sources (every gap identical).
+
+  CV-of-IAT is the standard queueing-theory dispersion knob on
+  an inter-arrival sequence:
+
+  - `gapCv ~ 0`   = clocked-regular (every active hour comes the
+    same number of hours after the previous; cron-like producer).
+  - `gapCv ~ 1`   = Poisson-ish / memoryless (mixed human +
+    machine usage with no preferred spacing).
+  - `gapCv >> 1`  = bursty / heavy-tailed (a few enormous gaps
+    dominate the variance; project-style work — dense for a
+    stretch, then dark for days).
+
+  Distinct from every existing lens:
+
+  - `interarrival-time` already collects the same per-source gap
+    sequence but reports it as min/p50/p90/max + a fixed-edge
+    histogram. It does **not** emit CV. CV compresses the spread
+    into a single regular-vs-bursty number that enables ranking
+    across sources, which p50/p90 alone cannot do — two sources
+    with `p50=1, p90=2` can have wildly different CV depending
+    on their tail (max 4 vs max 200).
+  - `source-burstiness-fano-factor` is variance-to-mean of the
+    **count** of rows per fixed-width time bucket. CV-of-IAT is
+    a different statistic on the **gap** distribution. Two
+    sources can have identical Fano factor but very different
+    `gapCv` (Fano is dominated by within-bucket count variance;
+    `gapCv` by between-bucket spacing variance).
+  - `source-active-day-streak`, `source-decay-half-life`,
+    `source-dry-spell` look at run lengths or single-event
+    aggregates, not the dispersion of the gap distribution.
+  - `idle-gaps` operates on `SessionLine` (per-session message
+    gaps in seconds), not on per-source bucket spacing.
+
+  Display gates: `--min-active-hours` (default 3, since 2 gaps
+  is the minimum for a non-degenerate CV), `--min-mean-gap`
+  (default 0), `--top` (no cap by default), `--sort` (one of
+  `cv` (default), `mean-gap`, `max-gap`, `active-hours`,
+  `source`).
+
+  Live smoke against `~/.config/pew/queue.jsonl` (default sort,
+  one source name redacted to `ide-assistant-A` per banned-string
+  policy):
+
+  ```
+  pew-insights source-gap-hours-cv
+  as of: 2026-04-26T21:32:11.115Z    sources: 6 (shown 6)    active-hrs: 1,488    gaps: 1,482    min-active-hrs: 3    min-mean-gap: 0.00    top: -    sort: cv
+  dropped: 0 bad hour_start, 0 zero-mass rows, 0 by source filter, 0 below min-active-hrs, 0 below min-mean-gap, 0 below top cap
+
+  per-source gap-hours CV (sorted by cv; ties: source asc)
+  source           activeHrs  gaps  meanGap  stdGap  gapCv   minGap  maxGap  flat
+  ---------------  ---------  ----  -------  ------  ------  ------  ------  ----
+  claude-code      267        266   6.87     25.67   3.7369  1       316     -
+  ide-assistant-A  320        319   20.21    62.83   3.1083  1       568     -
+  codex            64         63    3.33     5.67    1.7004  1       28      -
+  hermes           165        164   1.65     1.30    0.7839  1       11      -
+  openclaw         421        420   1.05     0.69    0.6505  1       13      -
+  opencode         251        250   1.09     0.65    0.5987  1       10      -
+  ```
+
+  Two-cohort read across the 6 sources:
+
+  - **Heavy-tailed bursty** (`gapCv > 1.5`): `claude-code`,
+    `ide-assistant-A` (redacted), `codex`. These three look like
+    project-style producers — a typical gap of 6.87h / 20.21h /
+    3.33h respectively, but with single silences of 316h / 568h /
+    28h pulling the std way past the mean. `ide-assistant-A`'s
+    568-hour max gap (~23.7 days) is the most extreme silence
+    in the dataset and gives it the longest typical between-burst
+    spacing (~20h) of any source.
+  - **Near-Poisson / steady** (`gapCv < 1`): `hermes`, `openclaw`,
+    `opencode`. All three have `meanGap ~ 1.0–1.7h`, `maxGap`
+    in the single-to-low-double digits, and CV well below 1 —
+    near-continuous producers with tight, almost-Poisson spacing.
+    `opencode` is the steadiest (`gapCv = 0.5987`), followed by
+    `openclaw` (`0.6505`).
+
+  No source is "clocked-flat" (`gapCv == 0`) on the live data,
+  which is the expected human-driven outcome — perfect periodicity
+  would only show up for a strict cron-style poller.
+
+---
+
 ## 0.6.74 — 2026-04-27
 
 ### Changed
