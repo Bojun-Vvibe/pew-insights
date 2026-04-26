@@ -2,6 +2,94 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.61 — 2026-04-27
+
+### Added
+
+- `source-cumulative-mass-half-life-day`: per source, the smallest
+  number of UTC calendar days (sorted descending by per-day token
+  mass) whose cumulative share first crosses the 50% mark
+  (`halfLifeDays`), plus the same for 25% (`quartileLifeDays`)
+  and 75% (`threeQuarterLifeDays`). Reports `top1Share`,
+  `top3Share`, and `halfLifeRatio = halfLifeDays / daysActive`.
+  Headline question: **how many of a source's biggest UTC days
+  do you have to add together before you've explained half of
+  its history?**
+
+  Distinct from every existing concentration / temporal lens:
+
+  - `source-single-day-mass-concentration` reports **fixed-k**
+    shares (`maxDayShare`, `top2Share`, `top3Share`) and an HHI
+    sum-of-squares index. This metric inverts the question: not
+    "what share does the top-k take?" but "what's the smallest
+    k that crosses a target share?". Two sources can share an
+    identical `top3Share` while having different `halfLifeDays`
+    (e.g. one needs 2 days to reach 50%, the other needs 7).
+  - `daily-token-gini-coefficient` is a **global** (all-source-
+    pooled) inequality measure on per-day total mass; it cannot
+    answer the per-source question and conflates "one source had
+    a giant day" with "one calendar day was hot across all
+    sources".
+  - `source-decay-half-life` is a **chronological** half-life
+    over time-ordered days (recency / decay). This metric is
+    **shape-only**: sorting by mass descending strips out
+    chronology entirely.
+  - `cumulative-tokens-midpoint` reports a single global
+    chronological midpoint timestamp; this is per-source on a
+    mass-sorted curve.
+  - `source-day-of-week-token-mass-share`, `source-hour-of-day-*`,
+    `source-active-hour-*`, `source-burstiness-fano-factor`:
+    all measure either modular calendar location, hour-grain
+    burstiness, or run length. None compute a cumulative-share
+    threshold-crossing index over sorted-descending day mass.
+
+  Bounds: `halfLifeDays in [1, daysActive]`, `halfLifeRatio in
+  (0, 1]`. A perfectly flat source over `n` days yields
+  `halfLifeDays ~= n/2` and `halfLifeRatio ~= 0.5`; a single-day
+  source yields `1.0` for both; a heavy-headed source yields a
+  ratio close to `1/daysActive`.
+
+  Filters: `--since` / `--until` ISO window, `--source <id>`
+  restriction, `--min-days <n>` (default 2 — half-life is
+  degenerate at 1 day), `--top <n>` cap, `--sort` over
+  `half|ratio|tokens|days|quartile|threequarter|source` with
+  `source` asc as the deterministic final tiebreak.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-cumulative-mass-half-life-day
+pew-insights source-cumulative-mass-half-life-day
+as of: 2026-04-26T17:13:01.876Z    sources: 6 (shown 6)    total-tokens: 9,324,937,533    min-days: 2    max-ratio: 1.0000    top: -    sort: half
+dropped: 0 bad hour_start, 0 by source filter, 0 zero-mass sources, 0 below min-days, 0 above max-ratio, 0 below top cap
+(per-source cumulative-mass half-life: smallest k of UTC days, sorted desc by token mass, whose cumulative share crosses 25% / 50% / 75%; ratio = halfLifeDays / daysActive)
+
+per-source cumulative-mass half-life (sorted by half; ties: source asc)
+source           days  tokenSum       q25  half  q75  top1Share  top3Share  halfRatio
+---------------  ----  -------------  ---  ----  ---  ---------  ---------  ---------
+claude-code      35    3,442,385,788  1    2     6    0.3056     0.5964     0.0571
+codex            8     809,624,660    1    2     3    0.4814     0.8466     0.2500
+hermes           10    144,989,322    2    3     5    0.2392     0.5997     0.3000
+openclaw         10    1,749,957,612  2    3     5    0.2023     0.5120     0.3000
+opencode         7     3,176,094,424  2    3     4    0.2280     0.6051     0.4286
+ide-assistant-A  73    1,885,727      3    6     15   0.1277     0.3270     0.0822
+```
+
+Reading: `claude-code` and `codex` both reach the 50% line with
+just their two biggest days (`half=2`) — but the ratios diverge:
+`claude-code` has `halfLifeRatio = 0.057` (35 active days, 2/35
+suffices, so its mass is dramatically heavy-headed), while
+`codex` has `halfLifeRatio = 0.250` (only 8 days, so 2/8 is
+"merely concentrated"). `ide-assistant-A` is the structural
+opposite: 73 active days but you still need 6 of them to clear
+50% and 15 to clear 75% — a near-uniform tail. Crucially,
+`claude-code` and `codex` would look very different under
+`source-single-day-mass-concentration` (top1 = 0.31 vs 0.48,
+top3 = 0.60 vs 0.85) but identical under `halfLifeDays` (both
+= 2): the two metrics answer genuinely different questions and
+this command is the threshold-crossing complement to the
+fixed-k view.
+
 ## 0.6.60 — 2026-04-27
 
 ### Changed
