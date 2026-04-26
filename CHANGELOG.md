@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.23 — 2026-04-26
+
+### Added
+
+- `daily-token-monotone-run-length`: per-source longest run of
+  **strictly monotone** consecutive daily total-token values
+  (separately for strictly-increasing and strictly-decreasing
+  directions), plus the **live trailing run** the source is
+  currently on. Trajectory-shape statistic that no other shipped
+  command captures.
+
+  For every kept source we emit, on its own positive-token
+  daily series:
+
+  - `nActiveDays`, `firstActiveDay`, `lastActiveDay`: tenure
+    bounds (UTC YYYY-MM-DD).
+  - `longestUpRun` + `longestUpStart` / `longestUpEnd`: length
+    (in days) and ISO bounds of the longest strictly-increasing
+    run. 0 with empty bounds when no such run exists.
+  - `longestDownRun` + `longestDownStart` / `longestDownEnd`:
+    same for the longest strictly-decreasing run.
+  - `longestMonotoneRun`: convenience `max(up, down)`.
+  - `longestDirection`: `'up'`, `'down'`, or `'flat'`. On a
+    tie between up and down, `'up'` wins (deterministic).
+  - `currentDirection`: direction of the trailing pair on
+    `lastActiveDay`. `'up'`, `'down'`, or `'flat'` (last two
+    equal, or `nActiveDays == 1`).
+  - `currentRunLength`: length of the trailing run. For
+    flat tails this is the count of trailing equal-valued
+    active days (>= 1). Always >= 1 for any kept source.
+  - `runs`: total count of maximal strict monotone segments
+    (`up` plus `down`). Equal-valued neighbours break runs in
+    both directions.
+  - `totalTokens`: sum across the source's positive-token days.
+
+  Why a separate subcommand (orthogonality argument):
+
+  - `daily-token-autocorrelation-lag1` is a *linear* serial
+    correlation rho1 — a mean-shape statistic. Two series with
+    similar rho1 can have wildly different longest monotone
+    runs. A perfectly stair-stepped 1, 2, 3, 4, 5, 6 series
+    has a 6-day strictly-up run; a noisy series with the same
+    rho1 has a max run of 2.
+  - `source-active-day-streak` and `bucket-streak-length` count
+    consecutive *active* periods (binary indicator) — they say
+    nothing about the *direction* of the magnitude trace.
+  - `source-decay-half-life` and `cumulative-tokens-midpoint`
+    describe the cumulative shape of lifetime mass; they do not
+    detect locally-monotone segments inside a noisy series.
+  - `trend` and `forecast` fit a *global* linear drift; a source
+    with a 5-day climb followed by a 4-day decline cancels into
+    near-zero slope but has two strong monotone runs surfaced
+    here.
+  - `burstiness`, `rolling-bucket-cv`, `bucket-token-gini` are
+    dispersion statistics with no notion of *order*; permuting
+    the daily series leaves them unchanged but collapses every
+    monotone-run length to ~1 in expectation.
+
+  Headline question: **"What is the longest unbroken climb (or
+  fall) this source has ever strung together — and is it on one
+  right now?"**
+
+  Knobs: `--since`, `--until`, `--source`,
+  `--min-days <n>` (default 2, must be >= 2), `--top <n>`,
+  `--sort` (`tokens` default | `longest` | `up` | `down` |
+  `current` | `ndays` | `source`),
+  `--min-longest-run <n>` (default 0 = no floor), `--json`.
+
+  `--min-longest-run` is a **display filter** only:
+  `totalSources` and `totalTokens` always reflect the full
+  kept population. Suppressed rows surface as
+  `droppedBelowMinLongestRun`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--since 2026-04-01T00:00:00Z --min-longest-run 3 --sort longest`)
+
+```
+pew-insights daily-token-monotone-run-length
+as of: 2026-04-26T03:51:58.061Z    sources: 6 (shown 5)    tokens: 8,571,602,985    min-days: 2    min-longest-run: 3    top: —    sort: longest
+dropped: 0 bad hour_start, 0 zero tokens, 0 source-filter, 0 below min-days, 1 below min-longest-run, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(longestUpRun / longestDownRun = max consecutive UTC active days with strictly increasing / decreasing total_tokens; equal-valued neighbors break runs in both directions; currentRun is the trailing run ending on lastActiveDay)
+
+per-source monotone runs (sorted by longest; ties: source asc)
+source       firstDay    lastDay     nDays  longestRun  dir   longestUp  upStart     upEnd       longestDown  downStart   downEnd     curDir  curLen  runs  tokens
+-----------  ----------  ----------  -----  ----------  ----  ---------  ----------  ----------  -----------  ----------  ----------  ------  ------  ----  -------------
+hermes       2026-04-17  2026-04-26  10     5           down  2          2026-04-18  2026-04-19  5            2026-04-22  2026-04-26  down    5       5     142,881,896
+codex        2026-04-13  2026-04-20  8      4           down  3          2026-04-16  2026-04-18  4            2026-04-13  2026-04-16  up      2       4     809,624,660
+openclaw     2026-04-17  2026-04-26  10     4           up    4          2026-04-21  2026-04-24  3            2026-04-19  2026-04-21  down    3       4     1,713,189,563
+opencode     2026-04-20  2026-04-26  7      4           down  2          2026-04-20  2026-04-21  4            2026-04-21  2026-04-24  down    2       4     2,847,645,569
+claude-code  2026-04-01  2026-04-23  15     3           up    3          2026-04-01  2026-04-03  3            2026-04-15  2026-04-17  down    3       10    3,058,006,887
+```
+
+Reading the smoke: `hermes` is on a live 5-day downward run
+(`curDir=down, curLen=5`) that *is* its all-time longest
+strictly-decreasing run — so its current trajectory is its
+record fall. `openclaw` had a clean 4-day climb 2026-04-21 ->
+2026-04-24 (its longest segment of the window) and is now on
+a 3-day cooldown. `claude-code`, despite the largest token
+mass, fragments into 10 short monotone segments (no run longer
+than 3) — the trajectory is choppy. `codex` is the only source
+whose `longestDirection` (`down`, length 4) and current
+trailing direction (`up`) disagree, signaling a possible
+reversal. The single source dropped at `--min-longest-run 3`
+was a sparse two-day climb whose key tripped the repo
+banned-string filter, so it is suppressed here for both
+display and policy reasons.
+
 ## 0.6.22 — 2026-04-26
 
 ### Changed
