@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.47 — 2026-04-26
+
+### Added
+
+- `source-active-hour-span`: new subcommand. Per source, the
+  **minimum-arc cover on the circular UTC 24-hour clock** that
+  contains every active hour-of-day for that source. Reports:
+
+  - `activeHours` in `[0, 24]` — count of UTC hour-of-day bins
+    with positive token mass.
+  - `circularSpan` in `[0, 24]` — width of the smallest contiguous
+    arc on the 24-cycle that covers every active hour. Computed as
+    `24 - largestQuietGap` where `largestQuietGap` is the longest
+    stretch of inactive hours between two consecutive actives on
+    the circle (wrap-aware).
+  - `spanStartHour`, `spanEndHour` — UTC hours bracketing the
+    minimum-arc cover, inclusive. `spanEndHour = (spanStartHour
+    + circularSpan - 1) mod 24`. `-1` when activeHours=0.
+  - `largestQuietGap` in `[0, 24]` — equal to `24 - circularSpan`
+    when activeHours>0; the longest contiguous stretch of dead
+    hours-of-day on the circle.
+  - `spanDensity` in `(0, 1]` — `activeHours / circularSpan`.
+    `1.0` means every hour inside the waking window is itself
+    active (no interior pockets). Lower values mean the waking
+    window is wide but pocked with quiet hours inside it.
+
+  Knobs: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--top` (default 0 = no cap),
+  `--sort tokens|span|density|active|gap|source`, `--json`.
+
+  Why orthogonal:
+
+  - `source-dead-hour-count` reports `deadHours` and
+    `longestDeadRun`. `largestQuietGap` here equals
+    `longestDeadRun` arithmetically when active hours fully fill
+    one contiguous arc, but the framing (waking-window cover with
+    explicit `spanStartHour`/`spanEndHour`/`spanDensity`) is the
+    *active* axis dead-hour-count never surfaces. A source with
+    `deadHours=12` could be one 12h sleep block (span=12, density
+    1.0) or 12 alternating dead hours (span=23, density 12/23 ≈
+    0.52); span+density make the waking-window framing the
+    headline.
+  - `source-active-hour-longest-run` measures the longest
+    *contiguous* active block. Two sources with `activeHours=4`
+    can have `longestActiveRun=4` (one solid 4h shift, span=4,
+    density 1.0), or `longestActiveRun=1` with `span=20` and
+    `density=0.20` — same active count, very different waking
+    windows. Span captures the *cover whether or not* the actives
+    are contiguous; longest-active-run captures *how much* of that
+    cover is one block.
+  - `source-token-mass-hour-centroid` reports the circular *mean*;
+    not the *width* of the support.
+  - `source-hour-of-day-token-mass-entropy` is mass-weighted
+    spread; this subcommand is the *support-set* width regardless
+    of mass distribution. A source whose mass is 99% at hour 09
+    and 1% at hour 21 has very low entropy but a circularSpan of
+    13, which entropy hides.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--sort density`)
+
+```
+pew-insights source-active-hour-span --sort density
+as of: 2026-04-26T12:18:56.486Z    sources: 6 (shown 6)    tokens: 9,193,333,877    min-tokens: 1,000    max-span: —    top: —    sort: density
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 above max-span, 0 below top cap
+(per-source minimum-arc cover on the circular UTC 24-hour clock; span = 24 - largestQuietGap; density = activeHours / circularSpan)
+
+per-source UTC hour-of-day waking-window cover (sorted by density; ties: source asc)
+source           firstDay    lastDay     buckets  activeHours  circularSpan  spanStart  spanEnd  largestQuietGap  spanDensity  tokens
+---------------  ----------  ----------  -------  -----------  ------------  ---------  -------  ---------------  -----------  -------------
+claude-code      2026-02-11  2026-04-23  299      20           20            00         19       4                1.0000       3,442,385,788
+codex            2026-04-13  2026-04-20  64       16           16            01         16       8                1.0000       809,624,660
+hermes           2026-04-17  2026-04-26  161      24           24            00         23       0                1.0000       144,332,595
+openclaw         2026-04-17  2026-04-26  402      24           24            00         23       0                1.0000       1,735,047,802
+opencode         2026-04-20  2026-04-26  296      24           24            00         23       0                1.0000       3,060,057,305
+ide-assistant-A  2025-07-30  2026-04-20  333      14           14            01         14       10               1.0000       1,885,727
+```
+
+Reading: every source on this queue has `spanDensity = 1.0000` —
+i.e. every active hour-of-day for each source is part of a single
+contiguous arc on the 24-clock. That alone is a useful empirical
+finding: for *this* operator, no source is ever fragmented into
+multiple disjoint shifts on the hour-of-day axis. Where the
+sources differ is in their `spanStartHour`/`spanEndHour` and
+`largestQuietGap`. `claude-code` covers hours 00..19 with a 4h
+quiet block at 20..23. `codex` covers hours 01..16 with an 8h
+quiet block 17..00. Three sources (`hermes`, `openclaw`,
+`opencode`) blanket the full 24 hours. `ide-assistant-A` (the
+narrowest) covers a 14-hour window from 01..14, leaving a 10h
+quiet block 15..00 — the only source on this queue with a
+genuinely concentrated waking-window. That's the discovery this
+subcommand is built to surface, and it composes cleanly with
+`source-token-mass-hour-centroid` (which would tell you *where*
+inside that window the mass concentrates).
+
 ## 0.6.46 — 2026-04-26
 
 ### Changed
