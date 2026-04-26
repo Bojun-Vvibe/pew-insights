@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.21 — 2026-04-26
+
+### Added
+
+- `source-active-day-streak`: per-source longest run of
+  **consecutive UTC calendar days** on which the source had at
+  least one positive-token bucket. The habit-consistency lens
+  that nothing else in the report set provides.
+
+  For every source we emit, on its own positive-token buckets:
+
+  - `firstDay` / `lastDay`: ISO YYYY-MM-DD (UTC) bounds.
+  - `tenureDays`: calendar days from `firstDay` to `lastDay`
+    inclusive (`>= 1` whenever the source survived filters).
+  - `activeDays`: count of distinct UTC calendar days touched.
+  - `streaks`: count of maximal active-day runs.
+  - `meanStreak`: `activeDays / streaks`.
+  - `longestStreak` + `longestStreakStart` / `longestStreakEnd`:
+    length and ISO bounds of the longest maximal active-day run.
+    Earliest qualifying run wins on ties for full determinism.
+  - `currentStreak`: length of the streak ending on `lastDay`
+    (1 if the day before `lastDay` was inactive). For sources
+    still active in the corpus's final day this is the live
+    streak; otherwise it's the trailing streak when the source
+    went quiet.
+  - `density`: `activeDays / tenureDays` in `[0, 1]`. 1 = used
+    every single day of its calendar tenure.
+  - `tokens`: sum of `total_tokens` across the source's
+    positive-token buckets.
+
+  Why a separate subcommand (orthogonality argument):
+
+  - `source-tenure` reports first/last/span and active days but
+    not the longest *consecutive* active run, so it cannot tell
+    "used every day for 30 days" from "used 30 scattered days
+    across 90".
+  - `source-debut-recency` is a calendar-position metric (where
+    on the timeline the source sits) — silent on internal
+    consistency.
+  - `source-decay-half-life` measures intra-tenure mass shape
+    (where in the source's life tokens piled up) — silent on
+    consecutive-day habits.
+  - `source-run-lengths` measures consecutive *sessions* of the
+    same source within a sitting — operator stickiness, not
+    calendar-day consistency. A source with a session run-length
+    of 1 throughout can still have a 30-day active-day streak.
+  - `bucket-streak-length` measures consecutive active **hour
+    buckets** per source (intra-day burstiness), not calendar
+    days. Multi-bucket runs that all sit inside one calendar
+    day collapse to a 1-day active-day streak here.
+  - `active-span-per-day`, `first-bucket-of-day`, and
+    `last-bucket-of-day` are corpus-level day-shape metrics with
+    no per-source angle.
+
+  Headline question: **"Which sources do I touch every day, and
+  how long has my longest unbroken habit been?"**
+
+  Knobs: `--since`, `--until`, `--model`, `--source`,
+  `--min-days <n>` (default 1), `--top <n>`, `--sort`
+  (`tokens` default | `streak` | `density` | `current` | `days` |
+  `source`), `--density-min <f>` (default 0), `--json`.
+
+  `--min-days` and `--density-min` are **display filters only**
+  — `totalSources` and `totalTokens` always reflect the full
+  kept population. Suppressed rows surface as
+  `droppedBelowMinDays` and `droppedBelowDensityMin` in the
+  report header.
+
+  Determinism: pure builder. Wall clock only via
+  `opts.generatedAt`. All sorts and tie-breaks fully specified
+  (longest-streak ties broken by earliest start; per-source row
+  ties broken by source key asc). Identical input always yields
+  identical output.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--since 2026-04-01T00:00:00Z --top 8`)
+
+```
+pew-insights source-active-day-streak
+as of: 2026-04-26T03:25:17.281Z    sources: 6 (shown 6)    tokens: 8,558,935,893    min-days: 1    density-min: 0.000    top: 8    sort: tokens
+dropped: 0 bad hour_start, 0 zero tokens, 0 model-filter, 0 source-filter, 0 below min-days, 0 below density-min, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(longestStreak = max consecutive UTC calendar days the source had a positive-token bucket; density = activeDays / tenureDays; currentStreak = streak ending on lastDay)
+
+top 8 sources by tokens (ties: source asc)
+source       firstDay    lastDay     tenureD  activeD  streaks  meanRun  longest  longestStart  longestEnd  currentStreak  density  tokens
+-----------  ----------  ----------  -------  -------  -------  -------  -------  ------------  ----------  -------------  -------  -------------
+claude-code  2026-04-01  2026-04-23  23       15       4        3.75     9        2026-04-13    2026-04-21  1              0.652    3,058,006,887
+opencode     2026-04-20  2026-04-26  7        7        1        7.00     7        2026-04-20    2026-04-26  7              1.000    2,836,034,021
+openclaw     2026-04-17  2026-04-26  10       10       1        10.00    10       2026-04-17    2026-04-26  10             1.000    1,712,134,019
+codex        2026-04-13  2026-04-20  8        8        1        8.00     8        2026-04-13    2026-04-20  8              1.000    809,624,660
+hermes       2026-04-17  2026-04-26  10       10       1        10.00    10       2026-04-17    2026-04-26  10             1.000    142,881,896
+```
+
+(One additional source row in the underlying queue is redacted
+from the table to comply with the project's banned-strings
+guardrail.)
+
+Reading the leaderboard: four out of five visible sources have
+`density == 1.000` — i.e. the operator touched them **every
+single UTC calendar day** of their calendar tenure in the
+window. `opencode`, `openclaw`, and `hermes` all have a
+`currentStreak` equal to their full `activeDays`, meaning the
+streaks were still live at corpus end (`2026-04-26`). The
+heavyweight `claude-code` is the lone outlier: 4 streaks across
+a 23-day tenure with `density` 0.652 and a `currentStreak` of
+just 1, despite holding the longest single uninterrupted run
+(9 days, `2026-04-13` → `2026-04-21`). Headline operator
+insight: the agentic stack is on a clean unbroken daily-habit
+streak; only the legacy `claude-code` source has fallen out of
+the daily rotation.
+
 ## 0.6.20 — 2026-04-26
 
 ### Changed
