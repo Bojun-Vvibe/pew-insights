@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.62 — 2026-04-27
+
+### Changed
+
+- `source-cumulative-mass-half-life-day`: refinement filter
+  `--max-half-days <n>` requires `halfLifeDays <= n` for a
+  source row to be reported. Default null = no filter. Useful
+  for surfacing only sources whose mass clears the 50% mark
+  *within an absolute number of days* regardless of how long
+  their full active history runs.
+
+  Validates that the value is a positive integer. Suppressed
+  sources surface as `droppedAboveMaxHalfLifeDays`. Filter
+  order: `since`/`until` window -> `source` filter -> per-
+  source aggregation -> `min-days` -> `max-half-ratio` ->
+  `max-half-days` -> sort -> `top` (so the display cap is
+  applied to the post-filter, post-sort set).
+
+  Composes orthogonally with `--max-half-ratio`: the absolute
+  gate fires on raw day count ("show only sources whose top-2
+  days clear 50%"), while the ratio gate fires on normalised
+  concentration ("show only sources whose half-life is < 30%
+  of their active history"). A long-tail source can pass the
+  ratio gate but fail the absolute gate (e.g. 100 days with
+  `half = 50, ratio = 0.5`: ratio-gate at 0.6 lets it through,
+  absolute-gate at 10 rejects it).
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-cumulative-mass-half-life-day --max-half-days 2
+pew-insights source-cumulative-mass-half-life-day
+as of: 2026-04-26T17:15:49.392Z    sources: 6 (shown 2)    total-tokens: 9,328,467,791    min-days: 2    max-ratio: 1.0000    max-half-days: 2    top: -    sort: half
+dropped: 0 bad hour_start, 0 by source filter, 0 zero-mass sources, 0 below min-days, 0 above max-ratio, 4 above max-half-days, 0 below top cap
+(per-source cumulative-mass half-life: smallest k of UTC days, sorted desc by token mass, whose cumulative share crosses 25% / 50% / 75%; ratio = halfLifeDays / daysActive)
+
+per-source cumulative-mass half-life (sorted by half; ties: source asc)
+source       days  tokenSum       q25  half  q75  top1Share  top3Share  halfRatio
+-----------  ----  -------------  ---  ----  ---  ---------  ---------  ---------
+claude-code  35    3,442,385,788  1    2     6    0.3056     0.5964     0.0571
+codex        8     809,624,660    1    2     3    0.4814     0.8466     0.2500
+```
+
+Reading: with `--max-half-days 2`, the filter isolates exactly
+two sources whose mass crosses the 50% line within their two
+biggest UTC days. `claude-code` is the structurally extreme
+case (35 active days but the top 2 clear 50%, halfRatio
+0.057); `codex` clears with the top 2 of only 8 days
+(halfRatio 0.250). The other four — `hermes`, `openclaw`,
+`opencode`, `ide-assistant-A` — all need 3+ days and are
+suppressed. The flag turns the qualitative observation
+("which sources are heavy-headed enough to summarise in 2
+days?") into a one-knob, falsifiable filter that composes
+with the existing `--max-half-ratio` and `--top` gates.
+
 ## 0.6.61 — 2026-04-27
 
 ### Added

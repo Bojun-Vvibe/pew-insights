@@ -30,6 +30,7 @@ test('source-cumulative-mass-half-life-day: empty input -> empty report', () => 
   assert.equal(r.sources.length, 0);
   assert.equal(r.minDays, 2);
   assert.equal(r.maxHalfLifeRatio, 1);
+  assert.equal(r.maxHalfLifeDays, null);
   assert.equal(r.top, null);
   assert.equal(r.sort, 'half');
 });
@@ -47,6 +48,86 @@ test('source-cumulative-mass-half-life-day: rejects bad minDays', () => {
 });
 
 test('source-cumulative-mass-half-life-day: rejects bad maxHalfLifeRatio', () => {
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeRatio: 0 }),
+  );
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeRatio: -0.1 }),
+  );
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeRatio: 1.1 }),
+  );
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeRatio: Number.NaN }),
+  );
+});
+
+test('source-cumulative-mass-half-life-day: rejects bad maxHalfLifeDays', () => {
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeDays: 0 }),
+  );
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeDays: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeDays: 1.5 }),
+  );
+});
+
+test('source-cumulative-mass-half-life-day: maxHalfLifeDays=2 keeps only sources whose half clears within 2 days', () => {
+  // s1: heavy-headed (half=1 in 4 days)  -> kept
+  // s2: uniform 4d (half=2 in 4 days)    -> kept
+  // s3: uniform 8d (half=4 in 8 days)    -> dropped
+  const q: QueueLine[] = [];
+  q.push(ql('2026-04-01T00:00:00.000Z', 's1', 800));
+  q.push(ql('2026-04-02T00:00:00.000Z', 's1', 100));
+  q.push(ql('2026-04-03T00:00:00.000Z', 's1', 50));
+  q.push(ql('2026-04-04T00:00:00.000Z', 's1', 50));
+  for (let i = 1; i <= 4; i++) {
+    q.push(ql(`2026-04-0${i}T00:00:00.000Z`, 's2', 100));
+  }
+  for (let i = 1; i <= 8; i++) {
+    q.push(ql(`2026-04-0${i}T00:00:00.000Z`, 's3', 100));
+  }
+  const r = buildSourceCumulativeMassHalfLifeDay(q, {
+    generatedAt: GEN,
+    maxHalfLifeDays: 2,
+  });
+  assert.equal(r.sources.length, 2);
+  const surviving = r.sources.map((s) => s.source).sort();
+  assert.deepEqual(surviving, ['s1', 's2']);
+  assert.equal(r.droppedAboveMaxHalfLifeDays, 1);
+});
+
+test('source-cumulative-mass-half-life-day: maxHalfLifeDays composes orthogonally with maxHalfLifeRatio', () => {
+  // s1: heavy-headed 4d -> half=1, ratio=0.25
+  // s2: uniform 4d      -> half=2, ratio=0.5
+  // s3: uniform 100d    -> half=50, ratio=0.5
+  // With max-half-days=10 and max-half-ratio=0.6:
+  //   s1 passes both, s2 passes both, s3 fails the absolute cap
+  //   (half=50 > 10) but would pass the ratio cap (0.5 <= 0.6).
+  const q: QueueLine[] = [];
+  q.push(ql('2026-04-01T00:00:00.000Z', 's1', 800));
+  q.push(ql('2026-04-02T00:00:00.000Z', 's1', 100));
+  q.push(ql('2026-04-03T00:00:00.000Z', 's1', 50));
+  q.push(ql('2026-04-04T00:00:00.000Z', 's1', 50));
+  for (let i = 1; i <= 4; i++) {
+    q.push(ql(`2026-04-0${i}T00:00:00.000Z`, 's2', 100));
+  }
+  for (let i = 0; i < 100; i++) {
+    const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString();
+    q.push(ql(d, 's3', 100));
+  }
+  const r = buildSourceCumulativeMassHalfLifeDay(q, {
+    generatedAt: GEN,
+    maxHalfLifeDays: 10,
+    maxHalfLifeRatio: 0.6,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxHalfLifeDays, 1);
+});
+
+test('source-cumulative-mass-half-life-day: rejects bad maxHalfLifeRatio (still rejects)', () => {
   assert.throws(() =>
     buildSourceCumulativeMassHalfLifeDay([], { maxHalfLifeRatio: 0 }),
   );

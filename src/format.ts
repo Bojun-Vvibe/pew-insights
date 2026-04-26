@@ -7210,12 +7210,12 @@ export function renderSourceCumulativeMassHalfLifeDay(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    max-ratio: ${r.maxHalfLifeRatio.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    max-ratio: ${r.maxHalfLifeRatio.toFixed(4)}    max-half-days: ${r.maxHalfLifeDays ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedZeroMass)} zero-mass sources, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedAboveMaxHalfLifeRatio)} above max-ratio, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedZeroMass)} zero-mass sources, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedAboveMaxHalfLifeRatio)} above max-ratio, ${formatNumber(r.droppedAboveMaxHalfLifeDays)} above max-half-days, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

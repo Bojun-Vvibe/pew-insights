@@ -6853,6 +6853,10 @@ program
     '2',
   )
   .option(
+    '--max-half-days <n>',
+    'drop sources whose absolute halfLifeDays exceeds n (positive integer); useful for surfacing only sources that reach the 50% mark within k days regardless of how long their full history runs (default no filter)',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
@@ -6869,6 +6873,7 @@ program
         until?: string;
         source?: string;
         minDays: string;
+        maxHalfDays?: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -6883,6 +6888,16 @@ program
           throw new Error(
             `--min-days must be a positive integer (got ${opts.minDays})`,
           );
+        }
+        let maxHalfLifeDays: number | null = null;
+        if (opts.maxHalfDays != null) {
+          const m = Number.parseFloat(opts.maxHalfDays);
+          if (!Number.isFinite(m) || m < 1 || !Number.isInteger(m)) {
+            throw new Error(
+              `--max-half-days must be a positive integer (got ${opts.maxHalfDays})`,
+            );
+          }
+          maxHalfLifeDays = m;
         }
         let top: number | null = null;
         if (opts.top != null) {
@@ -6912,6 +6927,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minDays,
+          maxHalfLifeDays,
           top,
           sort: opts.sort as
             | 'half'

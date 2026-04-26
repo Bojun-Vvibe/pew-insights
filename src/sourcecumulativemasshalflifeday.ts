@@ -116,6 +116,21 @@ export interface SourceCumulativeMassHalfLifeDayOptions {
    */
   maxHalfLifeRatio?: number;
   /**
+   * Drop sources whose absolute `halfLifeDays` is strictly above
+   * this value from the per-source table. Display filter only.
+   * Suppressed rows surface as `droppedAboveMaxHalfLifeDays`.
+   * Must be a positive integer. Default null = no filter.
+   *
+   * Composes orthogonally with `--max-half-ratio`: the absolute
+   * gate fires on raw day count (e.g. "show only sources whose
+   * top-2 days clear 50%"), while the ratio gate fires on
+   * normalised concentration (e.g. "show only sources whose
+   * half-life is < 30% of their active history"). A long-tail
+   * source can pass the ratio gate but fail the absolute gate
+   * (and vice versa).
+   */
+  maxHalfLifeDays?: number | null;
+  /**
    * Cap the per-source table to the top N rows after sort.
    * Suppressed rows surface as `droppedBelowTopCap`. Default
    * null = no cap.
@@ -169,6 +184,7 @@ export interface SourceCumulativeMassHalfLifeDayReport {
   source: string | null;
   minDays: number;
   maxHalfLifeRatio: number;
+  maxHalfLifeDays: number | null;
   top: number | null;
   sort:
     | 'half'
@@ -187,6 +203,7 @@ export interface SourceCumulativeMassHalfLifeDayReport {
   droppedZeroMass: number;
   droppedBelowMinDays: number;
   droppedAboveMaxHalfLifeRatio: number;
+  droppedAboveMaxHalfLifeDays: number;
   droppedBelowTopCap: number;
   sources: SourceCumulativeMassHalfLifeDayRow[];
 }
@@ -220,6 +237,14 @@ export function buildSourceCumulativeMassHalfLifeDay(
     throw new Error(
       `maxHalfLifeRatio must be a finite number in (0, 1] (got ${opts.maxHalfLifeRatio})`,
     );
+  }
+  const maxHalfLifeDays = opts.maxHalfLifeDays ?? null;
+  if (maxHalfLifeDays !== null) {
+    if (!Number.isInteger(maxHalfLifeDays) || maxHalfLifeDays < 1) {
+      throw new Error(
+        `maxHalfLifeDays must be a positive integer (got ${opts.maxHalfLifeDays})`,
+      );
+    }
   }
   const top = opts.top ?? null;
   if (top !== null) {
@@ -353,6 +378,7 @@ export function buildSourceCumulativeMassHalfLifeDay(
 
   let droppedBelowMinDays = 0;
   let droppedAboveMaxHalfLifeRatio = 0;
+  let droppedAboveMaxHalfLifeDays = 0;
   const survived: SourceCumulativeMassHalfLifeDayRow[] = [];
   for (const row of allRows) {
     if (row.daysActive < minDays) {
@@ -361,6 +387,10 @@ export function buildSourceCumulativeMassHalfLifeDay(
     }
     if (row.halfLifeRatio > maxHalfLifeRatio) {
       droppedAboveMaxHalfLifeRatio += 1;
+      continue;
+    }
+    if (maxHalfLifeDays !== null && row.halfLifeDays > maxHalfLifeDays) {
+      droppedAboveMaxHalfLifeDays += 1;
       continue;
     }
     survived.push(row);
@@ -395,6 +425,7 @@ export function buildSourceCumulativeMassHalfLifeDay(
     source: sourceFilter,
     minDays,
     maxHalfLifeRatio,
+    maxHalfLifeDays,
     top,
     sort,
     totalSources,
@@ -404,6 +435,7 @@ export function buildSourceCumulativeMassHalfLifeDay(
     droppedZeroMass,
     droppedBelowMinDays,
     droppedAboveMaxHalfLifeRatio,
+    droppedAboveMaxHalfLifeDays,
     droppedBelowTopCap,
     sources: finalSources,
   };
