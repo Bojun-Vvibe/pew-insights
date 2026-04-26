@@ -58,6 +58,10 @@ import type {
   SourceReasoningShareByDayCvRow,
 } from './sourcereasoningsharebydaycv.js';
 import type {
+  SourceOutputTokensByHourCvReport,
+  SourceOutputTokensByHourCvRow,
+} from './sourceoutputtokensbyhourcv.js';
+import type {
   SourceCacheShareByDayCvReport,
   SourceCacheShareByDayCvRow,
 } from './sourcecachesharebydaycv.js';
@@ -7646,6 +7650,73 @@ export function renderSourceCacheShareByDayCv(
     s.shareCv.toFixed(4),
     s.flatCold ? 'y' : '-',
     s.pureWarm ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceOutputTokensByHourCv(
+  r: SourceOutputTokensByHourCvReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-output-tokens-by-hour-cv'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-hours: ${r.minHours}    min-rows: ${r.minRows}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinHours)} below min-hours, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(hourCv = stddev(per-hour mean output_tokens) / mean of same across populated UTC hours-of-day; high CV = source's typical per-row output size swings across the day; flat=y means every populated hour had output_tokens=0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source diurnal output CV (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'tokens',
+    'outTok',
+    'rows',
+    'hoursPop',
+    'meanHourMean',
+    'stdHourMean',
+    'hourCv',
+    'flat',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceOutputTokensByHourCvRow) => [
+    s.source,
+    formatNumber(s.tokens),
+    formatNumber(s.outputTokens),
+    formatNumber(s.rowCount),
+    formatNumber(s.hoursPopulated),
+    s.meanHourMean.toFixed(2),
+    s.stdHourMean.toFixed(2),
+    s.hourCv.toFixed(4),
+    s.flatZero ? 'y' : '-',
   ]);
   lines.push(renderTableLocal(headers, rows));
 

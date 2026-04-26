@@ -94,6 +94,7 @@ import {
   renderSourceColdWarmRowRatio,
   renderSourceReasoningShareByDayCv,
   renderSourceCacheShareByDayCv,
+  renderSourceOutputTokensByHourCv,
   renderSourceInputTokenTopRowShare,
   renderSourceZeroOutputRowShare,
   renderModelTenure,
@@ -249,6 +250,7 @@ import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalf
 import { buildSourceColdWarmRowRatio } from './sourcecoldwarmrowratio.js';
 import { buildSourceReasoningShareByDayCv } from './sourcereasoningsharebydaycv.js';
 import { buildSourceCacheShareByDayCv } from './sourcecachesharebydaycv.js';
+import { buildSourceOutputTokensByHourCv } from './sourceoutputtokensbyhourcv.js';
 import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.js';
 import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
 import { buildModelTenure } from './modeltenure.js';
@@ -8842,6 +8844,98 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceCacheShareByDayCv(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-output-tokens-by-hour-cv')
+  .description(
+    "Per-source coefficient of variation of the mean per-row output_tokens across the source's populated UTC hours-of-day (0..23). High CV = the source's typical reply size swings across the day (e.g. small interactive replies one hour, long background summaries another); low CV = a source produces the same shape of output regardless of hour. Distinct from hour-of-day-token-skew (global, not per-source), source-hour-of-day-token-mass-entropy (mass concentration not per-row size), source-token-mass-hour-centroid (single circular mean), source-output-tokens-per-row-percentiles (collapses hour axis), source-cache-share-by-day-cv / source-reasoning-share-by-day-cv (CVs of share, not size), and source-burstiness-fano-factor / source-daily-token-trend-slope (day axis).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-hours <n>',
+    'hide source rows with hoursPopulated below n; integer in [1,24] (default 3); counts surface as droppedBelowMinHours',
+    '3',
+  )
+  .option(
+    '--min-rows <n>',
+    'hide source rows with fewer than n total kept rows (default 1); counts surface as droppedBelowMinRows',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedBelowTopCap (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: tokens (default) | cv | mean | hours | source. cv desc = most diurnally lumpy first. mean desc = biggest typical per-row output first. ties: source asc.",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minHours: string;
+        minRows: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minHours = Number.parseInt(opts.minHours, 10);
+        if (!Number.isInteger(minHours) || minHours < 1 || minHours > 24) {
+          throw new Error(
+            `--min-hours must be an integer in [1, 24] (got ${opts.minHours})`,
+          );
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['tokens', 'cv', 'mean', 'hours', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceOutputTokensByHourCv(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minHours,
+          minRows,
+          top: top === 0 ? null : top,
+          sort: opts.sort as 'tokens' | 'cv' | 'mean' | 'hours' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceOutputTokensByHourCv(report) + '\n');
         }
       } catch (e) {
         die(e);

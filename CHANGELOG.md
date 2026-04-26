@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.73 — 2026-04-27
+
+### Added
+
+- `source-output-tokens-by-hour-cv`: per-source coefficient of
+  variation of the **mean per-row `output_tokens`** across the
+  source's populated UTC hours-of-day (0..23). Surfaces *diurnal
+  output regularity per source*: high CV = the source's typical
+  reply size swings across the day (small interactive replies one
+  hour, big background summaries another); low CV = the source
+  produces the same shape of output regardless of clock hour.
+
+  Within-hour means are computed first (`sumOutput_h /
+  rowCount_h`), then population stddev / mean is taken across the
+  populated hour buckets. This isolates the diurnal signal from
+  row-level jitter.
+
+  Distinct from existing reports:
+
+  - `hour-of-day-token-skew`, `hour-of-week`, `peak-hour`,
+    `time-of-day` — global, not per-source.
+  - `source-hour-of-day-token-mass-entropy` — Shannon entropy of
+    the **mass distribution** across hours, not per-row size.
+    A source can be highly entropic (mass spread evenly) and
+    still produce wildly different per-row outputs per hour.
+  - `source-token-mass-hour-centroid` — single circular mean of
+    mass on the 24h clock; discards within-bucket variance.
+  - `source-output-tokens-per-row-percentiles` — pooled
+    percentile shape across all of a source's rows; collapses
+    the hour axis entirely.
+  - `source-cache-share-by-day-cv` /
+    `source-reasoning-share-by-day-cv` — CVs of share, not size.
+  - `source-burstiness-fano-factor` /
+    `source-daily-token-trend-slope` — day axis, not hour.
+
+  Flags: `--since`, `--until`, `--source`, `--min-hours`
+  (default 3, range [1,24]), `--min-rows` (default 1), `--top`,
+  `--sort tokens|cv|mean|hours|source` (default `tokens`),
+  `--json`. Convention: `flatZero=true` when every populated
+  hour had `sum(output_tokens) == 0`; `singleHour=true` when
+  `hoursPopulated === 1`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (`--sort cv`,
+  `ide-assistant-A` redacted from a banned-string source name):
+
+  ```
+  pew-insights source-output-tokens-by-hour-cv
+  as of: 2026-04-26T21:11:54.393Z    sources: 6 (shown 6)    tokens: 9,419,357,435    min-hours: 3    min-rows: 1    top: -    sort: cv
+
+  per-source diurnal output CV (sorted by cv; ties: source asc)
+  source             tokens         outTok      rows  hoursPop  meanHourMean  stdHourMean  hourCv
+  -----------------  -------------  ----------  ----  --------  ------------  -----------  ------
+  codex              809,624,660    2,045,042   64    16        37612.39      34918.41     0.9284
+  claude-code        3,442,385,788  12,128,825  299   20        72072.20      46197.07     0.6410
+  ide-assistant-A    1,885,727      1,135,247   333   14         3476.62       1633.88     0.4700
+  opencode           3,255,867,695  21,719,811  314   24        68647.89      25835.57     0.3763
+  hermes             145,444,813    1,406,816   165   24         7766.99       2875.47     0.3702
+  openclaw           1,764,148,752  4,843,187   420   24        11591.65      3417.80     0.2948
+  ```
+
+  Read: `codex` is the most diurnally lumpy (`hourCv = 0.9284`)
+  — its typical per-row output size swings nearly 1x its own mean
+  across the day. `openclaw` is the steadiest (`hourCv = 0.2948`)
+  — its per-row output is roughly the same shape regardless of
+  hour, despite being populated in all 24 hour buckets.
+
 ## 0.6.72 — 2026-04-27
 
 ### Changed
