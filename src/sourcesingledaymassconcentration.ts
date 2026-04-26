@@ -111,6 +111,19 @@ export interface SourceSingleDayMassConcentrationOptions {
    */
   minDays?: number;
   /**
+   * Drop sources whose `maxDayShare` is strictly below this
+   * value from the per-source table. Display filter only.
+   * Suppressed rows surface as `droppedBelowMinMaxShare`. Must
+   * be a finite number in [0, 1]. Default 0 = no floor.
+   *
+   * Useful for surfacing only sources whose history is
+   * genuinely dominated by a single date (e.g.
+   * `--max-share-min 0.4` keeps only sources whose biggest day
+   * is >= 40% of their entire history). Composes with
+   * `--min-days` (the gate is applied AFTER min-days).
+   */
+  minMaxShare?: number;
+  /**
    * Cap the per-source table to the top N rows after sort.
    * Suppressed rows surface as `droppedBelowTopCap`. Default
    * null = no cap.
@@ -157,6 +170,7 @@ export interface SourceSingleDayMassConcentrationReport {
   windowEnd: string | null;
   source: string | null;
   minDays: number;
+  minMaxShare: number;
   top: number | null;
   sort: 'tokens' | 'maxshare' | 'top2' | 'top3' | 'hhi' | 'days' | 'source';
   /** Distinct sources seen pre-filter. */
@@ -167,6 +181,7 @@ export interface SourceSingleDayMassConcentrationReport {
   droppedSourceFilter: number;
   droppedZeroMass: number;
   droppedBelowMinDays: number;
+  droppedBelowMinMaxShare: number;
   droppedBelowTopCap: number;
   sources: SourceSingleDayMassConcentrationRow[];
 }
@@ -179,6 +194,12 @@ export function buildSourceSingleDayMassConcentration(
   if (!Number.isInteger(minDays) || minDays < 1) {
     throw new Error(
       `minDays must be a positive integer (got ${opts.minDays})`,
+    );
+  }
+  const minMaxShare = opts.minMaxShare ?? 0;
+  if (!Number.isFinite(minMaxShare) || minMaxShare < 0 || minMaxShare > 1) {
+    throw new Error(
+      `minMaxShare must be a finite number in [0, 1] (got ${opts.minMaxShare})`,
     );
   }
   const top = opts.top ?? null;
@@ -313,10 +334,15 @@ export function buildSourceSingleDayMassConcentration(
   }
 
   let droppedBelowMinDays = 0;
+  let droppedBelowMinMaxShare = 0;
   const survived: SourceSingleDayMassConcentrationRow[] = [];
   for (const row of allRows) {
     if (row.daysActive < minDays) {
       droppedBelowMinDays += 1;
+      continue;
+    }
+    if (row.maxDayShare < minMaxShare) {
+      droppedBelowMinMaxShare += 1;
       continue;
     }
     survived.push(row);
@@ -348,6 +374,7 @@ export function buildSourceSingleDayMassConcentration(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     minDays,
+    minMaxShare,
     top,
     sort,
     totalSources,
@@ -356,6 +383,7 @@ export function buildSourceSingleDayMassConcentration(
     droppedSourceFilter,
     droppedZeroMass,
     droppedBelowMinDays,
+    droppedBelowMinMaxShare,
     droppedBelowTopCap,
     sources: finalSources,
   };

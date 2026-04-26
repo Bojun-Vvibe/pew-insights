@@ -6742,6 +6742,11 @@ program
     '3',
   )
   .option(
+    '--max-share-min <f>',
+    "drop sources whose maxDayShare is below f (in [0,1]); useful for surfacing only single-date-dominated sources, e.g. --max-share-min 0.4 keeps only sources whose biggest day is >= 40% of their entire history (default 0)",
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
@@ -6758,6 +6763,7 @@ program
         until?: string;
         source?: string;
         minDays: string;
+        maxShareMin: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -6771,6 +6777,12 @@ program
         if (!Number.isInteger(minDays) || minDays < 1) {
           throw new Error(
             `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        const minMaxShare = Number.parseFloat(opts.maxShareMin);
+        if (!Number.isFinite(minMaxShare) || minMaxShare < 0 || minMaxShare > 1) {
+          throw new Error(
+            `--max-share-min must be a finite number in [0, 1] (got ${opts.maxShareMin})`,
           );
         }
         let top: number | null = null;
@@ -6801,6 +6813,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minDays,
+          minMaxShare,
           top,
           sort: opts.sort as
             | 'tokens'

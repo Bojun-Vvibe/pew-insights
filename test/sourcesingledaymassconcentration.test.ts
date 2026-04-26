@@ -342,3 +342,109 @@ test('source-single-day-mass-concentration: hhi within [1/N, 1] bounds', () => {
   assert.ok(s.hhi >= 1 / s.daysActive - 1e-12);
   assert.ok(s.hhi <= 1 + 1e-12);
 });
+
+test('source-single-day-mass-concentration: rejects bad minMaxShare', () => {
+  assert.throws(() =>
+    buildSourceSingleDayMassConcentration([], { minMaxShare: -0.1 }),
+  );
+  assert.throws(() =>
+    buildSourceSingleDayMassConcentration([], { minMaxShare: 1.5 }),
+  );
+  assert.throws(() =>
+    buildSourceSingleDayMassConcentration([], {
+      minMaxShare: Number.POSITIVE_INFINITY,
+    }),
+  );
+  assert.throws(() =>
+    buildSourceSingleDayMassConcentration([], { minMaxShare: Number.NaN }),
+  );
+});
+
+test('source-single-day-mass-concentration: minMaxShare gates per-source', () => {
+  // s1: maxShare = 0.7, s2: maxShare = 0.25
+  const q = [
+    ql('2026-04-01T00:00:00.000Z', 's1', 700),
+    ql('2026-04-02T00:00:00.000Z', 's1', 200),
+    ql('2026-04-03T00:00:00.000Z', 's1', 100),
+    ql('2026-04-01T00:00:00.000Z', 's2', 100),
+    ql('2026-04-02T00:00:00.000Z', 's2', 100),
+    ql('2026-04-03T00:00:00.000Z', 's2', 100),
+    ql('2026-04-04T00:00:00.000Z', 's2', 100),
+  ];
+  const r = buildSourceSingleDayMassConcentration(q, {
+    generatedAt: GEN,
+    minMaxShare: 0.5,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's1');
+  assert.equal(r.droppedBelowMinMaxShare, 1);
+  assert.equal(r.minMaxShare, 0.5);
+});
+
+test('source-single-day-mass-concentration: minMaxShare 0 = no floor (default)', () => {
+  const q = [
+    ql('2026-04-01T00:00:00.000Z', 's1', 100),
+    ql('2026-04-02T00:00:00.000Z', 's1', 100),
+    ql('2026-04-03T00:00:00.000Z', 's1', 100),
+  ];
+  const r = buildSourceSingleDayMassConcentration(q, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinMaxShare, 0);
+  assert.equal(r.minMaxShare, 0);
+});
+
+test('source-single-day-mass-concentration: minMaxShare 1.0 keeps only single-day sources', () => {
+  const q = [
+    // single-day source: maxShare = 1
+    ql('2026-04-01T00:00:00.000Z', 'one'),
+    ql('2026-04-01T01:00:00.000Z', 'one', 100),
+    ql('2026-04-01T02:00:00.000Z', 'one', 100),
+    // multi-day source: maxShare < 1
+    ql('2026-04-01T00:00:00.000Z', 'multi', 100),
+    ql('2026-04-02T00:00:00.000Z', 'multi', 100),
+  ];
+  // ql signature is (hour_start, source, total_tokens=...) so above
+  // 'one' first call needs explicit tokens — fix below by retyping
+  const q2 = [
+    ql('2026-04-01T00:00:00.000Z', 'one', 100),
+    ql('2026-04-01T01:00:00.000Z', 'one', 100),
+    ql('2026-04-01T02:00:00.000Z', 'one', 100),
+    ql('2026-04-01T00:00:00.000Z', 'multi', 100),
+    ql('2026-04-02T00:00:00.000Z', 'multi', 100),
+  ];
+  void q;
+  const r = buildSourceSingleDayMassConcentration(q2, {
+    generatedAt: GEN,
+    minDays: 1,
+    minMaxShare: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'one');
+  assert.equal(r.sources[0]!.maxDayShare, 1);
+  assert.equal(r.droppedBelowMinMaxShare, 1);
+});
+
+test('source-single-day-mass-concentration: minMaxShare composes after minDays', () => {
+  const q = [
+    // s1: 2 days (below default minDays=3) with maxShare=0.6 -> dropped by minDays first
+    ql('2026-04-01T00:00:00.000Z', 's1', 600),
+    ql('2026-04-02T00:00:00.000Z', 's1', 400),
+    // s2: 4 days, maxShare = 0.4 -> survives minDays, dropped by minMaxShare 0.5
+    ql('2026-04-01T00:00:00.000Z', 's2', 400),
+    ql('2026-04-02T00:00:00.000Z', 's2', 300),
+    ql('2026-04-03T00:00:00.000Z', 's2', 200),
+    ql('2026-04-04T00:00:00.000Z', 's2', 100),
+    // s3: 3 days, maxShare = 0.7 -> survives both
+    ql('2026-04-01T00:00:00.000Z', 's3', 700),
+    ql('2026-04-02T00:00:00.000Z', 's3', 200),
+    ql('2026-04-03T00:00:00.000Z', 's3', 100),
+  ];
+  const r = buildSourceSingleDayMassConcentration(q, {
+    generatedAt: GEN,
+    minMaxShare: 0.5,
+  });
+  assert.equal(r.droppedBelowMinDays, 1);
+  assert.equal(r.droppedBelowMinMaxShare, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's3');
+});
