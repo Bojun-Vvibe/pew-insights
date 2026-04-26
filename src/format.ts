@@ -7422,3 +7422,81 @@ export function renderSourceReasoningShareByDayCv(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceInputTokenTopRowShareReport,
+  SourceInputTokenTopRowShareRow,
+} from './sourceinputtokentoprowshare.js';
+
+export function renderSourceInputTokenTopRowShare(
+  r: SourceInputTokenTopRowShareReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-input-token-top-row-share'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    input-tokens: ${formatNumber(r.totalInputTokens)}    K: ${r.topK}    min-rows: ${r.minRows}    min-top1: ${r.minTop1Share.toFixed(4)}    min-topk: ${r.minTopKShare.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAllZero)} all-zero-input sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinTop1Share)} below min-top1, ${formatNumber(r.droppedBelowMinTopKShare)} below min-topk, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-row input_tokens mass concentration per source; top1Share = biggest single row / sum; topKShare = sum of K biggest rows / sum; hhi = sum_i (row_i/sum)^2; single=y means rowsConsidered==1)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source input-token top-row mass concentration (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'zeroR',
+    'inSum',
+    'top1Tok',
+    'top1Sh',
+    'topKTok',
+    'topKSh',
+    'hhi',
+    'single',
+  ];
+  const rows2: string[][] = r.sources.map(
+    (s: SourceInputTokenTopRowShareRow) => [
+      s.source,
+      formatNumber(s.rowsConsidered),
+      formatNumber(s.rowsZeroInput),
+      formatNumber(s.inputSum),
+      formatNumber(s.top1Tokens),
+      s.top1Share.toFixed(4),
+      formatNumber(s.topKTokens),
+      s.topKShare.toFixed(4),
+      s.hhi.toFixed(4),
+      s.singleRow ? 'y' : '-',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

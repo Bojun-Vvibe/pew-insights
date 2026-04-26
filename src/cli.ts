@@ -93,6 +93,7 @@ import {
   renderSourceCumulativeMassHalfLifeDay,
   renderSourceColdWarmRowRatio,
   renderSourceReasoningShareByDayCv,
+  renderSourceInputTokenTopRowShare,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -245,6 +246,7 @@ import { buildSourceSingleDayMassConcentration } from './sourcesingledaymassconc
 import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalflifeday.js';
 import { buildSourceColdWarmRowRatio } from './sourcecoldwarmrowratio.js';
 import { buildSourceReasoningShareByDayCv } from './sourcereasoningsharebydaycv.js';
+import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -8723,6 +8725,140 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceReasoningShareByDayCv(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-input-token-top-row-share')
+  .description(
+    "Per-source concentration of input_tokens mass in the K largest single rows. Reports top1Share, topKShare (default K=3), and HHI over per-row input_tokens. Distinct from input-token-decile-distribution (global), source-output-tokens-per-row-percentiles (output column, percentile shape not concentration), source-single-day-mass-concentration (daily total_tokens not per-row input), and source-cost-class-mix (count of large-class rows not mass concentration). Surfaces sources whose lifetime input volume is dominated by a few monster prompts.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--top-k <n>',
+    'K for the topKShare cumulative concentration (default 3)',
+    '3',
+  )
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n positive-input rows (default 3)',
+    '3',
+  )
+  .option(
+    '--min-top1-share <f>',
+    'drop sources whose top1Share is below f, in [0,1] (default 0)',
+    '0',
+  )
+  .option(
+    '--min-topk-share <f>',
+    'drop sources whose topKShare is below f, in [0,1] (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'tokens' (default) | 'top1' | 'topk' | 'hhi' | 'rows' | 'source'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        topK: string;
+        minRows: string;
+        minTop1Share: string;
+        minTopkShare: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topK = Number.parseInt(opts.topK, 10);
+        if (!Number.isInteger(topK) || topK < 1) {
+          throw new Error(
+            `--top-k must be a positive integer (got ${opts.topK})`,
+          );
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const minTop1Share = Number.parseFloat(opts.minTop1Share);
+        if (
+          !Number.isFinite(minTop1Share) ||
+          minTop1Share < 0 ||
+          minTop1Share > 1
+        ) {
+          throw new Error(
+            `--min-top1-share must be a finite number in [0, 1] (got ${opts.minTop1Share})`,
+          );
+        }
+        const minTopKShare = Number.parseFloat(opts.minTopkShare);
+        if (
+          !Number.isFinite(minTopKShare) ||
+          minTopKShare < 0 ||
+          minTopKShare > 1
+        ) {
+          throw new Error(
+            `--min-topk-share must be a finite number in [0, 1] (got ${opts.minTopkShare})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['tokens', 'top1', 'topk', 'hhi', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceInputTokenTopRowShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          topK,
+          minRows,
+          minTop1Share,
+          minTopKShare,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'top1'
+            | 'topk'
+            | 'hhi'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceInputTokenTopRowShare(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
