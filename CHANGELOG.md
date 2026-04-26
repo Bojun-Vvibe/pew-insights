@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.63 — 2026-04-27
+
+### Added
+
+- `source-cold-warm-row-ratio`: per-source split of hour-bucket
+  *rows* into "cold" (`cached_input_tokens === 0`) vs "warm"
+  (`cached_input_tokens > 0`), restricted to rows with
+  `input_tokens > 0` so cache reuse is even definable.
+
+  For each source we report `coldRows` / `warmRows` /
+  `coldShare` (row-count share), the matching mass-weighted
+  `coldInputTokenShare`, and the diagnostic
+  `gap = coldShare - coldInputTokenShare` in [-1, +1]. A
+  positive gap means cold rows are *smaller than average*
+  (lots of small uncached one-shots, the heavy lifting happens
+  on warm rows); a negative gap means cold rows are *larger
+  than average* (the big jobs miss the cache, the cache only
+  helps on the small follow-ups). Also reports
+  `meanColdInput` / `meanWarmInput` for direct comparison.
+
+  Orthogonal to `cache-hit-ratio` (continuous-ratio
+  percentiles, no row vs mass split), `cache-hit-by-hour`
+  (hour-of-day axis, mass-only), `source-weekend-weekday-
+  cache-share-gap` (weekday/weekend axis, mass-only),
+  `source-cost-class-mix` (token-volume buckets, not cache
+  state), and `source-io-ratio-stability` (output/input ratio,
+  not cache state).
+
+  Knobs: `--since/--until`, `--source`, `--min-rows` (default
+  5; sparse sources surface as `droppedSparseSources`),
+  `--top` (default 0 = no cap), `--sort` (`tokens` (default) |
+  `rows` | `cold-share` | `cold-mass-share` | `gap` |
+  `source`; `gap` ranks by `|coldRowMassGap|` desc).
+  Determinism preserved: source-asc tie-break on every sort
+  key. Rows with non-positive `input_tokens` surface as
+  `droppedNonPositiveInput`; bad timestamps as
+  `droppedInvalidHourStart`.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-cold-warm-row-ratio
+pew-insights source-cold-warm-row-ratio
+as of: 2026-04-26T17:38:35.886Z    sources: 6 (shown 6)    total-tokens: 9,339,986,718    min-rows: 5    top: -    sort: tokens
+dropped: 0 bad hour_start, 327 non-positive input, 0 source-filter, 0 below min-rows, 0 below top cap
+(per-source row-count vs input-mass split for cold (cached_input_tokens=0) vs warm (>0) hour-buckets; gap = coldShare - coldInputTokenShare)
+
+per-source cold/warm row & input-mass split (sorted by tokens; ties: source asc)
+source           firstDay    lastDay     nRows  coldRows  warmRows  coldShare  coldMassShare  gap      meanColdInput  meanWarmInput  inputTokens
+---------------  ----------  ----------  -----  --------  --------  ---------  -------------  -------  -------------  -------------  -------------
+claude-code      2026-02-11  2026-04-23  299    49        250       0.1639     0.0685         +0.0954  2,564,318      6,835,848      1,834,613,640
+opencode         2026-04-20  2026-04-26  307    3         304       0.0098     0.0025         +0.0073  170,630        672,840        205,055,205
+openclaw         2026-04-17  2026-04-26  413    4         409       0.0097     0.0010         +0.0087  240,424        2,299,517      941,463,975
+codex            2026-04-13  2026-04-20  64     2         62        0.0313     0.0003         +0.0310  55,606         6,623,709      410,781,190
+hermes           2026-04-17  2026-04-26  164    1         163       0.0061     0.0003         +0.0058  15,400         340,079        55,448,217
+ide-assistant-A  2026-03-05  2026-04-17  6      6         0         1.0000     1.0000         +0.0000  96,848         0              581,090
+```
+
+Reading: every source (except `ide-assistant-A`, which is
+purely cold across all 6 rows) shows a small **positive** gap
+— cold rows are consistently smaller than warm rows. The
+spread is widest on `claude-code` (gap +0.095): 16% of rows
+are cold but only 7% of input mass is, meaning the heavy
+prompt-caching on big sessions is doing its job; the residual
+cold rows are the small one-shots that wouldn't benefit from
+caching anyway. `codex` shows the *steepest* per-row size
+ratio (`meanWarmInput / meanColdInput` ≈ 119), confirming
+that cold rows there are tiny scratchpad-style probes.
+`ide-assistant-A` (telemetry-only, no prompt cache reuse on
+this stack) is the structural outlier with `coldShare = 1.0`.
+
 ## 0.6.62 — 2026-04-27
 
 ### Changed
