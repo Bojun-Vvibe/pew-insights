@@ -41,6 +41,7 @@ import type { OutputTokenDecileDistributionReport } from './outputtokendeciledis
 import type { InputTokenDecileDistributionReport } from './inputtokendeciledistribution.js';
 import type { SourceTokenMassHourCentroidReport } from './sourcetokenmasshourcentroid.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
+import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -6303,6 +6304,74 @@ export function renderDailyTokenGini(r: DailyTokenGiniReport): string {
     s.maxDayShare.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceHourTopKMassShare(
+  r: SourceHourTopKMassShareReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-hour-of-day-topk-mass-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    K: ${r.topHoursK}    uniformBaseline: ${r.uniformBaseline.toFixed(4)}    min-tokens: ${formatNumber(r.minTokens)}    min-hours: ${formatNumber(r.minHours)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinHours)} below min-hours, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source share of total token mass in the K busiest hours-of-day; share_K in [K/24, 1]; UTC hours)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source top-${r.topHoursK} hour-of-day mass share (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'hoursActive',
+    `top${r.topHoursK}Share`,
+    'topHours',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => {
+    const hourSig = s.topHourBuckets
+      .map((b) => `${String(b.hour).padStart(2, '0')}:${b.share.toFixed(3)}`)
+      .join(' ');
+    return [
+      s.source,
+      s.firstDay,
+      s.lastDay,
+      formatNumber(s.nHours),
+      s.topKShare.toFixed(4),
+      hourSig,
+      formatNumber(s.totalTokens),
+    ];
+  });
   lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');

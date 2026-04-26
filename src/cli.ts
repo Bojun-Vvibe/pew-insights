@@ -76,6 +76,7 @@ import {
   renderSourceOutputTokenBenfordDeviation,
   renderSourceTokenMassHourCentroid,
   renderDailyTokenGini,
+  renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderModelTenure,
@@ -212,6 +213,7 @@ import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignrun
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
 import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
+import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
@@ -6996,6 +6998,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenGini(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-hour-of-day-topk-mass-share')
+  .description(
+    'Per-source share of total token mass concentrated in the K busiest hours-of-day (default K=3) on the 24-hour clock. Range [K/24, 1]. Orthogonal to peak-hour-share (per-day spikiness), source-token-mass-hour-centroid (circular mean position), hour-of-day-token-skew (3rd moment), and bucket-token-gini (mixes hour-of-day with day axis).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--top-hours <k>',
+    'K, the number of busiest hours-of-day to sum (default 3). Integer in [1, 24]. Lower bound on share is K/24.',
+    '3',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-hours <n>',
+    'hide source rows whose nHours (distinct populated hours-of-day) is below n (default 2). Counts surface as droppedBelowMinHours.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: share (default) | tokens | hours | source. Applied before --top.',
+    'share',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        topHours: string;
+        minTokens: string;
+        minHours: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const topHours = Number.parseInt(opts.topHours, 10);
+        if (!Number.isInteger(topHours) || topHours < 1 || topHours > 24) {
+          throw new Error(
+            `--top-hours must be an integer in [1, 24] (got ${opts.topHours})`,
+          );
+        }
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minHours = Number.parseInt(opts.minHours, 10);
+        if (!Number.isInteger(minHours) || minHours < 1 || minHours > 24) {
+          throw new Error(
+            `--min-hours must be an integer in [1, 24] (got ${opts.minHours})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['share', 'tokens', 'hours', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceHourTopKMassShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          topHours,
+          minTokens,
+          minHours,
+          top,
+          sort: opts.sort as 'share' | 'tokens' | 'hours' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceHourTopKMassShare(report) + '\n');
         }
       } catch (e) {
         die(e);
