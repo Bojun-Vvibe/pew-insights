@@ -94,6 +94,22 @@ export interface SourceActiveHourLongestRunOptions {
    * Range 0..24; default 0 = no filter.
    */
   minLongestActiveRun?: number;
+  /**
+   * Display filter (refinement, v0.6.45): drop rows whose
+   * `activeHours` (raw count of nonzero hour-of-day bins) is
+   * strictly below this integer threshold. Range 0..24; default
+   * 0 = no filter.
+   *
+   * Complementary to `minLongestActiveRun`:
+   *   - `minActiveHours` filters by raw *count* of active hours.
+   *   - `minLongestActiveRun` filters by *contiguity* of those
+   *     hours.
+   * A source with `activeHours=12` scattered as 12 alternating
+   * single hours has `longestActiveRun=1` and `activeHours=12`;
+   * `--min-active-hours 10` keeps it, `--min-longest-active-run 6`
+   * drops it. The two filters compose by intersection.
+   */
+  minActiveHours?: number;
   generatedAt?: string;
 }
 
@@ -131,6 +147,7 @@ export interface SourceActiveHourLongestRunReport {
   top: number;
   sort: SourceActiveHourLongestRunSort;
   minLongestActiveRun: number;
+  minActiveHours: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -139,6 +156,7 @@ export interface SourceActiveHourLongestRunReport {
   droppedSourceFilter: number;
   droppedSparseSources: number;
   droppedBelowMinLongestActiveRun: number;
+  droppedBelowMinActiveHours: number;
   droppedTopSources: number;
   sources: SourceActiveHourLongestRunSourceRow[];
 }
@@ -254,6 +272,16 @@ export function buildSourceActiveHourLongestRun(
   ) {
     throw new Error(
       `minLongestActiveRun must be an integer in [0, 24] (got ${opts.minLongestActiveRun})`,
+    );
+  }
+  const minActiveHours = opts.minActiveHours ?? 0;
+  if (
+    !Number.isInteger(minActiveHours) ||
+    minActiveHours < 0 ||
+    minActiveHours > 24
+  ) {
+    throw new Error(
+      `minActiveHours must be an integer in [0, 24] (got ${opts.minActiveHours})`,
     );
   }
   const sort: SourceActiveHourLongestRunSort = opts.sort ?? 'tokens';
@@ -381,6 +409,16 @@ export function buildSourceActiveHourLongestRun(
     filtered = next;
   }
 
+  let droppedBelowMinActiveHours = 0;
+  if (minActiveHours > 0) {
+    const next: SourceActiveHourLongestRunSourceRow[] = [];
+    for (const r of filtered) {
+      if (r.activeHours >= minActiveHours) next.push(r);
+      else droppedBelowMinActiveHours += 1;
+    }
+    filtered = next;
+  }
+
   filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
@@ -420,6 +458,7 @@ export function buildSourceActiveHourLongestRun(
     top,
     sort,
     minLongestActiveRun,
+    minActiveHours,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -428,6 +467,7 @@ export function buildSourceActiveHourLongestRun(
     droppedSourceFilter,
     droppedSparseSources,
     droppedBelowMinLongestActiveRun,
+    droppedBelowMinActiveHours,
     droppedTopSources,
     sources: kept,
   };

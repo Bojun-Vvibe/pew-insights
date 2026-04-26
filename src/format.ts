@@ -6538,12 +6538,12 @@ export function renderSourceActiveHourLongestRun(
   lines.push(chalk.bold.cyan('pew-insights source-active-hour-longest-run'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-longest-active-run: ${r.minLongestActiveRun === 0 ? '\u2014' : r.minLongestActiveRun}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-longest-active-run: ${r.minLongestActiveRun === 0 ? '\u2014' : r.minLongestActiveRun}    min-active-hours: ${r.minActiveHours === 0 ? '\u2014' : r.minActiveHours}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinLongestActiveRun)} below min-longest-active-run, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinLongestActiveRun)} below min-longest-active-run, ${formatNumber(r.droppedBelowMinActiveHours)} below min-active-hours, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

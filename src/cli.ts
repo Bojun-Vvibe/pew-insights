@@ -7374,6 +7374,11 @@ program
     'display filter: hide sources whose longestActiveRun is strictly below n. n in [0,24]. Default 0 = no filter. Surfaces only sources with a substantial contiguous shift. Counts surface as droppedBelowMinLongestActiveRun.',
     '0',
   )
+  .option(
+    '--min-active-hours <n>',
+    'display filter (refinement, v0.6.45): hide sources whose activeHours (raw count of nonzero hour-of-day bins) is strictly below n. n in [0,24]. Default 0 = no filter. Complementary to --min-longest-active-run: this filters by raw count, that filter measures contiguity. The two compose by intersection. Counts surface as droppedBelowMinActiveHours.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -7385,6 +7390,7 @@ program
         top: string;
         sort: string;
         minLongestActiveRun: string;
+        minActiveHours: string;
         json?: boolean;
       },
       cmd,
@@ -7412,6 +7418,16 @@ program
             `--min-longest-active-run must be an integer in [0, 24] (got ${opts.minLongestActiveRun})`,
           );
         }
+        const minActiveHours = Number.parseInt(opts.minActiveHours, 10);
+        if (
+          !Number.isInteger(minActiveHours) ||
+          minActiveHours < 0 ||
+          minActiveHours > 24
+        ) {
+          throw new Error(
+            `--min-active-hours must be an integer in [0, 24] (got ${opts.minActiveHours})`,
+          );
+        }
         const validSorts = ['tokens', 'run', 'active', 'share', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -7426,6 +7442,7 @@ program
           minTokens,
           top,
           minLongestActiveRun,
+          minActiveHours,
           sort: opts.sort as 'tokens' | 'run' | 'active' | 'share' | 'source',
         });
         if (opts.json || common.json) {

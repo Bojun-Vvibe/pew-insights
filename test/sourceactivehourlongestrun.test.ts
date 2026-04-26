@@ -419,3 +419,84 @@ test('build: minLongestActiveRun=0 is no-op (default)', () => {
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedBelowMinLongestActiveRun, 0);
 });
+
+// ---- refinement (v0.6.45): --min-active-hours ------------------------------
+
+test('build: rejects minActiveHours out of [0,24]', () => {
+  assert.throws(() =>
+    buildSourceActiveHourLongestRun([], { minActiveHours: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceActiveHourLongestRun([], { minActiveHours: 25 }),
+  );
+  assert.throws(() =>
+    buildSourceActiveHourLongestRun([], { minActiveHours: 1.5 }),
+  );
+});
+
+test('build: minActiveHours=0 is no-op (default)', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-10T09:00:00.000Z', 'a', 5000),
+    ql('2026-04-10T10:00:00.000Z', 'b', 5000),
+  ];
+  const r = buildSourceActiveHourLongestRun(q, {
+    generatedAt: GEN,
+    minActiveHours: 0,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinActiveHours, 0);
+});
+
+test('build: minActiveHours filters by raw count regardless of contiguity', () => {
+  const q: QueueLine[] = [];
+  // 'shift': 8 contiguous active hours -> activeHours=8, longestActiveRun=8
+  for (let h = 0; h < 8; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'shift', 1500));
+  }
+  // 'scattered': 12 alternating hours -> activeHours=12, longestActiveRun=1
+  for (let h = 0; h < 24; h += 2) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'scattered', 1500));
+  }
+  const r = buildSourceActiveHourLongestRun(q, {
+    generatedAt: GEN,
+    minActiveHours: 10,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'scattered');
+  assert.equal(r.droppedBelowMinActiveHours, 1);
+});
+
+test('build: minActiveHours and minLongestActiveRun compose by intersection', () => {
+  const q: QueueLine[] = [];
+  // 'a': 8 contiguous -> activeHours=8, longestActiveRun=8
+  for (let h = 0; h < 8; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'a', 1500));
+  }
+  // 'b': 12 alternating -> activeHours=12, longestActiveRun=1
+  for (let h = 0; h < 24; h += 2) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'b', 1500));
+  }
+  // 'c': 14 contiguous -> activeHours=14, longestActiveRun=14
+  for (let h = 0; h < 14; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'c', 1500));
+  }
+  // require BOTH activeHours>=10 AND longestActiveRun>=6
+  // a: activeHours=8 fails first gate -> dropped by minActiveHours? No,
+  //    filter order is minLongestActiveRun first then minActiveHours.
+  // Verify both gates eliminate the right rows in either order semantically.
+  const r = buildSourceActiveHourLongestRun(q, {
+    generatedAt: GEN,
+    minActiveHours: 10,
+    minLongestActiveRun: 6,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'c');
+});

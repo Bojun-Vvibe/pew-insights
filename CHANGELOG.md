@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.45 — 2026-04-26
+
+### Changed
+
+- `source-active-hour-longest-run`: new display filter
+  `--min-active-hours <n>` drops rows whose `activeHours`
+  (raw count of nonzero hour-of-day bins) is strictly below `n`.
+  `n` in `[0, 24]`. Default 0 = no filter. Suppressed rows
+  surface as `droppedBelowMinActiveHours`.
+
+  Complementary to the v0.6.44 `--min-longest-active-run` filter:
+
+  - `--min-active-hours` filters by raw *count* of active hours.
+  - `--min-longest-active-run` filters by *contiguity* of those
+    hours.
+
+  A source with `activeHours=12` scattered as 12 alternating
+  single hours has `longestActiveRun=1` and `activeHours=12`;
+  `--min-active-hours 10` keeps it, `--min-longest-active-run 6`
+  drops it. The two filters compose by intersection, so
+  `--min-active-hours 10 --min-longest-active-run 6` keeps only
+  sources with at least 10 active hours *and* a contiguous shift
+  of at least 6 of them.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `minLongestActiveRun` -> `minActiveHours` ->
+  sort -> `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-active-hours 20 --sort active`)
+
+```
+pew-insights source-active-hour-longest-run --min-active-hours 20 --sort active
+as of: 2026-04-26T11:00:41.459Z    sources: 6 (shown 4)    tokens: 9,164,611,487    min-tokens: 1,000    min-longest-active-run: —    min-active-hours: 20    top: —    sort: active
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-longest-active-run, 2 below min-active-hours, 0 below top cap
+(per-source longest contiguous run of *active* hours-of-day on the circular 24-cycle; share = longestActiveRun / activeHours)
+
+per-source longest active hour-of-day run (sorted by active; ties: source asc)
+source       firstDay    lastDay     buckets  activeHours  longestActiveRun  runStart  activeRunCount  activeRunShare  tokens
+-----------  ----------  ----------  -------  -----------  ----------------  --------  --------------  --------------  -------------
+hermes       2026-04-17  2026-04-26  160      24           24                00        1               1.0000          144,017,552
+openclaw     2026-04-17  2026-04-26  400      24           24                00        1               1.0000          1,731,150,227
+opencode     2026-04-20  2026-04-26  294      24           24                00        1               1.0000          3,035,547,533
+claude-code  2026-02-11  2026-04-23  299      20           20                00        1               1.0000          3,442,385,788
+```
+
+Reading: with `--min-active-hours 20`, two of six sources are
+filtered out (`codex` at 16 active hours and the IDE-assistant
+source at 14 active hours). The remaining four are the ones
+operating on (or near) full-clock cadence, all with
+`activeRunCount=1`. None of the filtered-out sources are
+*fragmented*; they're simply narrower in raw extent — exactly
+the distinction `--min-active-hours` is designed to express
+when used independently of `--min-longest-active-run`.
+
 ## 0.6.44 — 2026-04-26
 
 ### Added
