@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.42 — 2026-04-26
+
+### Added
+
+- `source-dead-hour-count`: new subcommand. Per source, counts
+  the UTC hours-of-day (0..23) with **zero observed token mass**
+  over the window. Reports:
+
+  - `deadHours` / `liveHours` / `deadShare` (= `deadHours / 24`)
+  - `longestDeadRun` and `deadRunCount` on the *circular* 24-cycle
+    (so a quiet zone that wraps 23 -> 0 counts as a single run)
+  - per-row `firstDay` / `lastDay` / `nBuckets` / `totalTokens`
+
+  Knobs: `--since` / `--until` / `--source` / `--min-tokens`
+  (default 1000) / `--top` / `--sort`
+  (`tokens` | `dead` | `live` | `run` | `source`).
+
+  This is **orthogonal** to everything else that ships against the
+  hour-of-day axis:
+
+  - `source-token-mass-hour-centroid` reports the *circular mean*
+    of the hour-of-day distribution. A bimodal source (e.g. 09:00
+    and 21:00) gets a misleading centroid near 03:00. This
+    subcommand surfaces the *sparseness* of the same axis.
+  - `source-hour-of-day-topk-mass-share` reports the share of the
+    top-k busiest hours. It does not count zero hours: a 3-live-
+    hour source and a 14-live-hour source can have similar topK
+    shares if their tails are similar.
+  - `source-dry-spell` is a calendar-day recency metric, not an
+    hour-of-day metric. A source that posts every single day at
+    the same hour has zero dry-spell but 23 dead hours.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--sort dead --top 10`)
+
+Source labels containing the IDE-assistant product name are
+redacted to `ide-assistant-A` per the repo's published-content
+policy.
+
+```
+pew-insights source-dead-hour-count --sort dead --top 10
+as of: 2026-04-26T09:28:34.900Z    sources: 6 (shown 6)    tokens: 9,103,923,357    min-tokens: 1,000    min-dead-hours: —    top: 10    sort: dead
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-dead-hours, 0 below top cap
+(per-source count of UTC hours-of-day with zero token mass over the window; longestDeadRun and deadRunCount on the circular 24-cycle)
+
+per-source dead-hour count by UTC hour-of-day (sorted by dead; ties: source asc)
+source          firstDay    lastDay     buckets  deadHours  liveHours  deadShare  longestDeadRun  deadRunCount  tokens
+--------------  ----------  ----------  -------  ---------  ---------  ---------  --------------  ------------  -------------
+ide-assistant-A 2025-07-30  2026-04-20  333      10         14         0.4167     10              1             1,885,727
+codex           2026-04-13  2026-04-20  64       8          16         0.3333     8               1             809,624,660
+claude-code     2026-02-11  2026-04-23  299      4          20         0.1667     4               1             3,442,385,788
+hermes          2026-04-17  2026-04-26  159      0          24         0.0000     0               0             143,875,287
+openclaw        2026-04-17  2026-04-26  396      0          24         0.0000     0               0             1,725,356,211
+opencode        2026-04-20  2026-04-26  290      0          24         0.0000     0               0             2,980,795,684
+```
+
+Reading: three of six tracked sources cover the full UTC clock
+(`deadHours = 0`, every hour seen at least once) — those are the
+recently-active heavy senders (`hermes`, `openclaw`, `opencode`).
+The two longest-lived sources still keep a quiet block —
+`ide-assistant-A` is silent for 10 consecutive UTC hours
+(longest single run = 10), and `codex` for 8. `claude-code`,
+despite the longest history (`firstDay` 2026-02-11), only has
+4 dead hours, and they form a single contiguous quiet window.
+The `deadRunCount = 1` everywhere among the live sources says
+each source's quiet zone is one block, not fragmented across
+the day — typical of a workload that has a sleep window rather
+than scattered idle hours.
+
 ## 0.6.41 — 2026-04-26
 
 ### Changed
