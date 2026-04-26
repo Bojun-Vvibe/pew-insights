@@ -42,6 +42,7 @@ import type { InputTokenDecileDistributionReport } from './inputtokendeciledistr
 import type { SourceTokenMassHourCentroidReport } from './sourcetokenmasshourcentroid.js';
 import type { SourceDayOfWeekTokenMassShareReport } from './sourcedayofweektokenmassshare.js';
 import { dowName as dowNameFmt } from './sourcedayofweektokenmassshare.js';
+import type { SourceDeadHourCountReport } from './sourcedeadhourcount.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 // ---------------------------------------------------------------------------
@@ -6455,6 +6456,75 @@ export function renderSourceHourTopKMassShare(
       formatNumber(s.totalTokens),
     ];
   });
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceDeadHourCount(
+  r: SourceDeadHourCountReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-dead-hour-count'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-dead-hours: ${r.minDeadHours === 0 ? '\u2014' : r.minDeadHours}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDeadHours)} below min-dead-hours, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source count of UTC hours-of-day with zero token mass over the window; longestDeadRun and deadRunCount on the circular 24-cycle)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source dead-hour count by UTC hour-of-day (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'buckets',
+    'deadHours',
+    'liveHours',
+    'deadShare',
+    'longestDeadRun',
+    'deadRunCount',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nBuckets),
+    String(s.deadHours),
+    String(s.liveHours),
+    s.deadShare.toFixed(4),
+    String(s.longestDeadRun),
+    String(s.deadRunCount),
+    formatNumber(s.totalTokens),
+  ]);
   lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');

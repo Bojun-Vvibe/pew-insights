@@ -76,6 +76,7 @@ import {
   renderSourceOutputTokenBenfordDeviation,
   renderSourceTokenMassHourCentroid,
   renderSourceDayOfWeekTokenMassShare,
+  renderSourceDeadHourCount,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
@@ -214,6 +215,7 @@ import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignrun
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
 import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.js';
 import { buildSourceDayOfWeekTokenMassShare } from './sourcedayofweektokenmassshare.js';
+import { buildSourceDeadHourCount } from './sourcedeadhourcount.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
@@ -7219,6 +7221,102 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceHourTopKMassShare(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-dead-hour-count')
+  .description(
+    'Per-source count of UTC hours-of-day (0..23) with zero observed token mass over the window. Reports deadHours / liveHours / deadShare plus longestDeadRun and deadRunCount on the circular 24-cycle. Orthogonal to source-token-mass-hour-centroid (centroid, not sparseness), source-hour-of-day-topk-mass-share (top-k mass, not zero count), source-day-of-week-token-mass-share (different axis), source-dry-spell (calendar-day recency, not hour-of-day).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | dead | live | run | source. dead = deadHours desc, run = longestDeadRun desc. Applied before --top.',
+    'tokens',
+  )
+  .option(
+    '--min-dead-hours <n>',
+    'display filter: hide sources whose deadHours is strictly below n. n in [0,24]. Default 0 = no filter. Useful for surfacing only sparse sources (e.g. --min-dead-hours 12 hides any source that uses more than half the 24-hour clock). Counts surface as droppedBelowMinDeadHours.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        top: string;
+        sort: string;
+        minDeadHours: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minDeadHours = Number.parseInt(opts.minDeadHours, 10);
+        if (
+          !Number.isInteger(minDeadHours) ||
+          minDeadHours < 0 ||
+          minDeadHours > 24
+        ) {
+          throw new Error(
+            `--min-dead-hours must be an integer in [0, 24] (got ${opts.minDeadHours})`,
+          );
+        }
+        const validSorts = ['tokens', 'dead', 'live', 'run', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceDeadHourCount(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          top,
+          minDeadHours,
+          sort: opts.sort as 'tokens' | 'dead' | 'live' | 'run' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceDeadHourCount(report) + '\n');
         }
       } catch (e) {
         die(e);
