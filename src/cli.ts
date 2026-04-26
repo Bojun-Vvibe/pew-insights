@@ -99,6 +99,7 @@ import {
   renderSourceZeroOutputRowShare,
   renderSourceGapHoursCv,
   renderSourceInputOutputCorrelationCoefficient,
+  renderSourceFirstVsLastQuartileOutputMeanShift,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -257,6 +258,7 @@ import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.
 import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
 import { buildSourceGapHoursCv } from './sourcegaphourscv.js';
 import { buildSourceInputOutputCorrelationCoefficient } from './sourceinputoutputcorrelationcoefficient.js';
+import { buildSourceFirstVsLastQuartileOutputMeanShift } from './sourcefirstvslastquartileoutputmeanshift.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -9450,6 +9452,104 @@ program
         } else {
           process.stdout.write(
             renderSourceInputOutputCorrelationCoefficient(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-first-vs-last-quartile-output-mean-shift')
+  .description(
+    "Per-source non-parametric chronological drift detector for output_tokens: split each source's rows by hour_start into chronological quartiles, then report mean(output_tokens) of the first 25% vs the last 25%. meanShift = lastQMean - firstQMean (positive = source generates fatter replies now than at debut); relShift = meanShift/firstQMean (unitless, the cross-source comparator). Distinct from source-daily-token-trend-slope (OLS over daily aggregates of total_tokens; assumes linearity, hides within-day variation), source-output-tokens-per-row-percentiles (pools whole window, destroys chronology), source-decay-half-life (assumes monotone decay, cannot express growth), source-cumulative-mass-half-life-day (mass centroid on total_tokens, not reply-size mean), and source-input-output-correlation-coefficient (per-row association, not per-period mean shift).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; absolute floor 4 (need >=1 row per quartile end) (default 4)',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'shift-desc' (default) | 'shift-asc' | 'abs-shift' | 'rel-shift-desc' | 'rel-shift-asc' | 'abs-rel-shift' | 'rows' | 'source'",
+    'shift-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'shift-desc',
+          'shift-asc',
+          'abs-shift',
+          'rel-shift-desc',
+          'rel-shift-asc',
+          'abs-rel-shift',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceFirstVsLastQuartileOutputMeanShift(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'shift-desc'
+            | 'shift-asc'
+            | 'abs-shift'
+            | 'rel-shift-desc'
+            | 'rel-shift-asc'
+            | 'abs-rel-shift'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceFirstVsLastQuartileOutputMeanShift(report) + '\n',
           );
         }
       } catch (e) {

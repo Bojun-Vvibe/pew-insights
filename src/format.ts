@@ -7872,3 +7872,79 @@ export function renderSourceInputOutputCorrelationCoefficient(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceFirstVsLastQuartileOutputMeanShiftReport,
+  SourceFirstVsLastQuartileOutputMeanShiftRow,
+} from './sourcefirstvslastquartileoutputmeanshift.js';
+
+export function renderSourceFirstVsLastQuartileOutputMeanShift(
+  r: SourceFirstVsLastQuartileOutputMeanShiftReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights source-first-vs-last-quartile-output-mean-shift',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForQuartiles)} below 4-row quartile floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source non-parametric chronological drift: split each source's rows into chronological quartiles, compare mean(output_tokens) of Q1 vs Q4; meanShift = lastQMean - firstQMean (positive = fatter replies now); relShift = meanShift / firstQMean (unitless cross-source comparator); degenerate=y means firstQMean was 0 so relShift is reported as 0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source first-vs-last quartile output_tokens mean shift (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'qRows',
+    'firstQMean',
+    'lastQMean',
+    'meanShift',
+    'relShift',
+    'degen',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceFirstVsLastQuartileOutputMeanShiftRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.firstQRows),
+      s.firstQMean.toFixed(2),
+      s.lastQMean.toFixed(2),
+      s.meanShift.toFixed(2),
+      s.relShift.toFixed(4),
+      s.degenerate ? 'y' : '-',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
