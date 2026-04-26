@@ -6608,12 +6608,12 @@ export function renderSourceHourOfDayTokenMassEntropy(
   lines.push(chalk.bold.cyan('pew-insights source-hour-of-day-token-mass-entropy'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-normalized: ${r.minNormalized === 0 ? '\u2014' : r.minNormalized.toFixed(4)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    H_max(bits): ${r.maxEntropyBits.toFixed(4)}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-normalized: ${r.minNormalized === 0 ? '\u2014' : r.minNormalized.toFixed(4)}    min-effective-hours: ${r.minEffectiveHours === 0 ? '\u2014' : r.minEffectiveHours.toFixed(4)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    H_max(bits): ${r.maxEntropyBits.toFixed(4)}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinNormalized)} below min-normalized, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinNormalized)} below min-normalized, ${formatNumber(r.droppedBelowMinEffectiveHours)} below min-effective-hours, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

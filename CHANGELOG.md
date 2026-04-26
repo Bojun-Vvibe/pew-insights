@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## 0.6.46 — 2026-04-26
 
+### Changed
+
+- `source-hour-of-day-token-mass-entropy`: refinement filter
+  `--min-effective-hours <n>` drops rows whose `effectiveHours`
+  (= `2^entropyBits`, perplexity) is strictly below `n`.
+  `n` in `[0, 24]`. Default 0 = no filter. Suppressed rows
+  surface as `droppedBelowMinEffectiveHours`.
+
+  Complementary to `--min-normalized`: `--min-normalized` filters
+  by the `[0, 1]` normalized-entropy ratio; `--min-effective-hours`
+  filters by *real* spread expressed in hour-units. A source with
+  `activeHours=24` whose mass is dumped in two hours (effective
+  `~2.1`) passes `--min-normalized 0.3` but is filtered by
+  `--min-effective-hours 6`. The two filters compose by
+  intersection.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `minNormalized` -> `minEffectiveHours` -> sort
+  -> `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--sort effective --min-effective-hours 15`)
+
+```
+pew-insights source-hour-of-day-token-mass-entropy --sort effective --min-effective-hours 15
+as of: 2026-04-26T11:40:21.484Z    sources: 6 (shown 4)    tokens: 9,181,887,214    min-tokens: 1,000    min-normalized: —    min-effective-hours: 15.0000    top: —    sort: effective    H_max(bits): 4.5850
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-normalized, 2 below min-effective-hours, 0 below top cap
+(per-source Shannon entropy in bits of token mass over UTC hour-of-day; effectiveHours = 2^H; concentrationGap = activeHours - effectiveHours)
+
+per-source UTC hour-of-day token-mass entropy (sorted by effective; ties: source asc)
+source       firstDay    lastDay     buckets  activeHours  entropyBits  normalized  effectiveHours  concGap  topHour  topShare  tokens
+-----------  ----------  ----------  -------  -----------  -----------  ----------  --------------  -------  -------  --------  -------------
+openclaw     2026-04-17  2026-04-26  401      24           4.5185       0.9855      22.9192         1.0808   01       0.0744    1,733,425,416
+opencode     2026-04-20  2026-04-26  295      24           4.3742       0.9540      20.7383         3.2617   17       0.0940    3,050,233,028
+claude-code  2026-02-11  2026-04-23  299      20           4.0920       0.8925      17.0535         2.9465   08       0.1355    3,442,385,788
+hermes       2026-04-17  2026-04-26  161      24           4.0900       0.8920      17.0301         6.9699   14       0.1087    144,332,595
+```
+
+Reading: with `--min-effective-hours 15`, two of six sources drop
+out — `codex` (`effectiveHours ~ 12.4`) and `ide-assistant-A`
+(`effectiveHours ~ 9.1`). The four kept sources all have
+*meaningful* coverage: even the lowest-tokens row (`hermes`)
+clears the 15-hour bar, despite `concGap = 6.97` showing its
+mass is nontrivially clumped within those hours. This is the
+distinction the refinement is designed to surface — entropy
+alone (or `activeHours` alone) treats `hermes` and `openclaw`
+as similarly broad; `effectiveHours` reveals that `openclaw`
+operates more *uniformly* across the day.
+
 ### Added
 
 - `source-hour-of-day-token-mass-entropy`: new subcommand. Per

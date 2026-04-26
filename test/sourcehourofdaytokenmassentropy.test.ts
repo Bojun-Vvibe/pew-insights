@@ -81,6 +81,15 @@ test('build: rejects minNormalized out of [0,1]', () => {
   );
 });
 
+test('build: rejects minEffectiveHours out of [0,24]', () => {
+  assert.throws(() =>
+    buildSourceHourOfDayTokenMassEntropy([], { minEffectiveHours: -0.01 }),
+  );
+  assert.throws(() =>
+    buildSourceHourOfDayTokenMassEntropy([], { minEffectiveHours: 24.01 }),
+  );
+});
+
 test('build: rejects unknown sort', () => {
   assert.throws(() =>
     buildSourceHourOfDayTokenMassEntropy([], {
@@ -303,6 +312,58 @@ test('build: top caps results and surfaces droppedTopSources', () => {
     r.sources.map((s) => s.source),
     ['a', 'b'],
   );
+});
+
+test('build: minEffectiveHours filters by perplexity, not normalized', () => {
+  const q: QueueLine[] = [
+    // illusory: activeHours=24 but mass concentrated -> effective ~ 2.1
+    ql('2026-04-20T01:00:00.000Z', 'illusory', 9700),
+    ...Array.from({ length: 23 }, (_, i) =>
+      ql(
+        `2026-04-20T${String(i + 1).padStart(2, '0')}:00:00.000Z`,
+        'illusory',
+        100,
+      ),
+    ),
+    // real: 8 equal hours -> effective = 8.0
+    ...Array.from({ length: 8 }, (_, i) =>
+      ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00.000Z`, 'real', 1000),
+    ),
+  ];
+  const r = buildSourceHourOfDayTokenMassEntropy(q, {
+    generatedAt: GEN,
+    minEffectiveHours: 6,
+  });
+  assert.equal(r.droppedBelowMinEffectiveHours, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'real');
+  assert.ok(Math.abs(r.sources[0]!.effectiveHours - 8) < 1e-9);
+});
+
+test('build: minNormalized and minEffectiveHours compose by intersection', () => {
+  const q: QueueLine[] = [
+    // a: 1 hour -> normalized=0, effective=1. Filtered by either.
+    ql('2026-04-20T03:00:00.000Z', 'a', 5000),
+    // b: 4 equal hours -> normalized = 2 / log2(24) ~ 0.436, effective = 4.
+    //    Passes --min-normalized 0.4 but fails --min-effective-hours 6.
+    ...Array.from({ length: 4 }, (_, i) =>
+      ql(`2026-04-20T${String(i * 6).padStart(2, '0')}:00:00.000Z`, 'b', 1000),
+    ),
+    // c: 24 equal hours -> normalized=1, effective=24. Passes both.
+    ...Array.from({ length: 24 }, (_, i) =>
+      ql(`2026-04-21T${String(i).padStart(2, '0')}:00:00.000Z`, 'c', 1000),
+    ),
+  ];
+  const r = buildSourceHourOfDayTokenMassEntropy(q, {
+    generatedAt: GEN,
+    minNormalized: 0.4,
+    minEffectiveHours: 6,
+  });
+  // a dropped by min-normalized; b passes min-normalized but dropped by min-effective-hours
+  assert.equal(r.droppedBelowMinNormalized, 1);
+  assert.equal(r.droppedBelowMinEffectiveHours, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'c');
 });
 
 test('build: since/until window filters mass', () => {

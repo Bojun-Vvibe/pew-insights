@@ -7489,6 +7489,11 @@ program
     'display filter: hide sources whose entropyNormalized is strictly below p. p in [0, 1]. Default 0 = no filter. Useful for surfacing only sources with genuine spread (e.g. --min-normalized 0.7 keeps only sources using their day broadly). Counts surface as droppedBelowMinNormalized.',
     '0',
   )
+  .option(
+    '--min-effective-hours <n>',
+    'display filter: hide sources whose effectiveHours (= 2^entropyBits, perplexity) is strictly below n. n in [0, 24]. Default 0 = no filter. Complementary to --min-normalized: filters by *real* spread in hour-units rather than by [0,1] ratio. A source with activeHours=24 but effectiveHours=2.1 (mass dumped in two hours, the rest a thin tail) passes --min-normalized 0.3 but is filtered out by --min-effective-hours 6. Counts surface as droppedBelowMinEffectiveHours.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -7500,6 +7505,7 @@ program
         top: string;
         sort: string;
         minNormalized: string;
+        minEffectiveHours: string;
         json?: boolean;
       },
       cmd,
@@ -7527,6 +7533,16 @@ program
             `--min-normalized must be a number in [0, 1] (got ${opts.minNormalized})`,
           );
         }
+        const minEffectiveHours = Number.parseFloat(opts.minEffectiveHours);
+        if (
+          !Number.isFinite(minEffectiveHours) ||
+          minEffectiveHours < 0 ||
+          minEffectiveHours > 24
+        ) {
+          throw new Error(
+            `--min-effective-hours must be a number in [0, 24] (got ${opts.minEffectiveHours})`,
+          );
+        }
         const validSorts = [
           'tokens',
           'entropy',
@@ -7549,6 +7565,7 @@ program
           minTokens,
           top,
           minNormalized,
+          minEffectiveHours,
           sort: opts.sort as
             | 'tokens'
             | 'entropy'

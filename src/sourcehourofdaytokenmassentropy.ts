@@ -125,6 +125,20 @@ export interface SourceHourEntropyOptions {
    * Default 0 = no filter.
    */
   minNormalized?: number;
+  /**
+   * Display filter (refinement, v0.6.47): drop rows whose
+   * `effectiveHours` (= 2^entropyBits) is strictly below this
+   * float in [0, 24]. Complementary to `minNormalized`: surfaces
+   * sources whose *real* spread (perplexity) clears a concrete
+   * hour-count threshold, regardless of how many raw active hours
+   * they touch. A source with `activeHours=24` but
+   * `effectiveHours=2.1` (mass dumped in two hours, the rest a
+   * thin tail) passes `--min-normalized 0.3` but is filtered out
+   * by `--min-effective-hours 6`. Counts surface as
+   * `droppedBelowMinEffectiveHours`.
+   * Range [0, 24]; default 0 = no filter.
+   */
+  minEffectiveHours?: number;
   generatedAt?: string;
 }
 
@@ -162,6 +176,7 @@ export interface SourceHourEntropyReport {
   top: number;
   sort: SourceHourEntropySort;
   minNormalized: number;
+  minEffectiveHours: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -172,6 +187,7 @@ export interface SourceHourEntropyReport {
   droppedSourceFilter: number;
   droppedSparseSources: number;
   droppedBelowMinNormalized: number;
+  droppedBelowMinEffectiveHours: number;
   droppedTopSources: number;
   sources: SourceHourEntropyRow[];
 }
@@ -225,6 +241,16 @@ export function buildSourceHourOfDayTokenMassEntropy(
   ) {
     throw new Error(
       `minNormalized must be a finite number in [0, 1] (got ${opts.minNormalized})`,
+    );
+  }
+  const minEffectiveHours = opts.minEffectiveHours ?? 0;
+  if (
+    !Number.isFinite(minEffectiveHours) ||
+    minEffectiveHours < 0 ||
+    minEffectiveHours > 24
+  ) {
+    throw new Error(
+      `minEffectiveHours must be a finite number in [0, 24] (got ${opts.minEffectiveHours})`,
     );
   }
   const sort: SourceHourEntropySort = opts.sort ?? 'tokens';
@@ -368,6 +394,17 @@ export function buildSourceHourOfDayTokenMassEntropy(
     filtered = next;
   }
 
+  // refinement filter (v0.6.47): perplexity threshold
+  let droppedBelowMinEffectiveHours = 0;
+  if (minEffectiveHours > 0) {
+    const next: SourceHourEntropyRow[] = [];
+    for (const r of filtered) {
+      if (r.effectiveHours >= minEffectiveHours) next.push(r);
+      else droppedBelowMinEffectiveHours += 1;
+    }
+    filtered = next;
+  }
+
   filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
@@ -413,6 +450,7 @@ export function buildSourceHourOfDayTokenMassEntropy(
     top,
     sort,
     minNormalized,
+    minEffectiveHours,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -422,6 +460,7 @@ export function buildSourceHourOfDayTokenMassEntropy(
     droppedSourceFilter,
     droppedSparseSources,
     droppedBelowMinNormalized,
+    droppedBelowMinEffectiveHours,
     droppedTopSources,
     sources: kept,
   };
