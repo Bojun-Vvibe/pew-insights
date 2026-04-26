@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.80 — 2026-04-27
+
+### Changed
+
+- `source-first-vs-last-quartile-output-mean-shift`: refinement
+  adds the `--min-quartile-mean <f>` flag. Drops sources where
+  `max(firstQMean, lastQMean) < f` — the "ignore tiny-output
+  sources where shift is dominated by noise" gate. When both
+  quartile means are near zero, `meanShift` is necessarily small
+  in absolute terms and `relShift` is either degenerate
+  (`firstQMean = 0`) or numerically unstable (small/small).
+
+  The filter intentionally keeps a source if **either** quartile
+  mean clears the floor. That preserves the asymmetric drift
+  cases that are the entire point of this lens — a source that
+  jumped from `firstQMean = 0` to `lastQMean = 200k` is exactly
+  the "structurally changed" signal we want to surface, and a
+  conjunctive AND-gate would silently drop it. Disjunctive OR is
+  the correct semantics here.
+
+  Default `--min-quartile-mean 0` preserves v0.6.79 behaviour
+  exactly (no rows dropped).
+
+  Live smoke at `--min-quartile-mean 5000 --sort abs-shift`
+  against `~/.config/pew/queue.jsonl` (one IDE-assistant source
+  name redacted to `ide-assistant-A` per banned-string policy):
+
+  ```
+  pew-insights source-first-vs-last-quartile-output-mean-shift
+  as of: 2026-04-26T23:13:37.437Z    sources: 6 (shown 5)    rows: 1,604    min-rows: 4    min-q-mean: 5000.00    top: —    sort: abs-shift
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 4-row quartile floor, 0 below min-rows, 1 below min-q-mean, 0 below top cap
+
+  per-source first-vs-last quartile output_tokens mean shift (sorted by abs-shift; ties: source asc)
+  source       rows  qRows  firstQMean  lastQMean  meanShift  relShift  degen
+  -----------  ----  -----  ----------  ---------  ---------  --------  -----
+  claude-code  299   74     8566.23     114618.18  106051.95  12.3802   -
+  codex        64    16     21846.38    64236.81   42390.44   1.9404    -
+  openclaw     424   106    13096.42    1973.15    -11123.27  -0.8493   -
+  opencode     318   79     82335.68    93132.27   10796.58   0.1311    -
+  hermes       166   41     8232.17     8046.61    -185.56    -0.0225   -
+  ```
+
+  At `--min-quartile-mean 5000`, the redacted `ide-assistant-A`
+  source drops out (its `firstQMean = 2967.51` and `lastQMean =
+  1929.01` are both below `5000`). The surviving 5 sources each
+  have at least one quartile mean of `8k+` output tokens — a
+  meaningful baseline against which a `meanShift` magnitude can
+  be compared. Importantly, the relative ordering by `abs-shift`
+  among the surviving 5 is unchanged from the unfiltered v0.6.79
+  view — confirming the filter is a cohort selector, not a
+  re-ranker.
+
+  This pairs naturally with `--min-rows`: `--min-rows` controls
+  **how much sample each quartile end rests on**, while
+  `--min-quartile-mean` controls **how big the reply size is on
+  at least one end** so that the magnitude of `meanShift` carries
+  operational meaning. Both gates are display-only and surface
+  suppressed counts as `droppedBelowMinRows` /
+  `droppedBelowMinQuartileMean` for full transparency.
+
+---
+
 ## 0.6.79 — 2026-04-27
 
 ### Added
