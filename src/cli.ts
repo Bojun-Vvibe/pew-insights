@@ -91,6 +91,7 @@ import {
   renderSourceOutputTokensPerRowPercentiles,
   renderSourceSingleDayMassConcentration,
   renderSourceCumulativeMassHalfLifeDay,
+  renderSourceColdWarmRowRatio,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -241,6 +242,7 @@ import { buildSourceIoRatioStability } from './sourceioratiostability.js';
 import { buildSourceOutputTokensPerRowPercentiles } from './sourceoutputtokensperrowpercentiles.js';
 import { buildSourceSingleDayMassConcentration } from './sourcesingledaymassconcentration.js';
 import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalflifeday.js';
+import { buildSourceColdWarmRowRatio } from './sourcecoldwarmrowratio.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -8518,6 +8520,98 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceCostClassMix(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-cold-warm-row-ratio')
+  .description(
+    'Per-source split of hour-bucket *rows* into cold (cached_input_tokens === 0) vs warm (> 0), restricted to rows with input_tokens > 0. Reports coldRows / warmRows / coldShare (row-count share), coldInputTokenShare (input-mass share), gap = coldShare - coldInputTokenShare (positive = cold rows are smaller-than-average; negative = the big jobs miss the cache). Orthogonal to cache-hit-ratio (continuous ratio percentiles, not row vs mass split), cache-hit-by-hour (hour-of-day axis, mass-only), source-weekend-weekday-cache-share-gap (mass-only across weekday axis), source-cost-class-mix (partitions by total_tokens, not cache state), and source-io-ratio-stability (output/input ratio, not cache state).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-rows <n>',
+    'hide source rows with nRows below n (default 5); counts surface as droppedSparseSources',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | rows | cold-share | cold-mass-share | gap | source. gap = |coldRowMassGap| desc. Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 0) {
+          throw new Error(
+            `--min-rows must be a non-negative integer (got ${opts.minRows})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tokens',
+          'rows',
+          'cold-share',
+          'cold-mass-share',
+          'gap',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceColdWarmRowRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'rows'
+            | 'cold-share'
+            | 'cold-mass-share'
+            | 'gap'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceColdWarmRowRatio(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -52,6 +52,7 @@ import type { SourceCostClassMixReport } from './sourcecostclassmix.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
+import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -7268,6 +7269,79 @@ export function renderSourceCumulativeMassHalfLifeDay(
     ],
   );
   lines.push(renderTableLocal(headers, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceColdWarmRowRatio(
+  r: SourceColdWarmRowRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-cold-warm-row-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-rows: ${formatNumber(r.minRows)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveInput)} non-positive input, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-rows, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source row-count vs input-mass split for cold (cached_input_tokens=0) vs warm (>0) hour-buckets; gap = coldShare - coldInputTokenShare)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source cold/warm row & input-mass split (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'nRows',
+    'coldRows',
+    'warmRows',
+    'coldShare',
+    'coldMassShare',
+    'gap',
+    'meanColdInput',
+    'meanWarmInput',
+    'inputTokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nRows),
+    formatNumber(s.coldRows),
+    formatNumber(s.warmRows),
+    s.coldShare.toFixed(4),
+    s.coldInputTokenShare.toFixed(4),
+    (s.coldRowMassGap >= 0 ? '+' : '') + s.coldRowMassGap.toFixed(4),
+    formatNumber(Math.round(s.meanColdInput)),
+    formatNumber(Math.round(s.meanWarmInput)),
+    formatNumber(s.inputTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
