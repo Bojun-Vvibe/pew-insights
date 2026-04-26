@@ -7056,12 +7056,12 @@ export function renderSourceOutputTokensPerRowPercentiles(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    output-tokens: ${formatNumber(r.totalOutputTokens)}    min-rows: ${r.minRows}    min-p99: ${formatNumber(r.minP99)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    output-tokens: ${formatNumber(r.totalOutputTokens)}    min-rows: ${r.minRows}    min-p99: ${formatNumber(r.minP99)}    min-tail: ${r.minTail.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAllZero)} all-zero-output sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinP99)} below min-p99, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAllZero)} all-zero-output sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinP99)} below min-p99, ${formatNumber(r.droppedBelowMinTail)} below min-tail, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

@@ -100,6 +100,19 @@ export interface SourceOutputTokensPerRowPercentilesOptions {
    */
   minP99?: number;
   /**
+   * Drop sources whose `p99OverP50` (tail = p99 / p50) is strictly
+   * below this value from the per-source table. Display filter only.
+   * Suppressed rows surface as `droppedBelowMinTail`. Must be a
+   * non-negative finite number. Default 0 = no floor.
+   *
+   * Useful for surfacing sources whose generation distribution is
+   * bimodal/heavy-tailed (e.g. `--min-tail 5` keeps only sources
+   * whose worst row is at least 5x their median). Sources flagged
+   * as `flatLine`/all-equal automatically have tail = 1 and will be
+   * suppressed by any `--min-tail > 1`.
+   */
+  minTail?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null
    * = no cap.
@@ -144,6 +157,7 @@ export interface SourceOutputTokensPerRowPercentilesReport {
   source: string | null;
   minRows: number;
   minP99: number;
+  minTail: number;
   top: number | null;
   sort: 'tokens' | 'p50' | 'p90' | 'p99' | 'tail' | 'rows' | 'source';
   /** Distinct sources seen pre-filter. */
@@ -156,6 +170,7 @@ export interface SourceOutputTokensPerRowPercentilesReport {
   droppedAllZero: number;
   droppedBelowMinRows: number;
   droppedBelowMinP99: number;
+  droppedBelowMinTail: number;
   droppedBelowTopCap: number;
   sources: SourceOutputTokensPerRowPercentilesRow[];
 }
@@ -187,6 +202,12 @@ export function buildSourceOutputTokensPerRowPercentiles(
   if (!Number.isFinite(minP99) || minP99 < 0) {
     throw new Error(
       `minP99 must be a non-negative finite number (got ${opts.minP99})`,
+    );
+  }
+  const minTail = opts.minTail ?? 0;
+  if (!Number.isFinite(minTail) || minTail < 0) {
+    throw new Error(
+      `minTail must be a non-negative finite number (got ${opts.minTail})`,
     );
   }
   const top = opts.top ?? null;
@@ -295,6 +316,7 @@ export function buildSourceOutputTokensPerRowPercentiles(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinP99 = 0;
+  let droppedBelowMinTail = 0;
   const survived: SourceOutputTokensPerRowPercentilesRow[] = [];
   for (const row of allRows) {
     if (row.rowsConsidered < minRows) {
@@ -303,6 +325,10 @@ export function buildSourceOutputTokensPerRowPercentiles(
     }
     if (row.p99 < minP99) {
       droppedBelowMinP99 += 1;
+      continue;
+    }
+    if (row.p99OverP50 < minTail) {
+      droppedBelowMinTail += 1;
       continue;
     }
     survived.push(row);
@@ -335,6 +361,7 @@ export function buildSourceOutputTokensPerRowPercentiles(
     source: sourceFilter,
     minRows,
     minP99,
+    minTail,
     top,
     sort,
     totalSources,
@@ -344,6 +371,7 @@ export function buildSourceOutputTokensPerRowPercentiles(
     droppedAllZero,
     droppedBelowMinRows,
     droppedBelowMinP99,
+    droppedBelowMinTail,
     droppedBelowTopCap,
     sources: finalSources,
   };

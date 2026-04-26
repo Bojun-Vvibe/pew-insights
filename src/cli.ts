@@ -6631,6 +6631,11 @@ program
     '0',
   )
   .option(
+    '--min-tail <f>',
+    'drop sources whose p99/p50 (tail) is below f; useful for surfacing bimodal/heavy-tail sources (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -6648,6 +6653,7 @@ program
         source?: string;
         minRows: string;
         minP99: string;
+        minTail: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -6667,6 +6673,12 @@ program
         if (!Number.isFinite(minP99) || minP99 < 0) {
           throw new Error(
             `--min-p99 must be a non-negative finite number (got ${opts.minP99})`,
+          );
+        }
+        const minTail = Number.parseFloat(opts.minTail);
+        if (!Number.isFinite(minTail) || minTail < 0) {
+          throw new Error(
+            `--min-tail must be a non-negative finite number (got ${opts.minTail})`,
           );
         }
         let top: number | null = null;
@@ -6690,6 +6702,7 @@ program
           source: opts.source ?? null,
           minRows,
           minP99,
+          minTail,
           top,
           sort: opts.sort as
             | 'tokens'

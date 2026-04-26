@@ -326,3 +326,69 @@ test('source-output-tokens-per-row-percentiles: singleSample flag', () => {
   assert.equal(s.p99, 777);
   assert.equal(s.p99OverP50, 1);
 });
+
+test('source-output-tokens-per-row-percentiles: minTail default 0 and exposed in report', () => {
+  const r = buildSourceOutputTokensPerRowPercentiles([], { generatedAt: GEN });
+  assert.equal(r.minTail, 0);
+  assert.equal(r.droppedBelowMinTail, 0);
+});
+
+test('source-output-tokens-per-row-percentiles: rejects bad minTail', () => {
+  assert.throws(() => buildSourceOutputTokensPerRowPercentiles([], { minTail: -1 }));
+  assert.throws(() =>
+    buildSourceOutputTokensPerRowPercentiles([], { minTail: Number.NaN }),
+  );
+});
+
+test('source-output-tokens-per-row-percentiles: minTail filters flat sources', () => {
+  const q: QueueLine[] = [];
+  // flat: tail = 1
+  for (let i = 0; i < 10; i += 1) {
+    q.push(ql(`2026-04-01T${String(i).padStart(2, '0')}:00:00.000Z`, 'flat', 100));
+  }
+  // spiky: nine small + one huge -> tail >> 1
+  for (let i = 0; i < 9; i += 1) {
+    q.push(ql(`2026-04-02T${String(i).padStart(2, '0')}:00:00.000Z`, 'spiky', 10));
+  }
+  q.push(ql('2026-04-02T09:00:00.000Z', 'spiky', 100000));
+
+  const r = buildSourceOutputTokensPerRowPercentiles(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minTail: 5,
+  });
+  assert.equal(r.droppedBelowMinTail, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'spiky');
+});
+
+test('source-output-tokens-per-row-percentiles: minTail=0 keeps everything (no-op default)', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    q.push(ql(`2026-04-0${i + 1}T00:00:00.000Z`, 's1', 100));
+    q.push(ql(`2026-04-0${i + 1}T01:00:00.000Z`, 's2', 100 * (i + 1)));
+  }
+  const r = buildSourceOutputTokensPerRowPercentiles(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minTail: 0,
+  });
+  assert.equal(r.droppedBelowMinTail, 0);
+  assert.equal(r.sources.length, 2);
+});
+
+test('source-output-tokens-per-row-percentiles: minTail filter order is after minRows and minP99', () => {
+  // sparse-but-spiky source should be dropped by minRows BEFORE minTail
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'sparse-spiky', 1),
+    ql('2026-04-01T01:00:00.000Z', 'sparse-spiky', 1000),
+  ];
+  const r = buildSourceOutputTokensPerRowPercentiles(q, {
+    generatedAt: GEN,
+    minRows: 3,
+    minTail: 5,
+  });
+  assert.equal(r.droppedBelowMinRows, 1);
+  assert.equal(r.droppedBelowMinTail, 0);
+  assert.equal(r.sources.length, 0);
+});
