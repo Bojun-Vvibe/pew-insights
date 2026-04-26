@@ -130,6 +130,24 @@ export interface SourceCacheShareByDayCvOptions {
    * "wild among genuinely cache-using sources".
    */
   minMeanShare?: number;
+  /**
+   * Drop sources whose `daysWithZeroInput / activeDays` ratio is
+   * strictly above this value from the per-source table. Display
+   * filter only \u2014 global denominators reflect the full kept
+   * population. Suppressed rows surface as
+   * `droppedAboveMaxZeroInputDayShare`. Must be a finite number in
+   * [0, 1]. Default 1 = no floor (keep everything).
+   *
+   * Useful for filtering out sources whose `activeDays` are
+   * dominated by zero-input telemetry-only days. A source like a
+   * background heartbeat may have 73 active days but only 3 of
+   * them carry any prompt mass; its mean / cv / flatCold are then
+   * computed off only those 3 days and are statistically thin
+   * even if `--min-days` is satisfied. `--max-zero-input-day-share
+   * 0.5` keeps only sources where at least half of their active
+   * days actually had a prompt assembled.
+   */
+  maxZeroInputDayShare?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -174,6 +192,7 @@ export interface SourceCacheShareByDayCvReport {
   top: number | null;
   sort: 'tokens' | 'cv' | 'mean' | 'days' | 'source';
   minMeanShare: number;
+  maxZeroInputDayShare: number;
   /** Distinct sources that survived window/source filters. */
   totalSources: number;
   /** Sum of total_tokens across the full kept population. */
@@ -182,6 +201,7 @@ export interface SourceCacheShareByDayCvReport {
   droppedSourceFilter: number;
   droppedBelowMinDays: number;
   droppedBelowMinMeanShare: number;
+  droppedAboveMaxZeroInputDayShare: number;
   droppedBelowTopCap: number;
   sources: SourceCacheShareByDayCvRow[];
 }
@@ -228,6 +248,16 @@ export function buildSourceCacheShareByDayCv(
   ) {
     throw new Error(
       `minMeanShare must be a finite number in [0, 1] (got ${opts.minMeanShare})`,
+    );
+  }
+  const maxZeroInputDayShare = opts.maxZeroInputDayShare ?? 1;
+  if (
+    !Number.isFinite(maxZeroInputDayShare) ||
+    maxZeroInputDayShare < 0 ||
+    maxZeroInputDayShare > 1
+  ) {
+    throw new Error(
+      `maxZeroInputDayShare must be a finite number in [0, 1] (got ${opts.maxZeroInputDayShare})`,
     );
   }
 
@@ -375,6 +405,7 @@ export function buildSourceCacheShareByDayCv(
 
   let droppedBelowMinDays = 0;
   let droppedBelowMinMeanShare = 0;
+  let droppedAboveMaxZeroInputDayShare = 0;
   const survived: SourceCacheShareByDayCvRow[] = [];
   for (const row of allRows) {
     if (row.daysWithShare < minDays) {
@@ -383,6 +414,12 @@ export function buildSourceCacheShareByDayCv(
     }
     if (row.meanShare < minMeanShare) {
       droppedBelowMinMeanShare += 1;
+      continue;
+    }
+    const zeroDayShare =
+      row.activeDays > 0 ? row.daysWithZeroInput / row.activeDays : 0;
+    if (zeroDayShare > maxZeroInputDayShare) {
+      droppedAboveMaxZeroInputDayShare += 1;
       continue;
     }
     survived.push(row);
@@ -425,12 +462,14 @@ export function buildSourceCacheShareByDayCv(
     top,
     sort,
     minMeanShare,
+    maxZeroInputDayShare,
     totalSources: allRows.length,
     totalTokens,
     droppedInvalidHourStart,
     droppedSourceFilter,
     droppedBelowMinDays,
     droppedBelowMinMeanShare,
+    droppedAboveMaxZeroInputDayShare,
     droppedBelowTopCap,
     sources: finalSources,
   };

@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.72 — 2026-04-27
+
+### Changed
+
+- `source-cache-share-by-day-cv`: refinement flag
+  `--max-zero-input-day-share`. Drops sources whose
+  `daysWithZeroInput / activeDays` ratio is strictly above the
+  threshold from the per-source table. Default 1 = no filter
+  (preserves v0.6.71 behaviour). Suppressed rows surface as
+  `droppedAboveMaxZeroInputDayShare`.
+
+  This matters because `--min-days` only counts share-bearing
+  days (days with `input_tokens > 0`) and is silent on whether
+  a source's `activeDays` are dominated by zero-input
+  telemetry-only days. The v0.6.71 default smoke surfaced
+  `vscode-copilot` with 73 active days, 70 zero-input, and 3
+  share-bearing days carrying `cached = 0` — its `flatCold = y`
+  is real but is computed off only those 3 days; it is the
+  thinnest sample in the table and structurally a different
+  population than the 5 genuinely-prompting sources.
+
+  `--max-zero-input-day-share 0.5` keeps only sources where at
+  least half of their active days carried a prompt, which is a
+  cleaner cohort for "which prompting sources have the most
+  unstable cache posture day-over-day?"
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (`--max-zero-input-day-share 0.5 --sort cv`):
+
+  ```
+  pew-insights source-cache-share-by-day-cv
+  as of: 2026-04-26T20:18:30.218Z    sources: 6 (shown 5)    tokens: 9,400,697,187    min-days: 3    min-mean-share: 0.0000    max-zero-in-day: 0.5000    top: -    sort: cv
+  dropped: 0 bad hour_start, 0 by source filter, 0 below min-days, 0 below min-mean-share, 1 above max-zero-in-day, 0 below top cap
+
+  per-source cache-share daily CV (sorted by cv; ties: source asc)
+  source       tokens         inTok          cachedTok      activeD  shareD  zeroInD  meanShare  stdShare  shareCv  flat  pure
+  -----------  -------------  -------------  -------------  -------  ------  -------  ---------  --------  -------  ----  ----
+  opencode     3,239,968,878  207,357,893    3,010,922,321  7        7       0        1.0000     0.0000    0.0000   -     y
+  codex        809,624,660    410,781,190    396,009,088    8        8       0        0.9364     0.0377    0.0403   -     -
+  openclaw     1,761,387,321  946,845,382    809,703,808    10       10      0        0.8501     0.0426    0.0501   -     -
+  hermes       145,444,813    55,482,039     88,555,900     10       10      0        0.9295     0.1095    0.1179   -     -
+  claude-code  3,442,385,788  1,834,613,640  1,595,643,323  35       35      0        0.5712     0.4239    0.7421   -     -
+  ```
+
+  Top finding: removing the telemetry-only-dominated source
+  (`vscode-copilot`, dropped: 1 above max-zero-in-day) sharpens
+  the read — among sources that actually ship prompts on the
+  majority of their active days, the cache-CV ranking is
+  essentially unchanged but the `flatCold` row is gone, so the
+  five-source spread is now monotonic in instability:
+  `opencode` (pureWarm, cv=0) → `codex` (cv=0.04) → `openclaw`
+  (cv=0.05) → `hermes` (cv=0.12) → `claude-code` (cv=0.74). The
+  conclusion holds: `claude-code` is structurally bimodal in
+  daily cache reuse and is the only outlier among the
+  prompting sources.
+
 ## 0.6.71 — 2026-04-27
 
 ### Added

@@ -8767,6 +8767,11 @@ program
     'display filter: hide sources whose meanShare is strictly below n. n in [0, 1]. Default 0 = no filter. Useful for suppressing the mathematically-loud-but-substantively-cold regime (e.g. --min-mean-share 0.05 hides anything below 5% average cache share). Counts surface as droppedBelowMinMeanShare.',
     '0',
   )
+  .option(
+    '--max-zero-input-day-share <n>',
+    'display filter: hide sources whose daysWithZeroInput / activeDays ratio is strictly above n. n in [0, 1]. Default 1 = no filter. Useful for filtering out telemetry-only-day-dominated sources whose mean/cv are computed off statistically thin share-bearing days (e.g. --max-zero-input-day-share 0.5 keeps only sources where at least half of their active days had a prompt assembled). Counts surface as droppedAboveMaxZeroInputDayShare.',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -8778,6 +8783,7 @@ program
         top: string;
         sort: string;
         minMeanShare: string;
+        maxZeroInputDayShare: string;
         json?: boolean;
       },
       cmd,
@@ -8811,6 +8817,16 @@ program
             `--min-mean-share must be a finite number in [0, 1] (got ${opts.minMeanShare})`,
           );
         }
+        const maxZeroInputDayShare = Number.parseFloat(opts.maxZeroInputDayShare);
+        if (
+          !Number.isFinite(maxZeroInputDayShare) ||
+          maxZeroInputDayShare < 0 ||
+          maxZeroInputDayShare > 1
+        ) {
+          throw new Error(
+            `--max-zero-input-day-share must be a finite number in [0, 1] (got ${opts.maxZeroInputDayShare})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceCacheShareByDayCv(queue, {
           since: opts.since ?? null,
@@ -8820,6 +8836,7 @@ program
           top: top === 0 ? null : top,
           sort: opts.sort as 'tokens' | 'cv' | 'mean' | 'days' | 'source',
           minMeanShare,
+          maxZeroInputDayShare,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

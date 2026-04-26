@@ -328,3 +328,57 @@ test('source-cache-share-by-day-cv: invalid hour_start surfaces drop', () => {
   assert.equal(r.droppedInvalidHourStart, 1);
   assert.equal(r.sources[0]!.daysWithShare, 3);
 });
+
+test('source-cache-share-by-day-cv: rejects bad maxZeroInputDayShare', () => {
+  assert.throws(() =>
+    buildSourceCacheShareByDayCv([], { maxZeroInputDayShare: -0.01 }),
+  );
+  assert.throws(() =>
+    buildSourceCacheShareByDayCv([], { maxZeroInputDayShare: 1.01 }),
+  );
+});
+
+test('source-cache-share-by-day-cv: maxZeroInputDayShare drops telemetry-heavy sources', () => {
+  const queue: QueueLine[] = [
+    // 'telemetry' = 5 active days but 4 are zero-input (ratio 0.8)
+    ql('2026-04-20T00:00:00Z', 'telemetry', 0, 0),
+    ql('2026-04-21T00:00:00Z', 'telemetry', 0, 0),
+    ql('2026-04-22T00:00:00Z', 'telemetry', 0, 0),
+    ql('2026-04-23T00:00:00Z', 'telemetry', 0, 0),
+    ql('2026-04-24T00:00:00Z', 'telemetry', 1000, 500),
+    // need 3+ share-bearing days, so add more on the same day for telemetry
+    ql('2026-04-25T00:00:00Z', 'telemetry', 1000, 500),
+    ql('2026-04-26T00:00:00Z', 'telemetry', 1000, 500),
+    // 'real' = all days have input
+    ql('2026-04-20T00:00:00Z', 'real', 1000, 500),
+    ql('2026-04-21T00:00:00Z', 'real', 1000, 500),
+    ql('2026-04-22T00:00:00Z', 'real', 1000, 500),
+  ];
+  // telemetry has 7 active days, 4 zero-input -> ratio 4/7 ~ 0.571
+  // real has 3 active days, 0 zero-input -> ratio 0
+  const r = buildSourceCacheShareByDayCv(queue, {
+    generatedAt: GEN,
+    minDays: 3,
+    maxZeroInputDayShare: 0.5,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'real');
+  assert.equal(r.droppedAboveMaxZeroInputDayShare, 1);
+});
+
+test('source-cache-share-by-day-cv: maxZeroInputDayShare default 1 keeps everything', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'A', 0, 0),
+    ql('2026-04-21T00:00:00Z', 'A', 1000, 500),
+    ql('2026-04-22T00:00:00Z', 'A', 1000, 500),
+    ql('2026-04-23T00:00:00Z', 'A', 1000, 500),
+  ];
+  const r = buildSourceCacheShareByDayCv(queue, {
+    generatedAt: GEN,
+    minDays: 3,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.maxZeroInputDayShare, 1);
+  assert.equal(r.droppedAboveMaxZeroInputDayShare, 0);
+});

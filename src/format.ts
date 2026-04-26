@@ -7586,12 +7586,12 @@ export function renderSourceCacheShareByDayCv(
   lines.push(chalk.bold.cyan('pew-insights source-cache-share-by-day-cv'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    min-mean-share: ${r.minMeanShare.toFixed(4)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    min-mean-share: ${r.minMeanShare.toFixed(4)}    max-zero-in-day: ${r.maxZeroInputDayShare.toFixed(4)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinMeanShare)} below min-mean-share, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinMeanShare)} below min-mean-share, ${formatNumber(r.droppedAboveMaxZeroInputDayShare)} above max-zero-in-day, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
