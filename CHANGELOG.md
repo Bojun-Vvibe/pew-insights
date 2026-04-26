@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.24 — 2026-04-26
+
+### Changed
+
+- `daily-token-monotone-run-length`: new
+  `--current-direction <dirs>` knob. Comma-separated list of
+  `up` / `down` / `flat`; only sources whose `currentDirection`
+  is in the list are emitted. Suppressed rows surface as
+  `droppedByCurrentDirection`. Display filter only —
+  `totalSources` and `totalTokens` still reflect the full kept
+  population. Duplicates are de-duped, preserving order of
+  first occurrence; empty list is rejected (would suppress
+  every row).
+
+  This makes it trivial to surface, e.g., **"all sources
+  currently on a downward run"** (`--current-direction down`)
+  or **"all sources whose live trailing run is climbing or
+  plateaued"** (`--current-direction up,flat`) without
+  scanning the full table by eye.
+
+  Filter order is now well-defined and documented:
+  `since`/`until` window → `source` filter →
+  `minDays` → `minLongestRun` → `currentDirection` → sort →
+  `top` cap. Each layer's drop count is reported independently
+  so the operator can see exactly where each suppressed
+  source fell out.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--since 2026-04-01T00:00:00Z --min-longest-run 3 --current-direction down --sort current`)
+
+```
+pew-insights daily-token-monotone-run-length
+as of: 2026-04-26T03:55:02.966Z    sources: 6 (shown 4)    tokens: 8,571,602,985    min-days: 2    min-longest-run: 3    top: —    sort: current
+dropped: 0 bad hour_start, 0 zero tokens, 0 source-filter, 0 below min-days, 1 below min-longest-run, 1 by current-direction, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+current-direction filter: down
+(longestUpRun / longestDownRun = max consecutive UTC active days with strictly increasing / decreasing total_tokens; equal-valued neighbors break runs in both directions; currentRun is the trailing run ending on lastActiveDay)
+
+per-source monotone runs (sorted by current; ties: source asc)
+source       firstDay    lastDay     nDays  longestRun  dir   longestUp  upStart     upEnd       longestDown  downStart   downEnd     curDir  curLen  runs  tokens
+-----------  ----------  ----------  -----  ----------  ----  ---------  ----------  ----------  -----------  ----------  ----------  ------  ------  ----  -------------
+hermes       2026-04-17  2026-04-26  10     5           down  2          2026-04-18  2026-04-19  5            2026-04-22  2026-04-26  down    5       5     142,881,896
+claude-code  2026-04-01  2026-04-23  15     3           up    3          2026-04-01  2026-04-03  3            2026-04-15  2026-04-17  down    3       10    3,058,006,887
+openclaw     2026-04-17  2026-04-26  10     4           up    4          2026-04-21  2026-04-24  3            2026-04-19  2026-04-21  down    3       4     1,713,189,563
+opencode     2026-04-20  2026-04-26  7      4           down  2          2026-04-20  2026-04-21  4            2026-04-21  2026-04-24  down    2       4     2,847,645,569
+```
+
+Reading the smoke: with `--current-direction down` plus
+`--min-longest-run 3`, four sources surface as currently
+shedding volume on a meaningful longest-run baseline, sorted
+by `currentRunLength` desc so `hermes` (live 5-day fall, also
+its all-time longest descent) headlines and `opencode` (live
+2-day fall against a 4-day record descent) trails. The single
+`droppedByCurrentDirection` row was a source whose trailing
+pair is `up` (currently climbing); the single
+`droppedBelowMinLongestRun` row was a sparse two-day source
+whose key tripped the repo banned-string filter, so it stays
+suppressed for both display and policy reasons.
+
 ## 0.6.23 — 2026-04-26
 
 ### Added

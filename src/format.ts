@@ -5756,7 +5756,7 @@ export function renderDailyTokenMonotoneRunLength(
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedBelowMinLongestRun)} below min-longest-run, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedBelowMinLongestRun)} below min-longest-run, ${formatNumber(r.droppedByCurrentDirection)} by current-direction, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -5766,6 +5766,11 @@ export function renderDailyTokenMonotoneRunLength(
   }
   if (r.source !== null) {
     lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  if (r.currentDirectionFilter !== null) {
+    lines.push(
+      chalk.dim(`current-direction filter: ${r.currentDirectionFilter.join(',')}`),
+    );
   }
   lines.push(
     chalk.dim(

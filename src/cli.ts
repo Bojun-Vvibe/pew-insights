@@ -6031,6 +6031,10 @@ program
     'display filter: hide sources whose longestMonotoneRun is below n; counts surface as droppedBelowMinLongestRun (default 0 = no floor)',
     '0',
   )
+  .option(
+    '--current-direction <dirs>',
+    "display filter: keep only sources whose currentDirection is in this comma-separated list (one or more of 'up','down','flat'); counts surface as droppedByCurrentDirection. Useful for surfacing sources currently climbing / falling / plateaued.",
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6042,6 +6046,7 @@ program
         top: string;
         sort: string;
         minLongestRun: string;
+        currentDirection?: string;
         json?: boolean;
       },
       cmd,
@@ -6078,6 +6083,26 @@ program
           );
         }
         const queue = await readQueue(paths);
+        let currentDirection: ('up' | 'down' | 'flat')[] | null = null;
+        if (opts.currentDirection != null && opts.currentDirection !== '') {
+          const parts = opts.currentDirection
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (parts.length === 0) {
+            throw new Error(
+              `--current-direction must be a non-empty comma-separated list (got '${opts.currentDirection}')`,
+            );
+          }
+          for (const p of parts) {
+            if (p !== 'up' && p !== 'down' && p !== 'flat') {
+              throw new Error(
+                `--current-direction entries must be 'up'|'down'|'flat' (got '${p}')`,
+              );
+            }
+          }
+          currentDirection = parts as ('up' | 'down' | 'flat')[];
+        }
         const report = buildDailyTokenMonotoneRunLength(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
@@ -6086,6 +6111,7 @@ program
           top,
           sort,
           minLongestRun,
+          currentDirection,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

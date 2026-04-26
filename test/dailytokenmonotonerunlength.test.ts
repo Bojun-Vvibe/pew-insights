@@ -356,3 +356,112 @@ test('daily-token-monotone-run-length: deterministic on tie -> source asc second
   assert.equal(r.sources[0]!.source, 'a');
   assert.equal(r.sources[1]!.source, 'b');
 });
+
+// ---- --current-direction filter (refinement) -------------------------------
+
+test('daily-token-monotone-run-length: rejects empty currentDirection array', () => {
+  assert.throws(() =>
+    buildDailyTokenMonotoneRunLength([], { currentDirection: [] }),
+  );
+});
+
+test('daily-token-monotone-run-length: rejects bad currentDirection entries', () => {
+  assert.throws(() =>
+    buildDailyTokenMonotoneRunLength([], {
+      currentDirection: ['sideways' as never],
+    }),
+  );
+});
+
+test('daily-token-monotone-run-length: currentDirection=[up] keeps only climbing-tail sources', () => {
+  const queue: QueueLine[] = [
+    // 'up_src' trailing pair 200->300 -> up
+    ql('2026-04-01T00:00:00.000Z', 'up_src', 100),
+    ql('2026-04-02T00:00:00.000Z', 'up_src', 200),
+    ql('2026-04-03T00:00:00.000Z', 'up_src', 300),
+    // 'down_src' trailing pair 200->100 -> down
+    ql('2026-04-01T00:00:00.000Z', 'down_src', 300),
+    ql('2026-04-02T00:00:00.000Z', 'down_src', 200),
+    ql('2026-04-03T00:00:00.000Z', 'down_src', 100),
+    // 'flat_src' trailing pair 200=200 -> flat
+    ql('2026-04-01T00:00:00.000Z', 'flat_src', 100),
+    ql('2026-04-02T00:00:00.000Z', 'flat_src', 200),
+    ql('2026-04-03T00:00:00.000Z', 'flat_src', 200),
+  ];
+  const r = buildDailyTokenMonotoneRunLength(queue, {
+    generatedAt: GEN,
+    currentDirection: ['up'],
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'up_src');
+  assert.equal(r.droppedByCurrentDirection, 2);
+  // global denominators reflect full population
+  assert.equal(r.totalSources, 3);
+  assert.deepEqual(r.currentDirectionFilter, ['up']);
+});
+
+test('daily-token-monotone-run-length: currentDirection=[up,down] keeps both, drops flat', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'up_src', 100),
+    ql('2026-04-02T00:00:00.000Z', 'up_src', 200),
+    ql('2026-04-01T00:00:00.000Z', 'down_src', 200),
+    ql('2026-04-02T00:00:00.000Z', 'down_src', 100),
+    ql('2026-04-01T00:00:00.000Z', 'flat_src', 200),
+    ql('2026-04-02T00:00:00.000Z', 'flat_src', 200),
+  ];
+  const r = buildDailyTokenMonotoneRunLength(queue, {
+    generatedAt: GEN,
+    currentDirection: ['up', 'down'],
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedByCurrentDirection, 1);
+  assert.deepEqual(
+    r.sources.map((s) => s.source).sort(),
+    ['down_src', 'up_src'],
+  );
+});
+
+test('daily-token-monotone-run-length: currentDirection de-dupes duplicate entries', () => {
+  const r = buildDailyTokenMonotoneRunLength([], {
+    generatedAt: GEN,
+    currentDirection: ['up', 'up', 'down', 'up'],
+  });
+  assert.deepEqual(r.currentDirectionFilter, ['up', 'down']);
+});
+
+test('daily-token-monotone-run-length: currentDirection filter applies AFTER minLongestRun', () => {
+  // Two climbing sources: one with longest=4, one with longest=2.
+  // --min-longest-run=3 should drop the short one BEFORE the
+  // current-direction filter sees it, so droppedByCurrentDirection
+  // counts only rows that survived minLongestRun.
+  const queue: QueueLine[] = [
+    // 'tall' = 4-day climb, currentDir=up
+    ql('2026-04-01T00:00:00.000Z', 'tall', 100),
+    ql('2026-04-02T00:00:00.000Z', 'tall', 200),
+    ql('2026-04-03T00:00:00.000Z', 'tall', 300),
+    ql('2026-04-04T00:00:00.000Z', 'tall', 400),
+    // 'short' = 2-day climb, currentDir=up but suppressed by min-longest-run
+    ql('2026-04-01T00:00:00.000Z', 'short', 100),
+    ql('2026-04-02T00:00:00.000Z', 'short', 200),
+    // 'down_only' = 4-day descent, currentDir=down
+    ql('2026-04-01T00:00:00.000Z', 'down_only', 400),
+    ql('2026-04-02T00:00:00.000Z', 'down_only', 300),
+    ql('2026-04-03T00:00:00.000Z', 'down_only', 200),
+    ql('2026-04-04T00:00:00.000Z', 'down_only', 100),
+  ];
+  const r = buildDailyTokenMonotoneRunLength(queue, {
+    generatedAt: GEN,
+    minLongestRun: 3,
+    currentDirection: ['up'],
+  });
+  assert.equal(r.droppedBelowMinLongestRun, 1); // 'short'
+  assert.equal(r.droppedByCurrentDirection, 1); // 'down_only' survived min-longest-run, then dropped by direction
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'tall');
+});
+
+test('daily-token-monotone-run-length: report echoes null currentDirectionFilter when not set', () => {
+  const r = buildDailyTokenMonotoneRunLength([], { generatedAt: GEN });
+  assert.equal(r.currentDirectionFilter, null);
+  assert.equal(r.droppedByCurrentDirection, 0);
+});

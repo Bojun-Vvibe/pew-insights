@@ -119,6 +119,17 @@ export interface DailyTokenMonotoneRunLengthOptions {
    * surviving source is shown).
    */
   minLongestRun?: number;
+  /**
+   * Display filter: keep only sources whose `currentDirection`
+   * matches one of the listed directions. Useful for surfacing
+   * "all sources currently climbing" or "all sources whose live
+   * trailing run is flat (i.e. plateaued)". Counts surface as
+   * `droppedByCurrentDirection`. Default null = no filter.
+   *
+   * Empty array is rejected (would suppress every row); use
+   * null to disable. Duplicates are de-duped.
+   */
+  currentDirection?: MonotoneDirection[] | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -189,6 +200,8 @@ export interface DailyTokenMonotoneRunLengthReport {
   minDays: number;
   /** Echo of resolved minLongestRun floor. */
   minLongestRun: number;
+  /** Echo of resolved currentDirection filter (null = no filter). */
+  currentDirectionFilter: MonotoneDirection[] | null;
   /** Echo of resolved top cap (0 = no cap). */
   top: number;
   /** Echo of resolved sort key. */
@@ -206,6 +219,8 @@ export interface DailyTokenMonotoneRunLengthReport {
   droppedSparseSources: number;
   /** Source rows hidden by `minLongestRun`. */
   droppedBelowMinLongestRun: number;
+  /** Source rows hidden by the `currentDirection` filter. */
+  droppedByCurrentDirection: number;
   /** Source rows hidden by the `top` cap. */
   droppedTopSources: number;
   /** One row per kept source. */
@@ -367,6 +382,36 @@ export function buildDailyTokenMonotoneRunLength(
     throw new Error(`source must be a string when set (got ${typeof sourceFilter})`);
   }
 
+  const validDirs: MonotoneDirection[] = ['up', 'down', 'flat'];
+  let currentDirectionFilter: MonotoneDirection[] | null = null;
+  if (opts.currentDirection !== undefined && opts.currentDirection !== null) {
+    if (!Array.isArray(opts.currentDirection)) {
+      throw new Error(
+        `currentDirection must be an array of 'up'|'down'|'flat' or null (got ${typeof opts.currentDirection})`,
+      );
+    }
+    if (opts.currentDirection.length === 0) {
+      throw new Error(
+        `currentDirection must be null or a non-empty array (empty would suppress every row)`,
+      );
+    }
+    for (const d of opts.currentDirection) {
+      if (!validDirs.includes(d)) {
+        throw new Error(`currentDirection entries must be 'up'|'down'|'flat' (got ${d})`);
+      }
+    }
+    // de-dup, preserve order of first occurrence
+    const seen = new Set<MonotoneDirection>();
+    const dedup: MonotoneDirection[] = [];
+    for (const d of opts.currentDirection) {
+      if (!seen.has(d)) {
+        seen.add(d);
+        dedup.push(d);
+      }
+    }
+    currentDirectionFilter = dedup;
+  }
+
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
   if (opts.since != null && (sinceMs === null || !Number.isFinite(sinceMs))) {
@@ -481,6 +526,18 @@ export function buildDailyTokenMonotoneRunLength(
     kept = next;
   }
 
+  // Apply currentDirection display filter
+  let droppedByCurrentDirection = 0;
+  if (currentDirectionFilter !== null) {
+    const allowed = new Set(currentDirectionFilter);
+    const next: DailyTokenMonotoneRunLengthSourceRow[] = [];
+    for (const r of kept) {
+      if (allowed.has(r.currentDirection)) next.push(r);
+      else droppedByCurrentDirection += 1;
+    }
+    kept = next;
+  }
+
   // Sort
   kept.sort((a, b) => {
     let primary = 0;
@@ -524,6 +581,7 @@ export function buildDailyTokenMonotoneRunLength(
     windowEnd: opts.until ?? null,
     minDays,
     minLongestRun,
+    currentDirectionFilter,
     top,
     sort,
     source: sourceFilter,
@@ -534,6 +592,7 @@ export function buildDailyTokenMonotoneRunLength(
     droppedSourceFilter,
     droppedSparseSources,
     droppedBelowMinLongestRun,
+    droppedByCurrentDirection,
     droppedTopSources,
     sources: kept,
   };
