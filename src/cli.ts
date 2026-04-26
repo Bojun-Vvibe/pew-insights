@@ -2354,6 +2354,11 @@ program
     '0.25',
   )
   .option(
+    '--debut-share-min <f>',
+    'drop sources whose debutShare is below f from the per-source table; must be in [0, 1] (default 0); suppressed rows surface as droppedBelowDebutShareMin',
+    '0',
+  )
+  .option(
     '--newcomer-window-days <n>',
     'days back from corpus end (asOf) to count as the newcomer cohort for the global rollup; must be > 0 (default 7)',
     '7',
@@ -2373,6 +2378,7 @@ program
         top?: string;
         sort: string;
         debutWindowFraction: string;
+        debutShareMin: string;
         newcomerWindowDays: string;
         asOf?: string;
         json?: boolean;
@@ -2418,6 +2424,16 @@ program
             `--debut-window-fraction must be in (0, 1] (got ${opts.debutWindowFraction})`,
           );
         }
+        const debutShareMin = Number.parseFloat(opts.debutShareMin);
+        if (
+          !Number.isFinite(debutShareMin) ||
+          debutShareMin < 0 ||
+          debutShareMin > 1
+        ) {
+          throw new Error(
+            `--debut-share-min must be in [0, 1] (got ${opts.debutShareMin})`,
+          );
+        }
         const newcomerWindowDays = Number.parseFloat(opts.newcomerWindowDays);
         if (!Number.isFinite(newcomerWindowDays) || newcomerWindowDays <= 0) {
           throw new Error(
@@ -2438,6 +2454,7 @@ program
             | 'debutshare'
             | 'idle',
           debutWindowFraction,
+          debutShareMin,
           newcomerWindowDays,
           asOf: opts.asOf ?? null,
         });

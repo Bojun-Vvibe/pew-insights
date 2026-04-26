@@ -83,6 +83,14 @@ export interface SourceDebutRecencyOptions {
    */
   top?: number | null;
   /**
+   * Drop sources whose `debutShare` is strictly below this
+   * threshold from `sources[]`. Display filter only — global
+   * denominators (totalSources, totalTokens, newcomerRollup) reflect
+   * the full population. Suppressed rows surface as
+   * `droppedBelowDebutShareMin`. Must be in `[0, 1]`. Default 0 = no floor.
+   */
+  debutShareMin?: number;
+  /**
    * Sort key for `sources[]`:
    *   - 'recency' (default): daysSinceDebut asc (newest debuts
    *     first; ties on tokens desc, source asc).
@@ -160,6 +168,10 @@ export interface SourceDebutRecencyReport {
   droppedModelFilter: number;
   /** Source rows hidden by the `minBuckets` floor. */
   droppedSparseSources: number;
+  /** Source rows hidden by the `debutShareMin` floor. */
+  droppedBelowDebutShareMin: number;
+  /** Echo of the resolved `debutShareMin` floor. */
+  debutShareMin: number;
   /** Source rows trimmed by the `top` cap (after sort + floor). */
   droppedBelowTopCap: number;
   /** Global newcomer rollup (always over the full kept population). */
@@ -215,6 +227,17 @@ export function buildSourceDebutRecency(
   if (!Number.isFinite(newcomerWindowDays) || newcomerWindowDays <= 0) {
     throw new Error(
       `newcomerWindowDays must be > 0 (got ${opts.newcomerWindowDays})`,
+    );
+  }
+
+  const debutShareMin = opts.debutShareMin ?? 0;
+  if (
+    !Number.isFinite(debutShareMin) ||
+    debutShareMin < 0 ||
+    debutShareMin > 1
+  ) {
+    throw new Error(
+      `debutShareMin must be in [0, 1] (got ${opts.debutShareMin})`,
     );
   }
 
@@ -385,11 +408,16 @@ export function buildSourceDebutRecency(
     };
   }
 
-  // Apply minBuckets floor
+  // Apply minBuckets floor, then debutShareMin floor.
   const survived: SourceDebutRecencyRow[] = [];
+  let droppedBelowDebutShareMin = 0;
   for (const row of allRows) {
     if (row.activeBuckets < minBuckets) {
       droppedSparseSources += 1;
+      continue;
+    }
+    if (row.debutShare < debutShareMin) {
+      droppedBelowDebutShareMin += 1;
       continue;
     }
     survived.push(row);
@@ -439,6 +467,8 @@ export function buildSourceDebutRecency(
     droppedZeroTokens,
     droppedModelFilter,
     droppedSparseSources,
+    droppedBelowDebutShareMin,
+    debutShareMin,
     droppedBelowTopCap,
     newcomerRollup,
     sources: finalSources,

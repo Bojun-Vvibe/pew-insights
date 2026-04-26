@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.16 — 2026-04-26
+
+### Added
+
+- `source-debut-recency --debut-share-min <f>`: drop sources
+  whose `debutShare` is strictly below `f` from the per-source
+  table. `f` must be in `[0, 1]`; default `0` keeps every
+  source. Suppressed rows surface as `droppedBelowDebutShareMin`
+  in the report header alongside the effective floor — same
+  convention as `droppedBelowMinDays` / `droppedSparseSources`.
+  The newcomer rollup is **unaffected** by this floor (it
+  continues to count from the full kept population), so this
+  flag is a pure display lens for the per-source leaderboard.
+
+  Pairs naturally with `--sort debutshare`: surface only the
+  sources whose mass actually concentrated in their own debut
+  window. On a corpus with mixed debut shapes, this is the
+  difference between "show me everything" and "show me the
+  sources that are actually front-loaded".
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--debut-share-min 0.25 --sort debutshare`)
+
+Source names below are aliased; numeric values are verbatim.
+
+```
+pew-insights source-debut-recency --debut-share-min 0.25 --sort debutshare
+as of: 2026-04-26T00:35:44.243Z    asOf: 2026-04-26T00:30:00.000Z    shown: 3    totalSources: 6    debutWindowFraction: 0.250    minBuckets: 0    top: —    sort: debutshare
+dropped: 0 bad hour_start, 0 zero tokens, 0 model-filter, 0 sparse sources, 3 below debutShareMin (=0.250), 0 below top cap
+(per source: daysSinceDebut/lastSeen relative to asOf; debutShare = tokens in first debutWindowFraction of own tenure / total tokens)
+
+newcomer rollup (debut within last 7.00 days)
+summary                      value
+---------------------------  ------------------------
+newcomerCutoff               2026-04-19T00:30:00.000Z
+newcomerSources              1
+newcomerTokens               2.78B
+newcomerTokenShare           0.313
+totalTokens (full kept set)  8.88B
+
+per-source debut & recency (sorted by debutshare; ties: source asc)
+source     firstSeen                 lastSeen                  tenureH  buckets  tokens   daysSinceDebut  daysIdle  debutShare
+---------  ------------------------  ------------------------  -------  -------  -------  --------------  --------  ----------
+src_delta  2026-04-13T01:30:00.000Z  2026-04-20T16:30:00.000Z  183.0    64       809.62M  12.96           5.33      0.277
+src_bravo  2026-04-17T06:30:00.000Z  2026-04-25T22:30:00.000Z  208.0    153      142.32M  8.75            0.08      0.274
+src_alpha  2026-04-20T14:00:00.000Z  2026-04-26T00:30:00.000Z  130.5    209      2.78B    5.44            0.00      0.267
+```
+
+The headline insight: only **3 of 6 sources** clear the
+`debutShare >= 0.25` floor — i.e., on this corpus exactly
+half of the active sources are pacing flatter than their own
+debut-window quantile would predict. Notably the surviving
+trio (`src_delta`, `src_bravo`, `src_alpha`) cluster tightly
+in `[0.267, 0.277]` — basically *flat-rate* sources whose
+debutShare matches `debutWindowFraction = 0.25` to within 3
+percentage points. The 3 dropped sources (`src_chrly`,
+`src_echo`, `src_fox`) all have `debutShare < 0.25`, meaning
+their tokens land *later* than a uniform pacing would
+predict — back-loaded ramps. Combined with the unchanged
+newcomer rollup (still 31.3% of mass from the single recent
+debut `src_alpha`), the picture is: **the recent-spend
+concentration is being driven by a flat-rate source that
+debuted ~5 days ago, not by a debut-window burst**. Without
+this flag the table mixes flat-rate and back-loaded sources
+together and the distinction is invisible.
+
 ## 0.6.15 — 2026-04-26
 
 ### Added

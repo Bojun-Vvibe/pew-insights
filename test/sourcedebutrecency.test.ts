@@ -368,3 +368,72 @@ test('source-debut-recency: empty source string normalised to "unknown"', () => 
   assert.equal(r.sources[0]!.source, 'unknown');
   assert.equal(r.sources[0]!.tokens, 200);
 });
+
+test('source-debut-recency: rejects bad debutShareMin', () => {
+  assert.throws(() => buildSourceDebutRecency([], { debutShareMin: -0.1 }));
+  assert.throws(() => buildSourceDebutRecency([], { debutShareMin: 1.1 }));
+  assert.throws(() =>
+    buildSourceDebutRecency([], { debutShareMin: Number.NaN }),
+  );
+});
+
+test('source-debut-recency: debutShareMin defaults to 0 and echoes back', () => {
+  const r = buildSourceDebutRecency([], { generatedAt: GEN });
+  assert.equal(r.debutShareMin, 0);
+  assert.equal(r.droppedBelowDebutShareMin, 0);
+});
+
+test('source-debut-recency: debutShareMin filters out flat sources', () => {
+  // s_flat is evenly paced (debutShare ≈ 0.4); s_front front-loaded (≈ 0.8).
+  const queue: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 's_flat', 200),
+    ql('2026-04-21T01:00:00Z', 's_flat', 200),
+    ql('2026-04-22T02:00:00Z', 's_flat', 200),
+    ql('2026-04-23T03:00:00Z', 's_flat', 200),
+    ql('2026-04-24T04:00:00Z', 's_flat', 200),
+    ql('2026-04-20T00:00:00Z', 's_front', 800),
+    ql('2026-04-24T04:00:00Z', 's_front', 200),
+  ];
+  const r = buildSourceDebutRecency(queue, {
+    generatedAt: GEN,
+    debutShareMin: 0.5,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.droppedBelowDebutShareMin, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's_front');
+  assert.ok(r.sources[0]!.debutShare >= 0.5);
+});
+
+test('source-debut-recency: debutShareMin does not affect newcomer rollup', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 's_flat', 200),
+    ql('2026-04-21T01:00:00Z', 's_flat', 200),
+    ql('2026-04-22T02:00:00Z', 's_flat', 200),
+    ql('2026-04-23T03:00:00Z', 's_flat', 200),
+    ql('2026-04-24T04:00:00Z', 's_flat', 200),
+  ];
+  const r = buildSourceDebutRecency(queue, {
+    generatedAt: GEN,
+    debutShareMin: 0.99, // filters everything out of the table
+    newcomerWindowDays: 30,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedBelowDebutShareMin, 1);
+  // Rollup unaffected: s_flat debuted ~4d before asOf, < 30d window.
+  assert.equal(r.newcomerRollup.newcomerSources, 1);
+  assert.equal(r.newcomerRollup.newcomerTokens, 1000);
+});
+
+test('source-debut-recency: debutShareMin = 0 keeps all (idempotent)', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'a', 100),
+    ql('2026-04-21T00:00:00Z', 'b', 100),
+  ];
+  const r1 = buildSourceDebutRecency(queue, { generatedAt: GEN });
+  const r2 = buildSourceDebutRecency(queue, {
+    generatedAt: GEN,
+    debutShareMin: 0,
+  });
+  assert.deepEqual(r1, r2);
+});
