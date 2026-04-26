@@ -2,6 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.51 — 2026-04-26
+
+### Added
+
+- `source-daily-token-trend-slope`: new subcommand. Per source,
+  fits an ordinary least-squares (OLS) linear regression
+  `y = a + b * t` over the source's lifetime, where
+
+  - `t = 0 .. n-1` is the **active-day index** (the source's own
+    sequence of UTC calendar days on which it actually emitted any
+    tokens — inactive days are NOT inserted as zeroes), and
+  - `y` is the daily total (`sum(total_tokens)` over all rows
+    falling on that UTC calendar day).
+
+  Reports per source:
+
+  - `slopeTokensPerActiveDay` (= `b`): expected change in daily
+    token mass per additional active day. Positive = source is
+    growing; negative = shrinking.
+  - `interceptTokens` (= `a`): fitted day-zero intercept.
+  - `meanDailyTokens`: arithmetic mean of the daily totals.
+  - `normalizedSlope` = `slope / meanDailyTokens`: per-active-day
+    growth rate as a fraction of the source's own mean. Unitless,
+    cross-source comparable; e.g. `+0.10` = source is growing at
+    ~10% of its own mean per active day. `null` only when the
+    mean is exactly 0 (impossible if any positive row passed the
+    `total_tokens > 0` gate).
+  - `r2` in `[0, 1]`: coefficient of determination. Tells you
+    whether the slope is a clean trend or just noise around the
+    mean. `null` when the daily series has zero variance (i.e.
+    all active days have identical totals — a flat source).
+  - `firstActiveDay` / `lastActiveDay`: ISO `YYYY-MM-DD`
+    boundaries of the regression window.
+  - `nActiveDays`: number of days in the fit.
+
+  Why orthogonal to everything that already ships:
+
+  - `trend` is a *global* week-over-week and day-over-day delta
+    with sparklines. Not per source, and does not fit an OLS line
+    over the source's lifetime.
+  - `daily-token-zscore-extremes` flags outlier daily totals via
+    z-scores; explicitly ignores the mean trend.
+  - `daily-token-monotone-run-length`,
+    `daily-token-second-diff-sign-runs`, and
+    `daily-token-autocorrelation-lag1` look at *order structure*
+    (run lengths, curvature sign runs, lag-1 correlation) of the
+    daily series, never at a fitted linear slope.
+  - `daily-token-gini-coefficient` measures concentration across
+    days, not direction over time.
+  - `prompt-output-correlation` fits `y = output` vs `x = input`
+    per group; the regressor is *prompt size*, not *time index*.
+  - `source-decay-half-life` fits an exponential form on the
+    decay phase only, not a linear OLS over the whole lifetime.
+  - Every other `source-*` lifetime scalar
+    (`source-active-hour-*`, `source-day-of-week-token-mass-share`,
+    `source-hour-of-day-*`, `source-token-mass-hour-centroid`,
+    `source-io-ratio-stability`, `source-output-token-benford-deviation`,
+    `source-weekend-weekday-cache-share-gap`, ...) collapses the
+    source's lifetime to a time-direction-invariant statistic.
+    None of them ask "is this source rising or falling over its
+    lifetime?"
+
+  Headline question: **"For each source, is its daily token usage
+  trending up or down over its active lifetime, and how strong is
+  the trend?"**
+
+  Knobs: `--since` / `--until` (window on `hour_start`),
+  `--source` (single-source filter), `--min-active-days <n>`
+  (default 3 — a 1-2 day fit is degenerate, 3 is the smallest
+  sample where `r2` carries real information),
+  `--top <n>` (default 0 = no cap),
+  `--sort <key>` (`absslope` (default) | `slope` | `absnorm` |
+  `norm` | `r2` | `days` | `tokens` | `source`; null
+  `normalizedSlope`/`r2` always sort last on those keys),
+  `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, default sort `absslope`)
+
+```
+pew-insights source-daily-token-trend-slope
+as of: 2026-04-26T13:38:04.915Z    sources: 6 (shown 6)    total-tokens: 9,220,343,987    min-active-days: 3    top: —    sort: absslope
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-active-days, 0 below top cap
+(per source: OLS y=a+b*t over (active-day-index, daily total_tokens); slope b reported as tokens-per-active-day; normalized = b / mean; r2 in [0,1])
+
+per-source daily-token OLS trend (sorted by absslope; ties: source asc; null normalized/r2 sorted last)
+source            totalTokens    days  firstDay    lastDay     meanDaily    slope        normSlope  r2
+----------------  -------------  ----  ----------  ----------  -----------  -----------  ---------  ------
+codex             809,624,660    8     2026-04-13  2026-04-20  101,203,083  +21,159,196  +0.2091    0.1561
+claude-code       3,442,385,788  35    2026-02-11  2026-04-23  98,353,880   +10,420,380  +0.1059    0.2533
+opencode          3,082,066,256  7     2026-04-20  2026-04-26  440,295,179  +8,389,091   +0.0191    0.0058
+openclaw          1,739,882,776  10    2026-04-17  2026-04-26  173,988,278  -6,341,339   -0.0364    0.0327
+hermes            144,498,780    10    2026-04-17  2026-04-26  14,449,878   -2,045,556   -0.1416    0.3148
+ide-assistant-A   1,885,727      73    2025-07-30  2026-04-20  25,832       +408         +0.0158    0.0340
+```
+
+Reading: with default `absslope` sort, `codex` (+21.2M
+tokens/active-day, 8 days, 2026-04-13 .. 2026-04-20) and
+`claude-code` (+10.4M tokens/active-day, 35 days,
+2026-02-11 .. 2026-04-23) are the two largest *absolute*
+growth signals on this queue, and both have positive slopes —
+they are the queue's growth engines. `opencode` (+8.4M
+tokens/active-day, 7 days) has a third-largest raw slope but its
+`r2 = 0.0058` says the slope is essentially indistinguishable
+from a flat line over its 7 days of activity (the high mean
+hides huge day-to-day swings). `openclaw` (-6.3M, r2 = 0.033)
+and `hermes` (-2.0M, r2 = 0.315) are both *shrinking* — and
+`hermes` is the cleanest negative trend on the queue
+(r2 = 0.315 is the third-highest in the table).
+
+The `normalizedSlope` column flips the picture for cross-source
+ranking: by *relative* growth, `codex` (+0.21/day) and
+`claude-code` (+0.11/day) lead, then the negative leaders
+become `hermes` (-0.14/day) and `openclaw` (-0.04/day) — the
+smallest absolute decliner is the largest relative decliner
+once you control for scale. The `ide-assistant-A` source has
+the longest active history (73 days) and the cleanest positive
+relative trend at scale (`+408` tokens/active-day, normalized
++0.016, r2 0.034) but its absolute mean (~26k tokens/day) is
+3-4 orders of magnitude below the others, so it never surfaces
+on the absolute-slope sort even though its 73-day fit is the
+most data-rich.
+
+This is the standard scale-invariant trend reading you can't
+get from any of the existing time-series subcommands: `trend`
+gives you global week-over-week deltas (no per-source slope),
+`daily-token-autocorrelation-lag1` gives you order structure
+(no slope direction or magnitude), and `source-decay-half-life`
+fits the wrong functional form for sources that are *growing*.
+
 ## 0.6.50 — 2026-04-26
 
 ### Changed
