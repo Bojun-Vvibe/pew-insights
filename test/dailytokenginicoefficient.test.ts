@@ -279,4 +279,45 @@ test('buildDailyTokenGini: rejects bad knobs', () => {
   );
   assert.throws(() => buildDailyTokenGini([], { since: 'not-a-date' }));
   assert.throws(() => buildDailyTokenGini([], { until: 'not-a-date' }));
+  assert.throws(() => buildDailyTokenGini([], { minGini: -0.1 }));
+  assert.throws(() => buildDailyTokenGini([], { minGini: 1.1 }));
+  assert.throws(() =>
+    buildDailyTokenGini([], { minGini: Number.POSITIVE_INFINITY }),
+  );
+});
+
+test('buildDailyTokenGini: minGini filter drops low-skew sources', () => {
+  const queue: QueueLine[] = [
+    // src-a uniform -> gini ~ 0
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 5000),
+    ql('2026-04-21T05:00:00.000Z', 'src-a', 5000),
+    ql('2026-04-22T05:00:00.000Z', 'src-a', 5000),
+    // src-b skewed -> gini ~ (n-1)/n
+    ql('2026-04-20T05:00:00.000Z', 'src-b', 1),
+    ql('2026-04-21T05:00:00.000Z', 'src-b', 1),
+    ql('2026-04-22T05:00:00.000Z', 'src-b', 100000),
+  ];
+  const r = buildDailyTokenGini(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minGini: 0.5,
+  });
+  assert.equal(r.droppedBelowMinGini, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'src-b');
+  assert.equal(r.minGini, 0.5);
+});
+
+test('buildDailyTokenGini: minGini=0 is no-op', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 5000),
+    ql('2026-04-21T05:00:00.000Z', 'src-a', 5000),
+  ];
+  const r = buildDailyTokenGini(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minGini: 0,
+  });
+  assert.equal(r.droppedBelowMinGini, 0);
+  assert.equal(r.sources.length, 1);
 });

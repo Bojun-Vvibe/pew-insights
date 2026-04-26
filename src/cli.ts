@@ -6929,6 +6929,11 @@ program
     'sort key: gini (default) | tokens | days | source. Applied before --top.',
     'gini',
   )
+  .option(
+    '--min-gini <g>',
+    'display filter: hide sources whose Gini is strictly below this value. g in [0,1]. Default 0 = no filter. Applied after --min-tokens and --min-days. Counts surface as droppedBelowMinGini.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6940,6 +6945,7 @@ program
         minDays: string;
         top: string;
         sort: string;
+        minGini: string;
         json?: boolean;
       },
       cmd,
@@ -6963,6 +6969,12 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const minGini = Number.parseFloat(opts.minGini);
+        if (!Number.isFinite(minGini) || minGini < 0 || minGini > 1) {
+          throw new Error(
+            `--min-gini must be a number in [0, 1] (got ${opts.minGini})`,
+          );
+        }
         const validSorts = ['gini', 'tokens', 'days', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -6977,6 +6989,7 @@ program
           minTokens,
           minDays,
           top,
+          minGini,
           sort: opts.sort as 'gini' | 'tokens' | 'days' | 'source',
         });
         if (opts.json || common.json) {

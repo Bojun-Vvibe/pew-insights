@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.37 — 2026-04-26
+
+### Changed
+
+- `daily-token-gini-coefficient`: new display filter
+  `--min-gini <g>` drops rows whose `gini` is strictly below the
+  given threshold. `g` in `[0, 1]`. Default 0 = no filter.
+  Suppressed rows surface as `droppedBelowMinGini`. Useful for
+  surfacing only sources whose day-by-day token spend is
+  meaningfully skewed (e.g. `--min-gini 0.5` hides flat-spending
+  sources).
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `minDays` -> `minGini` -> sort -> `top` cap.
+
 ## 0.6.36 — 2026-04-26
 
 ### Added

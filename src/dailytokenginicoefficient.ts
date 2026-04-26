@@ -92,6 +92,14 @@ export interface DailyTokenGiniOptions {
   minDays?: number;
   top?: number;
   sort?: DailyTokenGiniSort;
+  /**
+   * Display filter (refinement, v0.6.37): drop rows whose `gini`
+   * is strictly below this value. 0 = no filter. Useful for
+   * surfacing only sources whose day-by-day token spend is
+   * meaningfully skewed (e.g. `--min-gini 0.5`). Applied after
+   * `minTokens` and `minDays`, before sort and `top`.
+   */
+  minGini?: number;
   generatedAt?: string;
 }
 
@@ -133,6 +141,8 @@ export interface DailyTokenGiniReport {
   minDays: number;
   top: number;
   sort: DailyTokenGiniSort;
+  /** Echo of resolved minGini filter (0 = no filter). */
+  minGini: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -141,6 +151,8 @@ export interface DailyTokenGiniReport {
   droppedSourceFilter: number;
   droppedSparseSources: number;
   droppedBelowMinDays: number;
+  /** Source rows hidden by the `minGini` filter. */
+  droppedBelowMinGini: number;
   droppedTopSources: number;
   sources: DailyTokenGiniSourceRow[];
 }
@@ -190,6 +202,12 @@ export function buildDailyTokenGini(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minGini = opts.minGini ?? 0;
+  if (!Number.isFinite(minGini) || minGini < 0 || minGini > 1) {
+    throw new Error(
+      `minGini must be a finite number in [0, 1] (got ${opts.minGini})`,
+    );
   }
   const sort: DailyTokenGiniSort = opts.sort ?? 'gini';
   const validSorts: DailyTokenGiniSort[] = ['gini', 'tokens', 'days', 'source'];
@@ -303,7 +321,19 @@ export function buildDailyTokenGini(
     totalTokensSum += acc.totalTokens;
   }
 
-  rows.sort((a, b) => {
+  // minGini refinement filter (v0.6.37)
+  let droppedBelowMinGini = 0;
+  let filtered = rows;
+  if (minGini > 0) {
+    const next: DailyTokenGiniSourceRow[] = [];
+    for (const r of rows) {
+      if (r.gini >= minGini) next.push(r);
+      else droppedBelowMinGini += 1;
+    }
+    filtered = next;
+  }
+
+  filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
       case 'tokens':
@@ -325,10 +355,10 @@ export function buildDailyTokenGini(
   });
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -339,6 +369,7 @@ export function buildDailyTokenGini(
     minDays,
     top,
     sort,
+    minGini,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -347,6 +378,7 @@ export function buildDailyTokenGini(
     droppedSourceFilter,
     droppedSparseSources,
     droppedBelowMinDays,
+    droppedBelowMinGini,
     droppedTopSources,
     sources: kept,
   };
