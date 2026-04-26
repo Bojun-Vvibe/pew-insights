@@ -80,6 +80,7 @@ import {
   renderSourceActiveHourLongestRun,
   renderSourceActiveHourSpan,
   renderSourceWeekendWeekdayCacheShareGap,
+  renderSourceDailyTokenTrendSlope,
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
@@ -223,6 +224,7 @@ import { buildSourceDeadHourCount } from './sourcedeadhourcount.js';
 import { buildSourceActiveHourLongestRun } from './sourceactivehourlongestrun.js';
 import { buildSourceActiveHourSpan } from './sourceactivehourspan.js';
 import { buildSourceWeekendWeekdayCacheShareGap } from './sourceweekendweekdaycachesharegap.js';
+import { buildSourceDailyTokenTrendSlope } from './sourcedailytokentrendslope.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
@@ -7813,6 +7815,104 @@ program
         } else {
           process.stdout.write(
             renderSourceWeekendWeekdayCacheShareGap(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-daily-token-trend-slope')
+  .description(
+    'Per source, fits OLS y = a + b*t over (active-day-index, daily total_tokens) across the source\'s active calendar days. Reports slope (tokens per active day), normalizedSlope (slope / mean), r2, and the active-day window. Orthogonal to trend (global week-over-week deltas with sparklines, not per-source OLS), daily-token-zscore-extremes (outlier flag, ignores trend), daily-token-monotone-run-length / daily-token-second-diff-sign-runs / daily-token-autocorrelation-lag1 (order-structure stats, no fitted slope), daily-token-gini-coefficient (concentration, not direction), prompt-output-correlation (regressor is prompt size, not time), source-decay-half-life (exponential fit on decay phase only), and every other source-* lifetime scalar.',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-active-days <n>',
+    'hide source rows with fewer than n active calendar days (default 3); a 1-2 day fit is degenerate. Suppressed surface as droppedBelowMinActiveDays.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absslope (default) | slope | absnorm | norm | r2 | days | tokens | source. absslope = |slope| desc; slope = signed slope desc; absnorm = |normalizedSlope| desc; norm = signed normalizedSlope desc; r2 = r2 desc; days = nActiveDays desc; tokens = totalTokens desc; source = alphabetical. Null normalizedSlope/r2 always sort last on those keys.',
+    'absslope',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minActiveDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minActiveDays = Number.parseInt(opts.minActiveDays, 10);
+        if (!Number.isInteger(minActiveDays) || minActiveDays < 2) {
+          throw new Error(
+            `--min-active-days must be an integer >= 2 (got ${opts.minActiveDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absslope',
+          'slope',
+          'absnorm',
+          'norm',
+          'r2',
+          'days',
+          'tokens',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceDailyTokenTrendSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minActiveDays,
+          top,
+          sort: opts.sort as
+            | 'absslope'
+            | 'slope'
+            | 'absnorm'
+            | 'norm'
+            | 'r2'
+            | 'days'
+            | 'tokens'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceDailyTokenTrendSlope(report) + '\n',
           );
         }
       } catch (e) {

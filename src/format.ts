@@ -46,6 +46,7 @@ import type { SourceDeadHourCountReport } from './sourcedeadhourcount.js';
 import type { SourceActiveHourLongestRunReport } from './sourceactivehourlongestrun.js';
 import type { SourceActiveHourSpanReport } from './sourceactivehourspan.js';
 import type { SourceWeekendWeekdayCacheShareGapReport } from './sourceweekendweekdaycachesharegap.js';
+import type { SourceDailyTokenTrendSlopeReport } from './sourcedailytokentrendslope.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
@@ -6819,6 +6820,83 @@ export function renderSourceWeekendWeekdayCacheShareGap(
     fmtSignedShare(s.shareGap),
     fmtShare(s.absShareGap),
     fmtRatio(s.shareRatio),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceDailyTokenTrendSlope(
+  r: SourceDailyTokenTrendSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-daily-token-trend-slope'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-active-days: ${formatNumber(r.minActiveDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinActiveDays)} below min-active-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per source: OLS y=a+b*t over (active-day-index, daily total_tokens); slope b reported as tokens-per-active-day; normalized = b / mean; r2 in [0,1])`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source daily-token OLS trend (sorted by ${r.sort}; ties: source asc; null normalized/r2 sorted last)`,
+    ),
+  );
+  const fmt2 = (v: number | null): string => (v === null ? '-' : v.toFixed(4));
+  const fmtSlope = (v: number): string => {
+    const s = formatNumber(Math.round(v));
+    return v >= 0 ? '+' + s : s;
+  };
+  const fmtSignedNorm = (v: number | null): string => {
+    if (v === null) return '-';
+    const s = v.toFixed(4);
+    return v >= 0 ? '+' + s : s;
+  };
+  const headers = [
+    'source',
+    'totalTokens',
+    'days',
+    'firstDay',
+    'lastDay',
+    'meanDaily',
+    'slope',
+    'normSlope',
+    'r2',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(Math.round(s.meanDailyTokens)),
+    fmtSlope(s.slopeTokensPerActiveDay),
+    fmtSignedNorm(s.normalizedSlope),
+    fmt2(s.r2),
   ]);
   lines.push(renderTableLocal(headers, rows));
 
