@@ -6723,8 +6723,6 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minRows,
-          minP99,
-          minTail,
           top,
           sort: opts.sort as
             | 'tokens'
@@ -9474,6 +9472,11 @@ program
     '4',
   )
   .option(
+    '--min-quartile-mean <f>',
+    'drop sources where max(firstQMean, lastQMean) < f; useful to suppress tiny-output sources where shift is dominated by noise (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9490,6 +9493,7 @@ program
         until?: string;
         source?: string;
         minRows: string;
+        minQuartileMean: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9503,6 +9507,12 @@ program
         if (!Number.isInteger(minRows) || minRows < 4) {
           throw new Error(
             `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minQuartileMean = Number.parseFloat(opts.minQuartileMean);
+        if (!Number.isFinite(minQuartileMean) || minQuartileMean < 0) {
+          throw new Error(
+            `--min-quartile-mean must be a finite, non-negative number (got ${opts.minQuartileMean})`,
           );
         }
         let top: number | null = null;
@@ -9534,6 +9544,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minRows,
+          minQuartileMean,
           top,
           sort: opts.sort as
             | 'shift-desc'

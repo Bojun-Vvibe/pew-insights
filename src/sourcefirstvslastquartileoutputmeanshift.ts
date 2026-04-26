@@ -139,6 +139,18 @@ export interface SourceFirstVsLastQuartileOutputMeanShiftOptions {
    */
   minRows?: number;
   /**
+   * Drop sources where `max(firstQMean, lastQMean)` is strictly
+   * below this value. This is the "ignore sources whose reply size
+   * is tiny on both ends" gate — when both quartile means are near
+   * zero, `meanShift` is necessarily small in absolute terms and
+   * `relShift` is either degenerate (firstQMean = 0) or numerically
+   * unstable (small/small). Display filter only. Suppressed rows
+   * surface as `droppedBelowMinQuartileMean`. Must be a finite,
+   * non-negative number. Default 0 = no floor (preserves v0.6.79
+   * behaviour exactly).
+   */
+  minQuartileMean?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -190,6 +202,7 @@ export interface SourceFirstVsLastQuartileOutputMeanShiftReport {
   windowEnd: string | null;
   source: string | null;
   minRows: number;
+  minQuartileMean: number;
   top: number | null;
   sort:
     | 'shift-desc'
@@ -208,6 +221,7 @@ export interface SourceFirstVsLastQuartileOutputMeanShiftReport {
   droppedSourceFilter: number;
   droppedTooFewRowsForQuartiles: number;
   droppedBelowMinRows: number;
+  droppedBelowMinQuartileMean: number;
   droppedBelowTopCap: number;
   sources: SourceFirstVsLastQuartileOutputMeanShiftRow[];
 }
@@ -236,6 +250,12 @@ export function buildSourceFirstVsLastQuartileOutputMeanShift(
   ) {
     throw new Error(
       `minRows must be an integer >= ${ABSOLUTE_MIN_ROWS} (got ${opts.minRows})`,
+    );
+  }
+  const minQuartileMean = opts.minQuartileMean ?? 0;
+  if (!Number.isFinite(minQuartileMean) || minQuartileMean < 0) {
+    throw new Error(
+      `minQuartileMean must be a finite, non-negative number (got ${opts.minQuartileMean})`,
     );
   }
   const top = opts.top ?? null;
@@ -364,10 +384,15 @@ export function buildSourceFirstVsLastQuartileOutputMeanShift(
   }
 
   let droppedBelowMinRows = 0;
+  let droppedBelowMinQuartileMean = 0;
   const survived: SourceFirstVsLastQuartileOutputMeanShiftRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
       droppedBelowMinRows += 1;
+      continue;
+    }
+    if (Math.max(row.firstQMean, row.lastQMean) < minQuartileMean) {
+      droppedBelowMinQuartileMean += 1;
       continue;
     }
     survived.push(row);
@@ -402,6 +427,7 @@ export function buildSourceFirstVsLastQuartileOutputMeanShift(
     windowEnd: opts.until ?? null,
     source: sourceFilter,
     minRows,
+    minQuartileMean,
     top,
     sort,
     totalSources,
@@ -410,6 +436,7 @@ export function buildSourceFirstVsLastQuartileOutputMeanShift(
     droppedSourceFilter,
     droppedTooFewRowsForQuartiles,
     droppedBelowMinRows,
+    droppedBelowMinQuartileMean,
     droppedBelowTopCap,
     sources: finalSources,
   };

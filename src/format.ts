@@ -7889,12 +7889,12 @@ export function renderSourceFirstVsLastQuartileOutputMeanShift(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-q-mean: ${r.minQuartileMean.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForQuartiles)} below 4-row quartile floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForQuartiles)} below 4-row quartile floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinQuartileMean)} below min-q-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

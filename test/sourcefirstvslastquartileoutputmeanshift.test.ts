@@ -330,3 +330,73 @@ test('first-vs-last-quartile: deterministic tiebreak by source asc', () => {
     ['alpha', 'mu', 'zeta'],
   );
 });
+
+test('first-vs-last-quartile: rejects bad minQuartileMean', () => {
+  assert.throws(() =>
+    buildSourceFirstVsLastQuartileOutputMeanShift([], { minQuartileMean: -0.1 }),
+  );
+  assert.throws(() =>
+    buildSourceFirstVsLastQuartileOutputMeanShift([], {
+      minQuartileMean: Number.NaN,
+    }),
+  );
+  assert.throws(() =>
+    buildSourceFirstVsLastQuartileOutputMeanShift([], {
+      minQuartileMean: Number.POSITIVE_INFINITY,
+    }),
+  );
+});
+
+test('first-vs-last-quartile: minQuartileMean default 0 preserves v0.6.79 behaviour', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 8; i += 1) {
+    const h = String(i).padStart(2, '0');
+    q.push(ql(`2026-04-20T${h}:00:00Z`, 'a', 10 + i));
+  }
+  const r = buildSourceFirstVsLastQuartileOutputMeanShift(q, {
+    generatedAt: GEN,
+  });
+  assert.equal(r.minQuartileMean, 0);
+  assert.equal(r.droppedBelowMinQuartileMean, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('first-vs-last-quartile: minQuartileMean drops tiny-output sources', () => {
+  // a: firstQ=0.5, lastQ=1 (both small) -> drop with --min-q-mean 50
+  // b: firstQ=100, lastQ=200 -> survive
+  const q: QueueLine[] = [];
+  const aOuts = [0, 1, 0, 1, 0, 1, 1, 1];
+  const bOuts = [50, 150, 100, 100, 100, 100, 150, 250];
+  for (let i = 0; i < 8; i += 1) {
+    const h = String(i).padStart(2, '0');
+    q.push(ql(`2026-04-20T${h}:00:00Z`, 'a', aOuts[i]!));
+    q.push(ql(`2026-04-20T${h}:00:00Z`, 'b', bOuts[i]!));
+  }
+  const r = buildSourceFirstVsLastQuartileOutputMeanShift(q, {
+    minQuartileMean: 50,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minQuartileMean, 50);
+  assert.equal(r.droppedBelowMinQuartileMean, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+});
+
+test('first-vs-last-quartile: minQuartileMean keeps source if EITHER end is >= floor', () => {
+  // c: firstQ=0, lastQ=200 (asymmetric — should survive at floor 50)
+  const q: QueueLine[] = [];
+  const outs = [0, 0, 50, 50, 50, 50, 200, 200];
+  for (let i = 0; i < 8; i += 1) {
+    const h = String(i).padStart(2, '0');
+    q.push(ql(`2026-04-20T${h}:00:00Z`, 'c', outs[i]!));
+  }
+  const r = buildSourceFirstVsLastQuartileOutputMeanShift(q, {
+    minQuartileMean: 50,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinQuartileMean, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.firstQMean, 0);
+  assert.equal(r.sources[0]!.lastQMean, 200);
+  assert.equal(r.sources[0]!.degenerate, true);
+});
