@@ -70,6 +70,7 @@ import {
   renderCostPerBucketPercentiles,
   renderRollingBucketCv,
   renderDailyTokenAutocorrelationLag1,
+  renderCumulativeTokensMidpoint,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -195,6 +196,7 @@ import { buildTokenVelocityPercentiles } from './tokenvelocitypercentiles.js';
 import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
+import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -5870,4 +5872,89 @@ program
     },
   );
 
+program
+  .command('cumulative-tokens-midpoint')
+  .description(
+    'Per-source: day at which cumulative tokens crosses 50% of lifetime, expressed as a percentile of the source\u2019s own calendar tenure (gap-filled with zero days). <0.5 = front-loaded, ~0.5 = uniform, >0.5 = back-loaded.',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-days <n>',
+    'drop sources with fewer than n distinct tokens-bearing days from the per-source table (default 1)',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + minDays; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'tokens' (default) | 'midpoint' | 'tenure' | 'source'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'tokens' &&
+          sort !== 'midpoint' &&
+          sort !== 'tenure' &&
+          sort !== 'source'
+        ) {
+          throw new Error(
+            `--sort must be 'tokens' | 'midpoint' | 'tenure' | 'source' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildCumulativeTokensMidpoint(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: sort as 'tokens' | 'midpoint' | 'tenure' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderCumulativeTokensMidpoint(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
 program.parseAsync(process.argv).catch(die);
+

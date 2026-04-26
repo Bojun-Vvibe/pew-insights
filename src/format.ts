@@ -5512,3 +5512,77 @@ export function renderSourceDebutRecency(r: SourceDebutRecencyReport): string {
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  CumulativeTokensMidpointReport,
+  CumulativeTokensMidpointRow,
+} from './cumulativetokensmidpoint.js';
+
+export function renderCumulativeTokensMidpoint(
+  r: CumulativeTokensMidpointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights cumulative-tokens-midpoint'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(midpointPctTenure = position in [firstActiveDay, lastActiveDay] (gap-filled with 0) where cumulative tokens first crosses 50%; <0.5 = front-loaded, ~0.5 = uniform, >0.5 = back-loaded; singleDay sources reported as 0 with singleDay=y)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source cumulative-tokens midpoint (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers2 = [
+    'source',
+    'tokens',
+    'firstDay',
+    'lastDay',
+    'tenureD',
+    'activeD',
+    'midIdx',
+    'midDay',
+    'midPct',
+    'single',
+  ];
+  const rows2: string[][] = r.sources.map((s: CumulativeTokensMidpointRow) => [
+    s.source,
+    formatNumber(s.tokens),
+    s.firstActiveDay.slice(0, 10),
+    s.lastActiveDay.slice(0, 10),
+    formatNumber(s.tenureDays),
+    formatNumber(s.activeDays),
+    formatNumber(s.midpointDayIndex),
+    s.midpointDayIso.slice(0, 10),
+    s.midpointPctTenure.toFixed(3),
+    s.singleDay ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers2, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
