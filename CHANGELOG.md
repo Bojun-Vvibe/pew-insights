@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.41 — 2026-04-26
+
+### Changed
+
+- `source-day-of-week-token-mass-share`: new display filter
+  `--min-weekend-share <s>` drops rows whose `weekendShare`
+  (= `share[Sun] + share[Sat]`) is strictly below the given
+  threshold. `s` in `[0, 1]`. Default 0 = no filter. Suppressed
+  rows surface as `droppedBelowMinWeekendShare`.
+
+  Useful for surfacing only weekend-skewed sources. The 2/7
+  ≈ 0.2857 uniform baseline is echoed as `weekendBaseline` on
+  the report header, so a natural threshold is `0.30`-ish to
+  catch sources meaningfully above the weekday/weekend
+  uniform-mix line.
+
+  The builder-level option (`minWeekendShare`) shipped already
+  in 0.6.40; this release wires it through the CLI flag and
+  the validation path, with a `[0, 1]` range check that
+  matches existing share-style flags
+  (`--min-share`, `--min-r`).
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `minWeekendShare` -> sort -> `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-weekend-share 0.30`)
+
+```
+pew-insights source-day-of-week-token-mass-share --min-weekend-share 0.30
+as of: 2026-04-26T08:52:13.218Z    sources: 6 (shown 2)    tokens: 9,089,776,672    uniformBaseline: 0.1429    weekendBaseline: 0.2857    min-tokens: 1,000    min-weekend-share: 0.3    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 4 below min-weekend-share, 0 below top cap
+(per-source share of total token mass across the 7 UTC weekdays; share_d sums to 1; weekendShare = Sun+Sat; entropy normalized by ln(7))
+
+per-source token-mass share by UTC weekday (sorted by tokens; ties: source asc)
+source    firstDay    lastDay     days  dominantDow  dominantShare  weekendShare  entropyNorm  Sun    Mon    Tue    Wed    Thu    Fri    Sat    tokens
+--------  ----------  ----------  ----  -----------  -------------  ------------  -----------  -----  -----  -----  -----  -----  -----  -----  -------------
+openclaw  2026-04-17  2026-04-26  10    0:Sun        0.2154         0.3203        0.9743       0.215  0.165  0.078  0.124  0.124  0.188  0.105  1,723,543,253
+hermes    2026-04-17  2026-04-26  10    0:Sun        0.2496         0.3508        0.9497       0.250  0.211  0.094  0.154  0.056  0.135  0.101  143,443,069
+```
+
+Reading: at `--min-weekend-share 0.30`, only `openclaw` (0.3203)
+and `hermes` (0.3508) clear the bar — both above the 2/7
+≈ 0.2857 uniform baseline. The four other sources (`claude-code`
+0.2699, `opencode` 0.2503, `codex` 0.1897, `ide-assistant-A`
+0.0399) are suppressed via the new `droppedBelowMinWeekendShare`
+counter (= 4). The CLI summary line echoes `min-weekend-share: 0.3`
+so JSON consumers can reproduce the filter exactly.
+
 ## 0.6.40 — 2026-04-26
 
 ### Added

@@ -6928,6 +6928,11 @@ program
     'sort key: tokens (default) | dominant | weekend | entropy | source. Applied before --top.',
     'tokens',
   )
+  .option(
+    '--min-weekend-share <s>',
+    'display filter: hide sources whose weekendShare (share[Sun]+share[Sat]) is strictly below s. s in [0,1]. Default 0 = no filter. Useful for surfacing only weekend-skewed sources (e.g. --min-weekend-share 0.4 hides every source at or below the 2/7 uniform baseline). Counts surface as droppedBelowMinWeekendShare.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6938,6 +6943,7 @@ program
         minTokens: string;
         top: string;
         sort: string;
+        minWeekendShare: string;
         json?: boolean;
       },
       cmd,
@@ -6955,6 +6961,16 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const minWeekendShare = Number.parseFloat(opts.minWeekendShare);
+        if (
+          !Number.isFinite(minWeekendShare) ||
+          minWeekendShare < 0 ||
+          minWeekendShare > 1
+        ) {
+          throw new Error(
+            `--min-weekend-share must be a number in [0, 1] (got ${opts.minWeekendShare})`,
+          );
+        }
         const validSorts = ['tokens', 'dominant', 'weekend', 'entropy', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -6968,6 +6984,7 @@ program
           source: opts.source ?? null,
           minTokens,
           top,
+          minWeekendShare,
           sort: opts.sort as
             | 'tokens'
             | 'dominant'
