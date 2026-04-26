@@ -60,6 +60,15 @@
  *   - `minInputTokens` (default 1000): structural floor on **total**
  *     input_tokens (weekday + weekend) for a source row to be
  *     reported. Sparse sources surface as `droppedSparseSources`.
+ *   - `minInputTokensEachSide` (refinement, v0.6.50): require **both**
+ *     `weekdayInputTokens >= n` AND `weekendInputTokens >= n` for a
+ *     source row to be reported. Default 0 = no per-side floor.
+ *     Useful for surfacing only sources with a comparable sample on
+ *     both sides (so the gap isn't dominated by one tiny side).
+ *     Suppressed surface as `droppedBelowMinInputTokensEachSide`.
+ *     Filter order: `since`/`until` window -> `source` filter ->
+ *     `minInputTokens` (pooled) -> `minInputTokensEachSide` (per side)
+ *     -> sort -> `top` cap.
  *   - `top` (default 0 = no cap): display cap on `sources[]`.
  *     Suppressed surface as `droppedTopSources`.
  *   - `sort` (default 'absgap'): 'absgap' | 'gap' | 'ratio' |
@@ -89,6 +98,15 @@ export interface SourceWeekendWeekdayCacheShareGapOptions {
   until?: string | null;
   source?: string | null;
   minInputTokens?: number;
+  /**
+   * Display filter (refinement, v0.6.50): require both
+   * `weekdayInputTokens >= n` AND `weekendInputTokens >= n`. Default
+   * 0 = no per-side floor. Use to surface only sources with a
+   * comparable sample on both sides so the gap isn't dominated by
+   * one tiny side. Suppressed surface as
+   * `droppedBelowMinInputTokensEachSide`.
+   */
+  minInputTokensEachSide?: number;
   top?: number;
   sort?: SourceWeekendWeekdayCacheShareGapSort;
   generatedAt?: string;
@@ -125,6 +143,7 @@ export interface SourceWeekendWeekdayCacheShareGapReport {
   windowStart: string | null;
   windowEnd: string | null;
   minInputTokens: number;
+  minInputTokensEachSide: number;
   top: number;
   sort: SourceWeekendWeekdayCacheShareGapSort;
   source: string | null;
@@ -135,6 +154,7 @@ export interface SourceWeekendWeekdayCacheShareGapReport {
   droppedNonPositiveTokens: number;
   droppedSourceFilter: number;
   droppedSparseSources: number;
+  droppedBelowMinInputTokensEachSide: number;
   droppedTopSources: number;
   sources: SourceWeekendWeekdayCacheShareGapSourceRow[];
 }
@@ -160,6 +180,15 @@ export function buildSourceWeekendWeekdayCacheShareGap(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minInputTokensEachSide = opts.minInputTokensEachSide ?? 0;
+  if (
+    !Number.isFinite(minInputTokensEachSide) ||
+    minInputTokensEachSide < 0
+  ) {
+    throw new Error(
+      `minInputTokensEachSide must be a non-negative finite number (got ${opts.minInputTokensEachSide})`,
+    );
   }
   const sort: SourceWeekendWeekdayCacheShareGapSort = opts.sort ?? 'absgap';
   const validSorts: SourceWeekendWeekdayCacheShareGapSort[] = [
@@ -303,6 +332,24 @@ export function buildSourceWeekendWeekdayCacheShareGap(
     totalCachedInputTokens += cachedInputTokens;
   }
 
+  // refinement filter (v0.6.50): require both sides to clear the per-side floor
+  let droppedBelowMinInputTokensEachSide = 0;
+  let filtered = rows;
+  if (minInputTokensEachSide > 0) {
+    const next: SourceWeekendWeekdayCacheShareGapSourceRow[] = [];
+    for (const r of rows) {
+      if (
+        r.weekdayInputTokens >= minInputTokensEachSide &&
+        r.weekendInputTokens >= minInputTokensEachSide
+      ) {
+        next.push(r);
+      } else {
+        droppedBelowMinInputTokensEachSide += 1;
+      }
+    }
+    filtered = next;
+  }
+
   // sort: nulls always go last on numeric keys; ties broken by source asc
   const cmpNullableDesc = (a: number | null, b: number | null): number => {
     const aNull = a === null;
@@ -313,7 +360,10 @@ export function buildSourceWeekendWeekdayCacheShareGap(
     return (b as number) - (a as number);
   };
 
-  rows.sort((a, b) => {
+  const cmpRow = (
+    a: SourceWeekendWeekdayCacheShareGapSourceRow,
+    b: SourceWeekendWeekdayCacheShareGapSourceRow,
+  ): number => {
     let primary = 0;
     switch (sort) {
       case 'gap':
@@ -341,13 +391,14 @@ export function buildSourceWeekendWeekdayCacheShareGap(
     }
     if (primary !== 0 && Number.isFinite(primary)) return primary;
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
-  });
+  };
+  filtered.sort(cmpRow);
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -355,6 +406,7 @@ export function buildSourceWeekendWeekdayCacheShareGap(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minInputTokens,
+    minInputTokensEachSide,
     top,
     sort,
     source: sourceFilter,
@@ -365,6 +417,7 @@ export function buildSourceWeekendWeekdayCacheShareGap(
     droppedNonPositiveTokens,
     droppedSourceFilter,
     droppedSparseSources,
+    droppedBelowMinInputTokensEachSide,
     droppedTopSources,
     sources: kept,
   };

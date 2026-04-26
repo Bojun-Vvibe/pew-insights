@@ -277,3 +277,83 @@ test('builder: empty source string normalized to "(unknown)"', () => {
   assert.equal(r.sources.length, 1);
   assert.equal(r.sources[0]!.source, '(unknown)');
 });
+
+// ---- v0.6.50 refinement: --min-input-tokens-each-side --------------------
+
+test('builder v0.6.50: minInputTokensEachSide drops sources with one tiny side', () => {
+  // A: weekday 5000, weekend 100 -> tiny weekend
+  // B: weekday 5000, weekend 5000 -> both sides healthy
+  const q: QueueLine[] = [
+    ql('2026-04-20T10:00:00.000Z', 'A', 5000, 500),
+    ql('2026-04-25T10:00:00.000Z', 'A', 100, 10),
+    ql('2026-04-20T10:00:00.000Z', 'B', 5000, 500),
+    ql('2026-04-25T10:00:00.000Z', 'B', 5000, 1500),
+  ];
+  const r = buildSourceWeekendWeekdayCacheShareGap(q, {
+    minInputTokens: 0,
+    minInputTokensEachSide: 1000,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minInputTokensEachSide, 1000);
+  assert.equal(r.droppedBelowMinInputTokensEachSide, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'B');
+});
+
+test('builder v0.6.50: minInputTokensEachSide=0 is no-op (default)', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T10:00:00.000Z', 'A', 5000, 500),
+    ql('2026-04-25T10:00:00.000Z', 'A', 100, 10),
+  ];
+  const r = buildSourceWeekendWeekdayCacheShareGap(q, {
+    minInputTokens: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minInputTokensEachSide, 0);
+  assert.equal(r.droppedBelowMinInputTokensEachSide, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('builder v0.6.50: minInputTokensEachSide drops weekday-only sources (weekend = 0)', () => {
+  // weekday-only source A: weekendInputTokens = 0 < any positive floor
+  const q: QueueLine[] = [
+    ql('2026-04-20T10:00:00.000Z', 'A', 5000, 500),
+  ];
+  const r = buildSourceWeekendWeekdayCacheShareGap(q, {
+    minInputTokens: 0,
+    minInputTokensEachSide: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinInputTokensEachSide, 1);
+  assert.equal(r.sources.length, 0);
+});
+
+test('builder v0.6.50: negative minInputTokensEachSide throws', () => {
+  assert.throws(
+    () =>
+      buildSourceWeekendWeekdayCacheShareGap([], {
+        minInputTokensEachSide: -1,
+        generatedAt: GEN,
+      }),
+    /minInputTokensEachSide must be/,
+  );
+});
+
+test('builder v0.6.50: per-side filter applies AFTER pooled minInputTokens (filter order)', () => {
+  // A: pooled 500 (below minInputTokens=1000) -> dropped as sparse, NOT counted in per-side drop
+  // B: pooled 5100 (passes), weekend tiny -> dropped as per-side
+  const q: QueueLine[] = [
+    ql('2026-04-20T10:00:00.000Z', 'A', 400, 100),
+    ql('2026-04-25T10:00:00.000Z', 'A', 100, 10),
+    ql('2026-04-20T10:00:00.000Z', 'B', 5000, 500),
+    ql('2026-04-25T10:00:00.000Z', 'B', 100, 10),
+  ];
+  const r = buildSourceWeekendWeekdayCacheShareGap(q, {
+    minInputTokens: 1000,
+    minInputTokensEachSide: 500,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedSparseSources, 1); // A
+  assert.equal(r.droppedBelowMinInputTokensEachSide, 1); // B
+  assert.equal(r.sources.length, 0);
+});

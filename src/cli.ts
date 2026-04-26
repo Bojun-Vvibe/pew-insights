@@ -7724,6 +7724,11 @@ program
     '1000',
   )
   .option(
+    '--min-input-tokens-each-side <n>',
+    'display filter (refinement, v0.6.50): require both weekdayInputTokens >= n AND weekendInputTokens >= n. Default 0 = no per-side floor. Surfaces only sources with a comparable sample on both sides so the gap is not dominated by one tiny side. Suppressed counts surface as droppedBelowMinInputTokensEachSide. Filter order: window -> source -> minInputTokens (pooled) -> minInputTokensEachSide (per side) -> sort -> top.',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
@@ -7741,6 +7746,7 @@ program
         until?: string;
         source?: string;
         minInputTokens: string;
+        minInputTokensEachSide: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -7754,6 +7760,17 @@ program
         if (!Number.isFinite(minInputTokens) || minInputTokens < 0) {
           throw new Error(
             `--min-input-tokens must be a non-negative number (got ${opts.minInputTokens})`,
+          );
+        }
+        const minInputTokensEachSide = Number.parseFloat(
+          opts.minInputTokensEachSide,
+        );
+        if (
+          !Number.isFinite(minInputTokensEachSide) ||
+          minInputTokensEachSide < 0
+        ) {
+          throw new Error(
+            `--min-input-tokens-each-side must be a non-negative number (got ${opts.minInputTokensEachSide})`,
           );
         }
         const top = Number.parseInt(opts.top, 10);
@@ -7780,6 +7797,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minInputTokens,
+          minInputTokensEachSide,
           top,
           sort: opts.sort as
             | 'absgap'

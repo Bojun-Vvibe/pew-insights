@@ -6756,12 +6756,12 @@ export function renderSourceWeekendWeekdayCacheShareGap(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    input-tokens: ${formatNumber(r.totalInputTokens)}    cached-input-tokens: ${formatNumber(r.totalCachedInputTokens)}    min-input-tokens: ${formatNumber(r.minInputTokens)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    input-tokens: ${formatNumber(r.totalInputTokens)}    cached-input-tokens: ${formatNumber(r.totalCachedInputTokens)}    min-input-tokens: ${formatNumber(r.minInputTokens)}    min-input-tokens-each-side: ${r.minInputTokensEachSide === 0 ? '\u2014' : formatNumber(r.minInputTokensEachSide)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-input-tokens, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-input-tokens, ${formatNumber(r.droppedBelowMinInputTokensEachSide)} below min-input-tokens-each-side, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
