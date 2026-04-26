@@ -340,3 +340,59 @@ test('scale-invariance: multiplying every output by a constant preserves the dig
     assert.equal(r1.sources[0]!.digits[i]!.observed, r2.sources[0]!.digits[i]!.observed);
   }
 });
+
+// ---- requireD1Mode refinement (v0.6.31) ------------------------------------
+
+test('requireD1Mode hides sources whose mode digit is not 1', () => {
+  const q: QueueLine[] = [];
+  // d1-dominant: lots of leading-1 (decreasing geometric-ish)
+  for (let i = 0; i < 30; i++) {
+    q.push(ql(`2026-04-${String((i % 28) + 1).padStart(2, '0')}T10:00:00.000Z`, 'd1src', 1000 + i));
+  }
+  // d9-dominant: every value starts with 9
+  for (let i = 0; i < 30; i++) {
+    q.push(ql(`2026-04-${String((i % 28) + 1).padStart(2, '0')}T11:00:00.000Z`, 'd9src', 9000 + i));
+  }
+  const r = buildSourceOutputTokenBenfordDeviation(q, {
+    generatedAt: GEN,
+    minRows: 9,
+    requireD1Mode: true,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'd1src');
+  assert.equal(r.sources[0]!.modeDigit, 1);
+  assert.equal(r.droppedNonD1Mode, 1);
+  assert.equal(r.requireD1Mode, true);
+});
+
+test('requireD1Mode default false leaves all sources visible', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 15; i++) {
+    q.push(ql(`2026-04-${String((i % 28) + 1).padStart(2, '0')}T10:00:00.000Z`, 'd9src', 9000 + i));
+  }
+  const r = buildSourceOutputTokenBenfordDeviation(q, {
+    generatedAt: GEN,
+    minRows: 9,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedNonD1Mode, 0);
+  assert.equal(r.requireD1Mode, false);
+});
+
+test('requireD1Mode is applied AFTER maxMad (filter order)', () => {
+  const q: QueueLine[] = [];
+  // d9-dominant high MAD source -> would be cut by maxMad first
+  for (let i = 0; i < 30; i++) {
+    q.push(ql(`2026-04-${String((i % 28) + 1).padStart(2, '0')}T11:00:00.000Z`, 'd9src', 9000 + i));
+  }
+  const r = buildSourceOutputTokenBenfordDeviation(q, {
+    generatedAt: GEN,
+    minRows: 9,
+    maxMad: 5,
+    requireD1Mode: true,
+  });
+  assert.equal(r.sources.length, 0);
+  // counted in maxMad bucket, NOT in non-d1-mode (filter order: maxMad then requireD1Mode)
+  assert.equal(r.droppedAboveMaxMad, 1);
+  assert.equal(r.droppedNonD1Mode, 0);
+});

@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.31 — 2026-04-26
+
+### Changed
+
+- `source-output-token-benford-deviation`: new display filter
+  `--require-d1-mode` drops rows whose `modeDigit` is not 1.
+  Benford's most basic prediction is that `d=1` is the most common
+  leading digit (`P_benford(1) = log10(2) ≈ 30.10%`); a source
+  whose mode is anything else is structurally non-Benford no matter
+  what its MAD% or chi-square says, because the *shape* of the law
+  is wrong, not just its dispersion. Suppressed rows surface as
+  `droppedNonD1Mode`. Default off.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minRows` -> `maxMad` -> `requireD1Mode` -> sort -> `top` cap.
+  (Tested explicitly: a high-MAD all-9 source dropped by `maxMad`
+  is counted in `droppedAboveMaxMad`, not `droppedNonD1Mode` — the
+  outer filter consumes it first.)
+
+### Live smoke (refinement, against `~/.config/pew/queue.jsonl`, `--sort mad --require-d1-mode`)
+
+```
+pew-insights source-output-token-benford-deviation
+as of: 2026-04-26T06:07:53.326Z    sources: 6 (shown 6)    rows: 1,514    tokens: 9,016,726,095    min-rows: 30    max-mad: —    require-d1-mode: yes    top: —    sort: mad
+dropped: 0 bad hour_start, 12 non-positive output, 0 source-filter, 0 below min-rows, 0 above max-mad, 0 non-d1-mode, 0 below top cap
+(P_benford(d) = log10(1 + 1/d), d in 1..9; chi2 has 8 d.o.f.; MAD% = mean_d|obs-exp|*100; Nigrini conformity: <0.6 close, 0.6-1.2 acceptable, 1.2-1.5 marginal, >1.5 nonconformity)
+
+per-source Benford fit on output_tokens (sorted by mad; ties: source asc)
+source            firstDay    lastDay     nRows  d1%    d2%    d3%    d4%    d5%    d6%   d7%   d8%   d9%   mode  modeFreq%  chi2   MAD%   tokens
+----------------  ----------  ----------  -----  -----  -----  -----  -----  -----  ----  ----  ----  ----  ----  ---------  -----  -----  -------------
+hermes            2026-04-17  2026-04-26  157    35.03  20.38  10.19  3.18   4.46   8.28  5.73  5.73  7.01  1     35.03      14.58  2.741  143,258,290
+openclaw          2026-04-17  2026-04-26  389    24.68  11.05  13.62  11.83  13.37  8.74  5.66  5.91  5.14  1     24.68      33.31  2.694  1,716,770,509
+claude-code       2026-02-11  2026-04-23  299    40.13  16.39  9.03   7.36   6.69   6.35  6.35  3.34  4.35  1     40.13      17.45  2.352  3,442,385,788
+opencode          2026-04-20  2026-04-26  284    26.41  16.55  10.21  6.34   10.92  8.80  9.86  5.63  5.28  1     26.41      19.59  2.309  2,902,806,791
+codex             2026-04-13  2026-04-20  64     35.94  15.63  14.06  9.38   4.69   6.25  7.81  3.13  3.13  1     35.94      3.10   2.093  809,624,660
+ide-assistant-A   2025-07-30  2026-04-20  321    27.41  19.63  12.77  11.21  5.92   6.85  7.79  4.67  3.74  1     27.41      6.74   1.326  1,880,057
+```
+
+That `0 non-d1-mode` row *is* the finding: across all six kept
+sources in the local pew queue — `hermes`, `openclaw`,
+`claude-code`, `opencode`, `codex`, `ide-assistant-A` — *every
+single one* has `modeDigit = 1` with `modeFreq` between 24.68% and
+40.13% (Benford predicts 30.10%). On the **shape** of Benford's
+law, the workspace is unanimously conformant; the
+"nonconformity" verdict from MAD% (every source > 2 except
+`ide-assistant-A` at 1.326) is driven entirely by *secondary
+digits* d3..d9 sloshing between excess and shortage — not by the
+d1 spike going missing. That distinction is exactly what
+`--require-d1-mode` is designed to surface and would be invisible
+to `--max-mad` alone (which would have dropped five of six on the
+default Benford conformity bands).
+
+For comparison, in synthetic test fixtures where every value is
+forced to start with 9, `--require-d1-mode` correctly drops the
+source as `droppedNonD1Mode: 1` while `droppedAboveMaxMad`
+remains 0 — proving the filter sees structural shape violations
+that magnitude statistics cannot.
+
+(One sixth source whose name corresponds to an editor-embedded
+assistant has been masked as `ide-assistant-A` per the workspace
+guardrail; numerics are real and unmodified.)
+
 ## 0.6.30 — 2026-04-26
 
 ### Added

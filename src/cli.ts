@@ -6724,6 +6724,10 @@ program
     'display filter: hide sources whose MAD% strictly exceeds this value (default 0 = no filter). Useful for surfacing only sources that conform to Benford.',
     '0',
   )
+  .option(
+    '--require-d1-mode',
+    "display filter: hide sources whose mode leading digit is not 1. Benford's most basic prediction is that d=1 dominates (~30.10%); a source with any other mode digit is structurally non-Benford regardless of MAD/chi2. Counts surface as droppedNonD1Mode. Default off.",
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6735,6 +6739,7 @@ program
         top: string;
         sort: string;
         maxMad: string;
+        requireD1Mode?: boolean;
         json?: boolean;
       },
       cmd,
@@ -6770,6 +6775,7 @@ program
           minRows,
           top,
           maxMad,
+          requireD1Mode: opts.requireD1Mode === true,
           sort: opts.sort as 'tokens' | 'mad' | 'chi2' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

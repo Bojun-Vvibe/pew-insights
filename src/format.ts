@@ -6086,12 +6086,12 @@ export function renderSourceOutputTokenBenfordDeviation(
   lines.push(chalk.bold.cyan('pew-insights source-output-token-benford-deviation'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    tokens: ${formatNumber(r.totalTokens)}    min-rows: ${r.minRows}    max-mad: ${r.maxMad === 0 ? '\u2014' : r.maxMad}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    tokens: ${formatNumber(r.totalTokens)}    min-rows: ${r.minRows}    max-mad: ${r.maxMad === 0 ? '\u2014' : r.maxMad}    require-d1-mode: ${r.requireD1Mode ? 'yes' : 'no'}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveOutput)} non-positive output, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-rows, ${formatNumber(r.droppedAboveMaxMad)} above max-mad, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveOutput)} non-positive output, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-rows, ${formatNumber(r.droppedAboveMaxMad)} above max-mad, ${formatNumber(r.droppedNonD1Mode)} non-d1-mode, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

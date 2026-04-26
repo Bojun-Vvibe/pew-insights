@@ -107,6 +107,15 @@ export interface SourceOutputTokenBenfordDeviationOptions {
    * strictly above this value. 0 = no filter.
    */
   maxMad?: number;
+  /**
+   * Display filter (refinement, v0.6.31): when true, drop rows whose
+   * `modeDigit` is not 1. Benford's most basic prediction is that
+   * d=1 is the most common leading digit (~30.10%); a source whose
+   * mode is anything else is structurally non-Benford regardless of
+   * MAD or chi-square. Counts surface as `droppedNonD1Mode`.
+   * Default false.
+   */
+  requireD1Mode?: boolean;
   generatedAt?: string;
 }
 
@@ -147,6 +156,8 @@ export interface SourceOutputTokenBenfordDeviationReport {
   top: number;
   sort: BenfordSort;
   maxMad: number;
+  /** Echo of resolved requireD1Mode flag. */
+  requireD1Mode: boolean;
   source: string | null;
   /** Sum of nRows across all kept sources. */
   totalRows: number;
@@ -162,6 +173,8 @@ export interface SourceOutputTokenBenfordDeviationReport {
   droppedSparseSources: number;
   /** Source rows hidden by the `maxMad` filter. */
   droppedAboveMaxMad: number;
+  /** Source rows hidden by the `requireD1Mode` flag. */
+  droppedNonD1Mode: number;
   /** Source rows hidden by the `top` cap. */
   droppedTopSources: number;
   sources: SourceOutputTokenBenfordDeviationSourceRow[];
@@ -209,6 +222,7 @@ export function buildSourceOutputTokenBenfordDeviation(
   if (!Number.isFinite(maxMad) || maxMad < 0) {
     throw new Error(`maxMad must be a non-negative number (got ${opts.maxMad})`);
   }
+  const requireD1Mode = opts.requireD1Mode === true;
   const sort: BenfordSort = opts.sort ?? 'tokens';
   const validSorts: BenfordSort[] = ['tokens', 'mad', 'chi2', 'rows', 'source'];
   if (!validSorts.includes(sort)) {
@@ -353,6 +367,17 @@ export function buildSourceOutputTokenBenfordDeviation(
     filtered = next;
   }
 
+  // requireD1Mode filter (v0.6.31)
+  let droppedNonD1Mode = 0;
+  if (requireD1Mode) {
+    const next: SourceOutputTokenBenfordDeviationSourceRow[] = [];
+    for (const r of filtered) {
+      if (r.modeDigit === 1) next.push(r);
+      else droppedNonD1Mode += 1;
+    }
+    filtered = next;
+  }
+
   filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
@@ -392,6 +417,7 @@ export function buildSourceOutputTokenBenfordDeviation(
     top,
     sort,
     maxMad,
+    requireD1Mode,
     source: sourceFilter,
     totalRows,
     totalTokens: totalTokensSum,
@@ -401,6 +427,7 @@ export function buildSourceOutputTokenBenfordDeviation(
     droppedSourceFilter,
     droppedSparseSources,
     droppedAboveMaxMad,
+    droppedNonD1Mode,
     droppedTopSources,
     sources: kept,
   };
