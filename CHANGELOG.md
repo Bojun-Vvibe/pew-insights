@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.65 — 2026-04-27
+
+### Added
+
+- `source-reasoning-share-by-day-cv`: per source, the coefficient of
+  variation (population stddev / mean) of the **daily reasoning
+  share** sequence, where each day's share is
+
+      reasoning_output_tokens / (output_tokens + reasoning_output_tokens)
+
+  i.e. the fraction of that day's reply work that was *invisible*
+  thinking rather than *visible* output. Headline question: **how
+  reliably does this source preserve its own thinking-vs-typing
+  balance day-over-day?** Low CV = stable reasoning posture; high
+  CV = swings between mostly-visible-output days and mostly-
+  invisible-reasoning days.
+
+  Distinct from every existing reasoning / ratio / per-source lens:
+
+  - `reasoning-share` is a single global per-**model** mean. It has
+    no per-source view, no day axis, and cannot tell a model that
+    ran 0.4 reasoning every day from one that flipped between 0.0
+    and 0.8 (both can integrate to 0.4 globally).
+  - `source-io-ratio-stability` measures CV of `output / input`,
+    not the *internal* split inside reply work. A source that
+    sends 10× more output every day with the same reasoning ratio
+    gets a flat ratioCv signal but a moving io ratio.
+  - `prompt-output-correlation --include-reasoning` collapses
+    reasoning into total output for a single global Pearson r; it
+    discards the daily share sequence entirely.
+  - `output-input-ratio` and `daily-token-autocorrelation-lag1`
+    touch neither reasoning tokens nor a per-source-day axis.
+
+  The metric is **scale-invariant** in token volume: a source that
+  burns 10× more tokens but holds the same reasoning share gets the
+  same CV.
+
+  Knobs: `--since/--until`, `--source`, `--min-days` (default 3;
+  CV on <2 samples is statistically meaningless; sparse sources
+  surface as `droppedBelowMinDays`), `--top` (default 0 = no cap),
+  `--sort` (`tokens` (default) | `cv` | `mean` | `days` | `source`;
+  `cv` asc puts the most stable sources first). Determinism
+  preserved: source-asc tie-break on every sort key. Days with
+  `output + reasoning === 0` are dropped from the share sequence
+  but counted in `daysWithZeroReply`. Sources with all-zero
+  reasoning surface as `flatLine=y`; sources with all-zero output
+  but positive reasoning surface as `pureReasoning=y` (the
+  structural opposite — same `shareCv = 0` but different
+  meaning).
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-reasoning-share-by-day-cv
+pew-insights source-reasoning-share-by-day-cv
+as of: 2026-04-26T18:28:17.290Z    sources: 6 (shown 6)    tokens: 9,356,260,959    min-days: 3    top: -    sort: tokens
+dropped: 0 bad hour_start, 0 by source filter, 0 below min-days, 0 below top cap
+(shareCv = stddev(daily reasoning/(output+reasoning)) / mean of same; low CV = stable thinking-vs-typing balance day-over-day; flat=y means every kept day had reasoning=0; pure=y means every kept day was 100% reasoning)
+
+per-source reasoning-share daily CV (sorted by tokens; ties: source asc)
+source           tokens         outTok      reasTok  activeD  shareD  zeroReplyD  meanShare  stdShare  shareCv  flat  pure
+---------------  -------------  ----------  -------  -------  ------  ----------  ---------  --------  -------  ----  ----
+claude-code      3,442,385,788  12,128,825  0        35       35      0           0.0000     0.0000    0.0000   y     -
+opencode         3,203,687,618  21,241,831  139,846  7        7       0           0.0051     0.0116    2.2898   -     -
+openclaw         1,753,440,270  4,832,427   0        10       10      0           0.0000     0.0000    0.0000   y     -
+codex            809,624,660    2,045,042   789,340  8        8       0           0.2724     0.0325    0.1195   -     -
+hermes           145,236,896    1,399,492   58       10       10      0           0.0000     0.0001    3.0000   -     -
+ide-assistant-B  1,885,727      1,135,247   169,390  73       73      0           0.2109     0.2853    1.3527   -     -
+```
+
+Reading: three structural regimes appear. (1) **Pure typists** —
+`claude-code` and `openclaw` never emit a single reasoning token
+across 35 / 10 active days respectively, so `flat=y` and
+`shareCv = 0` collapse to a degenerate constant zero. (2) **The
+stable reasoner** — `codex` consistently runs ~27% of its reply
+work as invisible thinking with very tight day-to-day spread
+(`shareCv = 0.12`); this is the single most disciplined
+thinking-vs-typing balance in the dataset. (3) **The wild
+reasoners** — `opencode` (`cv = 2.29`) and `ide-assistant-B`
+(`cv = 1.35`) swing dramatically: most of their days are pure
+output with the occasional huge reasoning spike. `hermes` is the
+edge case: 58 reasoning tokens out of 1.4M total output (mean
+share 0.00004 with one outlier day) inflates the CV to 3.0
+despite the source being effectively a typist; this is exactly
+the regime where a future `--min-mean-share` floor would help
+suppress mathematically-loud-but-substantively-flat sources.
+
 ## 0.6.64 — 2026-04-27
 
 ### Changed
