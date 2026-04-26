@@ -239,3 +239,83 @@ test('cumulative-tokens-midpoint: deterministic on shuffled input', () => {
   const r2 = buildCumulativeTokensMidpoint(q2, { generatedAt: GEN });
   assert.deepEqual(r1, r2);
 });
+
+test('cumulative-tokens-midpoint: midpointMin/midpointMax band drops out-of-band rows', () => {
+  // s1 front-loaded (midPct ~ 0), s2 uniform (midPct = 0.5),
+  // s3 back-loaded (midPct ~ 1).
+  const q = [
+    ql('2026-04-01T00:00:00.000Z', 's1', 1000),
+    ql('2026-04-02T00:00:00.000Z', 's1', 10),
+    ql('2026-04-03T00:00:00.000Z', 's1', 10),
+    ql('2026-04-04T00:00:00.000Z', 's1', 10),
+    ql('2026-04-05T00:00:00.000Z', 's1', 10),
+
+    ql('2026-04-01T00:00:00.000Z', 's2', 100),
+    ql('2026-04-02T00:00:00.000Z', 's2', 100),
+    ql('2026-04-03T00:00:00.000Z', 's2', 100),
+    ql('2026-04-04T00:00:00.000Z', 's2', 100),
+    ql('2026-04-05T00:00:00.000Z', 's2', 100),
+
+    ql('2026-04-01T00:00:00.000Z', 's3', 10),
+    ql('2026-04-02T00:00:00.000Z', 's3', 10),
+    ql('2026-04-03T00:00:00.000Z', 's3', 10),
+    ql('2026-04-04T00:00:00.000Z', 's3', 10),
+    ql('2026-04-05T00:00:00.000Z', 's3', 1000),
+  ];
+  // Keep only back-loaded sources: midPct >= 0.7.
+  const r = buildCumulativeTokensMidpoint(q, {
+    midpointMin: 0.7,
+    generatedAt: GEN,
+  });
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's3');
+  assert.equal(r.droppedBelowMidpointMin, 2);
+  assert.equal(r.droppedAboveMidpointMax, 0);
+  assert.equal(r.midpointMin, 0.7);
+  assert.equal(r.midpointMax, 1);
+});
+
+test('cumulative-tokens-midpoint: midpointMax 0.4 keeps only front-loaded', () => {
+  const q = [
+    // front-loaded
+    ql('2026-04-01T00:00:00.000Z', 's1', 1000),
+    ql('2026-04-02T00:00:00.000Z', 's1', 10),
+    ql('2026-04-03T00:00:00.000Z', 's1', 10),
+    ql('2026-04-04T00:00:00.000Z', 's1', 10),
+    ql('2026-04-05T00:00:00.000Z', 's1', 10),
+    // back-loaded
+    ql('2026-04-01T00:00:00.000Z', 's2', 10),
+    ql('2026-04-05T00:00:00.000Z', 's2', 1000),
+  ];
+  const r = buildCumulativeTokensMidpoint(q, {
+    midpointMax: 0.4,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's1');
+  assert.equal(r.droppedAboveMidpointMax, 1);
+});
+
+test('cumulative-tokens-midpoint: rejects bad midpointMin/midpointMax', () => {
+  assert.throws(() => buildCumulativeTokensMidpoint([], { midpointMin: -0.1 }));
+  assert.throws(() => buildCumulativeTokensMidpoint([], { midpointMin: 1.5 }));
+  assert.throws(() => buildCumulativeTokensMidpoint([], { midpointMax: -0.1 }));
+  assert.throws(() => buildCumulativeTokensMidpoint([], { midpointMax: 1.5 }));
+  assert.throws(() =>
+    buildCumulativeTokensMidpoint([], { midpointMin: 0.8, midpointMax: 0.3 }),
+  );
+});
+
+test('cumulative-tokens-midpoint: default band [0,1] keeps all rows (back-compat)', () => {
+  const q = [
+    ql('2026-04-01T00:00:00.000Z', 's1', 100),
+    ql('2026-04-02T00:00:00.000Z', 's1', 100),
+  ];
+  const r = buildCumulativeTokensMidpoint(q, { generatedAt: GEN });
+  assert.equal(r.midpointMin, 0);
+  assert.equal(r.midpointMax, 1);
+  assert.equal(r.droppedBelowMidpointMin, 0);
+  assert.equal(r.droppedAboveMidpointMax, 0);
+  assert.equal(r.sources.length, 1);
+});

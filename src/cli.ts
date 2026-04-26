@@ -5894,6 +5894,16 @@ program
     "sort key for sources[]: 'tokens' (default) | 'midpoint' | 'tenure' | 'source'",
     'tokens',
   )
+  .option(
+    '--midpoint-min <f>',
+    'drop sources whose midpointPctTenure is below f from the per-source table; must be in [0, 1] (default 0); suppressed rows surface as droppedBelowMidpointMin',
+    '0',
+  )
+  .option(
+    '--midpoint-max <f>',
+    'drop sources whose midpointPctTenure is above f from the per-source table; must be in [0, 1] (default 1); suppressed rows surface as droppedAboveMidpointMax',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -5904,6 +5914,8 @@ program
         minDays: string;
         top?: string;
         sort: string;
+        midpointMin: string;
+        midpointMax: string;
         json?: boolean;
       },
       cmd,
@@ -5936,6 +5948,23 @@ program
             `--sort must be 'tokens' | 'midpoint' | 'tenure' | 'source' (got ${opts.sort})`,
           );
         }
+        const midpointMin = Number.parseFloat(opts.midpointMin);
+        if (!Number.isFinite(midpointMin) || midpointMin < 0 || midpointMin > 1) {
+          throw new Error(
+            `--midpoint-min must be in [0, 1] (got ${opts.midpointMin})`,
+          );
+        }
+        const midpointMax = Number.parseFloat(opts.midpointMax);
+        if (!Number.isFinite(midpointMax) || midpointMax < 0 || midpointMax > 1) {
+          throw new Error(
+            `--midpoint-max must be in [0, 1] (got ${opts.midpointMax})`,
+          );
+        }
+        if (midpointMin > midpointMax) {
+          throw new Error(
+            `--midpoint-min (${midpointMin}) must be <= --midpoint-max (${midpointMax})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildCumulativeTokensMidpoint(queue, {
           since: opts.since ?? null,
@@ -5944,6 +5973,8 @@ program
           minDays,
           top,
           sort: sort as 'tokens' | 'midpoint' | 'tenure' | 'source',
+          midpointMin,
+          midpointMax,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

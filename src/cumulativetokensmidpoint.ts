@@ -90,6 +90,22 @@ export interface CumulativeTokensMidpointOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: 'tokens' | 'midpoint' | 'tenure' | 'source';
+  /**
+   * Drop sources whose `midpointPctTenure` is strictly below this
+   * value from the per-source table. Display filter only — global
+   * denominators reflect the full kept population. Suppressed rows
+   * surface as `droppedBelowMidpointMin` alongside the resolved
+   * `midpointMin` floor. Must be in `[0, 1]`. Default 0 = no floor.
+   */
+  midpointMin?: number;
+  /**
+   * Drop sources whose `midpointPctTenure` is strictly above this
+   * value from the per-source table. Display filter only.
+   * Suppressed rows surface as `droppedAboveMidpointMax` alongside
+   * the resolved `midpointMax` ceiling. Must be in `[0, 1]`.
+   * Default 1 = no ceiling.
+   */
+  midpointMax?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -124,6 +140,8 @@ export interface CumulativeTokensMidpointReport {
   minDays: number;
   top: number | null;
   sort: 'tokens' | 'midpoint' | 'tenure' | 'source';
+  midpointMin: number;
+  midpointMax: number;
   /** Distinct sources that survived filters (pre minDays floor). */
   totalSources: number;
   /** Sum of total_tokens across the full kept population. */
@@ -132,6 +150,8 @@ export interface CumulativeTokensMidpointReport {
   droppedZeroTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinDays: number;
+  droppedBelowMidpointMin: number;
+  droppedAboveMidpointMax: number;
   droppedBelowTopCap: number;
   sources: CumulativeTokensMidpointRow[];
 }
@@ -171,6 +191,23 @@ export function buildCumulativeTokensMidpoint(
   ) {
     throw new Error(
       `sort must be 'tokens' | 'midpoint' | 'tenure' | 'source' (got ${opts.sort})`,
+    );
+  }
+  const midpointMin = opts.midpointMin ?? 0;
+  if (!Number.isFinite(midpointMin) || midpointMin < 0 || midpointMin > 1) {
+    throw new Error(
+      `midpointMin must be in [0, 1] (got ${opts.midpointMin})`,
+    );
+  }
+  const midpointMax = opts.midpointMax ?? 1;
+  if (!Number.isFinite(midpointMax) || midpointMax < 0 || midpointMax > 1) {
+    throw new Error(
+      `midpointMax must be in [0, 1] (got ${opts.midpointMax})`,
+    );
+  }
+  if (midpointMin > midpointMax) {
+    throw new Error(
+      `midpointMin (${midpointMin}) must be <= midpointMax (${midpointMax})`,
     );
   }
 
@@ -274,12 +311,22 @@ export function buildCumulativeTokensMidpoint(
     });
   }
 
-  // Apply minDays (on activeDays — distinct tokens-bearing days).
+  // Apply minDays floor, then midpoint band [midpointMin, midpointMax].
   let droppedBelowMinDays = 0;
+  let droppedBelowMidpointMin = 0;
+  let droppedAboveMidpointMax = 0;
   const survived: CumulativeTokensMidpointRow[] = [];
   for (const row of allRows) {
     if (row.activeDays < minDays) {
       droppedBelowMinDays += 1;
+      continue;
+    }
+    if (row.midpointPctTenure < midpointMin) {
+      droppedBelowMidpointMin += 1;
+      continue;
+    }
+    if (row.midpointPctTenure > midpointMax) {
+      droppedAboveMidpointMax += 1;
       continue;
     }
     survived.push(row);
@@ -318,12 +365,16 @@ export function buildCumulativeTokensMidpoint(
     minDays,
     top,
     sort,
+    midpointMin,
+    midpointMax,
     totalSources: allRows.length,
     totalTokens,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
     droppedBelowMinDays,
+    droppedBelowMidpointMin,
+    droppedAboveMidpointMax,
     droppedBelowTopCap,
     sources: finalSources,
   };
