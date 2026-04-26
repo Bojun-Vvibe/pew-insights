@@ -73,6 +73,7 @@ import {
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
+  renderSourceOutputTokenBenfordDeviation,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderModelTenure,
@@ -206,6 +207,7 @@ import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
+import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
@@ -6684,6 +6686,96 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSecondDiffSignRuns(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-output-token-benford-deviation')
+  .description(
+    "Per-source goodness-of-fit of output_tokens leading-digit distribution to Benford's law (P(d)=log10(1+1/d)). Reports chi-square (8 d.o.f.) and Nigrini MAD%. Scale-free fingerprint of value-shape orthogonal to every magnitude/order statistic.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-rows <n>',
+    'hide source rows with fewer than n positive-output rows (default 30, must be >= 9); counts surface as droppedSparseSources',
+    '30',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | mad | chi2 | rows | source. Applied before --top.',
+    'tokens',
+  )
+  .option(
+    '--max-mad <pct>',
+    'display filter: hide sources whose MAD% strictly exceeds this value (default 0 = no filter). Useful for surfacing only sources that conform to Benford.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top: string;
+        sort: string;
+        maxMad: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 9) {
+          throw new Error(`--min-rows must be an integer >= 9 (got ${opts.minRows})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const maxMad = Number.parseFloat(opts.maxMad);
+        if (!Number.isFinite(maxMad) || maxMad < 0) {
+          throw new Error(
+            `--max-mad must be a non-negative number (got ${opts.maxMad})`,
+          );
+        }
+        const validSorts = ['tokens', 'mad', 'chi2', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceOutputTokenBenfordDeviation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          maxMad,
+          sort: opts.sort as 'tokens' | 'mad' | 'chi2' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceOutputTokenBenfordDeviation(report) + '\n');
         }
       } catch (e) {
         die(e);

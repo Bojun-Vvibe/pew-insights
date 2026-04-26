@@ -6074,3 +6074,93 @@ export function renderDailyTokenSecondDiffSignRuns(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceOutputTokenBenfordDeviationReport,
+} from './sourceoutputtokenbenforddeviation.js';
+
+export function renderSourceOutputTokenBenfordDeviation(
+  r: SourceOutputTokenBenfordDeviationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-output-token-benford-deviation'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    tokens: ${formatNumber(r.totalTokens)}    min-rows: ${r.minRows}    max-mad: ${r.maxMad === 0 ? '\u2014' : r.maxMad}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveOutput)} non-positive output, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-rows, ${formatNumber(r.droppedAboveMaxMad)} above max-mad, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(P_benford(d) = log10(1 + 1/d), d in 1..9; chi2 has 8 d.o.f.; MAD% = mean_d|obs-exp|*100; Nigrini conformity: <0.6 close, 0.6-1.2 acceptable, 1.2-1.5 marginal, >1.5 nonconformity)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Benford fit on output_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'nRows',
+    'd1%',
+    'd2%',
+    'd3%',
+    'd4%',
+    'd5%',
+    'd6%',
+    'd7%',
+    'd8%',
+    'd9%',
+    'mode',
+    'modeFreq%',
+    'chi2',
+    'MAD%',
+    'tokens',
+  ];
+  const fmtPct = (x: number): string => (x * 100).toFixed(2);
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nRows),
+    fmtPct(s.digits[0]!.observedFreq),
+    fmtPct(s.digits[1]!.observedFreq),
+    fmtPct(s.digits[2]!.observedFreq),
+    fmtPct(s.digits[3]!.observedFreq),
+    fmtPct(s.digits[4]!.observedFreq),
+    fmtPct(s.digits[5]!.observedFreq),
+    fmtPct(s.digits[6]!.observedFreq),
+    fmtPct(s.digits[7]!.observedFreq),
+    fmtPct(s.digits[8]!.observedFreq),
+    String(s.modeDigit),
+    fmtPct(s.modeFreq),
+    s.chi2.toFixed(2),
+    s.madPercent.toFixed(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
