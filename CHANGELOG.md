@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.57 — 2026-04-26
+
+### Added
+
+- `source-output-tokens-per-row-percentiles`: per-source
+  distribution of `output_tokens` **per individual queue row**,
+  reported as p50 / p90 / p99 plus mean / max and a
+  `tail = p99 / p50` ratio. Headline question: **for a given
+  source, how fat is its typical generation, and how heavy is
+  its tail?**
+
+  Distinct from every existing lens:
+
+  - `output-size` reports the same shape stats but groups by
+    **model**, not by source. A single source routinely fans
+    out across 3–5 models; pooling by model loses the
+    per-source signal.
+  - `output-token-decile-distribution` is a **global** decile
+    cut over every bucket row, with no per-source breakdown
+    and no comparison of two sources' tail thickness.
+  - `source-output-token-benford-deviation` is a leading-digit
+    fingerprint of the same column but discards magnitude —
+    two sources with identical Benford fits can have wildly
+    different p99 outputs.
+  - `source-cost-class-mix` projects each row onto a
+    small/med/large categorical based on `total_tokens`
+    (input + output combined), so it cannot answer the
+    output-only generation-magnitude question.
+  - `source-io-ratio-stability` reports the per-day output/input
+    ratio's CV — a *consistency* statistic, not a magnitude one.
+
+  Knobs: `--since` / `--until` (window on `hour_start`),
+  `--source` (single-source filter), `--min-rows` (default 3,
+  hide sources with too few positive-output rows for stable
+  percentiles), `--min-p99` (default 0, surface only heavy-tail
+  sources), `--top` (default unset = no cap), `--sort`
+  (`tokens` default | `p50` | `p90` | `p99` | `tail` | `rows`
+  | `source`), `--json`. Percentiles are type-7 linear
+  interpolation over the positive-output sequence; zero-output
+  rows are excluded from the percentile sequence but counted in
+  `rowsZeroOutput`.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-output-tokens-per-row-percentiles
+pew-insights source-output-tokens-per-row-percentiles
+as of: 2026-04-26T15:38:14.118Z    sources: 6 (shown 6)    output-tokens: 42,278,259    min-rows: 3    min-p99: 0    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 by source filter, 0 all-zero-output sources, 0 below min-rows, 0 below min-p99, 0 below top cap
+(per-row output_tokens distribution per source; p50/p90/p99 are type-7 linear-interpolation percentiles over positive-output rows; tail = p99/p50)
+
+per-source output-tokens-per-row percentiles (sorted by tokens; ties: source asc)
+source             rows  zeroR  outSum      mean    p50     p90      p99      max      tail
+-----------------  ----  -----  ----------  ------  ------  -------  -------  -------  -----
+opencode           303   0      20,749,083  68,479  48,926  155,486  322,419  333,890  6.59
+claude-code        299   0      12,128,825  40,565  11,145  145,810  290,010  416,890  26.02
+openclaw           408   0      4,830,052   11,838  3,081   48,417   66,901   116,291  21.72
+codex              64    0      2,045,042   31,954  17,740  78,911   154,333  163,782  8.70
+hermes             163   0      1,390,010   8,528   6,295   20,217   29,335   38,184   4.66
+ide-assistant-A    321   12     1,135,247   3,537   1,810   8,743    24,175   37,381   13.36
+```
+
+Reading: `opencode` is the per-call output volume leader by
+total mass, with a moderate tail (p99/p50 ≈ 6.6). `claude-code`
+runs at half the median (11k vs 49k) but its p99 is in the
+same league and its tail ratio is the heaviest of the agentic
+sources at 26x — its generations are bimodal, with a chatty
+floor and occasional very fat completions. `ide-assistant-A`
+has the lightest typical generation (~1.8k median) but still
+exhibits a 13x tail, consistent with mostly small inline
+suggestions plus the occasional long block. The `tail` column
+is the falsifiable summary of generation-shape skewness per
+source.
+
 ## 0.6.56 — 2026-04-26
 
 ### Changed
