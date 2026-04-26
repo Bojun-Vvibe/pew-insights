@@ -2,6 +2,118 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.81 — 2026-04-27
+
+### Added
+
+- `source-row-token-skewness`: per-source Fisher-Pearson sample
+  skewness (`g1`) of the per-row `total_tokens` distribution.
+  For each source, given its `n` per-row `total_tokens` samples
+  with sample mean `m` and population variance `s^2`,
+
+  ```
+  g1 = ( (1/n) * sum_i (x_i - m)^3 ) / s^3
+  ```
+
+  `g1 = 0` for any symmetric distribution. `g1 > 0` =
+  right-skewed (rare fat rows pull the right tail; the textbook
+  shape for token usage — many small interactive turns,
+  occasional huge background runs). `g1 < 0` = left-skewed (rare
+  events on the **low** end; uncommon for token usage). Rule of
+  thumb: `|g1| < 0.5` ~ approximately symmetric, `0.5 <= |g1| <
+  1` moderately skewed, `|g1| >= 1` highly skewed.
+
+  Why this is genuinely orthogonal to every per-source lens
+  already in the codebase:
+
+  - `hour-of-day-token-skew` ALSO computes `g1`, but on a wholly
+    different sample: per-day `total_tokens` totals grouped by
+    UTC hour-of-day, **pooled across all sources**. There is no
+    per-source breakdown and the unit of observation is a day,
+    not a row.
+  - `source-burstiness-fano-factor` is `variance / mean` of
+    per-source-active-day totals — dispersion (2nd moment), not
+    asymmetry (3rd moment). A perfectly symmetric high-variance
+    source has high Fano and zero skewness.
+  - `source-output-tokens-per-row-percentiles` is quantile-shape
+    on `output_tokens`. Skewness is moment-shape on
+    `total_tokens`. A source with `p50 = p90` but `p99 >> p90`
+    has a "p90-to-p99 jump" that skewness specifically
+    integrates over the whole tail (cubed), not at one quantile.
+  - `source-input-token-top-row-share` is mass concentration on
+    **input** tokens, not a moment statistic on **total**
+    tokens. They can disagree.
+  - `source-output-token-benford-deviation` is a digit-
+    distribution test, not a moment.
+  - `source-cumulative-mass-half-life-day` is a temporal
+    centroid; this lens has no time axis.
+  - `source-first-vs-last-quartile-output-mean-shift` is
+    chronological drift in the mean. Skewness is a one-shot
+    pooled distribution shape statistic.
+  - `daily-token-gini-coefficient` measures cross-day mass
+    inequality. A perfectly bimodal symmetric distribution has
+    high gini and zero skewness.
+
+  Algorithm: filter window + optional `--source`, drop rows with
+  non-finite `hour_start`, group by source, drop sources with
+  fewer than 3 samples (the absolute floor for a non-degenerate
+  3rd moment) — they surface as `droppedTooFewRowsForSkewness`.
+  Compute mean, population variance (ddof=0), stddev, and `g1`.
+  If `stddev = 0` (all rows identical, including all-zero),
+  skewness is mathematically undefined; we report `skewness = 0`
+  with `degenerate = true` so the operator can read the row and
+  see why the value was forced. Sort + display gates `--min-rows`
+  (>= 3) and `--top` are display-only — global denominators
+  reflect the full kept population, suppressed rows surface as
+  `droppedBelowMinRows` / `droppedBelowTopCap`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (one IDE-
+  assistant source name redacted to `ide-assistant-A` per
+  banned-string policy):
+
+  ```
+  pew-insights source-row-token-skewness
+  as of: 2026-04-26T23:51:51.412Z    sources: 6 (shown 6)    rows: 1,607    min-rows: 3    min-mean: 0.00    top: —    sort: skew-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 3-row floor, 0 below min-rows, 0 below min-mean, 0 below top cap
+
+  per-source row total_tokens skewness (sorted by skew-desc; ties: source asc)
+  source           rows  mean         stddev       skewness  degen
+  ---------------  ----  -----------  -----------  --------  -----
+  ide-assistant-A  333   5662.84      14933.73     7.9807    -
+  openclaw         425   4188017.41   4971650.48   4.1102    -
+  opencode         319   10373343.36  13437774.12  2.3280    -
+  claude-code      299   11512995.95  17605167.00  2.1794    -
+  hermes           167   873005.10    991164.28    1.7527    -
+  codex            64    12650385.31  14252148.98  1.4686    -
+  ```
+
+  Every one of the 6 sources is right-skewed (`g1 > 0`), and 5
+  of them are highly skewed (`g1 >= 1`). That is exactly the
+  textbook prediction for token usage on this device — most rows
+  are small interactive turns, a long right tail of background
+  runs pulls the moment.
+
+  The `ide-assistant-A` row at `g1 = 7.98` is striking. Its mean
+  is only `5662.84` total_tokens (the smallest of the 6
+  sources), but its stddev is `14933.73` — a CV of `~2.64`,
+  which means the SD is more than 2.5x the mean. That is only
+  possible with a heavy right tail of rare fat rows over a
+  baseline of small ones, and the third-moment statistic
+  surfaces it as a `g1` nearly twice that of the next-most-
+  skewed source. By contrast, `codex` at `g1 = 1.47` has the
+  largest mean (`12.65M`) and a stddev `~1.13x` the mean — also
+  right-tailed, but on a much more even baseline.
+
+  This is the only lens in the codebase that distinguishes
+  those two regimes via the same statistic at the same grain
+  (per-row, per-source, on `total_tokens`). `source-output-
+  tokens-per-row-percentiles` would report a percentile gap for
+  each, but the percentile gap is not commensurable across
+  sources at different scales; `g1` is unitless and is the
+  right cross-source comparator for distribution asymmetry.
+
+---
+
 ## 0.6.80 — 2026-04-27
 
 ### Changed
