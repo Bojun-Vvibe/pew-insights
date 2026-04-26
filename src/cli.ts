@@ -6154,6 +6154,15 @@ program
     'sort key: tokens (default) | extreme | fraction | maxabsz | ndays | source. Applied before --top.',
     'tokens',
   )
+  .option(
+    '--min-extreme <n>',
+    'display filter: hide sources whose nExtreme is below n; counts surface as droppedBelowMinExtreme (default 0 = no floor)',
+    '0',
+  )
+  .option(
+    '--direction <dir>',
+    "display filter: keep only sources with at least one extreme of the given direction. One of high|low|either. Default unset = no direction gate.",
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6165,6 +6174,8 @@ program
         sigma: string;
         top: string;
         sort: string;
+        minExtreme: string;
+        direction?: string;
         json?: boolean;
       },
       cmd,
@@ -6183,6 +6194,17 @@ program
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minExtreme = Number.parseInt(opts.minExtreme, 10);
+        if (!Number.isInteger(minExtreme) || minExtreme < 0) {
+          throw new Error(`--min-extreme must be a non-negative integer (got ${opts.minExtreme})`);
+        }
+        let direction: 'high' | 'low' | 'either' | null = null;
+        if (opts.direction != null && opts.direction !== '') {
+          if (!['high', 'low', 'either'].includes(opts.direction)) {
+            throw new Error(`--direction must be one of high|low|either (got ${opts.direction})`);
+          }
+          direction = opts.direction as 'high' | 'low' | 'either';
         }
         const sort = opts.sort as
           | 'tokens'
@@ -6204,6 +6226,8 @@ program
           sigma,
           top,
           sort,
+          minExtreme,
+          direction,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

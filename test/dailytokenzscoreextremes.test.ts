@@ -190,3 +190,70 @@ test('daily-token-zscore-extremes: sort by extreme', () => {
   });
   assert.equal(r.sources[0]!.source, 'a');
 });
+
+// ---- refinement: minExtreme + direction filters --------------------------
+
+test('daily-token-zscore-extremes: --min-extreme drops sources with too few extremes', () => {
+  const queue: QueueLine[] = [];
+  // a: 1 extreme
+  for (let d = 1; d <= 4; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', 100));
+  }
+  queue.push(ql('2026-04-05T00:00:00.000Z', 'a', 10000));
+  // b: 0 extreme (flat)
+  for (let d = 1; d <= 5; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'b', 5000));
+  }
+  const r = buildDailyTokenZscoreExtremes(queue, {
+    generatedAt: GEN,
+    sigma: 1.5,
+    minExtreme: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'a');
+  assert.equal(r.droppedBelowMinExtreme, 1);
+});
+
+test('daily-token-zscore-extremes: --direction high keeps only sources with high extremes', () => {
+  const queue: QueueLine[] = [];
+  // a: high extreme
+  for (let d = 1; d <= 4; d++) queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', 100));
+  queue.push(ql('2026-04-05T00:00:00.000Z', 'a', 10000));
+  // b: low extreme
+  for (let d = 1; d <= 4; d++) queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'b', 1000));
+  queue.push(ql('2026-04-05T00:00:00.000Z', 'b', 1));
+  const high = buildDailyTokenZscoreExtremes(queue, {
+    generatedAt: GEN,
+    sigma: 1.5,
+    direction: 'high',
+  });
+  assert.deepEqual(
+    high.sources.map((s) => s.source),
+    ['a'],
+  );
+  assert.equal(high.droppedByDirection, 1);
+  const low = buildDailyTokenZscoreExtremes(queue, {
+    generatedAt: GEN,
+    sigma: 1.5,
+    direction: 'low',
+  });
+  assert.deepEqual(
+    low.sources.map((s) => s.source),
+    ['b'],
+  );
+  const either = buildDailyTokenZscoreExtremes(queue, {
+    generatedAt: GEN,
+    sigma: 1.5,
+    direction: 'either',
+  });
+  assert.equal(either.sources.length, 2);
+  assert.equal(either.droppedByDirection, 0);
+});
+
+test('daily-token-zscore-extremes: rejects bad minExtreme / direction', () => {
+  assert.throws(() => buildDailyTokenZscoreExtremes([], { minExtreme: -1 }));
+  assert.throws(() => buildDailyTokenZscoreExtremes([], { minExtreme: 1.5 }));
+  assert.throws(() =>
+    buildDailyTokenZscoreExtremes([], { direction: 'sideways' as never }),
+  );
+});

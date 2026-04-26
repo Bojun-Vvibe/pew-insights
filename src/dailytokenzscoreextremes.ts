@@ -91,6 +91,21 @@ export interface DailyTokenZscoreExtremesOptions {
   top?: number;
   /** Sort key. */
   sort?: 'tokens' | 'extreme' | 'fraction' | 'maxabsz' | 'ndays' | 'source';
+  /**
+   * Display filter: hide sources whose `nExtreme` is strictly below
+   * this value. `totalSources` and `totalTokens` still reflect the
+   * full kept population. Suppressed rows surface as
+   * `droppedBelowMinExtreme`. Default 0 = no floor.
+   */
+  minExtreme?: number;
+  /**
+   * Display filter: when set to `'high'` only sources with at least
+   * one high-extreme day are kept; `'low'` only sources with at least
+   * one low-extreme day; `'either'` keeps any source with any
+   * extreme. Suppressed rows surface as `droppedByDirection`.
+   * Default `null` = no direction gate (all sources kept).
+   */
+  direction?: 'high' | 'low' | 'either' | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -132,12 +147,16 @@ export interface DailyTokenZscoreExtremesReport {
   top: number;
   sort: 'tokens' | 'extreme' | 'fraction' | 'maxabsz' | 'ndays' | 'source';
   source: string | null;
+  minExtreme: number;
+  direction: 'high' | 'low' | 'either' | null;
   totalTokens: number;
   totalSources: number;
   droppedInvalidHourStart: number;
   droppedZeroTokens: number;
   droppedSourceFilter: number;
   droppedSparseSources: number;
+  droppedBelowMinExtreme: number;
+  droppedByDirection: number;
   droppedTopSources: number;
   sources: DailyTokenZscoreExtremesSourceRow[];
 }
@@ -183,6 +202,14 @@ export function buildDailyTokenZscoreExtremes(
   const sourceFilter = opts.source ?? null;
   if (sourceFilter !== null && typeof sourceFilter !== 'string') {
     throw new Error(`source must be a string when set (got ${typeof sourceFilter})`);
+  }
+  const minExtreme = opts.minExtreme ?? 0;
+  if (!Number.isInteger(minExtreme) || minExtreme < 0) {
+    throw new Error(`minExtreme must be a non-negative integer (got ${opts.minExtreme})`);
+  }
+  const direction = opts.direction ?? null;
+  if (direction !== null && !['high', 'low', 'either'].includes(direction)) {
+    throw new Error(`direction must be one of high|low|either when set (got ${direction})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -319,11 +346,37 @@ export function buildDailyTokenZscoreExtremes(
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   });
 
+  // Display filters: minExtreme and direction. Applied AFTER sort so
+  // they don't reshuffle the kept order, and BEFORE the top cap so
+  // the cap operates on the post-filter population.
+  let droppedBelowMinExtreme = 0;
+  let droppedByDirection = 0;
+  const filtered: DailyTokenZscoreExtremesSourceRow[] = [];
+  for (const row of rows) {
+    if (row.nExtreme < minExtreme) {
+      droppedBelowMinExtreme += 1;
+      continue;
+    }
+    if (direction !== null) {
+      const passes =
+        direction === 'high'
+          ? row.nHighExtreme > 0
+          : direction === 'low'
+            ? row.nLowExtreme > 0
+            : row.nExtreme > 0;
+      if (!passes) {
+        droppedByDirection += 1;
+        continue;
+      }
+    }
+    filtered.push(row);
+  }
+
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -335,12 +388,16 @@ export function buildDailyTokenZscoreExtremes(
     top,
     sort,
     source: sourceFilter,
+    minExtreme,
+    direction,
     totalTokens,
     totalSources,
     droppedInvalidHourStart,
     droppedZeroTokens,
     droppedSourceFilter,
     droppedSparseSources,
+    droppedBelowMinExtreme,
+    droppedByDirection,
     droppedTopSources,
     sources: kept,
   };
