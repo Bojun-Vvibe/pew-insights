@@ -2,6 +2,123 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.30 — 2026-04-26
+
+### Added
+
+- `source-output-token-benford-deviation`: per-source goodness-of-fit
+  of the **leading-digit distribution of `output_tokens`** to
+  Benford's law, `P_benford(d) = log10(1 + 1/d)` for d in 1..9.
+
+  For each source we collect every positive `output_tokens` value,
+  bin by first significant decimal digit, and report:
+
+  - per-digit observed count and observed frequency (d1..d9)
+  - the expected count under Benford for the same N
+  - Pearson chi-square against Benford (8 d.o.f., no fitted params)
+  - Nigrini mean absolute deviation `MAD% = mean_d|obs - exp| * 100`
+    with the standard conformity bands:
+      - `< 0.6` close conformity
+      - `0.6 .. 1.2` acceptable
+      - `1.2 .. 1.5` marginally acceptable
+      - `> 1.5` nonconformity
+  - the mode digit and its observed frequency.
+
+  **Why orthogonal to everything else that ships.** Every existing
+  token statistic in `pew-insights` is *magnitude-aware*: sums,
+  percentiles, gini, z-score, autocorrelation, monotone runs, d2
+  sign runs, cv, entropy. They all care how big the numbers are.
+  Benford's leading-digit distribution is **scale-free** — it
+  depends only on `log10(x) mod 1`. Multiplying every output by a
+  positive constant leaves the per-digit counts (and hence chi2,
+  MAD, mode) unchanged; this is asserted in the test suite. None of
+  the order-statistics/decile/percentile subcommands touches digit
+  structure, and none of the time-series subcommands
+  (`autocorrelation-lag1`, `monotone-run-length`,
+  `second-difference-sign-runs`, `streaks`, `interarrival-time`)
+  cares about value digits — permuting the rows leaves Benford
+  unchanged.
+
+  Headline question this answers:
+  *"Do this source's per-bucket `output_tokens` magnitudes look
+  like they were drawn from a natural multi-order-of-magnitude
+  process, or are they shaped/clipped/truncated in a way that
+  distorts the first-significant-digit distribution?"*
+
+  A high MAD or chi2 against Benford is a fingerprint of
+  *non-natural* output shaping: hard token caps (truncation piles
+  up at certain leading digits), retries that produce many
+  near-identical outputs, very narrow effective range, or a small-N
+  regime where the law has not yet kicked in.
+
+  Per-source columns:
+
+  - `source`, `firstDay`, `lastDay`, `nRows`
+  - `digits[1..9]` with `observed`, `expected`, `observedFreq`,
+    `expectedFreq`
+  - `chi2`, `madPercent`, `modeDigit`, `modeFreq`, `totalTokens`
+
+  Knobs:
+
+  - `--since` / `--until`: ISO time-window filter on `hour_start`
+  - `--source <name>`: restrict to one source
+  - `--min-rows <n>` (default 30, must be `>= 9`): structural floor
+    so the chi-square is meaningful
+  - `--top <n>` (default 0 = no cap): display cap after sort
+  - `--sort <key>`: `tokens` (default) | `mad` | `chi2` | `rows` |
+    `source`
+  - `--max-mad <pct>` (default 0 = no filter): hide sources whose
+    MAD% strictly exceeds this value (refinement filter, lands in
+    0.6.31)
+  - `--json` for machine output
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minRows` -> `maxMad` -> sort -> `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, default flags)
+
+```
+pew-insights source-output-token-benford-deviation
+as of: 2026-04-26T06:04:56.087Z    sources: 6 (shown 6)    rows: 1,514    tokens: 9,016,726,095    min-rows: 30    max-mad: —    top: —    sort: tokens
+dropped: 0 bad hour_start, 12 non-positive output, 0 source-filter, 0 below min-rows, 0 above max-mad, 0 below top cap
+(P_benford(d) = log10(1 + 1/d), d in 1..9; chi2 has 8 d.o.f.; MAD% = mean_d|obs-exp|*100; Nigrini conformity: <0.6 close, 0.6-1.2 acceptable, 1.2-1.5 marginal, >1.5 nonconformity)
+
+per-source Benford fit on output_tokens (sorted by tokens; ties: source asc)
+source            firstDay    lastDay     nRows  d1%    d2%    d3%    d4%    d5%    d6%   d7%   d8%   d9%   mode  modeFreq%  chi2   MAD%   tokens
+----------------  ----------  ----------  -----  -----  -----  -----  -----  -----  ----  ----  ----  ----  ----  ---------  -----  -----  -------------
+claude-code       2026-02-11  2026-04-23  299    40.13  16.39  9.03   7.36   6.69   6.35  6.35  3.34  4.35  1     40.13      17.45  2.352  3,442,385,788
+opencode          2026-04-20  2026-04-26  284    26.41  16.55  10.21  6.34   10.92  8.80  9.86  5.63  5.28  1     26.41      19.59  2.309  2,902,806,791
+openclaw          2026-04-17  2026-04-26  389    24.68  11.05  13.62  11.83  13.37  8.74  5.66  5.91  5.14  1     24.68      33.31  2.694  1,716,770,509
+codex             2026-04-13  2026-04-20  64     35.94  15.63  14.06  9.38   4.69   6.25  7.81  3.13  3.13  1     35.94      3.10   2.093  809,624,660
+hermes            2026-04-17  2026-04-26  157    35.03  20.38  10.19  3.18   4.46   8.28  5.73  5.73  7.01  1     35.03      14.58  2.741  143,258,290
+ide-assistant-A   2025-07-30  2026-04-20  321    27.41  19.63  12.77  11.21  5.92   6.85  7.79  4.67  3.74  1     27.41      6.74   1.326  1,880,057
+```
+
+(One sixth source whose name corresponds to an editor-embedded
+assistant has been masked as `ide-assistant-A` per the workspace
+guardrail; numerics are real and unmodified.)
+
+Reading: every source's mode digit is `1`, exactly as Benford
+predicts. The headline finding is that `ide-assistant-A` is the
+*only* source whose `MAD% = 1.326` lands in the
+"marginally acceptable" Nigrini band — i.e. its
+`output_tokens` distribution is the closest in this workspace to a
+"natural" multi-order-of-magnitude process. Every other source has
+`MAD% > 2`, which Nigrini classifies as nonconformity. The
+chi-square ranking is consistent: `codex` (chi2 = 3.10) and
+`ide-assistant-A` (chi2 = 6.74) are the tightest fits;
+`openclaw` (chi2 = 33.31) is the worst, driven by an unusually
+flat profile across digits 3, 4, 5 (each ~12-14%) where Benford
+expects `~12.5%`, `9.7%`, `7.9%` — i.e. its output sizes are
+*more uniform across orders of magnitude than nature would
+predict*, consistent with a tool that emits structurally similar
+output shapes per turn. `hermes` shows the opposite distortion: a
+strong d2 spike (20.38% vs. 17.61% expected) and a starved d4
+(3.18% vs. 9.69%), pointing to a narrow effective output range.
+None of these structural shapes are surfaceable by any
+already-shipped subcommand: they are scale-invariant, order-free,
+and live entirely in the leading digit.
+
 ## 0.6.29 — 2026-04-26
 
 ### Changed
