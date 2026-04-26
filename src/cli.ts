@@ -8553,6 +8553,11 @@ program
     'sort key: tokens (default) | rows | cold-share | cold-mass-share | gap | source. gap = |coldRowMassGap| desc. Applied before --top.',
     'tokens',
   )
+  .option(
+    '--min-abs-gap <n>',
+    'display filter: hide sources whose |coldRowMassGap| is strictly below n. n in [0, 1]. Default 0 = no filter. Useful for surfacing only sources with a meaningful row-count vs input-mass mismatch (e.g. --min-abs-gap 0.05 hides anything within 5 percentage points of "cold rows weigh exactly the same as warm rows on average"). Counts surface as droppedBelowMinAbsGap.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -8563,6 +8568,7 @@ program
         minRows: string;
         top: string;
         sort: string;
+        minAbsGap: string;
         json?: boolean;
       },
       cmd,
@@ -8579,6 +8585,12 @@ program
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minAbsGap = Number.parseFloat(opts.minAbsGap);
+        if (!Number.isFinite(minAbsGap) || minAbsGap < 0 || minAbsGap > 1) {
+          throw new Error(
+            `--min-abs-gap must be a finite number in [0, 1] (got ${opts.minAbsGap})`,
+          );
         }
         const validSorts = [
           'tokens',
@@ -8600,6 +8612,7 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minAbsGap,
           sort: opts.sort as
             | 'tokens'
             | 'rows'

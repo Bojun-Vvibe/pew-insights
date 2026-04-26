@@ -84,6 +84,17 @@ export interface SourceColdWarmRowRatioOptions {
   minRows?: number;
   top?: number;
   sort?: SourceColdWarmRowRatioSort;
+  /**
+   * Refinement filter (v0.6.64): drop rows whose
+   * `|coldRowMassGap|` is strictly below this float threshold.
+   * Range [0, 1]. Default 0 = no filter. Useful for surfacing
+   * only sources with a meaningful row-count vs input-mass
+   * mismatch (e.g. `--min-abs-gap 0.05` hides anything within
+   * 5 percentage points of "cold rows weigh exactly the same
+   * as warm rows on average"). Counts surface as
+   * `droppedBelowMinAbsGap`.
+   */
+  minAbsGap?: number;
   generatedAt?: string;
 }
 
@@ -125,6 +136,7 @@ export interface SourceColdWarmRowRatioReport {
   minRows: number;
   top: number;
   sort: SourceColdWarmRowRatioSort;
+  minAbsGap: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -132,6 +144,7 @@ export interface SourceColdWarmRowRatioReport {
   droppedNonPositiveInput: number;
   droppedSourceFilter: number;
   droppedSparseSources: number;
+  droppedBelowMinAbsGap: number;
   droppedTopSources: number;
   sources: SourceColdWarmRowRatioRow[];
 }
@@ -162,6 +175,16 @@ export function buildSourceColdWarmRowRatio(
   if (!validSorts.includes(sort)) {
     throw new Error(
       `sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+    );
+  }
+  const minAbsGap = opts.minAbsGap ?? 0;
+  if (
+    !Number.isFinite(minAbsGap) ||
+    minAbsGap < 0 ||
+    minAbsGap > 1
+  ) {
+    throw new Error(
+      `minAbsGap must be a finite number in [0, 1] (got ${opts.minAbsGap})`,
     );
   }
   const sourceFilter = opts.source ?? null;
@@ -284,7 +307,19 @@ export function buildSourceColdWarmRowRatio(
     totalTokensSum += acc.totalTokens;
   }
 
-  rows.sort((a, b) => {
+  // refinement filter (v0.6.64): drop rows below |coldRowMassGap| threshold.
+  let droppedBelowMinAbsGap = 0;
+  let filtered = rows;
+  if (minAbsGap > 0) {
+    const next: SourceColdWarmRowRatioRow[] = [];
+    for (const r of rows) {
+      if (Math.abs(r.coldRowMassGap) >= minAbsGap) next.push(r);
+      else droppedBelowMinAbsGap += 1;
+    }
+    filtered = next;
+  }
+
+  filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
       case 'rows':
@@ -312,10 +347,10 @@ export function buildSourceColdWarmRowRatio(
   });
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -325,6 +360,7 @@ export function buildSourceColdWarmRowRatio(
     minRows,
     top,
     sort,
+    minAbsGap,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -332,6 +368,7 @@ export function buildSourceColdWarmRowRatio(
     droppedNonPositiveInput,
     droppedSourceFilter,
     droppedSparseSources,
+    droppedBelowMinAbsGap,
     droppedTopSources,
     sources: kept,
   };

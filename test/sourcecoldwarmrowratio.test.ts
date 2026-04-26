@@ -293,3 +293,119 @@ test('build: ties broken by source asc on equal sort key', () => {
   assert.equal(r.sources[0]!.source, 'a-source');
   assert.equal(r.sources[1]!.source, 'b-source');
 });
+
+// ---- refinement (v0.6.64): minAbsGap ---------------------------------------
+
+test('build: rejects minAbsGap out of [0,1]', () => {
+  assert.throws(() => buildSourceColdWarmRowRatio([], { minAbsGap: -0.1 }));
+  assert.throws(() => buildSourceColdWarmRowRatio([], { minAbsGap: 1.5 }));
+  assert.throws(() => buildSourceColdWarmRowRatio([], { minAbsGap: NaN }));
+});
+
+test('build: minAbsGap=0 default keeps every source', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T01:00:00.000Z', 'a', 100, 0),
+    ql('2026-04-20T02:00:00.000Z', 'a', 100, 0),
+    ql('2026-04-20T03:00:00.000Z', 'a', 100, 50),
+    ql('2026-04-20T04:00:00.000Z', 'a', 100, 50),
+    // gap = 0 source
+    ql('2026-04-20T01:00:00.000Z', 'b', 200, 0),
+    ql('2026-04-20T02:00:00.000Z', 'b', 200, 0),
+    ql('2026-04-20T03:00:00.000Z', 'b', 200, 100),
+    ql('2026-04-20T04:00:00.000Z', 'b', 200, 100),
+  ];
+  const r = buildSourceColdWarmRowRatio(q, { generatedAt: GEN, minRows: 1 });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinAbsGap, 0);
+});
+
+test('build: minAbsGap drops gap-zero sources but keeps gap-large ones', () => {
+  const q: QueueLine[] = [
+    // gap=0 source: 2 cold of 100, 2 warm of 100
+    ql('2026-04-20T01:00:00.000Z', 'flat', 100, 0),
+    ql('2026-04-20T02:00:00.000Z', 'flat', 100, 0),
+    ql('2026-04-20T03:00:00.000Z', 'flat', 100, 50),
+    ql('2026-04-20T04:00:00.000Z', 'flat', 100, 50),
+    // gap-large source: 4 cold of 10, 1 warm of 10_000
+    ql('2026-04-20T01:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T02:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T03:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T04:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T05:00:00.000Z', 'big', 10000, 5000),
+  ];
+  const r = buildSourceColdWarmRowRatio(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minAbsGap: 0.1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'big');
+  assert.equal(r.droppedBelowMinAbsGap, 1);
+});
+
+test('build: minAbsGap fires on negative gap as well as positive (abs filter)', () => {
+  // Single source with negative gap (big cold rows, small warm rows).
+  const q: QueueLine[] = [
+    ql('2026-04-20T01:00:00.000Z', 'codex', 10000, 0),
+    ql('2026-04-20T02:00:00.000Z', 'codex', 10000, 0),
+    ql('2026-04-20T03:00:00.000Z', 'codex', 100, 50),
+    ql('2026-04-20T04:00:00.000Z', 'codex', 100, 50),
+    ql('2026-04-20T05:00:00.000Z', 'codex', 100, 50),
+  ];
+  const rPass = buildSourceColdWarmRowRatio(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minAbsGap: 0.5,
+  });
+  assert.equal(rPass.sources.length, 1);
+  // Bumping above the magnitude should drop it.
+  const rDrop = buildSourceColdWarmRowRatio(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minAbsGap: 0.99,
+  });
+  assert.equal(rDrop.sources.length, 0);
+  assert.equal(rDrop.droppedBelowMinAbsGap, 1);
+});
+
+test('build: minAbsGap composes with --top (filter happens before cap)', () => {
+  const q: QueueLine[] = [
+    // 3 sources: gap 0.0, gap +0.5, gap +0.8
+    // 0
+    ql('2026-04-20T01:00:00.000Z', 'flat', 100, 0),
+    ql('2026-04-20T02:00:00.000Z', 'flat', 100, 0),
+    ql('2026-04-20T03:00:00.000Z', 'flat', 100, 50),
+    ql('2026-04-20T04:00:00.000Z', 'flat', 100, 50),
+    // mid: 3 cold of 100, 1 warm of 1000  -> coldShare=0.75, mass=300/1300=0.231, gap≈0.519
+    ql('2026-04-20T01:00:00.000Z', 'mid', 100, 0),
+    ql('2026-04-20T02:00:00.000Z', 'mid', 100, 0),
+    ql('2026-04-20T03:00:00.000Z', 'mid', 100, 0),
+    ql('2026-04-20T04:00:00.000Z', 'mid', 1000, 500),
+    // big: 4 cold of 10, 1 warm of 10000  -> gap≈0.7997
+    ql('2026-04-20T01:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T02:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T03:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T04:00:00.000Z', 'big', 10, 0),
+    ql('2026-04-20T05:00:00.000Z', 'big', 10000, 5000),
+  ];
+  // min-abs-gap=0.4 drops 'flat'. Then --top=1 sorted by gap keeps 'big'.
+  const r = buildSourceColdWarmRowRatio(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minAbsGap: 0.4,
+    top: 1,
+    sort: 'gap',
+  });
+  assert.equal(r.droppedBelowMinAbsGap, 1);
+  assert.equal(r.droppedTopSources, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'big');
+});
+
+test('build: minAbsGap is reported on the report object', () => {
+  const r = buildSourceColdWarmRowRatio([], {
+    generatedAt: GEN,
+    minAbsGap: 0.25,
+  });
+  assert.equal(r.minAbsGap, 0.25);
+});

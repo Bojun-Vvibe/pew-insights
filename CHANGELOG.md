@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.64 — 2026-04-27
+
+### Changed
+
+- `source-cold-warm-row-ratio`: refinement filter
+  `--min-abs-gap <n>` requires `|coldRowMassGap| >= n` for a
+  source row to be reported. Default 0 = no filter. Range
+  [0, 1]. Useful for surfacing only sources with a meaningful
+  row-count vs input-mass mismatch — anything within `n`
+  percentage points of "cold rows weigh exactly the same as
+  warm rows on average" is hidden.
+
+  Validates that the value is finite in [0, 1]. Suppressed
+  sources surface as `droppedBelowMinAbsGap`. Filter order:
+  `since`/`until` window -> `source` filter -> per-source
+  aggregation -> `min-rows` -> `min-abs-gap` -> sort -> `top`
+  (so the display cap is applied to the post-filter, post-
+  sort set, exactly like the other refinement gates in this
+  codebase).
+
+  The filter is symmetric on the absolute value of the gap,
+  so it catches both regimes — sources where cold rows are
+  unusually small (positive gap) and sources where the big
+  jobs miss the cache (negative gap). Composes with
+  `--sort gap` to put the gappiest survivors at the top of
+  the kept set.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-cold-warm-row-ratio --min-abs-gap 0.05
+pew-insights source-cold-warm-row-ratio
+as of: 2026-04-26T17:41:52.891Z    sources: 6 (shown 1)    total-tokens: 9,342,534,919    min-rows: 5    min-abs-gap: 0.0500    top: -    sort: tokens
+dropped: 0 bad hour_start, 327 non-positive input, 0 source-filter, 0 below min-rows, 5 below min-abs-gap, 0 below top cap
+(per-source row-count vs input-mass split for cold (cached_input_tokens=0) vs warm (>0) hour-buckets; gap = coldShare - coldInputTokenShare)
+
+per-source cold/warm row & input-mass split (sorted by tokens; ties: source asc)
+source       firstDay    lastDay     nRows  coldRows  warmRows  coldShare  coldMassShare  gap      meanColdInput  meanWarmInput  inputTokens
+-----------  ----------  ----------  -----  --------  --------  ---------  -------------  -------  -------------  -------------  -------------
+claude-code  2026-02-11  2026-04-23  299    49        250       0.1639     0.0685         +0.0954  2,564,318      6,835,848      1,834,613,640
+```
+
+Reading: with `--min-abs-gap 0.05`, only `claude-code` survives —
+the only source whose row-count vs input-mass split clears 5
+percentage points. The other five sources (`opencode` +0.0073,
+`openclaw` +0.0087, `codex` +0.0310, `hermes` +0.0058, and
+`ide-assistant-A` +0.0000) all have gaps small enough that
+treating "fraction of rows that are cold" as a proxy for
+"fraction of input mass that misses the cache" is acceptable
+within 5pp. The flag turns the qualitative observation
+("which source actually has cold rows shaped *differently*
+from warm rows?") into a one-knob, falsifiable filter that
+composes with `--sort gap` and `--top` to surface exactly
+the mismatched stragglers.
+
 ## 0.6.63 — 2026-04-27
 
 ### Added

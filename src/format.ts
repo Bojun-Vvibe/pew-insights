@@ -7280,12 +7280,12 @@ export function renderSourceColdWarmRowRatio(
   lines.push(chalk.bold.cyan('pew-insights source-cold-warm-row-ratio'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-rows: ${formatNumber(r.minRows)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-rows: ${formatNumber(r.minRows)}    min-abs-gap: ${r.minAbsGap === 0 ? '\u2014' : r.minAbsGap.toFixed(4)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveInput)} non-positive input, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-rows, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveInput)} non-positive input, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-rows, ${formatNumber(r.droppedBelowMinAbsGap)} below min-abs-gap, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
