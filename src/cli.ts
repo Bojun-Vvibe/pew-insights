@@ -7041,6 +7041,11 @@ program
     'sort key: share (default) | tokens | hours | source. Applied before --top.',
     'share',
   )
+  .option(
+    '--min-share <s>',
+    'display filter: hide sources whose topKShare is strictly below s. s in [0, 1]. Default 0 = no filter. Applied after --min-tokens and --min-hours, before sort and --top. Counts surface as droppedBelowMinShare.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -7053,6 +7058,7 @@ program
         minHours: string;
         top: string;
         sort: string;
+        minShare: string;
         json?: boolean;
       },
       cmd,
@@ -7088,6 +7094,12 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        const minShare = Number.parseFloat(opts.minShare);
+        if (!Number.isFinite(minShare) || minShare < 0 || minShare > 1) {
+          throw new Error(
+            `--min-share must be a number in [0, 1] (got ${opts.minShare})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceHourTopKMassShare(queue, {
           since: opts.since ?? null,
@@ -7097,6 +7109,7 @@ program
           minTokens,
           minHours,
           top,
+          minShare,
           sort: opts.sort as 'share' | 'tokens' | 'hours' | 'source',
         });
         if (opts.json || common.json) {

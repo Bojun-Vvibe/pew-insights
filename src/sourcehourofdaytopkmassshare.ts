@@ -96,6 +96,16 @@ export interface SourceHourTopKMassShareOptions {
   minHours?: number;
   top?: number;
   sort?: SourceHourTopKMassShareSort;
+  /**
+   * Display filter (refinement, v0.6.39): drop rows whose
+   * `topKShare` is strictly below this value. `s` in [0, 1]; 0
+   * means "no filter". Useful for surfacing only sources whose
+   * mass is meaningfully concentrated on a few clock hours
+   * (e.g. `--min-share 0.4` hides sources only mildly above the
+   * uniform baseline). Applied after `minTokens` and `minHours`,
+   * before sort and `top`.
+   */
+  minShare?: number;
   generatedAt?: string;
 }
 
@@ -126,6 +136,8 @@ export interface SourceHourTopKMassShareReport {
   minHours: number;
   top: number;
   sort: SourceHourTopKMassShareSort;
+  /** Echo of resolved minShare filter (0 = no filter). */
+  minShare: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -134,6 +146,8 @@ export interface SourceHourTopKMassShareReport {
   droppedSourceFilter: number;
   droppedSparseSources: number;
   droppedBelowMinHours: number;
+  /** Source rows hidden by the `minShare` filter. */
+  droppedBelowMinShare: number;
   droppedTopSources: number;
   sources: SourceHourTopKMassShareRow[];
 }
@@ -176,6 +190,12 @@ export function buildSourceHourTopKMassShare(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minShare = opts.minShare ?? 0;
+  if (!Number.isFinite(minShare) || minShare < 0 || minShare > 1) {
+    throw new Error(
+      `minShare must be a finite number in [0, 1] (got ${opts.minShare})`,
+    );
   }
   const sort: SourceHourTopKMassShareSort = opts.sort ?? 'share';
   const validSorts: SourceHourTopKMassShareSort[] = [
@@ -301,7 +321,19 @@ export function buildSourceHourTopKMassShare(
     totalTokensSum += acc.totalTokens;
   }
 
-  rows.sort((a, b) => {
+  // minShare refinement filter (v0.6.39)
+  let droppedBelowMinShare = 0;
+  let filtered = rows;
+  if (minShare > 0) {
+    const next: SourceHourTopKMassShareRow[] = [];
+    for (const r of rows) {
+      if (r.topKShare >= minShare) next.push(r);
+      else droppedBelowMinShare += 1;
+    }
+    filtered = next;
+  }
+
+  filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
       case 'tokens':
@@ -323,10 +355,10 @@ export function buildSourceHourTopKMassShare(
   });
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -339,6 +371,7 @@ export function buildSourceHourTopKMassShare(
     minHours,
     top,
     sort,
+    minShare,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -347,6 +380,7 @@ export function buildSourceHourTopKMassShare(
     droppedSourceFilter,
     droppedSparseSources,
     droppedBelowMinHours,
+    droppedBelowMinShare,
     droppedTopSources,
     sources: kept,
   };

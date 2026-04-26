@@ -308,3 +308,54 @@ test('build: echoes uniformBaseline = K/24 in report', () => {
   assert.equal(r.topHoursK, 6);
   assert.equal(r.uniformBaseline, 0.25);
 });
+
+// ---- minShare refinement (v0.6.39) -----------------------------------
+
+test('build: minShare drops rows with topKShare strictly below threshold', () => {
+  // src-a: highly concentrated (one hour) -> share = 1
+  // src-b: uniform across 24 hours -> share = 3/24 = 0.125
+  const queue: QueueLine[] = [];
+  queue.push(ql('2026-04-20T05:00:00.000Z', 'src-a', 1000));
+  queue.push(ql('2026-04-20T06:00:00.000Z', 'src-a', 1));
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    queue.push(ql(`2026-04-20T${hh}:00:00.000Z`, 'src-b', 100));
+  }
+  const r = buildSourceHourTopKMassShare(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minHours: 1,
+    topHours: 3,
+    minShare: 0.5,
+  });
+  assert.equal(r.droppedBelowMinShare, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'src-a');
+  assert.equal(r.minShare, 0.5);
+});
+
+test('build: minShare=0 is no-op', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 1000),
+    ql('2026-04-20T06:00:00.000Z', 'src-a', 1000),
+  ];
+  const r = buildSourceHourTopKMassShare(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minHours: 1,
+    minShare: 0,
+  });
+  assert.equal(r.droppedBelowMinShare, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('build: minShare validation', () => {
+  assert.throws(
+    () => buildSourceHourTopKMassShare([], { minShare: -0.1 }),
+    /minShare/,
+  );
+  assert.throws(
+    () => buildSourceHourTopKMassShare([], { minShare: 1.1 }),
+    /minShare/,
+  );
+});

@@ -6316,12 +6316,12 @@ export function renderSourceHourTopKMassShare(
   lines.push(chalk.bold.cyan('pew-insights source-hour-of-day-topk-mass-share'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    K: ${r.topHoursK}    uniformBaseline: ${r.uniformBaseline.toFixed(4)}    min-tokens: ${formatNumber(r.minTokens)}    min-hours: ${formatNumber(r.minHours)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    K: ${r.topHoursK}    uniformBaseline: ${r.uniformBaseline.toFixed(4)}    min-tokens: ${formatNumber(r.minTokens)}    min-hours: ${formatNumber(r.minHours)}    min-share: ${r.minShare === 0 ? '\u2014' : r.minShare}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinHours)} below min-hours, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinHours)} below min-hours, ${formatNumber(r.droppedBelowMinShare)} below min-share, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

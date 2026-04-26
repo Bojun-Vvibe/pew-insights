@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.39 — 2026-04-26
+
+### Changed
+
+- `source-hour-of-day-topk-mass-share`: new display filter
+  `--min-share <s>` drops rows whose `topKShare` is strictly
+  below the given threshold. `s` in `[0, 1]`. Default 0 = no
+  filter. Suppressed rows surface as `droppedBelowMinShare`.
+  Useful for surfacing only sources whose lifetime token mass
+  is meaningfully concentrated on a few clock hours
+  (e.g. `--min-share 0.35` hides sources only mildly above the
+  uniform baseline).
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `minHours` -> `minShare` -> sort -> `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-share 0.35`)
+
+```
+pew-insights source-hour-of-day-topk-mass-share --min-share 0.35
+as of: 2026-04-26T08:13:01.981Z    sources: 6 (shown 2)    tokens: 9,070,762,865    K: 3    uniformBaseline: 0.1250    min-tokens: 1,000    min-hours: 2    min-share: 0.35    top: —    sort: share
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-hours, 4 below min-share, 0 below top cap
+(per-source share of total token mass in the K busiest hours-of-day; share_K in [K/24, 1]; UTC hours)
+
+per-source top-3 hour-of-day mass share (sorted by share; ties: source asc)
+source           firstDay    lastDay     hoursActive  top3Share  topHours                    tokens
+---------------  ----------  ----------  -----------  ---------  --------------------------  -----------
+ide-assistant-A  2025-07-30  2026-04-20  14           0.4893     02:0.217 06:0.141 08:0.131  1,885,727
+codex            2026-04-13  2026-04-20  16           0.3647     12:0.128 16:0.119 15:0.118  809,624,660
+```
+
+Reading: at `--min-share 0.35`, only `ide-assistant-A` (0.4893)
+and `codex` (0.3647) clear the bar — the four other sources
+sit between 0.19 and 0.32 and are suppressed via the new
+`droppedBelowMinShare` counter (= 4). The CLI summary line
+echoes `min-share: 0.35` so JSON consumers can reproduce the
+filter exactly.
+
 ## 0.6.38 — 2026-04-26
 
 ### Added
