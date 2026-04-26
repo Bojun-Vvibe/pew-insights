@@ -6011,6 +6011,11 @@ program
     "sort key for sources[]: 'tokens' (default) | 'cv' | 'mean' | 'days' | 'source'",
     'tokens',
   )
+  .option(
+    '--cv-min <f>',
+    'drop sources whose ratioCv is below f (non-negative finite); useful for surfacing the wild ones; suppressed rows surface as droppedBelowCvMin (default 0)',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6021,6 +6026,7 @@ program
         minDays: string;
         top?: string;
         sort: string;
+        cvMin: string;
         json?: boolean;
       },
       cmd,
@@ -6054,6 +6060,10 @@ program
             `--sort must be 'tokens' | 'cv' | 'mean' | 'days' | 'source' (got ${opts.sort})`,
           );
         }
+        const cvMin = Number.parseFloat(opts.cvMin);
+        if (!Number.isFinite(cvMin) || cvMin < 0) {
+          throw new Error(`--cv-min must be a non-negative finite number (got ${opts.cvMin})`);
+        }
         const queue = await readQueue(paths);
         const report = buildSourceIoRatioStability(queue, {
           since: opts.since ?? null,
@@ -6062,6 +6072,7 @@ program
           minDays,
           top,
           sort: sort as 'tokens' | 'cv' | 'mean' | 'days' | 'source',
+          cvMin,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

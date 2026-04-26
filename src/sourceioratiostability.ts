@@ -102,6 +102,18 @@ export interface SourceIoRatioStabilityOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: 'tokens' | 'cv' | 'mean' | 'days' | 'source';
+  /**
+   * Drop sources whose `ratioCv` is strictly below this value
+   * from the per-source table. Display filter only — global
+   * denominators reflect the full kept population. Suppressed
+   * rows surface as `droppedBelowCvMin`. Must be a non-negative
+   * finite number. Default 0 = no floor.
+   *
+   * Useful for finding the "wild" sources whose interaction
+   * shape is genuinely volatile (e.g. `--cv-min 0.5`) without
+   * being drowned in stable rows.
+   */
+  cvMin?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -143,6 +155,7 @@ export interface SourceIoRatioStabilityReport {
   minDays: number;
   top: number | null;
   sort: 'tokens' | 'cv' | 'mean' | 'days' | 'source';
+  cvMin: number;
   /** Distinct sources that survived filters (pre minDays floor). */
   totalSources: number;
   /** Sum of total_tokens across the full kept population. */
@@ -150,6 +163,7 @@ export interface SourceIoRatioStabilityReport {
   droppedInvalidHourStart: number;
   droppedSourceFilter: number;
   droppedBelowMinDays: number;
+  droppedBelowCvMin: number;
   droppedBelowTopCap: number;
   sources: SourceIoRatioStabilityRow[];
 }
@@ -187,6 +201,10 @@ export function buildSourceIoRatioStability(
     throw new Error(
       `sort must be 'tokens' | 'cv' | 'mean' | 'days' | 'source' (got ${opts.sort})`,
     );
+  }
+  const cvMin = opts.cvMin ?? 0;
+  if (!Number.isFinite(cvMin) || cvMin < 0) {
+    throw new Error(`cvMin must be a non-negative finite number (got ${opts.cvMin})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -320,10 +338,15 @@ export function buildSourceIoRatioStability(
   }
 
   let droppedBelowMinDays = 0;
+  let droppedBelowCvMin = 0;
   const survived: SourceIoRatioStabilityRow[] = [];
   for (const row of allRows) {
     if (row.daysWithRatio < minDays) {
       droppedBelowMinDays += 1;
+      continue;
+    }
+    if (row.ratioCv < cvMin) {
+      droppedBelowCvMin += 1;
       continue;
     }
     survived.push(row);
@@ -365,11 +388,13 @@ export function buildSourceIoRatioStability(
     minDays,
     top,
     sort,
+    cvMin,
     totalSources: allRows.length,
     totalTokens,
     droppedInvalidHourStart,
     droppedSourceFilter,
     droppedBelowMinDays,
+    droppedBelowCvMin,
     droppedBelowTopCap,
     sources: finalSources,
   };

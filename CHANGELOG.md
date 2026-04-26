@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.20 — 2026-04-26
+
+### Changed
+
+- `source-io-ratio-stability`: new `--cv-min <f>` knob. Drops
+  per-source rows whose `ratioCv` is strictly below `f`. Display
+  filter only — global denominators still reflect the full kept
+  population. Suppressed rows surface as `droppedBelowCvMin`
+  alongside the resolved `cvMin` floor in the report header.
+
+  This makes it trivial to **isolate the volatile sources**
+  without sifting through stable ones — e.g. `--cv-min 0.5
+  --sort cv` orders the results so the most-volatile source
+  comes last and everything below the operator's volatility
+  threshold is hidden. Default `0` preserves the prior behaviour
+  (no floor).
+
+  The filter is applied **after** `--min-days` and **before**
+  `--top`, so a non-zero cap interacts predictably: only sources
+  surviving both `minDays` and `cvMin` compete for the top-N slots.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-days 3 --cv-min 0.5 --sort cv --since 2026-04-01T00:00:00Z`)
+
+```
+pew-insights source-io-ratio-stability
+as of: 2026-04-26T02:28:42.180Z    sources: 6 (shown 3)    tokens: 8,538,435,668    min-days: 3    cv-min: 0.500    sort: cv
+dropped: 0 bad hour_start, 0 by source filter, 1 below min-days, 2 below cv-min, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(ratioCv = stddev(daily out/in ratio) / mean(daily out/in ratio); low CV = stable interaction shape day-over-day; high CV = swings between mostly-prompt and mostly-generation; flatLine=y means every kept day had output_tokens=0)
+
+per-source io-ratio stability (sorted by cv; ties: source asc)
+source       tokens         inTok          outTok      activeD  ratioD  zeroInD  meanRatio  stdRatio  ratioCv  flat
+-----------  -------------  -------------  ----------  -------  ------  -------  ---------  --------  -------  ----
+openclaw     1,710,308,012  918,477,675    4,813,377   10       10      0        0.005      0.003     0.697    -
+hermes       142,614,057    55,111,274     1,332,424   10       10      0        0.082      0.071     0.862    -
+claude-code  3,058,006,887  1,572,298,745  11,153,239  15       15      0        0.009      0.012     1.301    -
+```
+
+The `--cv-min 0.5` floor cleanly surfaced the three most-volatile
+heavyweight sources and hid the two stable ones (`opencode` at
+`0.336` and `codex` at `0.389`), confirming the flag works as
+designed: 2 stable sources dropped via `droppedBelowCvMin`, 1
+suppressed by the unchanged `--min-days 3` floor.
+
 ## 0.6.19 — 2026-04-26
 
 ### Added

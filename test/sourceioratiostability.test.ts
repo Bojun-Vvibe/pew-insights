@@ -290,3 +290,69 @@ test('source-io-ratio-stability: aggregates multiple buckets within same UTC day
   assert.equal(s.meanRatio, 0.25);
   assert.equal(s.ratioCv, 0);
 });
+
+test('source-io-ratio-stability: cvMin floor drops stable sources', () => {
+  // s_stable: cv=0; s_wild: cv > 0.5
+  const q: QueueLine[] = [];
+  for (let d = 1; d <= 3; d += 1) {
+    const dd = String(d).padStart(2, '0');
+    q.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'stable', 100, 50));
+  }
+  q.push(ql('2026-04-01T00:00:00.000Z', 'wild', 100, 100));
+  q.push(ql('2026-04-02T00:00:00.000Z', 'wild', 100, 0));
+  q.push(ql('2026-04-03T00:00:00.000Z', 'wild', 100, 200));
+  const r = buildSourceIoRatioStability(q, {
+    generatedAt: GEN,
+    minDays: 3,
+    cvMin: 0.5,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'wild');
+  assert.equal(r.droppedBelowCvMin, 1);
+  assert.equal(r.cvMin, 0.5);
+});
+
+test('source-io-ratio-stability: cvMin=0 default keeps everything', () => {
+  const q: QueueLine[] = [];
+  for (let d = 1; d <= 3; d += 1) {
+    const dd = String(d).padStart(2, '0');
+    q.push(ql(`2026-04-${dd}T00:00:00.000Z`, 's1', 100, 50));
+  }
+  const r = buildSourceIoRatioStability(q, { generatedAt: GEN, minDays: 1 });
+  assert.equal(r.cvMin, 0);
+  assert.equal(r.droppedBelowCvMin, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('source-io-ratio-stability: rejects bad cvMin', () => {
+  assert.throws(() => buildSourceIoRatioStability([], { cvMin: -0.1 }));
+  assert.throws(() => buildSourceIoRatioStability([], { cvMin: Number.NaN }));
+  assert.throws(() => buildSourceIoRatioStability([], { cvMin: Number.POSITIVE_INFINITY }));
+});
+
+test('source-io-ratio-stability: cvMin applies before top cap', () => {
+  // 3 sources: a (cv=0), b (cv>0), c (cv>0). cvMin filters a, then top=1 keeps highest tokens.
+  const q: QueueLine[] = [];
+  for (let d = 1; d <= 3; d += 1) {
+    const dd = String(d).padStart(2, '0');
+    q.push(ql(`2026-04-${dd}T00:00:00.000Z`, 'a', 1000, 500)); // stable
+  }
+  q.push(ql('2026-04-01T00:00:00.000Z', 'b', 200, 100));
+  q.push(ql('2026-04-02T00:00:00.000Z', 'b', 200, 0));
+  q.push(ql('2026-04-03T00:00:00.000Z', 'b', 200, 200));
+  q.push(ql('2026-04-01T00:00:00.000Z', 'c', 100, 50));
+  q.push(ql('2026-04-02T00:00:00.000Z', 'c', 100, 0));
+  q.push(ql('2026-04-03T00:00:00.000Z', 'c', 100, 100));
+  const r = buildSourceIoRatioStability(q, {
+    generatedAt: GEN,
+    minDays: 3,
+    cvMin: 0.1,
+    top: 1,
+  });
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.droppedBelowCvMin, 1); // a dropped
+  assert.equal(r.droppedBelowTopCap, 1); // c dropped (b has more tokens)
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+});
