@@ -43,6 +43,7 @@ import type { SourceTokenMassHourCentroidReport } from './sourcetokenmasshourcen
 import type { SourceDayOfWeekTokenMassShareReport } from './sourcedayofweektokenmassshare.js';
 import { dowName as dowNameFmt } from './sourcedayofweektokenmassshare.js';
 import type { SourceDeadHourCountReport } from './sourcedeadhourcount.js';
+import type { SourceActiveHourLongestRunReport } from './sourceactivehourlongestrun.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 // ---------------------------------------------------------------------------
@@ -6523,6 +6524,75 @@ export function renderSourceDeadHourCount(
     s.deadShare.toFixed(4),
     String(s.longestDeadRun),
     String(s.deadRunCount),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceActiveHourLongestRun(
+  r: SourceActiveHourLongestRunReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-active-hour-longest-run'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-longest-active-run: ${r.minLongestActiveRun === 0 ? '\u2014' : r.minLongestActiveRun}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinLongestActiveRun)} below min-longest-active-run, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source longest contiguous run of *active* hours-of-day on the circular 24-cycle; share = longestActiveRun / activeHours)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source longest active hour-of-day run (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'buckets',
+    'activeHours',
+    'longestActiveRun',
+    'runStart',
+    'activeRunCount',
+    'activeRunShare',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nBuckets),
+    String(s.activeHours),
+    String(s.longestActiveRun),
+    s.longestRunStart < 0 ? '-' : String(s.longestRunStart).padStart(2, '0'),
+    String(s.activeRunCount),
+    s.activeRunShare.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));

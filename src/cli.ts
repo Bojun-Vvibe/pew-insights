@@ -77,6 +77,7 @@ import {
   renderSourceTokenMassHourCentroid,
   renderSourceDayOfWeekTokenMassShare,
   renderSourceDeadHourCount,
+  renderSourceActiveHourLongestRun,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
@@ -216,6 +217,7 @@ import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenfo
 import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.js';
 import { buildSourceDayOfWeekTokenMassShare } from './sourcedayofweektokenmassshare.js';
 import { buildSourceDeadHourCount } from './sourcedeadhourcount.js';
+import { buildSourceActiveHourLongestRun } from './sourceactivehourlongestrun.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
@@ -7334,6 +7336,102 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceDeadHourCount(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-active-hour-longest-run')
+  .description(
+    'Per-source longest contiguous run of *active* UTC hours-of-day (positive token mass) on the circular 24-cycle. Reports activeHours, longestActiveRun, activeRunCount, activeRunShare (= longestActiveRun / activeHours), and longestRunStart. Orthogonal to source-dead-hour-count (which measures the *zero* axis): two sources can have identical liveHours but very different longestActiveRun depending on whether their active mass is one solid shift or scattered across the day.',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | run | active | share | source. run = longestActiveRun desc, active = activeHours desc, share = activeRunShare desc. Applied before --top.',
+    'tokens',
+  )
+  .option(
+    '--min-longest-active-run <n>',
+    'display filter: hide sources whose longestActiveRun is strictly below n. n in [0,24]. Default 0 = no filter. Surfaces only sources with a substantial contiguous shift. Counts surface as droppedBelowMinLongestActiveRun.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        top: string;
+        sort: string;
+        minLongestActiveRun: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minLongestActiveRun = Number.parseInt(opts.minLongestActiveRun, 10);
+        if (
+          !Number.isInteger(minLongestActiveRun) ||
+          minLongestActiveRun < 0 ||
+          minLongestActiveRun > 24
+        ) {
+          throw new Error(
+            `--min-longest-active-run must be an integer in [0, 24] (got ${opts.minLongestActiveRun})`,
+          );
+        }
+        const validSorts = ['tokens', 'run', 'active', 'share', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceActiveHourLongestRun(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          top,
+          minLongestActiveRun,
+          sort: opts.sort as 'tokens' | 'run' | 'active' | 'share' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceActiveHourLongestRun(report) + '\n');
         }
       } catch (e) {
         die(e);
