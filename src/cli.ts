@@ -82,6 +82,7 @@ import {
   renderSourceWeekendWeekdayCacheShareGap,
   renderSourceDailyTokenTrendSlope,
   renderSourceBurstinessFanoFactor,
+  renderSourceCostClassMix,
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
@@ -227,6 +228,7 @@ import { buildSourceActiveHourSpan } from './sourceactivehourspan.js';
 import { buildSourceWeekendWeekdayCacheShareGap } from './sourceweekendweekdaycachesharegap.js';
 import { buildSourceDailyTokenTrendSlope } from './sourcedailytokentrendslope.js';
 import { buildSourceBurstinessFanoFactor } from './sourceburstinessfanofactor.js';
+import { buildSourceCostClassMix } from './sourcecostclassmix.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
@@ -8038,6 +8040,126 @@ program
           process.stdout.write(
             renderSourceBurstinessFanoFactor(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-cost-class-mix')
+  .description(
+    "Per source, classifies each positive-token row by total_tokens into small (< smallMax), medium ([smallMax, largeMin)), or large (>= largeMin) cost classes, then reports row-share and token-mass-share for each class. Orthogonal to tail-share (Pareto on hour-of-week buckets, never classifies rows by absolute magnitude), bucket-intensity / output-size (distribution shape stats, not categorical class share), source-burstiness-fano-factor and daily-token-gini-coefficient (dispersion / inequality scalars, not named magnitude classes), and cost / cost-per-bucket-percentiles (cost dollars derivative, not raw token threshold ladder). Headline question: what mix of small/medium/large rows is each source built out of, by both row count and token mass?",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--small-max <n>',
+    'exclusive upper bound of the small class; rows with total_tokens < smallMax are small (default 1000). Must be a positive integer.',
+    '1000',
+  )
+  .option(
+    '--large-min <n>',
+    'inclusive lower bound of the large class; rows with total_tokens >= largeMin are large (default 10000). Must be an integer >= smallMax. When largeMin == smallMax the medium class is structurally empty.',
+    '10000',
+  )
+  .option(
+    '--min-rows <n>',
+    'hide source rows with fewer than n classified rows (default 1). Suppressed surface as droppedBelowMinRows.',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | rows | pctLargeTokens | pctLargeRows | pctSmallTokens | pctSmallRows | source. tokens = totalTokens desc; rows = totalRows desc; pctLargeTokens = pctTokensLarge desc; pctLargeRows = pctRowsLarge desc; pctSmallTokens = pctTokensSmall desc; pctSmallRows = pctRowsSmall desc; source = alphabetical.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        smallMax: string;
+        largeMin: string;
+        minRows: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const smallMax = Number.parseInt(opts.smallMax, 10);
+        if (!Number.isInteger(smallMax) || smallMax <= 0) {
+          throw new Error(
+            `--small-max must be a positive integer (got ${opts.smallMax})`,
+          );
+        }
+        const largeMin = Number.parseInt(opts.largeMin, 10);
+        if (!Number.isInteger(largeMin) || largeMin < smallMax) {
+          throw new Error(
+            `--large-min must be an integer >= --small-max (got --large-min=${opts.largeMin}, --small-max=${smallMax})`,
+          );
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tokens',
+          'rows',
+          'pctLargeTokens',
+          'pctLargeRows',
+          'pctSmallTokens',
+          'pctSmallRows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceCostClassMix(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          smallMax,
+          largeMin,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'rows'
+            | 'pctLargeTokens'
+            | 'pctLargeRows'
+            | 'pctSmallTokens'
+            | 'pctSmallRows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceCostClassMix(report) + '\n');
         }
       } catch (e) {
         die(e);

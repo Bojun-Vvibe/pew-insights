@@ -48,6 +48,7 @@ import type { SourceActiveHourSpanReport } from './sourceactivehourspan.js';
 import type { SourceWeekendWeekdayCacheShareGapReport } from './sourceweekendweekdaycachesharegap.js';
 import type { SourceDailyTokenTrendSlopeReport } from './sourcedailytokentrendslope.js';
 import type { SourceBurstinessFanoFactorReport } from './sourceburstinessfanofactor.js';
+import type { SourceCostClassMixReport } from './sourcecostclassmix.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
@@ -6969,6 +6970,74 @@ export function renderSourceBurstinessFanoFactor(
     fmtN(s.cv, 4),
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceCostClassMix(
+  r: SourceCostClassMixReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-cost-class-mix'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    total-tokens: ${formatNumber(r.totalTokens)}    smallMax: ${formatNumber(r.smallMax)}    largeMin: ${formatNumber(r.largeMin)}    min-rows: ${formatNumber(r.minRows)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per source: classify each positive-token row by total_tokens into small (< smallMax), medium ([smallMax, largeMin)), large (>= largeMin); pctRowsX = classRows/totalRows, pctTokensX = classTokens/totalTokens)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source cost-class mix (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const pct = (v: number): string => (v * 100).toFixed(1) + '%';
+  const headers = [
+    'source',
+    'rows',
+    'tokens',
+    'sR%',
+    'mR%',
+    'lR%',
+    'sT%',
+    'mT%',
+    'lT%',
+  ];
+  const rows2: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalRows),
+    formatNumber(s.totalTokens),
+    pct(s.pctRowsSmall),
+    pct(s.pctRowsMedium),
+    pct(s.pctRowsLarge),
+    pct(s.pctTokensSmall),
+    pct(s.pctTokensMedium),
+    pct(s.pctTokensLarge),
+  ]);
+  lines.push(renderTableLocal(headers, rows2));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
