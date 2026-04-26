@@ -88,6 +88,7 @@ import {
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
+  renderSourceOutputTokensPerRowPercentiles,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -235,6 +236,7 @@ import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js'
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
+import { buildSourceOutputTokensPerRowPercentiles } from './sourceoutputtokensperrowpercentiles.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -6603,6 +6605,107 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceIoRatioStability(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-output-tokens-per-row-percentiles')
+  .description(
+    "Per-source distribution of output_tokens per individual queue row, reported as p50/p90/p99 plus mean/max and a tail = p99/p50 ratio. Distinct from output-size (per-model) and from output-token-decile-distribution (global) — this is the per-source generation-magnitude lens.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n positive-output rows (default 3)',
+    '3',
+  )
+  .option(
+    '--min-p99 <f>',
+    'drop sources whose p99 output_tokens is below f (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'tokens' (default) | 'p50' | 'p90' | 'p99' | 'tail' | 'rows' | 'source'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minP99: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const minP99 = Number.parseFloat(opts.minP99);
+        if (!Number.isFinite(minP99) || minP99 < 0) {
+          throw new Error(
+            `--min-p99 must be a non-negative finite number (got ${opts.minP99})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['tokens', 'p50', 'p90', 'p99', 'tail', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceOutputTokensPerRowPercentiles(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minP99,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'p50'
+            | 'p90'
+            | 'p99'
+            | 'tail'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceOutputTokensPerRowPercentiles(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

@@ -7041,3 +7041,81 @@ export function renderSourceCostClassMix(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceOutputTokensPerRowPercentilesReport,
+  SourceOutputTokensPerRowPercentilesRow,
+} from './sourceoutputtokensperrowpercentiles.js';
+
+export function renderSourceOutputTokensPerRowPercentiles(
+  r: SourceOutputTokensPerRowPercentilesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-output-tokens-per-row-percentiles'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    output-tokens: ${formatNumber(r.totalOutputTokens)}    min-rows: ${r.minRows}    min-p99: ${formatNumber(r.minP99)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAllZero)} all-zero-output sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinP99)} below min-p99, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-row output_tokens distribution per source; p50/p90/p99 are type-7 linear-interpolation percentiles over positive-output rows; tail = p99/p50)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source output-tokens-per-row percentiles (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'zeroR',
+    'outSum',
+    'mean',
+    'p50',
+    'p90',
+    'p99',
+    'max',
+    'tail',
+  ];
+  const rows2: string[][] = r.sources.map(
+    (s: SourceOutputTokensPerRowPercentilesRow) => [
+      s.source,
+      formatNumber(s.rowsConsidered),
+      formatNumber(s.rowsZeroOutput),
+      formatNumber(s.outputSum),
+      formatNumber(Math.round(s.mean)),
+      formatNumber(Math.round(s.p50)),
+      formatNumber(Math.round(s.p90)),
+      formatNumber(Math.round(s.p99)),
+      formatNumber(s.max),
+      s.p99OverP50.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
