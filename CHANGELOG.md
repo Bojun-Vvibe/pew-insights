@@ -52,6 +52,35 @@ All notable changes to this project will be documented in this file.
   unfiltered run — confirming the filter is purely a cohort
   selector and not a re-ranker.
 
+  Companion smoke (`--sort mean`, no filter) showing the
+  per-row-output-size leaderboard the cohort filter operates on:
+
+  ```
+  pew-insights source-output-tokens-by-hour-cv
+  as of: 2026-04-26T21:15:52.901Z    sources: 6 (shown 6)    tokens: 9,419,357,435    min-hours: 3    min-rows: 1    min-mean-hr: 0.00    top: -    sort: mean
+
+  per-source diurnal output CV (sorted by mean; ties: source asc)
+  source             tokens         outTok      rows  hoursPop  meanHourMean  stdHourMean  hourCv
+  -----------------  -------------  ----------  ----  --------  ------------  -----------  ------
+  claude-code        3,442,385,788  12,128,825  299   20        72072.20      46197.07     0.6410
+  opencode           3,255,867,695  21,719,811  314   24        68647.89      25835.57     0.3763
+  codex              809,624,660    2,045,042   64    16        37612.39      34918.41     0.9284
+  openclaw           1,764,148,752  4,843,187   420   24        11591.65      3417.80     0.2948
+  hermes             145,444,813    1,406,816   165   24         7766.99      2875.47     0.3702
+  ide-assistant-A    1,885,727      1,135,247   333   14         3476.62      1633.88     0.4700
+  ```
+
+  Two-axis read: `claude-code` ships the biggest typical reply
+  (~72K tokens/row) AND is the second-most diurnally lumpy
+  (`hourCv = 0.64`) — its midnight-hour replies do not look like
+  its noon replies. `opencode` ships nearly as big (~68K) but is
+  the steadiest of the chunky cohort (`hourCv = 0.38`) — flat
+  output shape across all 24 hours. `codex` is mid-tier on size
+  (~37K) but the most lumpy overall (`hourCv = 0.93`) and only
+  populates 16 hours — a focused-window-with-spiky-output
+  signature. The two metrics ARE NOT redundant: rank-by-mean
+  and rank-by-cv produce different orderings.
+
 ## 0.6.73 — 2026-04-27
 
 ### Added
