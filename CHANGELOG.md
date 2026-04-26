@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.60 — 2026-04-27
+
+### Changed
+
+- `source-single-day-mass-concentration`: refinement filter
+  `--max-share-min <f>` requires `maxDayShare >= f` for a
+  source row to be reported. Default 0 = no floor. Useful for
+  surfacing only sources whose history is genuinely dominated
+  by a single date.
+
+  Validates that the value is finite and in `[0, 1]`. Suppressed
+  sources surface as `droppedBelowMinMaxShare`. Filter order:
+  `since`/`until` window -> `source` filter -> per-source
+  aggregation -> `minDays` -> `minMaxShare` -> sort -> `top`
+  (so the display cap is applied to the post-filter, post-sort
+  set). Composes orthogonally with `--min-days`: a source has
+  to clear both gates.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-single-day-mass-concentration --max-share-min 0.4
+pew-insights source-single-day-mass-concentration
+as of: 2026-04-26T16:36:03.131Z    sources: 6 (shown 1)    total-tokens: 9,315,182,153    min-days: 3    max-share-min: 0.4000    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 by source filter, 0 zero-mass sources, 0 below min-days, 5 below max-share-min, 0 below top cap
+(per-source token-mass concentration on the single biggest UTC day; share = day_tokens / source_total; hhi = sum_i share_i^2 over active days)
+
+per-source single-day mass concentration (sorted by tokens; ties: source asc)
+source  days  tokenSum     maxDay      maxTok       maxShare  top2Share  top3Share  hhi
+------  ----  -----------  ----------  -----------  --------  ---------  ---------  ------
+codex   8     809,624,660  2026-04-20  389,724,254  0.4814    0.7079     0.8466     0.3088
+```
+
+Reading: with a `>= 0.4` floor on `maxDayShare`, the filter
+isolates exactly one source whose history is genuinely
+single-date-dominated: `codex` (one UTC day holds 48% of its
+entire 8-day token history; the top-3 days hold 85%). Every
+other source — `claude-code` (0.31), `opencode` (0.23),
+`hermes` (0.24), `openclaw` (0.20), `ide-assistant-A` (0.13)
+— spreads its mass more evenly across active days and is
+suppressed. The flag turns the qualitative observation
+("which sources had a single dominating day?") into a
+one-knob, falsifiable filter that composes with the existing
+`--min-days` and `--top` gates.
+
 ## 0.6.59 — 2026-04-27
 
 ### Added
