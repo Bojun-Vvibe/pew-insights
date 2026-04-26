@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.68 — 2026-04-27
+
+### Changed
+
+- `source-input-token-top-row-share`: refinement filter
+  `--min-hhi <f>` requires `hhi >= f` for a source row to be
+  reported. Default 0 = no filter. Range [0, 1] (the HHI of a
+  positive-input source is in (0, 1]; bounded above by 1 when one
+  row owns all mass and below by 1/n for n equal rows).
+
+  HHI is the cleanest single-number concentration scalar — unlike
+  `top1Share` (sensitive only to the single largest row) and
+  `topKShare` (sensitive only to the K largest, with K fixed),
+  HHI integrates the full distribution. The reciprocal `1/hhi` is
+  the **effective number of equally-weighted rows**: a source with
+  hhi 0.05 behaves like 20 equal-mass rows; hhi 0.5 behaves like 2.
+
+  `--min-hhi 0.02` keeps only sources whose effective row count is
+  <= 50 — i.e. mass is concentrated in <=50 effective rows of work
+  regardless of how many actual queue rows exist. The flag composes
+  with `--sort hhi` to put the most-concentrated survivors first.
+
+  Validates that the value is finite in [0, 1]. Suppressed sources
+  surface as `droppedBelowMinHhi`. Filter order: `since`/`until`
+  window -> `source` filter -> per-source aggregation -> `min-rows`
+  -> `min-top1-share` -> `min-topk-share` -> `min-hhi` -> sort ->
+  `top` (display cap is applied to the post-filter, post-sort set,
+  exactly like the other refinement gates in this codebase).
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-input-token-top-row-share --min-hhi 0.02 --sort hhi
+pew-insights source-input-token-top-row-share
+as of: 2026-04-26T18:59:01.935Z    sources: 6 (shown 2)    input-tokens: 3,451,386,953    K: 3    min-rows: 3    min-top1: 0.0000    min-topk: 0.0000    min-hhi: 0.0200    top: -    sort: hhi
+dropped: 0 bad hour_start, 0 by source filter, 0 all-zero-input sources, 0 below min-rows, 0 below min-top1, 0 below min-topk, 4 below min-hhi, 0 below top cap
+
+per-source input-token top-row mass concentration (sorted by hhi; ties: source asc)
+source           rows  zeroR  inSum        top1Tok     top1Sh  topKTok     topKSh  hhi
+---------------  ----  -----  -----------  ----------  ------  ----------  ------  ------
+ide-assistant-A  6     327    581,090      172,138     0.2962  414,670     0.7136  0.2047
+codex            64    0      410,781,190  29,634,948  0.0721  81,656,238  0.1988  0.0351
+```
+
+Reading: with `--min-hhi 0.02`, only two sources survive — the
+two whose lifetime input mass is concentrated in fewer than 50
+effective rows. `ide-assistant-A` (hhi 0.205, ~5 effective rows)
+and `codex` (hhi 0.035, ~28 effective rows) are exactly the two
+that the v0.6.67 default-sort smoke flagged as the top1-leaders.
+The other four (`claude-code` hhi 0.011, `openclaw` hhi 0.006,
+`opencode` hhi 0.011, `hermes` hhi 0.019) are correctly filtered
+out — their lifetime input volume is spread across >50 effective
+rows of comparable size.
+
+The flag turns the qualitative observation ("which sources have
+genuinely concentrated input mass?") into a one-knob, scalar,
+falsifiable filter that does not depend on the choice of K.
+
+ide-assistant-A redaction applied to one source name in the smoke
+output to comply with the local repo's banned-strings policy.
+
 ## 0.6.67 — 2026-04-27
 
 ### Added

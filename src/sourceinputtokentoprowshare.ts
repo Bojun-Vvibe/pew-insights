@@ -138,6 +138,21 @@ export interface SourceInputTokenTopRowShareOptions {
    */
   minTopKShare?: number;
   /**
+   * Drop sources whose `hhi` is strictly below this value from the
+   * per-source table. Display filter only. Suppressed rows surface
+   * as `droppedBelowMinHhi`. Must be in [0, 1] (HHI is bounded by
+   * 1 from above and 1/n from below for n positive rows). Default
+   * 0 = no floor.
+   *
+   * Useful for surfacing only sources whose input-token mass is
+   * **truly** concentrated, regardless of whether that concentration
+   * is in 1 monster row (top1Share leaderboard) or spread across a
+   * handful of large rows. HHI is the cleanest single-number
+   * concentration scalar: `--min-hhi 0.05` keeps only sources whose
+   * effective number of equally-weighted rows is <= 20.
+   */
+  minHhi?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null
    * = no cap.
@@ -181,6 +196,7 @@ export interface SourceInputTokenTopRowShareReport {
   minRows: number;
   minTop1Share: number;
   minTopKShare: number;
+  minHhi: number;
   top: number | null;
   sort: 'tokens' | 'top1' | 'topk' | 'hhi' | 'rows' | 'source';
   /** Distinct sources seen pre-filter. */
@@ -194,6 +210,7 @@ export interface SourceInputTokenTopRowShareReport {
   droppedBelowMinRows: number;
   droppedBelowMinTop1Share: number;
   droppedBelowMinTopKShare: number;
+  droppedBelowMinHhi: number;
   droppedBelowTopCap: number;
   sources: SourceInputTokenTopRowShareRow[];
 }
@@ -230,6 +247,12 @@ export function buildSourceInputTokenTopRowShare(
   ) {
     throw new Error(
       `minTopKShare must be a finite number in [0, 1] (got ${opts.minTopKShare})`,
+    );
+  }
+  const minHhi = opts.minHhi ?? 0;
+  if (!Number.isFinite(minHhi) || minHhi < 0 || minHhi > 1) {
+    throw new Error(
+      `minHhi must be a finite number in [0, 1] (got ${opts.minHhi})`,
     );
   }
   const top = opts.top ?? null;
@@ -346,6 +369,7 @@ export function buildSourceInputTokenTopRowShare(
   let droppedBelowMinRows = 0;
   let droppedBelowMinTop1Share = 0;
   let droppedBelowMinTopKShare = 0;
+  let droppedBelowMinHhi = 0;
   const survived: SourceInputTokenTopRowShareRow[] = [];
   for (const row of allRows) {
     if (row.rowsConsidered < minRows) {
@@ -358,6 +382,10 @@ export function buildSourceInputTokenTopRowShare(
     }
     if (row.topKShare < minTopKShare) {
       droppedBelowMinTopKShare += 1;
+      continue;
+    }
+    if (row.hhi < minHhi) {
+      droppedBelowMinHhi += 1;
       continue;
     }
     survived.push(row);
@@ -391,6 +419,7 @@ export function buildSourceInputTokenTopRowShare(
     minRows,
     minTop1Share,
     minTopKShare,
+    minHhi,
     top,
     sort,
     totalSources,
@@ -401,6 +430,7 @@ export function buildSourceInputTokenTopRowShare(
     droppedBelowMinRows,
     droppedBelowMinTop1Share,
     droppedBelowMinTopKShare,
+    droppedBelowMinHhi,
     droppedBelowTopCap,
     sources: finalSources,
   };

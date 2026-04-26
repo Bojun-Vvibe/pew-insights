@@ -444,3 +444,47 @@ test('source-input-token-top-row-share: top-k=1 makes topKShare equal top1Share'
   assert.equal(s.top1Share, s.topKShare);
   assert.equal(s.top1Tokens, s.topKTokens);
 });
+
+test('source-input-token-top-row-share: rejects bad minHhi', () => {
+  assert.throws(() => buildSourceInputTokenTopRowShare([], { minHhi: -0.01 }));
+  assert.throws(() => buildSourceInputTokenTopRowShare([], { minHhi: 1.01 }));
+  assert.throws(() =>
+    buildSourceInputTokenTopRowShare([], {
+      minHhi: Number.POSITIVE_INFINITY,
+    }),
+  );
+});
+
+test('source-input-token-top-row-share: minHhi gate suppresses flat sources', () => {
+  const q: QueueLine[] = [];
+  // 100 uniform rows of 100 -> hhi = 1/100 = 0.01
+  for (let i = 0; i < 100; i += 1) {
+    q.push(
+      ql(
+        `2026-04-${String((i % 28) + 1).padStart(2, '0')}T${String(i % 24).padStart(2, '0')}:00:00.000Z`,
+        'flat',
+        100,
+      ),
+    );
+  }
+  // 4 small rows + 1 monster -> hhi dominated by monster, > 0.5
+  for (let i = 0; i < 4; i += 1) {
+    q.push(ql(`2026-04-15T0${i}:00:00.000Z`, 'spiky', 1));
+  }
+  q.push(ql('2026-04-15T05:00:00.000Z', 'spiky', 1000));
+
+  const r = buildSourceInputTokenTopRowShare(q, {
+    generatedAt: GEN,
+    minRows: 1,
+    minHhi: 0.5,
+  });
+  assert.equal(r.droppedBelowMinHhi, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'spiky');
+});
+
+test('source-input-token-top-row-share: minHhi default 0 in report', () => {
+  const r = buildSourceInputTokenTopRowShare([], { generatedAt: GEN });
+  assert.equal(r.minHhi, 0);
+  assert.equal(r.droppedBelowMinHhi, 0);
+});

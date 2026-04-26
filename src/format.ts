@@ -7437,12 +7437,12 @@ export function renderSourceInputTokenTopRowShare(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    input-tokens: ${formatNumber(r.totalInputTokens)}    K: ${r.topK}    min-rows: ${r.minRows}    min-top1: ${r.minTop1Share.toFixed(4)}    min-topk: ${r.minTopKShare.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    input-tokens: ${formatNumber(r.totalInputTokens)}    K: ${r.topK}    min-rows: ${r.minRows}    min-top1: ${r.minTop1Share.toFixed(4)}    min-topk: ${r.minTopKShare.toFixed(4)}    min-hhi: ${r.minHhi.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAllZero)} all-zero-input sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinTop1Share)} below min-top1, ${formatNumber(r.droppedBelowMinTopKShare)} below min-topk, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAllZero)} all-zero-input sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinTop1Share)} below min-top1, ${formatNumber(r.droppedBelowMinTopKShare)} below min-topk, ${formatNumber(r.droppedBelowMinHhi)} below min-hhi, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

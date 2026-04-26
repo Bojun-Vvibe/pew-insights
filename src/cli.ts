@@ -8761,6 +8761,11 @@ program
     '0',
   )
   .option(
+    '--min-hhi <f>',
+    'drop sources whose hhi is below f, in [0,1]; HHI is the cleanest single-number concentration scalar — --min-hhi 0.05 keeps only sources whose effective number of equally-weighted rows is <= 20 (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -8780,6 +8785,7 @@ program
         minRows: string;
         minTop1Share: string;
         minTopkShare: string;
+        minHhi: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -8821,6 +8827,12 @@ program
             `--min-topk-share must be a finite number in [0, 1] (got ${opts.minTopkShare})`,
           );
         }
+        const minHhi = Number.parseFloat(opts.minHhi);
+        if (!Number.isFinite(minHhi) || minHhi < 0 || minHhi > 1) {
+          throw new Error(
+            `--min-hhi must be a finite number in [0, 1] (got ${opts.minHhi})`,
+          );
+        }
         let top: number | null = null;
         if (opts.top != null) {
           const t = Number.parseFloat(opts.top);
@@ -8844,6 +8856,7 @@ program
           minRows,
           minTop1Share,
           minTopKShare,
+          minHhi,
           top,
           sort: opts.sort as
             | 'tokens'
