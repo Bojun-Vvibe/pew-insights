@@ -5981,3 +5981,92 @@ export function renderSourceDrySpell(r: SourceDrySpellReport): string {
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  DailyTokenSecondDiffSignRunsReport,
+} from './dailytokenseconddiffsignruns.js';
+
+export function renderDailyTokenSecondDiffSignRuns(
+  r: DailyTokenSecondDiffSignRunsReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-second-difference-sign-runs'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(d2[i] = v[i+2] - 2*v[i+1] + v[i]; sign(d2) > 0 = concaveup (acceleration), < 0 = concavedown (deceleration), == 0 = flat (linear segment); a "run" is a maximal same-sign d2 stretch; length is # of d2 points; current = the trailing run ending on the last d2 point)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source second-difference sign runs (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'nDays',
+    'nD2',
+    'longestRun',
+    'regime',
+    'longUp',
+    'upStart',
+    'upEnd',
+    'longDown',
+    'downStart',
+    'downEnd',
+    'longFlat',
+    'curRegime',
+    'curLen',
+    'runs',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nD2Points),
+    formatNumber(s.longestRegimeRun),
+    s.longestRegime,
+    formatNumber(s.longestConcaveUpRun),
+    s.longestConcaveUpStart || '-',
+    s.longestConcaveUpEnd || '-',
+    formatNumber(s.longestConcaveDownRun),
+    s.longestConcaveDownStart || '-',
+    s.longestConcaveDownEnd || '-',
+    formatNumber(s.longestFlatRun),
+    s.currentRegime,
+    formatNumber(s.currentRunLength),
+    formatNumber(s.totalRuns),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

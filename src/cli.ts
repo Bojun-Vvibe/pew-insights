@@ -72,6 +72,7 @@ import {
   renderDailyTokenAutocorrelationLag1,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
+  renderDailyTokenSecondDiffSignRuns,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderModelTenure,
@@ -204,6 +205,7 @@ import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
+import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
@@ -6575,6 +6577,100 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceIoRatioStability(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-second-difference-sign-runs')
+  .description(
+    "Per-source longest run of consecutive same-sign second differences of daily total tokens — concavity-regime persistence (concaveup = accelerating, concavedown = decelerating, flat = locally linear). Trajectory-curvature statistic orthogonal to monotone-run-length (velocity-sign), autocorrelation (mean-shape), and z-score-extremes (tail events).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows with fewer than n active calendar days (default 3, must be >= 3); counts surface as droppedSparseSources',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | longest | concaveup | concavedown | flat | current | ndays | source. Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 3) {
+          throw new Error(`--min-days must be an integer >= 3 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tokens',
+          'longest',
+          'concaveup',
+          'concavedown',
+          'flat',
+          'current',
+          'ndays',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSecondDiffSignRuns(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'longest'
+            | 'concaveup'
+            | 'concavedown'
+            | 'flat'
+            | 'current'
+            | 'ndays'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSecondDiffSignRuns(report) + '\n');
         }
       } catch (e) {
         die(e);
