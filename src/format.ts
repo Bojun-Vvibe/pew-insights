@@ -45,6 +45,7 @@ import { dowName as dowNameFmt } from './sourcedayofweektokenmassshare.js';
 import type { SourceDeadHourCountReport } from './sourcedeadhourcount.js';
 import type { SourceActiveHourLongestRunReport } from './sourceactivehourlongestrun.js';
 import type { SourceActiveHourSpanReport } from './sourceactivehourspan.js';
+import type { SourceWeekendWeekdayCacheShareGapReport } from './sourceweekendweekdaycachesharegap.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
@@ -6740,6 +6741,84 @@ export function renderSourceActiveHourSpan(
     String(s.largestQuietGap),
     s.spanDensity.toFixed(4),
     formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceWeekendWeekdayCacheShareGap(
+  r: SourceWeekendWeekdayCacheShareGapReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-weekend-weekday-cache-share-gap'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    input-tokens: ${formatNumber(r.totalInputTokens)}    cached-input-tokens: ${formatNumber(r.totalCachedInputTokens)}    min-input-tokens: ${formatNumber(r.minInputTokens)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-input-tokens, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source cache hit share = sum(cached_input_tokens) / sum(input_tokens), partitioned by UTC day-of-week into weekday Mon..Fri vs weekend Sat..Sun; gap = weekend - weekday)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source weekend-vs-weekday cache hit share (sorted by ${r.sort}; ties: source asc; null shares sorted last)`,
+    ),
+  );
+  const fmtShare = (v: number | null): string =>
+    v === null ? '-' : v.toFixed(4);
+  const fmtRatio = (v: number | null): string =>
+    v === null ? '-' : v.toFixed(3);
+  const fmtSignedShare = (v: number | null): string => {
+    if (v === null) return '-';
+    const s = v.toFixed(4);
+    return v >= 0 ? '+' + s : s;
+  };
+  const headers = [
+    'source',
+    'inputTokens',
+    'wkdyBuckets',
+    'wkndBuckets',
+    'wkdyShare',
+    'wkndShare',
+    'shareGap',
+    'absGap',
+    'shareRatio',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.inputTokens),
+    formatNumber(s.weekdayBuckets),
+    formatNumber(s.weekendBuckets),
+    fmtShare(s.weekdayCacheShare),
+    fmtShare(s.weekendCacheShare),
+    fmtSignedShare(s.shareGap),
+    fmtShare(s.absShareGap),
+    fmtRatio(s.shareRatio),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

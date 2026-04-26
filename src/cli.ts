@@ -79,6 +79,7 @@ import {
   renderSourceDeadHourCount,
   renderSourceActiveHourLongestRun,
   renderSourceActiveHourSpan,
+  renderSourceWeekendWeekdayCacheShareGap,
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
@@ -221,6 +222,7 @@ import { buildSourceDayOfWeekTokenMassShare } from './sourcedayofweektokenmasssh
 import { buildSourceDeadHourCount } from './sourcedeadhourcount.js';
 import { buildSourceActiveHourLongestRun } from './sourceactivehourlongestrun.js';
 import { buildSourceActiveHourSpan } from './sourceactivehourspan.js';
+import { buildSourceWeekendWeekdayCacheShareGap } from './sourceweekendweekdaycachesharegap.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
@@ -7698,6 +7700,102 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceActiveHourSpan(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-weekend-weekday-cache-share-gap')
+  .description(
+    'Per source, compares input-token cache hit share between weekday (Mon..Fri UTC) and weekend (Sat..Sun UTC) buckets and reports the gap. Reports weekdayCacheShare, weekendCacheShare, shareGap (= weekend - weekday), absShareGap (|shareGap|), and shareRatio (= weekend / weekday). Orthogonal to cache-hit-ratio (single global share, not split by source/dow), cache-hit-by-hour (split by hour, not by source and not weekday/weekend), weekend-vs-weekday (compares token volume, not cache share), and source-day-of-week-token-mass-share (mass distribution across 7 dow bins, not cache share).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-input-tokens <n>',
+    'hide source rows with total input_tokens (weekday + weekend) below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absgap (default) | gap | ratio | weekday | weekend | tokens | source. absgap = |shareGap| desc; gap = shareGap desc; ratio = shareRatio desc; weekday/weekend = the named cache share desc; tokens = inputTokens desc; source = alphabetical. Null shares always sort last on numeric keys.',
+    'absgap',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minInputTokens: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minInputTokens = Number.parseFloat(opts.minInputTokens);
+        if (!Number.isFinite(minInputTokens) || minInputTokens < 0) {
+          throw new Error(
+            `--min-input-tokens must be a non-negative number (got ${opts.minInputTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absgap',
+          'gap',
+          'ratio',
+          'weekday',
+          'weekend',
+          'tokens',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceWeekendWeekdayCacheShareGap(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minInputTokens,
+          top,
+          sort: opts.sort as
+            | 'absgap'
+            | 'gap'
+            | 'ratio'
+            | 'weekday'
+            | 'weekend'
+            | 'tokens'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceWeekendWeekdayCacheShareGap(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
