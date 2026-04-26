@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.15 — 2026-04-26
+
+### Added
+
+- `pew-insights source-debut-recency`: per-source debut and
+  recency on the calendar plus a corpus-end **newcomer rollup**.
+  For every source we surface `firstSeen`, `lastSeen`,
+  `tenureHours`, `daysSinceDebut` and `daysSinceLastSeen`
+  (relative to `asOf`, the latest `hour_start` in the kept
+  window), plus `debutShare` — the fraction of the source's
+  total tokens that landed in the first `debutWindowFraction`
+  (default `0.25`) of its own tenure. The `newcomerRollup`
+  globally counts sources whose `firstSeen` falls within the
+  last `--newcomer-window-days` (default `7`) of `asOf` and
+  reports `newcomerSources`, `newcomerTokens`, and
+  `newcomerTokenShare` against `totalTokens`.
+
+  Why a separate subcommand: `source-tenure` reports first/last/
+  span but has no corpus-end-relative recency lens; `source-
+  decay-half-life` measures *intra-tenure* shape (a 50% mark on
+  a source's own life) and is orthogonal to where that life sits
+  on the calendar; `source-mix` and `source-rank-churn` are
+  leaderboards over mass / rank with no debut axis. The headline
+  question is "how much of my recent token spend is from sources
+  that debuted in the last week, vs sources I've used for
+  months?" — and within each source, "did it front-load its
+  first quarter and go quiet, or pace evenly?"
+
+  Determinism: `asOf` is derived from the data, never from
+  `Date.now()`. Wall clock only via `opts.generatedAt`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, defaults)
+
+Source names below are aliased; numeric values are verbatim.
+
+```
+pew-insights source-debut-recency
+as of: 2026-04-26T00:33:22.186Z    asOf: 2026-04-26T00:00:00.000Z    shown: 6    totalSources: 6    debutWindowFraction: 0.250    minBuckets: 0    top: —    sort: recency
+dropped: 0 bad hour_start, 0 zero tokens, 0 model-filter, 0 sparse sources, 0 below top cap
+(per source: daysSinceDebut/lastSeen relative to asOf; debutShare = tokens in first debutWindowFraction of own tenure / total tokens)
+
+newcomer rollup (debut within last 7.00 days)
+summary                      value
+---------------------------  ------------------------
+newcomerCutoff               2026-04-19T00:00:00.000Z
+newcomerSources              1
+newcomerTokens               2.77B
+newcomerTokenShare           0.312
+totalTokens (full kept set)  8.88B
+
+per-source debut & recency (sorted by recency; ties: source asc)
+source     firstSeen                 lastSeen                  tenureH  buckets  tokens   daysSinceDebut  daysIdle  debutShare
+---------  ------------------------  ------------------------  -------  -------  -------  --------------  --------  ----------
+src_alpha  2026-04-20T14:00:00.000Z  2026-04-26T00:00:00.000Z  130.0    208      2.77B    5.42            0.00      0.267
+src_bravo  2026-04-17T06:30:00.000Z  2026-04-25T22:30:00.000Z  208.0    153      142.32M  8.73            0.06      0.274
+src_chrly  2026-04-17T02:30:00.000Z  2026-04-26T00:00:00.000Z  213.5    378      1.71B    8.90            0.00      0.223
+src_delta  2026-04-13T01:30:00.000Z  2026-04-20T16:30:00.000Z  183.0    64       809.62M  12.94           5.31      0.277
+src_echo   2026-02-11T02:30:00.000Z  2026-04-23T14:30:00.000Z  1716.0   267      3.44B    73.90           2.40      0.004
+src_fox    2025-07-30T06:00:00.000Z  2026-04-20T01:30:00.000Z  6331.5   320      1.89M    269.75          5.94      0.194
+```
+
+The headline insight: a single source (`src_alpha`) accounts
+for **31.2% of all tokens** in the kept window despite having
+debuted only `5.42` days before the corpus end — i.e., the
+recent spend is heavily concentrated in one freshly-debuted
+source. The opposite tail is `src_echo`, which debuted `73.9`
+days ago and now has `debutShare = 0.004`: essentially **none**
+of its lifetime tokens landed in its first quarter — a
+back-loaded ramp where the source spent its first ~430h
+near-idle before going broad. `src_fox` is the longest-tenured
+(`269.75` days, ~6,331h) but has shrunk to `1.89M` tokens
+total; `daysIdle = 5.94` confirms it's effectively dormant.
+The `debutShare ≈ 0.25` cluster (`src_alpha` 0.267, `src_bravo`
+0.274, `src_delta` 0.277) is the "flat-rate" cohort — sources
+emitting at a roughly even per-hour pace. Net: this corpus is
+**newcomer-dominated by mass, but back-loaded by debut shape**,
+which would have been invisible to `source-tenure` (no
+`asOf`-relative axis) and to `source-decay-half-life` (no
+calendar / newcomer rollup).
+
 ## 0.6.14 — 2026-04-26
 
 ### Added

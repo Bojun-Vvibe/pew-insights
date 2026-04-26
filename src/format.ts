@@ -4921,6 +4921,10 @@ import type {
   SourceRankChurnReport,
   SourceRankChurnSourceRow,
 } from './sourcerankchurn.js';
+import type {
+  SourceDebutRecencyReport,
+  SourceDebutRecencyRow,
+} from './sourcedebutrecency.js';
 
 function fmtRunLen(n: number): string {
   if (Number.isInteger(n)) return String(n);
@@ -5342,6 +5346,100 @@ export function renderSourceRankChurn(r: SourceRankChurnReport): string {
     fmtRank(s.worstRank),
     formatNumber(s.distinctRanks),
     formatTokens(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+function fmtFraction(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(3);
+}
+
+function fmtDays(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(2);
+}
+
+function fmtHours(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(1);
+}
+
+export function renderSourceDebutRecency(r: SourceDebutRecencyReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-debut-recency'));
+  const topDesc = r.top === null ? '—' : String(r.top);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    asOf: ${r.asOf ?? '—'}    shown: ${formatNumber(r.sources.length)}    totalSources: ${formatNumber(r.totalSources)}    debutWindowFraction: ${fmtFraction(r.debutWindowFraction)}    minBuckets: ${formatNumber(r.minBuckets)}    top: ${topDesc}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedModelFilter)} model-filter, ${formatNumber(r.droppedSparseSources)} sparse sources, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '−∞'} → ${r.windowEnd ?? '+∞'}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(per source: daysSinceDebut/lastSeen relative to asOf; debutShare = tokens in first debutWindowFraction of own tenure / total tokens)',
+    ),
+  );
+  lines.push('');
+
+  const nr = r.newcomerRollup;
+  lines.push(chalk.bold(`newcomer rollup (debut within last ${fmtDays(nr.newcomerWindowDays)} days)`));
+  lines.push(
+    renderTableLocal(
+      ['summary', 'value'],
+      [
+        ['newcomerCutoff', nr.newcomerCutoffIso ?? '—'],
+        ['newcomerSources', formatNumber(nr.newcomerSources)],
+        ['newcomerTokens', formatTokens(nr.newcomerTokens)],
+        ['newcomerTokenShare', fmtFraction(nr.newcomerTokenShare)],
+        ['totalTokens (full kept set)', formatTokens(r.totalTokens)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no sources survived the filter. nothing to chart.'));
+    return lines.join('\n').replace(/\n+$/, '');
+  }
+
+  lines.push(
+    chalk.bold(
+      r.top === null
+        ? `per-source debut & recency (sorted by ${r.sort}; ties: source asc)`
+        : `top ${r.top} sources by ${r.sort} (ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstSeen',
+    'lastSeen',
+    'tenureH',
+    'buckets',
+    'tokens',
+    'daysSinceDebut',
+    'daysIdle',
+    'debutShare',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceDebutRecencyRow) => [
+    s.source,
+    s.firstSeen,
+    s.lastSeen,
+    fmtHours(s.tenureHours),
+    formatNumber(s.activeBuckets),
+    formatTokens(s.tokens),
+    fmtDays(s.daysSinceDebut),
+    fmtDays(s.daysSinceLastSeen),
+    fmtFraction(s.debutShare),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

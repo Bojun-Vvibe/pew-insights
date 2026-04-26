@@ -96,6 +96,7 @@ import {
   renderBucketTokenGini,
   renderHourOfDayTokenSkew,
   renderSourceRankChurn,
+  renderSourceDebutRecency,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -155,6 +156,7 @@ import { buildHourOfDaySourceMixEntropy } from './hourofdaysourcemixentropy.js';
 import { buildBucketTokenGini } from './buckettokengini.js';
 import { buildHourOfDayTokenSkew } from './hourofdaytokenskew.js';
 import { buildSourceRankChurn } from './sourcerankchurn.js';
+import { buildSourceDebutRecency } from './sourcedebutrecency.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2317,6 +2319,132 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRankChurn(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-debut-recency')
+  .description(
+    'Per-source debut/recency on the calendar plus a corpus-end newcomer rollup (debutShare = tokens in first debutWindowFraction of own tenure)',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--model <id>', 'restrict to a single normalised model id')
+  .option(
+    '--min-buckets <n>',
+    'drop sources with fewer than n distinct active buckets from the per-source table (default 0); newcomer rollup is unaffected',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort and min-buckets; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'recency' (default) | 'tokens' | 'tenure' | 'debutshare' | 'idle'",
+    'recency',
+  )
+  .option(
+    '--debut-window-fraction <f>',
+    'fraction of each source\u2019s tenure used as its debut window for debutShare; must be in (0, 1] (default 0.25)',
+    '0.25',
+  )
+  .option(
+    '--newcomer-window-days <n>',
+    'days back from corpus end (asOf) to count as the newcomer cohort for the global rollup; must be > 0 (default 7)',
+    '7',
+  )
+  .option(
+    '--as-of <iso>',
+    'override the corpus-end anchor; defaults to the latest hour_start across the kept window',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        model?: string;
+        minBuckets: string;
+        top?: string;
+        sort: string;
+        debutWindowFraction: string;
+        newcomerWindowDays: string;
+        asOf?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minBuckets = Number.parseInt(opts.minBuckets, 10);
+        if (!Number.isFinite(minBuckets) || minBuckets < 0) {
+          throw new Error(
+            `--min-buckets must be a non-negative integer (got ${opts.minBuckets})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'recency' &&
+          sort !== 'tokens' &&
+          sort !== 'tenure' &&
+          sort !== 'debutshare' &&
+          sort !== 'idle'
+        ) {
+          throw new Error(
+            `--sort must be 'recency' | 'tokens' | 'tenure' | 'debutshare' | 'idle' (got ${opts.sort})`,
+          );
+        }
+        const debutWindowFraction = Number.parseFloat(opts.debutWindowFraction);
+        if (
+          !Number.isFinite(debutWindowFraction) ||
+          debutWindowFraction <= 0 ||
+          debutWindowFraction > 1
+        ) {
+          throw new Error(
+            `--debut-window-fraction must be in (0, 1] (got ${opts.debutWindowFraction})`,
+          );
+        }
+        const newcomerWindowDays = Number.parseFloat(opts.newcomerWindowDays);
+        if (!Number.isFinite(newcomerWindowDays) || newcomerWindowDays <= 0) {
+          throw new Error(
+            `--newcomer-window-days must be > 0 (got ${opts.newcomerWindowDays})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceDebutRecency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          model: opts.model ?? null,
+          minBuckets,
+          top,
+          sort: sort as
+            | 'recency'
+            | 'tokens'
+            | 'tenure'
+            | 'debutshare'
+            | 'idle',
+          debutWindowFraction,
+          newcomerWindowDays,
+          asOf: opts.asOf ?? null,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceDebutRecency(report) + '\n');
         }
       } catch (e) {
         die(e);
