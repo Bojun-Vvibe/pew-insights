@@ -5517,6 +5517,81 @@ import type {
   CumulativeTokensMidpointReport,
   CumulativeTokensMidpointRow,
 } from './cumulativetokensmidpoint.js';
+import type {
+  SourceIoRatioStabilityReport,
+  SourceIoRatioStabilityRow,
+} from './sourceioratiostability.js';
+
+export function renderSourceIoRatioStability(
+  r: SourceIoRatioStabilityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-io-ratio-stability'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(ratioCv = stddev(daily out/in ratio) / mean(daily out/in ratio); low CV = stable interaction shape day-over-day; high CV = swings between mostly-prompt and mostly-generation; flatLine=y means every kept day had output_tokens=0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source io-ratio stability (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers2 = [
+    'source',
+    'tokens',
+    'inTok',
+    'outTok',
+    'activeD',
+    'ratioD',
+    'zeroInD',
+    'meanRatio',
+    'stdRatio',
+    'ratioCv',
+    'flat',
+  ];
+  const rows2: string[][] = r.sources.map((s: SourceIoRatioStabilityRow) => [
+    s.source,
+    formatNumber(s.tokens),
+    formatNumber(s.inputTokens),
+    formatNumber(s.outputTokens),
+    formatNumber(s.activeDays),
+    formatNumber(s.daysWithRatio),
+    formatNumber(s.daysWithZeroInput),
+    s.meanRatio.toFixed(3),
+    s.stdRatio.toFixed(3),
+    s.ratioCv.toFixed(3),
+    s.flatLine ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers2, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderCumulativeTokensMidpoint(
   r: CumulativeTokensMidpointReport,

@@ -71,6 +71,7 @@ import {
   renderRollingBucketCv,
   renderDailyTokenAutocorrelationLag1,
   renderCumulativeTokensMidpoint,
+  renderSourceIoRatioStability,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -197,6 +198,7 @@ import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
+import { buildSourceIoRatioStability } from './sourceioratiostability.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -5980,6 +5982,91 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderCumulativeTokensMidpoint(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-io-ratio-stability')
+  .description(
+    "Per-source coefficient of variation (stddev/mean) of the daily output_tokens/input_tokens ratio across the source's active calendar days. Low CV = stable interaction shape day-over-day; high CV = swings between mostly-prompt and mostly-generation. Distinct from output-input-ratio (single global mean) and from autocorrelation (magnitude persistence).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-days <n>',
+    'drop sources with fewer than n ratio-bearing days (input_tokens > 0) from the per-source table (default 3)',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + minDays; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key for sources[]: 'tokens' (default) | 'cv' | 'mean' | 'days' | 'source'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'tokens' &&
+          sort !== 'cv' &&
+          sort !== 'mean' &&
+          sort !== 'days' &&
+          sort !== 'source'
+        ) {
+          throw new Error(
+            `--sort must be 'tokens' | 'cv' | 'mean' | 'days' | 'source' (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceIoRatioStability(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: sort as 'tokens' | 'cv' | 'mean' | 'days' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceIoRatioStability(report) + '\n');
         }
       } catch (e) {
         die(e);
