@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.44 — 2026-04-26
+
+### Added
+
+- `source-active-hour-longest-run`: new subcommand. Per source,
+  the **longest contiguous run of *active* UTC hours-of-day**
+  (those with positive token mass) on the circular 24-cycle.
+  Reports:
+
+  - `activeHours` (count of hour-of-day bins with mass > 0)
+  - `longestActiveRun` (longest *circular* run of consecutive
+    positive hours; wraps the 23 -> 0 boundary)
+  - `activeRunCount` (number of maximal positive-runs on the
+    circular 24-cycle; 1 means a single contiguous shift, >1
+    means activity is split across disjoint windows)
+  - `activeRunShare` = `longestActiveRun / activeHours` in
+    `(0, 1]`. `1.0` means *every* active hour is part of one
+    contiguous block.
+  - `longestRunStart`: UTC hour at which the longest active
+    run begins (`-1` if no active hours).
+  - per-row `firstDay` / `lastDay` / `nBuckets` / `totalTokens`
+
+  Knobs: `--since` / `--until` / `--source` / `--min-tokens`
+  (default 1000) / `--top` / `--sort` (`tokens` | `run` |
+  `active` | `share` | `source`) / `--min-longest-active-run`
+  (display filter) / `--json`.
+
+  This is **orthogonal** to everything else that ships against the
+  hour-of-day axis, including the very recent
+  `source-dead-hour-count`:
+
+  - `source-dead-hour-count` reports `liveHours` (count of
+    nonzero hours) and `longestDeadRun` (longest run of *zeros*).
+    It does NOT measure the contiguity of the *active* mass.
+    Two sources with `liveHours = 12` can have
+    `longestActiveRun = 12` (one solid 12-hour shift) vs
+    `longestActiveRun = 1` (12 alternating active hours). Same
+    `liveHours`, very different operating shape.
+  - `source-token-mass-hour-centroid` reports the circular *mean*,
+    not the contiguous run length.
+  - `source-hour-of-day-topk-mass-share` reports the share of the
+    top-k hours; it does not measure whether those hours are
+    adjacent on the clock.
+  - `source-day-of-week-token-mass-share` is the day-of-week axis.
+  - `source-active-day-streak` measures consecutive *calendar*
+    days, not consecutive hours-of-day on a circular axis.
+  - `source-run-lengths` measures consecutive hourly *buckets in
+    wall-clock time*, not the hour-of-day clock projection.
+
+  Headline question:
+  **"For each source, what's the longest contiguous block of
+  hours-of-day where it's active, and is its activity one
+  shift or several scattered windows?"**
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--sort run --top 8 --min-tokens 5000`)
+
+Source labels containing the IDE-assistant product name are
+redacted to `ide-assistant-A` per the repo's published-content
+policy.
+
+```
+pew-insights source-active-hour-longest-run --sort run --top 8 --min-tokens 5000
+as of: 2026-04-26T10:58:00.798Z    sources: 6 (shown 6)    tokens: 9,157,543,324    min-tokens: 5,000    min-longest-active-run: —    top: 8    sort: run
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-longest-active-run, 0 below top cap
+(per-source longest contiguous run of *active* hours-of-day on the circular 24-cycle; share = longestActiveRun / activeHours)
+
+per-source longest active hour-of-day run (sorted by run; ties: source asc)
+source          firstDay    lastDay     buckets  activeHours  longestActiveRun  runStart  activeRunCount  activeRunShare  tokens
+--------------  ----------  ----------  -------  -----------  ----------------  --------  --------------  --------------  -------------
+hermes          2026-04-17  2026-04-26  160      24           24                00        1               1.0000          143,902,480
+openclaw        2026-04-17  2026-04-26  399      24           24                00        1               1.0000          1,730,135,993
+opencode        2026-04-20  2026-04-26  293      24           24                00        1               1.0000          3,029,608,676
+claude-code     2026-02-11  2026-04-23  299      20           20                00        1               1.0000          3,442,385,788
+codex           2026-04-13  2026-04-20  64       16           16                01        1               1.0000          809,624,660
+ide-assistant-A 2025-07-30  2026-04-20  333      14           14                01        1               1.0000          1,885,727
+```
+
+Reading: every one of the 6 sources observed in the window
+shows `activeRunCount = 1` and `activeRunShare = 1.0000` — i.e.
+each source's active hours-of-day are *all* contiguous, with no
+interior gap. Three sources (`hermes`, `openclaw`, `opencode`)
+cover the full 24-hour clock; `claude-code` has a 20-hour
+contiguous span (with a 4-hour quiet block somewhere); `codex`
+has a 16-hour contiguous span starting at UTC hour 01;
+`ide-assistant-A` has a 14-hour contiguous span starting at UTC
+hour 01.
+
+The fact that *zero* sources show fragmentation
+(`activeRunCount > 1`) is the signal: across this window, every
+source operates as a single working "shift" rather than two
+disjoint daypart bursts. That is precisely the question
+`source-dead-hour-count` cannot answer — its `liveHours = 14`
+for `ide-assistant-A` is identical whether those 14 hours are
+one contiguous block (this case) or fourteen scattered single
+hours alternating with quiet ones; this subcommand is what
+distinguishes those two operating shapes.
+
 ## 0.6.43 — 2026-04-26
 
 ### Changed
