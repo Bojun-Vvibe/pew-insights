@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.56 — 2026-04-26
+
+### Changed
+
+- `source-cost-class-mix`: refinement filter
+  `--min-large-pct-tokens <n>` requires `pctTokensLarge >= n`
+  (a fraction in `[0, 1]`) for a source row to be reported.
+  Default 0 = no floor. Use this to surface only the sources
+  whose token mass is dominated by batch / heavy rows. For
+  example `--min-large-pct-tokens 0.9` keeps only sources
+  where >=90% of tokens come from rows at or above
+  `--large-min`.
+
+  Validates that the value is a finite number in `[0, 1]`.
+  Suppressed sources surface as `droppedBelowMinLargePctTokens`.
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minRows` -> `minLargePctTokens` -> sort -> `top` (so the
+  display cap is applied to the post-filter, post-sort set).
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-cost-class-mix --min-large-pct-tokens 0.95
+pew-insights source-cost-class-mix
+as of: 2026-04-26T15:01:19.683Z    sources: 6 (shown 5)    rows: 1,566    total-tokens: 9,271,576,265    smallMax: 1,000    largeMin: 10,000    min-rows: 1    min-large-pct-tokens: 95.0%    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-rows, 1 below min-large-pct-tokens, 0 below top cap
+
+per-source cost-class mix (sorted by tokens; ties: source asc)
+source       rows  tokens         sR%   mR%   lR%     sT%   mT%   lT%
+-----------  ----  -------------  ----  ----  ------  ----  ----  ------
+claude-code  299   3,442,385,788  0.0%  0.3%  99.7%   0.0%  0.0%  100.0%
+opencode     301   3,130,618,291  0.0%  0.0%  100.0%  0.0%  0.0%  100.0%
+openclaw     407   1,742,563,019  0.0%  0.0%  100.0%  0.0%  0.0%  100.0%
+codex        64    809,624,660    0.0%  0.0%  100.0%  0.0%  0.0%  100.0%
+hermes       162   144,498,780    0.0%  0.0%  100.0%  0.0%  0.0%  100.0%
+```
+
+Reading: with a `>=95%`-large-mass floor the filter cleanly
+isolates the agentic/batch sources. The single dropped source
+(an IDE assistant with `pctTokensLarge = 59.6%`) is exactly
+the row that the v0.6.55 default view flagged as the
+qualitative outlier in this queue. The flag turns the
+qualitative observation ("only one source has a meaningful
+mix") into a one-knob, falsifiable filter.
+
 ## 0.6.55 — 2026-04-26
 
 ### Added
