@@ -96,6 +96,21 @@ export interface SourceBurstinessFanoFactorOptions {
   until?: string | null;
   source?: string | null;
   minActiveDays?: number;
+  /**
+   * Display filter (refinement, v0.6.54): require `fanoFactor >= n`
+   * for a source row to be reported. Default 0 = no Fano floor.
+   * Sources with `fanoFactor == null` (mean = 0; structurally
+   * impossible here since we drop non-positive token rows) are
+   * always suppressed when `minFano > 0`. Use this to surface
+   * only the bursty / over-dispersed sources — for example
+   * `--min-fano 1` keeps only sources at or above the Poisson
+   * baseline. Suppressed sources surface as `droppedBelowMinFano`.
+   * Filter order: `since`/`until` window -> `source` filter ->
+   * `minActiveDays` -> `minFano` -> sort -> `top`. `minFano`
+   * must be a finite non-negative number; there is no upper
+   * bound (Fano can be arbitrarily large for heavy-tailed series).
+   */
+  minFano?: number;
   top?: number;
   sort?: SourceBurstinessFanoFactorSort;
   generatedAt?: string;
@@ -123,6 +138,7 @@ export interface SourceBurstinessFanoFactorReport {
   windowStart: string | null;
   windowEnd: string | null;
   minActiveDays: number;
+  minFano: number;
   top: number;
   sort: SourceBurstinessFanoFactorSort;
   source: string | null;
@@ -132,6 +148,7 @@ export interface SourceBurstinessFanoFactorReport {
   droppedNonPositiveTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinActiveDays: number;
+  droppedBelowMinFano: number;
   droppedTopSources: number;
   sources: SourceBurstinessFanoFactorSourceRow[];
 }
@@ -160,6 +177,12 @@ export function buildSourceBurstinessFanoFactor(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minFano = opts.minFano ?? 0;
+  if (!Number.isFinite(minFano) || minFano < 0) {
+    throw new Error(
+      `minFano must be a finite non-negative number (got ${opts.minFano})`,
+    );
   }
   const sort: SourceBurstinessFanoFactorSort = opts.sort ?? 'fano';
   const validSorts: SourceBurstinessFanoFactorSort[] = [
@@ -311,11 +334,27 @@ export function buildSourceBurstinessFanoFactor(
   };
   rows.sort(cmpRow);
 
+  // refinement filter (v0.6.54): require fanoFactor >= minFano;
+  // null fano (mean=0) is always suppressed when minFano > 0.
+  let droppedBelowMinFano = 0;
+  let filtered = rows;
+  if (minFano > 0) {
+    const next: SourceBurstinessFanoFactorSourceRow[] = [];
+    for (const r of rows) {
+      if (r.fanoFactor !== null && r.fanoFactor >= minFano) {
+        next.push(r);
+      } else {
+        droppedBelowMinFano += 1;
+      }
+    }
+    filtered = next;
+  }
+
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -323,6 +362,7 @@ export function buildSourceBurstinessFanoFactor(
     windowStart: opts.since ?? null,
     windowEnd: opts.until ?? null,
     minActiveDays,
+    minFano,
     top,
     sort,
     source: sourceFilter,
@@ -332,6 +372,7 @@ export function buildSourceBurstinessFanoFactor(
     droppedNonPositiveTokens,
     droppedSourceFilter,
     droppedBelowMinActiveDays,
+    droppedBelowMinFano,
     droppedTopSources,
     sources: kept,
   };

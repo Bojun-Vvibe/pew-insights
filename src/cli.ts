@@ -7953,6 +7953,11 @@ program
     '3',
   )
   .option(
+    '--min-fano <n>',
+    'display filter (refinement, v0.6.54): require fanoFactor >= n for a source row to be reported. Default 0 = no Fano floor. Sources with fanoFactor == null (mean=0) are always suppressed when --min-fano > 0. Use --min-fano 1 to keep only sources at or above the Poisson baseline (the bursty / over-dispersed ones). Suppressed surface as droppedBelowMinFano. Filter order: window -> source -> minActiveDays -> minFano -> sort -> top.',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
@@ -7970,6 +7975,7 @@ program
         until?: string;
         source?: string;
         minActiveDays: string;
+        minFano: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -7983,6 +7989,12 @@ program
         if (!Number.isInteger(minActiveDays) || minActiveDays < 2) {
           throw new Error(
             `--min-active-days must be an integer >= 2 (got ${opts.minActiveDays})`,
+          );
+        }
+        const minFano = Number.parseFloat(opts.minFano);
+        if (!Number.isFinite(minFano) || minFano < 0) {
+          throw new Error(
+            `--min-fano must be a finite non-negative number (got ${opts.minFano})`,
           );
         }
         const top = Number.parseInt(opts.top, 10);
@@ -8009,6 +8021,7 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minActiveDays,
+          minFano,
           top,
           sort: opts.sort as
             | 'fano'

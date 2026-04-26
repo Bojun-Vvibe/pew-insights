@@ -258,3 +258,52 @@ test('builder: invalid options throw', () => {
     /since/,
   );
 });
+
+test('builder (v0.6.54): minFano filter keeps only fano >= n; rest count droppedBelowMinFano', () => {
+  const q: QueueLine[] = [
+    // steady: var=0, fano=0
+    ql('2026-04-20T05:00:00.000Z', 'steady', 100),
+    ql('2026-04-21T05:00:00.000Z', 'steady', 100),
+    ql('2026-04-22T05:00:00.000Z', 'steady', 100),
+    // bursty: 10,10,10,1000 -> mean=257.5, var=164306.25, fano ~ 638
+    ql('2026-04-20T05:00:00.000Z', 'bursty', 10),
+    ql('2026-04-21T05:00:00.000Z', 'bursty', 10),
+    ql('2026-04-22T05:00:00.000Z', 'bursty', 10),
+    ql('2026-04-23T05:00:00.000Z', 'bursty', 1000),
+  ];
+  const r = buildSourceBurstinessFanoFactor(q, {
+    minActiveDays: 3,
+    minFano: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minFano, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'bursty');
+  assert.equal(r.droppedBelowMinFano, 1);
+});
+
+test('builder (v0.6.54): minFano = 0 is the default and drops nothing', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'steady', 100),
+    ql('2026-04-21T05:00:00.000Z', 'steady', 100),
+    ql('2026-04-22T05:00:00.000Z', 'steady', 100),
+  ];
+  const r = buildSourceBurstinessFanoFactor(q, {
+    minActiveDays: 3,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minFano, 0);
+  assert.equal(r.droppedBelowMinFano, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('builder (v0.6.54): invalid minFano throws', () => {
+  assert.throws(
+    () => buildSourceBurstinessFanoFactor([], { minFano: -1 }),
+    /minFano/,
+  );
+  assert.throws(
+    () => buildSourceBurstinessFanoFactor([], { minFano: Number.NaN }),
+    /minFano/,
+  );
+});

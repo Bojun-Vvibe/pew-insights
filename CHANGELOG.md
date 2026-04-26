@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.54 — 2026-04-26
+
+### Changed
+
+- `source-burstiness-fano-factor`: refinement filter
+  `--min-fano <n>` requires `fanoFactor >= n` for a source row
+  to be reported. Default 0 = no Fano floor. Sources with
+  `fanoFactor == null` (mean = 0; structurally impossible here
+  since we drop non-positive token rows) are always suppressed
+  when `--min-fano > 0`.
+
+  Important note on units: because `fanoFactor = variance / mean`
+  where both are in tokens, the Fano factor itself carries
+  *units of the mean* — for sources whose daily totals are in
+  the 10s of millions, the Fano factor is naturally in the
+  100Ms. `--min-fano 1` is therefore the *Poisson reference*
+  threshold in a strict count-process sense, but for token
+  series it filters nothing in practice. Useful thresholds for
+  this queue are in the same order of magnitude as `meanDaily`
+  itself; `--min-fano 100000000` cleanly isolates the queue's
+  three top-burst sources.
+
+  Suppressed sources surface as `droppedBelowMinFano`. Filter
+  order: `since`/`until` window -> `source` filter ->
+  `minActiveDays` -> `minFano` -> sort -> `top`. Validates
+  that `minFano` is a finite non-negative number; there is no
+  upper bound (Fano can be arbitrarily large for heavy-tailed
+  series).
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-fano 100000000`)
+
+```
+pew-insights source-burstiness-fano-factor --min-fano 100000000
+as of: 2026-04-26T14:22:16.993Z    sources: 6 (shown 3)    total-tokens: 9,244,278,977    min-active-days: 3    min-fano: 100,000,000    top: —    sort: fano
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-active-days, 3 below min-fano, 0 below top cap
+(per source: F = variance(daily total_tokens) / mean(daily total_tokens) over the source's active UTC days; F=1 = Poisson baseline, F<1 = sub-Poisson / steady, F>1 = super-Poisson / bursty; cv = stddev/mean for cross-reference)
+
+per-source daily-token Fano factor (sorted by fano; ties: source asc; null fano/cv sorted last)
+source       totalTokens    days  firstDay    lastDay     meanDaily    stddevDaily  fano         cv
+-----------  -------------  ----  ----------  ----------  -----------  -----------  -----------  ------
+claude-code  3,442,385,788  35    2026-02-11  2026-04-23  98,353,880   209,106,433  444,573,212  2.1261
+codex        809,624,660    8     2026-04-13  2026-04-20  101,203,083  122,703,257  148,771,055  1.2124
+opencode     3,104,458,986  7     2026-04-20  2026-04-26  443,494,141  218,288,153  107,441,594  0.4922
+```
+
+Reading: `--min-fano 100000000` drops three of the six sources
+from the v0.6.53 baseline — `openclaw` (fano=58M), `hermes`
+(fano=7.6M), and `vscode-ide-X` (fano=84K, redacted display
+name; see v0.6.53 note). The remaining three sources are the
+queue's three actual high-volume bursty signals. Note the
+sort order is *unchanged*: `--min-fano` is purely a noise-floor
+gate, it does not re-rank the survivors. Composing
+`--min-active-days` (sample-size guardrail) with `--min-fano`
+(dispersion-floor guardrail) is the standard pair of floors
+you want on any per-source dispersion report.
+
 ## 0.6.53 — 2026-04-26
 
 ### Added
