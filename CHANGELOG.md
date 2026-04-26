@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.26 — 2026-04-26
+
+### Changed
+
+- `daily-token-zscore-extremes`: two new display filters,
+  `--min-extreme <n>` and `--direction <high|low|either>`.
+
+  - `--min-extreme <n>` (default 0 = no floor): hides per-source
+    rows whose `nExtreme` is strictly below `n`. Use to surface
+    only sources with at least one (or several) z-score breaches.
+    Suppressed rows surface as `droppedBelowMinExtreme` in the
+    report header.
+  - `--direction <dir>` (default unset = no gate): keeps only
+    sources with at least one extreme in the given direction.
+    `high` = `nHighExtreme > 0`, `low` = `nLowExtreme > 0`,
+    `either` = `nExtreme > 0` (synonymous with `--min-extreme 1`).
+    Suppressed rows surface as `droppedByDirection`.
+
+  Display filters only — `totalSources` and `totalTokens` still
+  reflect the full kept population. Filter order is now
+  well-defined and documented:
+  `since`/`until` window → `source` filter → `minDays` → sort
+  → `minExtreme` → `direction` → `top` cap. Each layer's drop
+  count is reported independently so the operator can see
+  exactly where each suppressed source fell out.
+
+  Also: lowered the smoke-test sigma to 1.5 surfaces a richer
+  picture — `claude-code` flips from "1 extreme day" at strict
+  sigma=2 to "2 extreme days" at sigma=1.5, and three other
+  sources cross the bar exactly once. Operators can dial the
+  threshold to taste without changing any other knob.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--sigma 1.5 --min-extreme 1 --sort maxabsz --top 5`)
+
+```
+pew-insights daily-token-zscore-extremes
+as of: 2026-04-26T04:29:55.408Z    sources: 6 (shown 5)    tokens: 8,591,372,776    min-days: 3    sigma: 1.5    min-extreme: 1    direction: —    top: 5    sort: maxabsz
+dropped: 0 bad hour_start, 0 zero tokens, 0 source-filter, 0 below min-days, 1 below min-extreme, 0 by direction, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(z = (dailyTokens - sourceMean) / sourceStddev (population, 1/n divisor); high/low extreme = strict z > +sigma / z < -sigma; flat=y means stddev=0 across active days, so no z is defined)
+
+per-source z-score extremes (sorted by maxabsz)
+source       firstDay    lastDay     nDays  mean         stddev       flat  nHigh  nLow  nExtreme  extFrac  maxAbsZ  maxZDay     maxZTokens     dir   tokens
+-----------  ----------  ----------  -----  -----------  -----------  ----  -----  ----  --------  -------  -------  ----------  -------------  ----  -------------
+claude-code  2026-04-01  2026-04-23  15     203867125.8  286313694.0  -     2      0     2         0.133    2.962    2026-04-20  1,052,011,841  high  3,058,006,887
+codex        2026-04-13  2026-04-20  8      101203082.5  122703257.3  -     1      0     1         0.125    2.351    2026-04-20  389,724,254    high  809,624,660
+hermes       2026-04-17  2026-04-26  10     14288189.6   10669930.8   -     1      0     1         0.100    1.911    2026-04-19  34,683,508     high  142,881,896
+openclaw     2026-04-17  2026-04-26  10     171375266.3  104614383.9  -     1      1     2         0.200    1.746    2026-04-19  354,037,834    high  1,713,752,663
+opencode     2026-04-20  2026-04-26  7      409550322.9  248340516.0  -     0      1     1         0.143    1.580    2026-04-20  17,147,516     low   2,866,852,260
+```
+
+Reading the smoke: `--min-extreme 1` filters out one sparse
+source that had no z>1.5 day, surfacing exactly the five
+sources with at least one tail event in the window. Sorted by
+`maxAbsZ`, `claude-code` headlines (single 2.962-z spike on
+2026-04-20) but `openclaw` is the most balanced offender —
+the only source with both a high-side and a low-side extreme
+day inside its 10-day tenure (`extFrac=0.200`). `opencode` is
+the lone source whose top extreme is on the *low* side
+(`maxAbsZDirection=low`, 17.1M tokens against a 410M mean on
+2026-04-20), which paradoxically is the same UTC date that
+produced the high-side maxAbsZ for three other sources —
+implying a workspace-wide redistribution rather than a global
+intensity surge that day.
+
 ## 0.6.25 — 2026-04-26
 
 ### Added
