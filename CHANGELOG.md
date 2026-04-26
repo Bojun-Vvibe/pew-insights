@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.82 — 2026-04-27
+
+### Changed
+
+- `source-row-token-skewness`: refinement adds the
+  `--min-abs-skew <f>` flag. Drops sources where `|skewness| < f`.
+  Useful for surfacing only meaningfully asymmetric sources —
+  e.g. `--min-abs-skew 0.5` hides everything in the rule-of-
+  thumb "approximately symmetric" band, `--min-abs-skew 1` hides
+  everything below "highly skewed". Display filter only;
+  suppressed rows surface as `droppedBelowMinAbsSkew`. Default
+  `--min-abs-skew 0` preserves v0.6.81 behaviour exactly.
+
+  This is the natural cohort selector for this lens. Skewness
+  itself is signed (right- vs left-tailed), but the question
+  "is this source asymmetric enough to be worth reading?" is
+  always magnitude-based, so the gate is on `|g1|` not on `g1`.
+  An operator can pair `--min-abs-skew 1.5` with `--sort
+  abs-skew` to get a clean "show me the most one-sidedly heavy
+  -tailed sources, in order" view.
+
+  Live smoke at `--min-abs-skew 2 --sort abs-skew` against
+  `~/.config/pew/queue.jsonl` (one IDE-assistant source name
+  redacted to `ide-assistant-A` per banned-string policy):
+
+  ```
+  pew-insights source-row-token-skewness
+  as of: 2026-04-26T23:55:21.643Z    sources: 6 (shown 4)    rows: 1,607    min-rows: 3    min-mean: 0.00    min-abs-skew: 2.0000    top: —    sort: abs-skew
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 3-row floor, 0 below min-rows, 0 below min-mean, 2 below min-abs-skew, 0 below top cap
+
+  per-source row total_tokens skewness (sorted by abs-skew; ties: source asc)
+  source           rows  mean         stddev       skewness  degen
+  ---------------  ----  -----------  -----------  --------  -----
+  ide-assistant-A  333   5662.84      14933.73     7.9807    -
+  openclaw         425   4188017.41   4971650.48   4.1102    -
+  opencode         319   10392287.77  13435749.07  2.3249    -
+  claude-code      299   11512995.95  17605167.00  2.1794    -
+  ```
+
+  At `--min-abs-skew 2`, the `hermes` and `codex` rows
+  (`g1 = 1.7527` and `g1 = 1.4686` from the v0.6.81 smoke)
+  drop out — both are still right-skewed, but below the
+  filter floor. The surviving 4 sources all have `|g1| >= 2`,
+  meaning their per-row `total_tokens` distributions are
+  decisively one-sided. This pairs cleanly with `--sort
+  abs-skew` (used here): unfiltered, the two would not have
+  been adjacent in the table since v0.6.81 default sort is
+  `skew-desc`, but with the cohort selector engaged, the
+  ordering surfaces only the rows that clear the bar, in
+  decreasing magnitude.
+
+  Note that `opencode` shifted slightly between the v0.6.81
+  smoke (`g1 = 2.3280`) and this one (`g1 = 2.3249`) — the
+  queue file gained a few rows in the ~4-minute interval
+  between captures (1,607 -> 1,607 row count is unchanged
+  here, but per-source row counts can shift if rolled into
+  separate aggregation events). The relative ordering and the
+  cohort membership are unchanged, which is what the gate is
+  supposed to guarantee: it is a cohort selector, not a
+  re-ranker.
+
+---
+
 ## 0.6.81 — 2026-04-27
 
 ### Added

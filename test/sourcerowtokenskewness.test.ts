@@ -422,6 +422,7 @@ test('row-token-skewness: report shape stable (JSON keys)', () => {
   ];
   const r = buildSourceRowTokenSkewness(q, { generatedAt: GEN });
   assert.deepEqual(Object.keys(r).sort(), [
+    'droppedBelowMinAbsSkew',
     'droppedBelowMinMean',
     'droppedBelowMinRows',
     'droppedBelowTopCap',
@@ -429,6 +430,7 @@ test('row-token-skewness: report shape stable (JSON keys)', () => {
     'droppedSourceFilter',
     'droppedTooFewRowsForSkewness',
     'generatedAt',
+    'minAbsSkew',
     'minMean',
     'minRows',
     'sort',
@@ -488,4 +490,109 @@ test('row-token-skewness: absSkewness column always non-negative', () => {
     assert.ok(s.absSkewness >= 0);
     assert.ok(Math.abs(s.absSkewness - Math.abs(s.skewness)) < 1e-12);
   }
+});
+
+test('row-token-skewness: --min-abs-skew defaults to 0 (preserve v0.6.81 behaviour)', () => {
+  const r = buildSourceRowTokenSkewness([], { generatedAt: GEN });
+  assert.equal(r.minAbsSkew, 0);
+  assert.equal(r.droppedBelowMinAbsSkew, 0);
+});
+
+test('row-token-skewness: rejects bad minAbsSkew', () => {
+  assert.throws(() =>
+    buildSourceRowTokenSkewness([], { minAbsSkew: -0.1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenSkewness([], {
+      minAbsSkew: Number.POSITIVE_INFINITY,
+    }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenSkewness([], { minAbsSkew: Number.NaN }),
+  );
+});
+
+test('row-token-skewness: --min-abs-skew filters near-symmetric sources', () => {
+  // sym: g1 = 0 exactly; right: g1 ~ 1.5; left: g1 ~ -1.5
+  const q: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'sym', 50),
+    ql('2026-04-20T01:00:00Z', 'sym', 100),
+    ql('2026-04-20T02:00:00Z', 'sym', 150),
+    ql('2026-04-20T00:00:00Z', 'right', 10),
+    ql('2026-04-20T01:00:00Z', 'right', 10),
+    ql('2026-04-20T02:00:00Z', 'right', 10),
+    ql('2026-04-20T03:00:00Z', 'right', 10),
+    ql('2026-04-20T04:00:00Z', 'right', 1000),
+    ql('2026-04-20T00:00:00Z', 'left', 1000),
+    ql('2026-04-20T01:00:00Z', 'left', 1000),
+    ql('2026-04-20T02:00:00Z', 'left', 1000),
+    ql('2026-04-20T03:00:00Z', 'left', 1000),
+    ql('2026-04-20T04:00:00Z', 'left', 10),
+  ];
+  const r = buildSourceRowTokenSkewness(q, {
+    minAbsSkew: 0.5,
+    generatedAt: GEN,
+  });
+  // sym (|g1|=0) should be dropped; right and left should survive.
+  assert.equal(r.sources.length, 2);
+  const ids = new Set(r.sources.map((s) => s.source));
+  assert.ok(ids.has('right'));
+  assert.ok(ids.has('left'));
+  assert.equal(r.droppedBelowMinAbsSkew, 1);
+});
+
+test('row-token-skewness: --min-abs-skew with strict floor drops everything', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'a', 100),
+    ql('2026-04-20T01:00:00Z', 'a', 100),
+    ql('2026-04-20T02:00:00Z', 'a', 100),
+    ql('2026-04-20T03:00:00Z', 'a', 200),
+  ];
+  const r = buildSourceRowTokenSkewness(q, {
+    minAbsSkew: 1000,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedBelowMinAbsSkew, 1);
+});
+
+test('row-token-skewness: --min-abs-skew=0 preserves all rows', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'sym', 50),
+    ql('2026-04-20T01:00:00Z', 'sym', 100),
+    ql('2026-04-20T02:00:00Z', 'sym', 150),
+  ];
+  const r = buildSourceRowTokenSkewness(q, {
+    minAbsSkew: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinAbsSkew, 0);
+});
+
+test('row-token-skewness: minAbsSkew applied AFTER minMean (independent counters)', () => {
+  // small-mean symmetric: dropped by min-mean
+  // big-mean symmetric: dropped by min-abs-skew (g1 = 0)
+  // big-mean skewed: passes
+  const q: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'small-sym', 1),
+    ql('2026-04-20T01:00:00Z', 'small-sym', 2),
+    ql('2026-04-20T02:00:00Z', 'small-sym', 3),
+    ql('2026-04-20T00:00:00Z', 'big-sym', 100),
+    ql('2026-04-20T01:00:00Z', 'big-sym', 200),
+    ql('2026-04-20T02:00:00Z', 'big-sym', 300),
+    ql('2026-04-20T00:00:00Z', 'big-skew', 100),
+    ql('2026-04-20T01:00:00Z', 'big-skew', 100),
+    ql('2026-04-20T02:00:00Z', 'big-skew', 100),
+    ql('2026-04-20T03:00:00Z', 'big-skew', 1000),
+  ];
+  const r = buildSourceRowTokenSkewness(q, {
+    minMean: 50,
+    minAbsSkew: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'big-skew');
+  assert.equal(r.droppedBelowMinMean, 1);
+  assert.equal(r.droppedBelowMinAbsSkew, 1);
 });

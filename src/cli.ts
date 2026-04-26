@@ -9585,6 +9585,16 @@ program
     '3',
   )
   .option(
+    '--min-mean <f>',
+    'drop sources whose per-row total_tokens mean is strictly below f; useful for suppressing tiny-row sources where the 3rd moment is dominated by a single outlier (default 0)',
+    '0',
+  )
+  .option(
+    '--min-abs-skew <f>',
+    'drop sources whose |skewness| is strictly below f; useful for surfacing only meaningfully asymmetric sources (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9601,6 +9611,8 @@ program
         until?: string;
         source?: string;
         minRows: string;
+        minMean: string;
+        minAbsSkew: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9614,6 +9626,18 @@ program
         if (!Number.isInteger(minRows) || minRows < 3) {
           throw new Error(
             `--min-rows must be an integer >= 3 (got ${opts.minRows})`,
+          );
+        }
+        const minMean = Number.parseFloat(opts.minMean);
+        if (!Number.isFinite(minMean) || minMean < 0) {
+          throw new Error(
+            `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        const minAbsSkew = Number.parseFloat(opts.minAbsSkew);
+        if (!Number.isFinite(minAbsSkew) || minAbsSkew < 0) {
+          throw new Error(
+            `--min-abs-skew must be a finite, non-negative number (got ${opts.minAbsSkew})`,
           );
         }
         let top: number | null = null;
@@ -9643,6 +9667,8 @@ program
           until: opts.until ?? null,
           source: opts.source ?? null,
           minRows,
+          minMean,
+          minAbsSkew,
           top,
           sort: opts.sort as
             | 'skew-desc'

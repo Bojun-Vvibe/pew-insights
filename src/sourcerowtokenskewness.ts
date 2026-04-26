@@ -147,6 +147,16 @@ export interface SourceRowTokenSkewnessOptions {
    */
   minMean?: number;
   /**
+   * Drop sources whose `|skewness|` is strictly below this value.
+   * Useful for surfacing only meaningfully asymmetric sources (e.g.
+   * `--min-abs-skew 0.5` hides everything in the "approximately
+   * symmetric" rule-of-thumb band). Display filter only. Suppressed
+   * rows surface as `droppedBelowMinAbsSkew`. Must be a finite,
+   * non-negative number. Default 0 = no floor (preserves v0.6.81
+   * behaviour exactly).
+   */
+  minAbsSkew?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -186,6 +196,7 @@ export interface SourceRowTokenSkewnessReport {
   source: string | null;
   minRows: number;
   minMean: number;
+  minAbsSkew: number;
   top: number | null;
   sort: 'skew-desc' | 'skew-asc' | 'abs-skew' | 'rows' | 'mean' | 'source';
   /** Distinct sources seen pre-filter. */
@@ -197,6 +208,7 @@ export interface SourceRowTokenSkewnessReport {
   droppedTooFewRowsForSkewness: number;
   droppedBelowMinRows: number;
   droppedBelowMinMean: number;
+  droppedBelowMinAbsSkew: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSkewnessRow[];
 }
@@ -226,6 +238,12 @@ export function buildSourceRowTokenSkewness(
   if (!Number.isFinite(minMean) || minMean < 0) {
     throw new Error(
       `minMean must be a finite, non-negative number (got ${opts.minMean})`,
+    );
+  }
+  const minAbsSkew = opts.minAbsSkew ?? 0;
+  if (!Number.isFinite(minAbsSkew) || minAbsSkew < 0) {
+    throw new Error(
+      `minAbsSkew must be a finite, non-negative number (got ${opts.minAbsSkew})`,
     );
   }
   const top = opts.top ?? null;
@@ -336,6 +354,7 @@ export function buildSourceRowTokenSkewness(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinMean = 0;
+  let droppedBelowMinAbsSkew = 0;
   const survived: SourceRowTokenSkewnessRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -344,6 +363,10 @@ export function buildSourceRowTokenSkewness(
     }
     if (row.mean < minMean) {
       droppedBelowMinMean += 1;
+      continue;
+    }
+    if (row.absSkewness < minAbsSkew) {
+      droppedBelowMinAbsSkew += 1;
       continue;
     }
     survived.push(row);
@@ -375,6 +398,7 @@ export function buildSourceRowTokenSkewness(
     source: sourceFilter,
     minRows,
     minMean,
+    minAbsSkew,
     top,
     sort,
     totalSources,
@@ -384,6 +408,7 @@ export function buildSourceRowTokenSkewness(
     droppedTooFewRowsForSkewness,
     droppedBelowMinRows,
     droppedBelowMinMean,
+    droppedBelowMinAbsSkew,
     droppedBelowTopCap,
     sources: finalSources,
   };
