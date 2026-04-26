@@ -285,3 +285,104 @@ test('source-reasoning-share-by-day-cv: negative/NaN tokens treated as 0', () =>
   assert.equal(s.daysWithZeroReply, 1);
   assert.equal(s.daysWithShare, 2);
 });
+
+test('source-reasoning-share-by-day-cv: rejects bad minMeanShare', () => {
+  assert.throws(() => buildSourceReasoningShareByDayCv([], { minMeanShare: -0.1 }));
+  assert.throws(() => buildSourceReasoningShareByDayCv([], { minMeanShare: 1.5 }));
+  assert.throws(() =>
+    buildSourceReasoningShareByDayCv([], { minMeanShare: Number.NaN }),
+  );
+});
+
+test('source-reasoning-share-by-day-cv: minMeanShare suppresses negligible-share sources', () => {
+  // s_loud: 3 days at share=0.5 -> meanShare 0.5
+  // s_quiet: 3 days at share=0.001 -> meanShare 0.001
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 's_loud', 50, 50),
+    ql('2026-04-02T00:00:00.000Z', 's_loud', 50, 50),
+    ql('2026-04-03T00:00:00.000Z', 's_loud', 50, 50),
+    ql('2026-04-01T00:00:00.000Z', 's_quiet', 999, 1),
+    ql('2026-04-02T00:00:00.000Z', 's_quiet', 999, 1),
+    ql('2026-04-03T00:00:00.000Z', 's_quiet', 999, 1),
+  ];
+  const r = buildSourceReasoningShareByDayCv(q, {
+    generatedAt: GEN,
+    minDays: 1,
+    minMeanShare: 0.01,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's_loud');
+  assert.equal(r.droppedBelowMinMeanShare, 1);
+});
+
+test('source-reasoning-share-by-day-cv: minMeanShare = 0 is no-op (default)', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 's1', 100, 1),
+    ql('2026-04-02T00:00:00.000Z', 's1', 100, 1),
+    ql('2026-04-03T00:00:00.000Z', 's1', 100, 1),
+  ];
+  const r = buildSourceReasoningShareByDayCv(q, { generatedAt: GEN, minDays: 1 });
+  assert.equal(r.minMeanShare, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinMeanShare, 0);
+});
+
+test('source-reasoning-share-by-day-cv: minMeanShare boundary - inclusive at threshold', () => {
+  // Source with meanShare exactly 0.5 must NOT be dropped at minMeanShare 0.5
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 's1', 50, 50),
+    ql('2026-04-02T00:00:00.000Z', 's1', 50, 50),
+    ql('2026-04-03T00:00:00.000Z', 's1', 50, 50),
+  ];
+  const r = buildSourceReasoningShareByDayCv(q, {
+    generatedAt: GEN,
+    minDays: 1,
+    minMeanShare: 0.5,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinMeanShare, 0);
+});
+
+test('source-reasoning-share-by-day-cv: minMeanShare = 1 keeps only pureReasoning', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 's_pure', 0, 50),
+    ql('2026-04-02T00:00:00.000Z', 's_pure', 0, 50),
+    ql('2026-04-03T00:00:00.000Z', 's_pure', 0, 50),
+    ql('2026-04-01T00:00:00.000Z', 's_mixed', 50, 50),
+    ql('2026-04-02T00:00:00.000Z', 's_mixed', 50, 50),
+    ql('2026-04-03T00:00:00.000Z', 's_mixed', 50, 50),
+  ];
+  const r = buildSourceReasoningShareByDayCv(q, {
+    generatedAt: GEN,
+    minDays: 1,
+    minMeanShare: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's_pure');
+  assert.equal(r.sources[0]!.pureReasoning, true);
+});
+
+test('source-reasoning-share-by-day-cv: filter order minDays before minMeanShare', () => {
+  // s_few: 1 day at share=0.5 (passes share floor, fails day floor)
+  // s_many: 3 days at share=0.001 (passes day floor, fails share floor)
+  // s_good: 3 days at share=0.5 (passes both)
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 's_few', 50, 50),
+    ql('2026-04-01T00:00:00.000Z', 's_many', 999, 1),
+    ql('2026-04-02T00:00:00.000Z', 's_many', 999, 1),
+    ql('2026-04-03T00:00:00.000Z', 's_many', 999, 1),
+    ql('2026-04-01T00:00:00.000Z', 's_good', 50, 50),
+    ql('2026-04-02T00:00:00.000Z', 's_good', 50, 50),
+    ql('2026-04-03T00:00:00.000Z', 's_good', 50, 50),
+  ];
+  const r = buildSourceReasoningShareByDayCv(q, {
+    generatedAt: GEN,
+    minDays: 3,
+    minMeanShare: 0.01,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 's_good');
+  assert.equal(r.droppedBelowMinDays, 1);
+  assert.equal(r.droppedBelowMinMeanShare, 1);
+});

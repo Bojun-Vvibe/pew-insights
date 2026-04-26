@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.66 — 2026-04-27
+
+### Changed
+
+- `source-reasoning-share-by-day-cv`: refinement filter
+  `--min-mean-share <n>` requires `meanShare >= n` for a source row
+  to be reported. Default 0 = no filter. Range [0, 1]. Useful for
+  suppressing the **mathematically-loud-but-substantively-flat**
+  regime exposed by the v0.6.65 smoke test: a source with mean
+  reasoning share of ~0.00004 (one outlier reasoning day in an
+  otherwise pure-typist history) inflated `shareCv` to 3.0 despite
+  being substantively a typist. The flag turns the qualitative
+  observation ("which sources are *genuinely* reasoning, *and*
+  inconsistent about it?") into a one-knob, falsifiable filter.
+
+  Validates that the value is finite in [0, 1]. Suppressed sources
+  surface as `droppedBelowMinMeanShare`. Filter order: `since`/
+  `until` window -> `source` filter -> per-source aggregation ->
+  `min-days` -> `min-mean-share` -> sort -> `top` (so the display
+  cap is applied to the post-filter, post-sort set, exactly like
+  the other refinement gates in this codebase).
+
+  Composes with `--sort cv` to put the wildest survivors at the
+  top of the kept set.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-reasoning-share-by-day-cv --min-mean-share 0.01 --sort cv
+pew-insights source-reasoning-share-by-day-cv
+as of: 2026-04-26T18:31:30.998Z    sources: 6 (shown 2)    tokens: 9,356,260,959    min-days: 3    min-mean-share: 0.0100    top: -    sort: cv
+dropped: 0 bad hour_start, 0 by source filter, 0 below min-days, 4 below min-mean-share, 0 below top cap
+(shareCv = stddev(daily reasoning/(output+reasoning)) / mean of same; low CV = stable thinking-vs-typing balance day-over-day; flat=y means every kept day had reasoning=0; pure=y means every kept day was 100% reasoning)
+
+per-source reasoning-share daily CV (sorted by cv; ties: source asc)
+source           tokens       outTok     reasTok  activeD  shareD  zeroReplyD  meanShare  stdShare  shareCv  flat  pure
+---------------  -----------  ---------  -------  -------  ------  ----------  ---------  --------  -------  ----  ----
+codex            809,624,660  2,045,042  789,340  8        8       0           0.2724     0.0325    0.1195   -     -
+ide-assistant-B  1,885,727    1,135,247  169,390  73       73      0           0.2109     0.2853    1.3527   -     -
+```
+
+Reading: with `--min-mean-share 0.01`, only two sources clear the
+1% average reasoning floor and survive — `codex` (the disciplined
+reasoner, `cv 0.12`) and `ide-assistant-B` (the wild reasoner,
+`cv 1.35`). The other four sources — `claude-code`, `openclaw`
+(both flat-zero typists), `opencode` (`meanShare 0.005`,
+`cv 2.29` was loud-but-flat), and `hermes` (`meanShare 0.00004`,
+`cv 3.0` was the worst offender) — are correctly filtered out.
+The CV ranking is now restricted to genuinely-reasoning sources
+and answers the meaningful question: *among sources that
+actually think, who is wild and who is disciplined?* `codex`
+holds reasoning share within ±3pp day-over-day around a 27%
+mean; `ide-assistant-B` swings ±29pp around a 21% mean — over
+9× more variable per unit of average share.
+
 ## 0.6.65 — 2026-04-27
 
 ### Added

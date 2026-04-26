@@ -111,6 +111,22 @@ export interface SourceReasoningShareByDayCvOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: 'tokens' | 'cv' | 'mean' | 'days' | 'source';
+  /**
+   * Drop sources whose `meanShare` is strictly below this value
+   * from the per-source table. Display filter only — global
+   * denominators reflect the full kept population. Suppressed rows
+   * surface as `droppedBelowMinMeanShare`. Must be a finite number
+   * in [0, 1]. Default 0 = no floor.
+   *
+   * Useful for suppressing the "mathematically-loud-but-substantively-
+   * flat" regime: a source with reasoning tokens contributing
+   * ~0.004% of total reply work but one outlier day inflating
+   * `shareCv` past 3.0 is *technically* unstable but trivially
+   * negligible. `--min-mean-share 0.01` drops anything below 1%
+   * average reasoning share, so the CV ranking starts to mean
+   * "wild among genuinely reasoning sources".
+   */
+  minMeanShare?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -154,6 +170,7 @@ export interface SourceReasoningShareByDayCvReport {
   minDays: number;
   top: number | null;
   sort: 'tokens' | 'cv' | 'mean' | 'days' | 'source';
+  minMeanShare: number;
   /** Distinct sources that survived window/source filters. */
   totalSources: number;
   /** Sum of total_tokens across the full kept population. */
@@ -161,6 +178,7 @@ export interface SourceReasoningShareByDayCvReport {
   droppedInvalidHourStart: number;
   droppedSourceFilter: number;
   droppedBelowMinDays: number;
+  droppedBelowMinMeanShare: number;
   droppedBelowTopCap: number;
   sources: SourceReasoningShareByDayCvRow[];
 }
@@ -197,6 +215,16 @@ export function buildSourceReasoningShareByDayCv(
   ) {
     throw new Error(
       `sort must be 'tokens' | 'cv' | 'mean' | 'days' | 'source' (got ${opts.sort})`,
+    );
+  }
+  const minMeanShare = opts.minMeanShare ?? 0;
+  if (
+    !Number.isFinite(minMeanShare) ||
+    minMeanShare < 0 ||
+    minMeanShare > 1
+  ) {
+    throw new Error(
+      `minMeanShare must be a finite number in [0, 1] (got ${opts.minMeanShare})`,
     );
   }
 
@@ -337,10 +365,15 @@ export function buildSourceReasoningShareByDayCv(
   }
 
   let droppedBelowMinDays = 0;
+  let droppedBelowMinMeanShare = 0;
   const survived: SourceReasoningShareByDayCvRow[] = [];
   for (const row of allRows) {
     if (row.daysWithShare < minDays) {
       droppedBelowMinDays += 1;
+      continue;
+    }
+    if (row.meanShare < minMeanShare) {
+      droppedBelowMinMeanShare += 1;
       continue;
     }
     survived.push(row);
@@ -382,11 +415,13 @@ export function buildSourceReasoningShareByDayCv(
     minDays,
     top,
     sort,
+    minMeanShare,
     totalSources: allRows.length,
     totalTokens,
     droppedInvalidHourStart,
     droppedSourceFilter,
     droppedBelowMinDays,
+    droppedBelowMinMeanShare,
     droppedBelowTopCap,
     sources: finalSources,
   };

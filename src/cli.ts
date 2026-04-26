@@ -8660,6 +8660,11 @@ program
     "sort key: tokens (default) | cv | mean | days | source. cv asc = most stable first. ties: source asc.",
     'tokens',
   )
+  .option(
+    '--min-mean-share <n>',
+    'display filter: hide sources whose meanShare is strictly below n. n in [0, 1]. Default 0 = no filter. Useful for suppressing the mathematically-loud-but-substantively-flat regime (e.g. --min-mean-share 0.01 hides anything below 1% average reasoning share, so the CV ranking starts to mean "wild among genuinely reasoning sources"). Counts surface as droppedBelowMinMeanShare.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -8670,6 +8675,7 @@ program
         minDays: string;
         top: string;
         sort: string;
+        minMeanShare: string;
         json?: boolean;
       },
       cmd,
@@ -8693,6 +8699,16 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        const minMeanShare = Number.parseFloat(opts.minMeanShare);
+        if (
+          !Number.isFinite(minMeanShare) ||
+          minMeanShare < 0 ||
+          minMeanShare > 1
+        ) {
+          throw new Error(
+            `--min-mean-share must be a finite number in [0, 1] (got ${opts.minMeanShare})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceReasoningShareByDayCv(queue, {
           since: opts.since ?? null,
@@ -8701,6 +8717,7 @@ program
           minDays,
           top: top === 0 ? null : top,
           sort: opts.sort as 'tokens' | 'cv' | 'mean' | 'days' | 'source',
+          minMeanShare,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
