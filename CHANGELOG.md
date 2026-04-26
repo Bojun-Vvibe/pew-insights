@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.58 — 2026-04-26
+
+### Changed
+
+- `source-output-tokens-per-row-percentiles`: refinement filter
+  `--min-tail <f>` requires `p99 / p50 >= f` for a source row
+  to be reported. Default 0 = no floor. Use this to surface
+  only sources whose generation distribution is bimodal /
+  heavy-tailed (e.g. `--min-tail 5` keeps only sources whose
+  worst row is at least 5x their median).
+
+  Validates that the value is a non-negative finite number.
+  Suppressed sources surface as `droppedBelowMinTail`.
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minRows` -> `minP99` -> `minTail` -> sort -> `top` (so the
+  display cap is applied to the post-filter, post-sort set).
+  Sources flagged as flat (every positive-output row equal
+  → tail = 1) are suppressed by any `--min-tail > 1`.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-output-tokens-per-row-percentiles --min-tail 10
+pew-insights source-output-tokens-per-row-percentiles
+as of: 2026-04-26T15:40:32.214Z    sources: 6 (shown 3)    output-tokens: 42,321,777    min-rows: 3    min-p99: 0    min-tail: 10.00    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 by source filter, 0 all-zero-output sources, 0 below min-rows, 0 below min-p99, 3 below min-tail, 0 below top cap
+(per-row output_tokens distribution per source; p50/p90/p99 are type-7 linear-interpolation percentiles over positive-output rows; tail = p99/p50)
+
+per-source output-tokens-per-row percentiles (sorted by tokens; ties: source asc)
+source             rows  zeroR  outSum      mean    p50     p90      p99      max      tail
+-----------------  ----  -----  ----------  ------  ------  -------  -------  -------  -----
+claude-code        299   0      12,128,825  40,565  11,145  145,810  290,010  416,890  26.02
+openclaw           408   0      4,830,052   11,838  3,081   48,417   66,901   116,291  21.72
+ide-assistant-A    321   12     1,135,247   3,537   1,810   8,743    24,175   37,381   13.36
+```
+
+Reading: with a `tail >= 10x` floor the filter cleanly isolates
+the three sources whose generation distribution is genuinely
+bimodal — a small-output floor with rare very fat completions.
+The three sources dropped (`opencode` tail=6.6, `codex` tail=8.7,
+`hermes` tail=4.7) are operationally "boringly consistent": their
+worst row is within a single-digit multiple of their median.
+The flag turns the qualitative observation ("which sources have
+true heavy-tail risk?") into a one-knob, falsifiable filter that
+composes with the existing `--min-rows` and `--min-p99` gates.
+
 ## 0.6.57 — 2026-04-26
 
 ### Added
