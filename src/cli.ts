@@ -71,6 +71,7 @@ import {
   renderRollingBucketCv,
   renderDailyTokenAutocorrelationLag1,
   renderDailyTokenMonotoneRunLength,
+  renderDailyTokenZscoreExtremes,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderModelTenure,
@@ -201,6 +202,7 @@ import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
+import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
 import { buildModelTenure } from './modeltenure.js';
@@ -6124,6 +6126,95 @@ program
     },
   );
 
+program
+  .command('daily-token-zscore-extremes')
+  .description(
+    "Per-source count of daily total-token values whose population z-score exceeds ±sigma. Tail-event statistic that surfaces individual extreme days (heavy or light) — orthogonal to aggregate dispersion (burstiness, rolling-bucket-cv), serial correlation (autocorrelation-lag1), and direction-persistence (monotone-run-length).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with fewer than n active calendar days (default 3, must be >= 2); counts surface as droppedSparseSources',
+    '3',
+  )
+  .option(
+    '--sigma <f>',
+    'strict z-score threshold; days with |z| > sigma count as extreme. Must be > 0. Default 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | extreme | fraction | maxabsz | ndays | source. Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        sigma: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(`--min-days must be an integer >= 2 (got ${opts.minDays})`);
+        }
+        const sigma = Number.parseFloat(opts.sigma);
+        if (!Number.isFinite(sigma) || sigma <= 0) {
+          throw new Error(`--sigma must be a positive finite number (got ${opts.sigma})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sort = opts.sort as
+          | 'tokens'
+          | 'extreme'
+          | 'fraction'
+          | 'maxabsz'
+          | 'ndays'
+          | 'source';
+        const validSorts = ['tokens', 'extreme', 'fraction', 'maxabsz', 'ndays', 'source'];
+        if (!validSorts.includes(sort)) {
+          throw new Error(`--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenZscoreExtremes(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          sigma,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenZscoreExtremes(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
 
 program
   .command('cumulative-tokens-midpoint')

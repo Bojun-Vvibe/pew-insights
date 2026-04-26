@@ -4971,6 +4971,80 @@ export function renderDailyTokenAutocorrelationLag1(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenZscoreExtremes(
+  r: import('./dailytokenzscoreextremes.js').DailyTokenZscoreExtremesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-zscore-extremes'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sigma: ${r.sigma}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(z = (dailyTokens - sourceMean) / sourceStddev (population, 1/n divisor); high/low extreme = strict z > +sigma / z < -sigma; flat=y means stddev=0 across active days, so no z is defined)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source z-score extremes (sorted by ${r.sort})`));
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'nDays',
+    'mean',
+    'stddev',
+    'flat',
+    'nHigh',
+    'nLow',
+    'nExtreme',
+    'extFrac',
+    'maxAbsZ',
+    'maxZDay',
+    'maxZTokens',
+    'dir',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nActiveDays),
+    s.mean.toFixed(1),
+    s.stddev.toFixed(1),
+    s.flat ? 'y' : '-',
+    formatNumber(s.nHighExtreme),
+    formatNumber(s.nLowExtreme),
+    formatNumber(s.nExtreme),
+    s.extremeFraction.toFixed(3),
+    s.maxAbsZ.toFixed(3),
+    s.maxAbsZDay || '-',
+    s.maxAbsZDay ? formatNumber(s.maxAbsZTokens) : '-',
+    s.maxAbsZDirection,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 import type { SourceRunLengthsReport } from './sourcerunlengths.js';
 import type {
   HourOfDaySourceMixEntropyReport,
