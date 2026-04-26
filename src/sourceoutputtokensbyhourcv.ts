@@ -118,6 +118,23 @@ export interface SourceOutputTokensByHourCvOptions {
    */
   minRows?: number;
   /**
+   * Drop sources whose `meanHourMean` is strictly below this value
+   * from the per-source table. Display filter only — global
+   * denominators reflect the full kept population. Suppressed rows
+   * surface as `droppedBelowMinMeanHourMean`. Must be a finite
+   * non-negative number. Default 0 = no floor.
+   *
+   * Useful for suppressing the
+   * "mathematically-loud-but-substantively-tiny" regime: a source
+   * whose hourly mean per-row output is ~30 tokens with one outlier
+   * hour at 200 inflating `hourCv` past 1.0 is *technically* lumpy
+   * but trivially small in absolute terms. `--min-mean-hour-mean
+   * 1000` keeps only sources whose typical per-row reply averages
+   * at least 1000 tokens across hours, so the CV ranking starts to
+   * mean "wild among genuinely chunky-output sources".
+   */
+  minMeanHourMean?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + floors.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -172,6 +189,7 @@ export interface SourceOutputTokensByHourCvReport {
   source: string | null;
   minHours: number;
   minRows: number;
+  minMeanHourMean: number;
   top: number | null;
   sort: 'tokens' | 'cv' | 'mean' | 'hours' | 'source';
   /** Distinct sources that survived window/source filters. */
@@ -182,6 +200,7 @@ export interface SourceOutputTokensByHourCvReport {
   droppedSourceFilter: number;
   droppedBelowMinHours: number;
   droppedBelowMinRows: number;
+  droppedBelowMinMeanHourMean: number;
   droppedBelowTopCap: number;
   sources: SourceOutputTokensByHourCvRow[];
 }
@@ -200,6 +219,12 @@ export function buildSourceOutputTokensByHourCv(
   if (!Number.isInteger(minRows) || minRows < 1) {
     throw new Error(
       `minRows must be a positive integer (got ${opts.minRows})`,
+    );
+  }
+  const minMeanHourMean = opts.minMeanHourMean ?? 0;
+  if (!Number.isFinite(minMeanHourMean) || minMeanHourMean < 0) {
+    throw new Error(
+      `minMeanHourMean must be a finite non-negative number (got ${opts.minMeanHourMean})`,
     );
   }
   const top = opts.top ?? null;
@@ -348,6 +373,7 @@ export function buildSourceOutputTokensByHourCv(
 
   let droppedBelowMinHours = 0;
   let droppedBelowMinRows = 0;
+  let droppedBelowMinMeanHourMean = 0;
   const survived: SourceOutputTokensByHourCvRow[] = [];
   for (const row of allRows) {
     if (row.hoursPopulated < minHours) {
@@ -356,6 +382,10 @@ export function buildSourceOutputTokensByHourCv(
     }
     if (row.rowCount < minRows) {
       droppedBelowMinRows += 1;
+      continue;
+    }
+    if (row.meanHourMean < minMeanHourMean) {
+      droppedBelowMinMeanHourMean += 1;
       continue;
     }
     survived.push(row);
@@ -396,6 +426,7 @@ export function buildSourceOutputTokensByHourCv(
     source: sourceFilter,
     minHours,
     minRows,
+    minMeanHourMean,
     top,
     sort,
     totalSources: allRows.length,
@@ -404,6 +435,7 @@ export function buildSourceOutputTokensByHourCv(
     droppedSourceFilter,
     droppedBelowMinHours,
     droppedBelowMinRows,
+    droppedBelowMinMeanHourMean,
     droppedBelowTopCap,
     sources: finalSources,
   };

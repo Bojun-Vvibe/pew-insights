@@ -7663,12 +7663,12 @@ export function renderSourceOutputTokensByHourCv(
   lines.push(chalk.bold.cyan('pew-insights source-output-tokens-by-hour-cv'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-hours: ${r.minHours}    min-rows: ${r.minRows}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-hours: ${r.minHours}    min-rows: ${r.minRows}    min-mean-hr: ${r.minMeanHourMean.toFixed(2)}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinHours)} below min-hours, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinHours)} below min-hours, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMeanHourMean)} below min-mean-hr, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.74 — 2026-04-27
+
+### Changed
+
+- `source-output-tokens-by-hour-cv`: refinement flag
+  `--min-mean-hour-mean`. Drops sources whose `meanHourMean`
+  (mean across populated hours of the within-hour mean
+  `output_tokens`) is strictly below the threshold from the
+  per-source table. Default 0 = no filter (preserves v0.6.73
+  behaviour). Suppressed rows surface as
+  `droppedBelowMinMeanHourMean`.
+
+  This matters because `--min-hours` only counts populated hour
+  buckets and is silent on whether those buckets carry
+  *substantively meaningful* output volume. The v0.6.73 default
+  smoke had a source averaging ~3,477 tokens per row sitting at
+  `hourCv = 0.4700` — its diurnal lumpiness is real but is a
+  rounding error next to a source averaging ~72,000 tokens per
+  row. Mixing the two in one CV ranking conflates "wild among
+  tiny replies" with "wild among genuinely chunky replies".
+
+  `--min-mean-hour-mean 5000` keeps only sources whose typical
+  per-row reply averages at least ~5K tokens across hours, which
+  is a cleaner cohort for "which big-output sources are most
+  diurnally unstable?"
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (`--sort cv --min-mean-hour-mean 5000`):
+
+  ```
+  pew-insights source-output-tokens-by-hour-cv
+  as of: 2026-04-26T21:14:33.633Z    sources: 6 (shown 5)    tokens: 9,419,357,435    min-hours: 3    min-rows: 1    min-mean-hr: 5000.00    top: -    sort: cv
+  dropped: 0 bad hour_start, 0 by source filter, 0 below min-hours, 0 below min-rows, 1 below min-mean-hr, 0 below top cap
+
+  per-source diurnal output CV (sorted by cv; ties: source asc)
+  source       tokens         outTok      rows  hoursPop  meanHourMean  stdHourMean  hourCv
+  -----------  -------------  ----------  ----  --------  ------------  -----------  ------
+  codex        809,624,660    2,045,042   64    16        37612.39      34918.41     0.9284
+  claude-code  3,442,385,788  12,128,825  299   20        72072.20      46197.07     0.6410
+  opencode     3,255,867,695  21,719,811  314   24        68647.89      25835.57     0.3763
+  hermes       145,444,813    1,406,816   165   24         7766.99       2875.47     0.3702
+  openclaw     1,764,148,752  4,843,187   420   24        11591.65      3417.80     0.2948
+  ```
+
+  The thin `ide-assistant-A` row (`meanHourMean ~3477`, redacted
+  banned-string source name) drops out, and the ranking among
+  the surviving 5 chunky-output sources is unchanged from the
+  unfiltered run — confirming the filter is purely a cohort
+  selector and not a re-ranker.
+
 ## 0.6.73 — 2026-04-27
 
 ### Added

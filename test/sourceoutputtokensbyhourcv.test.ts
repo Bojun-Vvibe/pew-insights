@@ -403,3 +403,86 @@ test('source-output-tokens-by-hour-cv: deterministic tiebreak by source asc', ()
   assert.equal(r.sources[0]!.source, 'alpha');
   assert.equal(r.sources[1]!.source, 'beta');
 });
+
+test('source-output-tokens-by-hour-cv: rejects bad minMeanHourMean', () => {
+  assert.throws(() =>
+    buildSourceOutputTokensByHourCv([], { minMeanHourMean: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceOutputTokensByHourCv([], { minMeanHourMean: Number.NaN }),
+  );
+  assert.throws(() =>
+    buildSourceOutputTokensByHourCv([], {
+      minMeanHourMean: Number.POSITIVE_INFINITY,
+    }),
+  );
+});
+
+test('source-output-tokens-by-hour-cv: minMeanHourMean drops trivially-tiny sources', () => {
+  const queue: QueueLine[] = [
+    // tinyLumpy: hours 0,6,12 with outputs 10, 20, 60 -> mean=30, hourCv ≈ 0.72
+    ql('2026-04-20T00:00:00Z', 'tinyLumpy', 10),
+    ql('2026-04-20T06:00:00Z', 'tinyLumpy', 20),
+    ql('2026-04-20T12:00:00Z', 'tinyLumpy', 60),
+    // chunkySteady: hours 0,6,12 outputs 1000, 1000, 1000 -> mean=1000, hourCv=0
+    ql('2026-04-20T00:00:00Z', 'chunkySteady', 1000),
+    ql('2026-04-20T06:00:00Z', 'chunkySteady', 1000),
+    ql('2026-04-20T12:00:00Z', 'chunkySteady', 1000),
+  ];
+  const r = buildSourceOutputTokensByHourCv(queue, {
+    generatedAt: GEN,
+    minHours: 3,
+    minMeanHourMean: 100,
+    sort: 'cv',
+  });
+  // tinyLumpy mean=30 < 100 -> dropped
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'chunkySteady');
+  assert.equal(r.droppedBelowMinMeanHourMean, 1);
+  assert.equal(r.minMeanHourMean, 100);
+});
+
+test('source-output-tokens-by-hour-cv: minMeanHourMean=0 preserves v0.6.73 behaviour', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'srcA', 10),
+    ql('2026-04-20T06:00:00Z', 'srcA', 20),
+    ql('2026-04-20T12:00:00Z', 'srcA', 60),
+  ];
+  const rDefault = buildSourceOutputTokensByHourCv(queue, {
+    generatedAt: GEN,
+    minHours: 3,
+  });
+  const rZero = buildSourceOutputTokensByHourCv(queue, {
+    generatedAt: GEN,
+    minHours: 3,
+    minMeanHourMean: 0,
+  });
+  assert.equal(rDefault.sources.length, 1);
+  assert.equal(rZero.sources.length, 1);
+  assert.equal(rDefault.minMeanHourMean, 0);
+  assert.equal(rDefault.droppedBelowMinMeanHourMean, 0);
+});
+
+test('source-output-tokens-by-hour-cv: minMeanHourMean composes with minHours and minRows', () => {
+  const queue: QueueLine[] = [
+    // dropped by minHours
+    ql('2026-04-20T00:00:00Z', 'thinHours', 5000),
+    // survives all
+    ql('2026-04-20T00:00:00Z', 'good', 5000),
+    ql('2026-04-20T06:00:00Z', 'good', 5000),
+    ql('2026-04-20T12:00:00Z', 'good', 5000),
+    // dropped by minMeanHourMean
+    ql('2026-04-20T00:00:00Z', 'tiny', 10),
+    ql('2026-04-20T06:00:00Z', 'tiny', 10),
+    ql('2026-04-20T12:00:00Z', 'tiny', 10),
+  ];
+  const r = buildSourceOutputTokensByHourCv(queue, {
+    generatedAt: GEN,
+    minHours: 3,
+    minMeanHourMean: 100,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'good');
+  assert.equal(r.droppedBelowMinHours, 1);
+  assert.equal(r.droppedBelowMinMeanHourMean, 1);
+});

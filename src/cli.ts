@@ -8476,7 +8476,7 @@ program
         const minRows = Number.parseInt(opts.minRows, 10);
         if (!Number.isInteger(minRows) || minRows < 1) {
           throw new Error(
-            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
           );
         }
         const minLargePctTokens = Number.parseFloat(opts.minLargePctTokens);
@@ -8873,6 +8873,11 @@ program
     '1',
   )
   .option(
+    '--min-mean-hour-mean <n>',
+    'display filter: hide sources whose meanHourMean (mean across populated hours of within-hour mean output_tokens) is strictly below n. Finite non-negative number. Default 0 = no floor. Useful for suppressing the mathematically-loud-but-substantively-tiny regime (e.g. --min-mean-hour-mean 1000 hides sources whose typical per-row reply averages under 1000 tokens). Counts surface as droppedBelowMinMeanHourMean.',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources after sort; remainder surface as droppedBelowTopCap (default 0 = no cap)',
     '0',
@@ -8891,6 +8896,7 @@ program
         source?: string;
         minHours: string;
         minRows: string;
+        minMeanHourMean: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -8916,6 +8922,12 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
+        const minMeanHourMean = Number.parseFloat(opts.minMeanHourMean);
+        if (!Number.isFinite(minMeanHourMean) || minMeanHourMean < 0) {
+          throw new Error(
+            `--min-mean-hour-mean must be a finite non-negative number (got ${opts.minMeanHourMean})`,
+          );
+        }
         const validSorts = ['tokens', 'cv', 'mean', 'hours', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -8929,6 +8941,7 @@ program
           source: opts.source ?? null,
           minHours,
           minRows,
+          minMeanHourMean,
           top: top === 0 ? null : top,
           sort: opts.sort as 'tokens' | 'cv' | 'mean' | 'hours' | 'source',
         });
