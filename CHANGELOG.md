@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.32 — 2026-04-26
+
+### Added
+
+- `source-token-mass-hour-centroid`: per-source **token-mass-weighted
+  circular centroid** on the 24-hour clock. Treats hour-of-day as
+  intrinsically circular (hour 23 and hour 0 are adjacent, not 23h
+  apart). For each source we sum total_tokens into 24 hourly bins,
+  place each bin at angle `theta = 2*pi*h/24` on the unit circle
+  with mass = total_tokens, and report:
+
+  - `centroidHour` = `atan2(sum m*sin(theta), sum m*cos(theta))`
+    converted back to hours in `[0, 24)`
+  - `R` = resultant length, `sqrt(xBar^2 + yBar^2)` in `[0, 1]`
+    (R=1: all mass at one hour; R=0: mass spread evenly around
+    the clock)
+  - `spreadHrs` = `sqrt(-2*ln(R)) * 24/(2*pi)` (Mardia/Jupp
+    circular SD scaled to hours; +inf when R=0)
+  - `peakHour` / `peakHourTokens` for cross-checking against the
+    existing linear-peak statistics
+
+  Why orthogonal to all ~45+ priors: every existing hour-of-day
+  statistic (`peak-hour`, `time-of-day`, `hour-of-week`,
+  `weekday-share`, `weekend-vs-weekday`, `first-bucket-of-day`,
+  `last-bucket-of-day`, `active-span-per-day`, `cache-hit-by-hour`,
+  `hour-of-day-source-mix-entropy`, `hour-of-day-token-skew`) is
+  *linear*: it picks a mode bucket, reports a histogram, or
+  measures span/skew on a 0..23 line where 23 and 0 are far apart.
+  None of them computes a mass-weighted circular centroid, and a
+  source whose work straddles midnight (e.g. 22:00 and 02:00) has
+  centroid near 24/0 — which a linear mean would catastrophically
+  collapse to noon. The Benford / decile / autocorrelation /
+  monotone-run / d2-sign-runs / gini family is on the value axis
+  or its order, never on phase.
+
+  Knobs: `--since` / `--until` (window), `--source` (single source),
+  `--min-tokens` (default 1000; sparse drop to `droppedSparseSources`),
+  `--top` (cap kept rows post-sort), `--sort`
+  `tokens|centroid|r|spread|source` (default `tokens`),
+  `--json`. Hour-of-day is read in **UTC**, matching every other
+  hour-of-day stat in this codebase, so centroids are comparable.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, default `--sort tokens`)
+
+```
+pew-insights source-token-mass-hour-centroid
+as of: 2026-04-26T06:41:58.066Z    sources: 6 (shown 6)    tokens: 9,034,854,111    min-tokens: 1,000    top: -    sort: tokens
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below top cap
+
+per-source token-mass-weighted hour-of-day centroid (sorted by tokens; ties: source asc)
+source           firstDay    lastDay     days  buckets  centroidHr  R       spreadHrs  peakHr  peakTokens   tokens
+---------------  ----------  ----------  ----  -------  ----------  ------  ---------  ------  -----------  -------------
+claude-code      2026-02-11  2026-04-23  35    20       8.47        0.3969  5.19       8       466,586,192  3,442,385,788
+opencode         2026-04-20  2026-04-26  7     24       16.66       0.1664  7.23       17      286,822,225  2,919,216,082
+openclaw         2026-04-17  2026-04-26  10    24       5.87        0.1076  8.07       1       128,895,936  1,718,483,564
+codex            2026-04-13  2026-04-20  8     16       11.13       0.4359  4.92       12      103,439,933  809,624,660
+hermes           2026-04-17  2026-04-26  10    24       7.85        0.3044  5.89       14      15,687,670   143,258,290
+ide-assistant-A  2025-07-30  2026-04-20  73    14       6.10        0.7274  3.05       2       410,051      1,885,727
+```
+
+The reading: across the local pew queue, **`ide-assistant-A` is the
+only tightly-concentrated source** (R = 0.7274, spread 3.05h around
+6:10 UTC = ~02:10 PT) — sharp morning workload. Every other source
+has R well below 0.5, with `openclaw` essentially smeared (R = 0.108,
+spread > 8h) — its 24-bucket coverage and tiny resultant length say
+the workload is broadly diurnal, not concentrated. Note `claude-code`
+and `hermes` have linear `peakHr` (8 and 14) noticeably **different
+from** their circular centroids (8.47 and 7.85): the circular
+centroid pulls toward off-peak mass that the mode-only `peakHour`
+ignores. `codex` has the most cleanly bimodal-but-symmetric profile
+(centroid 11.13, R = 0.44, peak at 12) — what you would expect from
+a workday that brackets noon.
+
 ## 0.6.31 — 2026-04-26
 
 ### Changed

@@ -74,6 +74,7 @@ import {
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
   renderSourceOutputTokenBenfordDeviation,
+  renderSourceTokenMassHourCentroid,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderModelTenure,
@@ -208,6 +209,7 @@ import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationl
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
+import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
@@ -6782,6 +6784,85 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceOutputTokenBenfordDeviation(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-token-mass-hour-centroid')
+  .description(
+    'Per-source token-mass-weighted circular centroid on the 24-hour clock. Reports centroidHour, resultant length R (concentration), and circular SD in hours. Treats hour-of-day as circular (23 and 0 adjacent), unlike every other hour-of-day stat which uses linear bins.',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | centroid | r | spread | source. Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['tokens', 'centroid', 'r', 'spread', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceTokenMassHourCentroid(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          top,
+          sort: opts.sort as 'tokens' | 'centroid' | 'r' | 'spread' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceTokenMassHourCentroid(report) + '\n');
         }
       } catch (e) {
         die(e);

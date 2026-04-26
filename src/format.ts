@@ -39,6 +39,7 @@ import type { HourOfWeekReport } from './hourofweek.js';
 import type { DeviceTenureReport } from './devicetenure.js';
 import type { OutputTokenDecileDistributionReport } from './outputtokendeciledistribution.js';
 import type { InputTokenDecileDistributionReport } from './inputtokendeciledistribution.js';
+import type { SourceTokenMassHourCentroidReport } from './sourcetokenmasshourcentroid.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -6158,6 +6159,80 @@ export function renderSourceOutputTokenBenfordDeviation(
     fmtPct(s.modeFreq),
     s.chi2.toFixed(2),
     s.madPercent.toFixed(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceTokenMassHourCentroid(
+  r: SourceTokenMassHourCentroidReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-token-mass-hour-centroid'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(centroidHour = atan2(sum m*sin(theta), sum m*cos(theta)) on a 24h circle, theta=2*pi*h/24, m=total_tokens; R in [0,1] is concentration; spreadHrs = sqrt(-2*ln(R))*24/(2*pi); UTC hours)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source token-mass-weighted hour-of-day centroid (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'buckets',
+    'centroidHr',
+    'R',
+    'spreadHrs',
+    'peakHr',
+    'peakTokens',
+    'tokens',
+  ];
+  const fmtH = (h: number): string => h.toFixed(2);
+  const fmtSpread = (h: number): string =>
+    Number.isFinite(h) ? h.toFixed(2) : '\u221e';
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.nBuckets),
+    fmtH(s.centroidHour),
+    s.resultantLength.toFixed(4),
+    fmtSpread(s.spreadHours),
+    String(s.peakHour),
+    formatNumber(s.peakHourTokens),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
