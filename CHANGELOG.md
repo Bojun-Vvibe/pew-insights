@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.36 — 2026-04-26
+
+### Added
+
+- `daily-token-gini-coefficient`: per-source Gini coefficient of
+  the per-day `total_tokens` vector. Collapses hourly buckets to
+  UTC days and then computes Gini over the day-vector via the
+  O(n log n) sorted form
+
+  ```
+  G = ( 2 * sum_i i * D_(i)  -  (n + 1) * S ) / ( n * S )
+  ```
+
+  where `D_(i)` is the i-th order statistic and `S = sum D_(i)`.
+  Range `[0, (n - 1) / n]`. We report `G` directly without the
+  `n / (n - 1)` small-sample correction so the value is
+  comparable across sources with different `n`.
+
+  This is **order-invariant** by construction — a permutation of
+  the day-vector has the same Gini — which makes it orthogonal to
+  every existing daily-time-series stat in this codebase
+  (`daily-token-zscore-extremes`, `daily-token-monotone-run-length`,
+  `daily-token-second-difference-sign-runs`,
+  `daily-token-autocorrelation-lag1`, `cumulative-tokens-midpoint`),
+  all of which read the daily series in order. It is also
+  distinct from `bucket-token-gini`, which Ginis hourly buckets
+  within a window rather than per-day totals per source.
+
+  Knobs: `--since` / `--until` (ISO window on `hour_start`),
+  `--source <name>` (single-source restriction; non-matching
+  surface as `droppedSourceFilter`), `--min-tokens` (default
+  1000; counts surface as `droppedSparseSources`), `--min-days`
+  (default 2; counts surface as `droppedBelowMinDays`), `--top`
+  (default 0 = no cap; counts surface as `droppedTopSources`),
+  `--sort` (`gini` default | `tokens` | `days` | `source`),
+  `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+pew-insights daily-token-gini-coefficient
+as of: 2026-04-26T07:10:43.575Z    sources: 6 (shown 6)    tokens: 9,047,851,381    min-tokens: 1,000    min-days: 2    top: —    sort: gini
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-days, 0 below top cap
+(per-source Gini of per-day total_tokens; G = (2*sum_i i*D_(i) - (n+1)*S) / (n*S) over sorted day vector; range [0, (n-1)/n]; UTC days)
+
+per-source Gini of per-day total_tokens (sorted by gini; ties: source asc)
+source            firstDay    lastDay     days  gini    meanDaily    maxDay      maxDayTokens   maxShare  tokens
+----------------  ----------  ----------  ----  ------  -----------  ----------  -------------  --------  -------------
+claude-code       2026-02-11  2026-04-23  35    0.7590  98,353,880   2026-04-20  1,052,011,841  0.3056    3,442,385,788
+ide-assistant-A   2025-07-30  2026-04-20  73    0.7000  25,832       2026-04-17  240,730        0.1277    1,885,727
+codex             2026-04-13  2026-04-20  8     0.5892  101,203,083  2026-04-20  389,724,254    0.4814    809,624,660
+hermes            2026-04-17  2026-04-26  10    0.4048  14,344,307   2026-04-19  34,683,508     0.2418    143,443,069
+openclaw          2026-04-17  2026-04-26  10    0.3424  171,951,363  2026-04-19  354,037,834    0.2059    1,719,513,628
+opencode          2026-04-20  2026-04-26  7     0.3200  418,714,073  2026-04-21  724,269,445    0.2471    2,930,998,509
+```
+
+Reading: `claude-code` has the most unequal day-by-day spend
+(G = 0.7590 over 35 days, with a single 2026-04-20 day carrying
+~31% of its total mass), while `opencode` is the most evenly
+spread (G = 0.3200 over 7 days). The order-invariance of Gini
+means these numbers say nothing about *when* the spikes happen —
+that is what the existing autocorrelation / monotone-run /
+sign-runs subcommands are for. Both views together form a
+two-axis read on per-source daily intensity.
+
 ## 0.6.35 — 2026-04-26
 
 ### Docs
