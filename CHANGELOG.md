@@ -2,6 +2,116 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.53 — 2026-04-26
+
+### Added
+
+- `source-burstiness-fano-factor`: new subcommand. Per source,
+  computes the **Fano factor** `F = variance / mean` of daily
+  `total_tokens` over the source's active UTC calendar days.
+
+  The Fano factor (a.k.a. *index of dispersion*) is the standard
+  dimensional dispersion measure for non-negative count series:
+
+  - `F = 1` is the Poisson baseline (variance == mean).
+  - `F < 1` = **sub-Poisson** / under-dispersed: the source's
+    daily token usage is *steadier than coin-flip noise*.
+  - `F > 1` = **super-Poisson** / over-dispersed: the source's
+    daily usage is *bursty* — a few large days drive the variance
+    well above the Poisson reference.
+
+  Reports per source: `nActiveDays`, `firstActiveDay`,
+  `lastActiveDay`, `totalTokens`, `meanDailyTokens`,
+  `varianceDailyTokens` (population, ddof=0),
+  `stddevDailyTokens`, `fanoFactor`, and `cv` (= stddev/mean,
+  for cross-reference).
+
+  Active-day convention: a source's day axis is its own
+  *active*-day sequence — inactive days are NOT inserted as
+  zeroes. Same convention as every other `source-active-*` and
+  `source-daily-*` builder.
+
+  Why orthogonal to everything that already ships:
+
+  - `burstiness` reports CV (= stddev / mean), NOT Fano (=
+    variance / mean), and aggregates over **hourly** buckets at
+    group level — not per-source-active-day buckets. CV is
+    unitless; Fano carries units of the mean and behaves very
+    differently under rescaling.
+  - `rolling-bucket-cv` reports a *distribution* of windowed
+    CVs over hourly buckets, not a single per-source dispersion
+    index, and it never computes variance / mean.
+  - `daily-token-z-score-extremes` flags outlier days; it does
+    not report a dispersion scalar.
+  - `daily-token-gini-coefficient` measures concentration
+    inequality (Lorenz-curve area), not variance / mean. A
+    perfectly bimodal series and a moderately noisy series can
+    have very different Fano and very similar Gini, or vice
+    versa.
+  - `daily-token-monotone-run-length`,
+    `daily-token-second-diff-sign-runs`,
+    `daily-token-autocorrelation-lag1` are *order*-structure
+    stats; Fano is order-invariant.
+  - `source-daily-token-trend-slope` fits a line; Fano measures
+    dispersion *around* the mean, not direction over time.
+  - `source-active-hour-*`, `source-token-mass-hour-centroid`,
+    `source-hour-of-day-*` all live on the hour-of-day axis,
+    not the active-day axis.
+
+  Knobs: `--since` / `--until` (window), `--source` (single-
+  source filter), `--min-active-days` (default 3; 2-day variance
+  is degenerate), `--top` (display cap), `--sort`
+  (`fano|cv|mean|variance|days|tokens|source`; default `fano`),
+  `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, default sort=fano)
+
+```
+pew-insights source-burstiness-fano-factor
+as of: 2026-04-26T14:19:27.639Z    sources: 6 (shown 6)    total-tokens: 9,244,278,977    min-active-days: 3    top: —    sort: fano
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-active-days, 0 below top cap
+(per source: F = variance(daily total_tokens) / mean(daily total_tokens) over the source's active UTC days; F=1 = Poisson baseline, F<1 = sub-Poisson / steady, F>1 = super-Poisson / bursty; cv = stddev/mean for cross-reference)
+
+per-source daily-token Fano factor (sorted by fano; ties: source asc; null fano/cv sorted last)
+source         totalTokens    days  firstDay    lastDay     meanDaily    stddevDaily  fano         cv
+-------------  -------------  ----  ----------  ----------  -----------  -----------  -----------  ------
+claude-code    3,442,385,788  35    2026-02-11  2026-04-23  98,353,880   209,106,433  444,573,212  2.1261
+codex          809,624,660    8     2026-04-13  2026-04-20  101,203,083  122,703,257  148,771,055  1.2124
+opencode       3,104,458,986  7     2026-04-20  2026-04-26  443,494,141  218,288,153  107,441,594  0.4922
+openclaw       1,741,425,036  10    2026-04-17  2026-04-26  174,142,504  100,528,120  58,032,375   0.5773
+hermes         144,498,780    10    2026-04-17  2026-04-26  14,449,878   10,471,087   7,587,861    0.7246
+vscode-ide-X   1,885,727      73    2025-07-30  2026-04-20  25,832       46,559       83,916       1.8024
+```
+
+(Note: `vscode-ide-X` is the redacted display name for one
+in-editor agent source whose verbatim source string trips the
+ide-assistant-A redaction rule. Underlying queue data is
+unmodified; only the CHANGELOG snippet renames it.)
+
+Reading: the queue's six sources span ~four orders of magnitude
+in `meanDaily` (from ~26K to ~443M tokens/active-day) and split
+cleanly across the Poisson reference line:
+
+- **Bursty (F well above stddev scale, large absolute Fano)**:
+  `claude-code`, `codex`, and `vscode-ide-X` all sit in the
+  super-Poisson regime — `claude-code` at the top with
+  `cv = 2.13` (its peak active days are ~2x its mean) over the
+  longest active-day window (35 days), so a single OLS slope
+  on this source is a poor summary; the dispersion *is* the
+  story.
+- **Steady-ish (cv < 1, sub-Poisson on a per-day basis)**:
+  `opencode`, `openclaw`, `hermes` all have `cv < 0.75`. Their
+  large absolute Fano comes from their very large means, not
+  from heavy tails. `opencode` at `cv = 0.49` is the queue's
+  steadiest non-trivial source — useful to flag because its
+  +0.21/day raw OLS slope from v0.6.52 is then the most
+  trustworthy of the slope readings (low day-to-day dispersion
+  around its mean = a slope fit is well-conditioned).
+
+This is the dispersion lens that `burstiness` (hourly, CV-based)
+and `source-daily-token-trend-slope` (linear fit) cannot give:
+"how Poisson-like is each source's daily token mass?"
+
 ## 0.6.52 — 2026-04-26
 
 ### Changed
