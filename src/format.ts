@@ -7119,3 +7119,79 @@ export function renderSourceOutputTokensPerRowPercentiles(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceSingleDayMassConcentrationReport,
+  SourceSingleDayMassConcentrationRow,
+} from './sourcesingledaymassconcentration.js';
+
+export function renderSourceSingleDayMassConcentration(
+  r: SourceSingleDayMassConcentrationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-single-day-mass-concentration'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedZeroMass)} zero-mass sources, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source token-mass concentration on the single biggest UTC day; share = day_tokens / source_total; hhi = sum_i share_i^2 over active days)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source single-day mass concentration (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'days',
+    'tokenSum',
+    'maxDay',
+    'maxTok',
+    'maxShare',
+    'top2Share',
+    'top3Share',
+    'hhi',
+  ];
+  const rows2: string[][] = r.sources.map(
+    (s: SourceSingleDayMassConcentrationRow) => [
+      s.source,
+      formatNumber(s.daysActive),
+      formatNumber(s.tokenSum),
+      s.maxDay,
+      formatNumber(s.maxDayTokens),
+      s.maxDayShare.toFixed(4),
+      s.top2Share.toFixed(4),
+      s.top3Share.toFixed(4),
+      s.hhi.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows2));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

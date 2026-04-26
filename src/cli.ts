@@ -89,6 +89,7 @@ import {
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderSourceOutputTokensPerRowPercentiles,
+  renderSourceSingleDayMassConcentration,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -237,6 +238,7 @@ import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
 import { buildSourceOutputTokensPerRowPercentiles } from './sourceoutputtokensperrowpercentiles.js';
+import { buildSourceSingleDayMassConcentration } from './sourcesingledaymassconcentration.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -6718,6 +6720,102 @@ program
         } else {
           process.stdout.write(
             renderSourceOutputTokensPerRowPercentiles(report) + '\n',
+          );
+        }
+      } catch (e) {
+          die(e);
+        }
+      },
+    );
+
+program
+  .command('source-single-day-mass-concentration')
+  .description(
+    "Per-source share of total token mass on the source's single biggest UTC day, plus top-2/top-3 cumulative shares and a per-day Herfindahl-Hirschman index. Detects sources whose history is dominated by a single date — orthogonal to daily-token-gini (global), source-day-of-week-token-mass-share (DOW modular), source-active-day-streak (run length), and source-token-mass-hour-centroid (location).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-days <n>',
+    'drop sources with fewer than n active UTC days (default 3)',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'tokens' (default) | 'maxshare' | 'top2' | 'top3' | 'hhi' | 'days' | 'source'",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'tokens',
+          'maxshare',
+          'top2',
+          'top3',
+          'hhi',
+          'days',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceSingleDayMassConcentration(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'maxshare'
+            | 'top2'
+            | 'top3'
+            | 'hhi'
+            | 'days'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceSingleDayMassConcentration(report) + '\n',
           );
         }
       } catch (e) {
