@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.17 — 2026-04-26
+
+### Added
+
+- `daily-token-autocorrelation-lag1`: per-source lag-1 (Pearson)
+  autocorrelation of *daily* total-token totals. Reveals day-to-day
+  persistence (does today's token mass actually predict tomorrow's?)
+  which is invisible to magnitude-only metrics like `burstiness`,
+  `rolling-bucket-cv`, or `bucket-token-gini`. Two definitions are
+  reported on the same row so the operator can read both at once:
+
+  - `rho1Active` — autocorrelation over the source's own consecutive
+    *active* days (no calendar gap-fill). Answers "does a heavy day
+    predict the next *active* day".
+  - `rho1Filled` — autocorrelation over the gap-filled tenure
+    (missing calendar days inside `[first, last]` become 0 tokens).
+    Answers "does a heavy day predict the next *literal* calendar day".
+
+  The two agree for sources with no gaps and diverge for sporadic /
+  bursty sources. Constant series surface as `flat=true` with
+  `rho1=0` so the reader can distinguish "literally undefined" from
+  "noisy zero". Knobs: `--since`, `--until`, `--source`, `--min-days`
+  (>=3, structural), `--top` (display cap), `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top 5 --min-days 5`)
+
+```
+pew-insights daily-token-autocorrelation-lag1
+as of: 2026-04-26T00:58:08.585Z    sources: 6 (shown 5)    tokens: 8,890,905,434    min-days: 5
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-days, 1 below top cap
+(observation = lag-1 Pearson autocorrelation of per-source daily total_tokens; rho1Active uses consecutive *active* days, rho1Filled gap-fills missing calendar days inside [first, last] with 0; constant series surface as flat=true with rho1=0)
+
+per-source lag-1 autocorrelation (sorted by tokens desc)
+source       tokens         nActive  nFilled  mean         stddev       rho1Active  flatA  rho1Filled  flatF  first       last
+-----------  -------------  -------  -------  -----------  -----------  ----------  -----  ----------  -----  ----------  ----------
+claude-code  3,442,385,788  35       72       98353879.7   209106432.8  0.258       -      0.332       -      2026-02-11  2026-04-23
+opencode     2,785,850,422  7        7        397978631.7  263844276.0  -0.171      -      -0.171      -      2026-04-20  2026-04-26
+openclaw     1,708,544,780  10       10       170854478.0  105438800.1  0.201       -      0.201       -      2026-04-17  2026-04-26
+codex        809,624,660    8        8        101203082.5  122703257.3  -0.019      -      -0.019      -      2026-04-13  2026-04-20
+hermes       142,614,057    10       10       14261405.7   10704635.2   0.402       -      0.402       -      2026-04-17  2026-04-26
+```
+
+Reading the table: `claude-code` has moderate positive persistence
+(`rho1Active = 0.258`); a heavy day tends to be followed by another
+heavy day. The gap-filled view is *higher* (`rho1Filled = 0.332`)
+because the long stretches of zero days inside its tenure
+(Feb 11 -> Apr 23, only 35 of 72 days active) reinforce the
+auto-similarity of "active vs idle" runs. `hermes` is the most
+persistent in the active-day view (`0.402`); its activity once it
+starts is sticky. `opencode` is *anti*-persistent (`-0.171`):
+heavy days tend to be followed by lighter days, consistent with a
+"work hard one day, recover the next" pattern. `codex` is
+essentially memoryless across days (`-0.019`).
+
 ## 0.6.16 — 2026-04-26
 
 ### Added
