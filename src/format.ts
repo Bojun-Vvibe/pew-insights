@@ -5743,3 +5743,82 @@ export function renderSourceActiveDayStreak(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenMonotoneRunLength(
+  r: import('./dailytokenmonotonerunlength.js').DailyTokenMonotoneRunLengthReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-monotone-run-length'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    min-longest-run: ${r.minLongestRun}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedBelowMinLongestRun)} below min-longest-run, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(longestUpRun / longestDownRun = max consecutive UTC active days with strictly increasing / decreasing total_tokens; equal-valued neighbors break runs in both directions; currentRun is the trailing run ending on lastActiveDay)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source monotone runs (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'nDays',
+    'longestRun',
+    'dir',
+    'longestUp',
+    'upStart',
+    'upEnd',
+    'longestDown',
+    'downStart',
+    'downEnd',
+    'curDir',
+    'curLen',
+    'runs',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nActiveDays),
+    formatNumber(s.longestMonotoneRun),
+    s.longestDirection,
+    formatNumber(s.longestUpRun),
+    s.longestUpStart || '-',
+    s.longestUpEnd || '-',
+    formatNumber(s.longestDownRun),
+    s.longestDownStart || '-',
+    s.longestDownEnd || '-',
+    s.currentDirection,
+    formatNumber(s.currentRunLength),
+    formatNumber(s.runs),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

@@ -70,6 +70,7 @@ import {
   renderCostPerBucketPercentiles,
   renderRollingBucketCv,
   renderDailyTokenAutocorrelationLag1,
+  renderDailyTokenMonotoneRunLength,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
   renderModelTenure,
@@ -199,6 +200,7 @@ import { buildTokenVelocityPercentiles } from './tokenvelocitypercentiles.js';
 import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
+import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
 import { buildSourceIoRatioStability } from './sourceioratiostability.js';
 import { buildModelTenure } from './modeltenure.js';
@@ -6000,6 +6002,102 @@ program
       }
     },
   );
+
+program
+  .command('daily-token-monotone-run-length')
+  .description(
+    "Per-source longest run of strictly monotone (increasing or decreasing) consecutive daily total-token values, plus the live trailing run direction & length. Trajectory-shape statistic orthogonal to autocorrelation (mean-shape) and burstiness/gini (dispersion).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with fewer than n active calendar days (default 2, must be >= 2); counts surface as droppedSparseSources',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | longest | up | down | current | ndays | source. Applied before --top.',
+    'tokens',
+  )
+  .option(
+    '--min-longest-run <n>',
+    'display filter: hide sources whose longestMonotoneRun is below n; counts surface as droppedBelowMinLongestRun (default 0 = no floor)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minLongestRun: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(`--min-days must be an integer >= 2 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minLongestRun = Number.parseInt(opts.minLongestRun, 10);
+        if (!Number.isInteger(minLongestRun) || minLongestRun < 0) {
+          throw new Error(
+            `--min-longest-run must be a non-negative integer (got ${opts.minLongestRun})`,
+          );
+        }
+        const sort = opts.sort as
+          | 'tokens'
+          | 'longest'
+          | 'up'
+          | 'down'
+          | 'current'
+          | 'ndays'
+          | 'source';
+        const validSorts = ['tokens', 'longest', 'up', 'down', 'current', 'ndays', 'source'];
+        if (!validSorts.includes(sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMonotoneRunLength(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort,
+          minLongestRun,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenMonotoneRunLength(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
 
 program
   .command('cumulative-tokens-midpoint')
