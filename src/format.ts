@@ -47,6 +47,7 @@ import type { SourceActiveHourLongestRunReport } from './sourceactivehourlongest
 import type { SourceActiveHourSpanReport } from './sourceactivehourspan.js';
 import type { SourceWeekendWeekdayCacheShareGapReport } from './sourceweekendweekdaycachesharegap.js';
 import type { SourceDailyTokenTrendSlopeReport } from './sourcedailytokentrendslope.js';
+import type { SourceBurstinessFanoFactorReport } from './sourceburstinessfanofactor.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
@@ -6897,6 +6898,75 @@ export function renderSourceDailyTokenTrendSlope(
     fmtSlope(s.slopeTokensPerActiveDay),
     fmtSignedNorm(s.normalizedSlope),
     fmt2(s.r2),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceBurstinessFanoFactor(
+  r: SourceBurstinessFanoFactorReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-burstiness-fano-factor'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    total-tokens: ${formatNumber(r.totalTokens)}    min-active-days: ${formatNumber(r.minActiveDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinActiveDays)} below min-active-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per source: F = variance(daily total_tokens) / mean(daily total_tokens) over the source's active UTC days; F=1 = Poisson baseline, F<1 = sub-Poisson / steady, F>1 = super-Poisson / bursty; cv = stddev/mean for cross-reference)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source daily-token Fano factor (sorted by ${r.sort}; ties: source asc; null fano/cv sorted last)`,
+    ),
+  );
+  const fmtN = (v: number | null, d: number): string =>
+    v === null ? '-' : v.toFixed(d);
+  const headers = [
+    'source',
+    'totalTokens',
+    'days',
+    'firstDay',
+    'lastDay',
+    'meanDaily',
+    'stddevDaily',
+    'fano',
+    'cv',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.stddevDailyTokens)),
+    s.fanoFactor === null ? '-' : formatNumber(Math.round(s.fanoFactor)),
+    fmtN(s.cv, 4),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

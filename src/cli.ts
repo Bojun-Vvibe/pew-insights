@@ -81,6 +81,7 @@ import {
   renderSourceActiveHourSpan,
   renderSourceWeekendWeekdayCacheShareGap,
   renderSourceDailyTokenTrendSlope,
+  renderSourceBurstinessFanoFactor,
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
@@ -225,6 +226,7 @@ import { buildSourceActiveHourLongestRun } from './sourceactivehourlongestrun.js
 import { buildSourceActiveHourSpan } from './sourceactivehourspan.js';
 import { buildSourceWeekendWeekdayCacheShareGap } from './sourceweekendweekdaycachesharegap.js';
 import { buildSourceDailyTokenTrendSlope } from './sourcedailytokentrendslope.js';
+import { buildSourceBurstinessFanoFactor } from './sourceburstinessfanofactor.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
@@ -7926,6 +7928,102 @@ program
         } else {
           process.stdout.write(
             renderSourceDailyTokenTrendSlope(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-burstiness-fano-factor')
+  .description(
+    "Per source, computes the Fano factor F = variance / mean of daily total_tokens over the source's active UTC calendar days. F=1 = Poisson baseline, F<1 = sub-Poisson (steady), F>1 = super-Poisson (bursty / clustered). Reports meanDaily, stddevDaily, fanoFactor, and cv (= stddev/mean) for cross-reference. Orthogonal to burstiness (CV across hourly buckets at group level, NOT variance/mean over per-source-active-day buckets), rolling-bucket-cv (windowed CV distribution, not a single dispersion index), daily-token-z-score-extremes (outlier flag, not a dispersion scalar), daily-token-gini-coefficient (Lorenz inequality, not variance/mean), source-daily-token-trend-slope (fits a line, not dispersion around mean), and every source-* hour-of-day stat (different axis).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-active-days <n>',
+    'hide source rows with fewer than n active calendar days (default 3); a 2-day variance is degenerate. Suppressed surface as droppedBelowMinActiveDays.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: fano (default) | cv | mean | variance | days | tokens | source. fano = fanoFactor desc; cv = cv desc; mean = meanDailyTokens desc; variance = varianceDailyTokens desc; days = nActiveDays desc; tokens = totalTokens desc; source = alphabetical. Null fano/cv (mean=0) always sort last on those keys.',
+    'fano',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minActiveDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minActiveDays = Number.parseInt(opts.minActiveDays, 10);
+        if (!Number.isInteger(minActiveDays) || minActiveDays < 2) {
+          throw new Error(
+            `--min-active-days must be an integer >= 2 (got ${opts.minActiveDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'fano',
+          'cv',
+          'mean',
+          'variance',
+          'days',
+          'tokens',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceBurstinessFanoFactor(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minActiveDays,
+          top,
+          sort: opts.sort as
+            | 'fano'
+            | 'cv'
+            | 'mean'
+            | 'variance'
+            | 'days'
+            | 'tokens'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceBurstinessFanoFactor(report) + '\n',
           );
         }
       } catch (e) {
