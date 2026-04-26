@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.67 — 2026-04-27
+
+### Added
+
+- `source-input-token-top-row-share`: per source, the share of total
+  `input_tokens` mass concentrated in the K largest single rows
+  (default K=3). Reports `top1Share`, `topKShare`, and an HHI over
+  per-row input shares. Headline question: **for a given source,
+  how much of its lifetime input volume lives in just a handful of
+  giant prompts?**
+
+  A source can deliver the same input-token total via two very
+  different shapes — flat (thousands of medium prompts) vs. spiky
+  (a few monster context-paste / repo-dump / tool-result rows that
+  dominate the rest). The flat regime is well-modelled by mean-rate
+  budget arithmetic; the spiky regime is what blows context limits
+  and dominates cache-miss cost. This metric makes that distinction
+  numeric.
+
+  Distinct from every existing lens:
+
+  - `input-token-decile-distribution` is global; no per-source view.
+  - `source-output-tokens-per-row-percentiles` is the **output**
+    column reported as percentile shape (p50/p90/p99 + p99/p50
+    tail). topKShare is a different statistic — the cumulative
+    share owned by the K biggest slices, not the magnitude of any
+    single slice.
+  - `source-single-day-mass-concentration` aggregates to UTC days
+    (sums input + output + reasoning); a single monster *row*
+    inside a busy day is diluted there but visible here.
+  - `source-cost-class-mix` is *count*-based (how many rows fall
+    in the large bucket); this is *mass*-based (how much of the
+    pie those rows own).
+  - `daily-token-gini-coefficient` is across-days inequality, not
+    within-source row-level concentration.
+
+  The metric is **scale-invariant** in token volume: a source that
+  burns 10× more input tokens with the same row-distribution shape
+  gets identical `top1Share`, `topKShare`, and `hhi`. (Test:
+  `scale-invariance — 10x volume same shape -> identical
+  concentrations`.)
+
+  Knobs: `--since/--until`, `--source`, `--top-k` (default 3, must
+  be a positive integer), `--min-rows` (default 3; concentration
+  on <3 samples is degenerate; sparse sources surface as
+  `droppedBelowMinRows`), `--min-top1-share` (default 0; floor in
+  [0, 1] for `top1Share`), `--min-topk-share` (default 0; floor in
+  [0, 1] for `topKShare`), `--top` (default 0 = no cap), `--sort`
+  (`tokens` (default) | `top1` | `topk` | `hhi` | `rows` |
+  `source`; final tiebreak source asc), `--json`.
+
+  Edge cases: rows with non-finite or non-positive `input_tokens`
+  are excluded from the mass denominator and tallied as
+  `rowsZeroInput`. Sources whose every kept row is zero-input are
+  dropped as `droppedAllZero`. If `rowsConsidered <= topK`,
+  `topKShare = 1` by definition. `singleRow = true` iff
+  `rowsConsidered == 1` (in which case top1Share = topKShare =
+  hhi = 1; surfaced flag, not auto-dropped — `--min-rows` handles
+  filtering).
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-input-token-top-row-share --sort top1
+pew-insights source-input-token-top-row-share
+as of: 2026-04-26T18:55:31.862Z    sources: 6 (shown 6)    input-tokens: 3,451,306,272    K: 3    min-rows: 3    min-top1: 0.0000    min-topk: 0.0000    top: -    sort: top1
+dropped: 0 bad hour_start, 0 by source filter, 0 all-zero-input sources, 0 below min-rows, 0 below min-top1, 0 below min-topk, 0 below top cap
+
+per-source input-token top-row mass concentration (sorted by top1; ties: source asc)
+source           rows  zeroR  inSum          top1Tok     top1Sh  topKTok      topKSh  hhi
+---------------  ----  -----  -------------  ----------  ------  -----------  ------  ------
+ide-assistant-A  6     327    581,090        172,138     0.2962  414,670      0.7136  0.2047
+codex            64    0      410,781,190    29,634,948  0.0721  81,656,238   0.1988  0.0351
+opencode         309   0      206,340,260    11,956,114  0.0579  22,202,717   0.1076  0.0110
+hermes           164   0      55,448,217     3,124,801   0.0564  6,986,503    0.1260  0.0192
+claude-code      299   0      1,834,613,640  55,738,577  0.0304  141,022,272  0.0769  0.0105
+openclaw         415   0      943,541,875    23,487,070  0.0249  63,533,094   0.0673  0.0057
+```
+
+Reading: the local queue's top1Share ranking flips intuition. The
+absolute-volume leaders (`claude-code` at 1.83B input tokens,
+`openclaw` at 944M) are the *least* concentrated — top1Share ~0.025–
+0.030 means no single row owns more than 3% of either source's
+lifetime input mass. Their topKShare (0.07–0.08) and HHI (~0.01)
+both confirm a flat, evenly-spread workload.
+
+`codex` is the standout at the operationally-interesting end of the
+volume scale: 0.40B input tokens but with `top1Share 0.0721` and
+`topKShare 0.1988` — three monster prompts own ~20% of its entire
+lifetime input work. HHI of 0.0351 is ~3x the claude-code/openclaw
+baseline.
+
+`ide-assistant-A` is the extreme outlier (top1Share 0.296, topKShare
+0.714, hhi 0.205) but with only 6 rows it's a `--min-rows 3`-passing
+edge case where the metric is mathematically valid but barely above
+the singleRow floor; in a deeper history it would settle.
+
+`opencode` and `hermes` sit in the middle — low absolute volume,
+low top1 (5–6%), but topKShare 0.11–0.13 says their top 3 rows do
+own a noticeably larger slice than `claude-code`/`openclaw`.
+
+ide-assistant-A redaction applied to the original ide-assistant
+source name in this output to comply with the local repo's banned-
+strings policy. The underlying queue row is unchanged.
+
 ## 0.6.66 — 2026-04-27
 
 ### Changed
