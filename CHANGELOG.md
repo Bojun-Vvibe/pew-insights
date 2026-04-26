@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.22 — 2026-04-26
+
+### Changed
+
+- `source-active-day-streak`: new `--min-longest-streak <n>`
+  knob. Drops per-source rows whose `longestStreak` is strictly
+  below `n` from the per-source table. Display filter only —
+  `totalSources` and `totalTokens` still reflect the full kept
+  population. Suppressed rows surface as
+  `droppedBelowMinLongestStreak` in the report header alongside
+  the resolved `minLongestStreak` floor.
+
+  This makes it trivial to **isolate the truly habitual sources**
+  (e.g. "show me sources with at least a 7-day unbroken run")
+  without sifting through one-off / sparse usage. The default of
+  `1` is a no-op since the smallest possible `longestStreak` for
+  any surviving source is 1.
+
+  Filter order is now well-defined and documented:
+  `minDays` → `densityMin` → `minLongestStreak` → sort →
+  `top` cap. Each layer's drop count is reported independently
+  so the operator can see exactly where each suppressed source
+  fell out.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--since 2026-04-01T00:00:00Z --min-longest-streak 7 --sort streak`)
+
+```
+pew-insights source-active-day-streak
+as of: 2026-04-26T03:29:07.899Z    sources: 6 (shown 5)    tokens: 8,558,935,893    min-days: 1    density-min: 0.000    min-longest-streak: 7    top: —    sort: streak
+dropped: 0 bad hour_start, 0 zero tokens, 0 model-filter, 0 source-filter, 0 below min-days, 0 below density-min, 1 below min-longest-streak, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(longestStreak = max consecutive UTC calendar days the source had a positive-token bucket; density = activeDays / tenureDays; currentStreak = streak ending on lastDay)
+
+per-source active-day streaks (sorted by streak; ties: source asc)
+source       firstDay    lastDay     tenureD  activeD  streaks  meanRun  longest  longestStart  longestEnd  currentStreak  density  tokens
+-----------  ----------  ----------  -------  -------  -------  -------  -------  ------------  ----------  -------------  -------  -------------
+hermes       2026-04-17  2026-04-26  10       10       1        10.00    10       2026-04-17    2026-04-26  10             1.000    142,881,896
+openclaw     2026-04-17  2026-04-26  10       10       1        10.00    10       2026-04-17    2026-04-26  10             1.000    1,712,134,019
+claude-code  2026-04-01  2026-04-23  23       15       4        3.75     9        2026-04-13    2026-04-21  1              0.652    3,058,006,887
+codex        2026-04-13  2026-04-20  8        8        1        8.00     8        2026-04-13    2026-04-20  8              1.000    809,624,660
+opencode     2026-04-20  2026-04-26  7        7        1        7.00     7        2026-04-20    2026-04-26  7              1.000    2,836,034,021
+```
+
+The `--min-longest-streak 7` floor cleanly hid the single
+sparse-usage source (longestStreak 1) and surfaced the five
+that have at least a one-week unbroken active habit, sorted
+by streak length so ties at the top (`hermes` and `openclaw`,
+both at 10 days) break on source key asc. The redacted source
+that appeared in the 0.6.21 smoke was the one dropped here as
+`droppedBelowMinLongestStreak == 1`.
+
 ## 0.6.21 — 2026-04-26
 
 ### Added

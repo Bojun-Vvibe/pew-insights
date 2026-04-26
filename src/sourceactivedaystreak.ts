@@ -126,6 +126,15 @@ export interface SourceActiveDayStreakOptions {
    * `sources[]`. Display filter only. Must be in `[0, 1]`. Default 0.
    */
   densityMin?: number;
+  /**
+   * Drop rows whose `longestStreak` is strictly below this threshold
+   * from `sources[]`. Display filter only — `totalSources` and
+   * `totalTokens` reflect the full kept population. Suppressed rows
+   * surface as `droppedBelowMinLongestStreak`. Must be a positive
+   * integer. Default 1 (no-op since the smallest possible
+   * `longestStreak` for any surviving source is 1).
+   */
+  minLongestStreak?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -160,6 +169,8 @@ export interface SourceActiveDayStreakReport {
   sort: 'tokens' | 'streak' | 'density' | 'current' | 'days' | 'source';
   /** Echo of resolved `densityMin`. */
   densityMin: number;
+  /** Echo of resolved `minLongestStreak`. */
+  minLongestStreak: number;
   /** Distinct sources in the full kept population (pre display filters). */
   totalSources: number;
   /** Sum of total_tokens across the full kept population. */
@@ -176,6 +187,8 @@ export interface SourceActiveDayStreakReport {
   droppedBelowMinDays: number;
   /** Source rows hidden by `densityMin` floor. */
   droppedBelowDensityMin: number;
+  /** Source rows hidden by `minLongestStreak` floor. */
+  droppedBelowMinLongestStreak: number;
   /** Source rows trimmed by `top` cap. */
   droppedBelowTopCap: number;
   /** Per-source rows, sorted per opts.sort. */
@@ -227,6 +240,12 @@ export function buildSourceActiveDayStreak(
   const densityMin = opts.densityMin ?? 0;
   if (!Number.isFinite(densityMin) || densityMin < 0 || densityMin > 1) {
     throw new Error(`densityMin must be in [0, 1] (got ${opts.densityMin})`);
+  }
+  const minLongestStreak = opts.minLongestStreak ?? 1;
+  if (!Number.isInteger(minLongestStreak) || minLongestStreak < 1) {
+    throw new Error(
+      `minLongestStreak must be a positive integer (got ${opts.minLongestStreak})`,
+    );
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -363,10 +382,11 @@ export function buildSourceActiveDayStreak(
     });
   }
 
-  // Apply minDays then densityMin display filters.
+  // Apply minDays then densityMin then minLongestStreak display filters.
   const survived: SourceActiveDayStreakRow[] = [];
   let droppedBelowMinDays = 0;
   let droppedBelowDensityMin = 0;
+  let droppedBelowMinLongestStreak = 0;
   for (const row of allRows) {
     if (row.activeDays < minDays) {
       droppedBelowMinDays += 1;
@@ -374,6 +394,10 @@ export function buildSourceActiveDayStreak(
     }
     if (row.density < densityMin) {
       droppedBelowDensityMin += 1;
+      continue;
+    }
+    if (row.longestStreak < minLongestStreak) {
+      droppedBelowMinLongestStreak += 1;
       continue;
     }
     survived.push(row);
@@ -408,6 +432,7 @@ export function buildSourceActiveDayStreak(
     top,
     sort,
     densityMin,
+    minLongestStreak,
     totalSources: allRows.length,
     totalTokens,
     droppedInvalidHourStart,
@@ -416,6 +441,7 @@ export function buildSourceActiveDayStreak(
     droppedSourceFilter,
     droppedBelowMinDays,
     droppedBelowDensityMin,
+    droppedBelowMinLongestStreak,
     droppedBelowTopCap,
     sources: finalSources,
   };

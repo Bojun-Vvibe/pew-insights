@@ -33,6 +33,8 @@ test('source-active-day-streak: empty input → zero rows', () => {
   assert.equal(r.top, null);
   assert.equal(r.sort, 'tokens');
   assert.equal(r.densityMin, 0);
+  assert.equal(r.minLongestStreak, 1);
+  assert.equal(r.droppedBelowMinLongestStreak, 0);
 });
 
 test('source-active-day-streak: rejects bad opts', () => {
@@ -43,6 +45,15 @@ test('source-active-day-streak: rejects bad opts', () => {
   assert.throws(() => buildSourceActiveDayStreak([], { top: 1.5 }));
   assert.throws(() => buildSourceActiveDayStreak([], { densityMin: -0.1 }));
   assert.throws(() => buildSourceActiveDayStreak([], { densityMin: 1.5 }));
+  assert.throws(() =>
+    buildSourceActiveDayStreak([], { minLongestStreak: 0 }),
+  );
+  assert.throws(() =>
+    buildSourceActiveDayStreak([], { minLongestStreak: -3 }),
+  );
+  assert.throws(() =>
+    buildSourceActiveDayStreak([], { minLongestStreak: 1.5 }),
+  );
   assert.throws(() =>
     buildSourceActiveDayStreak([], {
       // @ts-expect-error invalid sort
@@ -282,4 +293,80 @@ test('source-active-day-streak: deterministic — identical input → identical 
   const a = buildSourceActiveDayStreak(q, { generatedAt: GEN });
   const b = buildSourceActiveDayStreak(q, { generatedAt: GEN });
   assert.deepEqual(a, b);
+});
+
+test('source-active-day-streak: --min-longest-streak filters out short habits', () => {
+  // alpha: longestStreak 5 (5 consecutive days)
+  // beta:  longestStreak 2 (2 days, gap, 1 day)
+  // gamma: longestStreak 1
+  const q: QueueLine[] = [
+    ql('2026-04-01T01:00:00Z', 'alpha', 10),
+    ql('2026-04-02T01:00:00Z', 'alpha', 10),
+    ql('2026-04-03T01:00:00Z', 'alpha', 10),
+    ql('2026-04-04T01:00:00Z', 'alpha', 10),
+    ql('2026-04-05T01:00:00Z', 'alpha', 10),
+    ql('2026-04-01T01:00:00Z', 'beta', 10),
+    ql('2026-04-02T01:00:00Z', 'beta', 10),
+    ql('2026-04-04T01:00:00Z', 'beta', 10),
+    ql('2026-04-01T01:00:00Z', 'gamma', 10),
+  ];
+  const r3 = buildSourceActiveDayStreak(q, {
+    minLongestStreak: 3,
+    generatedAt: GEN,
+  });
+  assert.equal(r3.minLongestStreak, 3);
+  assert.equal(r3.droppedBelowMinLongestStreak, 2); // beta + gamma
+  assert.equal(r3.sources.length, 1);
+  assert.equal(r3.sources[0]!.source, 'alpha');
+  // global denominators echo the full kept population
+  assert.equal(r3.totalSources, 3);
+  assert.equal(r3.totalTokens, 90);
+
+  const r2 = buildSourceActiveDayStreak(q, {
+    minLongestStreak: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r2.droppedBelowMinLongestStreak, 1); // only gamma drops
+  assert.equal(r2.sources.length, 2);
+
+  // default (1) keeps everyone
+  const r1 = buildSourceActiveDayStreak(q, { generatedAt: GEN });
+  assert.equal(r1.droppedBelowMinLongestStreak, 0);
+  assert.equal(r1.sources.length, 3);
+});
+
+test('source-active-day-streak: --min-longest-streak applies AFTER minDays / densityMin and BEFORE top cap', () => {
+  // alpha: longestStreak 4, activeDays 4, density 1.0
+  // beta:  longestStreak 3, activeDays 3, density 1.0
+  // gamma: longestStreak 2, activeDays 2, density 0.4 (sparse over 5 days)
+  // delta: longestStreak 1, activeDays 1, density 1.0
+  const q: QueueLine[] = [
+    ql('2026-04-01T01:00:00Z', 'alpha', 100),
+    ql('2026-04-02T01:00:00Z', 'alpha', 100),
+    ql('2026-04-03T01:00:00Z', 'alpha', 100),
+    ql('2026-04-04T01:00:00Z', 'alpha', 100),
+    ql('2026-04-01T01:00:00Z', 'beta', 50),
+    ql('2026-04-02T01:00:00Z', 'beta', 50),
+    ql('2026-04-03T01:00:00Z', 'beta', 50),
+    ql('2026-04-01T01:00:00Z', 'gamma', 30),
+    ql('2026-04-05T01:00:00Z', 'gamma', 30),
+    ql('2026-04-01T01:00:00Z', 'delta', 5),
+  ];
+  // Order of filters: minDays(2) drops delta first; then densityMin(0.5)
+  // drops gamma (0.4 < 0.5); then minLongestStreak(3) drops anyone
+  // surviving with longestStreak < 3.
+  const r = buildSourceActiveDayStreak(q, {
+    minDays: 2,
+    densityMin: 0.5,
+    minLongestStreak: 3,
+    top: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinDays, 1); // delta
+  assert.equal(r.droppedBelowDensityMin, 1); // gamma
+  assert.equal(r.droppedBelowMinLongestStreak, 0); // alpha(4) and beta(3) both pass
+  assert.equal(r.droppedBelowTopCap, 1); // alpha and beta survived; top=1 hides one
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'alpha');
+  assert.equal(r.totalSources, 4);
 });

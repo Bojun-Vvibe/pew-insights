@@ -2505,6 +2505,11 @@ program
     'drop rows whose density (activeDays/tenureDays) is below f from the per-source table; must be in [0, 1] (default 0); suppressed rows surface as droppedBelowDensityMin',
     '0',
   )
+  .option(
+    '--min-longest-streak <n>',
+    'drop rows whose longestStreak is strictly below n from the per-source table; must be a positive integer (default 1 = no-op); suppressed rows surface as droppedBelowMinLongestStreak',
+    '1',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -2517,6 +2522,7 @@ program
         top?: string;
         sort: string;
         densityMin: string;
+        minLongestStreak: string;
         json?: boolean;
       },
       cmd,
@@ -2557,6 +2563,16 @@ program
             `--density-min must be in [0, 1] (got ${opts.densityMin})`,
           );
         }
+        const minLongestStreak = Number.parseInt(opts.minLongestStreak, 10);
+        if (
+          !Number.isFinite(minLongestStreak) ||
+          minLongestStreak < 1 ||
+          !Number.isInteger(minLongestStreak)
+        ) {
+          throw new Error(
+            `--min-longest-streak must be a positive integer (got ${opts.minLongestStreak})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceActiveDayStreak(queue, {
           since: opts.since ?? null,
@@ -2573,6 +2589,7 @@ program
             | 'days'
             | 'source',
           densityMin,
+          minLongestStreak,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
