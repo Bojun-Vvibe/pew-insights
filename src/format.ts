@@ -7851,6 +7851,7 @@ export function renderSourceInputOutputCorrelationCoefficient(
     'stdIn',
     'stdOut',
     'r',
+    'r2',
     'degen',
   ];
   const rows: string[][] = r.sources.map(
@@ -7863,6 +7864,7 @@ export function renderSourceInputOutputCorrelationCoefficient(
       s.stdIn.toFixed(2),
       s.stdOut.toFixed(2),
       s.r.toFixed(4),
+      s.rSquared.toFixed(4),
       s.degenerate ? 'y' : '-',
     ],
   );

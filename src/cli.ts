@@ -9373,7 +9373,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'r-desc' (default) | 'r-asc' | 'abs-r' | 'positive-pairs' | 'rows' | 'source'",
+    "sort key: 'r-desc' (default) | 'r-asc' | 'abs-r' | 'r-squared' | 'positive-pairs' | 'rows' | 'source'",
     'r-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9418,6 +9418,7 @@ program
           'r-desc',
           'r-asc',
           'abs-r',
+          'r-squared',
           'positive-pairs',
           'rows',
           'source',
@@ -9439,6 +9440,7 @@ program
             | 'r-desc'
             | 'r-asc'
             | 'abs-r'
+            | 'r-squared'
             | 'positive-pairs'
             | 'rows'
             | 'source',

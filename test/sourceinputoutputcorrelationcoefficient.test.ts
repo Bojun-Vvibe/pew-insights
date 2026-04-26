@@ -456,3 +456,66 @@ test('source-iocc: negative input/output treated as 0 (excluded from positivePai
   assert.equal(a.rows, 4);
   assert.equal(a.positivePairs, 2);
 });
+
+test('source-iocc: rSquared == r*r for non-degenerate sources', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a', 1, 2),
+    ql('2026-04-20T01:00:00Z', 'a', 2, 2),
+    ql('2026-04-20T02:00:00Z', 'a', 3, 4),
+    ql('2026-04-20T03:00:00Z', 'a', 4, 5),
+  ];
+  const r = buildSourceInputOutputCorrelationCoefficient(q, {
+    generatedAt: GEN,
+  });
+  const a = r.sources.find((s) => s.source === 'a')!;
+  assert.ok(Math.abs(a.rSquared - a.r * a.r) < 1e-12);
+  assert.ok(a.rSquared >= 0 && a.rSquared <= 1);
+});
+
+test('source-iocc: rSquared == 0 for degenerate sources', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a', 10, 5),
+    ql('2026-04-20T01:00:00Z', 'a', 10, 7),
+    ql('2026-04-20T02:00:00Z', 'a', 10, 9),
+  ];
+  const r = buildSourceInputOutputCorrelationCoefficient(q, {
+    generatedAt: GEN,
+  });
+  const a = r.sources.find((s) => s.source === 'a')!;
+  assert.equal(a.degenerate, true);
+  assert.equal(a.rSquared, 0);
+});
+
+test('source-iocc: rSquared == 1 for perfect negative correlation', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a', 10, 80),
+    ql('2026-04-20T01:00:00Z', 'a', 20, 60),
+    ql('2026-04-20T02:00:00Z', 'a', 30, 40),
+    ql('2026-04-20T03:00:00Z', 'a', 40, 20),
+  ];
+  const r = buildSourceInputOutputCorrelationCoefficient(q, {
+    generatedAt: GEN,
+  });
+  const a = r.sources.find((s) => s.source === 'a')!;
+  assert.ok(Math.abs(a.rSquared - 1) < 1e-12);
+});
+
+test('source-iocc: sort by r-squared (anti-correlations float to top)', () => {
+  const q = [
+    // a: r ~ +0.5 -> r2 ~ 0.25
+    ql('2026-04-20T00:00:00Z', 'a', 1, 1),
+    ql('2026-04-20T01:00:00Z', 'a', 2, 1),
+    ql('2026-04-20T02:00:00Z', 'a', 3, 2),
+    ql('2026-04-20T03:00:00Z', 'a', 4, 4),
+    // b: r ~ -1 -> r2 ~ 1
+    ql('2026-04-20T00:00:00Z', 'b', 10, 80),
+    ql('2026-04-20T01:00:00Z', 'b', 20, 60),
+    ql('2026-04-20T02:00:00Z', 'b', 30, 40),
+  ];
+  const r = buildSourceInputOutputCorrelationCoefficient(q, {
+    generatedAt: GEN,
+    sort: 'r-squared',
+  });
+  // b has higher r2 even though r is negative
+  assert.equal(r.sources[0]!.source, 'b');
+});

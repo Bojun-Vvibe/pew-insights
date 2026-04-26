@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.78 — 2026-04-27
+
+### Changed
+
+- `source-input-output-correlation-coefficient`: refinement adds
+  the coefficient of determination `r2 = r*r` as an additional
+  output column and a new `--sort r-squared` key. `r2` is the
+  share of `output_tokens` variance linearly explained by
+  `input_tokens` under the Pearson model; in `[0, 1]`; reported
+  as `0` in the degenerate case for shape stability.
+
+  Why `r2` matters separately from `r`:
+
+  - `r` carries the **direction** of the linear association
+    (positive vs negative). Sorting by `r-desc` ranks by "most
+    scales-with-prompt", which is the intuitive lens.
+  - `r2` carries the **magnitude** of the explanatory power
+    independent of sign. A source with `r = -0.9` and a source
+    with `r = +0.9` both have `r2 = 0.81` — equally strong
+    linear relationships, just opposite directions. Sorting by
+    `r-squared` surfaces "strongest linear coupling regardless
+    of sign", which is the right ordering when triaging
+    "which sources have prompt-driven output behaviour at all"
+    vs "which are essentially decoupled".
+  - The `r vs r2` pairing in the same row also makes the
+    "explanatory power decays as the square" cost visible at a
+    glance: an `r = 0.7` source explains only `~49%` of output
+    variance from input alone, while `r = 0.9` explains `~81%`.
+
+  This is **not** a new statistic — it is the same Pearson
+  estimator with a derived column and a derived sort key — so
+  v0.6.77's smoke numbers are exactly preserved; only the
+  display surface widens.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (sorted by
+  `r-squared`, one IDE-assistant source name redacted to
+  `ide-assistant-A` per banned-string policy):
+
+  ```
+  pew-insights source-input-output-correlation-coefficient
+  as of: 2026-04-26T22:15:12.294Z    sources: 6 (shown 6)    rows: 1,600    pos-pairs: 1,273    min-rows: 3    min-pos-pairs: 2    top: -    sort: r-squared
+  dropped: 0 bad hour_start, 0 by source filter, 0 below min-rows, 0 below min-pos-pairs, 0 below top cap
+
+  per-source input-output Pearson r (sorted by r-squared; ties: source asc)
+  source           rows  posPairs  meanIn      meanOut   stdIn       stdOut    r       r2      degen
+  ---------------  ----  --------  ----------  --------  ----------  --------  ------  ------  -----
+  codex            64    64        6418456.09  31953.78  7171887.59  37319.41  0.9477  0.8981  -
+  claude-code      299   299       6135831.57  40564.63  9004344.25  67410.70  0.8609  0.7411  -
+  ide-assistant-A  333   6         96848.33    1531.33   46254.12    780.81    0.7600  0.5776  -
+  openclaw         422   422       2255670.14  11492.36  2628350.61  18912.69  0.6714  0.4507  -
+  opencode         316   316       661803.43   69316.45  1022356.18  72972.70  0.6173  0.3810  -
+  hermes           166   166       334401.17   8500.63   492832.83   7811.68   0.4962  0.2462  -
+  ```
+
+  Read across `r2`:
+
+  - `codex` and `claude-code` are the only sources where input
+    size genuinely explains the majority of output variance
+    (`r2 ~ 0.90` and `~0.74` respectively).
+  - `openclaw`, `opencode`, and `hermes` cluster at
+    `r2 ~ 0.25-0.45` — input size matters but more than half of
+    each source's output variance is driven by something other
+    than prompt length (model choice, user-driven length
+    override, tool-use loops).
+  - The redacted `ide-assistant-A` row at `r2 = 0.5776` is on a
+    sample of only 6 positive pairs and should not be compared
+    on equal footing — see the companion smoke below.
+
+  Companion smoke (`--min-positive-pairs 100 --sort r-squared`)
+  showing the sample-size filter clearing the thin samples:
+
+  ```
+  pew-insights source-input-output-correlation-coefficient
+  as of: 2026-04-26T22:15:12.351Z    sources: 6 (shown 4)    rows: 1,600    pos-pairs: 1,273    min-rows: 3    min-pos-pairs: 100    top: -    sort: r-squared
+  dropped: 0 bad hour_start, 0 by source filter, 0 below min-rows, 2 below min-pos-pairs, 0 below top cap
+
+  per-source input-output Pearson r (sorted by r-squared; ties: source asc)
+  source       rows  posPairs  meanIn      meanOut   stdIn       stdOut    r       r2      degen
+  -----------  ----  --------  ----------  --------  ----------  --------  ------  ------  -----
+  claude-code  299   299       6135831.57  40564.63  9004344.25  67410.70  0.8609  0.7411  -
+  openclaw     422   422       2255670.14  11492.36  2628350.61  18912.69  0.6714  0.4507  -
+  opencode     316   316       661803.43   69316.45  1022356.18  72972.70  0.6173  0.3810  -
+  hermes       166   166       334401.17   8500.63   492832.83   7811.68   0.4962  0.2462  -
+  ```
+
+  At `--min-positive-pairs 100`, two sources drop: the redacted
+  `ide-assistant-A` (only 6 positive pairs out of 333 rows —
+  almost certainly accounting-only telemetry) and `codex` (64
+  positive pairs — borderline; its `r = 0.9477` is the highest
+  in the dataset but its 95% CI on n=64 is roughly
+  `[0.92, 0.97]`, much wider than `claude-code`'s on n=299).
+  The surviving 4 sources each carry 166+ positive pairs, so
+  their `r` and `r2` figures are statistically meaningful
+  estimates rather than thin-sample point estimates.
+
+  The relative ordering by `r2` among the surviving 4 is
+  unchanged from the unfiltered view — confirming the filter
+  is purely a statistical-power cohort selector and not a
+  re-ranker. The cohort split is also stable:
+  `claude-code` is alone in the "input genuinely explains
+  output" tier (`r2 > 0.7`); the remaining three sit in the
+  "loosely coupled" tier (`r2 in [0.25, 0.45]`).
+
+---
+
 ## 0.6.77 — 2026-04-27
 
 ### Added

@@ -139,7 +139,14 @@ export interface SourceInputOutputCorrelationCoefficientOptions {
    *   - 'source':           source asc (lex).
    * Final tiebreak in all cases: source key asc.
    */
-  sort?: 'r-desc' | 'r-asc' | 'abs-r' | 'positive-pairs' | 'rows' | 'source';
+  sort?:
+    | 'r-desc'
+    | 'r-asc'
+    | 'abs-r'
+    | 'r-squared'
+    | 'positive-pairs'
+    | 'rows'
+    | 'source';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -153,6 +160,12 @@ export interface SourceInputOutputCorrelationCoefficientRow {
   stdIn: number;
   stdOut: number;
   r: number;
+  /**
+   * Coefficient of determination = r * r. Share of output_tokens
+   * variance linearly explained by input_tokens (Pearson model).
+   * In [0, 1]. Reported as 0 in the degenerate case.
+   */
+  rSquared: number;
   /**
    * True iff r is mathematically undefined (positivePairs < 2 OR
    * stdIn == 0 OR stdOut == 0). r is reported as 0 in this case.
@@ -168,7 +181,7 @@ export interface SourceInputOutputCorrelationCoefficientReport {
   minRows: number;
   minPositivePairs: number;
   top: number | null;
-  sort: 'r-desc' | 'r-asc' | 'abs-r' | 'positive-pairs' | 'rows' | 'source';
+  sort: 'r-desc' | 'r-asc' | 'abs-r' | 'r-squared' | 'positive-pairs' | 'rows' | 'source';
   /** Distinct sources seen pre-filter. */
   totalSources: number;
   /** Sum of all kept rows across all sources. */
@@ -210,6 +223,7 @@ export function buildSourceInputOutputCorrelationCoefficient(
     'r-desc',
     'r-asc',
     'abs-r',
+    'r-squared',
     'positive-pairs',
     'rows',
     'source',
@@ -335,6 +349,7 @@ export function buildSourceInputOutputCorrelationCoefficient(
       stdIn,
       stdOut,
       r,
+      rSquared: degenerate ? 0 : r * r,
       degenerate,
     });
   }
@@ -359,6 +374,7 @@ export function buildSourceInputOutputCorrelationCoefficient(
     if (sort === 'r-desc') primary = b.r - a.r;
     else if (sort === 'r-asc') primary = a.r - b.r;
     else if (sort === 'abs-r') primary = Math.abs(b.r) - Math.abs(a.r);
+    else if (sort === 'r-squared') primary = b.rSquared - a.rSquared;
     else if (sort === 'positive-pairs')
       primary = b.positivePairs - a.positivePairs;
     else if (sort === 'rows') primary = b.rows - a.rows;
