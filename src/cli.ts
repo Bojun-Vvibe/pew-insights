@@ -78,6 +78,7 @@ import {
   renderSourceDayOfWeekTokenMassShare,
   renderSourceDeadHourCount,
   renderSourceActiveHourLongestRun,
+  renderSourceActiveHourSpan,
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
@@ -219,6 +220,7 @@ import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.
 import { buildSourceDayOfWeekTokenMassShare } from './sourcedayofweektokenmassshare.js';
 import { buildSourceDeadHourCount } from './sourcedeadhourcount.js';
 import { buildSourceActiveHourLongestRun } from './sourceactivehourlongestrun.js';
+import { buildSourceActiveHourSpan } from './sourceactivehourspan.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
@@ -7581,6 +7583,104 @@ program
           process.stdout.write(
             renderSourceHourOfDayTokenMassEntropy(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-active-hour-span')
+  .description(
+    'Per-source minimum-arc cover on the circular UTC 24-hour clock containing every active hour-of-day for that source. Reports activeHours, circularSpan (= 24 - largestQuietGap), spanStartHour, spanEndHour, largestQuietGap, and spanDensity (= activeHours / circularSpan). Orthogonal to source-dead-hour-count (frames the *active waking window* rather than the quiet block, and surfaces spanStart/spanEnd/spanDensity), source-active-hour-longest-run (run length is *contiguous* active hours, span is the *cover* whether contiguous or not), source-token-mass-hour-centroid (mean, not width), and source-hour-of-day-token-mass-entropy (mass-weighted spread, not support-set width).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | span | density | active | gap | source. span = circularSpan desc, density = spanDensity desc, active = activeHours desc, gap = largestQuietGap desc. Applied before --top.',
+    'tokens',
+  )
+  .option(
+    '--max-span <n>',
+    'display filter (refinement, v0.6.47): hide sources whose circularSpan is strictly *above* n. n in [0,24]. Default 0 = no filter (disabled). Use --max-span 12 to surface only sources whose minimum-arc cover fits inside half the day; use --max-span 24 to keep all rows. Counts surface as droppedAboveMaxSpan.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        top: string;
+        sort: string;
+        maxSpan: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const maxSpan = Number.parseInt(opts.maxSpan, 10);
+        if (!Number.isInteger(maxSpan) || maxSpan < 0 || maxSpan > 24) {
+          throw new Error(
+            `--max-span must be an integer in [0, 24] (got ${opts.maxSpan})`,
+          );
+        }
+        const validSorts = ['tokens', 'span', 'density', 'active', 'gap', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceActiveHourSpan(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          top,
+          maxSpan,
+          sort: opts.sort as
+            | 'tokens'
+            | 'span'
+            | 'density'
+            | 'active'
+            | 'gap'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceActiveHourSpan(report) + '\n');
         }
       } catch (e) {
         die(e);

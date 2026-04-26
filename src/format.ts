@@ -44,6 +44,7 @@ import type { SourceDayOfWeekTokenMassShareReport } from './sourcedayofweektoken
 import { dowName as dowNameFmt } from './sourcedayofweektokenmassshare.js';
 import type { SourceDeadHourCountReport } from './sourcedeadhourcount.js';
 import type { SourceActiveHourLongestRunReport } from './sourceactivehourlongestrun.js';
+import type { SourceActiveHourSpanReport } from './sourceactivehourspan.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
@@ -6667,6 +6668,77 @@ export function renderSourceHourOfDayTokenMassEntropy(
     s.concentrationGap.toFixed(4),
     s.topHour < 0 ? '-' : String(s.topHour).padStart(2, '0'),
     s.topHourShare.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceActiveHourSpan(
+  r: SourceActiveHourSpanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-active-hour-span'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    max-span: ${r.maxSpan === 0 ? '\u2014' : r.maxSpan}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedAboveMaxSpan)} above max-span, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source minimum-arc cover on the circular UTC 24-hour clock; span = 24 - largestQuietGap; density = activeHours / circularSpan)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source UTC hour-of-day waking-window cover (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'buckets',
+    'activeHours',
+    'circularSpan',
+    'spanStart',
+    'spanEnd',
+    'largestQuietGap',
+    'spanDensity',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nBuckets),
+    String(s.activeHours),
+    String(s.circularSpan),
+    s.spanStartHour < 0 ? '-' : String(s.spanStartHour).padStart(2, '0'),
+    s.spanEndHour < 0 ? '-' : String(s.spanEndHour).padStart(2, '0'),
+    String(s.largestQuietGap),
+    s.spanDensity.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
