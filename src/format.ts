@@ -44,6 +44,7 @@ import type { SourceDayOfWeekTokenMassShareReport } from './sourcedayofweektoken
 import { dowName as dowNameFmt } from './sourcedayofweektokenmassshare.js';
 import type { SourceDeadHourCountReport } from './sourcedeadhourcount.js';
 import type { SourceActiveHourLongestRunReport } from './sourceactivehourlongestrun.js';
+import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 // ---------------------------------------------------------------------------
@@ -6593,6 +6594,79 @@ export function renderSourceActiveHourLongestRun(
     s.longestRunStart < 0 ? '-' : String(s.longestRunStart).padStart(2, '0'),
     String(s.activeRunCount),
     s.activeRunShare.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceHourOfDayTokenMassEntropy(
+  r: SourceHourEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-hour-of-day-token-mass-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-normalized: ${r.minNormalized === 0 ? '\u2014' : r.minNormalized.toFixed(4)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    H_max(bits): ${r.maxEntropyBits.toFixed(4)}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinNormalized)} below min-normalized, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Shannon entropy in bits of token mass over UTC hour-of-day; effectiveHours = 2^H; concentrationGap = activeHours - effectiveHours)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source UTC hour-of-day token-mass entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'buckets',
+    'activeHours',
+    'entropyBits',
+    'normalized',
+    'effectiveHours',
+    'concGap',
+    'topHour',
+    'topShare',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nBuckets),
+    String(s.activeHours),
+    s.entropyBits.toFixed(4),
+    s.entropyNormalized.toFixed(4),
+    s.effectiveHours.toFixed(4),
+    s.concentrationGap.toFixed(4),
+    s.topHour < 0 ? '-' : String(s.topHour).padStart(2, '0'),
+    s.topHourShare.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));

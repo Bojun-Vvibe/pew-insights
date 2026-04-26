@@ -78,6 +78,7 @@ import {
   renderSourceDayOfWeekTokenMassShare,
   renderSourceDeadHourCount,
   renderSourceActiveHourLongestRun,
+  renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
@@ -218,6 +219,7 @@ import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.
 import { buildSourceDayOfWeekTokenMassShare } from './sourcedayofweektokenmassshare.js';
 import { buildSourceDeadHourCount } from './sourcedeadhourcount.js';
 import { buildSourceActiveHourLongestRun } from './sourceactivehourlongestrun.js';
+import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
@@ -7449,6 +7451,119 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceActiveHourLongestRun(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-hour-of-day-token-mass-entropy')
+  .description(
+    'Per-source Shannon entropy (in bits) of token mass over UTC hours-of-day (0..23). Reports entropyBits, entropyNormalized (= entropyBits / log2(24)), effectiveHours (= 2^entropyBits), concentrationGap (= activeHours - effectiveHours), topHour, and topHourShare. Orthogonal to hour-of-day-source-mix-entropy (cross-source axis at each hour, not within-source across hours), source-token-mass-hour-centroid (circular mean, not spread), source-dead-hour-count and source-active-hour-longest-run (which only count *which* hours are positive and treat them equally — entropy weighs them by mass), source-hour-of-day-topk-mass-share (lump share of top-k, not full distributional summary).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | entropy | normalized | effective | gap | top-share | source. entropy/normalized/effective desc; gap = concentrationGap desc (most-illusory-breadth first); top-share = topHourShare desc (most-concentrated first). Applied before --top.',
+    'tokens',
+  )
+  .option(
+    '--min-normalized <p>',
+    'display filter: hide sources whose entropyNormalized is strictly below p. p in [0, 1]. Default 0 = no filter. Useful for surfacing only sources with genuine spread (e.g. --min-normalized 0.7 keeps only sources using their day broadly). Counts surface as droppedBelowMinNormalized.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        top: string;
+        sort: string;
+        minNormalized: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minNormalized = Number.parseFloat(opts.minNormalized);
+        if (
+          !Number.isFinite(minNormalized) ||
+          minNormalized < 0 ||
+          minNormalized > 1
+        ) {
+          throw new Error(
+            `--min-normalized must be a number in [0, 1] (got ${opts.minNormalized})`,
+          );
+        }
+        const validSorts = [
+          'tokens',
+          'entropy',
+          'normalized',
+          'effective',
+          'gap',
+          'top-share',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceHourOfDayTokenMassEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          top,
+          minNormalized,
+          sort: opts.sort as
+            | 'tokens'
+            | 'entropy'
+            | 'normalized'
+            | 'effective'
+            | 'gap'
+            | 'top-share'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceHourOfDayTokenMassEntropy(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
