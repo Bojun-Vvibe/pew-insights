@@ -75,6 +75,7 @@ import {
   renderDailyTokenSecondDiffSignRuns,
   renderSourceOutputTokenBenfordDeviation,
   renderSourceTokenMassHourCentroid,
+  renderSourceDayOfWeekTokenMassShare,
   renderDailyTokenGini,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
@@ -212,6 +213,7 @@ import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
 import { buildSourceTokenMassHourCentroid } from './sourcetokenmasshourcentroid.js';
+import { buildSourceDayOfWeekTokenMassShare } from './sourcedayofweektokenmassshare.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
@@ -6893,6 +6895,90 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceTokenMassHourCentroid(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-day-of-week-token-mass-share')
+  .description(
+    'Per-source distribution of total token mass across the 7 UTC weekdays. Reports share vector (sums to 1), dominant weekday and its share, weekendShare (Sun+Sat), and ln(7)-normalized Shannon entropy. Orthogonal to weekday-share (global) and weekend-vs-weekday (global): this is per-source. Orthogonal to all hour-of-day stats (different axis) and to daily-token-* (collapses date axis, keeps 7-cycle).',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens (default) | dominant | weekend | entropy | source. Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['tokens', 'dominant', 'weekend', 'entropy', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceDayOfWeekTokenMassShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          top,
+          sort: opts.sort as
+            | 'tokens'
+            | 'dominant'
+            | 'weekend'
+            | 'entropy'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceDayOfWeekTokenMassShare(report) + '\n');
         }
       } catch (e) {
         die(e);

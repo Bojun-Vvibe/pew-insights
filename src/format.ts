@@ -40,6 +40,8 @@ import type { DeviceTenureReport } from './devicetenure.js';
 import type { OutputTokenDecileDistributionReport } from './outputtokendeciledistribution.js';
 import type { InputTokenDecileDistributionReport } from './inputtokendeciledistribution.js';
 import type { SourceTokenMassHourCentroidReport } from './sourcetokenmasshourcentroid.js';
+import type { SourceDayOfWeekTokenMassShareReport } from './sourcedayofweektokenmassshare.js';
+import { dowName as dowNameFmt } from './sourcedayofweektokenmassshare.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 // ---------------------------------------------------------------------------
@@ -6235,6 +6237,87 @@ export function renderSourceTokenMassHourCentroid(
     fmtSpread(s.spreadHours),
     String(s.peakHour),
     formatNumber(s.peakHourTokens),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceDayOfWeekTokenMassShare(
+  r: SourceDayOfWeekTokenMassShareReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-day-of-week-token-mass-share'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    uniformBaseline: ${r.uniformBaseline.toFixed(4)}    weekendBaseline: ${r.weekendUniformBaseline.toFixed(4)}    min-tokens: ${formatNumber(r.minTokens)}    min-weekend-share: ${r.minWeekendShare === 0 ? '\u2014' : r.minWeekendShare}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinWeekendShare)} below min-weekend-share, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source share of total token mass across the 7 UTC weekdays; share_d sums to 1; weekendShare = Sun+Sat; entropy normalized by ln(7))`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source token-mass share by UTC weekday (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'dominantDow',
+    'dominantShare',
+    'weekendShare',
+    'entropyNorm',
+    'Sun',
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    `${s.dominantDow}:${dowNameFmt(s.dominantDow)}`,
+    s.dominantShare.toFixed(4),
+    s.weekendShare.toFixed(4),
+    s.normalizedEntropy.toFixed(4),
+    s.shares[0].toFixed(3),
+    s.shares[1].toFixed(3),
+    s.shares[2].toFixed(3),
+    s.shares[3].toFixed(3),
+    s.shares[4].toFixed(3),
+    s.shares[5].toFixed(3),
+    s.shares[6].toFixed(3),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
