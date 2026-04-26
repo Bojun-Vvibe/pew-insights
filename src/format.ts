@@ -53,6 +53,10 @@ import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
+import type {
+  SourceReasoningShareByDayCvReport,
+  SourceReasoningShareByDayCvRow,
+} from './sourcereasoningsharebydaycv.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -7340,6 +7344,79 @@ export function renderSourceColdWarmRowRatio(
     formatNumber(Math.round(s.meanColdInput)),
     formatNumber(Math.round(s.meanWarmInput)),
     formatNumber(s.inputTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceReasoningShareByDayCv(
+  r: SourceReasoningShareByDayCvReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-reasoning-share-by-day-cv'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(shareCv = stddev(daily reasoning/(output+reasoning)) / mean of same; low CV = stable thinking-vs-typing balance day-over-day; flat=y means every kept day had reasoning=0; pure=y means every kept day was 100% reasoning)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source reasoning-share daily CV (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'tokens',
+    'outTok',
+    'reasTok',
+    'activeD',
+    'shareD',
+    'zeroReplyD',
+    'meanShare',
+    'stdShare',
+    'shareCv',
+    'flat',
+    'pure',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceReasoningShareByDayCvRow) => [
+    s.source,
+    formatNumber(s.tokens),
+    formatNumber(s.outputTokens),
+    formatNumber(s.reasoningTokens),
+    formatNumber(s.activeDays),
+    formatNumber(s.daysWithShare),
+    formatNumber(s.daysWithZeroReply),
+    s.meanShare.toFixed(4),
+    s.stdShare.toFixed(4),
+    s.shareCv.toFixed(4),
+    s.flatLine ? 'y' : '-',
+    s.pureReasoning ? 'y' : '-',
   ]);
   lines.push(renderTableLocal(headers, rows));
 

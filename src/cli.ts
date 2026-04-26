@@ -92,6 +92,7 @@ import {
   renderSourceSingleDayMassConcentration,
   renderSourceCumulativeMassHalfLifeDay,
   renderSourceColdWarmRowRatio,
+  renderSourceReasoningShareByDayCv,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -243,6 +244,7 @@ import { buildSourceOutputTokensPerRowPercentiles } from './sourceoutputtokenspe
 import { buildSourceSingleDayMassConcentration } from './sourcesingledaymassconcentration.js';
 import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalflifeday.js';
 import { buildSourceColdWarmRowRatio } from './sourcecoldwarmrowratio.js';
+import { buildSourceReasoningShareByDayCv } from './sourcereasoningsharebydaycv.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -8625,6 +8627,85 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceColdWarmRowRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-reasoning-share-by-day-cv')
+  .description(
+    "Per-source coefficient of variation of the daily reasoning_output_tokens / (output_tokens + reasoning_output_tokens) share across the source's active calendar UTC days. Low CV = stable thinking-vs-typing balance day-over-day; high CV = swings between mostly-visible-output days and mostly-invisible-reasoning days. Distinct from reasoning-share (single global per-model mean, no per-source view, no day axis), source-io-ratio-stability (CV of output/input, not the internal reasoning split), prompt-output-correlation --include-reasoning (collapses reasoning into total output for a single global Pearson r, no daily share sequence), and daily-token-autocorrelation-lag1 (magnitude persistence, ignores reasoning entirely).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows with daysWithShare below n (default 3); counts surface as droppedBelowMinDays',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedBelowTopCap (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: tokens (default) | cv | mean | days | source. cv asc = most stable first. ties: source asc.",
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['tokens', 'cv', 'mean', 'days', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceReasoningShareByDayCv(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top: top === 0 ? null : top,
+          sort: opts.sort as 'tokens' | 'cv' | 'mean' | 'days' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceReasoningShareByDayCv(report) + '\n');
         }
       } catch (e) {
         die(e);
