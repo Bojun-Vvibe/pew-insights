@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.40 — 2026-04-26
+
+### Added
+
+- `source-day-of-week-token-mass-share`: per-source distribution of
+  total token mass across the 7 UTC weekdays. For each source we
+  collapse every hourly bucket into a length-7 vector indexed by
+  UTC day-of-week (0 = Sun .. 6 = Sat),
+
+  ```
+  D_d = sum_{rows with utc-dow = d} total_tokens     (d in 0..6)
+  ```
+
+  and report the share vector `share_d = D_d / sum_d D_d`
+  (sums to 1) along with three derived concentration metrics:
+
+  - `dominantDow` / `dominantShare`: argmax_d and max_d of the
+    share vector. Lower bound `1/7` (uniform), upper bound `1`
+    (all mass on one weekday). The per-row `uniformBaseline`
+    (= `1/7` ≈ 0.1429) is echoed on the report header.
+  - `weekendShare = share[Sun] + share[Sat]`. Uniform baseline
+    is `2/7` ≈ 0.2857 (echoed as `weekendUniformBaseline`).
+    Above ⇒ weekend-skewed; below ⇒ weekday-skewed.
+  - `normalizedEntropy = H / ln(7)` where `H` is the Shannon
+    entropy of the share vector. Range `[0, 1]`; 1 = uniform
+    across all 7 weekdays, 0 = all mass on a single weekday.
+    Treats day-of-week as 7 *categorical* bins (not as a 7-cycle):
+    Sun-Sat adjacency is rarely meaningful for workload patterns,
+    unlike hour-of-day which IS circular.
+
+  Why a fresh subcommand instead of folding into existing reports:
+
+  - `weekday-share` and `weekend-vs-weekday` are *global* (not
+    per-source). They cannot answer "does codex skew weekend
+    while ide-assistant-A skews weekday?" — they collapse all
+    sources into a single aggregate share.
+  - `source-token-mass-hour-centroid` and
+    `source-hour-of-day-topk-mass-share` are *hour-of-day* axes
+    (24-cycle), a totally different signal from day-of-week.
+  - The `daily-token-*` family (Gini, autocorrelation,
+    monotone-runs, second-diff sign-runs, z-score-extremes,
+    monotone-run-length) operate on the *date* axis (each
+    calendar day is its own bin). They mix DOW with epoch — a
+    source with a 6-month run will have its DOW signal smeared
+    across many calendar days. This subcommand collapses the
+    date axis and keeps only the 7-cycle signal.
+
+  Knobs: `--since` / `--until` (ISO window on `hour_start`),
+  `--source` (single source filter), `--min-tokens` (default
+  1000; sparse sources surface as `droppedSparseSources`),
+  `--top` (default 0 = no cap), `--sort` =
+  `tokens` (default) | `dominant` | `weekend` | `entropy` |
+  `source`. UTC weekday is read from `Date.getUTCDay()`,
+  matching every other time-axis stat in this codebase.
+
+  Determinism: pure builder. Wall clock only via
+  `opts.generatedAt`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+pew-insights source-day-of-week-token-mass-share
+as of: 2026-04-26T08:50:40.022Z    sources: 6 (shown 6)    tokens: 9,089,776,672    uniformBaseline: 0.1429    weekendBaseline: 0.2857    min-tokens: 1,000    min-weekend-share: —    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-weekend-share, 0 below top cap
+(per-source share of total token mass across the 7 UTC weekdays; share_d sums to 1; weekendShare = Sun+Sat; entropy normalized by ln(7))
+
+per-source token-mass share by UTC weekday (sorted by tokens; ties: source asc)
+source           firstDay    lastDay     days  dominantDow  dominantShare  weekendShare  entropyNorm  Sun    Mon    Tue    Wed    Thu    Fri    Sat    tokens
+---------------  ----------  ----------  ----  -----------  -------------  ------------  -----------  -----  -----  -----  -----  -----  -----  -----  -------------
+claude-code      2026-02-11  2026-04-23  35    1:Mon        0.3295         0.2699        0.9014       0.067  0.330  0.102  0.173  0.063  0.063  0.203  3,442,385,788
+opencode         2026-04-20  2026-04-26  7     2:Tue        0.2440         0.2503        0.8985       0.068  0.006  0.244  0.221  0.156  0.122  0.182  2,968,894,175
+openclaw         2026-04-17  2026-04-26  10    0:Sun        0.2154         0.3203        0.9743       0.215  0.165  0.078  0.124  0.124  0.188  0.105  1,723,543,253
+codex            2026-04-13  2026-04-20  8     1:Mon        0.7079         0.1897        0.5242       0.051  0.708  0.051  0.011  0.007  0.034  0.139  809,624,660
+hermes           2026-04-17  2026-04-26  10    0:Sun        0.2496         0.3508        0.9497       0.250  0.211  0.094  0.154  0.056  0.135  0.101  143,443,069
+ide-assistant-A  2025-07-30  2026-04-20  73    5:Fri        0.2938         0.0399        0.8458       0.021  0.154  0.160  0.074  0.278  0.294  0.019  1,885,727
+```
+
+Reading: `codex` is the runaway weekday-Monday source —
+70.8% of its lifetime token mass landed on a Monday and its
+normalizedEntropy of 0.5242 is by far the lowest of the 6
+sources, confirming a sharply concentrated DOW signature.
+`ide-assistant-A` is the most weekday-skewed source overall:
+weekendShare = 0.0399 (≈ 7× below the uniform 2/7 baseline)
+with mass clustered on Thu/Fri (0.278/0.294). At the other end,
+`hermes` (0.3508) and `openclaw` (0.3203) are the only sources
+trending weekend-skewed (weekendShare > 2/7 baseline).
+
 ## 0.6.39 — 2026-04-26
 
 ### Changed
