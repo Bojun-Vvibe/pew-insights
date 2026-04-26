@@ -86,6 +86,19 @@ export interface SourceCostClassMixOptions {
   smallMax?: number;
   largeMin?: number;
   minRows?: number;
+  /**
+   * Display filter (refinement, v0.6.56): require
+   * `pctTokensLarge >= minLargePctTokens` (a fraction in [0, 1])
+   * for a source row to be reported. Default 0 = no floor. Use
+   * this to surface only the sources whose token mass is dominated
+   * by batch / heavy rows — for example `--min-large-pct-tokens
+   * 0.9` keeps only sources where >=90% of tokens come from rows
+   * at or above `largeMin`. Suppressed sources surface as
+   * `droppedBelowMinLargePctTokens`. Filter order: `since`/`until`
+   * window -> `source` -> `minRows` -> `minLargePctTokens` ->
+   * sort -> `top`. Must be a finite number in [0, 1].
+   */
+  minLargePctTokens?: number;
   top?: number;
   sort?: SourceCostClassMixSort;
   generatedAt?: string;
@@ -116,6 +129,7 @@ export interface SourceCostClassMixReport {
   smallMax: number;
   largeMin: number;
   minRows: number;
+  minLargePctTokens: number;
   top: number;
   sort: SourceCostClassMixSort;
   source: string | null;
@@ -126,6 +140,7 @@ export interface SourceCostClassMixReport {
   droppedNonPositiveTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
+  droppedBelowMinLargePctTokens: number;
   droppedTopSources: number;
   sources: SourceCostClassMixSourceRow[];
 }
@@ -149,6 +164,16 @@ export function buildSourceCostClassMix(
   const minRows = opts.minRows ?? 1;
   if (!Number.isInteger(minRows) || minRows < 1) {
     throw new Error(`minRows must be an integer >= 1 (got ${opts.minRows})`);
+  }
+  const minLargePctTokens = opts.minLargePctTokens ?? 0;
+  if (
+    !Number.isFinite(minLargePctTokens) ||
+    minLargePctTokens < 0 ||
+    minLargePctTokens > 1
+  ) {
+    throw new Error(
+      `minLargePctTokens must be a finite number in [0, 1] (got ${opts.minLargePctTokens})`,
+    );
   }
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
@@ -306,11 +331,26 @@ export function buildSourceCostClassMix(
   };
   rowsArr.sort(cmpRow);
 
+  // refinement filter (v0.6.56): require pctTokensLarge >= minLargePctTokens.
+  let droppedBelowMinLargePctTokens = 0;
+  let filtered = rowsArr;
+  if (minLargePctTokens > 0) {
+    const next: SourceCostClassMixSourceRow[] = [];
+    for (const r of rowsArr) {
+      if (r.pctTokensLarge >= minLargePctTokens) {
+        next.push(r);
+      } else {
+        droppedBelowMinLargePctTokens += 1;
+      }
+    }
+    filtered = next;
+  }
+
   let droppedTopSources = 0;
-  let kept = rowsArr;
-  if (top > 0 && rowsArr.length > top) {
-    droppedTopSources = rowsArr.length - top;
-    kept = rowsArr.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -320,6 +360,7 @@ export function buildSourceCostClassMix(
     smallMax,
     largeMin,
     minRows,
+    minLargePctTokens,
     top,
     sort,
     source: sourceFilter,
@@ -330,6 +371,7 @@ export function buildSourceCostClassMix(
     droppedNonPositiveTokens,
     droppedSourceFilter,
     droppedBelowMinRows,
+    droppedBelowMinLargePctTokens,
     droppedTopSources,
     sources: kept,
   };

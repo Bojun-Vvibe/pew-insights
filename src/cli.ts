@@ -8074,6 +8074,11 @@ program
     '1',
   )
   .option(
+    '--min-large-pct-tokens <n>',
+    'display filter (refinement, v0.6.56): require pctTokensLarge >= n (a fraction in [0, 1]) for a source row to be reported. Default 0 = no floor. Use --min-large-pct-tokens 0.9 to keep only sources where >=90% of tokens come from rows at or above --large-min. Suppressed sources surface as droppedBelowMinLargePctTokens. Filter order: window -> source -> minRows -> minLargePctTokens -> sort -> top.',
+    '0',
+  )
+  .option(
     '--top <n>',
     'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
     '0',
@@ -8093,6 +8098,7 @@ program
         smallMax: string;
         largeMin: string;
         minRows: string;
+        minLargePctTokens: string;
         top: string;
         sort: string;
         json?: boolean;
@@ -8118,6 +8124,16 @@ program
         if (!Number.isInteger(minRows) || minRows < 1) {
           throw new Error(
             `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLargePctTokens = Number.parseFloat(opts.minLargePctTokens);
+        if (
+          !Number.isFinite(minLargePctTokens) ||
+          minLargePctTokens < 0 ||
+          minLargePctTokens > 1
+        ) {
+          throw new Error(
+            `--min-large-pct-tokens must be a finite number in [0, 1] (got ${opts.minLargePctTokens})`,
           );
         }
         const top = Number.parseInt(opts.top, 10);
@@ -8146,6 +8162,7 @@ program
           smallMax,
           largeMin,
           minRows,
+          minLargePctTokens,
           top,
           sort: opts.sort as
             | 'tokens'

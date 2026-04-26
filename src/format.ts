@@ -6981,12 +6981,12 @@ export function renderSourceCostClassMix(
   lines.push(chalk.bold.cyan('pew-insights source-cost-class-mix'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    total-tokens: ${formatNumber(r.totalTokens)}    smallMax: ${formatNumber(r.smallMax)}    largeMin: ${formatNumber(r.largeMin)}    min-rows: ${formatNumber(r.minRows)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    total-tokens: ${formatNumber(r.totalTokens)}    smallMax: ${formatNumber(r.smallMax)}    largeMin: ${formatNumber(r.largeMin)}    min-rows: ${formatNumber(r.minRows)}    min-large-pct-tokens: ${r.minLargePctTokens === 0 ? '\u2014' : (r.minLargePctTokens * 100).toFixed(1) + '%'}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinLargePctTokens)} below min-large-pct-tokens, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

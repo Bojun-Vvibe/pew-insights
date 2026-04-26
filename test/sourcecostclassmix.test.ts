@@ -234,4 +234,71 @@ test('cost-class-mix: throws on bad knobs', () => {
   assert.throws(() =>
     buildSourceCostClassMix([], { until: 'not-iso', generatedAt: GEN }),
   );
+  assert.throws(() =>
+    buildSourceCostClassMix([], {
+      minLargePctTokens: -0.1,
+      generatedAt: GEN,
+    }),
+  );
+  assert.throws(() =>
+    buildSourceCostClassMix([], {
+      minLargePctTokens: 1.5,
+      generatedAt: GEN,
+    }),
+  );
+});
+
+test('cost-class-mix: minLargePctTokens floor filters source rows below threshold', () => {
+  const q: QueueLine[] = [
+    // a: 100% large mass
+    ql('2026-04-20T10:00:00.000Z', 'a', 50000),
+    ql('2026-04-20T11:00:00.000Z', 'a', 60000),
+    // b: only small/medium -> 0% large mass
+    ql('2026-04-20T10:00:00.000Z', 'b', 500),
+    ql('2026-04-20T11:00:00.000Z', 'b', 1500),
+    // c: mixed -> ~50% large mass
+    ql('2026-04-20T10:00:00.000Z', 'c', 10000),
+    ql('2026-04-20T11:00:00.000Z', 'c', 5000),
+    ql('2026-04-20T12:00:00.000Z', 'c', 5000),
+  ];
+  const r = buildSourceCostClassMix(q, {
+    minLargePctTokens: 0.9,
+    generatedAt: GEN,
+  });
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'a');
+  assert.equal(r.droppedBelowMinLargePctTokens, 2);
+  assert.equal(r.minLargePctTokens, 0.9);
+});
+
+test('cost-class-mix: minLargePctTokens=0 is a no-op', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T10:00:00.000Z', 'a', 500),
+    ql('2026-04-20T11:00:00.000Z', 'b', 50000),
+  ];
+  const r = buildSourceCostClassMix(q, {
+    minLargePctTokens: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinLargePctTokens, 0);
+});
+
+test('cost-class-mix: minLargePctTokens applied AFTER sort, BEFORE top', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T10:00:00.000Z', 'a', 50000), // 100% large
+    ql('2026-04-20T10:00:00.000Z', 'b', 500), // 0% large
+    ql('2026-04-20T10:00:00.000Z', 'c', 60000), // 100% large
+  ];
+  const r = buildSourceCostClassMix(q, {
+    minLargePctTokens: 0.5,
+    top: 1,
+    generatedAt: GEN,
+  });
+  // After filter we have a, c; after top=1 (sort tokens desc) we keep c
+  assert.equal(r.droppedBelowMinLargePctTokens, 1);
+  assert.equal(r.droppedTopSources, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'c');
 });
