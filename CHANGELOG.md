@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.55 — 2026-04-26
+
+### Added
+
+- `source-cost-class-mix`: per-source classification of every
+  positive-token activity row into a small / medium / large
+  cost class by `total_tokens`, with both row-share and
+  token-mass-share reported per class. Default thresholds:
+  small `< 1000`, medium `[1000, 10000)`, large `>= 10000`.
+  Tunable via `--small-max` and `--large-min`. Headline
+  question: **what mix of small / medium / large rows is each
+  source built out of, by both row-count and token mass?**
+
+  Answers a question no existing lens does. `tail-share` is a
+  Pareto stat on hour-of-week buckets (never classifies rows
+  by absolute magnitude), `bucket-intensity` and `output-size`
+  report distribution shape (mean, p50, p95, max) but never
+  project onto a named-class categorical, `source-burstiness-fano-factor`
+  and `daily-token-gini-coefficient` are dispersion / inequality
+  scalars, and `cost` / `cost-per-bucket-percentiles` operate
+  on cost dollars (a model-priced derivative), not on the raw
+  token magnitude with a fixed threshold ladder.
+
+  Knobs: `--since` / `--until` (window on `hour_start`),
+  `--source` (single-source filter), `--small-max` (default
+  1000), `--large-min` (default 10000), `--min-rows` (default
+  1, hide low-volume sources), `--top` (default 0 = no cap),
+  `--sort` (`tokens` default | `rows` | `pctLargeTokens` |
+  `pctLargeRows` | `pctSmallTokens` | `pctSmallRows` |
+  `source`), `--json`. When `--large-min == --small-max` the
+  medium class is structurally empty and only small/large rows
+  are reported.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-cost-class-mix
+pew-insights source-cost-class-mix
+as of: 2026-04-26T14:58:47.723Z    sources: 6 (shown 6)    rows: 1,566    total-tokens: 9,271,576,265    smallMax: 1,000    largeMin: 10,000    min-rows: 1    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-rows, 0 below top cap
+
+per-source cost-class mix (sorted by tokens; ties: source asc)
+source             rows  tokens         sR%    mR%    lR%     sT%   mT%    lT%
+-----------------  ----  -------------  -----  -----  ------  ----  -----  ------
+claude-code        299   3,442,385,788  0.0%   0.3%   99.7%   0.0%  0.0%   100.0%
+opencode           301   3,130,618,291  0.0%   0.0%   100.0%  0.0%  0.0%   100.0%
+openclaw           407   1,742,563,019  0.0%   0.0%   100.0%  0.0%  0.0%   100.0%
+codex              64    809,624,660    0.0%   0.0%   100.0%  0.0%  0.0%   100.0%
+hermes             162   144,498,780    0.0%   0.0%   100.0%  0.0%  0.0%   100.0%
+ide-assistant-A    333   1,885,727      28.5%  59.8%  11.7%   2.4%  38.0%  59.6%
+```
+
+Reading: under default thresholds (small `< 1k`, large `>=
+10k` total_tokens per row), five of six sources land
+essentially 100% in the **large** class by both row count and
+token mass — which matches the agentic / context-heavy nature
+of those workloads (every row pulls a multi-kilo-token
+context). The sixth source, an IDE assistant, is the only
+one with a meaningful mix: only **11.7%** of its rows are
+large but those carry **59.6%** of its token mass; **28.5%
+of rows** are small (interactive completions) but those carry
+only **2.4%** of mass. That source is also two orders of
+magnitude lighter in absolute token volume than the agentic
+sources (1.9M vs. 144M-3.4B), so it dominates the queue's
+small/medium row counts but contributes <0.02% of total
+tokens. The asymmetry is exactly the kind of mix-vs-magnitude
+distinction that a Pareto/dispersion lens flattens away.
+
 ## 0.6.54 — 2026-04-26
 
 ### Changed
