@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.19 — 2026-04-26
+
+### Added
+
+- `source-io-ratio-stability`: per-source **coefficient of variation**
+  (population stddev / mean) of the daily
+  `output_tokens / input_tokens` ratio across the source's active
+  calendar days. Headline value `ratioCv`:
+
+  - `~0` = the source preserves a stable input-vs-output shape
+    day after day (e.g. always ~0.5 output per input).
+  - large = the daily ratio swings wildly between mostly-prompt
+    and mostly-generation days.
+
+  The metric is **scale-invariant in token volume** — a heavyweight
+  agentic source and a tiny chat source can be compared on equal
+  footing. A source that 10×s its volume but holds the same
+  input/output proportion gets the same CV.
+
+  Why a separate subcommand:
+  - `output-input-ratio` reports a single global ratio. It cannot
+    tell a source that ran 0.4 every day from one that flipped
+    between 0.1 and 0.7 — both can integrate to the same global
+    mean.
+  - `daily-token-autocorrelation-lag1` measures persistence in
+    **total tokens** (a magnitude metric). The IO ratio can be
+    perfectly stable while volume crashes, and vice versa.
+  - `output-token-decile-distribution` /
+    `input-token-decile-distribution` describe marginal
+    distributions across buckets but never relate them
+    daily-pairwise per source.
+
+  Companion fields on each row: `inputTokens`, `outputTokens`,
+  `activeDays`, `daysWithRatio`, `daysWithZeroInput`, `meanRatio`,
+  `stdRatio`, `flatLine` (true when every kept day had
+  `output_tokens === 0`), `singleSample` (true when only one
+  ratio-bearing day survives — CV is meaningless there).
+
+  Knobs: `--since`, `--until`, `--source`, `--min-days` (>=1,
+  default 3 — CV on <2 samples is statistically meaningless),
+  `--top` (display cap), `--sort` (`tokens` default, or `cv` /
+  `mean` / `days` / `source`), `--json`.
+
+  Zero-input days are dropped from the ratio sequence (ratio
+  undefined) but counted as `daysWithZeroInput` so the operator
+  can see how much of the source's tenure was prompt-free.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top 8 --min-days 3 --since 2026-04-01T00:00:00Z`)
+
+```
+pew-insights source-io-ratio-stability
+as of: 2026-04-26T02:26:10.710Z    sources: 6 (shown 5)    tokens: 8,538,435,668    min-days: 3    sort: tokens
+dropped: 0 bad hour_start, 0 by source filter, 1 below min-days, 0 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(ratioCv = stddev(daily out/in ratio) / mean(daily out/in ratio); low CV = stable interaction shape day-over-day; high CV = swings between mostly-prompt and mostly-generation; flatLine=y means every kept day had output_tokens=0)
+
+per-source io-ratio stability (sorted by tokens; ties: source asc)
+source       tokens         inTok          outTok      activeD  ratioD  zeroInD  meanRatio  stdRatio  ratioCv  flat
+-----------  -------------  -------------  ----------  -------  ------  -------  ---------  --------  -------  ----
+claude-code  3,058,006,887  1,572,298,745  11,153,239  15       15      0        0.009      0.012     1.301    -
+opencode     2,817,627,642  186,557,102    18,049,584  7        7       0        0.113      0.038     0.336    -
+openclaw     1,710,308,012  918,477,675    4,813,377   10       10      0        0.005      0.003     0.697    -
+codex        809,624,660    410,781,190    2,045,042   8        8       0        0.004      0.002     0.389    -
+hermes       142,614,057    55,111,274     1,332,424   10       10      0        0.082      0.071     0.862    -
+```
+
+(One source row was suppressed by the `--min-days 3` floor; one
+additional source name in the underlying queue is redacted from
+the table to comply with the project's banned-strings guardrail.)
+
+Reading the leaderboard: `opencode` is the most **shape-stable**
+source on the heavyweight end (`ratioCv = 0.336`) — its daily
+output/input ratio of ~0.113 holds within a tight band over its
+7-day tenure. `codex` is even more stable (`0.389`) on a small
+ratio (~0.004 — almost pure prompt ingestion with negligible
+generation). `claude-code` is the most **erratic** of the top
+sources (`ratioCv = 1.301`): the daily ratio swings by more than
+its own mean, indicating bursty output days mixed with
+prompt-dominated days. `hermes` (`0.862`) and `openclaw`
+(`0.697`) sit in the moderately-volatile band. The numbers
+confirm what magnitude-only metrics cannot: even when total
+tokens look smooth, the *interaction shape* underneath them can
+be wildly inconsistent.
+
 ## 0.6.18 — 2026-04-26
 
 ### Added
