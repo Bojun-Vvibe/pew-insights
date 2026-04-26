@@ -114,6 +114,24 @@ export interface SourceGapHoursCvOptions {
    */
   minMeanGap?: number;
   /**
+   * Drop sources with fewer than this many gaps from the per-source
+   * table. Display filter only. Suppressed rows surface as
+   * `droppedBelowMinGaps`. Must be a non-negative integer. Default 0
+   * = no floor (preserves v0.6.75 behaviour).
+   *
+   * This is **distinct** from `--min-active-hours`. `--min-active-hours`
+   * filters on the count of distinct active hour buckets (and thus
+   * implicitly on `gaps = activeHours - 1`), but is silent on whether
+   * the number of gaps is large enough for `gapCv` to be a stable
+   * estimator. For a heavy-tailed gap distribution, `gapCv` measured
+   * on 2 gaps is essentially noise; `--min-gaps 10` (a reasonable
+   * floor) restricts the cohort to sources whose CV estimate has
+   * non-trivial sample support. Note that `--min-active-hours n`
+   * implies `gaps >= n - 1`, but `--min-gaps n` is a sharper, more
+   * statistically-meaningful gate at the same intent.
+   */
+  minGaps?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -153,6 +171,7 @@ export interface SourceGapHoursCvReport {
   source: string | null;
   minActiveHours: number;
   minMeanGap: number;
+  minGaps: number;
   top: number | null;
   sort: 'cv' | 'mean-gap' | 'max-gap' | 'active-hours' | 'source';
   /** Distinct sources seen pre-filter. */
@@ -166,6 +185,7 @@ export interface SourceGapHoursCvReport {
   droppedSourceFilter: number;
   droppedBelowMinActiveHours: number;
   droppedBelowMinMeanGap: number;
+  droppedBelowMinGaps: number;
   droppedBelowTopCap: number;
   sources: SourceGapHoursCvRow[];
 }
@@ -186,6 +206,12 @@ export function buildSourceGapHoursCv(
   if (!Number.isFinite(minMeanGap) || minMeanGap < 0) {
     throw new Error(
       `minMeanGap must be a finite, non-negative number (got ${opts.minMeanGap})`,
+    );
+  }
+  const minGaps = opts.minGaps ?? 0;
+  if (!Number.isInteger(minGaps) || minGaps < 0) {
+    throw new Error(
+      `minGaps must be a non-negative integer (got ${opts.minGaps})`,
     );
   }
   const top = opts.top ?? null;
@@ -319,10 +345,15 @@ export function buildSourceGapHoursCv(
 
   let droppedBelowMinActiveHours = 0;
   let droppedBelowMinMeanGap = 0;
+  let droppedBelowMinGaps = 0;
   const survived: SourceGapHoursCvRow[] = [];
   for (const row of allRows) {
     if (row.hoursActive < minActiveHours) {
       droppedBelowMinActiveHours += 1;
+      continue;
+    }
+    if (row.gaps < minGaps) {
+      droppedBelowMinGaps += 1;
       continue;
     }
     if (row.meanGap < minMeanGap) {
@@ -357,6 +388,7 @@ export function buildSourceGapHoursCv(
     source: sourceFilter,
     minActiveHours,
     minMeanGap,
+    minGaps,
     top,
     sort,
     totalSources,
@@ -367,6 +399,7 @@ export function buildSourceGapHoursCv(
     droppedSourceFilter,
     droppedBelowMinActiveHours,
     droppedBelowMinMeanGap,
+    droppedBelowMinGaps,
     droppedBelowTopCap,
     sources: finalSources,
   };

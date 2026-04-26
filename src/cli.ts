@@ -9256,6 +9256,11 @@ program
     '0',
   )
   .option(
+    '--min-gaps <n>',
+    'drop sources with fewer than n gaps from the table; sharper than --min-active-hours when you want gapCv estimated on a meaningful sample (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9273,6 +9278,7 @@ program
         source?: string;
         minActiveHours: string;
         minMeanGap: string;
+        minGaps: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9292,6 +9298,12 @@ program
         if (!Number.isFinite(minMeanGap) || minMeanGap < 0) {
           throw new Error(
             `--min-mean-gap must be a finite, non-negative number (got ${opts.minMeanGap})`,
+          );
+        }
+        const minGaps = Number.parseInt(opts.minGaps, 10);
+        if (!Number.isInteger(minGaps) || minGaps < 0) {
+          throw new Error(
+            `--min-gaps must be a non-negative integer (got ${opts.minGaps})`,
           );
         }
         let top: number | null = null;
@@ -9315,6 +9327,7 @@ program
           source: opts.source ?? null,
           minActiveHours,
           minMeanGap,
+          minGaps,
           top,
           sort: opts.sort as
             | 'cv'

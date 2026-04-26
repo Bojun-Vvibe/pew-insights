@@ -428,3 +428,84 @@ test('source-gap-hours-cv: window mirrored on output', () => {
   assert.equal(r.windowStart, '2026-04-20T00:00:00Z');
   assert.equal(r.windowEnd, '2026-04-21T00:00:00Z');
 });
+
+test('source-gap-hours-cv: minGaps default is 0 and field is mirrored on report', () => {
+  const r = buildSourceGapHoursCv([], { generatedAt: GEN });
+  assert.equal(r.minGaps, 0);
+  assert.equal(r.droppedBelowMinGaps, 0);
+});
+
+test('source-gap-hours-cv: rejects bad minGaps', () => {
+  assert.throws(() => buildSourceGapHoursCv([], { minGaps: -1 }));
+  assert.throws(() => buildSourceGapHoursCv([], { minGaps: 1.5 }));
+  assert.throws(() =>
+    buildSourceGapHoursCv([], { minGaps: Number.NaN }),
+  );
+});
+
+test('source-gap-hours-cv: minGaps filter drops sources with too few gaps', () => {
+  const q = [
+    // a: 4 active hours -> 3 gaps
+    ql('2026-04-20T00:00:00Z', 'a'),
+    ql('2026-04-20T01:00:00Z', 'a'),
+    ql('2026-04-20T02:00:00Z', 'a'),
+    ql('2026-04-20T03:00:00Z', 'a'),
+    // b: 11 active hours -> 10 gaps
+    ql('2026-04-20T00:00:00Z', 'b'),
+    ql('2026-04-20T01:00:00Z', 'b'),
+    ql('2026-04-20T02:00:00Z', 'b'),
+    ql('2026-04-20T03:00:00Z', 'b'),
+    ql('2026-04-20T04:00:00Z', 'b'),
+    ql('2026-04-20T05:00:00Z', 'b'),
+    ql('2026-04-20T06:00:00Z', 'b'),
+    ql('2026-04-20T07:00:00Z', 'b'),
+    ql('2026-04-20T08:00:00Z', 'b'),
+    ql('2026-04-20T09:00:00Z', 'b'),
+    ql('2026-04-20T10:00:00Z', 'b'),
+  ];
+  const r = buildSourceGapHoursCv(q, {
+    generatedAt: GEN,
+    minGaps: 10,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0].source, 'b');
+  assert.equal(r.sources[0].gaps, 10);
+  assert.equal(r.droppedBelowMinGaps, 1);
+});
+
+test('source-gap-hours-cv: minGaps=0 (default) preserves v0.6.75 behaviour exactly', () => {
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a'),
+    ql('2026-04-20T01:00:00Z', 'a'),
+    ql('2026-04-20T02:00:00Z', 'a'),
+  ];
+  const r1 = buildSourceGapHoursCv(q, { generatedAt: GEN });
+  const r2 = buildSourceGapHoursCv(q, { generatedAt: GEN, minGaps: 0 });
+  assert.deepEqual(r1.sources, r2.sources);
+  assert.equal(r1.droppedBelowMinGaps, 0);
+});
+
+test('source-gap-hours-cv: minGaps and minActiveHours compose (minGaps is sharper)', () => {
+  // source 'a' has activeHours = 3 (gaps = 2)
+  const q = [
+    ql('2026-04-20T00:00:00Z', 'a'),
+    ql('2026-04-20T01:00:00Z', 'a'),
+    ql('2026-04-20T02:00:00Z', 'a'),
+  ];
+  // minActiveHours=3 alone: 'a' survives
+  const r1 = buildSourceGapHoursCv(q, {
+    generatedAt: GEN,
+    minActiveHours: 3,
+  });
+  assert.equal(r1.sources.length, 1);
+  // minGaps=5 forces drop even though active-hours gate passed
+  const r2 = buildSourceGapHoursCv(q, {
+    generatedAt: GEN,
+    minActiveHours: 3,
+    minGaps: 5,
+  });
+  assert.equal(r2.sources.length, 0);
+  assert.equal(r2.droppedBelowMinGaps, 1);
+  assert.equal(r2.droppedBelowMinActiveHours, 0);
+});

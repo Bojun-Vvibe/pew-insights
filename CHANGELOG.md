@@ -2,6 +2,91 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.76 — 2026-04-27
+
+### Changed
+
+- `source-gap-hours-cv`: refinement flag `--min-gaps <n>`. Drops
+  sources with fewer than `n` gaps in the per-source table.
+  Default 0 = no filter (preserves v0.6.75 behaviour). Suppressed
+  rows surface as `droppedBelowMinGaps`.
+
+  This is **distinct** from `--min-active-hours`. The active-hours
+  gate filters on the count of distinct active hour buckets and
+  thus implicitly on `gaps = activeHours - 1`, but is silent on
+  whether the number of gaps is large enough for `gapCv` to be a
+  stable estimator. For a heavy-tailed gap distribution, `gapCv`
+  measured on 2 gaps is essentially noise; `--min-gaps 200` (a
+  meaningful sample-size floor) restricts the cohort to sources
+  whose CV estimate has non-trivial sample support.
+
+  Why `--min-gaps` and not just a higher `--min-active-hours`:
+  the two flags compose orthogonally and document intent
+  separately. `--min-active-hours 50` reads "I want a source that
+  has been active across at least 50 distinct hours of wall
+  clock"; `--min-gaps 50` reads "I want CV computed on at least
+  50 between-bucket gap samples". Both happen to require the
+  same n in this dataset because every source has exactly
+  `gaps = activeHours - 1`, but the semantic separation matters
+  in code review and in reports — the former is a coverage gate,
+  the latter is a statistical-power gate.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (`--min-gaps 200`, source name redacted to `ide-assistant-A`
+  per banned-string policy):
+
+  ```
+  pew-insights source-gap-hours-cv
+  as of: 2026-04-26T21:35:40.524Z    sources: 6 (shown 4)    active-hrs: 1,488    gaps: 1,482    min-active-hrs: 3    min-gaps: 200    min-mean-gap: 0.00    top: -    sort: cv
+  dropped: 0 bad hour_start, 0 zero-mass rows, 0 by source filter, 0 below min-active-hrs, 2 below min-gaps, 0 below min-mean-gap, 0 below top cap
+
+  per-source gap-hours CV (sorted by cv; ties: source asc)
+  source           activeHrs  gaps  meanGap  stdGap  gapCv   minGap  maxGap  flat
+  ---------------  ---------  ----  -------  ------  ------  ------  ------  ----
+  claude-code      267        266   6.87     25.67   3.7369  1       316     -
+  ide-assistant-A  320        319   20.21    62.83   3.1083  1       568     -
+  openclaw         421        420   1.05     0.69    0.6505  1       13      -
+  opencode         251        250   1.09     0.65    0.5987  1       10      -
+  ```
+
+  At `--min-gaps 200`, two sources drop out of the v0.6.75
+  default ranking: `codex` (only 63 gaps — its `gapCv = 1.70` is
+  estimated on a thin sample and its bursty rank should be read
+  with caution) and `hermes` (164 gaps — borderline). The
+  surviving 4 sources each carry 250+ gaps, so their gapCv
+  numbers are statistically meaningful estimates rather than
+  small-sample noise. The bursty-vs-steady ordering is unchanged
+  from v0.6.75 among these 4 — confirming the filter is purely
+  a statistical-power cohort selector and not a re-ranker.
+
+  Companion smoke (`--sort active-hours --min-gaps 100`) showing
+  the same gate at a looser threshold and a coverage-ordered
+  view (one source name redacted to `ide-assistant-A`):
+
+  ```
+  pew-insights source-gap-hours-cv
+  as of: 2026-04-26T21:35:40.582Z    sources: 6 (shown 5)    active-hrs: 1,488    gaps: 1,482    min-active-hrs: 3    min-gaps: 100    min-mean-gap: 0.00    top: -    sort: active-hours
+  dropped: 0 bad hour_start, 0 zero-mass rows, 0 by source filter, 0 below min-active-hrs, 1 below min-gaps, 0 below min-mean-gap, 0 below top cap
+
+  per-source gap-hours CV (sorted by active-hours; ties: source asc)
+  source           activeHrs  gaps  meanGap  stdGap  gapCv   minGap  maxGap  flat
+  ---------------  ---------  ----  -------  ------  ------  ------  ------  ----
+  openclaw         421        420   1.05     0.69    0.6505  1       13      -
+  ide-assistant-A  320        319   20.21    62.83   3.1083  1       568     -
+  claude-code      267        266   6.87     25.67   3.7369  1       316     -
+  opencode         251        250   1.09     0.65    0.5987  1       10      -
+  hermes           165        164   1.65     1.30    0.7839  1       11      -
+  ```
+
+  Cross-axis read: `openclaw` is both the most-active source
+  (421 active hours) and one of the steadiest (`gapCv = 0.65`).
+  The redacted `ide-assistant-A` source is the second-most-active
+  (320 hours) yet has the most extreme single silence (568h max
+  gap, ~23.7 days) — a producer that sustains broad coverage
+  punctuated by very long dark periods.
+
+---
+
 ## 0.6.75 — 2026-04-27
 
 ### Added

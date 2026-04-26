@@ -7735,12 +7735,12 @@ export function renderSourceGapHoursCv(
   lines.push(chalk.bold.cyan('pew-insights source-gap-hours-cv'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-hrs: ${formatNumber(r.totalActiveHours)}    gaps: ${formatNumber(r.totalGaps)}    min-active-hrs: ${r.minActiveHours}    min-mean-gap: ${r.minMeanGap.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    active-hrs: ${formatNumber(r.totalActiveHours)}    gaps: ${formatNumber(r.totalGaps)}    min-active-hrs: ${r.minActiveHours}    min-gaps: ${r.minGaps}    min-mean-gap: ${r.minMeanGap.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokenMass)} zero-mass rows, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinActiveHours)} below min-active-hrs, ${formatNumber(r.droppedBelowMinMeanGap)} below min-mean-gap, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokenMass)} zero-mass rows, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinActiveHours)} below min-active-hrs, ${formatNumber(r.droppedBelowMinGaps)} below min-gaps, ${formatNumber(r.droppedBelowMinMeanGap)} below min-mean-gap, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
