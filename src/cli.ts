@@ -94,6 +94,7 @@ import {
   renderSourceColdWarmRowRatio,
   renderSourceReasoningShareByDayCv,
   renderSourceInputTokenTopRowShare,
+  renderSourceZeroOutputRowShare,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -247,6 +248,7 @@ import { buildSourceCumulativeMassHalfLifeDay } from './sourcecumulativemasshalf
 import { buildSourceColdWarmRowRatio } from './sourcecoldwarmrowratio.js';
 import { buildSourceReasoningShareByDayCv } from './sourcereasoningsharebydaycv.js';
 import { buildSourceInputTokenTopRowShare } from './sourceinputtokentoprowshare.js';
+import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -8871,6 +8873,132 @@ program
         } else {
           process.stdout.write(
             renderSourceInputTokenTopRowShare(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-zero-output-row-share')
+  .description(
+    "Per-source share of rows with output_tokens==0 (aborted/empty turns). Reports zeroShare = zeroRows/rows and zeroInputShare = sum(input_tokens over zero-output rows) / sum(input_tokens). Distinct from source-output-tokens-per-row-percentiles (percentile shape, not categorical zero-count), source-cost-class-mix (small/med/large by total_tokens), source-input-token-top-row-share (input mass concentration on positive-input rows), and source-cold-warm-row-ratio (cache-state partition). Surfaces sources where the model was invoked but produced no output.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows (default 3)',
+    '3',
+  )
+  .option(
+    '--min-zero-share <f>',
+    'drop sources whose zeroShare is below f, in [0,1] (default 0)',
+    '0',
+  )
+  .option(
+    '--min-zero-input-share <f>',
+    'drop sources whose zeroInputShare is below f, in [0,1] (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'zero-share' (default) | 'zero-input-share' | 'zero-rows' | 'rows' | 'source'",
+    'zero-share',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minZeroShare: string;
+        minZeroInputShare: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const minZeroShare = Number.parseFloat(opts.minZeroShare);
+        if (
+          !Number.isFinite(minZeroShare) ||
+          minZeroShare < 0 ||
+          minZeroShare > 1
+        ) {
+          throw new Error(
+            `--min-zero-share must be a finite number in [0, 1] (got ${opts.minZeroShare})`,
+          );
+        }
+        const minZeroInputShare = Number.parseFloat(opts.minZeroInputShare);
+        if (
+          !Number.isFinite(minZeroInputShare) ||
+          minZeroInputShare < 0 ||
+          minZeroInputShare > 1
+        ) {
+          throw new Error(
+            `--min-zero-input-share must be a finite number in [0, 1] (got ${opts.minZeroInputShare})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'zero-share',
+          'zero-input-share',
+          'zero-rows',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceZeroOutputRowShare(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minZeroShare,
+          minZeroInputShare,
+          top,
+          sort: opts.sort as
+            | 'zero-share'
+            | 'zero-input-share'
+            | 'zero-rows'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceZeroOutputRowShare(report) + '\n',
           );
         }
       } catch (e) {

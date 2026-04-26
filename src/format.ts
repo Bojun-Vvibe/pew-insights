@@ -7500,3 +7500,77 @@ export function renderSourceInputTokenTopRowShare(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceZeroOutputRowShareReport,
+  SourceZeroOutputRowShareRow,
+} from './sourcezerooutputrowshare.js';
+
+export function renderSourceZeroOutputRowShare(
+  r: SourceZeroOutputRowShareReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-zero-output-row-share'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRows)}    zero-rows: ${formatNumber(r.totalZeroRows)}    in-tok: ${formatNumber(r.totalInputTokens)}    zero-in-tok: ${formatNumber(r.totalZeroInputTokens)}    min-rows: ${r.minRows}    min-zero: ${r.minZeroShare.toFixed(4)}    min-zero-in: ${r.minZeroInputShare.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinZeroShare)} below min-zero-share, ${formatNumber(r.droppedBelowMinZeroInputShare)} below min-zero-input-share, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source share of rows where output_tokens==0; zeroShare = zeroRows/rows; zeroInputShare = sum(input_tokens) over zero-output rows / sum(input_tokens) over all rows; zOnly=y means every kept row was zero-output)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source zero-output row share (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'zeroR',
+    'zeroSh',
+    'zInTok',
+    'inTok',
+    'zInSh',
+    'zOnly',
+  ];
+  const rows3: string[][] = r.sources.map(
+    (s: SourceZeroOutputRowShareRow) => [
+      s.source,
+      formatNumber(s.rows),
+      formatNumber(s.zeroRows),
+      s.zeroShare.toFixed(4),
+      formatNumber(s.zeroInputSum),
+      formatNumber(s.totalInputSum),
+      s.zeroInputShare.toFixed(4),
+      s.zeroOnly ? 'y' : '-',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows3));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
