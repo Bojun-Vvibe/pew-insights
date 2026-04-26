@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.27 — 2026-04-26
+
+### Added
+
+- `source-dry-spell`: per-source longest run of consecutive UTC
+  *inactive* calendar days strictly inside tenure (firstDay →
+  lastDay). The orthogonal complement of `source-active-day-streak`:
+  where streak measures presence ("longest unbroken habit"), this
+  report measures the worst absence gap ("longest break I took").
+
+  Two sources can share the same tenure, the same `activeDays`, and
+  even the same `density` (activeDays/tenureDays) yet have radically
+  different *gap shape*: one source's inactivity is spread evenly as
+  many short 1-day gaps; the other's is concentrated in a single
+  multi-week dry spell. `source-active-day-streak` cannot
+  distinguish these patterns — its longest-streak number is silent
+  about how the inactive days are arranged. `source-dry-spell`
+  surfaces it directly.
+
+  Per-source columns:
+
+  - `tenureDays`, `activeDays`, `inactiveDays`
+    (`tenureDays - activeDays`)
+  - `longestDrySpell`: max consecutive UTC inactive days strictly
+    inside tenure. 0 when active every single day. Earliest-tied
+    run wins → deterministic output.
+  - `longestDrySpellStart` / `longestDrySpellEnd`: ISO bounds of
+    that run (empty `'-'` rendered when length 0).
+  - `nDrySpells`: total count of maximal inactive runs inside tenure.
+  - `meanDrySpell`: `inactiveDays / nDrySpells` (0 when none).
+  - `drySpellFraction`: `inactiveDays / tenureDays` in `[0, 1)`.
+    1.0 is impossible — firstDay and lastDay are by definition
+    active.
+
+  Why orthogonal to everything that already ships:
+
+  - `source-active-day-streak` reports longest *active* run and
+    density but is silent on how absences cluster.
+  - `source-tenure` reports the calendar span only.
+  - `source-debut-recency` is a calendar-position metric.
+  - `source-decay-half-life` measures intra-tenure token-mass
+    center, not gap geometry.
+  - `source-run-lengths` measures consecutive same-source
+    *sessions*, not calendar-day inactivity.
+  - `bucket-streak-length` measures consecutive positive *hour
+    buckets* (intra-day burstiness), not multi-day absences.
+  - `gaps` / `idle-gaps` / `bucket-gap-distribution` measure
+    inter-bucket time gaps with no per-source dry-spell roll-up
+    into "consecutive blank UTC days within tenure".
+
+  Knobs: `--since` / `--until` / `--model` / `--source` filters,
+  `--min-days` (population gate, default 1), `--top` (display cap),
+  `--sort` (`longest` default | `fraction` | `tokens` | `inactive`
+  | `mean` | `source`), `--min-longest` (display filter; default 0;
+  use 1 to hide perfect-attendance sources).
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--top 10`; one source key redacted from output below)
+
+```
+pew-insights source-dry-spell
+as of: 2026-04-26T04:54:06.531Z    sources: 6 (shown 6)    tokens: 8,990,845,684    min-days: 1    min-longest: 0    top: 10    sort: longest
+dropped: 0 bad hour_start, 0 zero tokens, 0 model-filter, 0 source-filter, 0 below min-days, 0 below min-longest, 0 below top cap
+(longestDrySpell = max consecutive UTC inactive days strictly inside tenure; drySpellFraction = inactiveDays/tenureDays; firstDay and lastDay are by definition active so fraction < 1)
+
+top 10 sources by longest (ties: source asc)
+source          firstDay    lastDay     tenureD  activeD  inactD  longestDry  dryStart    dryEnd      nDry  meanDry  dryFrac  tokens
+--------------  ----------  ----------  -------  -------  ------  ----------  ----------  ----------  ----  -------  -------  -------------
+vscode-redact   2025-07-30  2026-04-20  265      73       192     23          2026-03-21  2026-04-12  36    5.33     0.725    1,885,727
+claude-code     2026-02-11  2026-04-23  72       35       37      12          2026-02-13  2026-02-24  10    3.70     0.514    3,442,385,788
+codex           2026-04-13  2026-04-20  8        8        0       0           -           -           0     0.00     0.000    809,624,660
+hermes          2026-04-17  2026-04-26  10       10       0       0           -           -           0     0.00     0.000    143,099,245
+openclaw        2026-04-17  2026-04-26  10       10       0       0           -           -           0     0.00     0.000    1,714,495,692
+opencode        2026-04-20  2026-04-26  7        7        0       0           -           -           0     0.00     0.000    2,879,354,572
+```
+
+(One source key was redacted to comply with the project's banned-string
+policy for documentation; the live binary surfaces all sources unchanged.)
+
+Reading the smoke: the redacted long-tenure IDE source has the
+worst gap geometry — 265 calendar days of tenure but only 73
+active, with a 23-day continuous dry spell ending 2026-04-12 and
+36 separate dry spells averaging 5.33 days each (`dryFrac=0.725`).
+That's a fundamentally different usage pattern from `claude-code`,
+which despite a much shorter 72-day tenure also racks up 12
+consecutive dry days early (2026-02-13 → 2026-02-24) before
+settling into denser use. The four newest sources (`codex`,
+`hermes`, `openclaw`, `opencode`) are all perfect-attendance
+within their short tenures — `--min-longest 1` would drop them
+and surface only the two sources with any dry days at all.
+This is information `source-active-day-streak` cannot produce:
+it would tell you `claude-code` has a long active streak but
+not that the same source also has a 12-day blackout earlier in
+its life.
+
 ## 0.6.26 — 2026-04-26
 
 ### Changed
