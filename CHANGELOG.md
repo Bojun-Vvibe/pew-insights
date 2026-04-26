@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.71 — 2026-04-27
+
+### Added
+
+- `source-cache-share-by-day-cv`: per-source coefficient of
+  variation of the daily `cached_input_tokens / input_tokens`
+  share across the source's active calendar UTC days. Low CV =
+  stable cache reuse day-over-day; high CV = swings between
+  cold-prompt days (fresh sessions, big uncached prompts) and
+  warm-context days (long-running follow-ups against a warm
+  context). The metric is scale-invariant in token volume — a
+  source that burns 10× more tokens but holds the same cache
+  share gets the same CV — which makes it useful for comparing
+  a heavyweight context source to a tiny chat source on equal
+  footing.
+
+  Distinct from existing cache-related angles:
+
+    - `source-cold-warm-row-ratio` is a row-count split by
+      `cached_input_tokens === 0` vs `> 0` and says nothing
+      about how the share *moves* day-over-day inside the warm
+      rows.
+    - `source-weekend-weekday-cache-share-gap` collapses time
+      into two buckets (Mon..Fri vs Sat..Sun); a source that
+      is wildly unstable inside the weekday bucket can still
+      report a tiny gap.
+    - `cache-hit-ratio` and `cache-hit-by-hour` are global
+      across sources — they cannot tell a source that ran 0.6
+      cache share every day from one that flipped between 0.0
+      and 1.0 (both can integrate to 0.6 globally).
+    - `source-io-ratio-stability` is the analogous CV but on
+      `output / input`, not on cache reuse — orthogonal axis.
+
+  Two structural edge cases get explicit booleans so the
+  operator can read the table at a glance: `flatCold = y`
+  means every kept day had `cached_input_tokens == 0` (the
+  source has never tasted cache); `pureWarm = y` means every
+  kept day had `cached >= input` (the source lives entirely
+  inside warm context). Both report `shareCv = 0` by
+  convention but mean opposite things.
+
+  Display gates: `--min-days` (default 3) drops sources with
+  fewer share-bearing days than that floor; `--min-mean-share`
+  (default 0) suppresses the
+  mathematically-loud-but-substantively-cold regime (e.g.
+  `--min-mean-share 0.05` hides anything below 5% average
+  cache share). All drops surface as auditable counters.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (`--sort cv --top 12`):
+
+  ```
+  pew-insights source-cache-share-by-day-cv
+  as of: 2026-04-26T20:16:15.981Z    sources: 6 (shown 6)    tokens: 9,400,697,187    min-days: 3    min-mean-share: 0.0000    top: 12    sort: cv
+
+  per-source cache-share daily CV (sorted by cv; ties: source asc)
+  source          tokens         inTok          cachedTok      activeD  shareD  zeroInD  meanShare  stdShare  shareCv  flat  pure
+  --------------  -------------  -------------  -------------  -------  ------  -------  ---------  --------  -------  ----  ----
+  opencode        3,239,968,878  207,357,893    3,010,922,321  7        7       0        1.0000     0.0000    0.0000   -     y
+  vscode-copilot  1,885,727      581,090        0              73       3       70       0.0000     0.0000    0.0000   y     -
+  codex           809,624,660    410,781,190    396,009,088    8        8       0        0.9364     0.0377    0.0403   -     -
+  openclaw        1,761,387,321  946,845,382    809,703,808    10       10      0        0.8501     0.0426    0.0501   -     -
+  hermes          145,444,813    55,482,039     88,555,900     10       10      0        0.9295     0.1095    0.1179   -     -
+  claude-code     3,442,385,788  1,834,613,640  1,595,643,323  35       35      0        0.5712     0.4239    0.7421   -     -
+  ```
+
+  Top finding: the cache-posture spectrum is enormous on real
+  data. Two structural extremes anchor it — `opencode`
+  (`pureWarm`) lives entirely inside warm context, while
+  `vscode-copilot` (`flatCold`) has 73 active days but only
+  3 with any prompt mass and zero cached input across them
+  (the 70 zero-input days are auto-recorded telemetry rows).
+  Among the genuinely cache-using sources, the top of the CV
+  ranking is dominated by `claude-code` at `shareCv = 0.7421`
+  with `meanShare = 0.5712` and `stdShare = 0.4239` — its 35
+  active days swing widely between cold and warm, not a flat
+  ~0.6. By contrast `codex` (`shareCv = 0.0403`) and
+  `openclaw` (`shareCv = 0.0501`) are both rock-stable around
+  0.85–0.94, and `hermes` (`shareCv = 0.1179`) is mildly
+  variable around 0.93. So the right reading is: most sources
+  have a fixed cache regime — the outlier is `claude-code`,
+  which is structurally bimodal day-over-day.
+
 ## 0.6.70 — 2026-04-27
 
 ### Changed
