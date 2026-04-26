@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.50 — 2026-04-26
+
+### Changed
+
+- `source-weekend-weekday-cache-share-gap`: refinement filter
+  `--min-input-tokens-each-side <n>` requires **both**
+  `weekdayInputTokens >= n` AND `weekendInputTokens >= n` for a
+  source row to be reported. Default 0 = no per-side floor.
+
+  Complementary to `--min-input-tokens`: the existing flag is a
+  *pooled* floor on `weekdayInput + weekendInput` (controls
+  whether a source has enough total signal to be analyzed at
+  all). The new flag is a *per-side* floor that controls
+  whether a source has enough signal **on each side
+  independently** for the gap to be meaningful — without it, a
+  source with 5M weekday input and 100 weekend input would
+  surface a `weekendCacheShare` derived from a 100-token
+  denominator, which is statistically meaningless and tends to
+  dominate `--sort absgap`.
+
+  Suppressed sources surface as
+  `droppedBelowMinInputTokensEachSide`. Filter order:
+  `since`/`until` window -> `source` filter -> `minInputTokens`
+  (pooled) -> `minInputTokensEachSide` (per side) -> sort ->
+  `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-input-tokens-each-side 1000000 --sort gap`)
+
+```
+pew-insights source-weekend-weekday-cache-share-gap --min-input-tokens-each-side 1000000 --sort gap
+as of: 2026-04-26T13:00:37.927Z    sources: 6 (shown 5)    input-tokens: 3,433,527,099    cached-input-tokens: 5,731,464,770    min-input-tokens: 1,000    min-input-tokens-each-side: 1,000,000    top: —    sort: gap
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-input-tokens, 1 below min-input-tokens-each-side, 0 below top cap
+(per-source cache hit share = sum(cached_input_tokens) / sum(input_tokens), partitioned by UTC day-of-week into weekday Mon..Fri vs weekend Sat..Sun; gap = weekend - weekday)
+
+per-source weekend-vs-weekday cache hit share (sorted by gap; ties: source asc; null shares sorted last)
+source       inputTokens    wkdyBuckets  wkndBuckets  wkdyShare  wkndShare  shareGap  absGap  shareRatio
+-----------  -------------  -----------  -----------  ---------  ---------  --------  ------  ----------
+opencode     198,775,584    223          74           12.9781    19.7283    +6.7501   6.7501  1.520
+claude-code  1,834,613,640  270          29           0.8408     0.9529     +0.1121   0.1121  1.133
+openclaw     933,424,993    255          148          0.8594     0.8492     -0.0102   0.0102  0.988
+codex        410,781,190    45           19           0.9670     0.9516     -0.0154   0.0154  0.984
+hermes       55,350,602     103          58           2.1436     0.9501     -1.1935   1.1935  0.443
+```
+
+Reading: with `--min-input-tokens-each-side 1000000`, the
+small `ide-assistant-A` source (which had a `null`
+weekendCacheShare in the v0.6.49 baseline because its weekend
+input was zero) drops out as expected — its per-side weekend
+input is 0, well below the 1M floor. The remaining 5 sources
+all clear 1M tokens on each side, so every reported gap is
+backed by a real sample on both sides. Sorted by signed `gap`
+desc, the picture is sharpened: `opencode` (+6.75) and
+`claude-code` (+0.11) cache *more* on weekends; `openclaw`
+(-0.01) and `codex` (-0.02) are at parity; `hermes` (-1.19)
+caches *less* on weekends, by far the largest negative shift
+on the queue. The two-flag composition (pooled +
+per-side) cleanly separates "is there enough total data?"
+from "is each side individually comparable?" — the standard
+two-axis sample-size guardrail for a paired-comparison stat.
+
 ## 0.6.49 — 2026-04-26
 
 ### Added
