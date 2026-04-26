@@ -5901,3 +5901,83 @@ export function renderDailyTokenMonotoneRunLength(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceDrySpellReport,
+  SourceDrySpellRow,
+} from './sourcedryspell.js';
+
+export function renderSourceDrySpell(r: SourceDrySpellReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-dry-spell'));
+  const topDesc = r.top === null ? '\u2014' : String(r.top);
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    min-longest: ${r.minLongest}    top: ${topDesc}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero tokens, ${formatNumber(r.droppedModelFilter)} model-filter, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinLongest)} below min-longest, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  lines.push(
+    chalk.dim(
+      '(longestDrySpell = max consecutive UTC inactive days strictly inside tenure; drySpellFraction = inactiveDays/tenureDays; firstDay and lastDay are by definition active so fraction < 1)',
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(
+      chalk.yellow('  no sources survived the filter. nothing to chart.'),
+    );
+    return lines.join('\n').replace(/\n+$/, '');
+  }
+
+  lines.push(
+    chalk.bold(
+      r.top === null
+        ? `per-source dry spells (sorted by ${r.sort}; ties: source asc)`
+        : `top ${r.top} sources by ${r.sort} (ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenureD',
+    'activeD',
+    'inactD',
+    'longestDry',
+    'dryStart',
+    'dryEnd',
+    'nDry',
+    'meanDry',
+    'dryFrac',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceDrySpellRow) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.tenureDays),
+    formatNumber(s.activeDays),
+    formatNumber(s.inactiveDays),
+    formatNumber(s.longestDrySpell),
+    s.longestDrySpellStart || '-',
+    s.longestDrySpellEnd || '-',
+    formatNumber(s.nDrySpells),
+    s.meanDrySpell.toFixed(2),
+    fmtFraction(s.drySpellFraction),
+    formatNumber(s.tokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

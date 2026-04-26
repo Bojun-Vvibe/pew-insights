@@ -103,6 +103,7 @@ import {
   renderSourceRankChurn,
   renderSourceDebutRecency,
   renderSourceActiveDayStreak,
+  renderSourceDrySpell,
 } from './format.js';
 import { renderHtmlReport } from './html.js';
 import {
@@ -164,6 +165,7 @@ import { buildHourOfDayTokenSkew } from './hourofdaytokenskew.js';
 import { buildSourceRankChurn } from './sourcerankchurn.js';
 import { buildSourceDebutRecency } from './sourcedebutrecency.js';
 import { buildSourceActiveDayStreak } from './sourceactivedaystreak.js';
+import { buildSourceDrySpell } from './sourcedryspell.js';
 import {
   buildMessageVolume,
   DEFAULT_VOLUME_EDGES,
@@ -2599,6 +2601,118 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceActiveDayStreak(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-dry-spell')
+  .description(
+    "Per-source longest run of consecutive UTC inactive days strictly inside tenure (worst-gap geometry — orthogonal complement to source-active-day-streak)",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--model <id>', 'restrict to a single normalised model id')
+  .option('--source <key>', 'restrict to a single source key')
+  .option(
+    '--min-days <n>',
+    'drop sources with fewer than n active days (default 1); display filter only',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'longest' (default) | 'fraction' | 'tokens' | 'inactive' | 'mean' | 'source'",
+    'longest',
+  )
+  .option(
+    '--min-longest <n>',
+    'drop rows whose longestDrySpell is strictly below n; non-negative integer (default 0 = no-op); use 1 to hide perfect-attendance sources',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        model?: string;
+        source?: string;
+        minDays: string;
+        top?: string;
+        sort: string;
+        minLongest: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isFinite(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be a positive integer (got ${opts.minDays})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const sort = opts.sort;
+        if (
+          sort !== 'longest' &&
+          sort !== 'fraction' &&
+          sort !== 'tokens' &&
+          sort !== 'inactive' &&
+          sort !== 'mean' &&
+          sort !== 'source'
+        ) {
+          throw new Error(
+            `--sort must be 'longest' | 'fraction' | 'tokens' | 'inactive' | 'mean' | 'source' (got ${opts.sort})`,
+          );
+        }
+        const minLongest = Number.parseInt(opts.minLongest, 10);
+        if (
+          !Number.isFinite(minLongest) ||
+          minLongest < 0 ||
+          !Number.isInteger(minLongest)
+        ) {
+          throw new Error(
+            `--min-longest must be a non-negative integer (got ${opts.minLongest})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceDrySpell(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          model: opts.model ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort: sort as
+            | 'longest'
+            | 'fraction'
+            | 'tokens'
+            | 'inactive'
+            | 'mean'
+            | 'source',
+          minLongest,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceDrySpell(report) + '\n');
         }
       } catch (e) {
         die(e);
