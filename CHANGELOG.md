@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.69 — 2026-04-27
+
+### Added
+
+- `source-zero-output-row-share`: per-source share of rows with
+  `output_tokens == 0` — i.e. turns where the model was invoked but
+  produced no output. Reports `zeroShare = zeroRows / rows` and a
+  companion `zeroInputShare = sum(input_tokens over zero-output
+  rows) / sum(input_tokens over all rows)`. Headline question:
+  **what fraction of a source's rows are zero-output turns, and how
+  much input volume do those zero-output rows account for?**
+
+  A row with `output_tokens == 0` represents a turn that was either
+  aborted (user ctrl-c'd before any tokens streamed), empty-replied
+  (server returned a stop with no content), or accounting-only
+  (e.g. a tool-result echo recorded as a queue row but with no
+  model generation). These are operationally interesting because
+  the input cost is real (the prompt was assembled and likely
+  shipped) even though there is no output to show for it. A high
+  `zeroShare` for a source signals workflow friction; a high
+  `zeroInputShare` even with a low `zeroShare` is the expensive
+  failure mode — rare zero-output rows that each carry a giant
+  prompt.
+
+  Distinct from every existing lens:
+
+  - `source-output-tokens-per-row-percentiles` reports percentile
+    shape (p50/p90/p99) of the output column. A source with 30%
+    zero-output rows and a source with 0% zero-output rows can
+    have identical p90/p99 if their non-zero tails match;
+    `zeroShare` is a categorical count, not a quantile.
+  - `source-cost-class-mix` projects rows onto small/med/large by
+    `total_tokens`. Zero-output rows usually fall in `small` but
+    `small` is dominated by genuine small-but-non-empty turns —
+    the two phenomena are not separable in that lens.
+  - `source-input-token-top-row-share` is mass-concentration on
+    the **input** column for **positive-input** rows; says nothing
+    about whether output was produced.
+  - `source-cold-warm-row-ratio` partitions by
+    `cached_input_tokens` (input-side cache state); orthogonal to
+    output presence.
+
+  CLI: `--since`, `--until`, `--source`, `--min-rows` (default 3),
+  `--min-zero-share`, `--min-zero-input-share`, `--top`, `--sort`
+  (zero-share | zero-input-share | zero-rows | rows | source).
+  All filters validated; non-finite or out-of-range values throw.
+  Determinism: pure builder; final tiebreak on source asc.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-zero-output-row-share
+pew-insights source-zero-output-row-share
+as of: 2026-04-26T19:36:06.768Z    sources: 6 (shown 6)    rows: 1,588    zero-rows: 12    in-tok: 3,453,153,151    zero-in-tok: 0    min-rows: 3    min-zero: 0.0000    min-zero-in: 0.0000    top: -    sort: zero-share
+dropped: 0 bad hour_start, 0 by source filter, 0 below min-rows, 0 below min-zero-share, 0 below min-zero-input-share, 0 below top cap
+
+per-source zero-output row share (sorted by zero-share; ties: source asc)
+source           rows  zeroR  zeroSh  zInTok  inTok          zInSh   zOnly
+---------------  ----  -----  ------  ------  -------------  ------  -----
+ide-assistant-A  333   12     0.0360  0       581,090        0.0000  -
+claude-code      299   0      0.0000  0       1,834,613,640  0.0000  -
+codex            64    0      0.0000  0       410,781,190    0.0000  -
+hermes           165   0      0.0000  0       55,482,039     0.0000  -
+openclaw         416   0      0.0000  0       944,886,524    0.0000  -
+opencode         311   0      0.0000  0       206,808,668    0.0000  -
+```
+
+Reading: of 1,588 lifetime queue rows across 6 sources, only 12
+(0.76% globally) are zero-output. They are entirely concentrated in
+one source — `ide-assistant-A` — at a 3.6% rate. The other five
+sources (`claude-code`, `codex`, `hermes`, `openclaw`, `opencode`)
+have **never** recorded a zero-output row in the captured history,
+so their `zeroShare` is exactly 0.
+
+Critically, the zero-output rows on `ide-assistant-A` carried
+**zero input tokens** as well (`zInTok = 0`). That is diagnostic:
+these are not aborted-after-prompt-shipped turns (which would
+register input mass); they are empty accounting events — the queue
+recorded a row but neither input nor output tokens were assembled.
+The "expensive failure mode" (rare zero-output but heavy input
+prompt) does not occur in this dataset. The "cheap accounting
+artifact" mode is what `ide-assistant-A` actually shows.
+
+This is operationally distinct from what every prior per-source
+metric reported: `source-output-tokens-per-row-percentiles` would
+have folded these 12 rows into the lower tail of an output
+distribution; `source-cost-class-mix` would have tossed them into
+the `small` bucket alongside genuine small turns. Only
+`zeroShare`, by treating zero-output as a categorical event,
+isolates them as a single coherent population.
+
+ide-assistant-A redaction applied to one source name in the smoke
+output to comply with the local repo's banned-strings policy.
+
 ## 0.6.68 — 2026-04-27
 
 ### Changed
