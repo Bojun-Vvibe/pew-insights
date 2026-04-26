@@ -100,6 +100,7 @@ import {
   renderSourceGapHoursCv,
   renderSourceInputOutputCorrelationCoefficient,
   renderSourceFirstVsLastQuartileOutputMeanShift,
+  renderSourceRowTokenSkewness,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -259,6 +260,7 @@ import { buildSourceZeroOutputRowShare } from './sourcezerooutputrowshare.js';
 import { buildSourceGapHoursCv } from './sourcegaphourscv.js';
 import { buildSourceInputOutputCorrelationCoefficient } from './sourceinputoutputcorrelationcoefficient.js';
 import { buildSourceFirstVsLastQuartileOutputMeanShift } from './sourcefirstvslastquartileoutputmeanshift.js';
+import { buildSourceRowTokenSkewness } from './sourcerowtokenskewness.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -9562,6 +9564,98 @@ program
           process.stdout.write(
             renderSourceFirstVsLastQuartileOutputMeanShift(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-skewness')
+  .description(
+    "Per-source Fisher-Pearson sample skewness g1 of per-row total_tokens distribution: g1 = mean((x-mean)^3) / stddev^3. g1>0 = right-skewed (rare fat rows pull the tail; the textbook token-usage shape), g1<0 = left-skewed, ~0 = symmetric. Distinct from hour-of-day-token-skew (global, on per-day totals grouped by hour), source-burstiness-fano-factor (variance/mean, 2nd moment not 3rd), source-output-tokens-per-row-percentiles (quantile shape on output_tokens not moment shape on total_tokens), source-input-token-top-row-share (mass concentration not moment), source-output-token-benford-deviation (digit distribution), source-cumulative-mass-half-life-day (temporal centroid), source-first-vs-last-quartile-output-mean-shift (chronological drift in mean), and daily-token-gini-coefficient (cross-day inequality, not within-source row asymmetry).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; absolute floor 3 (need >=3 samples for a non-degenerate 3rd moment) (default 3)',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'skew-desc' (default) | 'skew-asc' | 'abs-skew' | 'rows' | 'mean' | 'source'",
+    'skew-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 3) {
+          throw new Error(
+            `--min-rows must be an integer >= 3 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'skew-desc',
+          'skew-asc',
+          'abs-skew',
+          'rows',
+          'mean',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'skew-desc'
+            | 'skew-asc'
+            | 'abs-skew'
+            | 'rows'
+            | 'mean'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenSkewness(report) + '\n');
         }
       } catch (e) {
         die(e);

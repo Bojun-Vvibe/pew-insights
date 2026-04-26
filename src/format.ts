@@ -7948,3 +7948,62 @@ export function renderSourceFirstVsLastQuartileOutputMeanShift(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenSkewnessReport,
+  SourceRowTokenSkewnessRow,
+} from './sourcerowtokenskewness.js';
+
+export function renderSourceRowTokenSkewness(
+  r: SourceRowTokenSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-mean: ${r.minMean.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForSkewness)} below 3-row floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMean)} below min-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Fisher-Pearson sample skewness g1 of per-row total_tokens: g1 = mean((x-mean)^3) / stddev^3; g1>0 = right-skewed (rare fat rows pull the right tail), g1<0 = left-skewed, |g1|<0.5 ~symmetric, |g1|>=1 highly skewed; degen=y means stddev=0 so skewness reported as 0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row total_tokens skewness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'mean', 'stddev', 'skewness', 'degen'];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenSkewnessRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.mean.toFixed(2),
+    s.stddev.toFixed(2),
+    s.skewness.toFixed(4),
+    s.degenerate ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
