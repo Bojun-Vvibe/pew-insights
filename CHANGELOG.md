@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.46 — 2026-04-26
+
+### Added
+
+- `source-hour-of-day-token-mass-entropy`: new subcommand. Per
+  source, the **Shannon entropy (in bits) of token mass over UTC
+  hours-of-day (0..23)**. Reports:
+
+  - `entropyBits` in `[0, log2(24)] = [0, ~4.5850]`
+  - `entropyNormalized` = `entropyBits / log2(24)` in `[0, 1]`
+    (1 = mass perfectly uniform across all 24 hours; 0 = mass
+    in a single hour).
+  - `effectiveHours` = `2^entropyBits` — perplexity, the
+    "equivalent number of equal-mass hours" the source occupies.
+  - `concentrationGap` = `activeHours - effectiveHours`. 0 means
+    the active hours are equal-mass; large positive values mean
+    the apparent breadth is illusory (one or two hours dominate).
+  - `topHour` / `topHourShare`: UTC hour of the busiest hour and
+    its mass share.
+  - `activeHours`, `firstDay`, `lastDay`, `nBuckets`, `totalTokens`.
+
+  Knobs: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--top` (default 0 = no cap),
+  `--sort tokens|entropy|normalized|effective|gap|top-share|source`,
+  `--json`.
+
+  Why orthogonal:
+
+  - `hour-of-day-source-mix-entropy` is the *cross-source* axis at
+    each hour ("at 14:00 UTC, how mixed is the source roster?").
+    This subcommand is the *within-source* axis across hours
+    ("for source X, how spread is its day?"). Different
+    probability space.
+  - `source-token-mass-hour-centroid` reports the *circular mean*
+    hour. Two sources with mass in `{09, 10, 11}` and uniform
+    `{00..23}` have very different entropies (`log2(3)` vs
+    `log2(24)`, a 3.6x gap) that the centroid hides.
+  - `source-dead-hour-count` and `source-active-hour-longest-run`
+    count *which* hours are zero/positive. They treat all positive
+    hours equally. Two sources with the same `activeHours = 3`
+    can have entropies of `~0.34` bits (one hour dominant) or
+    `~1.585` bits (equal). This subcommand surfaces that gap and
+    quantifies it via `concentrationGap`.
+  - `source-hour-of-day-topk-mass-share` reports the lump share
+    of the top-`k` hours. Entropy is the full distributional
+    summary in one scalar.
+  - `daily-token-gini-coefficient` is the *daily* axis, not
+    hour-of-day.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--sort entropy`)
+
+```
+pew-insights source-hour-of-day-token-mass-entropy --sort entropy
+as of: 2026-04-26T11:36:56.665Z    sources: 6 (shown 6)    tokens: 9,176,426,404    min-tokens: 1,000    min-normalized: —    top: —    sort: entropy    H_max(bits): 4.5850
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 below min-normalized, 0 below top cap
+(per-source Shannon entropy in bits of token mass over UTC hour-of-day; effectiveHours = 2^H; concentrationGap = activeHours - effectiveHours)
+
+per-source UTC hour-of-day token-mass entropy (sorted by entropy; ties: source asc)
+source             firstDay    lastDay     buckets  activeHours  entropyBits  normalized  effectiveHours  concGap  topHour  topShare  tokens
+-----------------  ----------  ----------  -------  -----------  -----------  ----------  --------------  -------  -------  --------  -------------
+openclaw           2026-04-17  2026-04-26  400      24           4.5185       0.9855      22.9189         1.0811   01       0.0744    1,733,326,864
+opencode           2026-04-20  2026-04-26  295      24           4.3736       0.9539      20.7296         3.2704   17       0.0942    3,044,870,770
+claude-code        2026-02-11  2026-04-23  299      20           4.0920       0.8925      17.0535         2.9465   08       0.1355    3,442,385,788
+hermes             2026-04-17  2026-04-26  161      24           4.0900       0.8920      17.0301         6.9699   14       0.1087    144,332,595
+codex              2026-04-13  2026-04-20  64       16           3.6281       0.7913      12.3646         3.6354   12       0.1278    809,624,660
+ide-assistant-A    2025-07-30  2026-04-20  333      14           3.1866       0.6950      9.1046          4.8954   02       0.2174    1,885,727
+```
+
+Reading: `openclaw` is the most uniformly spread across the
+24-hour clock (`normalized = 0.9855`, `concGap = 1.08` — almost
+every active hour pulls equal weight). `hermes` looks similar by
+the *count* axes (`activeHours = 24`, `entropyBits = 4.09`) but
+`concGap = 6.97` reveals that its mass is concentrated enough
+that it effectively occupies only ~17 of those 24 hours — a
+genuine quality of attention that `source-active-hour-longest-run`
+and `source-dead-hour-count` cannot see. `ide-assistant-A` has
+the smallest spread (`activeHours = 14`, `effectiveHours = 9.10`)
+and the highest single-hour share (~21.7% on hour 02 UTC).
+
 ## 0.6.45 — 2026-04-26
 
 ### Changed
