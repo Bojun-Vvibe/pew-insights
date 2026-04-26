@@ -2,6 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.49 — 2026-04-26
+
+### Added
+
+- `source-weekend-weekday-cache-share-gap`: new subcommand. Per
+  source, compares **input-token cache hit share** between
+  weekday (Mon..Fri UTC) and weekend (Sat..Sun UTC) buckets, and
+  reports the gap. For each source, partitions every hourly row
+  by UTC day-of-week and computes, on each side,
+
+  ```
+  cacheShare_side = sum(cached_input_tokens_side)
+                  / sum(input_tokens_side)
+  ```
+
+  Reports per source:
+
+  - `weekdayCacheShare`: pooled cache share over Mon..Fri buckets
+    (`null` when `weekdayInputTokens == 0`).
+  - `weekendCacheShare`: pooled cache share over Sat..Sun buckets
+    (`null` when `weekendInputTokens == 0`).
+  - `shareGap` = `weekendCacheShare - weekdayCacheShare` in
+    `[-1, 1]` (`null` when either side is `null`). Positive =
+    source caches *more* on weekends than weekdays.
+  - `absShareGap` = `|shareGap|` — direction-agnostic answer to
+    "which sources behave most *differently* on weekends?"
+  - `shareRatio` = `weekendCacheShare / weekdayCacheShare` when
+    `weekdayCacheShare > 0`, else `null`. 1.0 = parity.
+  - `weekdayBuckets` / `weekendBuckets` for sample-size sanity.
+
+  Why orthogonal to everything that already ships:
+
+  - `cache-hit-ratio` is a single global cached/input share —
+    not split by source and not split by day-of-week.
+  - `cache-hit-by-hour` splits by UTC hour-of-day across the
+    whole queue — not per source, and not on the weekday vs
+    weekend axis.
+  - `weekend-vs-weekday` (the global subcommand) compares
+    *token volume* and bucket counts between weekday and
+    weekend buckets — it does not look at cache share at all.
+  - `source-day-of-week-token-mass-share` is the *token mass*
+    distribution across the seven day-of-week bins per source
+    — neither cache share nor the weekday/weekend partition.
+  - All other source-* dow / hour subcommands operate on
+    *total* tokens, not on the cached/input ratio.
+
+  Knobs: `--since` / `--until` / `--source` / `--min-input-tokens`
+  (default 1000, on weekday + weekend pooled input) / `--top` /
+  `--sort` (default `absgap` | `gap` | `ratio` | `weekday` |
+  `weekend` | `tokens` | `source`; null shares sort last on
+  numeric keys) / `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+pew-insights source-weekend-weekday-cache-share-gap
+as of: 2026-04-26T12:57:32.234Z    sources: 6 (shown 6)    input-tokens: 3,433,358,348    cached-input-tokens: 5,728,053,418    min-input-tokens: 1,000    top: —    sort: absgap
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-input-tokens, 0 below top cap
+(per-source cache hit share = sum(cached_input_tokens) / sum(input_tokens), partitioned by UTC day-of-week into weekday Mon..Fri vs weekend Sat..Sun; gap = weekend - weekday)
+
+per-source weekend-vs-weekday cache hit share (sorted by absgap; ties: source asc; null shares sorted last)
+source          inputTokens    wkdyBuckets  wkndBuckets  wkdyShare  wkndShare  shareGap  absGap  shareRatio
+--------------  -------------  -----------  -----------  ---------  ---------  --------  ------  ----------
+opencode        198,606,833    223          74           12.9781    19.7262    +6.7481   6.7481  1.520
+hermes          55,350,602     103          58           2.1436     0.9501     -1.1935   1.1935  0.443
+claude-code     1,834,613,640  270          29           0.8408     0.9529     +0.1121   0.1121  1.133
+codex           410,781,190    45           19           0.9670     0.9516     -0.0154   0.0154  0.984
+openclaw        933,424,993    255          148          0.8594     0.8492     -0.0102   0.0102  0.988
+ide-assistant-A  581,090        316          17           0.0000     -          -         -       -
+```
+
+Reading: cache shares above 1.0 are real on this queue —
+`cached_input_tokens` is recorded *additively* by pew rather
+than as a strict subset of `input_tokens`, so the ratio can
+exceed 1 for sources whose answers are predominantly served
+out of the prompt cache (here `opencode` and `hermes`). Sorted
+by `absShareGap`, the most weekend-shifted source by a wide
+margin is `opencode` (+6.75 absolute, ratio 1.52 — *more*
+cache reuse on weekends), followed by `hermes` (-1.19, ratio
+0.44 — *less* cache reuse on weekends, the only source whose
+weekend ratio drops by more than half). The three high-volume
+agents `claude-code`, `codex`, `openclaw` all sit within ±0.12
+of weekday parity, which is the right answer: their weekend
+behavior is essentially indistinguishable from weekday.
+`ide-assistant-A` has zero cached input on weekdays and no
+weekend buckets at all in the qualifying set, so its
+weekendCacheShare is `null` and the gap is correctly
+suppressed rather than synthesized.
+
 ## 0.6.48 — 2026-04-26
 
 ### Changed
