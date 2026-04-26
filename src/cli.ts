@@ -69,6 +69,7 @@ import {
   renderTokenVelocityPercentiles,
   renderCostPerBucketPercentiles,
   renderRollingBucketCv,
+  renderDailyTokenAutocorrelationLag1,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -193,6 +194,7 @@ import { buildBucketIntensity } from './bucketintensity.js';
 import { buildTokenVelocityPercentiles } from './tokenvelocitypercentiles.js';
 import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
+import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -5789,6 +5791,67 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderRollingBucketCv(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-autocorrelation-lag1')
+  .description(
+    'Per-source lag-1 (Pearson) autocorrelation of daily token totals; reveals day-to-day persistence (does today predict tomorrow?) which is invisible to magnitude-only metrics like burstiness or rolling-bucket-cv',
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with fewer than n active calendar days; counts surface as droppedSparseSources (default 3, must be >= 3)',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources by total tokens; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 3) {
+          throw new Error(`--min-days must be an integer >= 3 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAutocorrelationLag1(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenAutocorrelationLag1(report) + '\n');
         }
       } catch (e) {
         die(e);

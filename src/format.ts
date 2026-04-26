@@ -4897,9 +4897,76 @@ export function renderRollingBucketCv(
     s.p90Cv.toFixed(3),
     s.maxCv.toFixed(3),
     s.meanCv.toFixed(3),
-     s.peakWindowStart ?? '-',
+      s.peakWindowStart ?? '-',
   ]);
   lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenAutocorrelationLag1(
+  r: import('./dailytokenautocorrelationlag1.js').DailyTokenAutocorrelationLag1Report,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-autocorrelation-lag1'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(observation = lag-1 Pearson autocorrelation of per-source daily total_tokens; rho1Active uses consecutive *active* days, rho1Filled gap-fills missing calendar days inside [first, last] with 0; constant series surface as flat=true with rho1=0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold('per-source lag-1 autocorrelation (sorted by tokens desc)'));
+  const headers2 = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'mean',
+    'stddev',
+    'rho1Active',
+    'flatA',
+    'rho1Filled',
+    'flatF',
+    'first',
+    'last',
+  ];
+  const rowsR2: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.mean.toFixed(1),
+    s.stddev.toFixed(1),
+    s.rho1Active.toFixed(3),
+    s.flatActive ? 'y' : '-',
+    s.rho1Filled.toFixed(3),
+    s.flatFilled ? 'y' : '-',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers2, rowsR2));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
