@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.35 — 2026-04-26
+
+### Docs
+
+- `source-token-mass-hour-centroid`: extend the file-level JSDoc
+  with a worked example showing how `--max-spread` and `--min-r`
+  compose, and an explicit note on why `--min-r` is the more
+  numerically stable choice when the distribution is near-uniform
+  (R approx 0). No behaviour change; tests unchanged.
+
 ## 0.6.34 — 2026-04-26
 
 ### Changed

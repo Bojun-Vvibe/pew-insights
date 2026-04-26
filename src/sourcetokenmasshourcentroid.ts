@@ -88,6 +88,29 @@
  *     from the UTC timestamp in `hour_start`. Every other
  *     hour-of-day statistic in this codebase reads UTC as well, so
  *     the centroid is comparable.
+ *
+ * Worked example (refinement filters added in 0.6.33 / 0.6.34):
+ *
+ *   To surface only sources whose hour-of-day token mass is
+ *   tightly concentrated, combine `--max-spread` (Mardia/Jupp SD
+ *   in hours, finite cap) with `--min-r` (resultant length floor,
+ *   numerically stable lower bound). The two filters compose:
+ *
+ *     pew-insights source-token-mass-hour-centroid \
+ *       --min-tokens 10000 \
+ *       --max-spread 6 \
+ *       --min-r 0.3 \
+ *       --sort r
+ *
+ *   reads as: "from sources with at least 10k total tokens, show
+ *   me only those whose circular SD is at most 6 hours AND whose
+ *   resultant length is at least 0.3, sorted by concentration
+ *   descending". The two filters are monotonically related but
+ *   `--min-r` is the more numerically stable choice when the
+ *   distribution is near-uniform (R approx 0): FP noise can drive
+ *   the spread-from-R conversion to an enormous-but-finite value
+ *   that slips past a `--max-spread` cutoff, while R itself is
+ *   bounded in [0, 1].
  */
 import type { QueueLine } from './types.js';
 
