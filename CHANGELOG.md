@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.59 — 2026-04-27
+
+### Added
+
+- `source-single-day-mass-concentration`: per-source share of total
+  token mass on the source's single biggest UTC day
+  (`maxDayShare`), plus the cumulative top-2 / top-3 day shares
+  and a per-day Herfindahl–Hirschman index (`hhi`) over the
+  source's per-day mass distribution. Headline question:
+  **how concentrated is a source's history on its single
+  fattest day?**
+
+  Distinct from every existing concentration / temporal lens:
+
+  - `daily-token-gini-coefficient` is a **global** (all-source-
+    pooled) inequality measure on per-day total mass; it
+    cannot answer the per-source question and conflates "one
+    source had a giant day" with "one calendar day was hot
+    across all sources".
+  - `bucket-token-gini` measures inequality across hourly
+    buckets, not calendar days.
+  - `source-day-of-week-token-mass-share` is a **modular DOW
+    histogram** (Mon..Sun); it cannot detect "a single
+    Wednesday produced 80% of this source's mass". DOW shares
+    can look balanced even when one specific date dominates.
+  - `source-token-mass-hour-centroid` is a **location** metric
+    (where on the 24h clock the mass sits), not a
+    **concentration** metric.
+  - `source-active-day-streak` / `source-active-hour-longest-run`
+    measure **consecutive run length**, not mass concentration.
+  - `source-burstiness-fano-factor` is variance/mean on per-
+    bucket counts (request-arrival dispersion); it ignores
+    token magnitude entirely.
+  - `source-output-tokens-per-row-percentiles` summarises the
+    per-row magnitude distribution, not its temporal
+    concentration on calendar days.
+
+  For each surviving source we report `daysActive`, `tokenSum`,
+  `maxDay` (UTC YYYY-MM-DD), `maxDayTokens`, `maxDayShare`,
+  `top2Share`, `top3Share`, `hhi`, and a `singleDay` flag.
+  Bounds: `maxDayShare` and `hhi` both lie in
+  `[1/daysActive, 1]`; a source with one active day yields
+  `1.0` for all share fields and `hhi`.
+
+  Filters: `--since` / `--until` ISO window, `--source <id>`
+  restriction, `--min-days <n>` (default 3 — top-3 cumulative
+  is degenerate below 3 days), `--top <n>` cap, `--sort` over
+  `tokens|maxshare|top2|top3|hhi|days|source` with `source`
+  asc as the deterministic final tiebreak.
+
+#### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js source-single-day-mass-concentration
+pew-insights source-single-day-mass-concentration
+as of: 2026-04-26T16:33:36.341Z    sources: 6 (shown 6)    total-tokens: 9,311,813,301    min-days: 3    top: —    sort: tokens
+dropped: 0 bad hour_start, 0 by source filter, 0 zero-mass sources, 0 below min-days, 0 below top cap
+(per-source token-mass concentration on the single biggest UTC day; share = day_tokens / source_total; hhi = sum_i share_i^2 over active days)
+
+per-source single-day mass concentration (sorted by tokens; ties: source asc)
+source           days  tokenSum       maxDay      maxTok         maxShare  top2Share  top3Share  hhi
+---------------  ----  -------------  ----------  -------------  --------  ---------  ---------  ------
+claude-code      35    3,442,385,788  2026-04-20  1,052,011,841  0.3056    0.5090     0.5964     0.1577
+opencode         7     3,164,302,151  2026-04-21  724,269,445    0.2289    0.4367     0.6073     0.1752
+openclaw         10    1,748,625,653  2026-04-19  354,037,834    0.2025    0.3653     0.5124     0.1324
+codex            8     809,624,660    2026-04-20  389,724,254    0.4814    0.7079     0.8466     0.3088
+hermes           10    144,989,322    2026-04-19  34,683,508     0.2392    0.4475     0.5997     0.1516
+ide-assistant-A  73    1,885,727      2026-04-17  240,730        0.1277    0.2306     0.3270     0.0582
+```
+
+Reading: `codex` is the most concentrated source by every share
+metric — its single biggest UTC day (2026-04-20) holds 48% of
+its entire history's total tokens, and the top-3 days hold
+85%. Its `hhi = 0.31` is roughly 2x the next-most-concentrated
+source (`opencode`, 0.18). At the other end, `ide-assistant-A`
+has the longest active span (73 days) and the lowest
+concentration on every metric (`maxDayShare = 0.13`,
+`hhi = 0.06`) — a steady-state background producer with no
+single-day spike. The `tokenSum` ordering (used for the
+default sort) is decoupled from the concentration ordering:
+`claude-code` is the largest producer overall but only the
+4th-most-concentrated, while `codex` is the 4th-largest
+producer but the most concentrated. That decoupling is the
+qualitative payoff vs the existing pooled `daily-token-gini-
+coefficient`, which would flag a globally-busy day even when
+no single source actually owned it.
+
 ## 0.6.58 — 2026-04-26
 
 ### Changed
