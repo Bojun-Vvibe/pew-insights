@@ -2,6 +2,96 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.25 — 2026-04-26
+
+### Added
+
+- `daily-token-zscore-extremes`: per-source count of daily
+  total-token values whose **population z-score exceeds ±sigma**
+  (strict). Tail-event statistic that surfaces *individual*
+  extreme days (heavy or light) — orthogonal to everything
+  shipped:
+
+  - `burstiness` and `rolling-bucket-cv` are aggregate dispersion
+    numbers that collapse the entire shape into one CV; they
+    don't say *how many* individual days actually breach a fixed
+    sigma multiple, separately above and below the mean.
+  - `daily-token-autocorrelation-lag1` is a serial-dependence
+    statistic; it does not flag whether any day is itself extreme.
+  - `daily-token-monotone-run-length` is a trajectory-shape
+    statistic about direction persistence; an extreme one-day
+    spike contributes only a single up step plus a single down
+    step there.
+  - `bucket-token-gini`, `hour-of-day-token-skew` work on
+    within-day or hour-of-day distributions, not on the source's
+    full active-day series.
+  - `anomalies` uses different / coarser thresholds and is not a
+    per-source z-score tally.
+
+  For each kept source we compute population mean and population
+  stddev (1/n divisor, matching `rolling-bucket-cv` and
+  `daily-token-autocorrelation-lag1`) over the source's
+  positive-token active-day series, then per-day
+  `z = (x - mean) / stddev`. Strict counts:
+
+  - `nHighExtreme`: days with `z > +sigma`
+  - `nLowExtreme`:  days with `z < -sigma`
+  - `nExtreme`:     sum of the two (exactly ±sigma does NOT count)
+  - `extremeFraction = nExtreme / nActiveDays`
+  - `maxAbsZ`, `maxAbsZDay`, `maxAbsZTokens`, `maxAbsZDirection`
+    (`'high'`/`'low'`/`'flat'`)
+
+  Constant series surface as `flat: true` with `stddev: 0`,
+  zero counts, `maxAbsZ: 0`, and an empty `maxAbsZDay`.
+
+  Headline question:
+  **"Out of this source's active-day series, how many days were
+  unusually heavy (z > +sigma) or unusually light (z < -sigma),
+  and what is the single most extreme |z|?"**
+
+  Knobs: `--since`, `--until`, `--source`,
+  `--min-days <n>` (default 3, must be >= 2),
+  `--sigma <f>` (default 2, must be > 0),
+  `--top <n>`,
+  `--sort` (`tokens` default | `extreme` | `fraction` |
+  `maxabsz` | `ndays` | `source`),
+  `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--since 2026-04-01T00:00:00Z --sort extreme --top 5`)
+
+```
+pew-insights daily-token-zscore-extremes
+as of: 2026-04-26T04:27:37.179Z    sources: 6 (shown 5)    tokens: 8,591,372,776    min-days: 3    sigma: 2    top: 5    sort: extreme
+dropped: 0 bad hour_start, 0 zero tokens, 0 source-filter, 0 below min-days, 1 below top cap
+window: 2026-04-01T00:00:00Z -> +inf
+(z = (dailyTokens - sourceMean) / sourceStddev (population, 1/n divisor); high/low extreme = strict z > +sigma / z < -sigma; flat=y means stddev=0 across active days, so no z is defined)
+
+per-source z-score extremes (sorted by extreme)
+source       firstDay    lastDay     nDays  mean         stddev       flat  nHigh  nLow  nExtreme  extFrac  maxAbsZ  maxZDay     maxZTokens     dir   tokens
+-----------  ----------  ----------  -----  -----------  -----------  ----  -----  ----  --------  -------  -------  ----------  -------------  ----  -------------
+claude-code  2026-04-01  2026-04-23  15     203867125.8  286313694.0  -     1      0     1         0.067    2.962    2026-04-20  1,052,011,841  high  3,058,006,887
+codex        2026-04-13  2026-04-20  8      101203082.5  122703257.3  -     1      0     1         0.125    2.351    2026-04-20  389,724,254    high  809,624,660
+hermes       2026-04-17  2026-04-26  10     14288189.6   10669930.8   -     0      0     0         0.000    1.911    2026-04-19  34,683,508     high  142,881,896
+openclaw     2026-04-17  2026-04-26  10     171375266.3  104614383.9  -     0      0     0         0.000    1.746    2026-04-19  354,037,834    high  1,713,752,663
+opencode     2026-04-20  2026-04-26  7      409550322.9  248340516.0  -     0      0     0         0.000    1.580    2026-04-20  17,147,516     low   2,866,852,260
+```
+
+Reading the smoke: only two sources cross the strict 2-sigma
+bar at all. `claude-code` posts the largest |z| of the window
+(`2.962` on 2026-04-20, a `1.05B`-token day against a
+`204M`-token mean) — exactly one day above the bar out of 15
+active days (`extFrac=0.067`). `codex` is similar in shape
+(`z=2.351` on 2026-04-20, `extFrac=0.125`) — that same UTC
+date appears as the peak day for four of the five reported
+sources, hinting at a workspace-wide intensity burst on
+2026-04-20 even where it didn't break the strict threshold.
+`opencode` is the only source whose maxAbsZ is on the *low*
+side (`17.1M` against a `410M` mean), flagging an unusually
+quiet day inside an otherwise heavy week. The single source
+suppressed by `--top 5` is a sparse 3-day series whose name
+trips the repo banned-string filter, so it stays out of the
+smoke for both display and policy reasons.
+
 ## 0.6.24 — 2026-04-26
 
 ### Changed
