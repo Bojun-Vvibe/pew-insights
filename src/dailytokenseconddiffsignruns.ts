@@ -135,6 +135,19 @@ export interface DailyTokenSecondDiffSignRunsOptions {
    *   - 'source':               source asc
    */
   sort?: SecondDiffSignRunsSort;
+  /**
+   * Display filter: hide rows whose `currentRunLength` is strictly
+   * below this value. Useful for surfacing only sources that are
+   * sitting in a *deeply persistent* concavity regime right now,
+   * filtering out the noise of length-1 trailing runs (which mean
+   * the regime just flipped on the most recent d2 point and is
+   * fragile). Counts surface as `droppedBelowMinCurrentRun`.
+   * Default 0 = no floor (every kept row shown).
+   *
+   * Filter order (matches the rest of the family):
+   * window -> source -> minDays -> minCurrentRun -> sort -> top.
+   */
+  minCurrentRun?: number;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -216,6 +229,8 @@ export interface DailyTokenSecondDiffSignRunsReport {
   top: number;
   /** Echo of resolved sort key. */
   sort: SecondDiffSignRunsSort;
+  /** Echo of resolved minCurrentRun floor (0 = no floor). */
+  minCurrentRun: number;
   /** Echo of source filter (null when not set). */
   source: string | null;
   /** Sum of total_tokens across all kept source rows. */
@@ -227,6 +242,8 @@ export interface DailyTokenSecondDiffSignRunsReport {
   droppedSourceFilter: number;
   /** Sources with fewer than `minDays` active days. */
   droppedSparseSources: number;
+  /** Source rows hidden by the `minCurrentRun` floor. */
+  droppedBelowMinCurrentRun: number;
   /** Source rows hidden by the `top` cap. */
   droppedTopSources: number;
   /** One row per kept source. */
@@ -307,6 +324,12 @@ export function buildDailyTokenSecondDiffSignRuns(
   const top = opts.top ?? 0;
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
+  }
+  const minCurrentRun = opts.minCurrentRun ?? 0;
+  if (!Number.isInteger(minCurrentRun) || minCurrentRun < 0) {
+    throw new Error(
+      `minCurrentRun must be a non-negative integer (got ${opts.minCurrentRun})`,
+    );
   }
   const sort = opts.sort ?? 'tokens';
   const validSorts: SecondDiffSignRunsSort[] = [
@@ -467,7 +490,19 @@ export function buildDailyTokenSecondDiffSignRuns(
     });
   }
 
-  rows.sort((a, b) => {
+  // Apply minCurrentRun display filter (after build, before sort)
+  let droppedBelowMinCurrentRun = 0;
+  let filtered: DailyTokenSecondDiffSignRunsSourceRow[] = rows;
+  if (minCurrentRun > 0) {
+    const next: DailyTokenSecondDiffSignRunsSourceRow[] = [];
+    for (const r of rows) {
+      if (r.currentRunLength >= minCurrentRun) next.push(r);
+      else droppedBelowMinCurrentRun += 1;
+    }
+    filtered = next;
+  }
+
+  filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
       case 'longest':
@@ -501,10 +536,10 @@ export function buildDailyTokenSecondDiffSignRuns(
   });
 
   let droppedTopSources = 0;
-  let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  let kept = filtered;
+  if (top > 0 && filtered.length > top) {
+    droppedTopSources = filtered.length - top;
+    kept = filtered.slice(0, top);
   }
 
   return {
@@ -514,6 +549,7 @@ export function buildDailyTokenSecondDiffSignRuns(
     minDays,
     top,
     sort,
+    minCurrentRun,
     source: sourceFilter,
     totalTokens,
     totalSources,
@@ -521,6 +557,7 @@ export function buildDailyTokenSecondDiffSignRuns(
     droppedZeroTokens,
     droppedSourceFilter,
     droppedSparseSources,
+    droppedBelowMinCurrentRun,
     droppedTopSources,
     sources: kept,
   };

@@ -294,3 +294,90 @@ test('daily-token-second-diff-sign-runs: deterministic source-asc tiebreak', () 
   assert.equal(r.sources[0]!.source, 'a');
   assert.equal(r.sources[1]!.source, 'b');
 });
+
+// ---- minCurrentRun filter --------------------------------------------------
+
+test('daily-token-second-diff-sign-runs: rejects bad minCurrentRun', () => {
+  assert.throws(() =>
+    buildDailyTokenSecondDiffSignRuns([], { minCurrentRun: -1 }),
+  );
+  assert.throws(() =>
+    buildDailyTokenSecondDiffSignRuns([], { minCurrentRun: 1.5 }),
+  );
+});
+
+test('daily-token-second-diff-sign-runs: minCurrentRun=0 is no-op', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T10:00:00.000Z', 'a', 1),
+    ql('2026-04-02T10:00:00.000Z', 'a', 2),
+    ql('2026-04-03T10:00:00.000Z', 'a', 4),
+  ];
+  const r = buildDailyTokenSecondDiffSignRuns(q, {
+    generatedAt: GEN,
+    minCurrentRun: 0,
+  });
+  assert.equal(r.minCurrentRun, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinCurrentRun, 0);
+});
+
+test('daily-token-second-diff-sign-runs: minCurrentRun drops fragile-regime rows', () => {
+  // a: 1,2,4,8,16 -> all concaveup, currentRunLength=3
+  // b: 1,2,4 -> currentRunLength=1 (single d2 point, concaveup)
+  // c: 10,20,30,40,30 -> diffs 10,10,10,-10; d2: 0,0,-20; signs: flat, flat, down; currentRun = 1 (down)
+  const q: QueueLine[] = [
+    ql('2026-04-01T10:00:00.000Z', 'a', 1),
+    ql('2026-04-02T10:00:00.000Z', 'a', 2),
+    ql('2026-04-03T10:00:00.000Z', 'a', 4),
+    ql('2026-04-04T10:00:00.000Z', 'a', 8),
+    ql('2026-04-05T10:00:00.000Z', 'a', 16),
+    ql('2026-04-01T10:00:00.000Z', 'b', 1),
+    ql('2026-04-02T10:00:00.000Z', 'b', 2),
+    ql('2026-04-03T10:00:00.000Z', 'b', 4),
+    ql('2026-04-01T10:00:00.000Z', 'c', 10),
+    ql('2026-04-02T10:00:00.000Z', 'c', 20),
+    ql('2026-04-03T10:00:00.000Z', 'c', 30),
+    ql('2026-04-04T10:00:00.000Z', 'c', 40),
+    ql('2026-04-05T10:00:00.000Z', 'c', 30),
+  ];
+  const r = buildDailyTokenSecondDiffSignRuns(q, {
+    generatedAt: GEN,
+    minCurrentRun: 2,
+  });
+  assert.equal(r.totalSources, 3);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'a');
+  assert.equal(r.droppedBelowMinCurrentRun, 2);
+});
+
+test('daily-token-second-diff-sign-runs: minCurrentRun precedes top cap', () => {
+  // Filter first, then top cap. If 5 sources, min drops 3, top=1 keeps 1 of remaining 2.
+  const q: QueueLine[] = [];
+  // 5 doubling sources, all currentRunLength = 3
+  for (const s of ['a', 'b', 'c', 'd', 'e']) {
+    q.push(
+      ql('2026-04-01T10:00:00.000Z', s, 1),
+      ql('2026-04-02T10:00:00.000Z', s, 2),
+      ql('2026-04-03T10:00:00.000Z', s, 4),
+      ql('2026-04-04T10:00:00.000Z', s, 8),
+      ql('2026-04-05T10:00:00.000Z', s, 16),
+    );
+  }
+  const r = buildDailyTokenSecondDiffSignRuns(q, {
+    generatedAt: GEN,
+    minCurrentRun: 5, // all currentRunLength = 3, so all drop
+    top: 2,
+  });
+  assert.equal(r.droppedBelowMinCurrentRun, 5);
+  assert.equal(r.sources.length, 0);
+  // top cap doesn't trigger because nothing survived the filter
+  assert.equal(r.droppedTopSources, 0);
+});
+
+test('daily-token-second-diff-sign-runs: minCurrentRun echoed in report', () => {
+  const r = buildDailyTokenSecondDiffSignRuns([], {
+    generatedAt: GEN,
+    minCurrentRun: 7,
+  });
+  assert.equal(r.minCurrentRun, 7);
+});

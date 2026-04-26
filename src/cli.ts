@@ -6610,6 +6610,11 @@ program
     'sort key: tokens (default) | longest | concaveup | concavedown | flat | current | ndays | source. Applied before --top.',
     'tokens',
   )
+  .option(
+    '--min-current-run <n>',
+    'display filter: hide sources whose currentRunLength is below n (the trailing same-sign d2 stretch). Useful for surfacing only sources sitting in a deeply persistent regime right now. Counts surface as droppedBelowMinCurrentRun. Default 0 = no floor.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -6620,6 +6625,7 @@ program
         minDays: string;
         top: string;
         sort: string;
+        minCurrentRun: string;
         json?: boolean;
       },
       cmd,
@@ -6634,6 +6640,12 @@ program
         const top = Number.parseInt(opts.top, 10);
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const minCurrentRun = Number.parseInt(opts.minCurrentRun, 10);
+        if (!Number.isInteger(minCurrentRun) || minCurrentRun < 0) {
+          throw new Error(
+            `--min-current-run must be a non-negative integer (got ${opts.minCurrentRun})`,
+          );
         }
         const validSorts = [
           'tokens',
@@ -6657,6 +6669,7 @@ program
           source: opts.source ?? null,
           minDays,
           top,
+          minCurrentRun,
           sort: opts.sort as
             | 'tokens'
             | 'longest'

@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.29 — 2026-04-26
+
+### Changed
+
+- `daily-token-second-difference-sign-runs`: new display filter
+  `--min-current-run <n>` drops rows whose `currentRunLength` is
+  strictly below `n`. Default 0 = no-op. Suppressed rows surface
+  as `droppedBelowMinCurrentRun`. Filter order:
+  `since`/`until` window → `source` filter → `minDays` →
+  `minCurrentRun` → sort → `top` cap.
+
+  Headline use: `--min-current-run 2` keeps only sources whose
+  *most recent* d2 sign matched the d2 sign immediately before it
+  — i.e. sources whose acceleration regime has *persisted at least
+  one step* and is therefore not a fragile single-point flip. A
+  `currentRunLength=1` row means the regime literally just changed
+  on the latest d2 point; the trend has no inertia. With
+  `--min-current-run 2` you get only sources sitting in a real
+  regime right now.
+
+### Live smoke (refinement, against `~/.config/pew/queue.jsonl`, `--sort current --top 5 --min-current-run 2`)
+
+```
+pew-insights daily-token-second-difference-sign-runs
+as of: 2026-04-26T05:27:03.316Z    sources: 6 (shown 0)    tokens: 9,004,047,980    min-days: 3    min-current-run: 2    top: 5    sort: current
+dropped: 0 bad hour_start, 0 zero tokens, 0 source-filter, 0 below min-days, 6 below min-current-run, 0 below top cap
+(d2[i] = v[i+2] - 2*v[i+1] + v[i]; sign(d2) > 0 = concaveup (acceleration), < 0 = concavedown (deceleration), == 0 = flat (linear segment); a "run" is a maximal same-sign d2 stretch; length is # of d2 points; current = the trailing run ending on the last d2 point)
+
+  no source rows after filters. nothing to chart.
+```
+
+That empty table *is* the finding: across all six sources in the
+local pew queue, *every single one* has a `currentRunLength` of
+exactly 1 — the most recent d2 point flipped sign relative to the
+one before it. None of them is currently in a sustained
+acceleration or deceleration regime; every source is at a local
+inflection on its daily-tokens trace. `droppedBelowMinCurrentRun:
+6` confirms all six were filtered out by the `>= 2` floor (the
+`--top 5` cap also incidentally would have dropped the same
+low-volume source whose name contains a substring the workspace
+pre-push guardrail bans, but the min-current-run filter consumed
+all six rows first, so `droppedTopSources: 0`).
+
+For comparison, dropping the floor to `--min-current-run 1`
+returns all five top-by-current sources (`claude-code`, `codex`,
+`hermes`, `openclaw`, `opencode`) — every `curLen=1` — confirming
+the same finding from a different angle: the local pew queue is in
+a "regime-change" moment across the board, not a "regime-
+persistence" one. That's the specific structural state the new
+flag is designed to surface, and it would be invisible to every
+other shipped subcommand.
+
 ## 0.6.28 — 2026-04-26
 
 ### Added
