@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.48 — 2026-04-26
+
+### Changed
+
+- `source-active-hour-span`: refinement filter
+  `--min-largest-quiet-gap <n>` drops rows whose `largestQuietGap`
+  (longest stretch of dead hours-of-day on the circular 24-cycle)
+  is strictly below `n`. `n` in `[0, 24]`. Default 0 = no filter.
+  Suppressed rows surface as `droppedBelowMinLargestQuietGap`.
+
+  Complementary to `--max-span`: `--max-span` filters on the
+  *width of the active cover*; `--min-largest-quiet-gap` filters
+  on the *width of the single longest quiet block*. The two
+  surface different framings of the same circular partition
+  (span + gap = 24 when activeHours>0). Together they pick out
+  sources with both a narrow waking window AND a real off-shift.
+
+  Filter order: `since`/`until` window -> `source` filter ->
+  `minTokens` -> `maxSpan` -> `minLargestQuietGap` -> sort ->
+  `top` cap.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, `--min-largest-quiet-gap 6 --sort gap`)
+
+```
+pew-insights source-active-hour-span --min-largest-quiet-gap 6 --sort gap
+as of: 2026-04-26T12:21:13.987Z    sources: 6 (shown 2)    tokens: 9,193,333,877    min-tokens: 1,000    max-span: —    min-largest-quiet-gap: 6    top: —    sort: gap
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 0 above max-span, 4 below min-largest-quiet-gap, 0 below top cap
+(per-source minimum-arc cover on the circular UTC 24-hour clock; span = 24 - largestQuietGap; density = activeHours / circularSpan)
+
+per-source UTC hour-of-day waking-window cover (sorted by gap; ties: source asc)
+source           firstDay    lastDay     buckets  activeHours  circularSpan  spanStart  spanEnd  largestQuietGap  spanDensity  tokens
+---------------  ----------  ----------  -------  -----------  ------------  ---------  -------  ---------------  -----------  -----------
+ide-assistant-A  2025-07-30  2026-04-20  333      14           14            01         14       10               1.0000       1,885,727
+codex            2026-04-13  2026-04-20  64       16           16            01         16       8                1.0000       809,624,660
+```
+
+Reading: with `--min-largest-quiet-gap 6`, 4 of 6 sources drop
+out — `claude-code` (gap=4, just under), and `hermes`,
+`openclaw`, `opencode` (gap=0, full 24-hour coverage). The two
+that survive are the only sources on this queue with a
+genuinely concentrated daily pattern: `ide-assistant-A` runs
+01..14 UTC with a 10-hour quiet block 15..00, and `codex` runs
+01..16 UTC with an 8-hour quiet block 17..00. Sorted by gap
+desc, the *most* concentrated source by quiet-block measure
+surfaces first, regardless of token volume — which is the
+right framing for the "which sources have an actual off
+shift?" question. (Note also that the refinement bumps the
+version to 0.6.48 and bundles the chore + docs + feature in a
+single push, matching the existing release rhythm in this
+repo.)
+
 ## 0.6.47 — 2026-04-26
 
 ### Added

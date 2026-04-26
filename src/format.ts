@@ -6682,12 +6682,12 @@ export function renderSourceActiveHourSpan(
   lines.push(chalk.bold.cyan('pew-insights source-active-hour-span'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    max-span: ${r.maxSpan === 0 ? '\u2014' : r.maxSpan}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    max-span: ${r.maxSpan === 0 ? '\u2014' : r.maxSpan}    min-largest-quiet-gap: ${r.minLargestQuietGap === 0 ? '\u2014' : r.minLargestQuietGap}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedAboveMaxSpan)} above max-span, ${formatNumber(r.droppedTopSources)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedAboveMaxSpan)} above max-span, ${formatNumber(r.droppedBelowMinLargestQuietGap)} below min-largest-quiet-gap, ${formatNumber(r.droppedTopSources)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

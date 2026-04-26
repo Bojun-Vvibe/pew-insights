@@ -397,3 +397,78 @@ test('build: maxSpan=24 keeps everyone (effective no-op while echoing the knob)'
   assert.equal(r.sources.length, 1);
   assert.equal(r.droppedAboveMaxSpan, 0);
 });
+
+// ---- refinement: --min-largest-quiet-gap (v0.6.48) -----------------------
+
+test('build: rejects minLargestQuietGap out of [0,24]', () => {
+  assert.throws(() =>
+    buildSourceActiveHourSpan([], { minLargestQuietGap: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceActiveHourSpan([], { minLargestQuietGap: 25 }),
+  );
+  assert.throws(() =>
+    buildSourceActiveHourSpan([], { minLargestQuietGap: 1.5 }),
+  );
+});
+
+test('build: minLargestQuietGap=0 is no-op (default)', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-10T09:00:00.000Z', 'a', 5000),
+    ql('2026-04-10T10:00:00.000Z', 'b', 5000),
+  ];
+  const r = buildSourceActiveHourSpan(q, {
+    generatedAt: GEN,
+    minLargestQuietGap: 0,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinLargestQuietGap, 0);
+});
+
+test('build: minLargestQuietGap surfaces only sources with a real off-shift', () => {
+  const q: QueueLine[] = [];
+  // 'allday': covers all 24 hours -> largestQuietGap=0
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'allday', 1000));
+  }
+  // 'sleeper': covers hours 0..15 -> largestQuietGap=8 (block 16..23)
+  for (let h = 0; h < 16; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'sleeper', 1000));
+  }
+  const r = buildSourceActiveHourSpan(q, {
+    generatedAt: GEN,
+    minLargestQuietGap: 6,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'sleeper');
+  assert.equal(r.droppedBelowMinLargestQuietGap, 1);
+});
+
+test('build: minLargestQuietGap and maxSpan compose by intersection', () => {
+  const q: QueueLine[] = [];
+  // 'a' covers 0..15 -> span=16, gap=8
+  for (let h = 0; h < 16; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'a', 1000));
+  }
+  // 'b' covers 0..3 -> span=4, gap=20
+  for (let h = 0; h < 4; h++) {
+    const hh = String(h).padStart(2, '0');
+    q.push(ql(`2026-04-10T${hh}:00:00.000Z`, 'b', 1000));
+  }
+  // both have a substantial quiet gap; only 'b' has a narrow span
+  const r = buildSourceActiveHourSpan(q, {
+    generatedAt: GEN,
+    maxSpan: 12,
+    minLargestQuietGap: 6,
+    minTokens: 1000,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.droppedAboveMaxSpan, 1); // 'a' fails first gate
+  assert.equal(r.droppedBelowMinLargestQuietGap, 0); // 'a' never reached second gate
+});

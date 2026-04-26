@@ -7621,6 +7621,11 @@ program
     'display filter (refinement, v0.6.47): hide sources whose circularSpan is strictly *above* n. n in [0,24]. Default 0 = no filter (disabled). Use --max-span 12 to surface only sources whose minimum-arc cover fits inside half the day; use --max-span 24 to keep all rows. Counts surface as droppedAboveMaxSpan.',
     '0',
   )
+  .option(
+    '--min-largest-quiet-gap <n>',
+    'display filter (refinement, v0.6.48): hide sources whose largestQuietGap (longest stretch of dead hours-of-day on the circular 24-cycle) is strictly below n. n in [0,24]. Default 0 = no filter. Surfaces only sources with a meaningful "off shift" (e.g. --min-largest-quiet-gap 6 hides any source whose longest dead stretch is shorter than 6 hours). Complementary to --max-span: this filters on the width of the *single longest quiet block*, --max-span filters on the width of the *active cover*. Counts surface as droppedBelowMinLargestQuietGap.',
+    '0',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -7632,6 +7637,7 @@ program
         top: string;
         sort: string;
         maxSpan: string;
+        minLargestQuietGap: string;
         json?: boolean;
       },
       cmd,
@@ -7655,6 +7661,16 @@ program
             `--max-span must be an integer in [0, 24] (got ${opts.maxSpan})`,
           );
         }
+        const minLargestQuietGap = Number.parseInt(opts.minLargestQuietGap, 10);
+        if (
+          !Number.isInteger(minLargestQuietGap) ||
+          minLargestQuietGap < 0 ||
+          minLargestQuietGap > 24
+        ) {
+          throw new Error(
+            `--min-largest-quiet-gap must be an integer in [0, 24] (got ${opts.minLargestQuietGap})`,
+          );
+        }
         const validSorts = ['tokens', 'span', 'density', 'active', 'gap', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -7669,6 +7685,7 @@ program
           minTokens,
           top,
           maxSpan,
+          minLargestQuietGap,
           sort: opts.sort as
             | 'tokens'
             | 'span'

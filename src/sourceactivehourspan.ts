@@ -127,6 +127,21 @@ export interface SourceActiveHourSpanOptions {
    * knob.
    */
   maxSpan?: number;
+  /**
+   * Display filter (refinement, v0.6.48): drop rows whose
+   * `largestQuietGap` is strictly below this integer threshold.
+   * Useful for surfacing only sources with a *meaningful* sleep
+   * block on the 24-clock (e.g. --min-largest-quiet-gap 6 hides
+   * any source whose longest dead stretch is shorter than 6
+   * hours, leaving sources with a real "off shift"). Range
+   * 0..24; default 0 = no filter. Complementary to `--max-span`:
+   * `--max-span` filters on the *width of the active cover*,
+   * `--min-largest-quiet-gap` filters on the *width of the
+   * single longest quiet block*. The two compose by intersection
+   * and surface different framings of the same circular
+   * partition (span + gap = 24 when activeHours>0).
+   */
+  minLargestQuietGap?: number;
   generatedAt?: string;
 }
 
@@ -162,6 +177,7 @@ export interface SourceActiveHourSpanReport {
   top: number;
   sort: SourceActiveHourSpanSort;
   maxSpan: number;
+  minLargestQuietGap: number;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -170,6 +186,7 @@ export interface SourceActiveHourSpanReport {
   droppedSourceFilter: number;
   droppedSparseSources: number;
   droppedAboveMaxSpan: number;
+  droppedBelowMinLargestQuietGap: number;
   droppedTopSources: number;
   sources: SourceActiveHourSpanSourceRow[];
 }
@@ -263,6 +280,16 @@ export function buildSourceActiveHourSpan(
   if (!Number.isInteger(maxSpan) || maxSpan < 0 || maxSpan > 24) {
     throw new Error(
       `maxSpan must be an integer in [0, 24] (got ${opts.maxSpan})`,
+    );
+  }
+  const minLargestQuietGap = opts.minLargestQuietGap ?? 0;
+  if (
+    !Number.isInteger(minLargestQuietGap) ||
+    minLargestQuietGap < 0 ||
+    minLargestQuietGap > 24
+  ) {
+    throw new Error(
+      `minLargestQuietGap must be an integer in [0, 24] (got ${opts.minLargestQuietGap})`,
     );
   }
   const sort: SourceActiveHourSpanSort = opts.sort ?? 'tokens';
@@ -393,6 +420,17 @@ export function buildSourceActiveHourSpan(
     filtered = next;
   }
 
+  // refinement filter (v0.6.48): min-largest-quiet-gap
+  let droppedBelowMinLargestQuietGap = 0;
+  if (minLargestQuietGap > 0) {
+    const next: SourceActiveHourSpanSourceRow[] = [];
+    for (const r of filtered) {
+      if (r.largestQuietGap >= minLargestQuietGap) next.push(r);
+      else droppedBelowMinLargestQuietGap += 1;
+    }
+    filtered = next;
+  }
+
   filtered.sort((a, b) => {
     let primary = 0;
     switch (sort) {
@@ -435,6 +473,7 @@ export function buildSourceActiveHourSpan(
     top,
     sort,
     maxSpan,
+    minLargestQuietGap,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
@@ -443,6 +482,7 @@ export function buildSourceActiveHourSpan(
     droppedSourceFilter,
     droppedSparseSources,
     droppedAboveMaxSpan,
+    droppedBelowMinLargestQuietGap,
     droppedTopSources,
     sources: kept,
   };
