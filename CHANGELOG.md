@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.128 — 2026-04-27
+
+### Added
+
+- `source-row-token-katz-fd`: per-source **Katz Fractal
+  Dimension (KFD)** of Katz (1988, Comput. Biol. Med.
+  18(3):145-156) on the per-row `total_tokens` time-ordered
+  sequence treated as a 2D planar curve.
+
+  Mathematical justification.  Treating the sequence
+  `v[0..N-1]` as the 2D curve `(i, v[i])`, define on the
+  Katz-normalised curve (values divided by the raw average
+  step length `a = (1/(N-1)) sum_i sqrt(1 + (v[i+1]-v[i])^2)`,
+  Katz's published scale-invariance trick):
+
+  - `L` = total Euclidean path length,
+  - `d` = max Euclidean distance from the starting point,
+  - `n = N - 1` = number of unit steps.
+
+  Then `KFD = log10(n) / (log10(n) + log10(d/L))`. A perfectly
+  straight curve has `d = L`, so `log(d/L) = 0` and `KFD = 1`.
+  A maximally coiled / space-filling curve has `L >> d`, so
+  `log(d/L)` is a large negative number and `KFD -> 2`.
+
+  Genuinely orthogonal to the existing `source-row-token-higuchi-fd`
+  even though both are "fractal dimensions". HFD is the slope of
+  `log L(k)` vs `log k` over multiple sub-sampling strides
+  `k = 1..kMax` — i.e. a **scaling exponent** under
+  coarse-graining. KFD uses **only stride 1** (the raw
+  consecutive-difference path length) and compares it to a
+  **single global geometric reference** (the maximum chord `d`).
+  HFD averages roughness across all strides; KFD is dominated by
+  the single largest excursion via `d`. The two coincide only
+  for ideal self-similar curves with a clean `L(k) ~ k^{-D}`
+  law; on empirical mixed-regime series with drift,
+  heteroscedasticity, or short bursts, **rankings by HFD vs by
+  KFD do not preserve order**.
+
+  Validates `minRows >= 4`, surfaces honest drops for
+  `droppedZeroVariance` (sigma=0; degenerate log argument) and
+  `droppedDegenerate` (L<=0 / d<=0 / denominator zero). Clamps
+  KFD to `[1, 2]` and preserves the raw value in `kfdRaw`.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (1,678 rows, 6 sources; one source name redacted to
+  `vscode-XXX` for policy compliance):
+
+  ```
+  pew-insights source-row-token-katz-fd
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,678
+  min-rows: 16   detrend: no   top: -   sort: kfd-asc
+
+  per-source row-token Katz Fractal Dimension (sorted by kfd-asc; ties: source asc)
+  source       rows  sigma         L       d       n    KFD     kfdRaw
+  -----------  ----  ------------  ------  ------  ---  ------  ------
+  opencode      347  13,132,016.38  541.41  346.00  346  1.0829  1.0829
+  openclaw      453   4,875,317.41  733.41  452.00  452  1.0860  1.0860
+  claude-code   299  17,605,167.00  479.98  298.00  298  1.0913  1.0913
+  hermes        182     987,306.18  285.25  181.01  181  1.0959  1.0959
+  vscode-XXX    333      14,933.73  554.67  332.00  332  1.0970  1.0970
+  codex          64  14,252,148.98   97.64   63.00   63   1.1183  1.1183
+  ```
+
+  Reading: every source lands in the `1.08-1.12` band, which
+  corresponds to "near-monotone with mild oscillation" — the
+  per-row token-count curve is dominated by its drift along the
+  i-axis (the chord `d` is essentially `n` for all sources, so
+  `d/L > 0.62` everywhere) and only mildly coiled by short
+  excursions. `codex` (the shortest series at N=64) tops the
+  table at KFD = 1.1183, consistent with its much smaller `d/L`
+  ratio (63 / 97.64 = 0.645) — fewer rows means less
+  cancellation between excursions. `opencode` lands lowest at
+  KFD = 1.0829 because its 347-row run averages out
+  short-burst roughness against the dominant temporal chord.
+
+  Compare with the DFA-2 alpha column from 0.6.127 on the same
+  data:
+
+  - `opencode`: KFD = 1.0829 (lowest, smoothest) vs.
+    DFA-2 alpha = 1.0977 (highest, most drift-dominated).
+    The two estimators **invert** the ranking — DFA's
+    detrended-fluctuation framing rewards persistent drift
+    while KFD's chord-vs-arc framing rewards a chord that
+    nearly equals the arc.
+  - `codex`: KFD = 1.1183 (highest, most coiled) vs.
+    DFA-2 alpha = 0.7375 (second-lowest, near-uncorrelated).
+    Same inversion in the opposite direction.
+
+  Concrete confirmation that KFD and the existing scaling-based
+  lenses are not redundant.
+
 ## 0.6.127 — 2026-04-27
 
 ### Added
