@@ -180,3 +180,64 @@ test('sample-entropy: report carries options and source asc tiebreak', () => {
   assert.equal(r.sources[0]!.source, 'aaa');
   assert.equal(r.sources[1]!.source, 'zzz');
 });
+
+test('sample-entropy --min-template-matches: rejects negative / non-integer', () => {
+  assert.throws(() =>
+    buildSourceRowTokenSampleEntropy([], { minTemplateMatches: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenSampleEntropy([], { minTemplateMatches: 1.5 }),
+  );
+});
+
+test('sample-entropy --min-template-matches: 0 default = no floor', () => {
+  // alternating series gives B=72; ensure default keeps the row
+  const data = series(
+    Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? 1 : 2)),
+  );
+  const r = buildSourceRowTokenSampleEntropy(data, { generatedAt: GEN });
+  assert.equal(r.minTemplateMatches, 0);
+  assert.equal(r.droppedBelowMinTemplateMatches, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.bMatches, 72);
+});
+
+test('sample-entropy --min-template-matches: high threshold drops low-B rows', () => {
+  // alternating series: B=72. Set min-template-matches to 100 -> drop
+  const data = series(
+    Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? 1 : 2)),
+  );
+  const r = buildSourceRowTokenSampleEntropy(data, {
+    generatedAt: GEN,
+    minTemplateMatches: 100,
+  });
+  assert.equal(r.droppedBelowMinTemplateMatches, 1);
+  assert.equal(r.sources.length, 0);
+});
+
+test('sample-entropy --min-template-matches: degenerate rows are exempt', () => {
+  // Construct a series where length-m matches don't exist anywhere
+  // (B=0 -> degenerate). All-distinct values with small tolerance:
+  // ascending integers 1..20, sigma~5.77, r=0.001 -> tol~0.006 < 1
+  // -> no two windows match. degenerate=true.
+  const data = series(Array.from({ length: 20 }, (_, i) => i + 1));
+  const r = buildSourceRowTokenSampleEntropy(data, {
+    generatedAt: GEN,
+    r: 0.001,
+    minTemplateMatches: 1000, // very high
+  });
+  // The row is degenerate (B=0). Despite the high threshold, exempt.
+  assert.equal(r.degenerateNoMatches + r.degenerateNoExtensions, 1);
+  assert.equal(r.droppedBelowMinTemplateMatches, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.degenerate, true);
+});
+
+test('sample-entropy --min-template-matches: report carries the field', () => {
+  const r = buildSourceRowTokenSampleEntropy([], {
+    generatedAt: GEN,
+    minTemplateMatches: 50,
+  });
+  assert.equal(r.minTemplateMatches, 50);
+  assert.equal(r.droppedBelowMinTemplateMatches, 0);
+});
