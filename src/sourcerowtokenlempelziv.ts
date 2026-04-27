@@ -124,6 +124,16 @@
  * Determinism: pure builder. Wall clock only via
  * `opts.generatedAt`. Sort tiebreak in all sort modes is
  * `source` asc.
+ *
+ * Companion lenses in the suite for cross-comparison:
+ *   - `source-row-token-permutation-entropy` (ordinal entropy)
+ *   - `source-row-token-sample-entropy` (single-scale templates)
+ *   - `source-row-token-mann-kendall-trend` (directional trend)
+ *   - `source-row-token-runs-test` (sign-run dichotomy)
+ *   - `source-row-token-turning-point-count` (extremum counts)
+ *   - `source-row-token-autocorrelation-lag1` (linear lag-1)
+ *   - `source-row-token-hurst-rs` (R/S scaling exponent)
+ *   - `source-row-token-higuchi-fd` (arc-length scaling exponent)
  */
 import type { QueueLine } from './types.js';
 

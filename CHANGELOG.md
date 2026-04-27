@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.121 — 2026-04-27
+
+### Changed
+
+- `source-row-token-lempel-ziv`: doc polish — appends an
+  explicit "companion lenses" list to the module header so a
+  reader of the source can see at a glance which other
+  `source-row-token-*` lenses to cross-compare against
+  (permutation-entropy, sample-entropy, mann-kendall, runs,
+  turning-point, autocorr-lag1, hurst-rs, higuchi-fd). No
+  production behaviour change, no test change.
+
 ## 0.6.120 — 2026-04-27
 
 ### Changed
