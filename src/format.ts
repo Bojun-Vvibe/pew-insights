@@ -9668,3 +9668,65 @@ export function renderSourceRowTokenPetrosianFd(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenApproximateEntropyReport,
+  SourceRowTokenApproximateEntropyRow,
+} from './sourcerowtokenapproximateentropy.js';
+
+export function renderSourceRowTokenApproximateEntropy(
+  r: SourceRowTokenApproximateEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-approximate-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    m: ${r.m}    r: ${r.r}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (constant series), ${formatNumber(r.droppedDegenerate)} degenerate (non-finite phi), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Approximate Entropy (Pincus 1991, PNAS 88(6):2297-2301) on the per-row total_tokens time-ordered sequence. ApEn(m, r) = phi^m - phi^(m+1) where phi^k = mean over i of ln(C_i^k) and C_i^k is the fraction of length-k templates within Chebyshev distance r*sigma of template i (self-matches included). Lower = more regular, higher = more random. White noise typically ~ 1.6-2.1 at m=2, r=0.2; perfectly periodic ~ 0. Genuinely orthogonal to source-row-token-sample-entropy (SampEn excludes self-matches and is undefined for no-match degeneracies; ApEn is biased toward regularity but always finite for non-constant series), to permutation-entropy (ordinal-only), to hurst-rs / dfa (multi-scale memory), to mann-kendall / runs / turning-point (directional / dichotomy / extremum), to lag-1 autocorrelation (linear, single lag), to lempel-ziv (median-binarised factors), to katz-fd / higuchi-fd / petrosian-fd (path-length / FD), to hjorth-mobility/complexity (variance ratios — magnitude-sensitive), to zero-crossing-rate (single-scale sign count), and to all order-invariant dispersion / shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Approximate Entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'sigma', 'tol', 'phiM', 'phiMp1', 'ApEn'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenApproximateEntropyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.sigma.toFixed(2),
+      s.tolerance.toFixed(2),
+      s.phiM.toFixed(4),
+      s.phiMp1.toFixed(4),
+      s.apEn.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

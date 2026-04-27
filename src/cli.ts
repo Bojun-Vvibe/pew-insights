@@ -118,6 +118,7 @@ import {
   renderSourceRowTokenHjorthMobility,
   renderSourceRowTokenHjorthComplexity,
   renderSourceRowTokenZeroCrossingRate,
+  renderSourceRowTokenApproximateEntropy,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -297,6 +298,7 @@ import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
+import { buildSourceRowTokenApproximateEntropy } from './sourcerowtokenapproximateentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -12584,6 +12586,101 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenDfa(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-approximate-entropy')
+  .description(
+    "Per-source Approximate Entropy (Pincus 1991, PNAS 88(6):2297-2301) on the per-row total_tokens time-ordered sequence. ApEn(m, r) = phi^m - phi^(m+1) where phi^k = mean over i of ln(C_i^k) and C_i^k is the fraction of length-k templates within Chebyshev distance r*sigma of template i (self-matches included). Lower = more regular, higher = more random. White noise typically ~ 1.6-2.1 at m=2, r=0.2; perfectly periodic ~ 0. Genuinely orthogonal to source-row-token-sample-entropy (SampEn excludes self-matches and is undefined for no-match degeneracies; ApEn is biased toward regularity but always finite for non-constant series), to permutation-entropy (ordinal-only), to hurst-rs / dfa (multi-scale memory), to mann-kendall / runs / turning-point (directional / dichotomy / extremum), to lag-1 autocorrelation (linear, single lag), to lempel-ziv (median-binarised factors), to katz-fd / higuchi-fd / petrosian-fd (path-length / FD), to hjorth-mobility/complexity (variance ratios), to zero-crossing-rate (sign count), and to all order-invariant dispersion / shape lenses.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option('--m <n>', 'embedding dimension; integer in [1, 6] (default 2)', '2')
+  .option('--r <n>', 'tolerance multiplier r (tolerance = r * sigma_v); finite positive (default 0.2)', '0.2')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= m+2 (default 12)',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'apen-asc' (default; most-regular first) | 'apen-desc' (most-random first) | 'rows' | 'source'",
+    'apen-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        m: string;
+        r: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const m = Number.parseInt(opts.m, 10);
+        if (!Number.isInteger(m) || m < 1 || m > 6) {
+          throw new Error(`--m must be an integer in [1, 6] (got ${opts.m})`);
+        }
+        const r = Number.parseFloat(opts.r);
+        if (!Number.isFinite(r) || r <= 0) {
+          throw new Error(`--r must be a finite positive number (got ${opts.r})`);
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < m + 2) {
+          throw new Error(
+            `--min-rows must be an integer >= m+2 (=${m + 2}) (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['apen-asc', 'apen-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenApproximateEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          m,
+          r,
+          minRows,
+          top,
+          sort: opts.sort as 'apen-asc' | 'apen-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenApproximateEntropy(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
