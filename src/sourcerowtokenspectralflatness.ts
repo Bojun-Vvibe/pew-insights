@@ -123,6 +123,23 @@ export interface SourceRowTokenSpectralFlatnessOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported `spectralFlatness`. Sources
+   * whose value is strictly below the threshold are suppressed
+   * and counted under `droppedBelowMinSf`. Useful to surface
+   * only the more white-noise-like sources.
+   */
+  minSf?: number | null;
+  /**
+   * Optional upper bound on reported `spectralFlatness`.
+   * Symmetric counterpart to `minSf`. Surfaces in
+   * `droppedAboveMaxSf`. Useful to surface only the more
+   * tonal sources.
+   *
+   * If both are set and `minSf > maxSf`, the constructor
+   * throws — operator error, not a silent empty report.
+   */
+  maxSf?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'sf-asc' (default): SF ascending — most tonal first.
    *   - 'sf-desc':          SF descending — most white-noise-like first.
@@ -163,6 +180,8 @@ export interface SourceRowTokenSpectralFlatnessReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  minSf: number | null;
+  maxSf: number | null;
   sort: SourceRowTokenSpectralFlatnessSort;
   totalSources: number;
   totalRowsKept: number;
@@ -173,6 +192,8 @@ export interface SourceRowTokenSpectralFlatnessReport {
   droppedBelowMinRows: number;
   droppedConstantSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinSf: number;
+  droppedAboveMaxSf: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralFlatnessRow[];
 }
@@ -195,6 +216,23 @@ export function buildSourceRowTokenSpectralFlatness(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const minSf = opts.minSf ?? null;
+  if (minSf !== null) {
+    if (!Number.isFinite(minSf)) {
+      throw new Error(`minSf must be a finite number (got ${opts.minSf})`);
+    }
+  }
+  const maxSf = opts.maxSf ?? null;
+  if (maxSf !== null) {
+    if (!Number.isFinite(maxSf)) {
+      throw new Error(`maxSf must be a finite number (got ${opts.maxSf})`);
+    }
+  }
+  if (minSf !== null && maxSf !== null && minSf > maxSf) {
+    throw new Error(
+      `minSf (${minSf}) must be <= maxSf (${maxSf})`,
+    );
   }
   const sort = opts.sort ?? 'sf-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -387,10 +425,28 @@ export function buildSourceRowTokenSpectralFlatness(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinSf = 0;
+  let droppedAboveMaxSf = 0;
+  let postRows = allRows;
+  if (minSf !== null || maxSf !== null) {
+    const kept: SourceRowTokenSpectralFlatnessRow[] = [];
+    for (const row of postRows) {
+      if (minSf !== null && row.spectralFlatness < minSf) {
+        droppedBelowMinSf += 1;
+        continue;
+      }
+      if (maxSf !== null && row.spectralFlatness > maxSf) {
+        droppedAboveMaxSf += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -400,6 +456,8 @@ export function buildSourceRowTokenSpectralFlatness(
     source: sourceFilter,
     minRows,
     top,
+    minSf,
+    maxSf,
     sort,
     totalSources,
     totalRowsKept,
@@ -410,6 +468,8 @@ export function buildSourceRowTokenSpectralFlatness(
     droppedBelowMinRows,
     droppedConstantSeries,
     droppedDegenerate,
+    droppedBelowMinSf,
+    droppedAboveMaxSf,
     droppedBelowTopCap,
     sources: finalSources,
   };

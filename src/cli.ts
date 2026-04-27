@@ -12964,6 +12964,14 @@ program
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-sf <n>',
+    'suppress sources whose spectralFlatness is strictly below this threshold; surfaces them under droppedBelowMinSf. Useful to surface only the more white-noise-like sources.',
+  )
+  .option(
+    '--max-sf <n>',
+    'suppress sources whose spectralFlatness is strictly above this threshold; surfaces them under droppedAboveMaxSf. Symmetric to --min-sf; useful to surface the more tonal sources.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'sf-asc' (default; most tonal first) | 'sf-desc' (most white-noise-like first) | 'rows' | 'source'",
     'sf-asc',
@@ -12977,6 +12985,8 @@ program
         source?: string;
         minRows: string;
         top?: string;
+        minSf?: string;
+        maxSf?: string;
         sort: string;
         json?: boolean;
       },
@@ -12999,6 +13009,22 @@ program
           }
           top = t;
         }
+        let minSf: number | null = null;
+        if (opts.minSf != null) {
+          const v = Number.parseFloat(opts.minSf);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--min-sf must be a finite number (got ${opts.minSf})`);
+          }
+          minSf = v;
+        }
+        let maxSf: number | null = null;
+        if (opts.maxSf != null) {
+          const v = Number.parseFloat(opts.maxSf);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--max-sf must be a finite number (got ${opts.maxSf})`);
+          }
+          maxSf = v;
+        }
         const validSorts = ['sf-asc', 'sf-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -13012,6 +13038,8 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minSf,
+          maxSf,
           sort: opts.sort as 'sf-asc' | 'sf-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

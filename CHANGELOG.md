@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.145 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-flatness` gains two refinement
+  threshold flags that compose with the 0.6.144 base lens
+  without changing default behaviour:
+
+  - `--min-sf <v>`: suppress sources whose `spectralFlatness`
+    is strictly below `v`. Suppressed sources surface in
+    `droppedBelowMinSf`. Useful to surface only the more
+    white-noise-like (less structured) sources.
+  - `--max-sf <v>`: symmetric counterpart. Suppress sources
+    whose `spectralFlatness` is strictly above `v`. Surfaces
+    in `droppedAboveMaxSf`. Useful to surface only the more
+    tonal (more structured / periodic) sources.
+
+  Both default to `null` (no filter); both must be finite
+  if set; if both are set and `min > max` the constructor
+  throws (operator error, not a silent empty report).
+  Pure post-compute filters — they do not affect the
+  underlying spectral-flatness computation, only which rows
+  are reported. Compose cleanly with `--top`: filter is
+  applied first, then the cap.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,712
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-flatness --max-sf 0.4
+  per-source row-token spectral flatness (sorted by sf-asc; ties: source asc)
+  source       rows  bins  gMean      aMean      SF      domBin  domShare
+  -----------  ----  ----  ---------  ---------  ------  ------  --------
+  opencode     358   179   1.642e+16  5.990e+16  0.2740  2       0.1055
+  claude-code  299   149   2.988e+16  9.298e+16  0.3214  1       0.2000
+  openclaw     464   232   3.973e+15  1.086e+16  0.3659  2       0.0920
+  codex        64    32    5.030e+15  1.301e+16  0.3867  1       0.2778
+  ```
+
+  2 sources suppressed under `droppedAboveMaxSf` (`vscode-XXX`
+  0.4889, `hermes` 0.5080). Reading: `--max-sf 0.4` isolates
+  the four sources whose per-row token sequence carries
+  detectable low-frequency structure (dominant period =
+  `n / dominantBin`, in this filtered set always the longest
+  half- or full-window oscillation, i.e. the multi-day burst
+  envelope). The two suppressed sources sit in the more
+  white-noise-like band (SF > 0.48) — their per-row token
+  sequences look closer to unstructured noise across the
+  Fourier basis. The flag pair lets operators read either end
+  of the spectrum without re-running the lens.
+
+  Tests: 3069 → 3078 (+9 in this refinement, +37 cumulative
+  since the 0.6.143 baseline).
+
 ## 0.6.144 — 2026-04-28
 
 ### Added

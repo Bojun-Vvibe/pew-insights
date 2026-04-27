@@ -394,3 +394,160 @@ test('spectral-flatness: degenerate counter remains 0 in normal input', () => {
   );
   assert.equal(r.droppedDegenerate, 0);
 });
+
+// --- 0.6.145 refinement: --min-sf / --max-sf threshold filters ---
+
+test('spectral-flatness: minSf defaults to null and surfaces no drops', () => {
+  const r = buildSourceRowTokenSpectralFlatness(
+    series([1, 2, 3, 4, 5, 6, 7, 8]),
+    { generatedAt: GEN },
+  );
+  assert.equal(r.minSf, null);
+  assert.equal(r.maxSf, null);
+  assert.equal(r.droppedBelowMinSf, 0);
+  assert.equal(r.droppedAboveMaxSf, 0);
+});
+
+test('spectral-flatness: minSf suppresses sources strictly below threshold', () => {
+  // tone -> SF tiny; noise -> SF moderate
+  const tone: number[] = [];
+  for (let t = 0; t < 64; t++) tone.push(100 + 50 * Math.sin((2 * Math.PI * 4 * t) / 64));
+  let s = 1;
+  const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const noise: number[] = [];
+  for (let t = 0; t < 64; t++) noise.push(Math.floor(rng() * 1000));
+  const queue = [
+    ...series(tone, 'tone'),
+    ...series(noise, 'noise'),
+  ];
+  const r = buildSourceRowTokenSpectralFlatness(queue, {
+    minSf: 0.1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'noise');
+  assert.equal(r.droppedBelowMinSf, 1);
+});
+
+test('spectral-flatness: maxSf suppresses sources strictly above threshold', () => {
+  const tone: number[] = [];
+  for (let t = 0; t < 64; t++) tone.push(100 + 50 * Math.sin((2 * Math.PI * 4 * t) / 64));
+  let s = 1;
+  const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const noise: number[] = [];
+  for (let t = 0; t < 64; t++) noise.push(Math.floor(rng() * 1000));
+  const queue = [
+    ...series(tone, 'tone'),
+    ...series(noise, 'noise'),
+  ];
+  const r = buildSourceRowTokenSpectralFlatness(queue, {
+    maxSf: 0.1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'tone');
+  assert.equal(r.droppedAboveMaxSf, 1);
+});
+
+test('spectral-flatness: minSf + maxSf band keeps middle and counts both sides', () => {
+  // tone (SF tiny), mid-noise (SF moderate), heavy-noise (SF higher)
+  const tone: number[] = [];
+  for (let t = 0; t < 64; t++) tone.push(100 + 50 * Math.sin((2 * Math.PI * 4 * t) / 64));
+  let s = 1;
+  const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const mid: number[] = [];
+  for (let t = 0; t < 64; t++) mid.push(Math.floor(rng() * 200) + 100 * Math.sin((2 * Math.PI * 4 * t) / 64));
+  const heavy: number[] = [];
+  for (let t = 0; t < 64; t++) heavy.push(Math.floor(rng() * 1000));
+  const queue = [
+    ...series(tone, 'tone'),
+    ...series(mid, 'mid'),
+    ...series(heavy, 'heavy'),
+  ];
+  const r = buildSourceRowTokenSpectralFlatness(queue, {
+    minSf: 0.05,
+    maxSf: 0.6,
+    generatedAt: GEN,
+  });
+  // tone below 0.05; mid and heavy in band (heavy ~0.5 < 0.6)
+  // We don't assume exact pass/fail of all 3 ; verify the dropped counter
+  // is consistent with sources.length.
+  assert.equal(r.droppedBelowMinSf + r.droppedAboveMaxSf + r.sources.length, 3);
+  assert.ok(r.droppedBelowMinSf >= 1, 'tone should be dropped below min-sf');
+});
+
+test('spectral-flatness: minSf > maxSf throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralFlatness([], {
+        minSf: 0.8,
+        maxSf: 0.2,
+      }),
+    /minSf \(0.8\) must be <= maxSf \(0.2\)/,
+  );
+});
+
+test('spectral-flatness: minSf non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralFlatness([], {
+        minSf: Number.POSITIVE_INFINITY,
+      }),
+    /minSf must be a finite number/,
+  );
+});
+
+test('spectral-flatness: maxSf non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralFlatness([], {
+        maxSf: Number.NaN,
+      }),
+    /maxSf must be a finite number/,
+  );
+});
+
+test('spectral-flatness: thresholds compose with top cap (filter first, then cap)', () => {
+  const tone: number[] = [];
+  for (let t = 0; t < 64; t++) tone.push(100 + 50 * Math.sin((2 * Math.PI * 4 * t) / 64));
+  let s = 1;
+  const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const mid: number[] = [];
+  for (let t = 0; t < 64; t++) mid.push(Math.floor(rng() * 200) + 100 * Math.sin((2 * Math.PI * 4 * t) / 64));
+  const heavy: number[] = [];
+  for (let t = 0; t < 64; t++) heavy.push(Math.floor(rng() * 1000));
+  const queue = [
+    ...series(tone, 'tone'),
+    ...series(mid, 'mid'),
+    ...series(heavy, 'heavy'),
+  ];
+  const r = buildSourceRowTokenSpectralFlatness(queue, {
+    minSf: 0.05,
+    top: 1,
+    sort: 'sf-asc',
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  // After min-sf, tone is dropped; remaining sorted asc -> mid first; cap=1 keeps mid.
+  assert.ok(r.droppedBelowMinSf >= 1);
+  assert.ok(r.droppedBelowTopCap >= 1);
+});
+
+test('spectral-flatness: equal-to-threshold rows are kept (strict comparison)', () => {
+  // Run once to read the SF for a fixed input, then reuse exactly that SF as the threshold.
+  const fixed: number[] = [];
+  for (let t = 0; t < 16; t++) fixed.push(t * (t % 3));
+  const baseline = buildSourceRowTokenSpectralFlatness(series(fixed), {
+    generatedAt: GEN,
+  });
+  assert.equal(baseline.sources.length, 1);
+  const sf = baseline.sources[0]!.spectralFlatness;
+  const r = buildSourceRowTokenSpectralFlatness(series(fixed), {
+    minSf: sf,
+    maxSf: sf,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinSf, 0);
+  assert.equal(r.droppedAboveMaxSf, 0);
+});
