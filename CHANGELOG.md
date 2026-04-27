@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.125 — 2026-04-27
+
+### Changed
+
+- `source-row-token-renyi-entropy`: doc polish — appends a
+  quick-reference block to the module header listing what each
+  α value computes (Hartley at α→0+, Bhattacharyya-derived at
+  α=0.5, the rejected Shannon limit at α=1 with pointers to the
+  correct alternative lenses, collision at α=2, min-entropy at
+  α→∞) and a one-line statement of the monotonicity invariant
+  asserted by the test suite. No production behaviour change,
+  no test change.
+
 ## 0.6.124 — 2026-04-27
 
 ### Changed

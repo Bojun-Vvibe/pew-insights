@@ -109,6 +109,19 @@
  *   - `source-row-token-gini` / `-iqr-ratio` (concentration on values)
  *   - `source-row-token-skewness` / `-kurtosis` (moment shape)
  *   - `source-row-token-burstiness-coefficient` (Goh-Barabási B)
+ *
+ * Quick reference for `--alpha` choices:
+ *   α → 0+ : Hartley / max-entropy log2(K) — counts non-empty bins.
+ *   α = 0.5: ~ 2·log of Bhattacharyya coefficient — rare-bin sensitive.
+ *   α = 1  : Shannon limit (intentionally rejected here; use a
+ *            Shannon lens such as `source-hour-of-day-token-mass-entropy`
+ *            on a different axis, or `source-row-token-permutation-entropy`
+ *            for ordinal Shannon).
+ *   α = 2  : collision entropy (default).
+ *   α →  ∞ : min-entropy -log2(max p_k) — heaviest bin only.
+ * Standard monotonicity: H_α is non-increasing in α (verified by
+ * test across α ∈ {0.5, 2, 4, 8}), with equality across α iff the
+ * non-empty bins are equiprobable.
  */
 import type { QueueLine } from './types.js';
 
