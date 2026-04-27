@@ -291,3 +291,87 @@ test('row-acf1: sort tie-break is source asc (deterministic)', () => {
   assert.equal(r.sources[0]!.source, 'a');
   assert.equal(r.sources[1]!.source, 'z');
 });
+
+test('row-acf1: --min-mean rejects bad values; default surfaces in report', () => {
+  const r = buildSourceRowTokenAutocorrelationLag1([], { generatedAt: GEN });
+  assert.equal(r.minMean, 0);
+  assert.equal(r.droppedBelowMinMean, 0);
+  assert.throws(() =>
+    buildSourceRowTokenAutocorrelationLag1([], { minMean: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenAutocorrelationLag1([], { minMean: Number.NaN }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenAutocorrelationLag1([], {
+      minMean: Number.POSITIVE_INFINITY,
+    }),
+  );
+});
+
+test('row-acf1: minMean is orthogonal to minAbsRho — gates distinct cohorts', () => {
+  // Construct an explicit orthogonality witness:
+  //
+  //   - source 'big-noisy':  mean = 1,000,000, rho1 ~ 0 (white-noise).
+  //                          Survives --min-mean 100,000 but
+  //                          dropped by --min-abs-rho 0.5.
+  //   - source 'tiny-sticky': mean ~ 350, rho1 = 0.5 (monotone).
+  //                          Survives --min-abs-rho 0.5 but
+  //                          dropped by --min-mean 100,000.
+  //
+  // Confirms the two filters select different cohorts.
+  const q: QueueLine[] = [];
+  // 'tiny-sticky': monotone 100..600 step 100 -> rho1 = 0.5, mean = 350.
+  for (let i = 0; i < 6; i += 1) {
+    q.push(ql(`2026-04-27T0${i}:00:00.000Z`, 'tiny-sticky', 100 * (i + 1)));
+  }
+  // 'big-noisy': six rows, large magnitudes, almost-flat with one
+  // outlier. Choosen so rho1 ~= -0.034 (well below 0.5) and
+  // mean ~= 5.33M (well above the 100k floor).
+  const noisyVals = [5_000_000, 5_000_000, 5_000_000, 5_000_000, 5_000_000, 7_000_000];
+  for (let i = 0; i < 6; i += 1) {
+    q.push(ql(`2026-04-27T0${i}:00:00.000Z`, 'big-noisy', noisyVals[i]!));
+  }
+
+  // Sanity: with no filters, both surface.
+  const baseline = buildSourceRowTokenAutocorrelationLag1(q, {
+    generatedAt: GEN,
+  });
+  assert.equal(baseline.sources.length, 2);
+  const tiny = baseline.sources.find((s) => s.source === 'tiny-sticky')!;
+  const big = baseline.sources.find((s) => s.source === 'big-noisy')!;
+  assert.ok(Math.abs(tiny.rho1 - 0.5) < 1e-12);
+  assert.ok(Math.abs(big.rho1) < 0.5);
+  assert.ok(big.mean > 100_000);
+  assert.ok(tiny.mean < 1_000);
+
+  // --min-mean 100_000: drops tiny-sticky (mean=350 below floor).
+  const gateMean = buildSourceRowTokenAutocorrelationLag1(q, {
+    minMean: 100_000,
+    generatedAt: GEN,
+  });
+  assert.equal(gateMean.droppedBelowMinMean, 1);
+  assert.equal(gateMean.sources.length, 1);
+  assert.equal(gateMean.sources[0]!.source, 'big-noisy');
+
+  // --min-abs-rho 0.5: drops big-noisy (rho1 ~ 0 below floor).
+  const gateRho = buildSourceRowTokenAutocorrelationLag1(q, {
+    minAbsRho: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(gateRho.droppedBelowMinAbsRho, 1);
+  assert.equal(gateRho.sources.length, 1);
+  assert.equal(gateRho.sources[0]!.source, 'tiny-sticky');
+
+  // Both filters: drops both.
+  const gateBoth = buildSourceRowTokenAutocorrelationLag1(q, {
+    minMean: 100_000,
+    minAbsRho: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(gateBoth.sources.length, 0);
+  // Ordering: minAbsRho is checked first, so big-noisy is gated by
+  // it; tiny-sticky is gated by minMean.
+  assert.equal(gateBoth.droppedBelowMinAbsRho, 1);
+  assert.equal(gateBoth.droppedBelowMinMean, 1);
+});

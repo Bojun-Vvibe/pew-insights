@@ -109,6 +109,18 @@ export interface SourceRowTokenAutocorrelationLag1Options {
    */
   minAbsRho?: number;
   /**
+   * Drop sources whose `mean` total_tokens is strictly below
+   * this value; cohort selector that gates out "tiny producer
+   * noise" — sources whose row magnitudes are so small that
+   * even a strong autocorrelation signal carries little
+   * absolute mass. Orthogonal to `minAbsRho`: a source can
+   * have mean=5K and rho1=0.95 (tiny but sticky, gated by
+   * minMean) or mean=10M and rho1=0.05 (huge but white-noise,
+   * gated by minAbsRho). Must be a finite, non-negative number.
+   * Default 0 (no floor).
+   */
+  minMean?: number;
+  /**
    * Cap the per-source table to the top N rows after sort.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -153,6 +165,7 @@ export interface SourceRowTokenAutocorrelationLag1Report {
   source: string | null;
   minRows: number;
   minAbsRho: number;
+  minMean: number;
   top: number | null;
   sort:
     | 'rho-desc'
@@ -168,6 +181,7 @@ export interface SourceRowTokenAutocorrelationLag1Report {
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
   droppedBelowMinAbsRho: number;
+  droppedBelowMinMean: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenAutocorrelationLag1Row[];
 }
@@ -195,6 +209,12 @@ export function buildSourceRowTokenAutocorrelationLag1(
   if (!Number.isFinite(minAbsRho) || minAbsRho < 0 || minAbsRho > 1) {
     throw new Error(
       `minAbsRho must be a finite number in [0, 1] (got ${opts.minAbsRho})`,
+    );
+  }
+  const minMean = opts.minMean ?? 0;
+  if (!Number.isFinite(minMean) || minMean < 0) {
+    throw new Error(
+      `minMean must be a finite, non-negative number (got ${opts.minMean})`,
     );
   }
   const top = opts.top ?? null;
@@ -333,10 +353,15 @@ export function buildSourceRowTokenAutocorrelationLag1(
   }
 
   let droppedBelowMinAbsRho = 0;
+  let droppedBelowMinMean = 0;
   const survived: SourceRowTokenAutocorrelationLag1Row[] = [];
   for (const row of allRows) {
     if (Math.abs(row.rho1) < minAbsRho) {
       droppedBelowMinAbsRho += 1;
+      continue;
+    }
+    if (row.mean < minMean) {
+      droppedBelowMinMean += 1;
       continue;
     }
     survived.push(row);
@@ -369,6 +394,7 @@ export function buildSourceRowTokenAutocorrelationLag1(
     source: sourceFilter,
     minRows,
     minAbsRho,
+    minMean,
     top,
     sort,
     totalSources,
@@ -378,6 +404,7 @@ export function buildSourceRowTokenAutocorrelationLag1(
     droppedSourceFilter,
     droppedBelowMinRows,
     droppedBelowMinAbsRho,
+    droppedBelowMinMean,
     droppedBelowTopCap,
     sources: finalSources,
   };

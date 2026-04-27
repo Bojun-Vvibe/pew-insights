@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.96 — 2026-04-27
+
+### Changed
+
+- `source-row-token-autocorrelation-lag1`: refinement
+  adds the `--min-mean <f>` flag. Drops sources whose
+  `mean` `total_tokens` is strictly below `f`. Default
+  `0` (no floor; preserves v0.6.95 behaviour exactly).
+
+  This is a **genuinely orthogonal cohort gate to
+  `--min-abs-rho`**:
+
+  - `--min-abs-rho` gates on the source's
+    autocorrelation **strength** (does the producer
+    repeat its token magnitudes?). Drops `flat: true`
+    sources too.
+  - `--min-mean` gates on the source's row-magnitude
+    **scale** (does the producer move enough mass per
+    row that the autocorrelation actually matters?).
+
+  A source can have `mean = 5K` and `rho1 = 0.95` (tiny
+  but sticky — gated by `--min-mean`), or `mean = 10M`
+  and `rho1 = 0.05` (huge but white-noise — gated by
+  `--min-abs-rho`). The two filters select different
+  cohorts; the new unit test
+  `row-acf1: minMean is orthogonal to minAbsRho —
+  gates distinct cohorts` constructs an explicit
+  orthogonality witness.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  with `--min-mean 100000`
+  (vscode-copilot redacted to vscode-assistant-redacted
+  and gated out by the floor — its mean is ~5,663):
+
+  ```
+  pew-insights source-row-token-autocorrelation-lag1 --min-mean 100000
+  sources: 6 (shown 5)    rows: 1,630    min-mean: 100,000
+  dropped: ... 1 below min-mean ...
+
+  source       rows  pairs  mean         variance              rho1    flat
+  -----------  ----  -----  -----------  --------------------  ------  ----
+  opencode     329   328    10469012.64  177391775374271.00    0.7049  no
+  openclaw     435   434    4305939.10   24389741240635.17     0.5347  no
+  codex        64    63     12650385.31  203123750617043.63    0.5296  no
+  claude-code  299   298    11512995.95  309941905126295.25    0.4243  no
+  hermes       170   169    867150.55    967363852176.82       0.1950  no
+  ```
+
+  Reading: the gate cleanly filters out the IDE-style
+  micro-row producer (the redacted source with mean
+  ~5,663 — three orders of magnitude smaller than every
+  other source) so the operator can focus the
+  autocorrelation cohort on producers that actually move
+  meaningful token mass per row. The remaining five all
+  surface positive lag-1 autocorrelation, with
+  `opencode` (rho1 = 0.7049) the most persistent and
+  `hermes` (rho1 = 0.1950) closest to white-noise.
+
+### Tests
+
+- 2 new unit tests in
+  `test/sourcerowtokenautocorrelationlag1.test.ts`
+  covering: `--min-mean` argument validation (rejects
+  negative, NaN, +Infinity); default surfaces in the
+  report; and an explicit orthogonality construction
+  showing that `minAbsRho` and `minMean` gate distinct
+  cohorts (small-but-sticky vs big-but-noisy).
+
+  Total: 2527 -> 2529.
+
 ## 0.6.95 — 2026-04-27
 
 ### Added
