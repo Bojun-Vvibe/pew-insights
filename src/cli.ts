@@ -103,6 +103,7 @@ import {
   renderSourceRowTokenSkewness,
   renderSourceRowTokenKurtosis,
   renderSourceRowTokenCoefficientOfVariation,
+  renderSourceRowTokenMad,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -266,6 +267,7 @@ import { buildSourceFirstVsLastQuartileOutputMeanShift } from './sourcefirstvsla
 import { buildSourceRowTokenSkewness } from './sourcerowtokenskewness.js';
 import { buildSourceRowTokenKurtosis } from './sourcerowtokenkurtosis.js';
 import { buildSourceRowTokenCoefficientOfVariation } from './sourcerowtokencoefficientofvariation.js';
+import { buildSourceRowTokenMad } from './sourcerowtokenmad.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -9926,6 +9928,113 @@ program
           process.stdout.write(
             renderSourceRowTokenCoefficientOfVariation(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-mad')
+  .description(
+    "Per-source Median Absolute Deviation (MAD) of per-row total_tokens. mad = median(|x - median(x)|); robust dispersion (50% breakdown point — outliers do not move it). Reports raw mad, madScaled = 1.4826 * mad (the Normal-consistency-scaled MAD; equals stddev under Normal data), and madRatio = mad / median (robust scale-free spread; the median/MAD analog of CV). Distinct from source-row-token-coefficient-of-variation (mean/stddev based — both dominated by outliers; identical CV can hide wildly different MAD, and the gap quantifies outlier leverage), source-row-token-skewness (3rd standardised moment), source-row-token-kurtosis (4th standardised moment, both also outlier-sensitive), source-output-tokens-per-row-percentiles (quantile shape on output_tokens not robust dispersion on total_tokens), source-output-tokens-by-hour-cv (CV across 24 hour-bins, temporal), source-gap-hours-cv (CV of cadence not values), source-burstiness-fano-factor (variance/mean on day totals), and the various daily-ratio CVs and concentration / share lenses.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; absolute floor 2 (default 2)',
+    '2',
+  )
+  .option(
+    '--min-median <f>',
+    'drop sources whose per-row total_tokens median is strictly below f (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'mad-desc' (default) | 'mad-asc' | 'ratio-desc' | 'ratio-asc' | 'rows' | 'median' | 'source'",
+    'mad-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMedian: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        const minMedian = Number.parseFloat(opts.minMedian);
+        if (!Number.isFinite(minMedian) || minMedian < 0) {
+          throw new Error(
+            `--min-median must be a finite, non-negative number (got ${opts.minMedian})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'mad-desc',
+          'mad-asc',
+          'ratio-desc',
+          'ratio-asc',
+          'rows',
+          'median',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMad(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMedian,
+          top,
+          sort: opts.sort as
+            | 'mad-desc'
+            | 'mad-asc'
+            | 'ratio-desc'
+            | 'ratio-asc'
+            | 'rows'
+            | 'median'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMad(report) + '\n');
         }
       } catch (e) {
         die(e);
