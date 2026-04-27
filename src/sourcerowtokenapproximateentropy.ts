@@ -146,6 +146,27 @@ export interface SourceRowTokenApproximateEntropyOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported ApEn. Sources whose computed
+   * ApEn is strictly below this threshold are suppressed and
+   * counted under `droppedBelowMinApen`. Useful to surface only
+   * the high-irregularity sources (`--min-apen 0.8`) and hide
+   * the well-behaved regular majority. ApEn is unbounded above
+   * (typical ceiling ~ ln(Nm) at the noisy extreme), so any
+   * finite number is a valid threshold.
+   */
+  minApen?: number | null;
+  /**
+   * Optional upper bound on reported ApEn. Sources whose computed
+   * ApEn is strictly above this threshold are suppressed and
+   * counted under `droppedAboveMaxApen`. Symmetric counterpart
+   * to `minApen`: useful to surface only the most-regular
+   * sources (`--max-apen 0.7`).
+   *
+   * If both are set and `minApen > maxApen`, the constructor
+   * throws — that is operator error, not a silent empty report.
+   */
+  maxApen?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'apen-asc' (default): ApEn ascending — most-regular
    *                           (most-predictable) first.
@@ -188,6 +209,8 @@ export interface SourceRowTokenApproximateEntropyReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenApproximateEntropySort;
+  minApen: number | null;
+  maxApen: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -197,6 +220,8 @@ export interface SourceRowTokenApproximateEntropyReport {
   droppedBelowMinRows: number;
   droppedZeroVariance: number;
   droppedDegenerate: number;
+  droppedBelowMinApen: number;
+  droppedAboveMaxApen: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenApproximateEntropyRow[];
 }
@@ -262,6 +287,23 @@ export function buildSourceRowTokenApproximateEntropy(
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
+    );
+  }
+  const minApen = opts.minApen ?? null;
+  if (minApen !== null) {
+    if (!Number.isFinite(minApen)) {
+      throw new Error(`minApen must be a finite number (got ${opts.minApen})`);
+    }
+  }
+  const maxApen = opts.maxApen ?? null;
+  if (maxApen !== null) {
+    if (!Number.isFinite(maxApen)) {
+      throw new Error(`maxApen must be a finite number (got ${opts.maxApen})`);
+    }
+  }
+  if (minApen !== null && maxApen !== null && minApen > maxApen) {
+    throw new Error(
+      `minApen (${minApen}) must be <= maxApen (${maxApen})`,
     );
   }
 
@@ -405,10 +447,28 @@ export function buildSourceRowTokenApproximateEntropy(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinApen = 0;
+  let droppedAboveMaxApen = 0;
+  let postRows = allRows;
+  if (minApen !== null || maxApen !== null) {
+    const kept: SourceRowTokenApproximateEntropyRow[] = [];
+    for (const row of postRows) {
+      if (minApen !== null && row.apEn < minApen) {
+        droppedBelowMinApen += 1;
+        continue;
+      }
+      if (maxApen !== null && row.apEn > maxApen) {
+        droppedAboveMaxApen += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -421,6 +481,8 @@ export function buildSourceRowTokenApproximateEntropy(
     minRows,
     top,
     sort,
+    minApen,
+    maxApen,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -430,6 +492,8 @@ export function buildSourceRowTokenApproximateEntropy(
     droppedBelowMinRows,
     droppedZeroVariance,
     droppedDegenerate,
+    droppedBelowMinApen,
+    droppedAboveMaxApen,
     droppedBelowTopCap,
     sources: finalSources,
   };

@@ -12617,6 +12617,14 @@ program
     "sort key: 'apen-asc' (default; most-regular first) | 'apen-desc' (most-random first) | 'rows' | 'source'",
     'apen-asc',
   )
+  .option(
+    '--min-apen <n>',
+    'suppress sources whose ApEn is strictly below this threshold; surfaces them under droppedBelowMinApen. Useful to surface only high-irregularity sources (e.g. >= 0.8) and hide regular majority.',
+  )
+  .option(
+    '--max-apen <n>',
+    'suppress sources whose ApEn is strictly above this threshold; surfaces them under droppedAboveMaxApen. Symmetric to --min-apen: surface only the most-regular sources.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12629,6 +12637,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minApen?: string;
+        maxApen?: string;
         json?: boolean;
       },
       cmd,
@@ -12658,6 +12668,22 @@ program
           }
           top = t;
         }
+        let minApen: number | null = null;
+        if (opts.minApen != null) {
+          const v = Number.parseFloat(opts.minApen);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--min-apen must be a finite number (got ${opts.minApen})`);
+          }
+          minApen = v;
+        }
+        let maxApen: number | null = null;
+        if (opts.maxApen != null) {
+          const v = Number.parseFloat(opts.maxApen);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--max-apen must be a finite number (got ${opts.maxApen})`);
+          }
+          maxApen = v;
+        }
         const validSorts = ['apen-asc', 'apen-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -12673,6 +12699,8 @@ program
           r,
           minRows,
           top,
+          minApen,
+          maxApen,
           sort: opts.sort as 'apen-asc' | 'apen-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

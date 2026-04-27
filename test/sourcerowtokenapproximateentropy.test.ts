@@ -480,3 +480,93 @@ test('apen: deterministic across runs (no wall-clock leak when generatedAt is se
   const r2 = buildSourceRowTokenApproximateEntropy(data, { generatedAt: GEN });
   assert.deepEqual(r1, r2);
 });
+
+test('apen: --min-apen suppresses below-threshold and counts droppedBelowMinApen', () => {
+  // periodic source -> low ApEn; random-ish source -> higher ApEn
+  let seed = 41;
+  const rng = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed % 1000) / 100;
+  };
+  const periodic = Array.from({ length: 30 }, (_, i) => [1, 2, 3, 2][i % 4]!);
+  const noisy = Array.from({ length: 30 }, () => rng());
+  const data = [...series(periodic, 'p'), ...series(noisy, 'n')];
+  const r = buildSourceRowTokenApproximateEntropy(data, {
+    generatedAt: GEN,
+    minApen: 0.5,
+  });
+  // Only the noisy one (higher ApEn) should survive
+  assert.ok(r.droppedBelowMinApen >= 1);
+  for (const s of r.sources) assert.ok(s.apEn >= 0.5);
+});
+
+test('apen: --max-apen suppresses above-threshold and counts droppedAboveMaxApen', () => {
+  let seed = 41;
+  const rng = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed % 1000) / 100;
+  };
+  const periodic = Array.from({ length: 30 }, (_, i) => [1, 2, 3, 2][i % 4]!);
+  const noisy = Array.from({ length: 30 }, () => rng());
+  const data = [...series(periodic, 'p'), ...series(noisy, 'n')];
+  // Compute baseline first to find an effective maxApen between the two
+  const base = buildSourceRowTokenApproximateEntropy(data, { generatedAt: GEN });
+  const apens = base.sources.map((s) => s.apEn).sort((a, b) => a - b);
+  const cutoff = (apens[0]! + apens[apens.length - 1]!) / 2;
+  const r = buildSourceRowTokenApproximateEntropy(data, {
+    generatedAt: GEN,
+    maxApen: cutoff,
+  });
+  assert.ok(r.droppedAboveMaxApen >= 1);
+  for (const s of r.sources) assert.ok(s.apEn <= cutoff);
+});
+
+test('apen: minApen > maxApen throws', () => {
+  assert.throws(() =>
+    buildSourceRowTokenApproximateEntropy([], { minApen: 0.8, maxApen: 0.4 }),
+  );
+});
+
+test('apen: non-finite minApen/maxApen throws', () => {
+  assert.throws(() =>
+    buildSourceRowTokenApproximateEntropy([], { minApen: NaN }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenApproximateEntropy([], { maxApen: Infinity }),
+  );
+});
+
+test('apen: minApen and maxApen both null -> all rows kept and counters zero', () => {
+  const vals = Array.from({ length: 20 }, (_, i) => i + 0.1 * (i % 3));
+  const r = buildSourceRowTokenApproximateEntropy(series(vals), {
+    generatedAt: GEN,
+  });
+  assert.equal(r.minApen, null);
+  assert.equal(r.maxApen, null);
+  assert.equal(r.droppedBelowMinApen, 0);
+  assert.equal(r.droppedAboveMaxApen, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('apen: --min-apen + --max-apen window combination', () => {
+  // 3 sources at different ApEn levels
+  let seed = 5;
+  const rng = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed % 1000) / 100;
+  };
+  const data = [
+    ...series(Array.from({ length: 30 }, (_, i) => [1, 2][i % 2]!), 'low'),
+    ...series(Array.from({ length: 30 }, (_, i) => [1, 2, 3, 4, 3, 2][i % 6]!), 'mid'),
+    ...series(Array.from({ length: 30 }, () => rng()), 'high'),
+  ];
+  const r = buildSourceRowTokenApproximateEntropy(data, {
+    generatedAt: GEN,
+    minApen: 0.1,
+    maxApen: 1.5,
+  });
+  // Should keep mid and high; drop low (~0)
+  for (const s of r.sources) {
+    assert.ok(s.apEn >= 0.1 && s.apEn <= 1.5);
+  }
+});

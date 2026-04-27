@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.137 — 2026-04-28
+
+### Added
+
+- `source-row-token-approximate-entropy` gains two
+  refinement threshold flags that compose with the 0.6.136
+  base lens without changing default behaviour:
+
+  - `--min-apen <v>`: suppress sources whose computed
+    ApEn is strictly below `v`. Suppressed sources surface
+    in `droppedBelowMinApen`. Useful to surface only the
+    high-irregularity sources (e.g. `--min-apen 0.85`)
+    and hide the well-behaved regular majority.
+
+  - `--max-apen <v>`: symmetric counterpart. Suppress
+    sources whose ApEn is strictly above `v`. Surfaces in
+    `droppedAboveMaxApen`. Useful to surface only the
+    most-regular sources (e.g. `--max-apen 0.7`) for
+    diagnostics like "which sources have the most
+    predictable token-count cadence?".
+
+  Both default to `null` (no filter); both must be finite
+  if set; if both are set and `min > max` the constructor
+  throws (operator error, not a silent empty report). Pure
+  post-compute filters — they do not affect the underlying
+  ApEn computation, only which rows are reported.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,700
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-approximate-entropy --max-apen 0.7 --sort apen-asc
+  as of: 2026-04-27   sources: 6 (shown 2)   rows: 1,700
+  m: 2   r: 0.2   min-rows: 12   max-apen: 0.7   sort: apen-asc
+  dropped: ... 0 below min-apen, 4 above max-apen, 0 below top cap
+
+  per-source row-token Approximate Entropy (sorted by apen-asc; ties: source asc)
+  source       rows  sigma        tol         phiM     phiMp1   ApEn
+  -----------  ----  -----------  ----------  -------  -------  ------
+  vscode-XXX    333  14933.73     2986.75     -1.7232  -2.3529  0.6297
+  codex          64  14252148.98  2850429.80  -3.0675  -3.7006  0.6331
+  ```
+
+  ```
+  pew-insights source-row-token-approximate-entropy --min-apen 0.85 --sort apen-desc
+  as of: 2026-04-27   sources: 6 (shown 3)   rows: 1,700
+  m: 2   r: 0.2   min-rows: 12   min-apen: 0.85   sort: apen-desc
+  dropped: ... 3 below min-apen, 0 above max-apen, 0 below top cap
+
+  per-source row-token Approximate Entropy (sorted by apen-desc; ties: source asc)
+  source    rows  sigma        tol         phiM     phiMp1   ApEn
+  --------  ----  -----------  ----------  -------  -------  ------
+  hermes     190  971430.60    194286.12   -3.2610  -4.1679  0.9069
+  opencode   354  12999470.80  2599894.16  -3.0051  -3.9110  0.9059
+  openclaw   460  4852243.72   970448.74   -2.8462  -3.7044  0.8582
+  ```
+
+  Reading the live smoke: the two filters partition the 6
+  sources into a clean tri-modal split. The two
+  most-regular (`vscode-XXX` 0.6297, `codex` 0.6331) sit
+  comfortably below `--max-apen 0.7`. The three most
+  irregular (`hermes` 0.9069, `opencode` 0.9059, `openclaw`
+  0.8582) sit above `--min-apen 0.85`. The middle source
+  (`claude-code` 0.7479) is excluded by **both** filters —
+  intentional, this is the "in-between" cohort. Setting
+  `--min-apen 0.7 --max-apen 0.85` would isolate exactly
+  that cohort, which is the typical operator use of the
+  symmetric pair.
+
+- 6 new unit tests for the new flags: --min-apen
+  suppression + counter, --max-apen suppression + counter
+  (using a baseline-derived cutoff for determinism),
+  `min > max` throws, non-finite throws, both-null
+  no-op, --min-apen + --max-apen window combination.
+
+  Test count: **2959 -> 2965** (+6 in this refinement,
+  +32 cumulative since baseline 2933).
+
 ## 0.6.136 — 2026-04-28
 
 ### Added
