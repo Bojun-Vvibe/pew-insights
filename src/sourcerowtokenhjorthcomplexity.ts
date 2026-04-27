@@ -161,6 +161,30 @@ export interface SourceRowTokenHjorthComplexityOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenHjorthComplexitySort;
+  /**
+   * Optional lower bound on reported complexity. Sources whose
+   * computed complexity is strictly below this threshold are
+   * suppressed from `sources[]` and counted under
+   * `droppedBelowMinComplexity`. Default null (no filter).
+   *
+   * Why this is **genuinely orthogonal** to the unfiltered
+   * default and not just a tuning knob: the typical operator
+   * question with this lens is "which sources have
+   * single-frequency-dominant token traffic (complexity ~ 1)
+   * and which have spectrally-spread, noise-like traffic
+   * (complexity > 1)". On a queue with many sources, the
+   * single-tone tail at complexity ~ 1 dominates the report
+   * visually and crowds out the few high-complexity outliers
+   * that are actually anomaly candidates. `--min-complexity 1.5`
+   * (or similar) suppresses the well-behaved sinusoidal
+   * majority and surfaces only the spectrally-spread sources
+   * worth investigating. Importantly the filter applies
+   * **after** the natural-mathematical drops (zero-variance,
+   * flat-diff, degenerate); a source that **fails** to compute
+   * a complexity is still surfaced under its honest-drop
+   * counter, not silently absorbed into the threshold counter.
+   */
+  minComplexity?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -190,6 +214,7 @@ export interface SourceRowTokenHjorthComplexityReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenHjorthComplexitySort;
+  minComplexity: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -200,6 +225,7 @@ export interface SourceRowTokenHjorthComplexityReport {
   droppedZeroVariance: number;
   droppedFlatDiff: number;
   droppedDegenerate: number;
+  droppedBelowMinComplexity: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenHjorthComplexityRow[];
 }
@@ -232,6 +258,14 @@ export function buildSourceRowTokenHjorthComplexity(
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
+  }
+  const minComplexity = opts.minComplexity ?? null;
+  if (minComplexity !== null) {
+    if (!Number.isFinite(minComplexity) || minComplexity < 0) {
+      throw new Error(
+        `minComplexity must be a non-negative finite number (got ${opts.minComplexity})`,
+      );
+    }
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -425,10 +459,23 @@ export function buildSourceRowTokenHjorthComplexity(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinComplexity = 0;
+  let postRows = allRows;
+  if (minComplexity !== null) {
+    const kept: SourceRowTokenHjorthComplexityRow[] = [];
+    for (const row of postRows) {
+      if (row.complexity < minComplexity) {
+        droppedBelowMinComplexity += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -439,6 +486,7 @@ export function buildSourceRowTokenHjorthComplexity(
     minRows,
     top,
     sort,
+    minComplexity,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -449,6 +497,7 @@ export function buildSourceRowTokenHjorthComplexity(
     droppedZeroVariance,
     droppedFlatDiff,
     droppedDegenerate,
+    droppedBelowMinComplexity,
     droppedBelowTopCap,
     sources: finalSources,
   };

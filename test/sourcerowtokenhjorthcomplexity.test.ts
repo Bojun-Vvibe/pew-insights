@@ -302,3 +302,85 @@ test('hjorth-complexity: complexity report includes mobility and mobilityDv comp
     Math.abs(row.complexity - row.mobilityDv / row.mobility) < 1e-12,
   );
 });
+
+test('hjorth-complexity: minComplexity defaults to null; report flag round-trips', () => {
+  const r = buildSourceRowTokenHjorthComplexity([], { generatedAt: GEN });
+  assert.equal(r.minComplexity, null);
+  assert.equal(r.droppedBelowMinComplexity, 0);
+  const r2 = buildSourceRowTokenHjorthComplexity([], {
+    generatedAt: GEN,
+    minComplexity: 1.5,
+  });
+  assert.equal(r2.minComplexity, 1.5);
+});
+
+test('hjorth-complexity: minComplexity must be non-negative finite number', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenHjorthComplexity([], { minComplexity: -0.1 }),
+    /minComplexity must be a non-negative finite number/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenHjorthComplexity([], {
+        minComplexity: Number.POSITIVE_INFINITY,
+      }),
+    /minComplexity must be a non-negative finite number/,
+  );
+});
+
+test('hjorth-complexity: minComplexity suppresses sinusoidal-tail and surfaces noisy outliers', () => {
+  // Two sources: s_sine (alternation -> complexity ~ 1) and
+  // s_noise (LCG noise -> complexity > 1.2). With --min-complexity 1.1,
+  // s_sine is suppressed under droppedBelowMinComplexity.
+  const sine = Array.from({ length: 64 }, (_, i) =>
+    i % 2 === 0 ? 0 : 100,
+  );
+  let s = 314159 >>> 0;
+  function next() {
+    s = (s * 1103515245 + 12345) >>> 0;
+    return ((s >>> 16) & 0xffff) / 0xffff;
+  }
+  const noise = Array.from({ length: 1024 }, () => next() * 100 + 1000);
+  const queue: QueueLine[] = [
+    ...series(sine, 's_sine'),
+    ...series(noise, 's_noise'),
+  ];
+  const unfiltered = buildSourceRowTokenHjorthComplexity(queue, {
+    generatedAt: GEN,
+  });
+  assert.equal(unfiltered.sources.length, 2);
+  assert.equal(unfiltered.droppedBelowMinComplexity, 0);
+  const filtered = buildSourceRowTokenHjorthComplexity(queue, {
+    generatedAt: GEN,
+    minComplexity: 1.1,
+  });
+  assert.equal(filtered.sources.length, 1);
+  assert.equal(filtered.sources[0]!.source, 's_noise');
+  assert.equal(filtered.droppedBelowMinComplexity, 1);
+});
+
+test('hjorth-complexity: minComplexity 0 keeps everything (lower-inclusive boundary)', () => {
+  // The filter is strict (`< minComplexity`), so 0 keeps every
+  // source whose complexity is >= 0 (i.e. every computed source).
+  const v = Array.from({ length: 64 }, (_, i) => (i % 2 === 0 ? 0 : 80));
+  const r = buildSourceRowTokenHjorthComplexity(series(v), {
+    generatedAt: GEN,
+    minComplexity: 0,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinComplexity, 0);
+});
+
+test('hjorth-complexity: minComplexity applied AFTER honest drops (zero-variance still surfaces under its own counter)', () => {
+  // A constant series should drop under zero-variance, NOT be silently
+  // absorbed by the min-complexity filter.
+  const v = Array.from({ length: 64 }, () => 42);
+  const r = buildSourceRowTokenHjorthComplexity(series(v), {
+    generatedAt: GEN,
+    minComplexity: 100,
+  });
+  assert.equal(r.droppedZeroVariance, 1);
+  assert.equal(r.droppedBelowMinComplexity, 0);
+  assert.equal(r.sources.length, 0);
+});

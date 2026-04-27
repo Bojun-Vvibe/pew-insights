@@ -11897,6 +11897,10 @@ program
     "sort key: 'complexity-asc' (default; most single-tone / sinusoidal first) | 'complexity-desc' (most multi-tone / noise-like first) | 'rows' | 'source'",
     'complexity-asc',
   )
+  .option(
+    '--min-complexity <n>',
+    'suppress sources whose computed complexity is strictly below this threshold; surfaces them under droppedBelowMinComplexity. Useful to hide the well-behaved sinusoidal-tail (complexity ~ 1) and surface only spectrally-spread / noise-like sources (complexity > 1.5 typical). Applied AFTER zero-variance / flat-diff / degenerate honest drops, so a source that fails to compute a complexity is still surfaced under its own drop counter.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -11907,6 +11911,7 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minComplexity?: string;
         json?: boolean;
       },
       cmd,
@@ -11928,6 +11933,16 @@ program
           }
           top = t;
         }
+        let minComplexity: number | null = null;
+        if (opts.minComplexity != null) {
+          const mc = Number.parseFloat(opts.minComplexity);
+          if (!Number.isFinite(mc) || mc < 0) {
+            throw new Error(
+              `--min-complexity must be a non-negative finite number (got ${opts.minComplexity})`,
+            );
+          }
+          minComplexity = mc;
+        }
         const validSorts = [
           'complexity-asc',
           'complexity-desc',
@@ -11946,6 +11961,7 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minComplexity,
           sort: opts.sort as
             | 'complexity-asc'
             | 'complexity-desc'
