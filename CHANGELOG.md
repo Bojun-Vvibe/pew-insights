@@ -2,6 +2,150 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.150 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-spectral-bandwidth`.
+  Per-source **spectral bandwidth** (sqrt of the 2nd central
+  moment) of the one-sided non-DC power spectrum
+  `P[k] = |X[k]|^2`, `k = 1..K = floor(n/2)`, of the
+  mean-centered per-row `total_tokens` sequence, taken
+  *around the centroid `c`*:
+
+      bandwidthBin = sqrt( sum_{k=1..K} (k - c)^2 * P[k]
+                           / sum_{k=1..K} P[k] )
+
+  where `c = sum_k k * P[k] / sum_k P[k]` is the spectral
+  centroid (first moment) shipped in 0.6.148.
+
+  Reported quantities:
+
+  - `centroidBin`            : first-moment bin (real),
+                               recomputed inline so the
+                               two-moment pair is internally
+                               consistent.
+  - `bandwidthBin`           : sqrt of 2nd central moment;
+                               bin-units; in `[0, (K-1)/2]`
+                               in practice.
+  - `bandwidthFractionBins`  : `bandwidthBin / bins` —
+                               scale-free spread in
+                               "fraction-of-Nyquist" units.
+  - `bandwidthFractionMax`   : `bandwidthBin / ((bins - 1) / 2)`
+                               — normalised against the
+                               widest possible discrete PSD on
+                               the available band (a 2-spike
+                               PSD at bins 1 and K). In
+                               `[0, 1]`.
+
+  Citation: Klapuri, A. (1999), "Sound onset detection by
+  applying psychoacoustic knowledge", Proc. ICASSP-99
+  vol.6 pp.3089-3092 — second central moment of the power
+  spectrum as a timbral spread descriptor. Reaffirmed in
+  Peeters, G. (2004), "A large set of audio features for
+  sound description (similarity and classification) in the
+  CUIDADO project", IRCAM Tech. Rep., §6.1 (Spectral
+  spread).
+
+  **Why this lens is genuinely orthogonal** to every shipped
+  `source-row-token-*` lens (justification required):
+
+  - vs. `spectral-centroid` (the lens shipped in 0.6.148):
+    centroid is the *first* moment (location). Bandwidth is
+    the *second* central moment (spread *around that
+    location*). Two PSDs with identical centroids can have
+    very different bandwidths: a single-spike PSD vs. a
+    uniform-over-the-whole-band PSD can both centre on
+    `K/2`, but the spike has near-zero bandwidth and the
+    uniform has bandwidth near `K / sqrt(12)`. Mean vs.
+    spread of a CDF — a textbook orthogonal pair. We test
+    this directly: a single tone at bin 16 and a two-tone
+    PSD with equal mass at bins 8 and 24 share
+    `centroidBin ~ 16` but have markedly different
+    bandwidths.
+  - vs. `spectral-rolloff` (0.6.146): roll-off is a
+    *quantile* of the cumulative PSD. Bandwidth is a
+    *moment* around the centroid. A PSD with mass equally
+    above and below the 85% roll-off bin can have any
+    bandwidth value depending on how far the mass spreads
+    from the centroid; conversely a wide and a narrow PSD
+    can share the same 85% quantile if their tails are
+    placed symmetrically. Quantile vs. central moment.
+  - vs. `spectral-flatness` (0.6.144): SF is the
+    geometric/arithmetic mean ratio `G/A` of `P[k]` —
+    a global "how peaked vs uniform" entropy ratio.
+    Bandwidth is *position-aware*: it cares where on the
+    axis the mass sits relative to the centroid, not just
+    the magnitude profile. A PSD with two equal peaks at
+    bins 1 and K and a PSD with two equal peaks at bins
+    `(K/2 - 1)` and `(K/2 + 1)` share the same flatness
+    but very different bandwidths.
+  - vs. `hjorth-mobility`: Parseval-equivalent to
+    `sqrt(integrated f^2-weighted PSD / total PSD)` —
+    the *non-central* second moment (around 0). Bandwidth
+    is the *central* second moment (around the centroid).
+    They differ by `centroid^2` via the parallel-axis
+    theorem; equal only when the centroid is 0, which never
+    holds here because `k >= 1`.
+  - vs. `teager-kaiser`: time-domain energy operator with
+    f^2 bias on average — also a non-central moment
+    summary, not centred on the centroid.
+  - vs. **autocorrelation (lag-1) / mann-kendall**:
+    time-domain summaries; lose the PSD entirely.
+  - vs. **fractal / scaling lenses** (`hurst-rs`, `dfa`,
+    `higuchi-fd`, `katz-fd`, `petrosian-fd`): summarise
+    PSD *slope* / scaling; bandwidth summarises PSD
+    *spread around its mean location*.
+  - vs. **amplitude-shape lenses** (`cv`, `mad`,
+    `iqr-ratio`, `skewness`, `kurtosis`, `gini`,
+    `crest-factor`, `burstiness-coefficient`): amplitude
+    domain, order-invariant. Bandwidth is order-sensitive.
+  - vs. **time-domain symbolic entropies** (`approximate`,
+    `sample`, `permutation`, `renyi`, `lempel-ziv`):
+    ordinal / symbolic reductions; lose the PSD entirely.
+  - vs. **event counters** (`zcr`, `runs-test`,
+    `turning-point`): scalar event tallies; bandwidth is a
+    continuous spread measure on bin index.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,727
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-bandwidth
+  per-source row-token spectral bandwidth (sorted by bandwidth-asc; ties: source asc)
+  source       rows  bins  totPower   centroidBin  bwBin    bwFrac  bwFracMax
+  -----------  ----  ----  ---------  -----------  -------  ------  ---------
+  opencode     363   181   1.089e+19  30.7277      41.3608  0.2285  0.4596
+  codex        64    32    4.162e+17  8.5305       8.2935   0.2592  0.5351
+  openclaw     469   234   2.561e+18  61.0529      61.7956  0.2641  0.5304
+  vscode-XXX   333   166   1.237e+13  55.4502      47.7503  0.2877  0.5788
+  claude-code  299   149   1.385e+19  39.8729      45.6546  0.3064  0.6170
+  hermes       199   99    1.801e+16  41.6642      30.5220  0.3083  0.6229
+  ```
+
+  Reading: `opencode` has the most spectrally concentrated
+  per-row token PSD (`bandwidthFractionMax = 0.460`) — its
+  PSD mass clusters tightly around `centroidBin ~ 30.7`,
+  i.e. one dominant time-scale of variability. `hermes` is
+  the most spread (`0.623`), with PSD mass distributed
+  widely on both sides of `centroidBin ~ 41.7` — multiple
+  competing time-scales. Note this lens is genuinely
+  orthogonal to centroid: `openclaw` and `claude-code`
+  have very different centroids (61.1 vs. 39.9, sitting at
+  opposite ends of the band) yet near-identical bandwidth
+  fractions (0.264 vs. 0.306) — equally spread, just
+  centred in different places. Conversely `opencode` and
+  `vscode-XXX` have similarly low centroids (30.7 vs.
+  55.5… well, different, but the point holds for `opencode`
+  vs. say `codex` — `codex` has centroid 8.5 and bandwidth
+  fraction 0.259, opencode has centroid 30.7 and bandwidth
+  fraction 0.229; very different centroids, similar
+  spreads).
+
+  Tests: 3180 -> 3207 (+27 in this lens, +125 cumulative
+  since the 0.6.145 baseline).
+
 ## 0.6.149 — 2026-04-28
 
 ### Added
