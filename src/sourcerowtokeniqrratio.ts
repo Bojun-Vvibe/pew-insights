@@ -141,6 +141,28 @@ export interface SourceRowTokenIqrRatioOptions {
    */
   minIqrRatio?: number;
   /**
+   * Drop sources whose `median` total_tokens is strictly below this
+   * value; cohort selector that gates out "tiny producer noise" —
+   * sources whose typical row magnitude is so small that the
+   * iqrRatio scalar (a *relative* dispersion) carries little
+   * absolute mass. Genuinely orthogonal to `--min-iqr-ratio`:
+   *
+   *   - `--min-iqr-ratio` gates on the **relative width** of the
+   *     central 50 % (does the producer's middle rows fan out
+   *     meaningfully relative to their typical row?).
+   *   - `--min-median` gates on the **absolute scale** of the
+   *     typical row (do the producer's median rows actually move
+   *     meaningful token mass?).
+   *
+   * A source can have median=2K and iqrRatio=4.0 (tiny but
+   * spread out — gated by --min-median), or median=10M and
+   * iqrRatio=0.05 (huge but tight — gated by --min-iqr-ratio).
+   * The two filters select different cohorts; an explicit
+   * orthogonality witness in the test suite constructs both.
+   * Must be a finite, non-negative number. Default 0 (no floor).
+   */
+  minMedian?: number;
+  /**
    * Cap the per-source table to the top N rows after sort.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -192,6 +214,7 @@ export interface SourceRowTokenIqrRatioReport {
   source: string | null;
   minRows: number;
   minIqrRatio: number;
+  minMedian: number;
   top: number | null;
   sort:
     | 'iqr-ratio-desc'
@@ -208,6 +231,7 @@ export interface SourceRowTokenIqrRatioReport {
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
   droppedBelowMinIqrRatio: number;
+  droppedBelowMinMedian: number;
   droppedDegenerate: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenIqrRatioRow[];
@@ -252,6 +276,12 @@ export function buildSourceRowTokenIqrRatio(
   if (!Number.isFinite(minIqrRatio) || minIqrRatio < 0) {
     throw new Error(
       `minIqrRatio must be a finite, non-negative number (got ${opts.minIqrRatio})`,
+    );
+  }
+  const minMedian = opts.minMedian ?? 0;
+  if (!Number.isFinite(minMedian) || minMedian < 0) {
+    throw new Error(
+      `minMedian must be a finite, non-negative number (got ${opts.minMedian})`,
     );
   }
   const top = opts.top ?? null;
@@ -375,9 +405,14 @@ export function buildSourceRowTokenIqrRatio(
   }
 
   let droppedBelowMinIqrRatio = 0;
+  let droppedBelowMinMedian = 0;
   let droppedDegenerate = 0;
   const survived: SourceRowTokenIqrRatioRow[] = [];
   for (const row of allRows) {
+    if (minMedian > 0 && row.median < minMedian) {
+      droppedBelowMinMedian += 1;
+      continue;
+    }
     if (minIqrRatio > 0) {
       if (row.iqrRatio === null) {
         // Degenerate rows have no comparable scalar; the floor
@@ -435,6 +470,7 @@ export function buildSourceRowTokenIqrRatio(
     source: sourceFilter,
     minRows,
     minIqrRatio,
+    minMedian,
     top,
     sort,
     totalSources,
@@ -445,6 +481,7 @@ export function buildSourceRowTokenIqrRatio(
     droppedSourceFilter,
     droppedBelowMinRows,
     droppedBelowMinIqrRatio,
+    droppedBelowMinMedian,
     droppedDegenerate,
     droppedBelowTopCap,
     sources: finalSources,

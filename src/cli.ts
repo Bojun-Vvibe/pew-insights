@@ -10575,6 +10575,11 @@ program
     '0',
   )
   .option(
+    '--min-median <f>',
+    'drop sources whose median total_tokens is strictly below f; cohort selector that gates out "tiny producer noise" — sources whose typical row magnitude is so small that the iqrRatio scalar (a *relative* dispersion) carries little absolute mass. Genuinely orthogonal to --min-iqr-ratio: a source can have median=2K and iqrRatio=4.0 (tiny but spread out — gated by --min-median) or median=10M and iqrRatio=0.05 (huge but tight — gated by --min-iqr-ratio). f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -10592,6 +10597,7 @@ program
         source?: string;
         minRows: string;
         minIqrRatio: string;
+        minMedian: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10611,6 +10617,12 @@ program
         if (!Number.isFinite(minIqrRatio) || minIqrRatio < 0) {
           throw new Error(
             `--min-iqr-ratio must be a finite, non-negative number (got ${opts.minIqrRatio})`,
+          );
+        }
+        const minMedian = Number.parseFloat(opts.minMedian);
+        if (!Number.isFinite(minMedian) || minMedian < 0) {
+          throw new Error(
+            `--min-median must be a finite, non-negative number (got ${opts.minMedian})`,
           );
         }
         let top: number | null = null;
@@ -10641,6 +10653,7 @@ program
           source: opts.source ?? null,
           minRows,
           minIqrRatio,
+          minMedian,
           top,
           sort: opts.sort as
             | 'iqr-ratio-desc'

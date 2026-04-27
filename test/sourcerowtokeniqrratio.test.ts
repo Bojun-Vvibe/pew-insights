@@ -355,3 +355,107 @@ test('row-iqr: determinism — repeated calls return identical numeric output', 
   const r2 = buildSourceRowTokenIqrRatio(q, { generatedAt: GEN });
   assert.equal(JSON.stringify(r1), JSON.stringify(r2));
 });
+
+test('row-iqr: --min-median rejects negative / NaN / +Infinity', () => {
+  assert.throws(() => buildSourceRowTokenIqrRatio([], { minMedian: -1 }));
+  assert.throws(() =>
+    buildSourceRowTokenIqrRatio([], { minMedian: Number.NaN }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenIqrRatio([], { minMedian: Number.POSITIVE_INFINITY }),
+  );
+  // Default is 0 and surfaces in the report.
+  const r = buildSourceRowTokenIqrRatio([], { generatedAt: GEN });
+  assert.equal(r.minMedian, 0);
+  assert.equal(r.droppedBelowMinMedian, 0);
+});
+
+test('row-iqr: --min-median drops sources whose median is below the floor', () => {
+  // Source a: median ~ 250, big.   Source b: median ~ 65, small.
+  const q = [
+    ql('2026-04-27T00:00:00.000Z', 'a', 100),
+    ql('2026-04-27T01:00:00.000Z', 'a', 200),
+    ql('2026-04-27T02:00:00.000Z', 'a', 300),
+    ql('2026-04-27T03:00:00.000Z', 'a', 400),
+    ql('2026-04-27T00:00:00.000Z', 'b', 50),
+    ql('2026-04-27T01:00:00.000Z', 'b', 60),
+    ql('2026-04-27T02:00:00.000Z', 'b', 70),
+    ql('2026-04-27T03:00:00.000Z', 'b', 80),
+  ];
+  const r = buildSourceRowTokenIqrRatio(q, {
+    generatedAt: GEN,
+    minMedian: 100,
+  });
+  assert.equal(r.minMedian, 100);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'a');
+  assert.equal(r.droppedBelowMinMedian, 1);
+});
+
+test('row-iqr: --min-median is orthogonal to --min-iqr-ratio (gates distinct cohorts)', () => {
+  // Construct an explicit orthogonality witness:
+  //
+  //   A: median=250 (big), iqrRatio=0.6 (spread)  -> survives BOTH gates.
+  //   B: median=65  (tiny), iqrRatio=0.46 (spread) -> survives min-iqr-ratio,
+  //                                                  killed by min-median.
+  //   C: median=10000 (big), iqrRatio=0.05 (tight) -> survives min-median,
+  //                                                  killed by min-iqr-ratio.
+  //
+  // For C: x=[9750, 9900, 10100, 10250]  -> q1=9862.5, med=10000,
+  //        q3=10137.5, iqr=275, iqrRatio=0.0275.
+  const q = [
+    // A
+    ql('2026-04-27T00:00:00.000Z', 'a', 100),
+    ql('2026-04-27T01:00:00.000Z', 'a', 200),
+    ql('2026-04-27T02:00:00.000Z', 'a', 300),
+    ql('2026-04-27T03:00:00.000Z', 'a', 400),
+    // B
+    ql('2026-04-27T00:00:00.000Z', 'b', 50),
+    ql('2026-04-27T01:00:00.000Z', 'b', 60),
+    ql('2026-04-27T02:00:00.000Z', 'b', 70),
+    ql('2026-04-27T03:00:00.000Z', 'b', 80),
+    // C
+    ql('2026-04-27T00:00:00.000Z', 'c', 9750),
+    ql('2026-04-27T01:00:00.000Z', 'c', 9900),
+    ql('2026-04-27T02:00:00.000Z', 'c', 10100),
+    ql('2026-04-27T03:00:00.000Z', 'c', 10250),
+  ];
+
+  // Just min-iqr-ratio at 0.1: drops C (iqrRatio 0.0275); keeps A and B.
+  const onlyRatio = buildSourceRowTokenIqrRatio(q, {
+    generatedAt: GEN,
+    minIqrRatio: 0.1,
+  });
+  assert.deepEqual(
+    onlyRatio.sources.map((s) => s.source).sort(),
+    ['a', 'b'],
+  );
+  assert.equal(onlyRatio.droppedBelowMinIqrRatio, 1);
+  assert.equal(onlyRatio.droppedBelowMinMedian, 0);
+
+  // Just min-median at 100: drops B (median 65); keeps A and C.
+  const onlyMedian = buildSourceRowTokenIqrRatio(q, {
+    generatedAt: GEN,
+    minMedian: 100,
+  });
+  assert.deepEqual(
+    onlyMedian.sources.map((s) => s.source).sort(),
+    ['a', 'c'],
+  );
+  assert.equal(onlyMedian.droppedBelowMinMedian, 1);
+  assert.equal(onlyMedian.droppedBelowMinIqrRatio, 0);
+
+  // Both gates together: only A survives. The two filters select
+  // different cohorts (B vs C dropped), proving orthogonality.
+  const both = buildSourceRowTokenIqrRatio(q, {
+    generatedAt: GEN,
+    minIqrRatio: 0.1,
+    minMedian: 100,
+  });
+  assert.deepEqual(
+    both.sources.map((s) => s.source),
+    ['a'],
+  );
+  assert.equal(both.droppedBelowMinMedian, 1);
+  assert.equal(both.droppedBelowMinIqrRatio, 1);
+});
