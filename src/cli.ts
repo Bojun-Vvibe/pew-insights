@@ -11804,6 +11804,10 @@ program
     "sort key: 'mobility-asc' (default; smoothest first) | 'mobility-desc' (most jittery first) | 'rows' | 'source'",
     'mobility-asc',
   )
+  .option(
+    '--detrend',
+    'subtract the OLS linear trend from each per-source value sequence before computing var(v) and var(diff(v)). Strips the quadratic-in-N denominator inflation that drift induces, exposing the true ratio of step-to-step jitter to fluctuation amplitude around the trend. Recommended for sources with strong monotone drift, where the no-detrend mobility is biased downward toward 0.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -11814,6 +11818,7 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        detrend?: boolean;
         json?: boolean;
       },
       cmd,
@@ -11848,6 +11853,7 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          detrend: opts.detrend === true,
           sort: opts.sort as
             | 'mobility-asc'
             | 'mobility-desc'

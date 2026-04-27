@@ -178,6 +178,36 @@ export interface SourceRowTokenHjorthMobilityOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenHjorthMobilitySort;
+  /**
+   * If true, subtract the OLS linear trend from each per-source
+   * value sequence before computing var(v) and var(diff(v)).
+   * Default false.
+   *
+   * Why this is **genuinely orthogonal** to the no-detrend
+   * default and not just a tuning knob: a strong linear drift
+   * on a stationary noise process inflates `var(v)` quadratically
+   * with N (the trend variance dominates) while leaving
+   * `var(diff(v))` essentially unchanged (because the trend
+   * contributes a constant `b` to every diff and `var(b) = 0`).
+   * That biases the no-detrend mobility **downward** toward 0
+   * for any series with strong drift, regardless of the
+   * underlying step-to-step jitter. Detrending strips out
+   * that quadratic-in-N denominator inflation and exposes the
+   * **true ratio of step-to-step jitter to fluctuation
+   * amplitude around the trend**, which is the regime
+   * operators usually want when ranking sources by "how noisy
+   * is this once you account for its growth".
+   *
+   * Worked example: a sequence `v[i] = i + e[i]` with `e[i]`
+   * iid zero-mean unit-variance noise has
+   * `var(v) ~ N^2/12 + 1` (trend variance dominates for
+   * large N) but `var(diff(v)) ~ 2 + var(b) = 2` (since the
+   * diff of the trend is the constant `b = 1`). No-detrend
+   * mobility ~ sqrt(2 / (N^2/12)) -> 0 as N grows. Detrended
+   * mobility on the same series stays at ~ sqrt(2) for all N
+   * — the white-noise asymptote correctly recovered.
+   */
+  detrend?: boolean;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -200,6 +230,7 @@ export interface SourceRowTokenHjorthMobilityReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  detrend: boolean;
   sort: SourceRowTokenHjorthMobilitySort;
   totalSources: number;
   totalRowsKept: number;
@@ -243,6 +274,7 @@ export function buildSourceRowTokenHjorthMobility(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
   }
+  const detrend = opts.detrend ?? false;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -311,12 +343,35 @@ export function buildSourceRowTokenHjorthMobility(
     totalRowsKept += samples.length;
 
     samples.sort((a, b) => a[0] - b[0]);
-    const v = samples.map((s) => s[1]);
+    let v = samples.map((s) => s[1]);
     const N = v.length;
 
     if (N < minRows) {
       droppedBelowMinRows += 1;
       continue;
+    }
+
+    if (detrend) {
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < N; i++) {
+        sx += i;
+        sy += v[i]!;
+      }
+      const xbar = sx / N;
+      const ybar = sy / N;
+      let sxx = 0;
+      let sxy = 0;
+      for (let i = 0; i < N; i++) {
+        const dx = i - xbar;
+        sxx += dx * dx;
+        sxy += dx * (v[i]! - ybar);
+      }
+      const b = sxx === 0 ? 0 : sxy / sxx;
+      const a = ybar - b * xbar;
+      const detrended: number[] = new Array(N);
+      for (let i = 0; i < N; i++) detrended[i] = v[i]! - (a + b * i);
+      v = detrended;
     }
 
     // Population variance of v.
@@ -411,6 +466,7 @@ export function buildSourceRowTokenHjorthMobility(
     source: sourceFilter,
     minRows,
     top,
+    detrend,
     sort,
     totalSources,
     totalRowsKept,

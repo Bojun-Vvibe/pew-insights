@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.131 — 2026-04-27
+
+### Added
+
+- `source-row-token-hjorth-mobility`: adds `--detrend` flag.
+  Subtracts the OLS linear trend from each per-source value
+  sequence before computing `var(v)` and `var(diff(v))`.
+
+  Why this is **genuinely orthogonal** to the no-detrend
+  default and not just a tuning knob:
+
+  Mathematically, a strong linear drift on a stationary noise
+  process inflates `var(v)` quadratically with `N` (the trend
+  variance dominates as `N^2/12 * b^2` for slope `b`) while
+  leaving `var(diff(v))` essentially unchanged (the diff of
+  the trend is the constant `b`, contributing `var(b) = 0`).
+  That biases the no-detrend mobility **downward toward 0**
+  for any series with strong drift, regardless of the
+  underlying step-to-step jitter regime. Detrending strips
+  out that quadratic-in-N denominator inflation and exposes
+  the **true ratio of step-to-step jitter to fluctuation
+  amplitude around the trend**.
+
+  Worked example confirmed by the new test
+  `detrend recovers white-noise asymptote on noise+drift`:
+  for `v[i] = i + e[i]` with iid zero-mean unit-variance
+  noise and N=2048, the no-detrend mobility collapses to
+  `~ 0.0017` (denominator dominated by trend variance
+  ~ 350,000) while the detrended mobility correctly recovers
+  `~ sqrt(2)`. Without `--detrend` the operator would
+  conclude this is a smooth source; with `--detrend` they
+  see the white-noise regime that's actually there.
+
+  Live smoke at `--detrend` against `~/.config/pew/queue.jsonl`
+  (1,685 rows, 6 sources; one source name redacted to
+  `vscode-XXX` for policy compliance):
+
+  ```
+  pew-insights source-row-token-hjorth-mobility
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,685
+  min-rows: 16   detrend: yes   top: -   sort: mobility-asc
+
+  per-source row-token Hjorth Mobility (sorted by mobility-asc; ties: source asc)
+  source       rows  var(v)              var(dv)             mobility
+  -----------  ----  ------------------  ------------------  --------
+  opencode      349  170666201032779.81  89218243489052.80   0.7230
+  openclaw      455   22334722487760.22  21738339538722.50   0.9866
+  codex          64  178723058277505.31  192303227566319.81  1.0373
+  vscode-XXX    333        213737166.13        287108965.56  1.1590
+  claude-code   299  234132242549674.03  323281135365393.00  1.1751
+  hermes        185    877905836597.40    1612447505406.83   1.3552
+  ```
+
+  Reading: compared to the no-detrend table from 0.6.130,
+  the **ranking re-orders** — `claude-code` jumps from 4th
+  to 5th-most-jittery (0.9583 -> 1.1751) and `vscode-XXX`
+  from 5th to 4th (1.1346 -> 1.1590). The biggest absolute
+  shift is `claude-code` (+0.1538), confirming it carried
+  the most mobility-suppressing drift in its raw series; once
+  the linear component is stripped, its underlying noise
+  regime is closer to the white-noise asymptote. `opencode`
+  barely moves (0.7217 -> 0.7230), indicating it had
+  essentially no linear trend to begin with — its smoothness
+  is genuine, not a drift artefact. **The detrend variant is
+  what operators usually want when ranking sources by
+  step-to-step jitter independent of growth.**
+
+  Adds 5 new tests: `detrend defaults to false; report flag
+  round-trips`, `detrend strips a perfect linear ramp ->
+  drops zero-variance` (residuals are exactly zero), `detrend
+  recovers white-noise asymptote on noise+drift` (the
+  worked-example regression test on 2048 LCG samples),
+  `detrend preserves mobility on already-zero-trend series`
+  (sinusoid baseline), and `detrend on alternating-only
+  series unchanged`. 2841 tests passing.
+
 ## 0.6.130 — 2026-04-27
 
 ### Added

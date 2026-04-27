@@ -352,3 +352,88 @@ test('hjorth-mobility: var(v) preserved across shuffle (sanity)', () => {
   const b = r.sources.find((x) => x.source === 'b')!;
   assert.ok(Math.abs(a.varV - b.varV) < 1e-9);
 });
+
+test('hjorth-mobility: detrend defaults to false; report flag round-trips', () => {
+  const v = Array.from({ length: 32 }, (_, i) => i + (i % 3));
+  const r1 = buildSourceRowTokenHjorthMobility(series(v), { generatedAt: GEN });
+  const r2 = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(r1.detrend, false);
+  assert.equal(r2.detrend, true);
+});
+
+test('hjorth-mobility: detrend strips a perfect linear ramp -> drops zero-variance', () => {
+  // Pure linear v[i] = i. Detrend residuals are exactly zero -> var(v)=0.
+  const v = Array.from({ length: 32 }, (_, i) => i);
+  const r = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedZeroVariance, 1);
+});
+
+test('hjorth-mobility: detrend recovers white-noise asymptote on noise+drift', () => {
+  // v[i] = i + e[i] with deterministic-LCG noise. No-detrend mobility -> 0
+  // because the trend variance dominates var(v); detrended mobility ~ sqrt(2).
+  let s = 99;
+  function rnd() {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff - 0.5;
+  }
+  const N = 2048;
+  const e = Array.from({ length: N }, () => rnd());
+  const v = e.map((ei, i) => i + ei);
+
+  const noDetrend = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+  });
+  const detr = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  const mNo = noDetrend.sources[0]!.mobility;
+  const mDe = detr.sources[0]!.mobility;
+  // No-detrend: dominated by quadratic trend variance -> mobility small.
+  assert.ok(mNo < 0.05, `no-detrend mobility=${mNo} should be near 0`);
+  // Detrended: white-noise asymptote ~ sqrt(2).
+  assert.ok(
+    Math.abs(mDe - Math.SQRT2) < 0.1,
+    `detrended mobility=${mDe} should be ~sqrt(2)`,
+  );
+});
+
+test('hjorth-mobility: detrend preserves mobility on already-zero-trend series', () => {
+  // Symmetric oscillation around zero has no linear trend; detrend should
+  // give essentially the same answer as no-detrend.
+  const v = Array.from({ length: 64 }, (_, i) =>
+    Math.sin(i * 0.4) * 100,
+  );
+  const noDe = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+  });
+  const de = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.ok(
+    Math.abs(noDe.sources[0]!.mobility - de.sources[0]!.mobility) < 1e-2,
+  );
+});
+
+test('hjorth-mobility: detrend on alternating-only series unchanged', () => {
+  // Alternation 0/100 has zero linear trend; detrend should not change mobility.
+  const v = Array.from({ length: 64 }, (_, i) => (i % 2 === 0 ? 0 : 100));
+  const noDe = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+  });
+  const de = buildSourceRowTokenHjorthMobility(series(v), {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.ok(
+    Math.abs(noDe.sources[0]!.mobility - de.sources[0]!.mobility) < 1e-2,
+  );
+});
