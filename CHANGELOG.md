@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.97 — 2026-04-27
+
+### Added
+
+- `source-row-token-iqr-ratio`: per-source robust
+  dispersion of `total_tokens` across queue rows,
+  computed as `iqrRatio = (q3 - q1) / median` using
+  type-7 (linear-interpolation) quantiles (the same
+  estimator used by `numpy.quantile` default and R's
+  `quantile(..., type = 7)`).
+
+  Headline question: **for each source, how spread out
+  is the central 50 % of per-row token magnitudes
+  relative to the typical row, measured by *order
+  statistics* that are immune to single-value outliers?**
+
+  Per-source emit:
+  - `q1`, `median`, `q3` — type-7 quantiles.
+  - `iqr` — `q3 - q1`.
+  - `iqrRatio`:
+    - `iqr / median`  when `median > 0`,
+    - `0`             when `iqr = 0`           (`flat: true`),
+    - `null`          when `median = 0 && iqr > 0`
+                       (`degenerate: true`; sparse-burst
+                       pattern: > 50 % of rows are zero
+                       plus a non-trivial top quartile,
+                       so the ratio diverges and is
+                       reported as `null` rather than
+                       `+Infinity`).
+
+  Genuinely orthogonal to every existing
+  `source-row-token-*` lens:
+
+  - `source-row-token-coefficient-of-variation` uses
+    the **mean** and **stddev** — both arbitrarily
+    inflated by a single huge outlier. iqrRatio uses
+    **order statistics** (Q1, median, Q3) which are
+    bounded by *rank*, not *value*; swapping the
+    largest row's token count for `1e15` leaves Q1,
+    median, Q3 (and iqrRatio) numerically unchanged
+    (verified by an explicit unit test).
+  - `source-row-token-mad` (median absolute deviation
+    / median) is also robust, but it summarises the
+    distance of **all** rows from the median (via a
+    median-of-absolute-deviations). iqrRatio measures
+    the **width of the central 50 %** specifically and
+    *deliberately ignores* the outer 50 %.
+  - `source-row-token-gini` is a Lorenz-curve
+    **concentration** index over the whole
+    distribution; not a width-relative-to-centre.
+  - `source-row-token-skewness` /
+    `source-row-token-kurtosis` are shape moments
+    that say nothing about *width* — a narrow but
+    heavy-tailed distribution and a wide but flat one
+    can share kurtosis.
+  - `source-row-token-autocorrelation-lag1` measures
+    **ordering persistence**, blind to dispersion;
+    shuffling a source's rows zeros out lag-1 ACF but
+    leaves iqrRatio numerically unchanged (verified by
+    an explicit order-independence unit test).
+  - `source-output-tokens-per-row-percentiles` reports
+    raw percentiles of `output_tokens` (not
+    `total_tokens`) and leaves any ratio computation
+    to the operator.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to vscode-assistant-redacted):
+
+  ```
+  pew-insights source-row-token-iqr-ratio
+  sources: 6 (shown 6)    rows: 1,631    min-rows: 4    min-iqr-ratio: 0.0000    sort: iqr-ratio-desc
+  dropped: 0 bad hour_start, 0 bad total_tokens, 0 negative total_tokens, 0 by source filter, 0 below min-rows, 0 below min-iqr-ratio, 0 degenerate (median=0, iqr>0), 0 below top cap
+
+  source                     rows  q1          median      q3           iqr          iqrRatio  flat  degen
+  -------------------------  ----  ----------  ----------  -----------  -----------  --------  ----  -----
+  claude-code                299   728733.00   3319967.00  13677924.50  12949191.50  3.9004    no    no
+  hermes                     170   160251.25   392360.50   1412404.25   1252153.00   3.1913    no    no
+  codex                      64    1664220.25  7132861.00  18367242.00  16703021.75  2.3417    no    no
+  vscode-assistant-redacted  333   815.00      2319.00     5116.00      4301.00      1.8547    no    no
+  opencode                   330   1300095.50  7260153.00  12408036.50  11107941.00  1.5300    no    no
+  openclaw                   435   1520316.00  2919905.00  5241292.00   3720976.00   1.2743    no    no
+  ```
+
+  Reading: the metric ranks producers by how *wide*
+  their central row-token mass is relative to the
+  typical row, *immune* to the largest-call outlier on
+  each source. `claude-code` (iqrRatio = 3.90) has the
+  widest central spread — its Q3 is roughly 4× its
+  median, meaning the upper-quartile rows routinely
+  carry an order of magnitude more tokens than the
+  median row, even before the tail kicks in. `openclaw`
+  (iqrRatio = 1.27) is the tightest — its central 50 %
+  sits within ~1.3× of its median, so the producer's
+  middle rows are unusually homogeneous in size.
+  Notably, the redacted IDE-style micro-row producer
+  (median ~ 2,319 tokens — three orders of magnitude
+  smaller than every other source) sits in the middle
+  of the iqrRatio ranking (1.85), which is exactly the
+  *robust* signal the lens is designed to surface:
+  absolute scale doesn't drive the ranking, *relative
+  central spread* does.
+
+### Tests
+
+- 15 new unit tests in `test/sourcerowtokeniqrratio.test.ts`
+  covering: empty input + defaults; argument validation
+  (rejects `minRows < 4`, non-integer `minRows`,
+  negative / NaN / +Infinity `minIqrRatio`, non-positive
+  `top`, fractional `top`, bogus `sort`, bogus `since`,
+  bogus `until`); drop counters for bad `hour_start`,
+  bad `total_tokens`, **negative** `total_tokens` (a
+  drop class new to this lens); a hand-computed
+  type-7-quantile golden case (`100,200,300,400` →
+  `q1=175, median=250, q3=325, iqrRatio=0.6`); constant
+  series → `flat: true`; degenerate sparse-burst
+  (`median=0, iqr>0`) → `iqrRatio=null,
+  degenerate=true`; `--source` filter dropped count;
+  `--since` / `--until` window clamping; `minRows`
+  boundary; **order independence** (shuffling rows
+  leaves iqrRatio numerically unchanged — orthogonality
+  witness vs autocorrelation-lag1); **outlier
+  robustness** (replacing the max with `1e15` leaves
+  Q1 / median / Q3 / iqrRatio numerically unchanged —
+  orthogonality witness vs CV / MAD-of-means); sort
+  modes and source-asc tiebreak; `--top` cap with
+  `droppedBelowTopCap`; degenerate-row gating by
+  `--min-iqr-ratio > 0` accounted under
+  `droppedDegenerate`; determinism (two calls produce
+  byte-identical JSON).
+
+  Total: 2529 -> 2544 (+15).
+
 ## 0.6.96 — 2026-04-27
 
 ### Changed
