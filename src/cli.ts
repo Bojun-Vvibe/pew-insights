@@ -13211,6 +13211,14 @@ program
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-centroid-frac-bins <v>',
+    'suppress sources whose centroidFractionBins is strictly below this threshold; surfaces them under droppedBelowMinCentroidFracBins. Useful to surface only the more high-frequency-loaded sources.',
+  )
+  .option(
+    '--max-centroid-frac-bins <v>',
+    'suppress sources whose centroidFractionBins is strictly above this threshold; surfaces them under droppedAboveMaxCentroidFracBins. Symmetric to --min-centroid-frac-bins; useful to surface only the more low-frequency-loaded sources.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'centroid-asc' (default; most low-frequency-loaded first) | 'centroid-desc' (most high-frequency-loaded first) | 'rows' | 'source'",
     'centroid-asc',
@@ -13224,6 +13232,8 @@ program
         source?: string;
         minRows: string;
         top?: string;
+        minCentroidFracBins?: string;
+        maxCentroidFracBins?: string;
         sort: string;
         json?: boolean;
       },
@@ -13246,6 +13256,26 @@ program
           }
           top = t;
         }
+        let minCentroidFracBins: number | null = null;
+        if (opts.minCentroidFracBins != null) {
+          const v = Number.parseFloat(opts.minCentroidFracBins);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-centroid-frac-bins must be a finite number (got ${opts.minCentroidFracBins})`,
+            );
+          }
+          minCentroidFracBins = v;
+        }
+        let maxCentroidFracBins: number | null = null;
+        if (opts.maxCentroidFracBins != null) {
+          const v = Number.parseFloat(opts.maxCentroidFracBins);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-centroid-frac-bins must be a finite number (got ${opts.maxCentroidFracBins})`,
+            );
+          }
+          maxCentroidFracBins = v;
+        }
         const validSorts = ['centroid-asc', 'centroid-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -13259,6 +13289,8 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minCentroidFracBins,
+          maxCentroidFracBins,
           sort: opts.sort as
             | 'centroid-asc'
             | 'centroid-desc'

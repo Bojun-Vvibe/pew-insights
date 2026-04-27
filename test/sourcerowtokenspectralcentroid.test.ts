@@ -537,3 +537,155 @@ test('spectral-centroid: totalSources counts groups before validity drops', () =
   assert.equal(r.sources.length, 1);
   assert.equal(r.droppedBelowMinRows, 1);
 });
+
+// ----- 0.6.149 refinement: --min/--max-centroid-frac-bins threshold filters -----
+
+function multiSourceMixed(): QueueLine[] {
+  // Three sources at very different centre frequencies.
+  const n = 64;
+  const queue: QueueLine[] = [];
+  const freqs: Array<[string, number]> = [
+    ['lo', 3],
+    ['mid', 16],
+    ['hi', 28],
+  ];
+  for (const [src, k] of freqs) {
+    const v: number[] = [];
+    for (let t = 0; t < n; t++) {
+      v.push(500 + 80 * Math.sin((2 * Math.PI * k * t) / n));
+    }
+    queue.push(...series(v, src));
+  }
+  return queue;
+}
+
+test('spectral-centroid: defaults — min/max centroid-frac-bins null', () => {
+  const r = buildSourceRowTokenSpectralCentroid([], { generatedAt: GEN });
+  assert.equal(r.minCentroidFracBins, null);
+  assert.equal(r.maxCentroidFracBins, null);
+  assert.equal(r.droppedBelowMinCentroidFracBins, 0);
+  assert.equal(r.droppedAboveMaxCentroidFracBins, 0);
+});
+
+test('spectral-centroid: --min-centroid-frac-bins suppresses low-freq sources', () => {
+  const r = buildSourceRowTokenSpectralCentroid(multiSourceMixed(), {
+    minCentroidFracBins: 0.4,
+    generatedAt: GEN,
+  });
+  // Only 'hi' (centroid ~ 28/32 ~ 0.875) should remain; 'lo' and 'mid' suppressed.
+  for (const s of r.sources) {
+    assert.ok(s.centroidFractionBins >= 0.4);
+  }
+  assert.ok(r.droppedBelowMinCentroidFracBins >= 1);
+});
+
+test('spectral-centroid: --max-centroid-frac-bins suppresses high-freq sources', () => {
+  const r = buildSourceRowTokenSpectralCentroid(multiSourceMixed(), {
+    maxCentroidFracBins: 0.4,
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    assert.ok(s.centroidFractionBins <= 0.4);
+  }
+  assert.ok(r.droppedAboveMaxCentroidFracBins >= 1);
+});
+
+test('spectral-centroid: min and max combine — band-pass on centroid', () => {
+  const r = buildSourceRowTokenSpectralCentroid(multiSourceMixed(), {
+    minCentroidFracBins: 0.3,
+    maxCentroidFracBins: 0.7,
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    assert.ok(s.centroidFractionBins >= 0.3);
+    assert.ok(s.centroidFractionBins <= 0.7);
+  }
+});
+
+test('spectral-centroid: min > max throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralCentroid([], {
+        minCentroidFracBins: 0.7,
+        maxCentroidFracBins: 0.3,
+      }),
+    /minCentroidFracBins.*maxCentroidFracBins/,
+  );
+});
+
+test('spectral-centroid: non-finite minCentroidFracBins throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralCentroid([], {
+        minCentroidFracBins: Number.NaN,
+      }),
+    /minCentroidFracBins/,
+  );
+});
+
+test('spectral-centroid: non-finite maxCentroidFracBins throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralCentroid([], {
+        maxCentroidFracBins: Number.POSITIVE_INFINITY,
+      }),
+    /maxCentroidFracBins/,
+  );
+});
+
+test('spectral-centroid: filter is post-compute — does not affect retained values', () => {
+  const baseline = buildSourceRowTokenSpectralCentroid(multiSourceMixed(), {
+    generatedAt: GEN,
+  });
+  const filtered = buildSourceRowTokenSpectralCentroid(multiSourceMixed(), {
+    minCentroidFracBins: 0.2,
+    generatedAt: GEN,
+  });
+  for (const f of filtered.sources) {
+    const b = baseline.sources.find((s) => s.source === f.source)!;
+    assert.equal(f.centroidBin, b.centroidBin);
+    assert.equal(f.centroidFractionBins, b.centroidFractionBins);
+  }
+});
+
+test('spectral-centroid: filter applied before --top cap', () => {
+  // 5 sources, suppress the 2 lowest, then cap to top 2.
+  const queue: QueueLine[] = [];
+  const n = 32;
+  for (let s = 0; s < 5; s++) {
+    const k = 2 + s * 5; // ks: 2, 7, 12, 17, 22
+    const v: number[] = [];
+    for (let t = 0; t < n; t++) {
+      v.push(300 + 50 * Math.sin((2 * Math.PI * k * t) / n));
+    }
+    queue.push(...series(v, `s-${s}`));
+  }
+  const r = buildSourceRowTokenSpectralCentroid(queue, {
+    minCentroidFracBins: 0.4,
+    top: 2,
+    sort: 'centroid-asc',
+    generatedAt: GEN,
+  });
+  assert.ok(r.sources.length <= 2);
+  assert.ok(r.droppedBelowMinCentroidFracBins >= 1);
+  for (const s of r.sources) {
+    assert.ok(s.centroidFractionBins >= 0.4);
+  }
+});
+
+test('spectral-centroid: schema includes new threshold fields', () => {
+  const r = buildSourceRowTokenSpectralCentroid([], {
+    minCentroidFracBins: 0.1,
+    maxCentroidFracBins: 0.9,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minCentroidFracBins, 0.1);
+  assert.equal(r.maxCentroidFracBins, 0.9);
+  for (const key of [
+    'droppedBelowMinCentroidFracBins',
+    'droppedAboveMaxCentroidFracBins',
+  ]) {
+    assert.ok(key in r, `missing ${key}`);
+    assert.equal((r as unknown as Record<string, number>)[key], 0);
+  }
+});

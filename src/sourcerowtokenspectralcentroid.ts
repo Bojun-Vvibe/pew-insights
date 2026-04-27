@@ -128,6 +128,25 @@ export interface SourceRowTokenSpectralCentroidOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported `centroidFractionBins`.
+   * Sources whose value is strictly below this threshold are
+   * suppressed and counted under `droppedBelowMinCentroidFracBins`.
+   * Useful to surface only the more high-frequency-loaded sources
+   * (per-row jitter rather than slow envelope).
+   */
+  minCentroidFracBins?: number | null;
+  /**
+   * Optional upper bound on reported `centroidFractionBins`.
+   * Symmetric counterpart to `minCentroidFracBins`. Surfaces in
+   * `droppedAboveMaxCentroidFracBins`. Useful to surface only the
+   * more low-frequency-loaded sources (slow envelope dominates).
+   *
+   * If both are set and `minCentroidFracBins > maxCentroidFracBins`,
+   * the constructor throws — operator error, not a silent
+   * empty report.
+   */
+  maxCentroidFracBins?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'centroid-asc' (default): centroidFractionBins ascending —
    *                               most low-frequency-loaded first.
@@ -166,6 +185,8 @@ export interface SourceRowTokenSpectralCentroidReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  minCentroidFracBins: number | null;
+  maxCentroidFracBins: number | null;
   sort: SourceRowTokenSpectralCentroidSort;
   totalSources: number;
   totalRowsKept: number;
@@ -176,6 +197,8 @@ export interface SourceRowTokenSpectralCentroidReport {
   droppedBelowMinRows: number;
   droppedConstantSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinCentroidFracBins: number;
+  droppedAboveMaxCentroidFracBins: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralCentroidRow[];
 }
@@ -202,6 +225,31 @@ export function buildSourceRowTokenSpectralCentroid(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const minCentroidFracBins = opts.minCentroidFracBins ?? null;
+  if (minCentroidFracBins !== null) {
+    if (!Number.isFinite(minCentroidFracBins)) {
+      throw new Error(
+        `minCentroidFracBins must be a finite number (got ${opts.minCentroidFracBins})`,
+      );
+    }
+  }
+  const maxCentroidFracBins = opts.maxCentroidFracBins ?? null;
+  if (maxCentroidFracBins !== null) {
+    if (!Number.isFinite(maxCentroidFracBins)) {
+      throw new Error(
+        `maxCentroidFracBins must be a finite number (got ${opts.maxCentroidFracBins})`,
+      );
+    }
+  }
+  if (
+    minCentroidFracBins !== null &&
+    maxCentroidFracBins !== null &&
+    minCentroidFracBins > maxCentroidFracBins
+  ) {
+    throw new Error(
+      `minCentroidFracBins (${minCentroidFracBins}) must be <= maxCentroidFracBins (${maxCentroidFracBins})`,
+    );
   }
   const sort = opts.sort ?? 'centroid-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -371,10 +419,34 @@ export function buildSourceRowTokenSpectralCentroid(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinCentroidFracBins = 0;
+  let droppedAboveMaxCentroidFracBins = 0;
+  let postRows = allRows;
+  if (minCentroidFracBins !== null || maxCentroidFracBins !== null) {
+    const kept: SourceRowTokenSpectralCentroidRow[] = [];
+    for (const row of postRows) {
+      if (
+        minCentroidFracBins !== null &&
+        row.centroidFractionBins < minCentroidFracBins
+      ) {
+        droppedBelowMinCentroidFracBins += 1;
+        continue;
+      }
+      if (
+        maxCentroidFracBins !== null &&
+        row.centroidFractionBins > maxCentroidFracBins
+      ) {
+        droppedAboveMaxCentroidFracBins += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -384,6 +456,8 @@ export function buildSourceRowTokenSpectralCentroid(
     source: sourceFilter,
     minRows,
     top,
+    minCentroidFracBins,
+    maxCentroidFracBins,
     sort,
     totalSources,
     totalRowsKept,
@@ -394,6 +468,8 @@ export function buildSourceRowTokenSpectralCentroid(
     droppedBelowMinRows,
     droppedConstantSeries,
     droppedDegenerate,
+    droppedBelowMinCentroidFracBins,
+    droppedAboveMaxCentroidFracBins,
     droppedBelowTopCap,
     sources: finalSources,
   };

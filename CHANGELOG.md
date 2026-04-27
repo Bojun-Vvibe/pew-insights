@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.149 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-centroid` gains two refinement
+  threshold flags that compose with the 0.6.148 base lens
+  without changing default behaviour:
+
+  - `--min-centroid-frac-bins <v>`: suppress sources whose
+    `centroidFractionBins` is strictly below `v`. Suppressed
+    sources surface in `droppedBelowMinCentroidFracBins`.
+    Useful to surface only the more high-frequency-loaded
+    sources (per-row jitter rather than slow envelope).
+  - `--max-centroid-frac-bins <v>`: symmetric counterpart.
+    Suppress sources whose `centroidFractionBins` is strictly
+    above `v`. Surfaces in `droppedAboveMaxCentroidFracBins`.
+    Useful to surface only the more low-frequency-loaded
+    sources (slow envelope dominates).
+
+  Both default to `null` (no filter); both must be finite
+  if set; if both are set and `min > max` the constructor
+  throws (operator error, not a silent empty report).
+  Pure post-compute filters — they do not affect the
+  underlying spectral-centroid computation, only which rows
+  are reported. Compose cleanly with `--top`: filter is
+  applied first, then the cap.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,723
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-centroid --max-centroid-frac-bins 0.3
+  per-source row-token spectral centroid (sorted by centroid-asc; ties: source asc)
+  source       rows  bins  totPower   centroidBin  centFrac  domBin  domShare
+  -----------  ----  ----  ---------  -----------  --------  ------  --------
+  opencode     362   181   1.086e+19  30.6010      0.1691    2       0.1086
+  openclaw     468   234   2.552e+18  61.0190      0.2608    2       0.0899
+  codex        64    32    4.162e+17  8.5305       0.2666    1       0.2778
+  claude-code  299   149   1.385e+19  39.8729      0.2676    1       0.2000
+  ```
+
+  2 sources suppressed under `droppedAboveMaxCentroidFracBins`
+  (`vscode-XXX` 0.3340, `hermes` 0.4199). Reading:
+  `--max-centroid-frac-bins 0.3` isolates the four sources
+  whose PSD first moment sits in the lower 30% of the band
+  — the more low-frequency-loaded subset, where per-row
+  token volume is dominated by slow envelope rather than
+  per-row jitter. The flag pair lets operators read either
+  end of the brightness distribution without re-running the
+  lens.
+
+  Tests: 3170 -> 3180 (+10 in this refinement, +98
+  cumulative since the 0.6.145 baseline).
+
 ## 0.6.148 — 2026-04-28
 
 ### Added
