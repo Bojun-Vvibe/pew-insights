@@ -10007,6 +10007,77 @@ import type {
   SourceRowTokenSpectralBandwidthReport,
   SourceRowTokenSpectralBandwidthRow,
 } from './sourcerowtokenspectralbandwidth.js';
+import type {
+  SourceRowTokenSpectralSkewnessReport,
+  SourceRowTokenSpectralSkewnessRow,
+} from './sourcerowtokenspectralskewness.js';
+
+export function renderSourceRowTokenSpectralSkewness(
+  r: SourceRowTokenSpectralSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-skewness: ${r.minSkewness ?? '\u2014'}    max-skewness: ${r.maxSkewness ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinSkewness)} below min-skewness, ${formatNumber(r.droppedAboveMaxSkewness)} above max-skewness, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source standardized (Fisher) spectral skewness of the one-sided non-DC PSD P[k] around its centroid c, computed on the mean-centered per-row total_tokens series. skewness = m3 / m2^(3/2) where m2 = sum_k (k - c)^2 * P[k] / sum_k P[k] and m3 = sum_k (k - c)^3 * P[k] / sum_k P[k]. Sign tells which side of the centroid the PSD tail leans: positive => long high-frequency tail; negative => long low-frequency tail. Magnitude is the asymmetry strength in standardized units. Peeters 2004 (CUIDADO §6.1.4) / Lerch 2012 §3.3.2 / Joanes & Gill 1998. PSD *3rd standardized central moment* (asymmetry around centroid), genuinely orthogonal to: spectral-centroid (1st moment / location — equal-centroid PSDs can have opposite-sign skewness), spectral-bandwidth (2nd central moment / spread — equal-bandwidth PSDs can have opposite-sign skewness; standardization by m2^(3/2) deliberately strips spread out so only direction remains), spectral-rolloff (CDF quantile), spectral-flatness (entropy ratio G/A — position-blind), hjorth-mobility (sqrt of *non-central* 2nd moment, sign-blind), TKEO, single-lag autocorrelation, event-count lenses (zcr, runs-test, turning-point, mann-kendall), time-domain symbolic entropies (approximate, sample, permutation, renyi, lempel-ziv), scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd), and all amplitude-domain shape lenses including amplitude-skewness (this lens is order-sensitive; amplitude-skewness is order-invariant).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral skewness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'centroidBin',
+    'bwBin',
+    'm3',
+    'skewness',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralSkewnessRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      s.centroidBin.toFixed(4),
+      s.bandwidthBin.toFixed(4),
+      s.m3.toExponential(3),
+      s.skewness.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenSpectralBandwidth(
   r: SourceRowTokenSpectralBandwidthReport,

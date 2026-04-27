@@ -125,6 +125,7 @@ import {
   renderSourceRowTokenSpectralRolloff,
   renderSourceRowTokenSpectralCentroid,
   renderSourceRowTokenSpectralBandwidth,
+  renderSourceRowTokenSpectralSkewness,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -311,6 +312,7 @@ import { buildSourceRowTokenSpectralFlatness } from './sourcerowtokenspectralfla
 import { buildSourceRowTokenSpectralRolloff } from './sourcerowtokenspectralrolloff.js';
 import { buildSourceRowTokenSpectralCentroid } from './sourcerowtokenspectralcentroid.js';
 import { buildSourceRowTokenSpectralBandwidth } from './sourcerowtokenspectralbandwidth.js';
+import { buildSourceRowTokenSpectralSkewness } from './sourcerowtokenspectralskewness.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -13421,6 +13423,130 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralBandwidth(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-skewness')
+  .description(
+    "Per-source standardized (Fisher) spectral skewness (3rd standardized central moment of the one-sided non-DC PSD around its centroid) of the mean-centered per-row total_tokens series. skewness = m3 / m2^(3/2). Sign tells which side of the centroid the PSD tail leans (positive => high-frequency tail; negative => low-frequency tail). Peeters 2004 / Lerch 2012 / Joanes & Gill 1998. PSD *3rd standardized central moment* (asymmetry around centroid), genuinely orthogonal to spectral-centroid (1st moment / location), spectral-bandwidth (2nd central moment / spread; standardization by m2^(3/2) deliberately strips spread out so only direction remains), spectral-rolloff, spectral-flatness, hjorth-mobility (sign-blind), TKEO, single-lag autocorrelation, event-count lenses, time-domain symbolic entropies, scaling/fractal lenses, and amplitude-domain shape lenses (which are order-invariant; this lens is order-sensitive).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--min-skewness <v>',
+    'suppress sources whose standardized skewness is strictly below this threshold; surfaces them under droppedBelowMinSkewness. Useful to surface only PSDs leaning sufficiently towards the high-frequency tail.',
+  )
+  .option(
+    '--max-skewness <v>',
+    'suppress sources whose standardized skewness is strictly above this threshold; surfaces them under droppedAboveMaxSkewness. Symmetric to --min-skewness; useful to surface only PSDs leaning towards the low-frequency tail.',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'skewness-asc' (default; most negatively skewed / long low-frequency tail first) | 'skewness-desc' (most positively skewed / long high-frequency tail first) | 'abs-skewness-desc' (most asymmetric in either direction first) | 'rows' | 'source'",
+    'skewness-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        minSkewness?: string;
+        maxSkewness?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        let minSkewness: number | null = null;
+        if (opts.minSkewness != null) {
+          const v = Number.parseFloat(opts.minSkewness);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-skewness must be a finite number (got ${opts.minSkewness})`,
+            );
+          }
+          minSkewness = v;
+        }
+        let maxSkewness: number | null = null;
+        if (opts.maxSkewness != null) {
+          const v = Number.parseFloat(opts.maxSkewness);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-skewness must be a finite number (got ${opts.maxSkewness})`,
+            );
+          }
+          maxSkewness = v;
+        }
+        const validSorts = [
+          'skewness-asc',
+          'skewness-desc',
+          'abs-skewness-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          minSkewness,
+          maxSkewness,
+          sort: opts.sort as
+            | 'skewness-asc'
+            | 'skewness-desc'
+            | 'abs-skewness-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralSkewness(report) + '\n',
           );
         }
       } catch (e) {
