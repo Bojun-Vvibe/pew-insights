@@ -120,6 +120,7 @@ import {
   renderSourceRowTokenZeroCrossingRate,
   renderSourceRowTokenApproximateEntropy,
   renderSourceRowTokenTeagerKaiser,
+  renderSourceRowTokenCrestFactor,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -301,6 +302,7 @@ import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutati
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenApproximateEntropy } from './sourcerowtokenapproximateentropy.js';
 import { buildSourceRowTokenTeagerKaiser } from './sourcerowtokenteagerkaiser.js';
+import { buildSourceRowTokenCrestFactor } from './sourcerowtokencrestfactor.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -12825,6 +12827,87 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenTeagerKaiser(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-crest-factor')
+  .description(
+    "Per-source crest factor C = peak / rms on the per-row total_tokens sequence. C is bounded in [1, sqrt(n)]: 1 means perfectly flat positive, sqrt(n) means one nonzero sample among n-1 zeros. Distinct from cv (centered dispersion), burstiness-coefficient (bounded sigma-vs-mu ratio), fano-factor (variance/mean), kurtosis/skewness (centered shape moments), order-sensitive lenses (TKEO/hjorth/autocorrelation/zcr/runs-test/turning-point/mann-kendall) and entropy/fractal/lempel-ziv lenses. crestFactorNorm = (C - 1) / (sqrt(n) - 1) puts heterogeneous-n sources on the same [0, 1] scale.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 2 (default 4)',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'crest-asc' (default; least peaky first) | 'crest-desc' (most peaky first) | 'norm-asc' | 'norm-desc' | 'rows' | 'source'",
+    'crest-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['crest-asc', 'crest-desc', 'norm-asc', 'norm-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenCrestFactor(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as 'crest-asc' | 'crest-desc' | 'norm-asc' | 'norm-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenCrestFactor(report) + '\n',
           );
         }
       } catch (e) {

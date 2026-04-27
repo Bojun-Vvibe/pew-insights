@@ -9677,6 +9677,67 @@ import type {
   SourceRowTokenTeagerKaiserReport,
   SourceRowTokenTeagerKaiserRow,
 } from './sourcerowtokenteagerkaiser.js';
+import type {
+  SourceRowTokenCrestFactorReport,
+  SourceRowTokenCrestFactorRow,
+} from './sourcerowtokencrestfactor.js';
+
+export function renderSourceRowTokenCrestFactor(
+  r: SourceRowTokenCrestFactorReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-crest-factor'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroRms)} zero-rms (constant-zero series), ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source crest factor C = peak / rms on the per-row total_tokens sequence. peak = max_i x_i, rms = sqrt(mean(x_i^2)). C is bounded in [1, sqrt(n)]: 1 means a perfectly flat positive series, sqrt(n) means one nonzero sample among n-1 zeros. Distinct from cv/sigma (peakiness vs. centered dispersion), from burstiness-coefficient (bounded sigma-vs-mu ratio), from fano-factor (variance/mean), from skewness/kurtosis (centered shape moments), from order-sensitive lenses (TKEO/hjorth/autocorrelation/zcr/runs-test/turning-point/mann-kendall) and from entropy/fractal/lempel-ziv lenses. crestFactorNorm = (C - 1) / (sqrt(n) - 1) puts heterogeneous-n sources on the same [0, 1] scale.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token crest factor (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'peak', 'rms', 'crestFactor', 'cMax', 'cNorm'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenCrestFactorRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.peak.toFixed(2),
+      s.rms.toFixed(2),
+      s.crestFactor.toFixed(4),
+      s.crestFactorMax.toFixed(4),
+      s.crestFactorNorm.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenTeagerKaiser(
   r: SourceRowTokenTeagerKaiserReport,
