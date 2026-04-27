@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.124 — 2026-04-27
+
+### Changed
+
+- `source-row-token-renyi-entropy`: extra test coverage for two
+  classical Rényi-entropy properties:
+
+  - **Effective participation ratio bounds**: under Rényi-2 the
+    "effective number of bins" is `1 / Σ p²`. Asserts on three
+    distinct distributions (95/5 concentrated, 3-bin equal,
+    full uniform) that `1 / collisionProb ∈ [1, support]`. This
+    is a tight algebraic invariant — collision probability ≥
+    `1/support` (Cauchy-Schwarz) and ≤ 1, so the effective
+    bin count is in `[1, K]` always. Catches future
+    regressions where a normalisation typo could violate
+    Cauchy-Schwarz.
+  - **Hartley limit**: as `α → 0+`, `H_α → log2(K)` (the
+    Hartley / max entropy). Asserts at `α = 0.05` on an
+    80/15/5 non-uniform distribution that `h2` is within 5%
+    of `log2(support)`. Confirms the small-α regime behaves
+    correctly and that the generic `α` code path matches
+    its theoretical limit, not just the integer α values
+    already covered.
+
+  Test count: 2757 -> 2759. No production code change.
+
 ## 0.6.123 — 2026-04-27
 
 ### Added

@@ -462,3 +462,63 @@ test('renyi-entropy: alpha=2 on uniform distribution still yields h2Norm=1', () 
   assert.ok(Math.abs(r2.sources[0]!.h2Norm - 1) < 1e-12);
   assert.ok(Math.abs(r05.sources[0]!.h2Norm - 1) < 1e-12);
 });
+
+test('renyi-entropy: effective participation ratio sanity (1/sumP^alpha)', () => {
+  // The "effective number of bins" under Renyi-2 is 1 / sumP^2,
+  // bounded above by support and below by 1. Verify both bounds hold
+  // across a mixed batch of distributions.
+  const cases: number[][] = [];
+  // case A: highly concentrated (95/5)
+  const a: number[] = [];
+  for (let i = 0; i < 95; i++) a.push(0);
+  for (let i = 0; i < 5; i++) a.push(50);
+  cases.push(a);
+  // case B: 3-bin equal
+  const b: number[] = [];
+  for (let i = 0; i < 30; i++) b.push(0);
+  for (let i = 0; i < 30; i++) b.push(20);
+  for (let i = 0; i < 30; i++) b.push(50);
+  cases.push(b);
+  // case C: uniform
+  const c: number[] = [];
+  for (let v = 0; v < 8; v++) {
+    for (let k = 0; k < 10; k++) c.push(v);
+  }
+  cases.push(c);
+
+  for (let i = 0; i < cases.length; i++) {
+    const r = buildSourceRowTokenRenyiEntropy(series(cases[i]!, `c${i}`), {
+      generatedAt: GEN,
+      bins: 10,
+      alpha: 2,
+    });
+    assert.equal(r.sources.length, 1);
+    const row = r.sources[0]!;
+    const eff = 1 / row.collisionProb;
+    assert.ok(
+      eff >= 1 - 1e-12 && eff <= row.support + 1e-12,
+      `case ${i}: 1/sumP^2 (${eff}) must lie in [1, support=${row.support}]`,
+    );
+  }
+});
+
+test('renyi-entropy: small alpha pushes h2 toward log2(support)', () => {
+  // As alpha -> 0+, H_alpha -> log2(K). Use alpha=0.05 on a
+  // non-uniform distribution and assert h2 is within 5% of log2(support).
+  const vals: number[] = [];
+  for (let i = 0; i < 80; i++) vals.push(0);
+  for (let i = 0; i < 15; i++) vals.push(20);
+  for (let i = 0; i < 5; i++) vals.push(50);
+  const r = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 10,
+    alpha: 0.05,
+  });
+  const row = r.sources[0]!;
+  const limit = Math.log2(row.support);
+  const rel = Math.abs(row.h2 - limit) / limit;
+  assert.ok(
+    rel < 0.05,
+    `expected h2 (${row.h2}) within 5% of log2(support)=${limit}, got rel=${rel}`,
+  );
+});
