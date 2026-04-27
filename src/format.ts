@@ -8009,6 +8009,78 @@ export function renderSourceRowTokenSkewness(
 }
 
 import type {
+  SourcePeakHourOfDayArgmaxReport,
+  SourcePeakHourOfDayArgmaxRow,
+} from './sourcepeakhourofdayargmax.js';
+
+export function renderSourcePeakHourOfDayArgmax(
+  r: SourcePeakHourOfDayArgmaxReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-peak-hour-of-day-argmax'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-mass: ${r.minMass.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedZeroMassSources)} zero-mass sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMass)} below min-mass, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source argmax UTC hour-of-day on total_tokens mass histogram. peakHour=argmax_h m[h], peakShare=peak/total, margin=peakShare-secondShare. margin->1: razor-sharp single-hour spike; margin->0: two or more hours essentially tied. tiebreak inside argmax: lowest hour wins.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source hour-of-day mass argmax (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mass',
+    'peakH',
+    'peakShare',
+    '2ndH',
+    '2ndShare',
+    'margin',
+    'hActive',
+  ];
+  const rows: string[][] = r.sources.map((s: SourcePeakHourOfDayArgmaxRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    formatNumber(Math.round(s.totalMass)),
+    String(s.peakHour).padStart(2, '0'),
+    s.peakShare.toFixed(4),
+    s.secondHour === null ? '\u2014' : String(s.secondHour).padStart(2, '0'),
+    s.secondShare.toFixed(4),
+    s.margin.toFixed(4),
+    String(s.hoursActive),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenKurtosisReport,
   SourceRowTokenKurtosisRow,
 } from './sourcerowtokenkurtosis.js';

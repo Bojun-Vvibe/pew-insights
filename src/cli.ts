@@ -102,6 +102,7 @@ import {
   renderSourceFirstVsLastQuartileOutputMeanShift,
   renderSourceRowTokenSkewness,
   renderSourceRowTokenKurtosis,
+  renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -263,6 +264,7 @@ import { buildSourceInputOutputCorrelationCoefficient } from './sourceinputoutpu
 import { buildSourceFirstVsLastQuartileOutputMeanShift } from './sourcefirstvslastquartileoutputmeanshift.js';
 import { buildSourceRowTokenSkewness } from './sourcerowtokenskewness.js';
 import { buildSourceRowTokenKurtosis } from './sourcerowtokenkurtosis.js';
+import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -9802,6 +9804,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenKurtosis(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-peak-hour-of-day-argmax')
+  .description(
+    "Per-source argmax over the hour-of-day [0..23] (UTC) total_tokens mass histogram: which UTC hour does each source's mass peak at, and is that peak a sharp single-hour spike or a broad plateau? Reports peakHour, peakShare (peak/total), secondHour, secondShare, and margin (peakShare - secondShare; 1.0 iff source uses exactly one hour). A mode-like statistic, deliberately distinct from source-token-mass-hour-centroid (the mean-like centroid of the same histogram — they coincide only for unimodal symmetric daily patterns), source-hour-of-day-token-mass-entropy (Shannon dispersion), source-hour-of-day-top-k-mass-share (cumulative top-k mass; at k=1 gives same peakShare value but not which hour and not the margin to #2), source-dead-hour-count, source-active-hour-longest-run, source-active-hour-span, source-day-of-week-token-mass-share, source-cumulative-mass-half-life-day, peak-hour (workspace-wide, not per-source), and hour-of-day-token-skew (workspace-wide).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows (default 1)',
+    '1',
+  )
+  .option(
+    '--min-mass <f>',
+    'drop sources whose total total_tokens mass T is strictly below f (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'margin-desc' (default) | 'margin-asc' | 'peak-share' | 'peak-hour' | 'mass' | 'rows' | 'source'",
+    'margin-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMass: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const minMass = Number.parseFloat(opts.minMass);
+        if (!Number.isFinite(minMass) || minMass < 0) {
+          throw new Error(
+            `--min-mass must be a finite, non-negative number (got ${opts.minMass})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'margin-desc',
+          'margin-asc',
+          'peak-share',
+          'peak-hour',
+          'mass',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourcePeakHourOfDayArgmax(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMass,
+          top,
+          sort: opts.sort as
+            | 'margin-desc'
+            | 'margin-asc'
+            | 'peak-share'
+            | 'peak-hour'
+            | 'mass'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourcePeakHourOfDayArgmax(report) + '\n');
         }
       } catch (e) {
         die(e);
