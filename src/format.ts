@@ -9208,6 +9208,66 @@ export function renderSourceRowTokenKatzFd(
 }
 
 import type {
+  SourceRowTokenHjorthMobilityReport,
+  SourceRowTokenHjorthMobilityRow,
+} from './sourcerowtokenhjorthmobility.js';
+
+export function renderSourceRowTokenHjorthMobility(
+  r: SourceRowTokenHjorthMobilityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-hjorth-mobility'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (var(v)=0), ${formatNumber(r.droppedDegenerate)} degenerate (ratio non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hjorth Mobility (Hjorth 1970, EEG Clin. Neurophysiol. 29:306-310) on the per-row total_tokens time-ordered sequence. mobility = sqrt(var(diff(v)) / var(v)), in units of 1/step. Scale-invariant. Hits 0 for DC-like / heavily smoothed series, ~1.414 (sqrt 2) for pure white noise, > sqrt(2) for anti-correlated / Nyquist-oscillatory series. Genuinely orthogonal to katz-fd / higuchi-fd (path-length geometric ratios vs. variance ratio), to dfa (cumulative-profile detrended scaling vs. raw first-difference), to hurst-rs (R/S of cumulative deviations vs. lag-1 variance ratio), to autocorrelation-lag1 (algebraically related as mobility^2 = 2*(1-rho_1) only for purely stationary series; differs under drift), to permutation-entropy / sample-entropy (ordinal / pattern-matching), to mann-kendall / runs / turning-point, to lempel-ziv / renyi-entropy (symbolic / histogrammatic), and to all order-invariant dispersion / shape lenses (shuffling pumps var(dv) sharply while leaving var(v) untouched, so mobility typically rises under shuffle).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Hjorth Mobility (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'var(v)', 'var(dv)', 'mobility'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenHjorthMobilityRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.varV.toFixed(2),
+      s.varDv.toFixed(2),
+      s.mobility.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenRenyiEntropyReport,
   SourceRowTokenRenyiEntropyRow,
 } from './sourcerowtokenrenyientropy.js';

@@ -115,6 +115,7 @@ import {
   renderSourceRowTokenSampleEntropy,
   renderSourceRowTokenHiguchiFd,
   renderSourceRowTokenKatzFd,
+  renderSourceRowTokenHjorthMobility,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
   renderSourceRowTokenDfa,
@@ -295,6 +296,7 @@ import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutati
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
+import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
 import { buildSourceRowTokenDfa } from './sourcerowtokendfa.js';
@@ -11773,6 +11775,91 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenKatzFd(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-hjorth-mobility')
+  .description(
+    "Per-source Hjorth Mobility (Hjorth 1970, EEG Clin. Neurophysiol. 29:306-310) on the per-row total_tokens time-ordered sequence. mobility = sqrt(var(diff(v)) / var(v)), in units of 1/step. Scale-invariant. Hits 0 for DC-like / heavily smoothed series, ~1.414 (sqrt 2) for pure white noise, > sqrt(2) for anti-correlated / Nyquist-oscillatory series. Genuinely orthogonal to katz-fd / higuchi-fd (path-length geometric ratios vs. variance ratio), to dfa (cumulative-profile detrended scaling vs. raw first-difference), to hurst-rs (R/S of cumulative deviations vs. lag-1 variance ratio), to autocorrelation-lag1 (algebraically related as mobility^2 = 2*(1-rho_1) only for purely stationary series; differs under drift because mobility uses the empirical variance of the diff series), to permutation-entropy / sample-entropy (ordinal / pattern-matching), to mann-kendall / runs / turning-point, to lempel-ziv / renyi-entropy (symbolic / histogrammatic), and to all order-invariant dispersion / shape lenses (shuffling pumps var(dv) sharply while leaving var(v) untouched, so mobility typically rises under shuffle).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 16)',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'mobility-asc' (default; smoothest first) | 'mobility-desc' (most jittery first) | 'rows' | 'source'",
+    'mobility-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['mobility-asc', 'mobility-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenHjorthMobility(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'mobility-asc'
+            | 'mobility-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenHjorthMobility(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
