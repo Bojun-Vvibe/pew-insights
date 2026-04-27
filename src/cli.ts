@@ -11470,6 +11470,11 @@ program
     '12',
   )
   .option(
+    '--min-template-matches <n>',
+    'drop non-degenerate sources whose length-m match count B is strictly below n. Cohort selector on the SampEn estimator count regime: ratios A/B with tiny B are statistically unstable. Orthogonal to --min-rows: that gates n; this gates B itself (B does not scale linearly with n — wide dynamic range can yield small B even at large n). Degenerate rows (B=0 or A=0&B>0) are exempt and surface via their own counters; combine with a sufficiently large value to also drop them. Integer >= 0. (default 0, no floor)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -11488,6 +11493,7 @@ program
         m: string;
         r: string;
         minRows: string;
+        minTemplateMatches: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -11509,6 +11515,12 @@ program
         if (!Number.isInteger(minRows) || minRows < m + 2) {
           throw new Error(
             `--min-rows must be an integer >= m+2 (=${m + 2}) (got ${opts.minRows})`,
+          );
+        }
+        const minTemplateMatches = Number.parseInt(opts.minTemplateMatches, 10);
+        if (!Number.isInteger(minTemplateMatches) || minTemplateMatches < 0) {
+          throw new Error(
+            `--min-template-matches must be an integer >= 0 (got ${opts.minTemplateMatches})`,
           );
         }
         let top: number | null = null;
@@ -11533,6 +11545,7 @@ program
           m,
           r,
           minRows,
+          minTemplateMatches,
           top,
           sort: opts.sort as 'sampen-asc' | 'sampen-desc' | 'rows' | 'source',
         });

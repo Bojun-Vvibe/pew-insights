@@ -151,6 +151,42 @@ export interface SourceRowTokenSampleEntropyOptions {
    */
   minRows?: number;
   /**
+   * Drop sources whose length-`m` match count `B` is strictly
+   * **below** this threshold. Must be an integer `>= 0`. Default
+   * 0 (no floor).
+   *
+   * Why this is genuinely orthogonal to `--min-rows`:
+   *
+   *   - `--min-rows` gates on the **input sample size** `n`. For
+   *     fixed `(m, r)` the number of length-`m` matches `B` does
+   *     not scale linearly with `n` — it scales with `n^2` only
+   *     in the dense-match regime (small effective dynamic range
+   *     relative to tolerance). A long source with a wide
+   *     dynamic range can clear `--min-rows` comfortably while
+   *     still producing a small `B` (e.g. 5 or 10), at which
+   *     point the SampEn estimate `-ln(A/B)` is dominated by
+   *     small-count noise and the `A/B` ratio is essentially
+   *     the outcome of a handful of Bernoulli trials.
+   *   - `--min-template-matches` gates on the **count regime
+   *     of the SampEn estimator itself**. Setting e.g.
+   *     `--min-template-matches 100` filters out the cohort of
+   *     sources whose reported `SampEn` is statistically
+   *     unstable from too few length-`m` matches, leaving the
+   *     surviving values directly comparable as point
+   *     estimates.
+   *
+   * Combined with `--min-rows` and `--top` the gates apply
+   * (logical AND); each gate counts its drops separately so the
+   * operator sees which gate dropped what.
+   *
+   * Note: degenerate sources (`B == 0`, `A == 0 & B > 0`) are
+   * still **kept** in the output by default (they are honest
+   * signals); a non-degenerate row with `B < minTemplateMatches`
+   * is what this gate filters. To also drop degenerate rows,
+   * combine with a sufficiently large `--min-template-matches`.
+   */
+  minTemplateMatches?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -202,6 +238,7 @@ export interface SourceRowTokenSampleEntropyReport {
   m: number;
   r: number;
   minRows: number;
+  minTemplateMatches: number;
   top: number | null;
   sort: SourceRowTokenSampleEntropySort;
   totalSources: number;
@@ -214,6 +251,7 @@ export interface SourceRowTokenSampleEntropyReport {
   droppedZeroVariance: number;
   degenerateNoMatches: number;
   degenerateNoExtensions: number;
+  droppedBelowMinTemplateMatches: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSampleEntropyRow[];
 }
@@ -236,6 +274,12 @@ export function buildSourceRowTokenSampleEntropy(
   if (!Number.isInteger(minRows) || minRows < m + 2) {
     throw new Error(
       `minRows must be an integer >= m+2 (=${m + 2}) (got ${opts.minRows})`,
+    );
+  }
+  const minTemplateMatches = opts.minTemplateMatches ?? 0;
+  if (!Number.isInteger(minTemplateMatches) || minTemplateMatches < 0) {
+    throw new Error(
+      `minTemplateMatches must be an integer >= 0 (got ${opts.minTemplateMatches})`,
     );
   }
   const top = opts.top ?? null;
@@ -402,6 +446,23 @@ export function buildSourceRowTokenSampleEntropy(
     });
   }
 
+  // Apply --min-template-matches gate. Only non-degenerate rows
+  // are subject to it; degenerate rows (B=0 or A=0&B>0) are
+  // honest signals and surface via their own counters.
+  let droppedBelowMinTemplateMatches = 0;
+  const survived: SourceRowTokenSampleEntropyRow[] = [];
+  for (const row of allRows) {
+    if (
+      minTemplateMatches > 0 &&
+      !row.degenerate &&
+      row.bMatches < minTemplateMatches
+    ) {
+      droppedBelowMinTemplateMatches += 1;
+      continue;
+    }
+    survived.push(row);
+  }
+
   // Sort. Degenerate rows always sink to the bottom regardless
   // of sort key; tiebreak is source asc.
   function sampenKey(row: SourceRowTokenSampleEntropyRow, asc: boolean): number {
@@ -411,7 +472,7 @@ export function buildSourceRowTokenSampleEntropy(
     return row.sampEn;
   }
 
-  allRows.sort((a, b) => {
+  survived.sort((a, b) => {
     let primary = 0;
     if (sort === 'sampen-asc') {
       primary = sampenKey(a, true) - sampenKey(b, true);
@@ -434,10 +495,10 @@ export function buildSourceRowTokenSampleEntropy(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = survived;
+  if (top !== null && survived.length > top) {
+    droppedBelowTopCap = survived.length - top;
+    finalSources = survived.slice(0, top);
   }
 
   return {
@@ -448,6 +509,7 @@ export function buildSourceRowTokenSampleEntropy(
     m,
     r,
     minRows,
+    minTemplateMatches,
     top,
     sort,
     totalSources,
@@ -460,6 +522,7 @@ export function buildSourceRowTokenSampleEntropy(
     droppedZeroVariance,
     degenerateNoMatches,
     degenerateNoExtensions,
+    droppedBelowMinTemplateMatches,
     droppedBelowTopCap,
     sources: finalSources,
   };

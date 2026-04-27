@@ -9010,12 +9010,12 @@ export function renderSourceRowTokenSampleEntropy(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-sample-entropy'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    m: ${r.m}    r: ${r.r.toFixed(4)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    m: ${r.m}    r: ${r.r.toFixed(4)}    min-rows: ${r.minRows}    min-tmpl-matches: ${formatNumber(r.minTemplateMatches)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (sigma=0), ${formatNumber(r.degenerateNoMatches)} degenerate (B=0; tolerance too tight), ${formatNumber(r.degenerateNoExtensions)} degenerate (A=0; matches don't extend), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (sigma=0), ${formatNumber(r.degenerateNoMatches)} degenerate (B=0; tolerance too tight), ${formatNumber(r.degenerateNoExtensions)} degenerate (A=0; matches don't extend), ${formatNumber(r.droppedBelowMinTemplateMatches)} below min-template-matches, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
