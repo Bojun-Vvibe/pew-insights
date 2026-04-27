@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.117 — 2026-04-27
+
+### Changed
+
+- `source-row-token-higuchi-fd`: adds a JSON-shape guard
+  test. Asserts that the report round-trips cleanly through
+  `JSON.stringify` / `JSON.parse`, that every documented row
+  field is present, and that `hfd` / `slopeRaw` serialise as
+  finite numbers (not NaN, not +Inf, not undefined). Catches
+  accidental future regressions where a field is renamed or
+  silently dropped from the JSON shape.
+
+  No production code change. Test count: 2711 -> 2712.
+
 ## 0.6.116 — 2026-04-27
 
 ### Changed

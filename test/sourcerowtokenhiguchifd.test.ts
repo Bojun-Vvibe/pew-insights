@@ -330,3 +330,43 @@ test('higuchi-fd: time-window filter (since/until) trims rows correctly', () => 
   // All 30 rows fall in the [0, 30) minute window
   assert.equal(r.totalRowsKept, 30);
 });
+
+test('higuchi-fd: report fields are JSON-stringifiable end-to-end', () => {
+  // Minimal end-to-end JSON shape guard. Catches accidental
+  // introduction of fields that JSON.stringify drops (e.g.
+  // undefined values surviving into the report) or unparseable
+  // numerics like NaN/+Inf in numeric slots.
+  const data = series(
+    Array.from({ length: 30 }, (_, i) => i + 1),
+    'shape-test',
+  );
+  const r = buildSourceRowTokenHiguchiFd(data, { generatedAt: GEN });
+  const json = JSON.stringify(r);
+  const parsed = JSON.parse(json);
+  assert.equal(parsed.generatedAt, GEN);
+  assert.equal(parsed.kMax, 8);
+  assert.equal(parsed.minK, 4);
+  assert.equal(parsed.minRows, 16);
+  assert.equal(parsed.detrend, false);
+  assert.equal(parsed.sort, 'hfd-asc');
+  assert.equal(parsed.totalSources, 1);
+  assert.equal(parsed.sources.length, 1);
+  const s = parsed.sources[0];
+  for (const key of [
+    'source',
+    'rowsKept',
+    'sigma',
+    'scalesUsed',
+    'kDropped',
+    'hfd',
+    'slopeRaw',
+    'r2',
+  ]) {
+    assert.ok(key in s, `missing key ${key}`);
+  }
+  assert.equal(typeof s.source, 'string');
+  assert.equal(typeof s.hfd, 'number');
+  assert.equal(typeof s.slopeRaw, 'number');
+  assert.ok(Number.isFinite(s.hfd));
+  assert.ok(Number.isFinite(s.slopeRaw));
+});
