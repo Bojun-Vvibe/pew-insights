@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.108 — 2026-04-27
+
+### Added
+
+- `source-row-token-mann-kendall-trend`: per-source
+  **Mann-Kendall rank-based monotonic trend test** on the per-row
+  `total_tokens` time-ordered sequence. Reports the
+  Mann-Kendall S statistic, tie-corrected `Var[S]`, the
+  continuity-corrected normal-approx Z (`Z = (S - 1)/sigmaS` for
+  `S > 0`, `(S + 1)/sigmaS` for `S < 0`, `0` otherwise), Kendall's
+  tau-b in `[-1, +1]`, and a two-sided p-value.
+
+  - `tau ~ +1` / `Z >> 0` -> later rows are monotonically larger
+    (UP trend).
+  - `tau ~ -1` / `Z << 0` -> later rows are monotonically smaller
+    (DOWN trend).
+  - `tau ~ 0` / `Z ~ 0` -> no monotonic trend detectable.
+
+  Genuinely orthogonal to every existing `source-row-token-*`
+  lens: to `runs-test` (median dichotomy is direction-blind to
+  monotone trend — reads "clumped" for both up and down trends),
+  to `turning-point-count` (jaggedness scalar, not direction),
+  to `autocorrelation-lag1` (Pearson rho is linear-parametric on
+  raw values; Mann-Kendall is non-parametric and all-pair),
+  to `permutation-entropy` (local m=3 ordinal patterns vs.
+  global pairwise concordance), and to every order-invariant
+  dispersion / shape lens (`-iqr-ratio`, `-mad`, `-skewness`,
+  `-kurtosis`, `-gini`, `-burstiness-coefficient`,
+  `-coefficient-of-variation`). Distinct also from the
+  daily-aggregated `source-daily-token-trend-slope` (which is a
+  per-source linear OLS slope on day-binned mass — this lens
+  operates on the raw per-row sequence, is non-parametric, and
+  reports a concordance scalar, not a slope in tokens/day).
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  (1,648 rows across 6 sources, top 5 by `|Z|`):
+
+  ```
+  per-source row-token Mann-Kendall trend test (sorted by abs-z-desc; ties: source asc)
+  source       rows  S       sigmaS   Z        tau      p       tieGrp  tiePr
+  -----------  ----  ------  -------  -------  -------  ------  ------  -----
+  claude-code  299   11,035  1727.69  6.3866   0.2477   0.0000  0       0
+  opencode     337   11,538  2066.73  5.5823   0.2038   0.0000  0       0
+  hermes       173   -2,814  761.74   -3.6929  -0.1891  0.0002  0       0
+  openclaw     442   -9,731  3102.74  -3.1359  -0.0998  0.0017  0       0
+  codex        64    352     172.60   2.0336   0.1746   0.0420  0       0
+  ```
+
+  Two clear regimes show up in the live data:
+
+  - **`claude-code` (Z = +6.39, tau = +0.248) and `opencode`
+    (Z = +5.58, tau = +0.204)**: strong, statistically very
+    significant *upward* monotonic trend in `total_tokens` —
+    rows that arrive later in the file have systematically
+    higher per-row token volumes than earlier rows.
+  - **`hermes` (Z = -3.69, tau = -0.189) and `openclaw`
+    (Z = -3.14, tau = -0.100)**: strong *downward* monotonic
+    trend — later rows have systematically smaller per-row
+    token volumes.
+
+  The four headline results all clear `p < 0.005`. `codex`
+  shows a weaker but still detectable upward signal
+  (`p = 0.042`).
+
+  Options: `--since`, `--until`, `--source`, `--min-rows <n>`
+  (default 8 — the normal-approx Z is unreliable below this),
+  `--max-p <f>` (cohort selector on statistical significance),
+  `--top <n>`, `--sort` (`abs-z-desc` default | `z-asc` |
+  `z-desc` | `tau-asc` | `tau-desc` | `abs-tau-desc` | `p-asc` |
+  `rows` | `source`), `--json`. 17 unit tests cover empties,
+  validation, monotone up/down (S = ±n(n-1)/2, tau = ±1),
+  all-equal degenerate (Var[S] = 0, Z = 0), zigzag (tau ~ 0),
+  hour_start sort precedence over insertion order, max-p gate,
+  every sort variant, top cap, tie correction
+  (`{1,1,1,5,5,5,9,9,9,9}` -> tieAdj = 288, Var[S] = 109), and
+  an orthogonality witness that demonstrates same multiset
+  with different orderings yields S = +25, -25, +5 for sorted /
+  reversed / alternating respectively.
+
 ## 0.6.107 — 2026-04-27
 
 ### Changed
