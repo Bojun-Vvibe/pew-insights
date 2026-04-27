@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.113 — 2026-04-27
+
+### Changed
+
+- `source-row-token-sample-entropy`: adds
+  `--min-template-matches`. Drop non-degenerate sources
+  whose length-`m` match count `B` is strictly **below**
+  the threshold. Default `0` (no floor).
+
+  Why this is **genuinely orthogonal** to `--min-rows`:
+
+  - `--min-rows` gates on the **input sample size** `n`.
+  - `--min-template-matches` gates on the **count regime
+    of the SampEn estimator itself**. The number of
+    length-`m` matches `B` does **not** scale linearly
+    with `n`: a long source with a wide dynamic range
+    relative to tolerance `r * sigma` can clear
+    `--min-rows` comfortably while still producing a small
+    `B` (e.g. 5 or 10), at which point the SampEn estimate
+    `-ln(A / B)` is dominated by small-count noise — the
+    `A / B` ratio is essentially the outcome of a handful
+    of Bernoulli trials. Setting e.g.
+    `--min-template-matches 100` filters out that cohort
+    and leaves the surviving SampEn values directly
+    comparable as point estimates.
+
+  Combined with `--min-rows` and `--top` the gates apply
+  (logical AND); each gate counts its drops separately
+  (`droppedBelowMinRows`, `droppedBelowMinTemplateMatches`,
+  `droppedBelowTopCap`).
+
+  Degenerate rows (`B == 0`, `A == 0 & B > 0`) are
+  **exempt** from this gate by design — they are honest
+  signals and surface via their own counters
+  (`degenerateNoMatches`, `degenerateNoExtensions`); to
+  also drop them, combine with a sufficiently large
+  `--min-template-matches`.
+
+  5 new unit tests cover: invalid input rejection
+  (negative, non-integer), default `0` = no floor, high
+  threshold drops low-`B` non-degenerate rows, degenerate
+  rows (`B = 0`) exempt from the gate even at very high
+  thresholds, and report carries the configured threshold.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--min-template-matches 1000 --sort sampen-desc`
+  (1,656 rows, 6 sources; one source-name redacted from the
+  excerpt below per repo policy):
+
+  ```
+  per-source row-token Sample Entropy (sorted by sampen-desc; ties: source asc)
+  source       rows  N    sigma        tol         B       A       SampEn  deg
+  -----------  ----  ---  -----------  ----------  ------  ------  ------  ---
+  opencode     339   337  13271505.56  2654301.11  4,580   2,017   0.8201  no
+  hermes       176   174  975688.83    195137.77   1,378   613     0.8100  no
+  claude-code  299   297  17605167.00  3521033.40  7,420   4,023   0.6122  no
+  openclaw     445   443  4898412.87   979682.57   10,901  6,122   0.5770  no
+  <redacted>   333   331  14933.73     2986.75     18,382  11,887  0.4359  no
+  ```
+
+  Compared to v0.6.112 (where `codex` topped the table at
+  `SampEn = 1.4907` on `B = 111`), the gate correctly
+  drops `codex` here (`droppedBelowMinTemplateMatches = 1`)
+  because its `B = 111 < 1000`. That `1.4907` figure is
+  not wrong — it is just statistically noisy on a 111-pair
+  Bernoulli sample. The gate is the operator's tool for
+  separating "high SampEn because the dynamics are
+  irregular" from "high SampEn because the count regime is
+  too small for the estimator to be stable", which
+  `--min-rows` alone cannot do.
+
 ## 0.6.112 — 2026-04-27
 
 ### Added
