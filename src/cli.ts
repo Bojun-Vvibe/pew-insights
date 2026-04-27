@@ -114,6 +114,7 @@ import {
   renderSourceRowTokenPermutationEntropy,
   renderSourceRowTokenSampleEntropy,
   renderSourceRowTokenHiguchiFd,
+  renderSourceRowTokenLempelZiv,
   renderSourceRowTokenMannKendallTrend,
   renderSourceRowTokenHurstRs,
   renderSourcePeakHourOfDayArgmax,
@@ -290,6 +291,7 @@ import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpoi
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
+import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
 import { buildSourceRowTokenHurstRs } from './sourcerowtokenhurstrs.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
@@ -11668,6 +11670,96 @@ program
           process.stdout.write(
             renderSourceRowTokenHiguchiFd(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-lempel-ziv')
+  .description(
+    "Per-source Lempel-Ziv (LZ76) symbolic complexity (Lempel & Ziv 1976, IEEE Trans. IT 22(1):75-81) on the per-row total_tokens time-ordered sequence after a per-source median binarisation. Reports raw factor count c(N) and normalised lzNorm = c(N) * log2(N) / N (in (0, ~1]; ~1 for i.i.d. fair-coin, << 1 for periodic / monotone / repetitive series). Genuinely orthogonal to permutation-entropy (ordinal vs. binary multi-length factor count), to sample-entropy (single-scale tolerance-matched recurrence vs. binarised multi-length factors), to runs / turning-point (specific event counts), to mann-kendall (anti-correlated on monotone signals only), to lag-1 autocorrelation (linear, parametric, value-domain), to hurst-rs / higuchi-fd (power-law scaling of values vs. symbol-sequence richness), and to all order-invariant dispersion / shape lenses (shuffle-invariant; lzNorm typically changes under shuffle).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 2 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lznorm-asc' (default; most repetitive first) | 'lznorm-desc' | 'lz-asc' | 'lz-desc' | 'rows' | 'source'",
+    'lznorm-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(`--min-rows must be an integer >= 2 (got ${opts.minRows})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lz-asc',
+          'lz-desc',
+          'lznorm-asc',
+          'lznorm-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLempelZiv(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'lz-asc'
+            | 'lz-desc'
+            | 'lznorm-asc'
+            | 'lznorm-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenLempelZiv(report) + '\n');
         }
       } catch (e) {
         die(e);

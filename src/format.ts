@@ -9145,3 +9145,65 @@ export function renderSourceRowTokenHiguchiFd(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenLempelZivReport,
+  SourceRowTokenLempelZivRow,
+} from './sourcerowtokenlempelziv.js';
+
+export function renderSourceRowTokenLempelZiv(
+  r: SourceRowTokenLempelZivReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-lempel-ziv'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantBitstream)} constant-bitstream, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LZ76 (Lempel & Ziv 1976) symbolic complexity on the per-row total_tokens series binarised at the per-source median. lzNorm = c(N) * log2(N) / N is in (0, ~1]; lzNorm -> 1 for an i.i.d. fair-coin source, lzNorm << 1 for periodic / monotone / highly repetitive series. Genuinely orthogonal to permutation-entropy (ordinal vs. binary-symbol multi-length factor count), to sample-entropy (single-scale tolerance-matched template recurrence on raw values vs. binarised multi-length factors), to runs-test / turning-point (specific event counts), to mann-kendall (anti-correlated on monotone signals only), to lag-1 autocorrelation (linear, parametric, value-domain), to hurst-rs / higuchi-fd (power-law scaling of values, not symbol-sequence richness), and to all order-invariant dispersion / shape lenses (shuffle-invariant; lzNorm typically changes under shuffle).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Lempel-Ziv (LZ76) complexity (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'median', 'ones', 'zeros', 'lz', 'lzNorm'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenLempelZivRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.median.toFixed(2),
+      formatNumber(s.onesCount),
+      formatNumber(s.zerosCount),
+      formatNumber(s.lz),
+      s.lzNorm.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

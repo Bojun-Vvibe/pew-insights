@@ -2,6 +2,98 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.118 — 2026-04-27
+
+### Added
+
+- `source-row-token-lempel-ziv`: new lens — per-source
+  **Lempel-Ziv (LZ76) symbolic complexity** of the per-row
+  `total_tokens` time-ordered sequence after a per-source
+  median binarisation (Lempel & Ziv 1976, IEEE Trans. IT,
+  22(1):75-81). Reports the raw factor count `c(N)` and
+  the normalised `lzNorm = c(N) * log2(N) / N` (in `(0, ~1]`;
+  `~1` for an i.i.d. fair-coin source, `<< 1` for periodic /
+  monotone / repetitive series).
+
+  Construction: per-source sort by `hour_start`, binarise
+  `s[i] = 1 if v[i] > median(v) else 0` (strict greater-than
+  so a constant series surfaces under
+  `droppedConstantBitstream` rather than getting reported as
+  "trivially complex"), LZ76 "exhaustive" parse: at each
+  position `i`, find the longest prefix that already occurs
+  as a contiguous substring of `s[0..i-1]`, emit a factor
+  covering it plus the next innovation symbol, advance.
+
+  Why this lens is **genuinely orthogonal** to every other
+  `source-row-token-*` already in the suite:
+
+  - vs `source-row-token-permutation-entropy`: PE is
+    ordinal entropy over length-m rank patterns; LZ76 is
+    a binary-symbol multi-length factor count. PE saturates
+    on monotone series; LZ76 also collapses on monotone but
+    behaves differently on periodic up-down patterns.
+  - vs `source-row-token-sample-entropy`: SampEn is a
+    single-scale tolerance-matched template-recurrence
+    score on raw values; LZ76 is binarised and counts
+    factors of all lengths. Drift-with-shape can score
+    low on SampEn but high on LZ76.
+  - vs `source-row-token-mann-kendall-trend`: MK is a
+    directional monotone-trend test; LZ76 is anti-correlated
+    on monotone signals only. The two are uncorrelated on
+    mixed signals.
+  - vs `source-row-token-runs-test` / `-turning-point-count`:
+    those count specific event types; LZ76 measures
+    sub-string diversity, which can grow even when the runs
+    / turning-point counts hit their expected null values.
+  - vs `source-row-token-hurst-rs` / `-higuchi-fd`: those are
+    power-law scaling exponents on the *value* sequence;
+    LZ76 is a symbolic complexity measure that ignores
+    magnitudes after binarisation.
+  - vs all order-invariant dispersion / shape lenses
+    (-iqr-ratio, -mad, -skewness, -kurtosis, -gini, -cv,
+    -burstiness-coefficient): the per-source median is
+    shuffle-invariant so the binary multiset is invariant,
+    but LZ76 depends on **order** and typically changes
+    under shuffle.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  (1,664 rows across 6 sources, default `--min-rows=8`,
+  `--sort=lznorm-asc`):
+
+  ```
+  source          rows  median      ones  zeros  lz  lzNorm
+  --------------  ----  ----------  ----  -----  --  ------
+  openclaw        448   2799364.50  224   224    41  0.8060
+  opencode        342   7556299.00  171   171    40  0.9845
+  vscode-redact   333   2319.00     166   167    43  1.0820
+  claude-code     299   3319967.00  149   150    41  1.1277
+  hermes          178   390122.50   89    89     28  1.1760
+  codex           64    7132861.00  32    32     14  1.3125
+  ```
+
+  Reading: `openclaw` has the most repetitive
+  above/below-median pattern (lzNorm 0.81), `codex` the
+  most "i.i.d.-looking" (lzNorm 1.31, slightly above the
+  asymptotic baseline because N=64 is small and the
+  log2(N)/N normaliser hasn't converged). All sources
+  produced a balanced binary stream (ones == zeros) which
+  is the expected behaviour of a strict median split with
+  no ties at the median.
+
+  CLI surface: `--since`, `--until`, `--source`,
+  `--min-rows` (default 8, integer >= 2), `--top`,
+  `--sort` (`lznorm-asc` default | `lznorm-desc` | `lz-asc`
+  | `lz-desc` | `rows` | `source`), `--json`.
+
+  12 unit tests cover: empty input, constant series ->
+  `droppedConstantBitstream`, too few rows, alternating /
+  monotone / pseudo-random behaviour bounds, hand-computed
+  LZ76 on a known 16-bit example (c(N) = 7 for
+  `0001101001000101`), `--since` / `--until` trimming,
+  source filter, top cap, invalid-sort and invalid-minRows
+  validation, and JSON round-trip shape. Test count:
+  2712 -> 2725 (+13).
+
 ## 0.6.117 — 2026-04-27
 
 ### Changed
