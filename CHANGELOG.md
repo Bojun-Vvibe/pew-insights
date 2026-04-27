@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.104 — 2026-04-27
+
+### Changed
+
+- `source-row-token-turning-point-count`: refinement adds the
+  `--max-tie-fraction <f>` flag, a **continuity-premise** gate
+  that is genuinely orthogonal to the existing `--max-p` and
+  `--min-abs-z` cohort selectors.
+
+  - `--max-p` and `--min-abs-z` filter on the **statistical
+    significance** of the (T - E[T]) gap under the i.i.d.-
+    continuous null. Both treat tied positions the same way the
+    test itself does — a tied position is just "not a turning
+    point" — so a series that is mostly plateau can score a
+    very low T (and a very negative Z) for reasons that have
+    nothing to do with first-difference persistence: it simply
+    has no first differences to count, because the values
+    aren't moving.
+  - `--max-tie-fraction f` filters on the **continuity
+    assumption itself**. A source whose row-token series is,
+    say, 80% repeated values (`tiePositions / (n-2) = 0.80`)
+    is violating the Wallis-Moore continuous-distribution
+    premise so badly that its reported Z is informative mostly
+    about *how discrete* the series is, not about whether its
+    first differences are persistent. Filtering these out (e.g.
+    `--max-tie-fraction 0.30`) keeps the surviving Z statistics
+    interpretable as evidence about trend / mean-reversion at
+    the step scale.
+
+  Combined with the existing gates, all three apply (logical
+  AND); each gate counts its drops separately under
+  `droppedAboveMaxTieFraction` so the operator sees which gate
+  dropped what.
+
+  Three new unit tests:
+  - `--max-tie-fraction drops plateau-dominated sources, counted
+    separately`: constructs a two-source witness — `plat` (8
+    zeros + 2 ramp values, tieFraction = 1.0) and `mono`
+    (1..10, tieFraction = 0.0) — verifies that
+    `--max-tie-fraction 0.3` drops `plat` and counts it under
+    `droppedAboveMaxTieFraction` (NOT under `droppedBelowMinAbsZ`
+    or `droppedAboveMaxP`).
+  - `--max-tie-fraction validates input` (rejects 0, 1.1, NaN).
+  - `--max-tie-fraction defaults expose new fields`
+    (`maxTieFraction = 1`, `droppedAboveMaxTieFraction = 0`).
+
+  Live smoke against `~/.config/pew/queue.jsonl` with the new
+  flag at a strict `0.05` tie-fraction ceiling:
+
+  ```
+  pew-insights source-row-token-turning-point-count --since 2026-04-20 --max-tie-fraction 0.05
+  sources: 6 (shown 5)    rows: 870    max-tie-frac: 0.0500    sort: abs-z-desc
+  dropped: ... 1 below min-rows, 0 above max-tie-fraction ...
+
+  source       rows  T    E[T]    sigmaT  Z        p       ties
+  -----------  ----  ---  ------  ------  -------  ------  ----
+  openclaw     351   212  232.67  7.879   -2.6230  0.0087  0
+  claude-code  45    25   28.67   2.771   -1.3233  0.1857  0
+  codex        15    7    8.67    1.531   -1.0885  0.2764  0
+  hermes       123   80   80.67   4.642   -0.1436  0.8858  0
+  opencode     335   221  222.00  7.696   -0.1299  0.8966  0
+  ```
+
+  Reading: in the live data, every surviving source has
+  `tiePositions = 0` — `total_tokens` is effectively continuous
+  for all six sources in the window (no two consecutive rows
+  share an exact total). The strict `--max-tie-fraction 0.05`
+  ceiling therefore drops nothing in practice, and the
+  surviving Z statistics — most notably `openclaw`'s
+  Z = -2.62 / p = 0.0087 — can be interpreted cleanly as
+  evidence about first-difference persistence, *not* as an
+  artefact of a discretised value distribution. This is the
+  whole point of the refinement: the operator can now publish
+  Z findings from this command with a defensible
+  continuity-premise audit trail rather than having to spot-
+  check the `ties` column manually.
+
 ## 0.6.103 — 2026-04-27
 
 ### Added

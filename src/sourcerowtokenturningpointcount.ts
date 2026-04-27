@@ -149,6 +149,39 @@ export interface SourceRowTokenTurningPointCountOptions {
    */
   minAbsZ?: number;
   /**
+   * Drop sources whose **fraction of interior positions that
+   * are ties** (`tiePositions / (n - 2)`) is strictly **above**
+   * this threshold. Must be a finite number in (0, 1]. Default 1
+   * (no floor — every source survives, including pure plateaus).
+   *
+   * Why this is genuinely orthogonal to `--max-p` / `--min-abs-z`:
+   *
+   *   - `--max-p` and `--min-abs-z` gate on the **statistical
+   *     significance** of the (T - E[T]) gap under the i.i.d.
+   *     continuous null. Both treat ties the same way the test
+   *     itself does — a tied position is just "not a turning
+   *     point" — and so a series that is mostly plateau can
+   *     score a very low T (and a very negative Z) for reasons
+   *     that have nothing to do with first-difference
+   *     persistence: it simply has no first differences to
+   *     count, because the values aren't moving.
+   *   - `--max-tie-fraction` gates on the **continuity assumption
+   *     itself**. A source whose row-token series is, say, 80%
+   *     repeated values (`tiePositions / (n-2) = 0.80`) is
+   *     violating the Wallis-Moore continuous-distribution
+   *     premise so badly that the reported Z is informative
+   *     mostly about **how discrete** the series is, not about
+   *     whether its first differences are persistent. Filtering
+   *     these out (e.g. `--max-tie-fraction 0.30`) keeps the
+   *     surviving Z statistics interpretable as evidence about
+   *     trend / mean-reversion at the step scale.
+   *
+   * Combined with the existing gates, all three apply (logical
+   * AND); each gate counts its drops separately so the operator
+   * sees which gate dropped what.
+   */
+  maxTieFraction?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -198,6 +231,7 @@ export interface SourceRowTokenTurningPointCountReport {
   minRows: number;
   maxP: number;
   minAbsZ: number;
+  maxTieFraction: number;
   top: number | null;
   sort: SourceRowTokenTurningPointCountSort;
   totalSources: number;
@@ -209,6 +243,7 @@ export interface SourceRowTokenTurningPointCountReport {
   droppedBelowMinRows: number;
   droppedAboveMaxP: number;
   droppedBelowMinAbsZ: number;
+  droppedAboveMaxTieFraction: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTurningPointCountRow[];
 }
@@ -266,6 +301,16 @@ export function buildSourceRowTokenTurningPointCount(
   if (!Number.isFinite(minAbsZ) || minAbsZ < 0) {
     throw new Error(
       `minAbsZ must be a finite, non-negative number (got ${opts.minAbsZ})`,
+    );
+  }
+  const maxTieFraction = opts.maxTieFraction ?? 1;
+  if (
+    !Number.isFinite(maxTieFraction) ||
+    maxTieFraction <= 0 ||
+    maxTieFraction > 1
+  ) {
+    throw new Error(
+      `maxTieFraction must be a finite number in (0, 1] (got ${opts.maxTieFraction})`,
     );
   }
   const top = opts.top ?? null;
@@ -388,8 +433,15 @@ export function buildSourceRowTokenTurningPointCount(
 
   let droppedAboveMaxP = 0;
   let droppedBelowMinAbsZ = 0;
+  let droppedAboveMaxTieFraction = 0;
   const survived: SourceRowTokenTurningPointCountRow[] = [];
   for (const row of allRows) {
+    const interior = row.rowsKept - 2;
+    const tieFrac = interior > 0 ? row.tiePositions / interior : 0;
+    if (maxTieFraction < 1 && tieFrac > maxTieFraction) {
+      droppedAboveMaxTieFraction += 1;
+      continue;
+    }
     if (minAbsZ > 0 && Math.abs(row.z) < minAbsZ) {
       droppedBelowMinAbsZ += 1;
       continue;
@@ -428,6 +480,7 @@ export function buildSourceRowTokenTurningPointCount(
     minRows,
     maxP,
     minAbsZ,
+    maxTieFraction,
     top,
     sort,
     totalSources,
@@ -439,6 +492,7 @@ export function buildSourceRowTokenTurningPointCount(
     droppedBelowMinRows,
     droppedAboveMaxP,
     droppedBelowMinAbsZ,
+    droppedAboveMaxTieFraction,
     droppedBelowTopCap,
     sources: finalSources,
   };

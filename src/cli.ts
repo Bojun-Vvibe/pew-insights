@@ -10944,6 +10944,11 @@ program
     '0',
   )
   .option(
+    '--max-tie-fraction <f>',
+    'drop sources whose fraction of interior positions that are ties (tiePositions / (n-2)) is strictly above f. f must be in (0, 1]. Orthogonal to --max-p / --min-abs-z: those gate on statistical significance under the i.i.d.-continuous null; this gates on the continuous-distribution premise itself, filtering out plateau-dominated sources whose Z is informative mostly about how discrete the series is. (default 1, no floor)',
+    '1',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -10962,6 +10967,7 @@ program
         minRows: string;
         maxP: string;
         minAbsZ: string;
+        maxTieFraction: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10987,6 +10993,16 @@ program
         if (!Number.isFinite(minAbsZ) || minAbsZ < 0) {
           throw new Error(
             `--min-abs-z must be a finite, non-negative number (got ${opts.minAbsZ})`,
+          );
+        }
+        const maxTieFraction = Number.parseFloat(opts.maxTieFraction);
+        if (
+          !Number.isFinite(maxTieFraction) ||
+          maxTieFraction <= 0 ||
+          maxTieFraction > 1
+        ) {
+          throw new Error(
+            `--max-tie-fraction must be a finite number in (0, 1] (got ${opts.maxTieFraction})`,
           );
         }
         let top: number | null = null;
@@ -11018,6 +11034,7 @@ program
           minRows,
           maxP,
           minAbsZ,
+          maxTieFraction,
           top,
           sort: opts.sort as
             | 'z-asc'

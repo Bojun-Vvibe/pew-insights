@@ -249,3 +249,45 @@ test('turning-point: since/until window applies on hour_start', () => {
   });
   assert.equal(r.totalRowsKept, 8);
 });
+
+test('turning-point: --max-tie-fraction drops plateau-dominated sources, counted separately', () => {
+  // 'plat': 8 zeros + 2 distinct ramp values -> all 8 interior
+  //   positions are ties (since v[i-1]==v[i]==v[i+1]==0 for first 6,
+  //   and v[i]==v[i-1] at position 7). tiePositions / (n-2) = 8/8 = 1.0
+  // 'mono': monotone, no ties. tieFrac = 0.
+  const queue: QueueLine[] = [
+    ...series([0, 0, 0, 0, 0, 0, 0, 0, 100, 200], 'plat'),
+    ...series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'mono'),
+  ];
+  const r = buildSourceRowTokenTurningPointCount(queue, {
+    maxTieFraction: 0.3,
+    generatedAt: GEN,
+  });
+  // plat dropped under maxTieFraction; mono survives
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'mono');
+  assert.equal(r.droppedAboveMaxTieFraction, 1);
+  // It must NOT be counted under min-abs-z or max-p
+  assert.equal(r.droppedBelowMinAbsZ, 0);
+  assert.equal(r.droppedAboveMaxP, 0);
+});
+
+test('turning-point: --max-tie-fraction validates input', () => {
+  assert.throws(() =>
+    buildSourceRowTokenTurningPointCount([], { maxTieFraction: 0 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenTurningPointCount([], { maxTieFraction: 1.1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenTurningPointCount([], {
+      maxTieFraction: Number.NaN,
+    }),
+  );
+});
+
+test('turning-point: --max-tie-fraction defaults expose new fields', () => {
+  const r = buildSourceRowTokenTurningPointCount([], { generatedAt: GEN });
+  assert.equal(r.maxTieFraction, 1);
+  assert.equal(r.droppedAboveMaxTieFraction, 0);
+});
