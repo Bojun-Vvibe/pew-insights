@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.147 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-rolloff` gains two refinement
+  threshold flags that compose with the 0.6.146 base lens
+  without changing default behaviour:
+
+  - `--min-rolloff-frac-bins <v>`: suppress sources whose
+    `rolloffFractionBins` is strictly below `v`. Suppressed
+    sources surface in `droppedBelowMinRolloffFracBins`.
+    Useful to surface only the more high-frequency-loaded
+    sources (per-row jitter rather than slow envelope).
+  - `--max-rolloff-frac-bins <v>`: symmetric counterpart.
+    Suppress sources whose `rolloffFractionBins` is strictly
+    above `v`. Surfaces in `droppedAboveMaxRolloffFracBins`.
+    Useful to surface only the more low-frequency-loaded
+    sources (multi-day envelope dominates).
+
+  Both default to `null` (no filter); both must be finite
+  if set; if both are set and `min > max` the constructor
+  throws (operator error, not a silent empty report).
+  Pure post-compute filters — they do not affect the
+  underlying spectral-rolloff computation, only which rows
+  are reported. Compose cleanly with `--top`: filter is
+  applied first, then the cap.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,716
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-rolloff --max-rolloff-frac-bins 0.6
+  per-source row-token spectral roll-off (sorted by rolloff-asc; ties: source asc)
+  source    rows  bins  totPower   rolloffBin  rollFrac  cumFrac  domBin  domShare
+  --------  ----  ----  ---------  ----------  --------  -------  ------  --------
+  opencode  360   180   1.080e+19  66          0.3667    0.8504   2       0.1069
+  codex     64    32    4.162e+17  18          0.5625    0.8695   1       0.2778
+  openclaw  465   232   2.527e+18  136         0.5862    0.8503   2       0.0915
+  ```
+
+  3 sources suppressed under `droppedAboveMaxRolloffFracBins`
+  (`claude-code` 0.6577, `vscode-XXX` 0.6807, `hermes`
+  0.7835). Reading: `--max-rolloff-frac-bins 0.6` isolates
+  the three sources whose 85% spectral mass sits below 60%
+  of Nyquist — the more low-frequency-loaded subset, where
+  per-row token volume is dominated by slow (multi-hour to
+  multi-day) envelope rather than per-row jitter. The flag
+  pair lets operators read either end of the band-edge
+  distribution without re-running the lens.
+
+  Tests: 3120 -> 3130 (+10 in this refinement, +48
+  cumulative since the 0.6.145 baseline).
+
 ## 0.6.146 — 2026-04-28
 
 ### Added

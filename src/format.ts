@@ -9814,12 +9814,12 @@ export function renderSourceRowTokenSpectralRolloff(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-rolloff'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    rolloff-fraction: ${r.rolloffFraction}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    rolloff-fraction: ${r.rolloffFraction}    min-rolloff-frac-bins: ${r.minRolloffFracBins ?? '\u2014'}    max-rolloff-frac-bins: ${r.maxRolloffFracBins ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinRolloffFracBins)} below min-rolloff-frac-bins, ${formatNumber(r.droppedAboveMaxRolloffFracBins)} above max-rolloff-frac-bins, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

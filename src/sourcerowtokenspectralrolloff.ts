@@ -127,6 +127,24 @@ export interface SourceRowTokenSpectralRolloffOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported `rolloffFractionBins`.
+   * Sources whose value is strictly below this threshold are
+   * suppressed and counted under `droppedBelowMinRolloffFracBins`.
+   * Useful to surface only the more high-frequency-loaded sources.
+   */
+  minRolloffFracBins?: number | null;
+  /**
+   * Optional upper bound on reported `rolloffFractionBins`.
+   * Symmetric counterpart to `minRolloffFracBins`. Surfaces in
+   * `droppedAboveMaxRolloffFracBins`. Useful to surface only the
+   * more low-frequency-loaded sources.
+   *
+   * If both are set and `minRolloffFracBins > maxRolloffFracBins`,
+   * the constructor throws — operator error, not a silent
+   * empty report.
+   */
+  maxRolloffFracBins?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'rolloff-asc' (default): rolloffFractionBins ascending —
    *                              most low-frequency-loaded first.
@@ -168,6 +186,8 @@ export interface SourceRowTokenSpectralRolloffReport {
   minRows: number;
   rolloffFraction: number;
   top: number | null;
+  minRolloffFracBins: number | null;
+  maxRolloffFracBins: number | null;
   sort: SourceRowTokenSpectralRolloffSort;
   totalSources: number;
   totalRowsKept: number;
@@ -178,6 +198,8 @@ export interface SourceRowTokenSpectralRolloffReport {
   droppedBelowMinRows: number;
   droppedConstantSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinRolloffFracBins: number;
+  droppedAboveMaxRolloffFracBins: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralRolloffRow[];
 }
@@ -214,6 +236,31 @@ export function buildSourceRowTokenSpectralRolloff(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const minRolloffFracBins = opts.minRolloffFracBins ?? null;
+  if (minRolloffFracBins !== null) {
+    if (!Number.isFinite(minRolloffFracBins)) {
+      throw new Error(
+        `minRolloffFracBins must be a finite number (got ${opts.minRolloffFracBins})`,
+      );
+    }
+  }
+  const maxRolloffFracBins = opts.maxRolloffFracBins ?? null;
+  if (maxRolloffFracBins !== null) {
+    if (!Number.isFinite(maxRolloffFracBins)) {
+      throw new Error(
+        `maxRolloffFracBins must be a finite number (got ${opts.maxRolloffFracBins})`,
+      );
+    }
+  }
+  if (
+    minRolloffFracBins !== null &&
+    maxRolloffFracBins !== null &&
+    minRolloffFracBins > maxRolloffFracBins
+  ) {
+    throw new Error(
+      `minRolloffFracBins (${minRolloffFracBins}) must be <= maxRolloffFracBins (${maxRolloffFracBins})`,
+    );
   }
   const sort = opts.sort ?? 'rolloff-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -394,10 +441,34 @@ export function buildSourceRowTokenSpectralRolloff(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinRolloffFracBins = 0;
+  let droppedAboveMaxRolloffFracBins = 0;
+  let postRows = allRows;
+  if (minRolloffFracBins !== null || maxRolloffFracBins !== null) {
+    const kept: SourceRowTokenSpectralRolloffRow[] = [];
+    for (const row of postRows) {
+      if (
+        minRolloffFracBins !== null &&
+        row.rolloffFractionBins < minRolloffFracBins
+      ) {
+        droppedBelowMinRolloffFracBins += 1;
+        continue;
+      }
+      if (
+        maxRolloffFracBins !== null &&
+        row.rolloffFractionBins > maxRolloffFracBins
+      ) {
+        droppedAboveMaxRolloffFracBins += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -408,6 +479,8 @@ export function buildSourceRowTokenSpectralRolloff(
     minRows,
     rolloffFraction,
     top,
+    minRolloffFracBins,
+    maxRolloffFracBins,
     sort,
     totalSources,
     totalRowsKept,
@@ -418,6 +491,8 @@ export function buildSourceRowTokenSpectralRolloff(
     droppedBelowMinRows,
     droppedConstantSeries,
     droppedDegenerate,
+    droppedBelowMinRolloffFracBins,
+    droppedAboveMaxRolloffFracBins,
     droppedBelowTopCap,
     sources: finalSources,
   };

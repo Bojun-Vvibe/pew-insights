@@ -13080,6 +13080,14 @@ program
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-rolloff-frac-bins <v>',
+    'suppress sources whose rolloffFractionBins is strictly below this threshold; surfaces them under droppedBelowMinRolloffFracBins. Useful to surface only the more high-frequency-loaded sources.',
+  )
+  .option(
+    '--max-rolloff-frac-bins <v>',
+    'suppress sources whose rolloffFractionBins is strictly above this threshold; surfaces them under droppedAboveMaxRolloffFracBins. Symmetric to --min-rolloff-frac-bins; useful to surface only the more low-frequency-loaded sources.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'rolloff-asc' (default; most low-frequency-loaded first) | 'rolloff-desc' (most high-frequency-loaded first) | 'rows' | 'source'",
     'rolloff-asc',
@@ -13094,6 +13102,8 @@ program
         minRows: string;
         rolloffFraction: string;
         top?: string;
+        minRolloffFracBins?: string;
+        maxRolloffFracBins?: string;
         sort: string;
         json?: boolean;
       },
@@ -13126,6 +13136,26 @@ program
           }
           top = t;
         }
+        let minRolloffFracBins: number | null = null;
+        if (opts.minRolloffFracBins != null) {
+          const v = Number.parseFloat(opts.minRolloffFracBins);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-rolloff-frac-bins must be a finite number (got ${opts.minRolloffFracBins})`,
+            );
+          }
+          minRolloffFracBins = v;
+        }
+        let maxRolloffFracBins: number | null = null;
+        if (opts.maxRolloffFracBins != null) {
+          const v = Number.parseFloat(opts.maxRolloffFracBins);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-rolloff-frac-bins must be a finite number (got ${opts.maxRolloffFracBins})`,
+            );
+          }
+          maxRolloffFracBins = v;
+        }
         const validSorts = ['rolloff-asc', 'rolloff-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -13140,6 +13170,8 @@ program
           minRows,
           rolloffFraction,
           top,
+          minRolloffFracBins,
+          maxRolloffFracBins,
           sort: opts.sort as
             | 'rolloff-asc'
             | 'rolloff-desc'
