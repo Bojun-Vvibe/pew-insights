@@ -2,6 +2,114 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.100 — 2026-04-27
+
+### Changed
+
+- `source-row-token-burstiness-coefficient`: refinement
+  adds the `--min-mean <f>` flag, mirroring the
+  `--min-cv` / `--min-mad-ratio` / `--min-gini` /
+  `--min-mean-streak` / `--min-mean` / `--min-median`
+  convention shipped with prior `source-row-token-*`
+  lenses.
+
+  Drops sources whose `mean` `total_tokens` is strictly
+  below `f`. Default `0` (no floor; preserves v0.6.99
+  behaviour exactly).
+
+  This is a **genuinely orthogonal cohort gate to
+  `--min-b`**:
+
+  - `--min-b` gates on the **regime** (where on the
+    periodic ↔ Poisson ↔ bursty axis a producer sits;
+    scale-free).
+  - `--min-mean` gates on the **absolute scale** of the
+    producer's typical row (do its rows actually move
+    meaningful token mass?).
+
+  A source can have `mean = 5K` and `B = 0.45` (tiny
+  rows but heavy-tailed regime — gated by
+  `--min-mean`), or `mean = 12M` and `B = 0.06` (huge
+  rows but only mildly super-Poisson — gated by
+  `--min-b 0.1`). The two filters select distinct
+  cohorts; the new unit test
+  `row-burst-b: --min-mean is orthogonal to --min-b
+  (gates distinct cohorts)` constructs an explicit
+  three-source orthogonality witness:
+
+  - A: mean = 50 / B ≈ 0.324 → survives `--min-b 0.3`,
+    killed by `--min-mean 1000`.
+  - B: mean = 1.5M / B = -0.5 → survives
+    `--min-mean 1000`, killed by `--min-b 0.3`.
+  - C: mean = 5M / B = 0.5 → survives both.
+  - Both filters together: only C survives. Proves the
+    two filters cannot be substituted for one another.
+
+  Filter order is deliberate: `--min-mean` runs **before
+  `--min-b`**, so a degenerate (all-zero) source whose
+  `mean = 0` is dropped under `droppedBelowMinMean`
+  (rather than `droppedDegenerate`) when both gates are
+  active. The new unit test
+  `row-burst-b: --min-mean applied before --min-b
+  (low-mean degenerates counted under
+  droppedBelowMinMean)` pins this ordering.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  with `--min-mean 100000` (one IDE-style assistant
+  source-id redacted by the test fixture conventions;
+  here gated out by the floor — its mean is ~5,663):
+
+  ```
+  pew-insights source-row-token-burstiness-coefficient --min-mean 100000
+  sources: 6 (shown 5)    rows: 1,635    min-mean: 100,000    sort: b-desc
+  dropped: ... 1 below min-mean ...
+
+  source       rows  mean         stddev       cv      B       flat  degen
+  -----------  ----  -----------  -----------  ------  ------  ----  -----
+  claude-code  299   11512995.95  17605167.00  1.5292  0.2092  no    no
+  opencode     331   10510189.13  13275030.65  1.2631  0.1162  no    no
+  openclaw     437   4298376.34   4928269.33   1.1465  0.0683  no    no
+  hermes       171   863466.67    981842.06    1.1371  0.0641  no    no
+  codex        64    12650385.31  14252148.98  1.1266  0.0595  no    no
+  ```
+
+  Reading: the gate cleanly filters out the IDE-style
+  micro-row producer (mean ~5.7K — three orders of
+  magnitude smaller than every other source's mean) so
+  the operator can focus the burstiness-regime cohort on
+  producers that actually move meaningful token mass per
+  row. The remaining five all retain
+  `B ∈ [0.0595, 0.2092]` (modestly super-Poisson;
+  `cv ∈ [1.13, 1.53]`), with `claude-code` (B = 0.21)
+  the most heavy-tailed and `codex` (B = 0.06) closest
+  to the Poisson baseline.
+
+### Tests
+
+- 6 new unit tests in
+  `test/sourcerowtokenburstinesscoefficient.test.ts`
+  covering: option validation for `--min-mean`
+  (negative / NaN / Infinity rejected); default
+  `--min-mean 0` preserves v0.6.99 behaviour exactly
+  (no `droppedBelowMinMean`, no source dropped); a
+  `--min-mean 1000` cohort that drops a tiny-mean
+  source (mean = 150) while keeping a huge-mean one
+  (mean = 1.5M); the explicit three-source
+  `--min-mean` ⊥ `--min-b` orthogonality witness above
+  (each filter alone, then both together, with
+  invariants pinned on per-source `mean` and `B`);
+  the documented filter order (`--min-mean` runs
+  before `--min-b`, so a `mean = 0` degenerate source
+  is dropped under `droppedBelowMinMean` not
+  `droppedDegenerate`); and a final assertion that
+  `--min-mean 0` (default) does NOT count a
+  `mean = 0` degenerate source under
+  `droppedBelowMinMean`.
+
+  Test count delta: 21 → 27 in this file
+  (`buildSourceRowTokenBurstinessCoefficient`-scoped),
+  total package 2568 → 2574.
+
 ## 0.6.99 — 2026-04-27
 
 ### Added
