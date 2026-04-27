@@ -457,3 +457,51 @@ test('spectral-bandwidth: tiebreak is source asc when bandwidth ties', () => {
   assert.equal(r.sources[0]!.source, 'alpha');
   assert.equal(r.sources[1]!.source, 'zeta');
 });
+
+test('spectral-bandwidth: filter applies before top cap (compose order)', () => {
+  // Build 5 sources with monotonically increasing bandwidth fractions
+  // by mixing single-tone with progressively more two-tone energy.
+  const queue: QueueLine[] = [];
+  for (let s = 0; s < 5; s++) {
+    const v: number[] = [];
+    for (let t = 0; t < 64; t++) {
+      const main = 100 * Math.sin((2 * Math.PI * 16 * t) / 64);
+      const spread =
+        s * 30 * Math.sin((2 * Math.PI * 1 * t) / 64) +
+        s * 30 * Math.sin((2 * Math.PI * 31 * t) / 64);
+      v.push(1000 + main + spread);
+    }
+    queue.push(...series(v, `s-${s}`));
+  }
+  // Filter narrows the candidate set, *then* top caps.
+  // With min=0.05 we expect to drop the very narrowest (s-0),
+  // and then top=2 caps the remaining 4 to 2.
+  const r = buildSourceRowTokenSpectralBandwidth(queue, {
+    generatedAt: GEN,
+    minBandwidthFracBins: 0.05,
+    top: 2,
+  });
+  // The source dropped under the min filter must NOT be counted under
+  // droppedBelowTopCap — verifies "filter then cap" composition order.
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinBandwidthFracBins, 1);
+  assert.equal(r.droppedBelowTopCap, 2);
+});
+
+test('spectral-bandwidth: bandwidthFractionMax matches bandwidthBin / ((bins-1)/2) exactly', () => {
+  // Property check: the normalised metric is exactly the documented ratio,
+  // not an approximation. Locks the formula against accidental drift.
+  const v: number[] = [];
+  for (let t = 0; t < 40; t++) {
+    v.push(100 + 50 * Math.sin((2 * Math.PI * 3 * t) / 40) + 30 * Math.sin((2 * Math.PI * 17 * t) / 40));
+  }
+  const r = buildSourceRowTokenSpectralBandwidth(series(v), {
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  const expected = row.bandwidthBin / ((row.bins - 1) / 2);
+  assert.ok(
+    Math.abs(row.bandwidthFractionMax - expected) < 1e-12,
+    `bandwidthFractionMax = bandwidthBin / ((bins-1)/2): got ${row.bandwidthFractionMax}, expected ${expected}`,
+  );
+});

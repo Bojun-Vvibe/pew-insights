@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.151 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-bandwidth` gains two property
+  tests and one composition-order test that lock the
+  0.6.150 base lens against future drift:
+
+  - **Compose-order test**: when both `--min-bandwidth-frac-bins`
+    and `--top` are set, the filter is applied first and the
+    cap second. A source dropped under the min filter is
+    counted under `droppedBelowMinBandwidthFracBins`, NOT
+    under `droppedBelowTopCap`. Locks the documented
+    "filter then cap" semantics in code.
+  - **Formula lock**: `bandwidthFractionMax` is exactly
+    `bandwidthBin / ((bins - 1) / 2)`, not an approximation.
+    Pinned with a `< 1e-12` equality assertion against
+    fresh inline computation. Catches accidental drift in
+    the normalisation denominator.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,727
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance) confirms the filter behaves as
+  documented:
+
+  ```
+  pew-insights source-row-token-spectral-bandwidth --max-bandwidth-frac-bins 0.27
+  per-source row-token spectral bandwidth (sorted by bandwidth-asc; ties: source asc)
+  source    rows  bins  totPower   centroidBin  bwBin    bwFrac  bwFracMax
+  --------  ----  ----  ---------  -----------  -------  ------  ---------
+  opencode  363   181   1.089e+19  30.7277      41.3608  0.2285  0.4596
+  codex     64    32    4.162e+17  8.5305       8.2935   0.2592  0.5351
+  openclaw  469   234   2.561e+18  61.0529      61.7956  0.2641  0.5304
+  ```
+
+  3 sources suppressed under `droppedAboveMaxBandwidthFracBins`
+  (`vscode-XXX` 0.2877, `claude-code` 0.3064, `hermes`
+  0.3083). Reading: `--max-bandwidth-frac-bins 0.27`
+  isolates the three sources whose per-row token PSD is
+  most spectrally concentrated — the operator-friendly
+  "single dominant time-scale" subset, distinct from the
+  "multiple competing time-scales" subset that the
+  symmetric `--min-bandwidth-frac-bins` flag surfaces.
+
+  Tests: 3207 -> 3209 (+2 in this refinement, +127
+  cumulative since the 0.6.145 baseline).
+
 ## 0.6.150 — 2026-04-28
 
 ### Added
