@@ -2,6 +2,94 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.98 — 2026-04-27
+
+### Changed
+
+- `source-row-token-iqr-ratio`: refinement adds the
+  `--min-median <f>` flag, mirroring the
+  `--min-cv` / `--min-mad-ratio` / `--min-gini` /
+  `--min-mean-streak` / `--min-mean` convention shipped
+  with prior `source-row-token-*` lenses.
+
+  Drops sources whose `median` `total_tokens` is
+  strictly below `f`. Default `0` (no floor; preserves
+  v0.6.97 behaviour exactly).
+
+  This is a **genuinely orthogonal cohort gate to
+  `--min-iqr-ratio`**:
+
+  - `--min-iqr-ratio` gates on the source's central
+    spread **relative to its typical row** (does the
+    producer's middle rows fan out meaningfully
+    relative to its median row?).
+  - `--min-median` gates on the source's typical row
+    **absolute scale** (do the producer's median rows
+    actually move meaningful token mass?).
+
+  A source can have `median = 2K` and
+  `iqrRatio = 4.0` (tiny but spread out — gated by
+  `--min-median`), or `median = 10M` and
+  `iqrRatio = 0.05` (huge but tight — gated by
+  `--min-iqr-ratio`). The two filters select distinct
+  cohorts; the new unit test
+  `row-iqr: --min-median is orthogonal to
+  --min-iqr-ratio (gates distinct cohorts)` constructs
+  an explicit three-source orthogonality witness:
+
+  - A: median = 250 / iqrRatio = 0.6 → survives both.
+  - B: median =  65 / iqrRatio ≈ 0.46 → survives
+    `--min-iqr-ratio 0.1` but is killed by
+    `--min-median 100`.
+  - C: median = 10000 / iqrRatio ≈ 0.0275 → survives
+    `--min-median 100` but is killed by
+    `--min-iqr-ratio 0.1`.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  with `--min-median 100000`
+  (vscode-copilot redacted to vscode-assistant-redacted
+  and gated out by the floor — its median is ~2,319):
+
+  ```
+  pew-insights source-row-token-iqr-ratio --min-median 100000
+  sources: 6 (shown 5)    rows: 1,632    min-median: 100,000    sort: iqr-ratio-desc
+  dropped: ... 1 below min-median ...
+
+  source       rows  q1          median      q3           iqr          iqrRatio  flat  degen
+  -----------  ----  ----------  ----------  -----------  -----------  --------  ----  -----
+  claude-code  299   728733.00   3319967.00  13677924.50  12949191.50  3.9004    no    no
+  hermes       170   160251.25   392360.50   1412404.25   1252153.00   3.1913    no    no
+  codex        64    1664220.25  7132861.00  18367242.00  16703021.75  2.3417    no    no
+  opencode     330   1320774.00  7260153.00  12408036.50  11087262.50  1.5271    no    no
+  openclaw     436   1516820.00  2917530.50  5234979.00   3718159.00   1.2744    no    no
+  ```
+
+  Reading: the gate cleanly filters out the IDE-style
+  micro-row producer (the redacted source with median
+  ~ 2,319 — three orders of magnitude smaller than every
+  other source's median) so the operator can focus the
+  iqrRatio cohort on producers that actually move
+  meaningful token mass per row. The remaining five all
+  retain iqrRatio ≥ 1.27 (every source's central 50 %
+  spans at least 1.27× its median), with `claude-code`
+  (3.90) the most spread and `openclaw` (1.27) the
+  tightest.
+
+### Tests
+
+- 3 new unit tests in
+  `test/sourcerowtokeniqrratio.test.ts` covering:
+  `--min-median` argument validation (rejects negative,
+  NaN, +Infinity); default surfaces in the report
+  (`minMedian = 0`, `droppedBelowMinMedian = 0`);
+  behavioural test (small-median source dropped); and
+  an explicit three-source orthogonality construction
+  showing that `--min-iqr-ratio` and `--min-median`
+  gate distinct cohorts (small-but-spread vs
+  big-but-tight).
+
+  Total: 2544 -> 2547 (+3).
+
 ## 0.6.97 — 2026-04-27
 
 ### Added
