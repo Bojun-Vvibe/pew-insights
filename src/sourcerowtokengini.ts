@@ -173,6 +173,29 @@ export interface SourceRowTokenGiniOptions {
    */
   minMean?: number;
   /**
+   * Drop sources whose `gini` is strictly below this value.
+   * The natural cohort selector for this lens — the question
+   * "is this source's row-level inequality meaningful?".
+   * Suggested operator thresholds:
+   *   - `--min-gini 0.2`  hide nearly-equal sources (very flat
+   *     per-row distribution).
+   *   - `--min-gini 0.4`  surface only sources with high
+   *     inequality (a handful of rows carrying a
+   *     disproportionate share).
+   *   - `--min-gini 0.6`  surface only sources with extreme
+   *     inequality — the "few rows do all the work" cohort.
+   * Display filter only. Suppressed rows surface as
+   * `droppedBelowMinGini`. Must be in `[0, 1)`. Default 0 = no
+   * floor (preserves v0.6.91 behaviour exactly). Strict-`<`
+   * semantics: an exactly-`gini = 0` source (all rows equal) is
+   * kept by the default `0`, but any positive threshold
+   * including `--min-gini 0.0001` drops it. Same convention as
+   * `--min-mad-ratio` (v0.6.90), `--min-cv` (v0.6.88),
+   * `--min-margin` (v0.6.86), `--min-abs-skew` (v0.6.81), and
+   * `--min-abs-kurt` (v0.6.84).
+   */
+  minGini?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -219,6 +242,7 @@ export interface SourceRowTokenGiniReport {
   source: string | null;
   minRows: number;
   minMean: number;
+  minGini: number;
   top: number | null;
   sort:
     | 'gini-desc'
@@ -238,6 +262,7 @@ export interface SourceRowTokenGiniReport {
   droppedZeroMassForGini: number;
   droppedBelowMinRows: number;
   droppedBelowMinMean: number;
+  droppedBelowMinGini: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenGiniRow[];
 }
@@ -277,6 +302,12 @@ export function buildSourceRowTokenGini(
   if (!Number.isFinite(minMean) || minMean < 0) {
     throw new Error(
       `minMean must be a finite, non-negative number (got ${opts.minMean})`,
+    );
+  }
+  const minGini = opts.minGini ?? 0;
+  if (!Number.isFinite(minGini) || minGini < 0 || minGini >= 1) {
+    throw new Error(
+      `minGini must be a finite number in [0, 1) (got ${opts.minGini})`,
     );
   }
   const top = opts.top ?? null;
@@ -390,6 +421,7 @@ export function buildSourceRowTokenGini(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinMean = 0;
+  let droppedBelowMinGini = 0;
   const survived: SourceRowTokenGiniRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -398,6 +430,10 @@ export function buildSourceRowTokenGini(
     }
     if (row.mean < minMean) {
       droppedBelowMinMean += 1;
+      continue;
+    }
+    if (row.gini < minGini) {
+      droppedBelowMinGini += 1;
       continue;
     }
     survived.push(row);
@@ -430,6 +466,7 @@ export function buildSourceRowTokenGini(
     source: sourceFilter,
     minRows,
     minMean,
+    minGini,
     top,
     sort,
     totalSources,
@@ -440,6 +477,7 @@ export function buildSourceRowTokenGini(
     droppedZeroMassForGini,
     droppedBelowMinRows,
     droppedBelowMinMean,
+    droppedBelowMinGini,
     droppedBelowTopCap,
     sources: finalSources,
   };

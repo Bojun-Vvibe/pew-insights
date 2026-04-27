@@ -9596,7 +9596,7 @@ program
   )
   .option(
     '--min-mean <f>',
-    'drop sources whose per-row total_tokens mean is strictly below f; useful for suppressing tiny-row sources where the 3rd moment is dominated by a single outlier (default 0)',
+    'drop sources whose per-row total_tokens mean is strictly below f (default 0)',
     '0',
   )
   .option(
@@ -10076,6 +10076,11 @@ program
     '0',
   )
   .option(
+    '--min-gini <f>',
+    'drop sources whose gini is strictly below f; cohort selector for "row-level inequality is meaningful" (e.g. --min-gini 0.4 surfaces only sources with high inequality where a handful of rows carry a disproportionate share; --min-gini 0.6 surfaces only sources with extreme inequality — the "few rows do all the work" cohort). Must be in [0, 1). Default 0',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -10093,6 +10098,7 @@ program
         source?: string;
         minRows: string;
         minMean: string;
+        minGini: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10112,6 +10118,12 @@ program
         if (!Number.isFinite(minMean) || minMean < 0) {
           throw new Error(
             `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        const minGini = Number.parseFloat(opts.minGini);
+        if (!Number.isFinite(minGini) || minGini < 0 || minGini >= 1) {
+          throw new Error(
+            `--min-gini must be a finite number in [0, 1) (got ${opts.minGini})`,
           );
         }
         let top: number | null = null;
@@ -10143,6 +10155,7 @@ program
           source: opts.source ?? null,
           minRows,
           minMean,
+          minGini,
           top,
           sort: opts.sort as
             | 'gini-desc'

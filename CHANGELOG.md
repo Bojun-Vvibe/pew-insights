@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.92 — 2026-04-27
+
+### Changed
+
+- `source-row-token-gini`: refinement adds the `--min-gini <f>`
+  flag. Drops sources whose `gini` is strictly below `f`. The
+  natural cohort selector for this lens — the question
+  "is this source's row-level inequality meaningful, or are
+  rows nearly equal in token mass?" is always gini-based.
+
+  Suggested operator thresholds:
+
+  - `--min-gini 0.2`  hide nearly-equal sources (the very flat
+    per-row distribution cohort).
+  - `--min-gini 0.4`  surface only sources with high
+    inequality — a handful of rows carrying a disproportionate
+    share.
+  - `--min-gini 0.6`  surface only sources with extreme
+    inequality — the "few rows do all the work" cohort.
+
+  Pair with the default `--sort gini-desc` for "show me the
+  most unequal sources, ordered by inequality" or with
+  `--sort unbiased-desc` for the small-sample-bias-corrected
+  ranking when source row counts differ wildly.
+
+  Display filter only; suppressed rows surface as
+  `droppedBelowMinGini`. Default `--min-gini 0` preserves
+  v0.6.91 behaviour exactly. Strict-`<` semantics: an
+  exactly-`gini = 0` source (all rows equal) is kept by the
+  default `0`, but any positive threshold including
+  `--min-gini 0.0001` drops it. Validation: `f` must lie in
+  `[0, 1)` (Gini is bounded above by `1` and never reaches
+  it for finite samples). Same convention as `--min-mad-ratio`
+  (v0.6.90), `--min-cv` (v0.6.88), `--min-margin` (v0.6.86),
+  `--min-abs-skew` (v0.6.81), and `--min-abs-kurt` (v0.6.84).
+
+  Live smoke at `--min-rows 5 --min-gini 0.6` against
+  `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-gini
+  as of: 2026-04-27T03:25:03.760Z    sources: 6 (shown 2)    rows: 1,623    min-rows: 5    min-mean: 0.00    min-gini: 0.6000    top: —    sort: gini-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 2-row floor, 0 zero-mass, 0 below min-rows, 0 below min-mean, 4 below min-gini, 0 below top cap
+
+  per-source row total_tokens Gini (sorted by gini-desc; ties: source asc)
+  source                       rows  mean         median      gini    giniUnbiased  mean/med  degMed
+  ---------------------------  ----  -----------  ----------  ------  ------------  --------  ------
+  claude-code                  299   11512995.95  3319967.00  0.6900  0.6923        3.4678    -
+  vscode-assistant-redacted    333   5662.84      2319.00     0.6842  0.6863        2.4419    -
+  ```
+
+  At `--min-gini 0.6`, only `claude-code` (`G=0.69`) and
+  `vscode-assistant-redacted` (`G=0.68`) survive. The four
+  dropped sources (`opencode 0.58`, `codex 0.58`, `hermes 0.57`,
+  `openclaw 0.47`) are the cohort whose row-level inequality
+  is below the "Gini >= 0.6" extreme-inequality bar. With this
+  gate engaged the lens transitions from "report all row-level
+  inequality" to "report only sources whose token mass is
+  *concentrated* in the long tail" — a much sharper filter
+  for the "a few rows carry most of the work" cohort.
+
+---
+
 ## 0.6.91 — 2026-04-27
 
 ### Added

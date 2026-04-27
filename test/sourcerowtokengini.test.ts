@@ -498,3 +498,113 @@ test('row-token-gini: multi-source full pipeline integration', () => {
   assert.equal(r.sources[1]!.source, 'b');
   assert.equal(r.sources[2]!.source, 'a');
 });
+
+test('row-token-gini: rejects bad minGini (negative)', () => {
+  assert.throws(() => buildSourceRowTokenGini([], { minGini: -0.1 }));
+});
+
+test('row-token-gini: rejects bad minGini (>= 1)', () => {
+  assert.throws(() => buildSourceRowTokenGini([], { minGini: 1 }));
+  assert.throws(() => buildSourceRowTokenGini([], { minGini: 1.5 }));
+});
+
+test('row-token-gini: rejects bad minGini (NaN / Infinity)', () => {
+  assert.throws(() => buildSourceRowTokenGini([], { minGini: Number.NaN }));
+  assert.throws(() =>
+    buildSourceRowTokenGini([], { minGini: Number.POSITIVE_INFINITY }),
+  );
+});
+
+test('row-token-gini: minGini default 0 preserves prior behaviour', () => {
+  // Three sources with ginis 0, 0.25, 0.75
+  const q = [
+    ql('2026-04-27T00:00:00.000Z', 'a', 5),
+    ql('2026-04-27T01:00:00.000Z', 'a', 5),
+    ql('2026-04-27T00:00:00.000Z', 'b', 1),
+    ql('2026-04-27T01:00:00.000Z', 'b', 2),
+    ql('2026-04-27T02:00:00.000Z', 'b', 3),
+    ql('2026-04-27T03:00:00.000Z', 'b', 4),
+    ql('2026-04-27T00:00:00.000Z', 'c', 0),
+    ql('2026-04-27T01:00:00.000Z', 'c', 0),
+    ql('2026-04-27T02:00:00.000Z', 'c', 0),
+    ql('2026-04-27T03:00:00.000Z', 'c', 1000),
+  ];
+  const r = buildSourceRowTokenGini(q, { generatedAt: GEN, minGini: 0 });
+  assert.equal(r.sources.length, 3);
+  assert.equal(r.droppedBelowMinGini, 0);
+});
+
+test('row-token-gini: minGini drops below threshold (strict <)', () => {
+  // a gini 0, b gini 0.25, c gini 0.75
+  const q = [
+    ql('2026-04-27T00:00:00.000Z', 'a', 5),
+    ql('2026-04-27T01:00:00.000Z', 'a', 5),
+    ql('2026-04-27T00:00:00.000Z', 'b', 1),
+    ql('2026-04-27T01:00:00.000Z', 'b', 2),
+    ql('2026-04-27T02:00:00.000Z', 'b', 3),
+    ql('2026-04-27T03:00:00.000Z', 'b', 4),
+    ql('2026-04-27T00:00:00.000Z', 'c', 0),
+    ql('2026-04-27T01:00:00.000Z', 'c', 0),
+    ql('2026-04-27T02:00:00.000Z', 'c', 0),
+    ql('2026-04-27T03:00:00.000Z', 'c', 1000),
+  ];
+  const r = buildSourceRowTokenGini(q, {
+    generatedAt: GEN,
+    minGini: 0.5,
+  });
+  // a (0) and b (0.25) drop, only c (0.75) survives
+  assert.equal(r.droppedBelowMinGini, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'c');
+});
+
+test('row-token-gini: minGini strict-< at exact gini', () => {
+  // gini = 0.25 exactly for [1,2,3,4]
+  const q = [
+    ql('2026-04-27T00:00:00.000Z', 'a', 1),
+    ql('2026-04-27T01:00:00.000Z', 'a', 2),
+    ql('2026-04-27T02:00:00.000Z', 'a', 3),
+    ql('2026-04-27T03:00:00.000Z', 'a', 4),
+  ];
+  const rEq = buildSourceRowTokenGini(q, {
+    generatedAt: GEN,
+    minGini: 0.25,
+  });
+  // 0.25 NOT < 0.25 -> kept
+  assert.equal(rEq.sources.length, 1);
+  assert.equal(rEq.droppedBelowMinGini, 0);
+  const rEps = buildSourceRowTokenGini(q, {
+    generatedAt: GEN,
+    minGini: 0.2501,
+  });
+  // 0.25 < 0.2501 -> dropped
+  assert.equal(rEps.sources.length, 0);
+  assert.equal(rEps.droppedBelowMinGini, 1);
+});
+
+test('row-token-gini: minGini drops the exactly-zero (all-equal) cohort at any positive threshold', () => {
+  const q = [
+    ql('2026-04-27T00:00:00.000Z', 'a', 100),
+    ql('2026-04-27T01:00:00.000Z', 'a', 100),
+    ql('2026-04-27T02:00:00.000Z', 'a', 100),
+  ];
+  // Default 0 keeps the gini=0 source.
+  const r0 = buildSourceRowTokenGini(q, { generatedAt: GEN });
+  assert.equal(r0.sources.length, 1);
+  // Any positive threshold (incl. 0.0001) drops it.
+  const rEps = buildSourceRowTokenGini(q, {
+    generatedAt: GEN,
+    minGini: 0.0001,
+  });
+  assert.equal(rEps.sources.length, 0);
+  assert.equal(rEps.droppedBelowMinGini, 1);
+});
+
+test('row-token-gini: report exposes minGini in header fields', () => {
+  const r = buildSourceRowTokenGini([], {
+    generatedAt: GEN,
+    minGini: 0.4,
+  });
+  assert.equal(r.minGini, 0.4);
+  assert.equal(r.droppedBelowMinGini, 0);
+});
