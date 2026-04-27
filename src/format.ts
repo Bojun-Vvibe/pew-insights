@@ -9998,3 +9998,75 @@ export function renderSourceRowTokenApproximateEntropy(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenSpectralCentroidReport,
+  SourceRowTokenSpectralCentroidRow,
+} from './sourcerowtokenspectralcentroid.js';
+
+export function renderSourceRowTokenSpectralCentroid(
+  r: SourceRowTokenSpectralCentroidReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-centroid'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source spectral centroid (first moment) of the one-sided non-DC power spectrum P[k] = |X[k]|^2 of the mean-centered per-row total_tokens series. centroidBin = sum_{k=1..K} k * P[k] / sum_{k=1..K} P[k]. centroidFractionBins = centroidBin / floor(n/2), in (0, 1] — scale-free brightness in fraction-of-Nyquist units. Klapuri 1999 / McKinney & Breebaart 2003. PSD *first moment* (mean of CDF), genuinely orthogonal to: spectral-rolloff (CDF *quantile* — same mean can sit at very different quantiles depending on PSD shape), spectral-flatness (entropy ratio G/A — flat and peaked PSDs can share the same centroid), hjorth-mobility (sqrt of *second* moment), TKEO (time-domain energy operator), single-lag autocorrelation, event-count lenses (zcr, runs-test, turning-point, mann-kendall), time-domain symbolic entropies (approximate, sample, permutation, renyi, lempel-ziv), scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd), and all amplitude-domain shape lenses (crest-factor, gini, mad, iqr-ratio, cv, kurtosis, skewness, burstiness-coefficient).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral centroid (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'centroidBin',
+    'centFrac',
+    'domBin',
+    'domShare',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralCentroidRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      s.centroidBin.toFixed(4),
+      s.centroidFractionBins.toFixed(4),
+      formatNumber(s.dominantBin),
+      s.dominantBinShare.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

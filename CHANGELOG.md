@@ -2,6 +2,119 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.148 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-spectral-centroid`.
+  Per-source **spectral centroid** (first moment) of the
+  one-sided non-DC power spectrum `P[k] = |X[k]|^2`,
+  `k = 1..floor(n/2)`, of the mean-centered per-row
+  `total_tokens` sequence:
+
+      centroidBin = sum_{k=1..K} k * P[k] / sum_{k=1..K} P[k]
+
+  Reported quantities:
+
+  - `centroidBin`         : real-valued power-weighted mean
+                            bin in `[1, bins]`.
+  - `centroidFractionBins`: `centroidBin / floor(n/2)`,
+                            in `(0, 1]` — scale-free
+                            brightness in
+                            "fraction-of-Nyquist" units.
+  - `dominantBin` / `dominantBinShare` for context.
+
+  Citation: Klapuri, A. (1999), "Sound onset detection by
+  applying psychoacoustic knowledge", Proc. ICASSP-99
+  vol.6 pp.3089-3092 — first moment of the power spectrum
+  as a timbral brightness descriptor. Reaffirmed in
+  McKinney, M. F. & Breebaart, J. (2003), "Features for
+  Audio and Music Classification", Proc. ISMIR 2003,
+  pp. 151-158.
+
+  **Why this lens is genuinely orthogonal** to every
+  shipped `source-row-token-*` lens (justification
+  required):
+
+  - vs. `spectral-rolloff` (the lens shipped in 0.6.146):
+    roll-off is a *quantile* of the cumulative PSD (the
+    bin where the CDF first crosses some fraction).
+    Centroid is the *first moment* (mean) of the same
+    PSD. Two PSDs with identical 85% roll-off bins can
+    have very different centroids: e.g. one with a sharp
+    peak at the roll-off bin (low centroid relative to
+    roll-off) versus one with broad mass spread evenly up
+    to it (centroid near roll-off / 2). Quantile vs. mean
+    of a CDF — a textbook orthogonal pair.
+  - vs. `spectral-flatness` (0.6.144): SF is the
+    geometric/arithmetic mean ratio `G/A` of the PSD —
+    answers "how peaked vs uniform". A uniform low PSD
+    and a uniform high PSD share `SF = 1` but have
+    different centroids; a sharp peak at the low end and
+    a sharp peak at the high end share equally low SF
+    but very different centroids. Shape vs. location.
+  - vs. `hjorth-mobility`: Parseval-equivalent to
+    `sqrt(integrated f^2-weighted PSD / total PSD)` —
+    the **square root of the second moment**. Centroid
+    is the **first moment**. First and second moments
+    are independent under most distributions (low-mean /
+    high-variance vs. high-mean / low-variance share
+    neither).
+  - vs. `teager-kaiser`: time-domain energy operator
+    `psi[n] = x[n]^2 - x[n-1]*x[n+1]` with a
+    frequency-squared bias on average — again a moment-
+    style summary, not a location summary.
+  - vs. **autocorrelation (lag-1)** / **mann-kendall** /
+    `dailytokenautocorrelationlag1`: time-domain
+    summaries; integrate one lag or one trend statistic;
+    lose the PSD entirely.
+  - vs. **fractal / scaling lenses** (`hurst-rs`, `dfa`,
+    `higuchi-fd`, `katz-fd`, `petrosian-fd`): summarise
+    PSD *slope* / scaling; centroid summarises PSD
+    *location*.
+  - vs. **amplitude-shape lenses** (`cv`, `mad`,
+    `iqr-ratio`, `skewness`, `kurtosis`, `gini`,
+    `crest-factor`, `burstiness-coefficient`): amplitude
+    domain, order-invariant. Centroid is order-sensitive.
+  - vs. **time-domain symbolic entropies** (`approximate`,
+    `sample`, `permutation`, `renyi`, `lempel-ziv`):
+    ordinal / symbolic reductions; lose the PSD entirely.
+  - vs. **event counters** (`zcr`, `runs-test`,
+    `turning-point`): scalar event tallies; centroid is a
+    continuous mean bin index.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,723
+  rows, 6 sources; one source name redacted to
+  `vscode-XXX` for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-centroid
+  per-source row-token spectral centroid (sorted by centroid-asc; ties: source asc)
+  source       rows  bins  totPower   centroidBin  centFrac  domBin  domShare
+  -----------  ----  ----  ---------  -----------  --------  ------  --------
+  opencode     362   181   1.086e+19  30.6010      0.1691    2       0.1086
+  openclaw     468   234   2.552e+18  61.0190      0.2608    2       0.0899
+  codex        64    32    4.162e+17  8.5305       0.2666    1       0.2778
+  claude-code  299   149   1.385e+19  39.8729      0.2676    1       0.2000
+  vscode-XXX   333   166   1.237e+13  55.4502      0.3340    2       0.0575
+  hermes       197   98    1.776e+16  41.1548      0.4199    1       0.1380
+  ```
+
+  Reading: `opencode` has the lowest brightness
+  (`centroidFractionBins = 0.169`) — its per-row token
+  PSD mass sits low on the frequency axis, indicating
+  per-row token volume dominated by slow envelope.
+  `hermes` is at the other extreme (`0.420`), with PSD
+  mass distributed nearly halfway up the band — more
+  per-row jitter on top of any envelope. The lens reads
+  **where on the frequency axis** the PSD mass lives, in
+  scale-free units, complementing `spectral-rolloff`
+  (which reads the same axis at a fixed cumulative
+  quantile rather than at the mean).
+
+  Tests: 3130 -> 3170 (+40 in this lens, +88 cumulative
+  since the 0.6.145 baseline).
+
 ## 0.6.147 — 2026-04-28
 
 ### Added
