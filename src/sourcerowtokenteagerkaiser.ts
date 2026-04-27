@@ -132,6 +132,24 @@ export interface SourceRowTokenTeagerKaiserOptions {
    */
   normalize?: boolean;
   /**
+   * Optional lower bound on reported TKEO. When `--normalize`
+   * is on, the bound applies to `tkeoMeanNormalized`; otherwise
+   * to `tkeoMean`. Sources whose value is strictly below the
+   * threshold are suppressed and counted under
+   * `droppedBelowMinTkeo`. Useful to surface only the
+   * high-energy / high-frequency-content sources.
+   */
+  minTkeo?: number | null;
+  /**
+   * Optional upper bound on reported TKEO. Symmetric counterpart
+   * to `minTkeo`. Surfaces in `droppedAboveMaxTkeo`. Useful to
+   * surface only the quiet / low-energy sources for diagnostics.
+   *
+   * If both are set and `minTkeo > maxTkeo`, the constructor
+   * throws — that is operator error, not a silent empty report.
+   */
+  maxTkeo?: number | null;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -176,6 +194,8 @@ export interface SourceRowTokenTeagerKaiserReport {
   source: string | null;
   minRows: number;
   normalize: boolean;
+  minTkeo: number | null;
+  maxTkeo: number | null;
   top: number | null;
   sort: SourceRowTokenTeagerKaiserSort;
   totalSources: number;
@@ -187,6 +207,8 @@ export interface SourceRowTokenTeagerKaiserReport {
   droppedBelowMinRows: number;
   droppedZeroVariance: number;
   droppedDegenerate: number;
+  droppedBelowMinTkeo: number;
+  droppedAboveMaxTkeo: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTeagerKaiserRow[];
 }
@@ -204,6 +226,23 @@ export function buildSourceRowTokenTeagerKaiser(
     );
   }
   const normalize = opts.normalize ?? false;
+  const minTkeo = opts.minTkeo ?? null;
+  if (minTkeo !== null) {
+    if (!Number.isFinite(minTkeo)) {
+      throw new Error(`minTkeo must be a finite number (got ${opts.minTkeo})`);
+    }
+  }
+  const maxTkeo = opts.maxTkeo ?? null;
+  if (maxTkeo !== null) {
+    if (!Number.isFinite(maxTkeo)) {
+      throw new Error(`maxTkeo must be a finite number (got ${opts.maxTkeo})`);
+    }
+  }
+  if (minTkeo !== null && maxTkeo !== null && minTkeo > maxTkeo) {
+    throw new Error(
+      `minTkeo (${minTkeo}) must be <= maxTkeo (${maxTkeo})`,
+    );
+  }
   const top = opts.top ?? null;
   if (top !== null) {
     if (!Number.isInteger(top) || top < 1) {
@@ -363,10 +402,32 @@ export function buildSourceRowTokenTeagerKaiser(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinTkeo = 0;
+  let droppedAboveMaxTkeo = 0;
+  let postRows = allRows;
+  if (minTkeo !== null || maxTkeo !== null) {
+    const kept: SourceRowTokenTeagerKaiserRow[] = [];
+    for (const row of postRows) {
+      const v =
+        normalize && row.tkeoMeanNormalized !== null
+          ? row.tkeoMeanNormalized
+          : row.tkeoMean;
+      if (minTkeo !== null && v < minTkeo) {
+        droppedBelowMinTkeo += 1;
+        continue;
+      }
+      if (maxTkeo !== null && v > maxTkeo) {
+        droppedAboveMaxTkeo += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -376,6 +437,8 @@ export function buildSourceRowTokenTeagerKaiser(
     source: sourceFilter,
     minRows,
     normalize,
+    minTkeo,
+    maxTkeo,
     top,
     sort,
     totalSources,
@@ -387,6 +450,8 @@ export function buildSourceRowTokenTeagerKaiser(
     droppedBelowMinRows,
     droppedZeroVariance,
     droppedDegenerate,
+    droppedBelowMinTkeo,
+    droppedAboveMaxTkeo,
     droppedBelowTopCap,
     sources: finalSources,
   };

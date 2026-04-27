@@ -2106,7 +2106,7 @@ program
   )
   .option(
     '--top <n>',
-    'display cap on the per-source list after sort + min-runs filter; hidden rows surface as droppedBelowTopCap',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
     '--filter-source <list>',
@@ -12740,6 +12740,14 @@ program
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-tkeo <n>',
+    'suppress sources whose computed value is strictly below this threshold; surfaces them under droppedBelowMinTkeo. With --normalize, applies to tkeoMeanNormalized; otherwise to tkeoMean.',
+  )
+  .option(
+    '--max-tkeo <n>',
+    'suppress sources whose computed value is strictly above this threshold; surfaces them under droppedAboveMaxTkeo. Symmetric to --min-tkeo.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'tkeo-asc' (default; quietest first) | 'tkeo-desc' (most-energetic first) | 'rows' | 'source'. With --normalize, the sort key uses tkeoMeanNormalized.",
     'tkeo-asc',
@@ -12754,6 +12762,8 @@ program
         minRows: string;
         normalize?: boolean;
         top?: string;
+        minTkeo?: string;
+        maxTkeo?: string;
         sort: string;
         json?: boolean;
       },
@@ -12776,6 +12786,22 @@ program
           }
           top = t;
         }
+        let minTkeo: number | null = null;
+        if (opts.minTkeo != null) {
+          const v = Number.parseFloat(opts.minTkeo);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--min-tkeo must be a finite number (got ${opts.minTkeo})`);
+          }
+          minTkeo = v;
+        }
+        let maxTkeo: number | null = null;
+        if (opts.maxTkeo != null) {
+          const v = Number.parseFloat(opts.maxTkeo);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--max-tkeo must be a finite number (got ${opts.maxTkeo})`);
+          }
+          maxTkeo = v;
+        }
         const validSorts = ['tkeo-asc', 'tkeo-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -12790,6 +12816,8 @@ program
           minRows,
           normalize: opts.normalize ?? false,
           top,
+          minTkeo,
+          maxTkeo,
           sort: opts.sort as 'tkeo-asc' | 'tkeo-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.139 — 2026-04-28
+
+### Added
+
+- `source-row-token-teager-kaiser` gains two refinement
+  threshold flags that compose with the 0.6.138 base lens
+  without changing default behaviour:
+
+  - `--min-tkeo <v>`: suppress sources whose computed
+    value is strictly below `v`. Suppressed sources surface
+    in `droppedBelowMinTkeo`. Useful to surface only the
+    high-energy / high-frequency-content sources.
+
+  - `--max-tkeo <v>`: symmetric counterpart. Suppress
+    sources whose value is strictly above `v`. Surfaces
+    in `droppedAboveMaxTkeo`. Useful to surface only the
+    quiet / low-energy sources for diagnostics.
+
+  When `--normalize` is on, both thresholds apply to
+  `tkeoMeanNormalized` (= tkeoMean / sigma^2); otherwise
+  they apply to the raw `tkeoMean`. This matches the
+  semantics of `--sort tkeo-asc`/`tkeo-desc`, so the same
+  threshold acts on the same value the user is sorting by.
+
+  Both default to `null` (no filter); both must be finite
+  if set; if both are set and `min > max` the constructor
+  throws (operator error, not a silent empty report).
+  Pure post-compute filters — they do not affect the
+  underlying TKEO computation, only which rows are
+  reported.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,706
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-teager-kaiser --normalize --min-tkeo 0.7 --sort tkeo-desc
+  as of: 2026-04-27   sources: 6 (shown 3)   rows: 1,706
+  min-rows: 8   normalize: true   min-tkeo: 0.7   sort: tkeo-desc
+  dropped: ... 0 below min-rows, 0 zero-variance, 0 degenerate, 3 below min-tkeo, 0 above max-tkeo, 0 below top cap
+
+  per-source row-token Teager-Kaiser energy mean (sorted by tkeo-desc; ties: source asc)
+  source       rows  sigma        tkeoMean            tkeoMean/sigma^2
+  -----------  ----  -----------  ------------------  ----------------
+  hermes        192    967511.72     822308397670.58            0.8785
+  vscode-XXX    333     14933.73          184179236.15           0.8259
+  codex          64  14252148.98  152260567998039.09             0.7496
+  ```
+
+  Reading the live smoke: with `--normalize --min-tkeo 0.7`
+  the lens cleanly partitions the 6 sources into a top
+  cohort of three with normalised energy ~ 0.75-0.88
+  (`hermes`, `vscode-XXX`, `codex`) and drops the bottom
+  three (`openclaw` 0.68, `claude-code` 0.59, `opencode`
+  0.40). Note that this top cohort is **completely
+  different** from the unnormalised top-3 in v0.6.138
+  (`claude-code`, `codex`, `opencode` — driven by
+  amplitude scale). The threshold flag plus `--normalize`
+  is the operator workflow for "show me the sources whose
+  token-count cadence carries the most high-frequency
+  oscillatory energy per unit variance, regardless of
+  absolute amplitude."
+
+- 7 new unit tests for the new flags: --min-tkeo
+  suppression on raw value, --max-tkeo suppression on raw
+  value, --min-tkeo with --normalize uses normalised
+  value, `min > max` throws, non-finite throws, both-null
+  no-op, --min-tkeo + --max-tkeo window combination.
+
+  Test count: **2994 -> 3001** (+7 in this refinement,
+  +68 cumulative since baseline 2933).
+
 ## 0.6.138 — 2026-04-28
 
 ### Added

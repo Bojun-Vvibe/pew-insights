@@ -359,3 +359,98 @@ test('tkeo: multi-source — independent computations', () => {
   assert.equal(r.totalSources, 2);
   assert.equal(r.sources.length, 2);
 });
+
+test('tkeo: --min-tkeo suppresses below threshold (raw)', () => {
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');  // tkeo=1
+  const bVals: number[] = [];
+  for (let i = 0; i < 20; i++) bVals.push(100 + 50 * Math.cos((Math.PI * i) / 3));
+  const b = series(bVals, 'b');  // tkeo much larger
+  const r = buildSourceRowTokenTeagerKaiser([...a, ...b], {
+    generatedAt: GEN,
+    minTkeo: 100,
+  });
+  assert.equal(r.droppedBelowMinTkeo, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+});
+
+test('tkeo: --max-tkeo suppresses above threshold (raw)', () => {
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');  // tkeo=1
+  const bVals: number[] = [];
+  for (let i = 0; i < 20; i++) bVals.push(100 + 50 * Math.cos((Math.PI * i) / 3));
+  const b = series(bVals, 'b');
+  const r = buildSourceRowTokenTeagerKaiser([...a, ...b], {
+    generatedAt: GEN,
+    maxTkeo: 10,
+  });
+  assert.equal(r.droppedAboveMaxTkeo, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'a');
+});
+
+test('tkeo: --min-tkeo with --normalize uses normalized value', () => {
+  // For ramp x_n=n, sigma^2 = (n^2-1)/12 over n samples; tkeoMean=1
+  // -> normalized = 12/(n^2-1) which is small for large n.
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');
+  // For periodic, normalized ~ 2 sin^2(omega) ~ O(0.1-1)
+  const bVals: number[] = [];
+  for (let i = 0; i < 30; i++) bVals.push(100 + 50 * Math.cos((Math.PI * i) / 3));
+  const b = series(bVals, 'b');
+  // Without normalize, both pass minTkeo=0.1
+  // With normalize and minTkeo=0.5, ramp's normalized is tiny -> dropped
+  const r = buildSourceRowTokenTeagerKaiser([...a, ...b], {
+    generatedAt: GEN,
+    normalize: true,
+    minTkeo: 0.5,
+  });
+  // Only sources with normalized >= 0.5 survive
+  for (const s of r.sources) {
+    assert.ok(s.tkeoMeanNormalized! >= 0.5);
+  }
+});
+
+test('tkeo: minTkeo > maxTkeo throws', () => {
+  assert.throws(() =>
+    buildSourceRowTokenTeagerKaiser([], { minTkeo: 10, maxTkeo: 5 }),
+  );
+});
+
+test('tkeo: non-finite minTkeo / maxTkeo throws', () => {
+  assert.throws(() =>
+    buildSourceRowTokenTeagerKaiser([], { minTkeo: NaN }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenTeagerKaiser([], { maxTkeo: Infinity }),
+  );
+});
+
+test('tkeo: both minTkeo and maxTkeo null = no-op (regression)', () => {
+  const data = series(Array.from({ length: 20 }, (_, i) => i + 1));
+  const r = buildSourceRowTokenTeagerKaiser(data, {
+    generatedAt: GEN,
+    minTkeo: null,
+    maxTkeo: null,
+  });
+  assert.equal(r.droppedBelowMinTkeo, 0);
+  assert.equal(r.droppedAboveMaxTkeo, 0);
+  assert.equal(r.sources.length, 1);
+});
+
+test('tkeo: --min-tkeo + --max-tkeo combine as a window', () => {
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');  // tkeo=1
+  // Constant offset preserves tkeo (psi = (n+c)^2 - (n-1+c)(n+1+c) = 1 still)
+  const b = series(Array.from({ length: 20 }, (_, i) => i + 100), 'b');
+  // Periodic high-energy
+  const cVals: number[] = [];
+  for (let i = 0; i < 20; i++) cVals.push(100 + 50 * Math.cos((Math.PI * i) / 3));
+  const c = series(cVals, 'c');
+  const r = buildSourceRowTokenTeagerKaiser([...a, ...b, ...c], {
+    generatedAt: GEN,
+    minTkeo: 0.5,
+    maxTkeo: 100,
+    sort: 'source',
+  });
+  // a and b have tkeo ~ 1, c has tkeo > 100 -> dropped above
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxTkeo, 1);
+});
