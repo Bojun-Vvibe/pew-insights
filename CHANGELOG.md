@@ -162,6 +162,11 @@ All notable changes to this project will be documented in this file.
   direct-DFT pure builders; both mean-center the input; both
   surface `droppedConstantSeries` for flat inputs.
 
+  Follow-up: see 0.6.147 for the
+  `--min-rolloff-frac-bins` / `--max-rolloff-frac-bins`
+  refinement that adds operator-side band-edge filtering on
+  this lens.
+
   Tests: 3082 -> 3120 (+38 new for this lens; covering math
   correctness on pure sines, cumulative-fraction monotonicity
   in `--rolloff-fraction`, scale/shift invariance,
