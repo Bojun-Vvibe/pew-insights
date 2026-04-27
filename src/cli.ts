@@ -112,6 +112,7 @@ import {
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
   renderSourceRowTokenPermutationEntropy,
+  renderSourceRowTokenMannKendallTrend,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -284,6 +285,7 @@ import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenbursti
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
+import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -11162,6 +11164,119 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenPermutationEntropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-mann-kendall-trend')
+  .description(
+    "Per-source Mann-Kendall rank-based monotonic trend test on the per-row total_tokens time-ordered sequence. S = sum_{i<j} sign(v[j] - v[i]); under H0 (i.i.d.) E[S] = 0 and Var[S] = [n(n-1)(2n+5) - sum_t t(t-1)(2t+5)] / 18 with the tie-correction sum over value-side tie groups. Z is continuity-corrected (Z = (S - 1)/sigma if S > 0, (S + 1)/sigma if S < 0, 0 otherwise) and asymptotically N(0,1); two-sided normal-approx p-value is reported. tau = Kendall's tau-b in [-1, +1] (signed concordance scalar; sample-size-agnostic). tau ~ +1 / Z >> 0 -> later rows monotonically larger (UP trend). tau ~ -1 / Z << 0 -> later rows monotonically smaller (DOWN trend). Genuinely orthogonal to source-row-token-runs-test (median-dichotomy is direction-blind to monotone trend; reads clumped for both up and down), to source-row-token-turning-point-count (jaggedness scalar, not direction), to source-row-token-autocorrelation-lag1 (Pearson rho, linear-parametric on raw values vs. non-parametric all-pair), to source-row-token-permutation-entropy (local m=3 ordinal patterns vs. global pairwise concordance), and to every order-invariant dispersion / shape lens (-iqr-ratio / -mad / -skewness / -kurtosis / -gini / -burstiness / -coefficient-of-variation). Distinct from source-daily-token-trend-slope, which is a per-source linear OLS slope on the daily-aggregated token mass — this lens operates per-row, is non-parametric, and reports a concordance scalar (not a slope in tokens/day).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; must be an integer >= 4 (the normal-approx Z is unreliable below this for Mann-Kendall) (default 8)',
+    '8',
+  )
+  .option(
+    '--max-p <f>',
+    'drop sources whose two-sided Mann-Kendall p-value is strictly above f; cohort selector that surfaces only sources with statistically detectable monotonic trend. f must be a finite number in (0, 1]. (default 1, no floor)',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'abs-z-desc' (default) | 'z-asc' | 'z-desc' | 'tau-asc' | 'tau-desc' | 'abs-tau-desc' | 'p-asc' | 'rows' | 'source'",
+    'abs-z-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        maxP: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const maxP = Number.parseFloat(opts.maxP);
+        if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
+          throw new Error(
+            `--max-p must be a finite number in (0, 1] (got ${opts.maxP})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'z-asc',
+          'z-desc',
+          'abs-z-desc',
+          'tau-asc',
+          'tau-desc',
+          'abs-tau-desc',
+          'p-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMannKendallTrend(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          maxP,
+          top,
+          sort: opts.sort as
+            | 'z-asc'
+            | 'z-desc'
+            | 'abs-z-desc'
+            | 'tau-asc'
+            | 'tau-desc'
+            | 'abs-tau-desc'
+            | 'p-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenMannKendallTrend(report) + '\n',
           );
         }
       } catch (e) {

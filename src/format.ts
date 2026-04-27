@@ -8845,3 +8845,79 @@ export function renderSourceRowTokenTurningPointCount(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenMannKendallTrendReport,
+  SourceRowTokenMannKendallTrendRow,
+} from './sourcerowtokenmannkendalltrend.js';
+
+export function renderSourceRowTokenMannKendallTrend(
+  r: SourceRowTokenMannKendallTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-mann-kendall-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    max-p: ${r.maxP.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAboveMaxP)} above max-p, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Mann-Kendall rank-based monotonic trend test on the per-row total_tokens time-ordered sequence. S = sum_{i<j} sign(v[j] - v[i]); under H0 (i.i.d.) E[S] = 0 and Var[S] = [n(n-1)(2n+5) - sum_t t(t-1)(2t+5)] / 18 with the tie-correction sum over value-side tie groups. Z is continuity-corrected (Z = (S - 1)/sigma if S > 0, (S + 1)/sigma if S < 0, 0 otherwise) and asymptotically N(0,1). tau = Kendall's tau-b in [-1, +1]. tau ~ +1 / Z >> 0 -> later rows monotonically larger (UP trend). tau ~ -1 / Z << 0 -> later rows monotonically smaller (DOWN trend). tau ~ 0 / Z ~ 0 -> no monotonic trend. Genuinely orthogonal to runs-test (median dichotomy is direction-blind to monotone trend; reads clumped for both up and down), to turning-point-count (jaggedness, not direction), to lag-1 autocorrelation (linear-parametric on raw values vs. non-parametric all-pair), to permutation-entropy (local m=3 ordinal patterns vs. global pairwise concordance), and to every order-invariant dispersion / shape lens.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Mann-Kendall trend test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'S',
+    'sigmaS',
+    'Z',
+    'tau',
+    'p',
+    'tieGrp',
+    'tiePr',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenMannKendallTrendRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.s),
+      Math.sqrt(Math.max(s.varS, 0)).toFixed(2),
+      s.z.toFixed(4),
+      s.tau.toFixed(4),
+      s.pValue.toFixed(4),
+      formatNumber(s.valueTieGroups),
+      formatNumber(s.valueTiePairs),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
