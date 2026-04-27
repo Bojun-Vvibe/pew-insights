@@ -490,10 +490,12 @@ test('spectral-rolloff: degenerate counter remains 0 in normal input', () => {
 test('spectral-rolloff: JSON shape is stable and complete', () => {
   const r = buildSourceRowTokenSpectralRolloff(
     series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
-    { generatedAt: GEN, top: 1 },
+    { generatedAt: GEN, top: 1, minRolloffFracBins: 0, maxRolloffFracBins: 1 },
   );
   const reportKeys = Object.keys(r).sort();
   assert.deepEqual(reportKeys, [
+    'droppedAboveMaxRolloffFracBins',
+    'droppedBelowMinRolloffFracBins',
     'droppedBelowMinRows',
     'droppedBelowTopCap',
     'droppedConstantSeries',
@@ -503,6 +505,8 @@ test('spectral-rolloff: JSON shape is stable and complete', () => {
     'droppedNegativeTokens',
     'droppedSourceFilter',
     'generatedAt',
+    'maxRolloffFracBins',
+    'minRolloffFracBins',
     'minRows',
     'rolloffFraction',
     'sort',
@@ -570,4 +574,158 @@ test('spectral-rolloff: dominantBinShare in (0, 1] and matches power max', () =>
   const row = r.sources[0]!;
   assert.ok(row.dominantBinShare > 0 && row.dominantBinShare <= 1 + 1e-12);
   assert.ok(row.dominantBin >= 1 && row.dominantBin <= row.bins);
+});
+
+// --- 0.6.147 refinement: --min-rolloff-frac-bins / --max-rolloff-frac-bins filters ---
+
+test('spectral-rolloff: refinement defaults — min/max are null and surface no drops', () => {
+  const r = buildSourceRowTokenSpectralRolloff(
+    series([1, 2, 3, 4, 5, 6, 7, 8]),
+    { generatedAt: GEN },
+  );
+  assert.equal(r.minRolloffFracBins, null);
+  assert.equal(r.maxRolloffFracBins, null);
+  assert.equal(r.droppedBelowMinRolloffFracBins, 0);
+  assert.equal(r.droppedAboveMaxRolloffFracBins, 0);
+});
+
+test('spectral-rolloff: minRolloffFracBins suppresses low-frequency-loaded sources', () => {
+  // low-freq sine -> small rolloffFractionBins; high-freq sine -> large
+  const lo: number[] = [];
+  for (let t = 0; t < 64; t++) lo.push(100 + 50 * Math.sin((2 * Math.PI * 2 * t) / 64));
+  const hi: number[] = [];
+  for (let t = 0; t < 64; t++) hi.push(100 + 50 * Math.sin((2 * Math.PI * 28 * t) / 64));
+  const queue = [...series(lo, 'low'), ...series(hi, 'high')];
+  const r = buildSourceRowTokenSpectralRolloff(queue, {
+    minRolloffFracBins: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'high');
+  assert.equal(r.droppedBelowMinRolloffFracBins, 1);
+  assert.equal(r.droppedAboveMaxRolloffFracBins, 0);
+});
+
+test('spectral-rolloff: maxRolloffFracBins suppresses high-frequency-loaded sources', () => {
+  const lo: number[] = [];
+  for (let t = 0; t < 64; t++) lo.push(100 + 50 * Math.sin((2 * Math.PI * 2 * t) / 64));
+  const hi: number[] = [];
+  for (let t = 0; t < 64; t++) hi.push(100 + 50 * Math.sin((2 * Math.PI * 28 * t) / 64));
+  const queue = [...series(lo, 'low'), ...series(hi, 'high')];
+  const r = buildSourceRowTokenSpectralRolloff(queue, {
+    maxRolloffFracBins: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'low');
+  assert.equal(r.droppedAboveMaxRolloffFracBins, 1);
+  assert.equal(r.droppedBelowMinRolloffFracBins, 0);
+});
+
+test('spectral-rolloff: min + max band keeps middle and counts both sides', () => {
+  // three sources: low (k=2), mid (k=15), high (k=28) over n=64.
+  const mk = (k: number, src: string) => {
+    const v: number[] = [];
+    for (let t = 0; t < 64; t++) v.push(100 + 50 * Math.sin((2 * Math.PI * k * t) / 64));
+    return series(v, src);
+  };
+  const queue = [...mk(2, 'low'), ...mk(15, 'mid'), ...mk(28, 'high')];
+  const r = buildSourceRowTokenSpectralRolloff(queue, {
+    minRolloffFracBins: 0.2,
+    maxRolloffFracBins: 0.7,
+    generatedAt: GEN,
+  });
+  assert.equal(
+    r.droppedBelowMinRolloffFracBins +
+      r.droppedAboveMaxRolloffFracBins +
+      r.sources.length,
+    3,
+  );
+  assert.ok(r.droppedBelowMinRolloffFracBins >= 1, 'low should be dropped');
+  assert.ok(r.droppedAboveMaxRolloffFracBins >= 1, 'high should be dropped');
+});
+
+test('spectral-rolloff: minRolloffFracBins > maxRolloffFracBins throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralRolloff([], {
+        minRolloffFracBins: 0.8,
+        maxRolloffFracBins: 0.2,
+      }),
+    /minRolloffFracBins \(0.8\) must be <= maxRolloffFracBins \(0.2\)/,
+  );
+});
+
+test('spectral-rolloff: minRolloffFracBins non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralRolloff([], {
+        minRolloffFracBins: Number.POSITIVE_INFINITY,
+      }),
+    /minRolloffFracBins must be a finite number/,
+  );
+});
+
+test('spectral-rolloff: maxRolloffFracBins non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralRolloff([], {
+        maxRolloffFracBins: Number.NaN,
+      }),
+    /maxRolloffFracBins must be a finite number/,
+  );
+});
+
+test('spectral-rolloff: refinement filters compose with --top (filter first, then cap)', () => {
+  const mk = (k: number, src: string) => {
+    const v: number[] = [];
+    for (let t = 0; t < 64; t++) v.push(100 + 50 * Math.sin((2 * Math.PI * k * t) / 64));
+    return series(v, src);
+  };
+  const queue = [...mk(2, 'low'), ...mk(15, 'mid'), ...mk(28, 'high')];
+  const r = buildSourceRowTokenSpectralRolloff(queue, {
+    minRolloffFracBins: 0.2,
+    top: 1,
+    sort: 'rolloff-asc',
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.ok(r.droppedBelowMinRolloffFracBins >= 1);
+  assert.ok(r.droppedBelowTopCap >= 1);
+});
+
+test('spectral-rolloff: equal-to-threshold rows are kept (strict comparison)', () => {
+  const fixed: number[] = [];
+  for (let t = 0; t < 16; t++) fixed.push(t * (t % 3));
+  const baseline = buildSourceRowTokenSpectralRolloff(series(fixed), {
+    generatedAt: GEN,
+  });
+  assert.equal(baseline.sources.length, 1);
+  const v = baseline.sources[0]!.rolloffFractionBins;
+  const r = buildSourceRowTokenSpectralRolloff(series(fixed), {
+    minRolloffFracBins: v,
+    maxRolloffFracBins: v,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinRolloffFracBins, 0);
+  assert.equal(r.droppedAboveMaxRolloffFracBins, 0);
+});
+
+test('spectral-rolloff: refinement filters do not affect the underlying computation', () => {
+  // Same input, with and without filters that keep all rows -> identical sources.
+  const v = [1, 5, 2, 8, 3, 7, 4, 6, 9, 0, 11, 2];
+  const a = buildSourceRowTokenSpectralRolloff(series(v, 'a'), {
+    generatedAt: GEN,
+  });
+  const b = buildSourceRowTokenSpectralRolloff(series(v, 'a'), {
+    minRolloffFracBins: 0,
+    maxRolloffFracBins: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(a.sources.length, b.sources.length);
+  assert.equal(a.sources[0]!.rolloffBin, b.sources[0]!.rolloffBin);
+  assert.ok(
+    Math.abs(a.sources[0]!.rolloffFractionBins - b.sources[0]!.rolloffFractionBins) < 1e-12,
+  );
 });
