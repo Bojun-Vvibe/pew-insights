@@ -2,6 +2,155 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.152 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-spectral-skewness`.
+  Per-source **standardized (Fisher) spectral skewness** — the
+  3rd standardized central moment of the one-sided non-DC
+  power spectrum `P[k] = |X[k]|^2`, `k = 1..K = floor(n/2)`,
+  of the mean-centered per-row `total_tokens` sequence, taken
+  *around the spectral centroid `c`*:
+
+      m2       = sum_k (k - c)^2 * P[k] / sum_k P[k]
+      m3       = sum_k (k - c)^3 * P[k] / sum_k P[k]
+      skewness = m3 / m2^(3/2)
+
+  where `c = sum_k k * P[k] / sum_k P[k]` is the spectral
+  centroid (first moment, shipped in 0.6.148).
+
+  Reported quantities:
+
+  - `centroidBin`  : first-moment bin (real); recomputed inline
+                     so the three-moment triple is internally
+                     consistent.
+  - `bandwidthBin` : sqrt(m2) — bin-units. Reported because
+                     `skewness` is undefined when this is 0.
+  - `m3`           : raw third central moment (bin^3 units),
+                     useful as a sanity check on sign.
+  - `skewness`     : `m3 / m2^(3/2)` — standardized; sign tells
+                     which side of the centroid the PSD tail
+                     leans (**positive** => long high-frequency
+                     tail; **negative** => long low-frequency
+                     tail). Magnitude gives the asymmetry
+                     strength in standardized units.
+
+  Citation: Peeters, G. (2004), "A large set of audio features
+  for sound description (similarity and classification) in the
+  CUIDADO project", IRCAM Tech. Rep., §6.1.4 — third central
+  moment of the power spectrum as the canonical spectral
+  asymmetry descriptor. See also Lerch, A. (2012), "An
+  Introduction to Audio Content Analysis", Wiley/IEEE Press,
+  §3.3.2 (Spectral Skewness), and the standardized (Fisher)
+  form in Joanes & Gill (1998), "Comparing measures of sample
+  skewness and kurtosis", J. Royal Stat. Soc. Series D, 47(1),
+  183-189.
+
+  **Why this lens is genuinely orthogonal** to every shipped
+  `source-row-token-*` lens:
+
+  - vs. **spectral-centroid** (0.6.148): centroid is the *first*
+    moment (location). Skewness is the *third* standardized
+    central moment (asymmetry of mass around that location).
+    Two PSDs with identical centroids can have skewness of
+    opposite sign — a PSD with mass at bins {c - 1, c + 5}
+    (positive skew) vs. {c - 5, c + 1} (negative skew) share
+    the same centroid but flip the skewness sign. Mean vs.
+    asymmetry of a CDF — orthogonal.
+  - vs. **spectral-bandwidth** (0.6.150): bandwidth is the
+    *second* central moment (sqrt of variance / spread).
+    Skewness divides the *third* central moment by the *3/2
+    power of the second*, deliberately scaling spread out so
+    only asymmetry remains. Two PSDs with identical bandwidth
+    can have very different skewness: a symmetric two-tone PSD
+    around the centroid has skewness 0; an asymmetric two-tone
+    PSD with the same variance has non-zero skewness. Spread
+    vs. *direction* of spread.
+  - vs. **spectral-rolloff** (0.6.146): roll-off is a single
+    CDF *quantile*. Skewness is a third-moment summary of the
+    whole CDF shape. Two PSDs that share an 85% roll-off bin
+    can have wildly different skewness depending on how their
+    mass is distributed *around the centroid* on either side.
+  - vs. **spectral-flatness** (0.6.144): SF is the
+    geometric/arithmetic mean ratio `G/A` of `P[k]` — a global
+    "how peaked vs uniform" entropy ratio that is *position-
+    blind*. Skewness is position-aware *and* direction-aware:
+    a uniform PSD on `[1, K/2]` and the mirror-image uniform
+    PSD on `[K/2 + 1, K]` share the same flatness but
+    opposite-sign skewness around their respective centroids.
+  - vs. **hjorth-mobility** / Parseval-domain non-central
+    moments / **TKEO**: those are sign-blind, non-negative
+    spread/energy summaries. Skewness is sign-bearing.
+  - vs. **autocorrelation lag-1 / mann-kendall**: time-domain
+    summaries; lose the PSD entirely.
+  - vs. **fractal / scaling lenses** (`hurst-rs`, `dfa`,
+    `higuchi-fd`, `katz-fd`, `petrosian-fd`): those summarise
+    PSD *slope* on a log-log axis. Slope is a first-moment-like
+    summary of `log P[k]` against `log k`; skewness is a
+    third-moment summary of `P[k]` against `k` on the linear
+    axis.
+  - vs. **amplitude-domain skewness**: amplitude-skewness is
+    *order-invariant* (shuffle the sequence and it doesn't
+    change). Spectral-skewness is *order-sensitive* — it is a
+    PSD descriptor; shuffle the sequence and the spectral
+    skewness changes.
+  - vs. **time-domain symbolic entropies** (`approximate`,
+    `sample`, `permutation`, `renyi`, `lempel-ziv`): ordinal /
+    symbolic reductions; lose the PSD entirely.
+  - vs. **event counters** (`zcr`, `runs-test`,
+    `turning-point`): scalar event tallies; skewness is a
+    continuous, sign-bearing third-moment summary on bin index.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,730 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-skewness
+  per-source row-token spectral skewness (sorted by skewness-asc; ties: source asc)
+  source       rows  bins  totPower   centroidBin  bwBin    m3        skewness
+  -----------  ----  ----  ---------  -----------  -------  --------  --------
+  hermes       200   100   1.809e+16  41.7856      30.6713  4.007e+3  0.1389
+  vscode-XXX   333   166   1.237e+13  55.4502      47.7503  4.653e+4  0.4274
+  claude-code  299   149   1.385e+19  39.8729      45.6546  7.708e+4  0.8100
+  codex        64    32    4.162e+17  8.5305       8.2935   5.460e+2  0.9572
+  openclaw     470   235   2.569e+18  61.1500      61.9847  2.581e+5  1.0838
+  opencode     364   182   1.092e+19  30.8920      41.6604  1.408e+5  1.9477
+  ```
+
+  Reading: every source has **positive** spectral skewness
+  here, which is the expected operator regime — a positive
+  skew means the per-row token PSD piles its mass at lower
+  frequencies (slower / longer time-scales of variability)
+  with a longer tail of weaker contributions reaching to
+  higher frequencies (faster fluctuations). `hermes` is the
+  least skewed (`0.139`), i.e. its PSD is the most symmetric
+  around its own centroid — variability time-scales are
+  distributed nearly evenly above and below `centroidBin ~
+  41.8`. `opencode` is the most skewed (`1.948`), with PSD
+  mass strongly piled below its centroid (`30.9`) and a long
+  tail towards higher frequencies — a clear "slow base
+  rhythm + occasional fast bursts" spectral signature.
+
+  Note this lens is genuinely orthogonal to bandwidth: take
+  `hermes` (`bwBin = 30.7`) and `claude-code` (`bwBin = 45.7`)
+  — different bandwidths but compare to `codex` (`bwBin =
+  8.3`) and `openclaw` (`bwBin = 61.9`); skewness ranks them
+  in a *different* order than bandwidth would (`hermes <
+  vscode-XXX < claude-code < codex < openclaw < opencode` by
+  skewness vs. `codex < hermes < opencode < claude-code <
+  vscode-XXX < openclaw` by `bwBin`). And it is genuinely
+  orthogonal to centroid: `hermes` (`centroid 41.8`) and
+  `vscode-XXX` (`centroid 55.5`) have very different centroids
+  but adjacent skewness; `opencode` (`centroid 30.9`) and
+  `openclaw` (`centroid 61.2`) sit at opposite ends of the
+  centroid axis but adjacent skewness. The third moment is
+  carrying its own information.
+
+  Tests: 3209 -> 3245 (+36 in this lens, +163 cumulative
+  since the 0.6.145 baseline).
+
 ## 0.6.151 — 2026-04-28
 
 ### Added
