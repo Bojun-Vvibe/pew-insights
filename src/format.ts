@@ -9606,3 +9606,65 @@ export function renderSourceRowTokenZeroCrossingRate(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenPetrosianFdReport,
+  SourceRowTokenPetrosianFdRow,
+} from './sourcerowtokenpetrosianfd.js';
+
+export function renderSourceRowTokenPetrosianFd(
+  r: SourceRowTokenPetrosianFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-petrosian-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (constant series), ${formatNumber(r.droppedDegenerate)} degenerate (M<2 / denom=0), ${formatNumber(r.clampedBelow1)} clamped below 1, ${formatNumber(r.clampedAbove2)} clamped above 2, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Petrosian Fractal Dimension (Petrosian 1995, Proc. 8th IEEE Symp. CBMS, pp. 212-217) on the per-row total_tokens time-ordered sequence. PFD = log10(M) / (log10(M) + log10(M / (M + 0.4 * Nd))) where M = N - 1 and Nd = number of sign flips in diff(v) (zero diffs treated as +1, Esteller 2001 convention). Bounded in [1, 2]; ~1 = near-monotone; ~1.18 = Nyquist alternation. Genuinely orthogonal to katz-fd / higuchi-fd (metric path-length quantities; PFD is purely binary post-sign-mapping — multiply v by 13 and Nd is bit-identical), to zero-crossing-rate (counts mean-crossings of v; PFD counts sign flips of diff(v) — monotone ramp has ZCR ~ 1/(N-1) but PFD ~ 1), to turning-point-count (raw extrema count; PFD wraps it in length-normalised log-ratio so ranking does not preserve order), to runs-test-z (median-binarised over v, not diff sign), to mann-kendall (all-pair concordance), to autocorr-lag1 (linear, magnitude-sensitive), to hjorth-mobility/complexity (variance ratios — magnitude sensitive), to permutation-entropy / sample-entropy (embedding windows), to lempel-ziv (median-binarised factor count), to renyi-entropy / dfa / hurst-rs, and to all order-invariant dispersion / shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Petrosian Fractal Dimension (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'M', 'Nd', 'zeroDiffs', 'PFD', 'pfdRaw'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenPetrosianFdRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.M),
+      formatNumber(s.Nd),
+      formatNumber(s.zeroDiffs),
+      s.pfd.toFixed(4),
+      s.pfdRaw.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

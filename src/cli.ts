@@ -118,6 +118,7 @@ import {
   renderSourceRowTokenHjorthMobility,
   renderSourceRowTokenHjorthComplexity,
   renderSourceRowTokenZeroCrossingRate,
+  renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
   renderSourceRowTokenDfa,
@@ -301,6 +302,7 @@ import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
 import { buildSourceRowTokenHjorthComplexity } from './sourcerowtokenhjorthcomplexity.js';
 import { buildSourceRowTokenZeroCrossingRate } from './sourcerowtokenzerocrossingrate.js';
+import { buildSourceRowTokenPetrosianFd } from './sourcerowtokenpetrosianfd.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
 import { buildSourceRowTokenDfa } from './sourcerowtokendfa.js';
@@ -12088,6 +12090,87 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenZeroCrossingRate(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-petrosian-fd')
+  .description(
+    "Per-source Petrosian Fractal Dimension (Petrosian 1995, Proc. 8th IEEE Symp. CBMS, pp. 212-217) on the per-row total_tokens time-ordered sequence. PFD = log10(M) / (log10(M) + log10(M / (M + 0.4 * Nd))) where M = N - 1 and Nd = number of sign flips in diff(v) (zero diffs treated as +1, Esteller 2001 convention). Bounded in [1, 2]; ~1 = near-monotone; ~1.18 = Nyquist alternation. Genuinely orthogonal to katz-fd / higuchi-fd (metric path-length quantities; PFD is purely binary post-sign-mapping — multiply v by 13 and Nd is bit-identical), to zero-crossing-rate (counts mean-crossings of v; PFD counts sign flips of diff(v) — monotone ramp has ZCR ~ 1/(N-1) but PFD ~ 1), to turning-point-count (raw extrema count; PFD wraps it in length-normalised log-ratio so ranking does not preserve order), to runs-test-z (median-binarised over v, not diff sign), to mann-kendall (all-pair concordance), to autocorr-lag1 (linear, magnitude-sensitive), to hjorth-mobility/complexity (variance ratios — magnitude-sensitive), to permutation-entropy / sample-entropy (embedding windows), to lempel-ziv (median-binarised factor count), to renyi-entropy / dfa / hurst-rs, and to all order-invariant dispersion / shape lenses (shuffle inflates Nd / PFD).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 16)',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'pfd-asc' (default; smoothest first) | 'pfd-desc' (wiggliest first) | 'rows' | 'source'",
+    'pfd-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['pfd-asc', 'pfd-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenPetrosianFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as 'pfd-asc' | 'pfd-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenPetrosianFd(report) + '\n',
           );
         }
       } catch (e) {
