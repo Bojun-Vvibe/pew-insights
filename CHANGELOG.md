@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.144 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-spectral-flatness`.
+  Per-source **spectral flatness** (a.k.a. **Wiener entropy**,
+  a.k.a. tonality coefficient) `SF = G(P) / A(P)` of the
+  one-sided non-DC power spectrum `P[k] = |X[k]|^2` of the
+  **mean-centered** per-row `total_tokens` sequence:
+
+  - `G(P) = exp(mean(log P[k]))` (geometric mean)
+  - `A(P) = mean(P[k])` (arithmetic mean)
+
+  By AM-GM, `SF ∈ (0, 1]`. `SF -> 1` means power is uniformly
+  distributed across frequencies (white-noise-like). `SF -> 0`
+  means power is concentrated in a few bins (highly tonal /
+  periodic).
+
+  Citation: Johnston, J. D. (1988), "Transform Coding of
+  Audio Signals Using Perceptual Noise Criteria", IEEE
+  J. Selected Areas in Comms 6(2):314–323. Standard
+  tonality measure in MPEG-1/2 audio psychoacoustics.
+  Equivalent (up to a sign) to `exp(-H_diff)` for a
+  stationary Gaussian process with the given PSD
+  (Burg 1975 max-entropy interpretation), hence "Wiener
+  entropy".
+
+  Construction: filter by `[since, until)` and optional
+  `--source`; drop bad `hour_start` / non-finite / negative
+  `total_tokens` (counted separately); group by source,
+  sort by `hour_start` (this is a frequency-domain lens —
+  ordering matters); skip if `n < min-rows` (default 8);
+  mean-center; compute the real DFT directly
+  (`X[k] = Σ_t x_t exp(-2πi k t / n)`) for `k = 1..⌊n/2⌋`;
+  floor sub-`1e-300` bins to avoid `-Infinity` from `log`;
+  return `G/A` along with the dominant frequency bin
+  (`dominantBin` → period = `n / dominantBin` in row-spacing
+  units) and its mass share.
+
+  **Genuinely orthogonal** to every other `source-row-token-*`
+  lens already shipped:
+
+  - vs. **crest-factor / gini / mad / iqr-ratio / cv /
+    kurtosis / skewness / burstiness-coefficient**: those
+    are amplitude-domain shape statistics. SF is a
+    **frequency-domain** statistic — two series with
+    identical histograms but different temporal arrangements
+    have different SF.
+  - vs. **lag-1 autocorrelation**: AR(1) summary at a single
+    lag. SF integrates the entire PSD.
+  - vs. **TKEO / hjorth-mobility / hjorth-complexity**: those
+    are spectral *moments* (TKEO ~ ω² A²; mobility ~
+    centroid; complexity ~ bandwidth). SF is an entropy-
+    like functional of the PSD, not a moment, and is
+    invariant to overall scaling of the spectrum.
+  - vs. **ZCR / runs-test / turning-point / mann-kendall**:
+    count-based event statistics that compress the entire
+    signal to a single integer.
+  - vs. **approximate / sample / permutation / renyi
+    entropies**: those are time-domain symbolic / ordinal
+    entropies; SF is the entropy of the **power
+    spectrum**. They generally disagree: a sine wave has
+    high permutation/sample entropy on noise but vanishing
+    SF.
+  - vs. **Hurst-RS / DFA / Higuchi-FD / Katz-FD / Petrosian-FD**:
+    long-range scaling / fractal-dimension single-exponent
+    summaries; SF is the *whole-band* flatness, not a slope.
+  - vs. **lempel-ziv**: symbolic factor count over a
+    binarised alphabet; binarisation destroys frequency
+    content.
+
+  Determinism: pure builder; wall clock only via
+  `opts.generatedAt`. Sort tiebreak in all sort modes is
+  `source` asc.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,712
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-flatness
+  per-source row-token spectral flatness (sorted by sf-asc; ties: source asc)
+  source        rows  bins  gMean      aMean      SF      domBin  domShare
+  ------------  ----  ----  ---------  ---------  ------  ------  --------
+  opencode      358   179   1.642e+16  5.990e+16  0.2740  2       0.1055
+  claude-code   299   149   2.988e+16  9.298e+16  0.3214  1       0.2000
+  openclaw      464   232   3.973e+15  1.086e+16  0.3659  2       0.0920
+  codex         64    32    5.030e+15  1.301e+16  0.3867  1       0.2778
+  vscode-XXX    333   166   3.641e+10  7.449e+10  0.4889  2       0.0575
+  hermes        194   97    9.153e+13  1.802e+14  0.5080  1       0.1377
+  ```
+
+  Reading: every source sits in the moderate-tonality band
+  `0.27 ≤ SF ≤ 0.51` — none is close to a pure tone
+  (`SF → 0`) and none is white-noise-like (`SF → 1`). The
+  most tonal is `opencode` (SF 0.274; dominant period =
+  358 / 2 = 179 rows ≈ session-scale rhythm); the most
+  white-noise-like is `hermes` (SF 0.508; small `n=194`
+  and unstructured per-row token sizes). Note the dominant
+  bins cluster at `k=1` or `k=2` for every source, i.e.
+  the strongest non-DC component is always the very
+  longest-period oscillation that fits in the window —
+  consistent with the heavy-tailed bursts of activity
+  these workloads exhibit on a multi-day window.
+
+  Tests: 3041 → 3069 (+28 in this lens).
+
 ## 0.6.143 — 2026-04-28
 
 ### Added

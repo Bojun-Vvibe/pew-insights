@@ -9739,6 +9739,69 @@ export function renderSourceRowTokenCrestFactor(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type {
+  SourceRowTokenSpectralFlatnessReport,
+  SourceRowTokenSpectralFlatnessRow,
+} from './sourcerowtokenspectralflatness.js';
+
+export function renderSourceRowTokenSpectralFlatness(
+  r: SourceRowTokenSpectralFlatnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-flatness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source spectral flatness SF = G(P)/A(P), where P[k] = |X[k]|^2 is the one-sided non-DC power spectrum of the mean-centered per-row total_tokens series. SF in (0, 1]: 1 = white-noise-like (uniform PSD), -> 0 = highly tonal/periodic (one frequency dominates). Johnston 1988 / Wiener entropy. Frequency-domain functional, genuinely orthogonal to amplitude-domain shape lenses (crest-factor, gini, mad, iqr-ratio, cv, kurtosis, skewness, burstiness-coefficient), to spectral *moments* (TKEO, hjorth-mobility, hjorth-complexity), to single-lag autocorrelation, to event-count lenses (zcr, runs-test, turning-point, mann-kendall), to time-domain symbolic entropies (approximate, sample, permutation, renyi), and to scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd). dominantBin gives the period n/dominantBin in row-spacing units.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral flatness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'bins', 'gMean', 'aMean', 'SF', 'domBin', 'domShare'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralFlatnessRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.geometricMean.toExponential(3),
+      s.arithmeticMean.toExponential(3),
+      s.spectralFlatness.toFixed(4),
+      formatNumber(s.dominantBin),
+      s.dominantBinShare.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderSourceRowTokenTeagerKaiser(
   r: SourceRowTokenTeagerKaiserReport,
 ): string {

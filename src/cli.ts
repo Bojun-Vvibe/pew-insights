@@ -121,6 +121,7 @@ import {
   renderSourceRowTokenApproximateEntropy,
   renderSourceRowTokenTeagerKaiser,
   renderSourceRowTokenCrestFactor,
+  renderSourceRowTokenSpectralFlatness,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -303,6 +304,7 @@ import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.
 import { buildSourceRowTokenApproximateEntropy } from './sourcerowtokenapproximateentropy.js';
 import { buildSourceRowTokenTeagerKaiser } from './sourcerowtokenteagerkaiser.js';
 import { buildSourceRowTokenCrestFactor } from './sourcerowtokencrestfactor.js';
+import { buildSourceRowTokenSpectralFlatness } from './sourcerowtokenspectralflatness.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -12936,6 +12938,87 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenCrestFactor(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-flatness')
+  .description(
+    "Per-source spectral flatness SF = G(P)/A(P) (Wiener entropy; Johnston 1988) of the one-sided non-DC power spectrum of the mean-centered per-row total_tokens series. SF in (0, 1]: 1 = white-noise-like (uniform PSD); -> 0 = highly tonal/periodic. Frequency-domain functional, orthogonal to amplitude-shape lenses (crest-factor, gini, mad, iqr-ratio, cv, kurtosis, skewness, burstiness-coefficient), to spectral *moments* (TKEO, hjorth-mobility/complexity), to single-lag autocorrelation, to event-count lenses (zcr, runs-test, turning-point, mann-kendall), to time-domain symbolic entropies (approximate, sample, permutation, renyi), and to scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'sf-asc' (default; most tonal first) | 'sf-desc' (most white-noise-like first) | 'rows' | 'source'",
+    'sf-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['sf-asc', 'sf-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralFlatness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as 'sf-asc' | 'sf-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralFlatness(report) + '\n',
           );
         }
       } catch (e) {
