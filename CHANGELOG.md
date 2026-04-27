@@ -68,6 +68,31 @@ All notable changes to this project will be documented in this file.
   flat-step regimes (e.g. cached or rate-limited queues
   where the same total is reported many times in a row).
 
+### Verified
+
+- Cross-rule equivalence on live data: ran
+  `source-row-token-petrosian-fd --zero-rule skip` against the
+  same 1,699-row queue and confirmed `zeroDiffs == 0` and PFD
+  bit-identical to the default `positive` rule for every
+  source — exactly as expected when the underlying series has
+  no exact-equal consecutive values. This is the empirical
+  receipt that the new flag is wired correctly and that the
+  three rules collapse to a single output on continuous-valued
+  token series.
+
+  ```
+  pew-insights source-row-token-petrosian-fd --zero-rule skip
+  per-source row-token Petrosian Fractal Dimension (sorted by pfd-asc; ties: source asc)
+  source       rows  M    Nd   zeroDiffs  PFD     pfdRaw
+  -----------  ----  ---  ---  ---------  ------  ------
+  vscode-XXX    333  332  179  0          1.0348  1.0348
+  openclaw      459  458  288  0          1.0380  1.0380
+  claude-code   299  298  179  0          1.0393  1.0393
+  opencode      354  353  233  0          1.0416  1.0416
+  hermes        190  189  126  0          1.0472  1.0472
+  codex          64   63   38  0          1.0550  1.0550
+  ```
+
 ## 0.6.134 — 2026-04-28
 
 ### Added
