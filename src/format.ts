@@ -8007,3 +8007,62 @@ export function renderSourceRowTokenSkewness(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenKurtosisReport,
+  SourceRowTokenKurtosisRow,
+} from './sourcerowtokenkurtosis.js';
+
+export function renderSourceRowTokenKurtosis(
+  r: SourceRowTokenKurtosisReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-kurtosis'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-mean: ${r.minMean.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForKurtosis)} below 4-row floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMean)} below min-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Fisher excess kurtosis g2 of per-row total_tokens: g2 = m4/m2^2 - 3; g2=0 mesokurtic (Normal-like), g2>0 leptokurtic (heavier tails AND more peaked centre than Normal), g2<0 platykurtic (thinner tails); Laplace=3, Exponential=6; degen=y means variance=0 so kurtosis reported as 0)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row total_tokens excess kurtosis (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'mean', 'stddev', 'excessKurt', 'degen'];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenKurtosisRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.mean.toFixed(2),
+    s.stddev.toFixed(2),
+    s.excessKurtosis.toFixed(4),
+    s.degenerate ? 'y' : '-',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

@@ -101,6 +101,7 @@ import {
   renderSourceInputOutputCorrelationCoefficient,
   renderSourceFirstVsLastQuartileOutputMeanShift,
   renderSourceRowTokenSkewness,
+  renderSourceRowTokenKurtosis,
   renderModelTenure,
   renderProviderTenure,
   renderTailShare,
@@ -261,6 +262,7 @@ import { buildSourceGapHoursCv } from './sourcegaphourscv.js';
 import { buildSourceInputOutputCorrelationCoefficient } from './sourceinputoutputcorrelationcoefficient.js';
 import { buildSourceFirstVsLastQuartileOutputMeanShift } from './sourcefirstvslastquartileoutputmeanshift.js';
 import { buildSourceRowTokenSkewness } from './sourcerowtokenskewness.js';
+import { buildSourceRowTokenKurtosis } from './sourcerowtokenkurtosis.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
 import { buildTenureDensityQuadrant } from './tenuredensityquadrant.js';
@@ -9682,6 +9684,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenSkewness(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-kurtosis')
+  .description(
+    "Per-source Fisher excess kurtosis g2 of per-row total_tokens distribution: g2 = m4/m2^2 - 3. g2=0 mesokurtic (Normal-like), g2>0 leptokurtic (heavier tails AND more peaked centre than a Normal of the same variance — extreme rows dominate the 4th moment), g2<0 platykurtic (thinner tails). Distinct from source-row-token-skewness (3rd moment, asymmetry/tail direction; mathematically independent of g2 — Laplace has g1=0,g2=3 and triangular has g1=0,g2=-0.6), source-burstiness-fano-factor (variance/mean on day totals, 2nd moment), source-output-tokens-per-row-percentiles (quantile shape on output_tokens), source-input-token-top-row-share (mass concentration), source-output-token-benford-deviation (digit distribution), source-cumulative-mass-half-life-day (temporal centroid), source-first-vs-last-quartile-output-mean-shift (chronological drift), and daily-token-gini-coefficient (cross-day inequality).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; absolute floor 4 (need >=4 samples for a non-degenerate 4th moment) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-mean <f>',
+    'drop sources whose per-row total_tokens mean is strictly below f (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'kurt-desc' (default) | 'kurt-asc' | 'abs-kurt' | 'rows' | 'mean' | 'source'",
+    'kurt-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minMean = Number.parseFloat(opts.minMean);
+        if (!Number.isFinite(minMean) || minMean < 0) {
+          throw new Error(
+            `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'kurt-desc',
+          'kurt-asc',
+          'abs-kurt',
+          'rows',
+          'mean',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenKurtosis(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMean,
+          top,
+          sort: opts.sort as
+            | 'kurt-desc'
+            | 'kurt-asc'
+            | 'abs-kurt'
+            | 'rows'
+            | 'mean'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenKurtosis(report) + '\n');
         }
       } catch (e) {
         die(e);
