@@ -117,6 +117,7 @@ import {
   renderSourceRowTokenKatzFd,
   renderSourceRowTokenHjorthMobility,
   renderSourceRowTokenHjorthComplexity,
+  renderSourceRowTokenZeroCrossingRate,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
   renderSourceRowTokenDfa,
@@ -299,6 +300,7 @@ import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
 import { buildSourceRowTokenHjorthComplexity } from './sourcerowtokenhjorthcomplexity.js';
+import { buildSourceRowTokenZeroCrossingRate } from './sourcerowtokenzerocrossingrate.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
 import { buildSourceRowTokenDfa } from './sourcerowtokendfa.js';
@@ -11973,6 +11975,87 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenHjorthComplexity(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-zero-crossing-rate')
+  .description(
+    "Per-source Zero-Crossing Rate (Kedem 1986, Proc. IEEE 74(11):1477-1493) of the de-meaned per-row total_tokens series. rate = (# adjacent sign changes after centring by mean) / (N - 1). Bounded in [0, 0.5] for any series whose centred sign sequence has at most one flip per step. Read: ~0 = slow drift / persistent; ~0.5 = Nyquist / white-noise-like / alternating. Genuinely orthogonal to hjorth-mobility/complexity (variance-ratio sensitive to amplitude; ZCR is amplitude-invariant after centring), to autocorrelation-lag1 (Kedem cosine identity holds for Gaussian only; token series are heavy-tailed), to runs / turning-point (no centring; monotone ramp has runs=1 / TP=0 but ZCR ~ 1/(N-1)), to permutation-entropy / sample-entropy (no embedding window), to lempel-ziv (mean-binarised transitions, not median-binarised factors), to dfa / hurst-rs / katz-fd / higuchi-fd (multi-scale exponents), and to all order-invariant dispersion / shape lenses (shuffle inflates ZCR toward 0.5).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 24)',
+    '24',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'rate-asc' (default; most slow-drift / persistent first) | 'rate-desc' (most Nyquist-like / alternating first) | 'rows' | 'source'",
+    'rate-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['rate-asc', 'rate-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenZeroCrossingRate(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as 'rate-asc' | 'rate-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenZeroCrossingRate(report) + '\n',
           );
         }
       } catch (e) {

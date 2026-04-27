@@ -9546,3 +9546,63 @@ export function renderSourceRowTokenHjorthComplexity(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenZeroCrossingRateReport,
+  SourceRowTokenZeroCrossingRateRow,
+} from './sourcerowtokenzerocrossingrate.js';
+
+export function renderSourceRowTokenZeroCrossingRate(
+  r: SourceRowTokenZeroCrossingRateReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-zero-crossing-rate'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (constant series), ${formatNumber(r.droppedDegenerate)} degenerate, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Zero-Crossing Rate (Kedem 1986, Proc. IEEE 74(11):1477-1493) of the de-meaned per-row total_tokens series. rate = (# adjacent sign changes after centring by mean) / (N - 1). In [0, 1] but bounded by 0.5 for any series whose centred sign sequence has at most one flip per step. Read: ~0 = slow drift / persistent; ~0.5 = Nyquist / white-noise-like / alternating. Genuinely orthogonal to hjorth-mobility/complexity (variance-ratio sensitive to amplitude; ZCR is amplitude-invariant after centring), to autocorrelation-lag1 (Kedem cosine identity holds for Gaussian only; token series are heavy-tailed), to runs / turning-point (no centring; monotone ramp has runs=1 / TP=0 but ZCR ~ 1/(N-1)), to permutation-entropy / sample-entropy (no embedding window), to lempel-ziv (mean-binarised transitions, not median-binarised factors), to dfa / hurst-rs / katz-fd / higuchi-fd (multi-scale exponents), and to all order-invariant dispersion / shape lenses (shuffle inflates ZCR toward 0.5).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Zero-Crossing Rate (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'mean', 'crossings', 'rate'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenZeroCrossingRateRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      formatNumber(s.crossings),
+      s.rate.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
