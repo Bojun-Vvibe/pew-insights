@@ -8345,6 +8345,77 @@ import type {
   SourceRowTokenAutocorrelationLag1Report,
   SourceRowTokenAutocorrelationLag1Row,
 } from './sourcerowtokenautocorrelationlag1.js';
+import type {
+  SourceRowTokenIqrRatioReport,
+  SourceRowTokenIqrRatioRow,
+} from './sourcerowtokeniqrratio.js';
+
+export function renderSourceRowTokenIqrRatio(
+  r: SourceRowTokenIqrRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-iqr-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-iqr-ratio: ${r.minIqrRatio.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinIqrRatio)} below min-iqr-ratio, ${formatNumber(r.droppedDegenerate)} degenerate (median=0, iqr>0), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source robust dispersion of total_tokens: iqrRatio = (q3 - q1) / median, computed via type-7 (linear-interpolation) quantiles. High iqrRatio = wide central spread relative to typical row size; low = tight central cluster. flat=true means iqr=0 (constant central rows); degenerate=true means median=0 with iqr>0 (sparse-burst pattern; ratio undefined and reported as null).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token IQR/median (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'q1',
+    'median',
+    'q3',
+    'iqr',
+    'iqrRatio',
+    'flat',
+    'degen',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenIqrRatioRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.q1.toFixed(2),
+    s.median.toFixed(2),
+    s.q3.toFixed(2),
+    s.iqr.toFixed(2),
+    s.iqrRatio === null ? 'null' : s.iqrRatio.toFixed(4),
+    s.flat ? 'yes' : 'no',
+    s.degenerate ? 'yes' : 'no',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenAutocorrelationLag1(
   r: SourceRowTokenAutocorrelationLag1Report,

@@ -107,6 +107,7 @@ import {
   renderSourceRowTokenGini,
   renderSourceSameModelStreak,
   renderSourceRowTokenAutocorrelationLag1,
+  renderSourceRowTokenIqrRatio,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -274,6 +275,7 @@ import { buildSourceRowTokenMad } from './sourcerowtokenmad.js';
 import { buildSourceRowTokenGini } from './sourcerowtokengini.js';
 import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
 import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorrelationlag1.js';
+import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10547,6 +10549,111 @@ program
           process.stdout.write(
             renderSourceRowTokenAutocorrelationLag1(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-iqr-ratio')
+  .description(
+    "Per-source robust dispersion of total_tokens across queue rows: iqrRatio = (q3 - q1) / median, computed via type-7 (linear-interpolation) quantiles. Headline: how spread out is the central 50% of per-row token magnitudes relative to the typical row, measured by *order statistics* (immune to single-value outliers). Distinct from source-row-token-coefficient-of-variation (mean+stddev — both inflated arbitrarily by a single huge outlier), source-row-token-mad (also robust but uses *all* rows summarised by median-of-absolute-deviations vs this lens which deliberately ignores the outer 50%), source-row-token-gini (Lorenz-curve concentration index over the whole distribution; not a width-relative-to-centre measure), source-row-token-skewness / source-row-token-kurtosis (shape moments; say nothing about *width*), source-row-token-autocorrelation-lag1 (ordering persistence; blind to dispersion), source-output-tokens-per-row-percentiles (raw percentiles of *output_tokens* only, leaves any ratio computation to the operator), cost-per-bucket-percentiles (dollar cost per hour-bucket, not per-row token magnitudes). flat=true marks sources with iqr=0 (constant central rows; iqrRatio=0). degenerate=true marks sources with median=0 but iqr>0 (sparse-burst pattern: > 50% of rows are zero plus a non-trivial top quartile; the ratio diverges and is reported as null rather than +Infinity).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need at least one observation per quartile slot for a meaningful Q1/Q3) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-iqr-ratio <f>',
+    'drop sources whose iqrRatio is strictly below f; cohort selector for sources whose central spread is non-trivial relative to their typical magnitude. With f > 0, drops degenerate (median=0, iqr>0) sources too (their iqrRatio is null) — counted under droppedDegenerate so the operator sees they were dropped because of *what* they are, not because of *how big* they are. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'iqr-ratio-desc' (default) | 'iqr-ratio-asc' | 'iqr-desc' | 'median-desc' | 'rows' | 'source'",
+    'iqr-ratio-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minIqrRatio: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minIqrRatio = Number.parseFloat(opts.minIqrRatio);
+        if (!Number.isFinite(minIqrRatio) || minIqrRatio < 0) {
+          throw new Error(
+            `--min-iqr-ratio must be a finite, non-negative number (got ${opts.minIqrRatio})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'iqr-ratio-desc',
+          'iqr-ratio-asc',
+          'iqr-desc',
+          'median-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenIqrRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minIqrRatio,
+          top,
+          sort: opts.sort as
+            | 'iqr-ratio-desc'
+            | 'iqr-ratio-asc'
+            | 'iqr-desc'
+            | 'median-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenIqrRatio(report) + '\n');
         }
       } catch (e) {
         die(e);
