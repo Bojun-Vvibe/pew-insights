@@ -9147,6 +9147,67 @@ export function renderSourceRowTokenHiguchiFd(
 }
 
 import type {
+  SourceRowTokenKatzFdReport,
+  SourceRowTokenKatzFdRow,
+} from './sourcerowtokenkatzfd.js';
+
+export function renderSourceRowTokenKatzFd(
+  r: SourceRowTokenKatzFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-katz-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    detrend: ${r.detrend ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (sigma=0), ${formatNumber(r.droppedDegenerate)} degenerate (L<=0 / d<=0 / denom=0), ${formatNumber(r.clampedBelow1)} clamped below 1, ${formatNumber(r.clampedAbove2)} clamped above 2, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Katz Fractal Dimension (Katz 1988, Comput. Biol. Med. 18(3):145-156) on the per-row total_tokens time-ordered sequence treated as a 2D planar curve. KFD = log10(n) / (log10(n) + log10(d/L)) on the Katz-normalised curve where L is total Euclidean path length, d is the maximum chord from the start, n = N-1. KFD ~ 1.0 = near-straight; KFD ~ 1.3-1.5 = moderate roughness; KFD -> 2 = heavily oscillating / space-filling. Genuinely orthogonal to higuchi-fd (multi-stride scaling exponent vs. closed-form single-scale geometric ratio — coincide only for ideal self-similar curves), to hurst-rs (R/S of cumulative deviations), to dfa (detrended fluctuations of cumulative profile), to permutation-entropy (ordinal-only), to sample-entropy (single-scale conditional irregularity), to mann-kendall / runs / turning-point, to autocorr-lag1, to lempel-ziv / renyi-entropy (symbolic / histogrammatic), and to all order-invariant dispersion / shape lenses (shuffling pumps L while leaving d roughly comparable, so KFD typically rises sharply under shuffle).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Katz Fractal Dimension (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'sigma', 'L', 'd', 'n', 'KFD', 'kfdRaw'];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenKatzFdRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.sigma.toFixed(2),
+    s.L.toFixed(2),
+    s.d.toFixed(2),
+    formatNumber(s.n),
+    s.kfd.toFixed(4),
+    s.kfdRaw.toFixed(4),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenRenyiEntropyReport,
   SourceRowTokenRenyiEntropyRow,
 } from './sourcerowtokenrenyientropy.js';

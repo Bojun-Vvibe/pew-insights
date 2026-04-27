@@ -114,6 +114,7 @@ import {
   renderSourceRowTokenPermutationEntropy,
   renderSourceRowTokenSampleEntropy,
   renderSourceRowTokenHiguchiFd,
+  renderSourceRowTokenKatzFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
   renderSourceRowTokenDfa,
@@ -293,6 +294,7 @@ import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpoi
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
+import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
 import { buildSourceRowTokenDfa } from './sourcerowtokendfa.js';
@@ -11674,6 +11676,91 @@ program
           process.stdout.write(
             renderSourceRowTokenHiguchiFd(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-katz-fd')
+  .description(
+    "Per-source Katz Fractal Dimension (Katz 1988, Comput. Biol. Med. 18(3):145-156) on the per-row total_tokens time-ordered sequence treated as a 2D planar curve. KFD = log10(n) / (log10(n) + log10(d/L)) on the Katz-normalised curve where L is total Euclidean path length, d is the maximum chord from the start, n = N-1. KFD ~ 1.0 = near-straight; KFD ~ 1.3-1.5 = moderate roughness; KFD -> 2 = heavily oscillating / space-filling. Genuinely orthogonal to source-row-token-higuchi-fd (multi-stride scaling exponent vs. closed-form single-scale geometric ratio - coincide only for ideal self-similar curves), to hurst-rs (R/S), to dfa (detrended fluctuations of cumulative profile), to permutation-entropy / sample-entropy (ordinal / single-scale conditional irregularity), to mann-kendall / runs / turning-point, to autocorr-lag1, to lempel-ziv / renyi-entropy (symbolic / histogrammatic), and to all order-invariant dispersion / shape lenses (shuffling pumps L while leaving d roughly comparable, so KFD typically rises sharply under shuffle).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 16)',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'kfd-asc' (default; straightest first) | 'kfd-desc' (most coiled first) | 'rows' | 'source'",
+    'kfd-asc',
+  )
+  .option(
+    '--detrend',
+    'subtract the OLS linear trend from each per-source value sequence before computing L, d, KFD. Isolates deviation-from-drift roughness; recommended for sources with strong monotone drift, where the raw KFD is biased downward (toward 1) by the trend.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        detrend?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['kfd-asc', 'kfd-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenKatzFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          detrend: opts.detrend === true,
+          sort: opts.sort as 'kfd-asc' | 'kfd-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenKatzFd(report) + '\n');
         }
       } catch (e) {
         die(e);
