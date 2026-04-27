@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.94 — 2026-04-27
+
+### Changed
+
+- `source-same-model-streak`: refinement adds the
+  `--min-mean-streak <f>` flag. Drops sources whose
+  `meanStreakLength` (= `rowsKept / streakCount`) is strictly
+  below `f`. Default `1` (no floor; preserves v0.6.93
+  behaviour exactly).
+
+  This is a **genuinely orthogonal cohort gate to
+  `--min-ratio`**:
+
+  - `--min-ratio` gates on the source's *single longest*
+    run, expressed as a fraction of `rowsKept`.
+  - `--min-mean-streak` gates on the *average* run length
+    across *all* the source's streaks.
+
+  A source with one giant run + many singletons can score
+  high on `longestStreakRatio` but low on
+  `meanStreakLength`, and vice versa — see the new unit
+  test `same-model-streak: minMeanStreak filter is
+  orthogonal to minRatio` for an explicit construction.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  with `--min-mean-streak 30` (3 sources gated out as
+  having average run length below 30):
+
+  ```
+  pew-insights source-same-model-streak --min-mean-streak 30
+  sources: 6 (shown 3)    rows: 1,626    min-mean-streak: 30.00
+  dropped: ... 3 below min-mean-streak ...
+
+  source    rows  streaks  longest  ratio   meanStreak  longestModel
+  --------  ----  -------  -------  ------  ----------  ---------------
+  openclaw  433   1        433      1.0000  433.00      gpt-5.4
+  hermes    170   5        79       0.4647  34.00       claude-opus-4.7
+  codex     64    1        64       1.0000  64.00       gpt-5.4
+  ```
+
+  Reading: the gate cleanly separates the "model-locked
+  operator" cohort (`openclaw`, `codex` with single streaks
+  covering all rows; `hermes` with only 5 streaks across
+  170 rows averaging 34 rows each) from the rotating
+  cohort (`opencode`, `claude-code`, and the redacted IDE
+  source with mean streaks of ~2.5–6.8 — all dropped).
+
+  Equivalent semantics: `--min-mean-streak f` is a
+  monotonically tighter version of "small streakCount given
+  rowsKept" — a different lens than `--min-ratio` because
+  it integrates over *every* run, not just the longest.
+
+### Tests
+
+- 3 new unit tests in `test/sourcesamemodelstreak.test.ts`
+  covering: `--min-mean-streak` argument validation
+  (rejects values below 1, NaN, infinity); default
+  surfaces in the report; and an explicit
+  orthogonality construction showing that `minRatio` and
+  `minMeanStreak` gate distinct cohorts.
+
+  Total: 2509 -> 2512.
+
 ## 0.6.93 — 2026-04-27
 
 ### Added

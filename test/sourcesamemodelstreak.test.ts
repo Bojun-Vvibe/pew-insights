@@ -248,3 +248,87 @@ test('same-model-streak: since/until window filters', () => {
   assert.equal(row.streakCount, 2);
   assert.equal(row.longestStreak, 1);
 });
+
+test('same-model-streak: minMeanStreak rejects bad values', () => {
+  assert.throws(() => buildSourceSameModelStreak([], { minMeanStreak: 0.5 }));
+  assert.throws(() => buildSourceSameModelStreak([], { minMeanStreak: -1 }));
+  assert.throws(() =>
+    buildSourceSameModelStreak([], { minMeanStreak: Number.POSITIVE_INFINITY }),
+  );
+  assert.throws(() =>
+    buildSourceSameModelStreak([], { minMeanStreak: Number.NaN }),
+  );
+});
+
+test('same-model-streak: minMeanStreak defaults to 1 in report', () => {
+  const r = buildSourceSameModelStreak([], { generatedAt: GEN });
+  assert.equal(r.minMeanStreak, 1);
+  assert.equal(r.droppedBelowMinMeanStreak, 0);
+});
+
+test('same-model-streak: minMeanStreak filter is orthogonal to minRatio', () => {
+  // a: 9 rows of m1 + 1 of m2 -> rowsKept=10, streakCount=2,
+  //   longestStreak=9, longestStreakRatio=0.9, meanStreakLength=5.0
+  // b: m1 m2 m1 m2 m1 m2 m1 m2 m1 m1 -> rowsKept=10, streakCount=9,
+  //   longestStreak=2 (m1 at the end), ratio=0.2, meanStreak=10/9~1.11
+  const q = [
+    // a: 9 m1, then 1 m2
+    ql('2026-04-27T00:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T01:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T02:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T03:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T04:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T05:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T06:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T07:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T08:00:00.000Z', 'a', 'm1'),
+    ql('2026-04-27T09:00:00.000Z', 'a', 'm2'),
+    // b: alternating with a m1,m1 pair at the end
+    ql('2026-04-27T00:00:00.000Z', 'b', 'm1'),
+    ql('2026-04-27T01:00:00.000Z', 'b', 'm2'),
+    ql('2026-04-27T02:00:00.000Z', 'b', 'm1'),
+    ql('2026-04-27T03:00:00.000Z', 'b', 'm2'),
+    ql('2026-04-27T04:00:00.000Z', 'b', 'm1'),
+    ql('2026-04-27T05:00:00.000Z', 'b', 'm2'),
+    ql('2026-04-27T06:00:00.000Z', 'b', 'm1'),
+    ql('2026-04-27T07:00:00.000Z', 'b', 'm2'),
+    ql('2026-04-27T08:00:00.000Z', 'b', 'm1'),
+    ql('2026-04-27T09:00:00.000Z', 'b', 'm1'),
+  ];
+  // Sanity check the underlying numbers first.
+  const base = buildSourceSameModelStreak(q, { generatedAt: GEN });
+  const aRow = base.sources.find((s) => s.source === 'a')!;
+  const bRow = base.sources.find((s) => s.source === 'b')!;
+  assert.equal(aRow.longestStreak, 9);
+  assert.equal(aRow.streakCount, 2);
+  assert.equal(aRow.meanStreakLength, 5);
+  assert.ok(Math.abs(aRow.longestStreakRatio - 0.9) < 1e-12);
+  assert.equal(bRow.longestStreak, 2);
+  assert.equal(bRow.streakCount, 9);
+  assert.ok(Math.abs(bRow.meanStreakLength - 10 / 9) < 1e-12);
+
+  // Gating on minRatio=0.5 keeps a, drops b.
+  const ratio = buildSourceSameModelStreak(q, {
+    generatedAt: GEN,
+    minRatio: 0.5,
+  });
+  assert.deepEqual(ratio.sources.map((s) => s.source), ['a']);
+  assert.equal(ratio.droppedBelowMinRatio, 1);
+
+  // Gating on minMeanStreak=2 keeps a (mean=5), drops b (mean~1.11).
+  const meanGate = buildSourceSameModelStreak(q, {
+    generatedAt: GEN,
+    minMeanStreak: 2,
+  });
+  assert.deepEqual(meanGate.sources.map((s) => s.source), ['a']);
+  assert.equal(meanGate.droppedBelowMinMeanStreak, 1);
+
+  // Gating on minMeanStreak=6 drops both — orthogonality demonstrated:
+  //   a still has ratio=0.9 (would survive minRatio=0.9) but mean=5 < 6.
+  const tight = buildSourceSameModelStreak(q, {
+    generatedAt: GEN,
+    minMeanStreak: 6,
+  });
+  assert.equal(tight.sources.length, 0);
+  assert.equal(tight.droppedBelowMinMeanStreak, 2);
+});

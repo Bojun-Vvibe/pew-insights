@@ -103,6 +103,18 @@ export interface SourceSameModelStreakOptions {
    */
   minRatio?: number;
   /**
+   * Drop sources whose `meanStreakLength` is strictly below
+   * this value. Orthogonal cohort gate to `minRatio`: minRatio
+   * gates on the source's single longest run; minMeanStreak
+   * gates on the average run across all streaks. A source with
+   * one giant run + many singletons can score high on
+   * longestStreakRatio but low on meanStreakLength, and vice
+   * versa. Must be a finite number >= 1 (since meanStreakLength
+   * is rowsKept/streakCount and streakCount <= rowsKept). Default
+   * 1 (no floor).
+   */
+  minMeanStreak?: number;
+  /**
    * Cap the per-source table to the top N rows after sort.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -148,6 +160,7 @@ export interface SourceSameModelStreakReport {
   minRows: number;
   minStreak: number;
   minRatio: number;
+  minMeanStreak: number;
   top: number | null;
   sort:
     | 'streak-desc'
@@ -164,6 +177,7 @@ export interface SourceSameModelStreakReport {
   droppedBelowMinRows: number;
   droppedBelowMinStreak: number;
   droppedBelowMinRatio: number;
+  droppedBelowMinMeanStreak: number;
   droppedBelowTopCap: number;
   sources: SourceSameModelStreakRow[];
 }
@@ -198,6 +212,12 @@ export function buildSourceSameModelStreak(
   if (!Number.isFinite(minRatio) || minRatio < 0 || minRatio > 1) {
     throw new Error(
       `minRatio must be a finite number in [0, 1] (got ${opts.minRatio})`,
+    );
+  }
+  const minMeanStreak = opts.minMeanStreak ?? 1;
+  if (!Number.isFinite(minMeanStreak) || minMeanStreak < 1) {
+    throw new Error(
+      `minMeanStreak must be a finite number >= 1 (got ${opts.minMeanStreak})`,
     );
   }
   const top = opts.top ?? null;
@@ -324,6 +344,7 @@ export function buildSourceSameModelStreak(
   let droppedBelowMinRows = 0;
   let droppedBelowMinStreak = 0;
   let droppedBelowMinRatio = 0;
+  let droppedBelowMinMeanStreak = 0;
   const survived: SourceSameModelStreakRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -336,6 +357,10 @@ export function buildSourceSameModelStreak(
     }
     if (row.longestStreakRatio < minRatio) {
       droppedBelowMinRatio += 1;
+      continue;
+    }
+    if (row.meanStreakLength < minMeanStreak) {
+      droppedBelowMinMeanStreak += 1;
       continue;
     }
     survived.push(row);
@@ -371,6 +396,7 @@ export function buildSourceSameModelStreak(
     minRows,
     minStreak,
     minRatio,
+    minMeanStreak,
     top,
     sort,
     totalSources,
@@ -380,6 +406,7 @@ export function buildSourceSameModelStreak(
     droppedBelowMinRows,
     droppedBelowMinStreak,
     droppedBelowMinRatio,
+    droppedBelowMinMeanStreak,
     droppedBelowTopCap,
     sources: finalSources,
   };

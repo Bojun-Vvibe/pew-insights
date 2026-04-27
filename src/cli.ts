@@ -10203,6 +10203,11 @@ program
     '0',
   )
   .option(
+    '--min-mean-streak <f>',
+    'drop sources whose meanStreakLength (= rowsKept / streakCount) is strictly below f. Orthogonal to --min-ratio: --min-ratio gates on the single longest run, --min-mean-streak gates on the average run length across all streaks. A source with one giant run + many singletons can score high on longestStreakRatio but low on meanStreakLength, and vice versa. Must be a finite number >= 1. (default 1)',
+    '1',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -10221,6 +10226,7 @@ program
         minRows: string;
         minStreak: string;
         minRatio: string;
+        minMeanStreak: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10246,6 +10252,12 @@ program
         if (!Number.isFinite(minRatio) || minRatio < 0 || minRatio > 1) {
           throw new Error(
             `--min-ratio must be a finite number in [0, 1] (got ${opts.minRatio})`,
+          );
+        }
+        const minMeanStreak = Number.parseFloat(opts.minMeanStreak);
+        if (!Number.isFinite(minMeanStreak) || minMeanStreak < 1) {
+          throw new Error(
+            `--min-mean-streak must be a finite number >= 1 (got ${opts.minMeanStreak})`,
           );
         }
         let top: number | null = null;
@@ -10278,6 +10290,7 @@ program
           minRows,
           minStreak,
           minRatio,
+          minMeanStreak,
           top,
           sort: opts.sort as
             | 'streak-desc'
