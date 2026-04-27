@@ -109,6 +109,7 @@ import {
   renderSourceRowTokenAutocorrelationLag1,
   renderSourceRowTokenIqrRatio,
   renderSourceRowTokenBurstinessCoefficient,
+  renderSourceRowTokenRunsTest,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -278,6 +279,7 @@ import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
 import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorrelationlag1.js';
 import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
+import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10788,6 +10790,113 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenBurstinessCoefficient(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-runs-test')
+  .description(
+    "Per-source Wald-Wolfowitz runs test on the per-row total_tokens sequence dichotomised at the source's own median. Signs: +1 if total_tokens > median, -1 if < median; ties (== median) are dropped. Runs R = number of maximal contiguous same-sign blocks in the time-ordered sequence. Under H0 (i.i.d.) E[R] = 1 + 2*n1*n2/n and Var[R] = 2*n1*n2*(2*n1*n2 - n)/(n^2*(n-1)); Z = (R - E[R]) / sigmaR is asymptotically N(0,1) and is reported with a two-sided normal-approx p-value. Z << 0 -> too few runs, above/below-median rows are CLUMPED (positive serial dependence / regime persistence). Z >> 0 -> too many runs, above/below-median rows ALTERNATE more than chance (negative serial dependence / mean-reversion). Genuinely orthogonal to source-row-token-autocorrelation-lag1 (Pearson rho on raw values, linear, parametric — runs test is non-parametric on the sign sequence), to source-row-token-burstiness-coefficient / -coefficient-of-variation / -iqr-ratio / -mad / -gini / -skewness / -kurtosis (all order-invariant marginal-distribution lenses; runs test depends entirely on ordering), and to source-same-model-streak (categorical run length on model identity, not on token-volume sign).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n sign-classified (post-tie-drop) rows; must be an integer >= 4 (the normal-approx Z is unreliable below this) (default 8)',
+    '8',
+  )
+  .option(
+    '--max-p <f>',
+    'drop sources whose two-sided runs-test p-value is strictly above f; cohort selector that surfaces only sources with statistically detectable non-randomness. f must be a finite number in (0, 1]. (default 1, no floor)',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'abs-z-desc' (default) | 'z-asc' | 'z-desc' | 'p-asc' | 'rows' | 'source'",
+    'abs-z-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        maxP: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const maxP = Number.parseFloat(opts.maxP);
+        if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
+          throw new Error(
+            `--max-p must be a finite number in (0, 1] (got ${opts.maxP})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'z-asc',
+          'z-desc',
+          'abs-z-desc',
+          'p-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenRunsTest(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          maxP,
+          top,
+          sort: opts.sort as
+            | 'z-asc'
+            | 'z-desc'
+            | 'abs-z-desc'
+            | 'p-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenRunsTest(report) + '\n',
           );
         }
       } catch (e) {

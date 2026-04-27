@@ -8625,3 +8625,79 @@ export function renderSourceRowTokenBurstinessCoefficient(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenRunsTestReport,
+  SourceRowTokenRunsTestRow,
+} from './sourcerowtokenrunstest.js';
+
+export function renderSourceRowTokenRunsTest(
+  r: SourceRowTokenRunsTestReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-runs-test'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    max-p: ${r.maxP.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAtMedian)} ties at median, ${formatNumber(r.droppedSingleClass)} single-class sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAboveMaxP)} above max-p, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Wald-Wolfowitz runs test on the per-row total_tokens sequence dichotomised at the source's own median: signs are +1 if total_tokens > median, -1 if < median; ties (== median) are dropped. Z = (R - mu_R) / sigma_R is the normal-approximation Z statistic; under H0 (i.i.d.) Z ~ N(0,1). Z << 0 -> too few runs, above/below-median rows are CLUMPED (positive serial dependence). Z >> 0 -> too many runs, above/below-median rows ALTERNATE more than chance (mean-reversion). p-value is two-sided normal-approx. Orthogonal to lag-1 autocorrelation (linear, on raw values) and to every dispersion / shape lens (those are order-invariant; this one is not).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token runs-test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'median',
+    'n+',
+    'n-',
+    'ties',
+    'runs',
+    'E[R]',
+    'sigmaR',
+    'Z',
+    'p',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenRunsTestRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.median.toFixed(2),
+    formatNumber(s.n1),
+    formatNumber(s.n2),
+    formatNumber(s.ties),
+    formatNumber(s.runs),
+    s.expectedRuns.toFixed(2),
+    s.stddevRuns.toFixed(3),
+    s.z.toFixed(4),
+    s.pValue.toFixed(4),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
