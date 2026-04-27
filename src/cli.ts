@@ -102,6 +102,7 @@ import {
   renderSourceFirstVsLastQuartileOutputMeanShift,
   renderSourceRowTokenSkewness,
   renderSourceRowTokenKurtosis,
+  renderSourceRowTokenCoefficientOfVariation,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -264,6 +265,7 @@ import { buildSourceInputOutputCorrelationCoefficient } from './sourceinputoutpu
 import { buildSourceFirstVsLastQuartileOutputMeanShift } from './sourcefirstvslastquartileoutputmeanshift.js';
 import { buildSourceRowTokenSkewness } from './sourcerowtokenskewness.js';
 import { buildSourceRowTokenKurtosis } from './sourcerowtokenkurtosis.js';
+import { buildSourceRowTokenCoefficientOfVariation } from './sourcerowtokencoefficientofvariation.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -9804,6 +9806,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenKurtosis(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-coefficient-of-variation')
+  .description(
+    "Per-source coefficient of variation cv = stddev / mean of per-row total_tokens distribution. Scale-free dispersion: doubling every row leaves cv unchanged. cv=0 all rows identical, cv~1 stddev equals mean (exponential-like baseline), cv>>1 a few rows dwarf the typical row. Distinct from source-burstiness-fano-factor (variance/mean on day totals — Fano carries token units and grows with absolute scale; CV is dimensionless and at row grain), source-row-token-skewness (3rd moment, asymmetry — mathematically independent of CV), source-row-token-kurtosis (4th moment, tail weight — mathematically independent of CV), source-output-tokens-per-row-percentiles (quantile shape on output_tokens not moment shape on total_tokens), source-output-tokens-by-hour-cv (CV across 24 hour-of-day bins, a temporal dispersion stat at hour grain), source-gap-hours-cv (CV of inter-row gap lengths, a cadence stat), source-cache-share-by-day-cv and source-reasoning-share-by-day-cv (CV of daily ratios, stability-of-mix at day grain), source-io-ratio-stability (CV of daily output/input ratio), burstiness and rolling-bucket-cv (global/windowed CVs of token-per-bucket), and the various concentration / share / temporal lenses (input-token-top-row-share, cumulative-mass-half-life-day, cold-warm-row-ratio, zero-output-row-share, daily-token-gini-coefficient, first-vs-last-quartile-output-mean-shift).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; absolute floor 2 (need >=2 samples for a non-degenerate 2nd moment) (default 2)',
+    '2',
+  )
+  .option(
+    '--min-mean <f>',
+    'drop sources whose per-row total_tokens mean is strictly below f; useful for suppressing tiny-row sources where a single outlier inflates CV (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'cv-desc' (default) | 'cv-asc' | 'rows' | 'mean' | 'stddev' | 'source'",
+    'cv-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        const minMean = Number.parseFloat(opts.minMean);
+        if (!Number.isFinite(minMean) || minMean < 0) {
+          throw new Error(
+            `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'cv-desc',
+          'cv-asc',
+          'rows',
+          'mean',
+          'stddev',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenCoefficientOfVariation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMean,
+          top,
+          sort: opts.sort as
+            | 'cv-desc'
+            | 'cv-asc'
+            | 'rows'
+            | 'mean'
+            | 'stddev'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenCoefficientOfVariation(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

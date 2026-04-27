@@ -8138,3 +8138,66 @@ export function renderSourceRowTokenKurtosis(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenCoefficientOfVariationReport,
+  SourceRowTokenCoefficientOfVariationRow,
+} from './sourcerowtokencoefficientofvariation.js';
+
+export function renderSourceRowTokenCoefficientOfVariation(
+  r: SourceRowTokenCoefficientOfVariationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-coefficient-of-variation'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-mean: ${r.minMean.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForCv)} below 2-row floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMean)} below min-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source coefficient of variation cv = stddev / mean of per-row total_tokens; scale-free dispersion. cv=0 all rows identical, cv~1 stddev equals mean (exponential-like), cv>>1 a few rows dwarf the typical row. degen=y means mean=0 so cv reported as 0.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row total_tokens coefficient of variation (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'mean', 'stddev', 'cv', 'degen'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenCoefficientOfVariationRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.stddev.toFixed(2),
+      s.cv.toFixed(4),
+      s.degenerate ? 'y' : '-',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
