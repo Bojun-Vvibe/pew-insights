@@ -74,6 +74,21 @@
  *        almost certainly a degenerate / quantised series; check
  *        `r2` and `scalesUsed` before trusting it.
  *
+ *   Optional preprocessing (since v0.6.111):
+ *
+ *   - `opts.detrend = true` (CLI: `--detrend`): replace
+ *     `d_i = x_i - mu` with `d_i = x_i - (a + b * i)` where
+ *     `(a, b)` is the per-chunk OLS line on `(i, x_i)`. The
+ *     simplest "Detrended Fluctuation Analysis"-style
+ *     preprocessing — addresses the documented R/S `H -> 1`
+ *     failure mode on monotone series. Detrended H is
+ *     **complementary, not redundant**, to classical H: classical
+ *     reads gross-signal multi-scale memory, detrended reads
+ *     residual-after-linear multi-scale memory. An exact linear
+ *     ramp degenerates under `--detrend` (zero residuals) and
+ *     surfaces under `droppedAllDegenerate` rather than
+ *     misleadingly reporting `H ~ 1`.
+ *
  * Why this lens is **genuinely orthogonal** to every existing
  * `source-row-token-*` lens:
  *
