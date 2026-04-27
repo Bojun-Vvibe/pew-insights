@@ -362,3 +362,59 @@ test('crossings <= rowsKept - 1 invariant', () => {
   assert.ok(row.crossings <= row.rowsKept - 1);
   assert.ok(row.crossings >= 0);
 });
+
+test('--min-rate suppresses persistent sources', () => {
+  const slow = new Array(24).fill(0).map((_, i) => i); // rate ~ 1/23 ~ 0.043
+  const fast = new Array(24).fill(0).map((_, i) => (i % 2 === 0 ? 10 : 0)); // rate = 1
+  const rows = [...series(slow, 'slow'), ...series(fast, 'fast')];
+  const r = buildSourceRowTokenZeroCrossingRate(rows, {
+    minRows: 24,
+    minRate: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'fast');
+  assert.equal(r.droppedBelowMinRate, 1);
+});
+
+test('--max-rate suppresses noisy sources', () => {
+  const slow = new Array(24).fill(0).map((_, i) => i);
+  const fast = new Array(24).fill(0).map((_, i) => (i % 2 === 0 ? 10 : 0));
+  const rows = [...series(slow, 'slow'), ...series(fast, 'fast')];
+  const r = buildSourceRowTokenZeroCrossingRate(rows, {
+    minRows: 24,
+    maxRate: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'slow');
+  assert.equal(r.droppedAboveMaxRate, 1);
+});
+
+test('minRate > maxRate throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenZeroCrossingRate(series(new Array(24).fill(1)), {
+        minRate: 0.8,
+        maxRate: 0.2,
+      }),
+    /minRate.*maxRate/,
+  );
+});
+
+test('--min-rate validates [0, 1]', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenZeroCrossingRate(series(new Array(24).fill(1)), {
+        minRate: 1.5,
+      }),
+    /minRate/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenZeroCrossingRate(series(new Array(24).fill(1)), {
+        minRate: -0.1,
+      }),
+    /minRate/,
+  );
+});

@@ -12005,6 +12005,14 @@ program
     "sort key: 'rate-asc' (default; most slow-drift / persistent first) | 'rate-desc' (most Nyquist-like / alternating first) | 'rows' | 'source'",
     'rate-asc',
   )
+  .option(
+    '--min-rate <n>',
+    'suppress sources whose ZCR is strictly below this threshold (in [0,1]); surfaces them under droppedBelowMinRate. Useful to surface only Nyquist-like / noise-like sources (>= 0.4 typical) and hide the persistent majority.',
+  )
+  .option(
+    '--max-rate <n>',
+    'suppress sources whose ZCR is strictly above this threshold (in [0,1]); surfaces them under droppedAboveMaxRate. Symmetric counterpart to --min-rate: surface only slow-drift / persistent sources (<= 0.2 typical).',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12015,6 +12023,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minRate?: string;
+        maxRate?: string;
         json?: boolean;
       },
       cmd,
@@ -12036,6 +12046,26 @@ program
           }
           top = t;
         }
+        let minRate: number | null = null;
+        if (opts.minRate != null) {
+          const v = Number.parseFloat(opts.minRate);
+          if (!Number.isFinite(v) || v < 0 || v > 1) {
+            throw new Error(
+              `--min-rate must be a finite number in [0, 1] (got ${opts.minRate})`,
+            );
+          }
+          minRate = v;
+        }
+        let maxRate: number | null = null;
+        if (opts.maxRate != null) {
+          const v = Number.parseFloat(opts.maxRate);
+          if (!Number.isFinite(v) || v < 0 || v > 1) {
+            throw new Error(
+              `--max-rate must be a finite number in [0, 1] (got ${opts.maxRate})`,
+            );
+          }
+          maxRate = v;
+        }
         const validSorts = ['rate-asc', 'rate-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -12049,6 +12079,8 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minRate,
+          maxRate,
           sort: opts.sort as 'rate-asc' | 'rate-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

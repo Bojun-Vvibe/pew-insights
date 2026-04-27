@@ -164,6 +164,28 @@ export interface SourceRowTokenZeroCrossingRateOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenZeroCrossingRateSort;
+  /**
+   * Optional lower bound on reported rate. Sources whose
+   * computed rate is strictly below this threshold are
+   * suppressed and counted under `droppedBelowMinRate`.
+   * Default null (no filter). Useful to surface only the
+   * Nyquist-like / noise-like sources (rate >= 0.4 typical)
+   * and hide the well-behaved persistent majority.
+   */
+  minRate?: number | null;
+  /**
+   * Optional upper bound on reported rate. Sources whose
+   * computed rate is strictly above this threshold are
+   * suppressed and counted under `droppedAboveMaxRate`.
+   * Default null. Symmetric counterpart to `minRate`: useful
+   * to surface only the slow-drift / persistent sources
+   * (rate <= 0.2 typical) and hide the noisy ones.
+   *
+   * If both `minRate` and `maxRate` are set and `minRate >
+   * maxRate`, the constructor throws — that is operator error,
+   * not a silent empty report.
+   */
+  maxRate?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -187,6 +209,8 @@ export interface SourceRowTokenZeroCrossingRateReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenZeroCrossingRateSort;
+  minRate: number | null;
+  maxRate: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -196,6 +220,8 @@ export interface SourceRowTokenZeroCrossingRateReport {
   droppedBelowMinRows: number;
   droppedZeroVariance: number;
   droppedDegenerate: number;
+  droppedBelowMinRate: number;
+  droppedAboveMaxRate: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenZeroCrossingRateRow[];
 }
@@ -222,6 +248,27 @@ export function buildSourceRowTokenZeroCrossingRate(
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
+    );
+  }
+  const minRate = opts.minRate ?? null;
+  if (minRate !== null) {
+    if (!Number.isFinite(minRate) || minRate < 0 || minRate > 1) {
+      throw new Error(
+        `minRate must be a finite number in [0, 1] (got ${opts.minRate})`,
+      );
+    }
+  }
+  const maxRate = opts.maxRate ?? null;
+  if (maxRate !== null) {
+    if (!Number.isFinite(maxRate) || maxRate < 0 || maxRate > 1) {
+      throw new Error(
+        `maxRate must be a finite number in [0, 1] (got ${opts.maxRate})`,
+      );
+    }
+  }
+  if (minRate !== null && maxRate !== null && minRate > maxRate) {
+    throw new Error(
+      `minRate (${minRate}) must be <= maxRate (${maxRate})`,
     );
   }
 
@@ -369,10 +416,28 @@ export function buildSourceRowTokenZeroCrossingRate(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinRate = 0;
+  let droppedAboveMaxRate = 0;
+  let postRows = allRows;
+  if (minRate !== null || maxRate !== null) {
+    const kept: SourceRowTokenZeroCrossingRateRow[] = [];
+    for (const row of postRows) {
+      if (minRate !== null && row.rate < minRate) {
+        droppedBelowMinRate += 1;
+        continue;
+      }
+      if (maxRate !== null && row.rate > maxRate) {
+        droppedAboveMaxRate += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -383,6 +448,8 @@ export function buildSourceRowTokenZeroCrossingRate(
     minRows,
     top,
     sort,
+    minRate,
+    maxRate,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -392,6 +459,8 @@ export function buildSourceRowTokenZeroCrossingRate(
     droppedBelowMinRows,
     droppedZeroVariance,
     droppedDegenerate,
+    droppedBelowMinRate,
+    droppedAboveMaxRate,
     droppedBelowTopCap,
     sources: finalSources,
   };
