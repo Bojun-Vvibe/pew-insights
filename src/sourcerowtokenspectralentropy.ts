@@ -198,6 +198,26 @@ export interface SourceRowTokenSpectralEntropyOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported `entropyNorm`. Sources whose
+   * value is strictly below this threshold are suppressed and
+   * counted under `droppedBelowMinNormEntropy`. Operator-friendly:
+   * `--min-norm-entropy 0.85` isolates the broadband / near-white
+   * subset (PSDs spread close to uniform-on-band).
+   */
+  minNormEntropy?: number | null;
+  /**
+   * Optional upper bound on reported `entropyNorm`. Symmetric
+   * counterpart. Surfaces in `droppedAboveMaxNormEntropy`.
+   * Operator-friendly: `--max-norm-entropy 0.5` isolates the tonal
+   * / concentrated subset (PSDs whose mass piles into a small
+   * number of bins).
+   *
+   * If both are set and `minNormEntropy > maxNormEntropy`, the
+   * constructor throws — operator error, not a silent empty
+   * report.
+   */
+  maxNormEntropy?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'norm-desc' (default): normalized entropy descending
    *                            (most broadband / white-like
@@ -243,6 +263,8 @@ export interface SourceRowTokenSpectralEntropyReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  minNormEntropy: number | null;
+  maxNormEntropy: number | null;
   sort: SourceRowTokenSpectralEntropySort;
   totalSources: number;
   totalRowsKept: number;
@@ -253,6 +275,8 @@ export interface SourceRowTokenSpectralEntropyReport {
   droppedBelowMinRows: number;
   droppedConstantSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinNormEntropy: number;
+  droppedAboveMaxNormEntropy: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralEntropyRow[];
 }
@@ -282,6 +306,31 @@ export function buildSourceRowTokenSpectralEntropy(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const minNormEntropy = opts.minNormEntropy ?? null;
+  if (minNormEntropy !== null) {
+    if (!Number.isFinite(minNormEntropy)) {
+      throw new Error(
+        `minNormEntropy must be a finite number (got ${opts.minNormEntropy})`,
+      );
+    }
+  }
+  const maxNormEntropy = opts.maxNormEntropy ?? null;
+  if (maxNormEntropy !== null) {
+    if (!Number.isFinite(maxNormEntropy)) {
+      throw new Error(
+        `maxNormEntropy must be a finite number (got ${opts.maxNormEntropy})`,
+      );
+    }
+  }
+  if (
+    minNormEntropy !== null &&
+    maxNormEntropy !== null &&
+    minNormEntropy > maxNormEntropy
+  ) {
+    throw new Error(
+      `minNormEntropy (${minNormEntropy}) must be <= maxNormEntropy (${maxNormEntropy})`,
+    );
   }
   const sort = opts.sort ?? 'norm-desc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -472,10 +521,28 @@ export function buildSourceRowTokenSpectralEntropy(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinNormEntropy = 0;
+  let droppedAboveMaxNormEntropy = 0;
+  let postRows = allRows;
+  if (minNormEntropy !== null || maxNormEntropy !== null) {
+    const kept: SourceRowTokenSpectralEntropyRow[] = [];
+    for (const row of postRows) {
+      if (minNormEntropy !== null && row.entropyNorm < minNormEntropy) {
+        droppedBelowMinNormEntropy += 1;
+        continue;
+      }
+      if (maxNormEntropy !== null && row.entropyNorm > maxNormEntropy) {
+        droppedAboveMaxNormEntropy += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -485,6 +552,8 @@ export function buildSourceRowTokenSpectralEntropy(
     source: sourceFilter,
     minRows,
     top,
+    minNormEntropy,
+    maxNormEntropy,
     sort,
     totalSources,
     totalRowsKept,
@@ -495,6 +564,8 @@ export function buildSourceRowTokenSpectralEntropy(
     droppedBelowMinRows,
     droppedConstantSeries,
     droppedDegenerate,
+    droppedBelowMinNormEntropy,
+    droppedAboveMaxNormEntropy,
     droppedBelowTopCap,
     sources: finalSources,
   };

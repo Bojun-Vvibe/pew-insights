@@ -13769,6 +13769,14 @@ program
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-norm-entropy <v>',
+    'suppress sources whose entropyNorm is strictly below this threshold; surfaces them under droppedBelowMinNormEntropy. Operator-friendly: --min-norm-entropy 0.85 isolates the broadband / near-white subset.',
+  )
+  .option(
+    '--max-norm-entropy <v>',
+    'suppress sources whose entropyNorm is strictly above this threshold; surfaces them under droppedAboveMaxNormEntropy. Operator-friendly: --max-norm-entropy 0.5 isolates the tonal / concentrated subset.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'norm-desc' (default; most broadband / white-like first) | 'norm-asc' (most tonal / concentrated first) | 'entropy-desc' | 'entropy-asc' | 'dom-share-desc' | 'rows' | 'source'",
     'norm-desc',
@@ -13782,6 +13790,8 @@ program
         source?: string;
         minRows: string;
         top?: string;
+        minNormEntropy?: string;
+        maxNormEntropy?: string;
         sort: string;
         json?: boolean;
       },
@@ -13804,6 +13814,26 @@ program
           }
           top = t;
         }
+        let minNormEntropy: number | null = null;
+        if (opts.minNormEntropy != null) {
+          const v = Number.parseFloat(opts.minNormEntropy);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-norm-entropy must be a finite number (got ${opts.minNormEntropy})`,
+            );
+          }
+          minNormEntropy = v;
+        }
+        let maxNormEntropy: number | null = null;
+        if (opts.maxNormEntropy != null) {
+          const v = Number.parseFloat(opts.maxNormEntropy);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-norm-entropy must be a finite number (got ${opts.maxNormEntropy})`,
+            );
+          }
+          maxNormEntropy = v;
+        }
         const validSorts = [
           'entropy-asc',
           'entropy-desc',
@@ -13825,6 +13855,8 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minNormEntropy,
+          maxNormEntropy,
           sort: opts.sort as
             | 'entropy-asc'
             | 'entropy-desc'

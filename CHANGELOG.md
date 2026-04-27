@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.157 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-entropy` gains a symmetric
+  `--min-norm-entropy` / `--max-norm-entropy` filter pair on
+  the normalized entropy column (`entropyBits / log2(bins)`,
+  range `[0, 1]`). Sources whose `entropyNorm` falls outside
+  the requested range surface in their own dropped buckets —
+  `droppedBelowMinNormEntropy` and `droppedAboveMaxNormEntropy`
+  — so the operator can read which gate a source fell through.
+
+  **Why this filter axis specifically.** `entropyNorm` is the
+  operator-friendly axis for the question "is this PSD
+  broadband or tonal?". `--min-norm-entropy 0.85` isolates
+  the near-white / broadband subset (PSDs whose mass is
+  spread close to uniform-on-band, i.e. the sources whose
+  per-row token sequences look most like a noise carrier with
+  no preferred period). `--max-norm-entropy 0.5` isolates the
+  tonal / concentrated subset (PSDs whose mass piles into a
+  small number of bins, i.e. sources whose per-row token
+  sequences carry a strong period). The dimensionless
+  `[0, 1]` axis is K-comparable across sources whose PSDs
+  have different bin counts (which is the point of the
+  Inouye et al. 1991 / Rezek & Roberts 1998 normalization);
+  the raw `entropyBits` axis is not. We deliberately do
+  **not** ship a `--min-entropy-bits` / `--max-entropy-bits`
+  pair because comparing raw `bits` across different `K`
+  would be misleading.
+
+  **Compose-order.** `--min-norm-entropy` / `--max-norm-entropy`
+  slot in before `--top` cap. Each gate surfaces dropped rows
+  in its own bucket; a source filtered under
+  `min-norm-entropy` is NOT also counted under
+  `droppedBelowTopCap`. A new compose-order test pins this
+  semantics in code:
+
+  > 3 sources, `min-norm-entropy` strictly between
+  > sortedNorm[0] and sortedNorm[1] -> drops 1 under
+  > `droppedBelowMinNormEntropy`. Cap to top 1 -> the
+  > remaining 1 of 2 surfaces under `droppedBelowTopCap`.
+  > Filter and cap counts do not overlap.
+
+  Also pinned:
+
+  - `--min-norm-entropy > --max-norm-entropy` throws
+    (operator error, not silent empty report).
+  - Non-finite values throw.
+  - Filter wires through to report fields `minNormEntropy` /
+    `maxNormEntropy`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,739 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-entropy --min-norm-entropy 0.85
+  per-source row-token spectral entropy (sorted by norm-desc; ties: source asc)
+  source      rows  bins  totPower   entBits  entNorm  domBin  domShare
+  ----------  ----  ----  ---------  -------  -------  ------  --------
+  vscode-XXX  333   166   1.237e+13  6.5331   0.8858   2       0.0575
+  hermes      203   101   1.845e+16  5.8237   0.8747   1       0.1367
+  ```
+
+  4 sources suppressed under `droppedBelowMinNormEntropy`
+  (`openclaw`, `codex`, `opencode`, `claude-code` — all with
+  `entropyNorm < 0.85`). Reading: `--min-norm-entropy 0.85`
+  isolates the two sources whose per-row token PSD is closest
+  to white-on-band (uniformly-spread frequency content with no
+  dominant bin). `vscode-XXX` tops the ranking with no single
+  bin owning more than ~6% of the power; `hermes` is close
+  behind at `entropyNorm = 0.8747`. The four suppressed
+  sources have measurably more concentrated PSDs (between
+  `entropyNorm = 0.7514` and `0.8406`); for those, the
+  per-row token sequence carries enough periodic structure to
+  pull the PSD away from the broadband ceiling.
+
+  Tests: 3338 -> 3345 (+7 in this refinement, +42 cumulative
+  for the 0.6.156→0.6.157 spectral-entropy lens; covers throw
+  paths for non-finite/inverted bounds, the
+  `--min-norm-entropy` / `--max-norm-entropy` ↔
+  broadband/tonal-subset semantics, the filter compose-order
+  no-overlap claim, and report-field wire-through).
+
 ## 0.6.156 — 2026-04-28
 
 ### Added

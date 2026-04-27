@@ -490,3 +490,148 @@ test('spectral-entropy: out-of-order input rows are sorted by hour_start before 
     Math.abs(a.sources[0]!.entropyNorm - b.sources[0]!.entropyNorm) < 1e-9,
   );
 });
+
+test('spectral-entropy: minNormEntropy non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralEntropy([], {
+        minNormEntropy: Number.NaN,
+      }),
+    /minNormEntropy must be a finite number/,
+  );
+});
+
+test('spectral-entropy: maxNormEntropy non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralEntropy([], {
+        maxNormEntropy: Number.POSITIVE_INFINITY,
+      }),
+    /maxNormEntropy must be a finite number/,
+  );
+});
+
+test('spectral-entropy: minNormEntropy > maxNormEntropy throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralEntropy([], {
+        minNormEntropy: 0.9,
+        maxNormEntropy: 0.5,
+      }),
+    /minNormEntropy \(0\.9\) must be <= maxNormEntropy \(0\.5\)/,
+  );
+});
+
+test('spectral-entropy: --min-norm-entropy gates broadband subset (drops below threshold)', () => {
+  // Tonal sequence has low entropyNorm; smooth ramp has higher.
+  const tonal: number[] = [];
+  const N = 16;
+  for (let t = 0; t < N; t++) {
+    tonal.push(Math.round(40 * Math.sin((2 * Math.PI * 3 * t) / N)) + 100);
+  }
+  const broad: number[] = [];
+  for (let t = 0; t < N; t++) broad.push(((t * 13 + 5) % 17) + 50);
+  // First, see what entropyNorm both yield at default settings.
+  const baseline = buildSourceRowTokenSpectralEntropy(
+    [...series(tonal, 'tonal'), ...series(broad, 'broad')],
+    { generatedAt: GEN, sort: 'norm-desc', minRows: 4 },
+  );
+  assert.equal(baseline.sources.length, 2);
+  // Pick a threshold strictly between the two values.
+  const sortedNorm = baseline.sources
+    .map((s) => s.entropyNorm)
+    .sort((a, b) => a - b);
+  const threshold = (sortedNorm[0]! + sortedNorm[1]!) / 2;
+  const r = buildSourceRowTokenSpectralEntropy(
+    [...series(tonal, 'tonal'), ...series(broad, 'broad')],
+    {
+      generatedAt: GEN,
+      sort: 'norm-desc',
+      minRows: 4,
+      minNormEntropy: threshold,
+    },
+  );
+  assert.equal(r.droppedBelowMinNormEntropy, 1);
+  assert.equal(r.sources.length, 1);
+  assert.ok(r.sources[0]!.entropyNorm >= threshold);
+});
+
+test('spectral-entropy: --max-norm-entropy gates tonal subset (drops above threshold)', () => {
+  const tonal: number[] = [];
+  const N = 16;
+  for (let t = 0; t < N; t++) {
+    tonal.push(Math.round(40 * Math.sin((2 * Math.PI * 3 * t) / N)) + 100);
+  }
+  const broad: number[] = [];
+  for (let t = 0; t < N; t++) broad.push(((t * 13 + 5) % 17) + 50);
+  const baseline = buildSourceRowTokenSpectralEntropy(
+    [...series(tonal, 'tonal'), ...series(broad, 'broad')],
+    { generatedAt: GEN, sort: 'norm-desc', minRows: 4 },
+  );
+  const sortedNorm = baseline.sources
+    .map((s) => s.entropyNorm)
+    .sort((a, b) => a - b);
+  const threshold = (sortedNorm[0]! + sortedNorm[1]!) / 2;
+  const r = buildSourceRowTokenSpectralEntropy(
+    [...series(tonal, 'tonal'), ...series(broad, 'broad')],
+    {
+      generatedAt: GEN,
+      sort: 'norm-desc',
+      minRows: 4,
+      maxNormEntropy: threshold,
+    },
+  );
+  assert.equal(r.droppedAboveMaxNormEntropy, 1);
+  assert.equal(r.sources.length, 1);
+  assert.ok(r.sources[0]!.entropyNorm <= threshold);
+});
+
+test('spectral-entropy: filter compose-order — filter first then top, no overlap in counts', () => {
+  // Three sources; pick a min-norm-entropy that drops exactly one,
+  // then cap to top 1; the remaining 1 of 2 must surface under
+  // droppedBelowTopCap, not double-counted under droppedBelowMinNormEntropy.
+  const a: number[] = [];
+  const N = 16;
+  for (let t = 0; t < N; t++) {
+    a.push(Math.round(40 * Math.sin((2 * Math.PI * 3 * t) / N)) + 100);
+  }
+  const b: number[] = [];
+  for (let t = 0; t < N; t++) b.push(((t * 13 + 5) % 17) + 50);
+  const c: number[] = [];
+  for (let t = 0; t < N; t++) c.push(((t * 7 + 3) % 19) + 30);
+  const baseline = buildSourceRowTokenSpectralEntropy(
+    [...series(a, 'a'), ...series(b, 'b'), ...series(c, 'c')],
+    { generatedAt: GEN, sort: 'norm-desc', minRows: 4 },
+  );
+  assert.equal(baseline.sources.length, 3);
+  const sortedNorm = baseline.sources
+    .map((s) => s.entropyNorm)
+    .sort((a, b) => a - b);
+  // Threshold strictly between sortedNorm[0] and sortedNorm[1] -> drops 1.
+  const threshold = (sortedNorm[0]! + sortedNorm[1]!) / 2;
+  const r = buildSourceRowTokenSpectralEntropy(
+    [...series(a, 'a'), ...series(b, 'b'), ...series(c, 'c')],
+    {
+      generatedAt: GEN,
+      sort: 'norm-desc',
+      minRows: 4,
+      minNormEntropy: threshold,
+      top: 1,
+    },
+  );
+  assert.equal(r.droppedBelowMinNormEntropy, 1);
+  assert.equal(r.droppedBelowTopCap, 1);
+  assert.equal(r.sources.length, 1);
+});
+
+test('spectral-entropy: report fields wire through new minNormEntropy/maxNormEntropy', () => {
+  const r = buildSourceRowTokenSpectralEntropy([], {
+    generatedAt: GEN,
+    minNormEntropy: 0.3,
+    maxNormEntropy: 0.95,
+  });
+  assert.equal(r.minNormEntropy, 0.3);
+  assert.equal(r.maxNormEntropy, 0.95);
+  assert.equal(r.droppedBelowMinNormEntropy, 0);
+  assert.equal(r.droppedAboveMaxNormEntropy, 0);
+});
