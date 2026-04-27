@@ -118,6 +118,17 @@ export interface SourceRowTokenKurtosisOptions {
    */
   minMean?: number;
   /**
+   * Drop sources whose `|excessKurtosis|` is strictly below this
+   * value. Useful for surfacing only meaningfully non-Normal sources
+   * (e.g. `--min-abs-kurt 1` hides everything in the rule-of-thumb
+   * "approximately mesokurtic" band; `--min-abs-kurt 3` hides
+   * everything below "Laplace-grade" tail weight). Display filter
+   * only. Suppressed rows surface as `droppedBelowMinAbsKurt`. Must
+   * be a finite, non-negative number. Default 0 = no floor
+   * (preserves v0.6.83 behaviour exactly).
+   */
+  minAbsKurt?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -158,6 +169,7 @@ export interface SourceRowTokenKurtosisReport {
   source: string | null;
   minRows: number;
   minMean: number;
+  minAbsKurt: number;
   top: number | null;
   sort: 'kurt-desc' | 'kurt-asc' | 'abs-kurt' | 'rows' | 'mean' | 'source';
   totalSources: number;
@@ -167,6 +179,7 @@ export interface SourceRowTokenKurtosisReport {
   droppedTooFewRowsForKurtosis: number;
   droppedBelowMinRows: number;
   droppedBelowMinMean: number;
+  droppedBelowMinAbsKurt: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenKurtosisRow[];
 }
@@ -196,6 +209,12 @@ export function buildSourceRowTokenKurtosis(
   if (!Number.isFinite(minMean) || minMean < 0) {
     throw new Error(
       `minMean must be a finite, non-negative number (got ${opts.minMean})`,
+    );
+  }
+  const minAbsKurt = opts.minAbsKurt ?? 0;
+  if (!Number.isFinite(minAbsKurt) || minAbsKurt < 0) {
+    throw new Error(
+      `minAbsKurt must be a finite, non-negative number (got ${opts.minAbsKurt})`,
     );
   }
   const top = opts.top ?? null;
@@ -303,6 +322,7 @@ export function buildSourceRowTokenKurtosis(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinMean = 0;
+  let droppedBelowMinAbsKurt = 0;
   const survived: SourceRowTokenKurtosisRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -311,6 +331,10 @@ export function buildSourceRowTokenKurtosis(
     }
     if (row.mean < minMean) {
       droppedBelowMinMean += 1;
+      continue;
+    }
+    if (row.absExcessKurtosis < minAbsKurt) {
+      droppedBelowMinAbsKurt += 1;
       continue;
     }
     survived.push(row);
@@ -343,6 +367,7 @@ export function buildSourceRowTokenKurtosis(
     source: sourceFilter,
     minRows,
     minMean,
+    minAbsKurt,
     top,
     sort,
     totalSources,
@@ -352,6 +377,7 @@ export function buildSourceRowTokenKurtosis(
     droppedTooFewRowsForKurtosis,
     droppedBelowMinRows,
     droppedBelowMinMean,
+    droppedBelowMinAbsKurt,
     droppedBelowTopCap,
     sources: finalSources,
   };

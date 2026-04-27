@@ -633,3 +633,155 @@ test('row-token-kurtosis: JSON shape stability — keys present and typed', () =
     assert.ok(k in row, `missing row key ${k}`);
   }
 });
+
+// --- v0.6.84 refinement: --min-abs-kurt cohort selector ---
+
+test('row-token-kurtosis: rejects bad minAbsKurt', () => {
+  assert.throws(() => buildSourceRowTokenKurtosis([], { minAbsKurt: -1 }));
+  assert.throws(() =>
+    buildSourceRowTokenKurtosis([], { minAbsKurt: Number.POSITIVE_INFINITY }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenKurtosis([], { minAbsKurt: Number.NaN }),
+  );
+});
+
+test('row-token-kurtosis: minAbsKurt default 0 preserves v0.6.83 behaviour', () => {
+  const q: QueueLine[] = [];
+  for (let i = 1; i <= 11; i += 1) {
+    q.push(ql(`2026-04-20T${String(i - 1).padStart(2, '0')}:00:00Z`, 'a', i * 50));
+  }
+  const r0 = buildSourceRowTokenKurtosis(q, { generatedAt: GEN });
+  const r1 = buildSourceRowTokenKurtosis(q, { minAbsKurt: 0, generatedAt: GEN });
+  assert.equal(r0.sources.length, r1.sources.length);
+  assert.equal(r0.sources[0]!.excessKurtosis, r1.sources[0]!.excessKurtosis);
+  assert.equal(r1.minAbsKurt, 0);
+  assert.equal(r0.droppedBelowMinAbsKurt, 0);
+});
+
+test('row-token-kurtosis: minAbsKurt drops sources below threshold', () => {
+  // 'fat' has high positive excess kurt; 'flat' (uniform) has g2 ~ -1.22.
+  const q: QueueLine[] = [];
+  // fat: 19 small + 1 huge -> very large positive excess kurt
+  for (let i = 0; i < 19; i += 1) {
+    q.push(ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00Z`, 'fat', 10));
+  }
+  q.push(ql('2026-04-21T00:00:00Z', 'fat', 10000));
+  // flat: 1..10 (g2 ~ -1.22)
+  for (let i = 1; i <= 10; i += 1) {
+    q.push(
+      ql(`2026-04-22T${String(i - 1).padStart(2, '0')}:00:00Z`, 'flat', i * 100),
+    );
+  }
+  // Threshold 2: 'flat' (|-1.22| < 2) drops out; 'fat' (large) stays.
+  const r = buildSourceRowTokenKurtosis(q, {
+    minAbsKurt: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'fat');
+  assert.equal(r.droppedBelowMinAbsKurt, 1);
+  assert.equal(r.minAbsKurt, 2);
+});
+
+test('row-token-kurtosis: minAbsKurt is magnitude-based (keeps platykurtic if |g2| large enough)', () => {
+  // 'bimod' has excess kurt = -2 exactly (two equal spikes).
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 4; i += 1) {
+    q.push(ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00Z`, 'bimod', 100));
+  }
+  for (let i = 0; i < 4; i += 1) {
+    q.push(ql(`2026-04-21T${String(i).padStart(2, '0')}:00:00Z`, 'bimod', 1000));
+  }
+  // 'norm' has small |g2| (will drop).
+  for (let i = 0; i < 8; i += 1) {
+    // Roughly mesokurtic: linear ramp gives g2 ~ -1.22, just under 2.
+    q.push(
+      ql(`2026-04-22T${String(i).padStart(2, '0')}:00:00Z`, 'norm', (i + 1) * 100),
+    );
+  }
+  const r = buildSourceRowTokenKurtosis(q, {
+    minAbsKurt: 1.5,
+    generatedAt: GEN,
+  });
+  // bimod: |g2| = 2 >= 1.5 -> kept.
+  // norm: |g2| ~ 1.22 < 1.5 -> dropped.
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'bimod');
+  assert.equal(r.droppedBelowMinAbsKurt, 1);
+});
+
+test('row-token-kurtosis: minAbsKurt = 0 keeps degenerate (kurt = 0) sources', () => {
+  // All-identical -> kurt 0, |kurt|=0; min-abs-kurt 0 -> not dropped (strict <).
+  const q: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'k', 500),
+    ql('2026-04-20T01:00:00Z', 'k', 500),
+    ql('2026-04-20T02:00:00Z', 'k', 500),
+    ql('2026-04-20T03:00:00Z', 'k', 500),
+  ];
+  const r = buildSourceRowTokenKurtosis(q, {
+    minAbsKurt: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.degenerate, true);
+});
+
+test('row-token-kurtosis: minAbsKurt 0.001 drops degenerate (kurt = 0) sources', () => {
+  // Strict-< gate: |0| < 0.001, so degenerate row is filtered out.
+  const q: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'k', 500),
+    ql('2026-04-20T01:00:00Z', 'k', 500),
+    ql('2026-04-20T02:00:00Z', 'k', 500),
+    ql('2026-04-20T03:00:00Z', 'k', 500),
+  ];
+  const r = buildSourceRowTokenKurtosis(q, {
+    minAbsKurt: 0.001,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedBelowMinAbsKurt, 1);
+});
+
+test('row-token-kurtosis: minAbsKurt + sort abs-kurt cohort view', () => {
+  const q: QueueLine[] = [];
+  // fat (high positive)
+  for (let i = 0; i < 19; i += 1) {
+    q.push(ql(`2026-04-20T${String(i).padStart(2, '0')}:00:00Z`, 'fat', 10));
+  }
+  q.push(ql('2026-04-21T00:00:00Z', 'fat', 10000));
+  // bimod (-2 exactly)
+  for (let i = 0; i < 4; i += 1) {
+    q.push(ql(`2026-04-22T${String(i).padStart(2, '0')}:00:00Z`, 'bimod', 100));
+  }
+  for (let i = 0; i < 4; i += 1) {
+    q.push(ql(`2026-04-23T${String(i).padStart(2, '0')}:00:00Z`, 'bimod', 1000));
+  }
+  // ramp (uniform-ish, ~ -1.22)
+  for (let i = 1; i <= 10; i += 1) {
+    q.push(
+      ql(`2026-04-24T${String(i - 1).padStart(2, '0')}:00:00Z`, 'ramp', i * 100),
+    );
+  }
+  const r = buildSourceRowTokenKurtosis(q, {
+    minAbsKurt: 1.5,
+    sort: 'abs-kurt',
+    generatedAt: GEN,
+  });
+  // ramp |g2| ~ 1.22 < 1.5 -> dropped. fat (large +) and bimod (|=2|) survive.
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinAbsKurt, 1);
+  // sort abs-kurt desc: fat first.
+  assert.equal(r.sources[0]!.source, 'fat');
+  assert.equal(r.sources[1]!.source, 'bimod');
+});
+
+test('row-token-kurtosis: report carries minAbsKurt in metadata', () => {
+  const r = buildSourceRowTokenKurtosis([], {
+    minAbsKurt: 3.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minAbsKurt, 3.5);
+  assert.ok('droppedBelowMinAbsKurt' in r);
+});
+

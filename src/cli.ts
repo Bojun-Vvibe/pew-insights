@@ -9710,6 +9710,11 @@ program
     '0',
   )
   .option(
+    '--min-abs-kurt <f>',
+    'drop sources whose |excessKurtosis| is strictly below f; useful for surfacing only meaningfully non-Normal sources (e.g. --min-abs-kurt 1 hides the "approximately mesokurtic" band, --min-abs-kurt 3 hides everything below Laplace-grade tail weight) (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9727,6 +9732,7 @@ program
         source?: string;
         minRows: string;
         minMean: string;
+        minAbsKurt: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9746,6 +9752,12 @@ program
         if (!Number.isFinite(minMean) || minMean < 0) {
           throw new Error(
             `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        const minAbsKurt = Number.parseFloat(opts.minAbsKurt);
+        if (!Number.isFinite(minAbsKurt) || minAbsKurt < 0) {
+          throw new Error(
+            `--min-abs-kurt must be a finite, non-negative number (got ${opts.minAbsKurt})`,
           );
         }
         let top: number | null = null;
@@ -9776,6 +9788,7 @@ program
           source: opts.source ?? null,
           minRows,
           minMean,
+          minAbsKurt,
           top,
           sort: opts.sort as
             | 'kurt-desc'

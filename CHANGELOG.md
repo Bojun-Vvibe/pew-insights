@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.84 — 2026-04-27
+
+### Changed
+
+- `source-row-token-kurtosis`: refinement adds the
+  `--min-abs-kurt <f>` flag. Drops sources where
+  `|excessKurtosis| < f`. The natural cohort selector for this
+  lens — the question "is this source non-Normal enough to be
+  worth reading?" is always magnitude-based, regardless of the
+  sign of `g2`. So the gate is on `|g2|`, not on `g2`.
+
+  Suggested operator thresholds (matching the rule-of-thumb
+  bands documented in v0.6.83):
+
+  - `--min-abs-kurt 1`  — hide everything in the
+    "approximately mesokurtic" band (`|g2| < 1` is Normal-ish).
+  - `--min-abs-kurt 3`  — hide everything below
+    "Laplace-grade" tail weight (Laplace has `g2 = 3`).
+  - `--min-abs-kurt 6`  — hide everything below
+    "Exponential-grade" tail weight (Exponential has `g2 = 6`).
+
+  Pair with `--sort abs-kurt` for a "show me the most non-Normal
+  sources, in order, in either direction (heavy-tail or
+  bounded-tail)" view.
+
+  Display filter only; suppressed rows surface as
+  `droppedBelowMinAbsKurt`. Default `--min-abs-kurt 0` preserves
+  v0.6.83 behaviour exactly (all sources surviving prior gates
+  are shown).
+
+  Strict-`<` semantics: a degenerate (variance-0) source has
+  `excessKurtosis = 0` and `|g2| = 0`, so the default
+  `--min-abs-kurt 0` keeps it in the table (the operator can
+  still see the `degen=y` flag), but any positive threshold
+  including `--min-abs-kurt 0.001` drops it. This is the same
+  convention as `--min-abs-skew` in v0.6.82.
+
+  Live smoke at `--min-abs-kurt 5 --sort abs-kurt` against
+  `~/.config/pew/queue.jsonl` (one IDE-assistant source name
+  redacted to `ide-assistant-A` per banned-string policy):
+
+  ```
+  pew-insights source-row-token-kurtosis
+  as of: 2026-04-27T00:53:43.718Z    sources: 6 (shown 3)    rows: 1,611    min-rows: 4    min-mean: 0.00    min-abs-kurt: 5.0000    top: —    sort: abs-kurt
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 4-row floor, 0 below min-rows, 0 below min-mean, 3 below min-abs-kurt, 0 below top cap
+
+  per-source row total_tokens excess kurtosis (sorted by abs-kurt; ties: source asc)
+  source           rows  mean         stddev       excessKurt  degen
+  ---------------  ----  -----------  -----------  ----------  -----
+  ide-assistant-A  333   5662.84      14933.73     74.7811     -
+  openclaw         427   4323900.45   4920540.60   23.8884     -
+  opencode         321   10377066.24  13396763.67  5.2966      -
+  ```
+
+  At `--min-abs-kurt 5`, the `claude-code` row (`g2 = 4.9976`
+  in the v0.6.83 default-sort smoke), `hermes` (`g2 = 3.86`),
+  and `codex` (`g2 = 1.67`) drop out — `claude-code` misses the
+  cut by 0.0024. With the cohort selector engaged plus
+  `--sort abs-kurt`, the surviving 3 sources are ordered by
+  decreasing tail weight: `ide-assistant-A` (the catastrophic
+  fat-tail outlier at 74.8) is first, `openclaw` second
+  (23.9 — pathological but an order of magnitude lighter than
+  the leader), `opencode` third (5.30 — barely above the floor,
+  "Exponential-ish" tail).
+
+  Note that `opencode` shifted between the v0.6.83 smoke
+  (`g2 = 5.2950`, mean = 10,364,291) and this one
+  (`g2 = 5.2966`, mean = 10,377,066) — the queue gained 4 rows
+  in the ~2.7 minute interval between captures (1,611 -> 1,611
+  total but per-source counts shifted: opencode 321 row count
+  is unchanged here, so the mean/kurt drift comes from upstream
+  rewrites of recent rows). The cohort membership at this
+  threshold is unchanged, which is what the gate is supposed to
+  guarantee: it is a cohort selector, not a re-ranker.
+
+---
+
 ## 0.6.83 — 2026-04-27
 
 ### Added
