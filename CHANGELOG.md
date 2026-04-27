@@ -2,6 +2,121 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.89 — 2026-04-27
+
+### Added
+
+- `source-row-token-mad`: per-source Median Absolute
+  Deviation (MAD) of the per-row `total_tokens` distribution.
+  `mad = median(|x_i - median(x)|)` — the canonical **robust**
+  dispersion statistic, with a 50% breakdown point (you have
+  to replace half the rows before MAD changes by more than a
+  bounded amount). Reports raw `mad`, the
+  Normal-consistency-scaled `madScaled = 1.4826 * mad` (which
+  equals `stddev` under Normal data — the factor is
+  `1 / Phi^{-1}(0.75)`), and `madRatio = mad / median` (a
+  robust, scale-free spread — the median/MAD analog of CV).
+
+  Why this is genuinely orthogonal to every existing per-row
+  dispersion lens — and specifically why it is **not** a
+  re-skinned CV (v0.6.87):
+
+  - CV uses **mean and stddev** as its location and scale
+    anchors. Both are pulled by outliers: a single 100x row
+    can shift the mean by >>10% and the stddev by >>50%, so
+    CV can report "highly dispersed" when 99% of rows are
+    actually tightly clustered.
+  - MAD uses **median and median-of-absolute-deviations** as
+    its anchors. Both are robust. In a contaminated
+    distribution like 95% N(100, 1) + 5% N(100, 1000), CV is
+    dominated by the contamination (large), while MAD reads
+    through it (small).
+  - The two statistics are mathematically **independent**. For
+    Normal data they trace each other (`madScaled ~ stddev`,
+    so `madRatio ~ 1.4826 * cv`), but for any heavy-tailed
+    or contaminated distribution they diverge — and the
+    **gap between them quantifies outlier leverage**.
+
+  Reading guide:
+
+  - `mad = 0`           : at least 50% of rows equal the
+                          median (the "constant ping"
+                          signature).
+  - `mad << median`     : tight clustering of the bulk;
+                          outliers can't pull MAD up.
+  - `madRatio < 0.5`    : the typical row deviates by less
+                          than half its median size — a
+                          stable cohort.
+  - `madRatio ~ 1`      : the typical absolute deviation
+                          equals the typical row size — a
+                          heavy-tailed or bimodal cohort.
+  - `madRatio > 1`      : rare; deviation exceeds row size,
+                          almost always indicates bimodality.
+
+  CLI flags: `--since`, `--until`, `--source`, `--min-rows`
+  (default 2; the absolute floor for a non-trivial sample
+  MAD), `--min-median` (drop sources with median row strictly
+  below `f`; useful for hiding tiny-row sources where MAD is
+  dominated by quantisation), `--top`, and `--sort` with keys
+  `mad-desc` (default), `mad-asc`, `ratio-desc`, `ratio-asc`,
+  `rows`, `median`, `source`. Final tiebreak on every sort is
+  `source` asc.
+
+  Edge cases. Single-row sources surface as
+  `droppedTooFewRowsForMad`. All-equal rows yield
+  `mad = madRatio = 0` with `degenerate = false` (the
+  "perfectly tight at a non-zero level" cohort). All-zero
+  rows yield `median = mad = madRatio = 0` with
+  `degenerate = true` (median = 0 makes `madRatio`
+  mathematically undefined; reported as 0 with the flag set).
+
+  Live smoke at `--min-rows 5` against
+  `~/.config/pew/queue.jsonl` (one IDE-assistant source
+  redacted to `vscode-assistant-redacted` per banned-string
+  policy):
+
+  ```
+  pew-insights source-row-token-mad
+  as of: 2026-04-27T02:41:29.531Z    sources: 6 (shown 6)    rows: 1,620    min-rows: 5    min-median: 0.00    top: —    sort: mad-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 2-row floor, 0 below min-rows, 0 below min-median, 0 below top cap
+
+  per-source row total_tokens MAD (sorted by mad-desc; ties: source asc)
+  source                     rows  median      mad         madScaled   madRatio  degen
+  -------------------------  ----  ----------  ----------  ----------  --------  -----
+  codex                      64    7132861.00  6506096.00  9645937.93  0.9121    -
+  opencode                   325   7170567.00  5612556.00  8321175.53  0.7827    -
+  claude-code                299   3319967.00  3103438.00  4601157.18  0.9348    -
+  openclaw                   431   2947672.00  1618637.00  2399791.22  0.5491    -
+  hermes                     168   390122.50   303553.50   450048.42   0.7781    -
+  vscode-assistant-redacted  333   2319.00     1736.00     2573.79     0.7486    -
+  ```
+
+  Cross-lens sanity check against the v0.6.87 CV report. The
+  CV ranking (most-to-least-dispersed-by-CV) was:
+  `vscode-assistant-redacted (2.64) > claude-code (1.53) >
+  opencode (1.29) > openclaw (1.14) > hermes (1.14) > codex
+  (1.13)`. The MAD-ratio ranking (the robust analog) is
+  **completely different**: `claude-code (0.93) > codex
+  (0.91) > opencode (0.78) > hermes (0.78) > vscode-...
+  (0.75) > openclaw (0.55)`. The most striking divergence is
+  `vscode-assistant-redacted`: CV places it at the **top** of
+  the dispersion ranking (CV = 2.64, more than twice the
+  exponential baseline) while MAD places it in the **middle**
+  of the pack (madRatio = 0.75). That gap — CV finding
+  extreme dispersion that MAD doesn't — is precisely the
+  outlier-leverage signature: this source has a small typical
+  row (median = 2,319 tokens) but a few rows that dwarf the
+  rest, so CV is dominated by the tail while MAD reads through
+  to the well-clustered bulk. Conversely, `codex` and
+  `claude-code` have the highest madRatio while only mid-pack
+  on CV — these are sources whose **bulk** rows are genuinely
+  spread out (the tail is not the only story). The two lenses
+  answer different questions: CV says "how heavy is the tail
+  relative to the mean?", MAD says "how spread out is the
+  middle 50%, ignoring the tail?".
+
+---
+
 ## 0.6.88 — 2026-04-27
 
 ### Changed
