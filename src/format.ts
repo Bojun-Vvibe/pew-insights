@@ -10015,6 +10015,77 @@ import type {
   SourceRowTokenSpectralKurtosisReport,
   SourceRowTokenSpectralKurtosisRow,
 } from './sourcerowtokenspectralkurtosis.js';
+import type {
+  SourceRowTokenSpectralEntropyReport,
+  SourceRowTokenSpectralEntropyRow,
+} from './sourcerowtokenspectralentropy.js';
+
+export function renderSourceRowTokenSpectralEntropy(
+  r: SourceRowTokenSpectralEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Shannon entropy of the normalized one-sided non-DC PSD p[k] = P[k] / sum_j P[j] of the mean-centered per-row total_tokens series. entropyBits = -sum p[k] * log2(p[k]); entropyNorm = entropyBits / log2(bins) in [0, 1]. 0 = pure tone (all power in one bin); 1 = uniform PSD (white-on-band). Shannon 1948 / Inouye et al. 1991 / Rezek & Roberts 1998 / Pan, Chen & Hsieh 2009. Information-theoretic concentration summary on the normalized PSD, genuinely orthogonal to: spectral-flatness (geometric/arithmetic ratio G/A — penalizes the worst bin; entropy weighs the whole shape; the two disagree on intermediate distributions and on PSDs with sparse zero bins), spectral-bandwidth (2nd central moment / spread — bandwidth and entropy can disagree on bimodal vs. unimodal PSDs), spectral-kurtosis (4th standardized central moment — peakedness with heavy tails can keep entropy moderate), spectral-skewness (sign-bearing 3rd standardized central moment — entropy is sign-blind), spectral-centroid (1st moment / location — entropy is location-blind), spectral-rolloff (CDF quantile), hjorth-mobility, TKEO, single-lag autocorrelation, event-count lenses (zcr, runs-test, turning-point, mann-kendall), time-domain symbolic entropies (approximate, sample, permutation, renyi, lempel-ziv — those count repeating motifs in the sequence; spectral entropy counts how many frequency bins meaningfully participate in the PSD), scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd), and all amplitude-domain shape lenses (this lens is order-sensitive; amplitude entropy / amplitude gini are order-invariant).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'entBits',
+    'entNorm',
+    'domBin',
+    'domShare',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralEntropyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      s.entropyBits.toFixed(4),
+      s.entropyNorm.toFixed(4),
+      formatNumber(s.dominantBin),
+      s.dominantShare.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenSpectralKurtosis(
   r: SourceRowTokenSpectralKurtosisReport,

@@ -2,6 +2,123 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.156 — 2026-04-28
+
+### Added
+
+- New subcommand `source-row-token-spectral-entropy`:
+  per-source **Shannon spectral entropy** of the per-row
+  `total_tokens` series. For each source, computes the
+  one-sided non-DC power spectrum `P[k] = |X[k]|^2` of the
+  mean-centered `total_tokens` sequence, normalizes to a
+  probability mass on bins `p[k] = P[k] / sum_j P[j]`, then
+  reports
+
+      entropyBits = -sum p[k] * log2(p[k])
+      entropyNorm = entropyBits / log2(bins) in [0, 1]
+
+  along with `dominantBin` / `dominantShare` (a
+  complementary-view sanity check on tonality). 0 = pure tone
+  (all power in one bin); 1 = uniform PSD (white-on-band).
+
+  **Citations.** Shannon, C. E. (1948), "A Mathematical
+  Theory of Communication", Bell System Tech. J., 27(3),
+  379-423 — the canonical reference for the entropy
+  functional. Inouye, T. et al. (1991), "Quantification of
+  EEG irregularity by use of the entropy of the power
+  spectrum", Electroencephalogr. Clin. Neurophysiol., 79(3),
+  204-210 — canonical reference for normalized spectral
+  entropy of a one-sided PSD as an irregularity measure.
+  Rezek, I. A. & Roberts, S. J. (1998), "Stochastic
+  complexity measures for physiological signal analysis",
+  IEEE Trans. Biomed. Eng., 45(9), 1186-1191 — the H/log(K)
+  normalization framing. Pan, Y.-N., Chen, J. & Li, X.-L.
+  (2009), "Spectral entropy: A complementary index for
+  rolling element bearing performance degradation
+  assessment", Proc. IMechE Part C, 223(5), 1223-1231 — the
+  condition-monitoring framing for normalized PSD entropy as
+  a tonal-vs-broadband index.
+
+  **Why this lens is genuinely orthogonal to every other
+  spectral lens already shipped.** Spectral flatness (0.6.144)
+  is the geometric/arithmetic mean ratio `G/A` of `P[k]` —
+  *renormalized geometric mean* (Wiener entropy in the log
+  domain). Spectral entropy here is the *Shannon entropy* of
+  the normalized PSD in the linear domain. Both have `[0, 1]`
+  range and both hit 1 at uniform-on-band, but they are NOT
+  the same functional and disagree on intermediate
+  distributions: a two-bin PSD with masses `(0.99, 0.01)` has
+  flatness `~= 0.198` but normalized entropy `~= 0.081` —
+  Shannon penalizes the long tail far less than the geometric
+  mean does. A uniform-on-half PSD with masses
+  `(0.5, 0.5, 0, 0)` has flatness 0 (any zero bin zeros the
+  geometric mean) but normalized entropy `0.5`. Flatness is
+  sensitive to the *worst* bin; entropy weighs the *whole*
+  shape. Distinct from spectral-bandwidth (2nd central
+  moment / spread), spectral-kurtosis (4th standardized
+  central moment / peakedness — heavy-tailed PSDs can keep
+  entropy moderate), spectral-skewness (sign-bearing 3rd
+  standardized central moment — entropy is sign-blind),
+  spectral-centroid (location — entropy is location-blind),
+  spectral-rolloff (CDF quantile). Distinct from time-domain
+  symbolic entropies (approximate, sample, permutation,
+  renyi, lempel-ziv) which count repeating motifs in the
+  sequence; spectral entropy counts how many frequency bins
+  meaningfully participate in the PSD. Two series with
+  identical permutation entropy can have wildly different
+  spectral entropy: a periodic carrier vs. a finely-shuffled
+  version with the same ordinal patterns but a broadened
+  PSD.
+
+  **Live smoke** against `~/.config/pew/queue.jsonl` (1,739
+  rows, 6 sources; `vscode-copilot` redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-entropy
+  per-source row-token spectral entropy (sorted by norm-desc; ties: source asc)
+  source       rows  bins  totPower   entBits  entNorm  domBin  domShare
+  -----------  ----  ----  ---------  -------  -------  ------  --------
+  vscode-XXX   333   166   1.237e+13  6.5331   0.8858   2       0.0575
+  hermes       203   101   1.845e+16  5.8237   0.8747   1       0.1367
+  openclaw     473   236   2.595e+18  6.6261   0.8406   2       0.0873
+  codex        64    32    4.162e+17  3.9281   0.7856   1       0.2778
+  opencode     367   183   1.102e+19  5.7374   0.7634   2       0.1103
+  claude-code  299   149   1.385e+19  5.4244   0.7514   1       0.2000
+  ```
+
+  Reading: every source's per-row token PSD sits in the
+  upper-mid `[0.75, 0.89]` `entropyNorm` range — broadband
+  but not perfectly white. `vscode-XXX` (333 rows) tops the
+  ranking with `entropyNorm = 0.8858` and `dominantShare`
+  only `0.0575` — its per-row token PSD is the most
+  uniformly-spread, with no single frequency bin owning more
+  than ~6% of the power. `claude-code` is the most tonal of
+  the live sources at `entropyNorm = 0.7514` with
+  `dominantShare = 0.2000` (one bin owns 20% of the power)
+  — a measurable but not extreme departure from the
+  white-on-band ceiling.
+
+  Tests: 3303 -> 3338 (+35 in this commit; 32 new
+  `spectral-entropy` test cases covering throw paths
+  (non-integer/`< 4` `min-rows`, non-positive-integer `top`,
+  invalid sort, invalid since/until), drop counters (bad
+  `hour_start`, NaN tokens, negative tokens, source filter,
+  below-min-rows, constant-series), shape invariants
+  (`bins == floor(n/2)`, `entropyNorm in [0, 1]`,
+  `entropyBits == entropyNorm * log2(bins)`,
+  `dominantShare in (0, 1]`, `dominantBin in [1, bins]`),
+  PSD invariants (additive-DC-shift invariance,
+  positive-scalar-multiply invariance, time-reversal
+  invariance, hour_start re-sorting), and the qualitative
+  tonal-vs-broadband ordering claim (sinusoid at single bin
+  -> `entropyNorm < 0.4` and `dominantShare > 0.5`; tonal
+  series strictly lower `entropyNorm` than smooth ramp), all
+  six sort modes (`norm-desc`/`norm-asc`/`entropy-desc`/
+  `entropy-asc`/`dom-share-desc`/`source`/`rows`),
+  `--top` cap, window filtering, default
+  `generatedAt`).
+
 ## 0.6.155 — 2026-04-28
 
 ### Added

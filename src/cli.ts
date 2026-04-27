@@ -127,6 +127,7 @@ import {
   renderSourceRowTokenSpectralBandwidth,
   renderSourceRowTokenSpectralSkewness,
   renderSourceRowTokenSpectralKurtosis,
+  renderSourceRowTokenSpectralEntropy,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -315,6 +316,7 @@ import { buildSourceRowTokenSpectralCentroid } from './sourcerowtokenspectralcen
 import { buildSourceRowTokenSpectralBandwidth } from './sourcerowtokenspectralbandwidth.js';
 import { buildSourceRowTokenSpectralSkewness } from './sourcerowtokenspectralskewness.js';
 import { buildSourceRowTokenSpectralKurtosis } from './sourcerowtokenspectralkurtosis.js';
+import { buildSourceRowTokenSpectralEntropy } from './sourcerowtokenspectralentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -13741,6 +13743,102 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralKurtosis(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-entropy')
+  .description(
+    "Per-source Shannon entropy of the normalized one-sided non-DC PSD p[k] = P[k] / sum_j P[j] of the mean-centered per-row total_tokens series. entropyBits = -sum p[k] * log2(p[k]); entropyNorm = entropyBits / log2(bins) in [0, 1]. 0 = pure tone (all power in one bin); 1 = uniform PSD (white-on-band). Shannon 1948 / Inouye et al. 1991 / Rezek & Roberts 1998 / Pan, Chen & Hsieh 2009. Information-theoretic concentration summary on the normalized PSD, genuinely orthogonal to spectral-flatness (geometric/arithmetic ratio G/A — disagrees on PSDs with sparse zero bins and on intermediate distributions), spectral-bandwidth (2nd central moment / spread), spectral-kurtosis (4th standardized central moment / peakedness), spectral-skewness (sign-bearing asymmetry), spectral-centroid (location), spectral-rolloff, hjorth-mobility, TKEO, single-lag autocorrelation, event counters, time-domain symbolic entropies (count motifs in the sequence; spectral entropy counts how many bins participate in the PSD), scaling/fractal lenses, and all amplitude-domain shape lenses (this lens is order-sensitive; amplitude entropy is order-invariant).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'norm-desc' (default; most broadband / white-like first) | 'norm-asc' (most tonal / concentrated first) | 'entropy-desc' | 'entropy-asc' | 'dom-share-desc' | 'rows' | 'source'",
+    'norm-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'entropy-asc',
+          'entropy-desc',
+          'norm-asc',
+          'norm-desc',
+          'dom-share-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'entropy-asc'
+            | 'entropy-desc'
+            | 'norm-asc'
+            | 'norm-desc'
+            | 'dom-share-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralEntropy(report) + '\n',
           );
         }
       } catch (e) {
