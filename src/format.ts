@@ -8701,3 +8701,73 @@ export function renderSourceRowTokenRunsTest(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenTurningPointCountReport,
+  SourceRowTokenTurningPointCountRow,
+} from './sourcerowtokenturningpointcount.js';
+
+export function renderSourceRowTokenTurningPointCount(
+  r: SourceRowTokenTurningPointCountReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-turning-point-count'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    max-p: ${r.maxP.toFixed(4)}    min-abs-z: ${r.minAbsZ.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinAbsZ)} below min-abs-z, ${formatNumber(r.droppedAboveMaxP)} above max-p, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Wallis-Moore turning-point test on the per-row total_tokens time-ordered sequence: T = number of interior positions i where v[i] is a strict local extremum (peak: v[i]>v[i-1] AND v[i]>v[i+1]; or trough: v[i]<v[i-1] AND v[i]<v[i+1]). Equality at either neighbour disqualifies position i (counted as tiePosition). Under H0 (i.i.d. continuous) E[T]=2(n-2)/3 and Var[T]=(16n-29)/90; Z=(T-E[T])/sigma is asymptotically N(0,1). Z<<0 -> too few extrema, series TOO SMOOTH (trend / first-difference persistence). Z>>0 -> too many extrema, series TOO JAGGED (first-difference mean-reversion). p-value is two-sided normal-approx. Orthogonal to runs-test (which thresholds at the median, not at the first-difference scale), to lag-1 autocorrelation (linear, parametric, on raw values), and to every dispersion / shape lens (those are order-invariant; T is not).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token turning-point test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'T',
+    'E[T]',
+    'sigmaT',
+    'Z',
+    'p',
+    'ties',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenTurningPointCountRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    formatNumber(s.turningPoints),
+    s.expectedTurningPoints.toFixed(2),
+    s.stddevTurningPoints.toFixed(3),
+    s.z.toFixed(4),
+    s.pValue.toFixed(4),
+    formatNumber(s.tiePositions),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

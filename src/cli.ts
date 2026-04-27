@@ -110,6 +110,7 @@ import {
   renderSourceRowTokenIqrRatio,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
+  renderSourceRowTokenTurningPointCount,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -280,6 +281,7 @@ import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorr
 import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
+import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10910,6 +10912,126 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenRunsTest(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-turning-point-count')
+  .description(
+    "Per-source Wallis-Moore turning-point test on the per-row total_tokens time-ordered sequence. T = number of interior positions i where v[i] is a strict local extremum (peak: v[i]>v[i-1] AND v[i]>v[i+1]; or trough: v[i]<v[i-1] AND v[i]<v[i+1]). Equality at either neighbour disqualifies position i (counted as tiePosition). Under H0 (i.i.d. continuous) E[T]=2(n-2)/3, Var[T]=(16n-29)/90; Z=(T-E[T])/sigma is asymptotically N(0,1) and is reported with a two-sided normal-approx p-value. Z<<0 -> too few turning points, series TOO SMOOTH (trend / first-difference persistence). Z>>0 -> too many turning points, series TOO JAGGED (first-difference mean-reversion). Genuinely orthogonal to source-row-token-runs-test (median dichotomy, not first-difference signs — a saw-tooth that crosses the median often is jagged at the value scale but smooth at the step scale, and vice versa), to source-row-token-autocorrelation-lag1 (linear Pearson rho on raw values vs. non-parametric on consecutive triples), and to all order-invariant dispersion/shape lenses (-iqr-ratio / -mad / -skewness / -kurtosis / -gini / -burstiness / -coefficient-of-variation).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n post-window rows; must be an integer >= 4 (the formula needs n-2 >= 2 and the normal-approx is unreliable below 8) (default 8)',
+    '8',
+  )
+  .option(
+    '--max-p <f>',
+    'drop sources whose two-sided turning-point-test p-value is strictly above f. f must be in (0, 1]. (default 1, no floor)',
+    '1',
+  )
+  .option(
+    '--min-abs-z <f>',
+    'drop sources whose absolute Z statistic is strictly below f; direction-agnostic effect-size cohort selector. (default 0, no floor)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'abs-z-desc' (default) | 'z-asc' | 'z-desc' | 'p-asc' | 'rows' | 'source'",
+    'abs-z-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        maxP: string;
+        minAbsZ: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const maxP = Number.parseFloat(opts.maxP);
+        if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
+          throw new Error(
+            `--max-p must be a finite number in (0, 1] (got ${opts.maxP})`,
+          );
+        }
+        const minAbsZ = Number.parseFloat(opts.minAbsZ);
+        if (!Number.isFinite(minAbsZ) || minAbsZ < 0) {
+          throw new Error(
+            `--min-abs-z must be a finite, non-negative number (got ${opts.minAbsZ})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'z-asc',
+          'z-desc',
+          'abs-z-desc',
+          'p-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTurningPointCount(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          maxP,
+          minAbsZ,
+          top,
+          sort: opts.sort as
+            | 'z-asc'
+            | 'z-desc'
+            | 'abs-z-desc'
+            | 'p-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenTurningPointCount(report) + '\n',
           );
         }
       } catch (e) {
