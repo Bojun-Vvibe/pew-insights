@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.133 — 2026-04-28
+
+### Added
+
+- `source-row-token-zero-crossing-rate`: per-source **Zero
+  Crossing Rate (ZCR)** of the de-meaned per-row
+  `total_tokens` time-ordered sequence. ZCR is one of the
+  oldest spectral-frequency proxies (Kedem 1986, "Spectral
+  analysis and discrimination by zero-crossings", Proc. IEEE
+  74(11):1477-1493) and a workhorse of speech / audio analysis.
+  Computes `rate = (# adjacent sign changes after centring by
+  mean) / (N - 1)`, with the Kedem sign convention
+  `sign(0) = +1` (a single isolated zero between two positives
+  is not a crossing). In `[0, 1]` by construction; `0.5`
+  corresponds to Nyquist (every adjacent pair flips sign) and
+  is the asymptote for symmetric mean-zero white noise; values
+  near `0` indicate slow drift / persistence.
+
+  Why this lens is **genuinely orthogonal** to every existing
+  `source-row-token-*` lens, including the Hjorth pair we
+  shipped in 0.6.130 / 0.6.132:
+
+    - vs. `hjorth-mobility` / `hjorth-complexity`: Hjorth
+      parameters are variance-ratios on the differenced series
+      and are sensitive to the **amplitude scale** of the
+      wiggles. ZCR counts only **sign** changes after centring
+      and is amplitude-invariant — multiply every value by 13
+      and the ZCR is bit-identical (verified by test). Two
+      series that agree on every sign of `(v[i] - mu)` produce
+      identical ZCR but can have wildly different
+      mobility/complexity.
+    - vs. `autocorrelation-lag1`: the Kedem cosine identity
+      `rho_1 = cos(pi * ZCR)` holds for **Gaussian stationary**
+      series only; empirical token-count series are
+      heavy-tailed, non-Gaussian, and non-stationary, so ZCR
+      carries information `rho_1` does not.
+    - vs. `runs` / `turning-point` / `mann-kendall`: those
+      count monotone streaks / local extrema / concordant pairs
+      respectively, none of them centring by the mean. A
+      monotone ramp has `runs = 1`, `turning-point = 0`,
+      `MK = +1`, but ZCR `~ 1/(N-1)` (a single crossing at the
+      midpoint).
+    - vs. `permutation-entropy` / `sample-entropy`: those use
+      embedding windows of length m; ZCR is a single-pass
+      pairwise sign count.
+    - vs. `lempel-ziv`: LZ counts unique factors in a
+      **median**-binarised symbol sequence. ZCR uses
+      **mean**-binarisation and counts **transitions**, not
+      **factors**.
+    - vs. `dfa` / `hurst-rs` / `katz-fd` / `higuchi-fd`: those
+      are multi-scale path-length / scaling exponents. ZCR is
+      a single-scale, fixed-step count.
+    - vs. all order-invariant dispersion / shape lenses
+      (`-iqr-ratio`, `-mad`, `-skewness`, `-kurtosis`, `-gini`,
+      `-burstiness-coefficient`, `-coefficient-of-variation`):
+      shuffling the sequence leaves them unchanged but
+      typically inflates ZCR toward the white-noise asymptote.
+
+  Honest drops: `droppedZeroVariance` (constant series; ZCR
+  not even definable — we refuse to report `rate = 0` for a
+  constant series because that would conflate "very slow drift
+  but signal exists" with "no signal at all"),
+  `droppedDegenerate` (any computed quantity non-finite). Each
+  surfaces in its own counter.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,694 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-zero-crossing-rate
+  as of: 2026-04-28   sources: 6 (shown 6)   rows: 1,694
+  min-rows: 24   top: -   sort: rate-asc
+
+  per-source row-token Zero-Crossing Rate (sorted by rate-asc; ties: source asc)
+  source       rows  mean         crossings  rate
+  -----------  ----  -----------  ---------  ------
+  openclaw      458   4159505.38   98         0.2144
+  vscode-XXX    333      5662.84   73         0.2199
+  claude-code   299  11512995.95   68         0.2282
+  opencode      352  10678398.66   88         0.2507
+  codex          64  12650385.31   20         0.3175
+  hermes        188    855159.07   73         0.3904
+  ```
+
+  Reading the live smoke: every source on the live queue lands
+  comfortably below the white-noise asymptote of `0.5`,
+  confirming what hjorth-mobility / dfa already hint at
+  separately — token traffic in this queue is **persistent**,
+  not noise-like. The spread is meaningful though. `openclaw`
+  (0.21), `vscode-XXX` (0.22), and `claude-code` (0.23) cluster
+  tightly: their token series stay on one side of their mean
+  for ~5 rows on average before flipping — slow-drift
+  conversational sessions where token counts trend together.
+  `hermes` (0.39) is the most Nyquist-like; combined with its
+  high hjorth-complexity (1.32 from 0.6.132) and high
+  hjorth-mobility (1.29 from 0.6.130), this triangulates a
+  source whose individual rows are noisy step-by-step but
+  globally have a strong central tendency. Cross-checking
+  against existing lenses: `codex` (0.32) is between hermes and
+  the cluster — consistent with its high `var(v)` (most
+  amplitude-rich) but moderate complexity (1.57). The `mean`
+  column shows the centring level we use, so the operator can
+  immediately see that `vscode-XXX`'s 5,663-token mean is two
+  orders of magnitude smaller than every other source — a
+  separate signal worth its own follow-up lens.
+
 ## 0.6.132 — 2026-04-27
 
 ### Added
