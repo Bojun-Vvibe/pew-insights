@@ -9832,6 +9832,11 @@ program
     '0',
   )
   .option(
+    '--min-cv <f>',
+    'drop sources whose cv is strictly below f; useful for surfacing only meaningfully-dispersed sources (e.g. --min-cv 1.0 hides everything tighter than the exponential baseline; --min-cv 0.5 hides the tightly-clustered band) (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9849,6 +9854,7 @@ program
         source?: string;
         minRows: string;
         minMean: string;
+        minCv: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9868,6 +9874,12 @@ program
         if (!Number.isFinite(minMean) || minMean < 0) {
           throw new Error(
             `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        const minCv = Number.parseFloat(opts.minCv);
+        if (!Number.isFinite(minCv) || minCv < 0) {
+          throw new Error(
+            `--min-cv must be a finite, non-negative number (got ${opts.minCv})`,
           );
         }
         let top: number | null = null;
@@ -9898,6 +9910,7 @@ program
           source: opts.source ?? null,
           minRows,
           minMean,
+          minCv,
           top,
           sort: opts.sort as
             | 'cv-desc'

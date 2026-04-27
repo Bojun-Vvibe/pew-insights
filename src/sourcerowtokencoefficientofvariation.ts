@@ -171,6 +171,21 @@ export interface SourceRowTokenCoefficientOfVariationOptions {
    */
   minMean?: number;
   /**
+   * Drop sources whose `cv` is strictly below this value. Useful
+   * for surfacing only meaningfully-dispersed sources (e.g.
+   * `--min-cv 1.0` hides everything tighter than the
+   * exponential-distribution baseline; `--min-cv 0.5` hides the
+   * "tightly clustered" band). Display filter only. Suppressed
+   * rows surface as `droppedBelowMinCv`. Must be a finite,
+   * non-negative number. Default 0 = no floor (preserves v0.6.87
+   * behaviour exactly). Strict-`<` semantics: an exactly-cv-0
+   * source is kept by the default `0` (the operator can still see
+   * the `degen` column), but any positive threshold including
+   * `--min-cv 0.0001` drops it. Same convention as the
+   * `--min-abs-skew` / `--min-abs-kurt` / `--min-margin` gates.
+   */
+  minCv?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -209,6 +224,7 @@ export interface SourceRowTokenCoefficientOfVariationReport {
   source: string | null;
   minRows: number;
   minMean: number;
+  minCv: number;
   top: number | null;
   sort: 'cv-desc' | 'cv-asc' | 'rows' | 'mean' | 'stddev' | 'source';
   /** Distinct sources seen pre-filter. */
@@ -220,6 +236,7 @@ export interface SourceRowTokenCoefficientOfVariationReport {
   droppedTooFewRowsForCv: number;
   droppedBelowMinRows: number;
   droppedBelowMinMean: number;
+  droppedBelowMinCv: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenCoefficientOfVariationRow[];
 }
@@ -249,6 +266,12 @@ export function buildSourceRowTokenCoefficientOfVariation(
   if (!Number.isFinite(minMean) || minMean < 0) {
     throw new Error(
       `minMean must be a finite, non-negative number (got ${opts.minMean})`,
+    );
+  }
+  const minCv = opts.minCv ?? 0;
+  if (!Number.isFinite(minCv) || minCv < 0) {
+    throw new Error(
+      `minCv must be a finite, non-negative number (got ${opts.minCv})`,
     );
   }
   const top = opts.top ?? null;
@@ -354,6 +377,7 @@ export function buildSourceRowTokenCoefficientOfVariation(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinMean = 0;
+  let droppedBelowMinCv = 0;
   const survived: SourceRowTokenCoefficientOfVariationRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -362,6 +386,10 @@ export function buildSourceRowTokenCoefficientOfVariation(
     }
     if (row.mean < minMean) {
       droppedBelowMinMean += 1;
+      continue;
+    }
+    if (row.cv < minCv) {
+      droppedBelowMinCv += 1;
       continue;
     }
     survived.push(row);
@@ -393,6 +421,7 @@ export function buildSourceRowTokenCoefficientOfVariation(
     source: sourceFilter,
     minRows,
     minMean,
+    minCv,
     top,
     sort,
     totalSources,
@@ -402,6 +431,7 @@ export function buildSourceRowTokenCoefficientOfVariation(
     droppedTooFewRowsForCv,
     droppedBelowMinRows,
     droppedBelowMinMean,
+    droppedBelowMinCv,
     droppedBelowTopCap,
     sources: finalSources,
   };

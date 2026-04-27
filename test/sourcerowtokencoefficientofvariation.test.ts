@@ -426,3 +426,93 @@ test('row-token-cv: deterministic across two builds', () => {
   });
   assert.deepEqual(r1, r2);
 });
+
+test('row-token-cv: minCv default 0 keeps zero-cv sources', () => {
+  // Identical-row source has cv=0; default minCv=0 must keep it
+  // (strict-< semantics).
+  const queue: QueueLine[] = [
+    ql('2026-01-01T00:00:00Z', 'flat', 100),
+    ql('2026-01-01T01:00:00Z', 'flat', 100),
+    ql('2026-01-01T02:00:00Z', 'spread', 10),
+    ql('2026-01-01T03:00:00Z', 'spread', 90),
+  ];
+  const r = buildSourceRowTokenCoefficientOfVariation(queue, {
+    generatedAt: GEN,
+  });
+  assert.equal(r.minCv, 0);
+  assert.equal(r.droppedBelowMinCv, 0);
+  assert.equal(r.sources.length, 2);
+});
+
+test('row-token-cv: minCv 0.0001 drops exactly cv=0 sources (strict <)', () => {
+  // Verifies the "strict <" semantics documented in the source:
+  // a positive threshold of any size drops cv=0 rows.
+  const queue: QueueLine[] = [
+    ql('2026-01-01T00:00:00Z', 'flat', 100),
+    ql('2026-01-01T01:00:00Z', 'flat', 100),
+    ql('2026-01-01T02:00:00Z', 'spread', 10),
+    ql('2026-01-01T03:00:00Z', 'spread', 90),
+  ];
+  const r = buildSourceRowTokenCoefficientOfVariation(queue, {
+    minCv: 0.0001,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinCv, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'spread');
+});
+
+test('row-token-cv: minCv 1.0 hides everything tighter than exponential baseline', () => {
+  // a: cv = 1/3 (below 1.0) -> dropped
+  // b: cv = 0.8 (below 1.0) -> dropped
+  // c: cv =~ 1.0 boundary case
+  // values [10,90]: mean=50, var=1600, stddev=40, cv=0.8
+  // values [1,99]: mean=50, var=2401, stddev=49, cv=0.98
+  // values [0,100]: mean=50, var=2500, stddev=50, cv=1.0 (boundary, kept by strict <)
+  // values [1,99,200]: mean=100, var=approx 6800, stddev~82.5, cv~0.825 -> dropped
+  // Use clear cases:
+  const queue: QueueLine[] = [
+    ql('2026-01-01T00:00:00Z', 'a', 10), // cv = 1/3
+    ql('2026-01-01T01:00:00Z', 'a', 20),
+    ql('2026-01-01T02:00:00Z', 'b', 1), // cv = 49/50 = 0.98 < 1
+    ql('2026-01-01T03:00:00Z', 'b', 99),
+    ql('2026-01-01T04:00:00Z', 'c', 0), // cv = 50/50 = 1.0 boundary
+    ql('2026-01-01T05:00:00Z', 'c', 100),
+  ];
+  const r = buildSourceRowTokenCoefficientOfVariation(queue, {
+    minCv: 1.0,
+    generatedAt: GEN,
+  });
+  // Strict < 1.0: c kept (cv=1.0 exactly), a + b dropped.
+  assert.equal(r.droppedBelowMinCv, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'c');
+});
+
+test('row-token-cv: rejects bad minCv', () => {
+  assert.throws(() =>
+    buildSourceRowTokenCoefficientOfVariation([], { minCv: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenCoefficientOfVariation([], {
+      minCv: Number.POSITIVE_INFINITY,
+    }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenCoefficientOfVariation([], { minCv: Number.NaN }),
+  );
+});
+
+test('row-token-cv: minCv carried into report; default 0 preserves v0.6.87 semantics', () => {
+  const r1 = buildSourceRowTokenCoefficientOfVariation([], {
+    generatedAt: GEN,
+  });
+  assert.equal(r1.minCv, 0);
+  assert.equal(r1.droppedBelowMinCv, 0);
+
+  const r2 = buildSourceRowTokenCoefficientOfVariation([], {
+    minCv: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r2.minCv, 0.5);
+});

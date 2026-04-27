@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.88 — 2026-04-27
+
+### Changed
+
+- `source-row-token-coefficient-of-variation`: refinement adds
+  the `--min-cv <f>` flag. Drops sources whose `cv` is strictly
+  below `f`. The natural cohort selector for this lens — the
+  question "is this source's per-row dispersion meaningful or
+  is it a near-constant series?" is always CV-magnitude-based.
+
+  Suggested operator thresholds:
+
+  - `--min-cv 0.1`  — hide everything where stddev is less
+    than 10% of the mean (a "rows are tightly clustered"
+    filter).
+  - `--min-cv 0.5`  — hide everything where stddev is less
+    than half the mean. A "moderate dispersion or above" view.
+  - `--min-cv 1.0`  — hide everything tighter than the
+    exponential-distribution baseline. Surfaces only sources
+    whose stddev exceeds the mean — the canonical
+    "heavy-tailed-with-zero-floor" regime.
+  - `--min-cv 2.0`  — surface only the most extremely
+    dispersed sources (typical row dwarfed by the tail by
+    ~2x).
+
+  Pair with `--sort cv-desc` (the default) for "show me the
+  sources with the most clearly heavy-tailed per-row size
+  distribution, in order of dispersion magnitude".
+
+  Display filter only; suppressed rows surface as
+  `droppedBelowMinCv`. Default `--min-cv 0` preserves v0.6.87
+  behaviour exactly. Strict-`<` semantics: an exactly-`cv = 0`
+  source (all-rows-identical or all-zero) is kept by the
+  default `0` (the operator can still see the `degen` column),
+  but any positive threshold including `--min-cv 0.0001` drops
+  it. Same convention as `--min-abs-skew` (v0.6.81),
+  `--min-abs-kurt` (v0.6.84), and `--min-margin` (v0.6.86).
+
+  Live smoke at `--min-rows 5 --min-cv 1.2` against
+  `~/.config/pew/queue.jsonl` (one IDE-assistant source name
+  redacted to `ide-assistant-A` per banned-string policy):
+
+  ```
+  pew-insights source-row-token-coefficient-of-variation
+  as of: 2026-04-27T02:16:03.585Z    sources: 6 (shown 3)    rows: 1,618    min-rows: 5    min-mean: 0.00    min-cv: 1.2000    top: —    sort: cv-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 2-row floor, 0 below min-rows, 0 below min-mean, 3 below min-cv, 0 below top cap
+
+  per-source row total_tokens coefficient of variation (sorted by cv-desc; ties: source asc)
+  source           rows  mean         stddev       cv      degen
+  ---------------  ----  -----------  -----------  ------  -----
+  ide-assistant-A  333   5662.84      14933.73     2.6371  -
+  claude-code      299   11512995.95  17605167.00  1.5292  -
+  opencode         324   10375052.08  13335606.75  1.2854  -
+  ```
+
+  At `--min-cv 1.2`, the three sources whose CV is in the
+  `[1.13, 1.14]` band from v0.6.87 (`openclaw` 1.14, `hermes`
+  1.14, `codex` 1.13) are correctly dropped — their per-row
+  stddev only modestly exceeds their mean. The three survivors
+  are the lens's "most heavy-tailed" cohort:
+  `ide-assistant-A` is the standout (`cv = 2.64`, more than 2x
+  the exponential baseline — a small-mean source whose tail
+  rows dwarf the typical row by ~3x); `claude-code` second
+  (`cv = 1.53`); `opencode` third (`cv = 1.29`). With this
+  gate engaged the lens transitions from "report all per-row
+  dispersion" to "report only sources whose per-row size
+  distribution is meaningfully heavier-tailed than the
+  exponential baseline".
+
+---
+
 ## 0.6.87 — 2026-04-27
 
 ### Added
