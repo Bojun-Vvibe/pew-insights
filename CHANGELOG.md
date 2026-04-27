@@ -2,6 +2,200 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.99 — 2026-04-27
+
+### Added
+
+- New subcommand `source-row-token-burstiness-coefficient`:
+  per-source **Goh & Barabási (2008) burstiness
+  coefficient B** of `total_tokens` across the source's
+  queue rows, computed as
+
+  ```
+  B = (sigma - mu) / (sigma + mu)
+  ```
+
+  where `mu` is the sample mean and `sigma` is the
+  **population** standard deviation (divisor `n`) of
+  per-row `total_tokens`. B is bounded in `[-1, 1]`
+  with three concrete anchor regimes:
+
+  - `B = -1`: perfectly periodic / constant series
+    (sigma = 0, mu > 0).
+  - `B =  0`: sigma == mu — neutral exponential /
+    Poisson-like baseline (the same regime that
+    `cv = 1` marks).
+  - `B ->  1`: extremely heavy-tailed; one or a handful
+    of rows dwarf the rest (sigma >> mu).
+
+  B is mathematically a bounded monotone transform of
+  the coefficient of variation:
+
+  ```
+  B = (cv - 1) / (cv + 1)
+  ```
+
+  so the **ranking** of sources by B and by cv is
+  identical for non-degenerate sources. The **added
+  value** of B over `source-row-token-coefficient-of-
+  variation` is *not* a different ranking; it is a
+  **regime-classification scalar** with three concrete
+  anchor points (-1 periodic, 0 Poisson, +1 maximally
+  bursty) that are directly comparable across sources of
+  any scale and that gate cleanly on a fixed threshold
+  (e.g. `--min-b 0` = "show me only super-Poisson
+  sources"). The raw cv has no such interpretable
+  cut-off — its scale is open-ended and its "Poisson
+  baseline" of `1.0` is a number an operator has to
+  remember rather than a built-in zero.
+
+  Genuinely orthogonal to every other `source-row-
+  token-*` lens already in the suite:
+
+  - `source-row-token-coefficient-of-variation` shares
+    the same ranking but emits an open-ended scalar
+    with no built-in regime anchors.
+  - `source-burstiness-fano-factor` is the Fano factor
+    `F = sigma^2 / mu` on **per-day totals** —
+    different grain (day, not row), different functional
+    form (variance/mean, carries token units, scale-
+    dependent), different bounds (`0` to `+inf`),
+    different anchor (`F = 1` ~ Poisson, not `B = 0`).
+  - `source-row-token-iqr-ratio` is a robust, order-
+    statistic spread-vs-centre measure: outlier-immune.
+    B is moment-based and dominated by extreme rows.
+  - `source-row-token-mad` is also robust, also median-
+    anchored. B uses mean and stddev.
+  - `source-row-token-gini` is a Lorenz-curve
+    concentration index integrating pairwise differences
+    over the whole distribution; not a mean/stddev ratio.
+  - `source-row-token-skewness` and `source-row-token-
+    kurtosis` are 3rd and 4th standardised moments —
+    shape, not the mean/stddev *ratio* B reports.
+  - `source-row-token-autocorrelation-lag1` measures
+    ordering persistence; blind to dispersion.
+  - `source-same-model-streak` is a categorical
+    stickiness statistic — which model — not numerical.
+  - `source-output-tokens-per-row-percentiles` reports
+    raw percentiles of `output_tokens` (not
+    `total_tokens`) and emits no single comparable
+    scalar.
+
+  Subcommand surface:
+
+  ```
+  pew-insights source-row-token-burstiness-coefficient \
+    [--since <iso>] [--until <iso>] \
+    [--source <id>] \
+    [--min-rows <n>]   # default 2
+    [--min-b <f>]      # default -1 (no floor); range [-1, 1]
+    [--top <n>] \
+    [--sort <key>] \   # b-desc | b-asc | abs-b-desc |
+                       # mean-desc | rows | source
+    [--json]
+  ```
+
+  Edge-case handling (all unit-tested):
+
+  - **Constant non-zero series** (sigma = 0, mu > 0):
+    B = -1, `flat: true`, `degenerate: false`. The
+    formula yields -1 cleanly so no special-case is
+    needed for the value itself.
+  - **All-zero series** (sigma = 0, mu = 0): B = `null`,
+    `flat: true`, `degenerate: true`. Reported as
+    `null` instead of `NaN` (the formula is `0/0`).
+    Always dropped by any `--min-b > -1` and counted
+    under `droppedDegenerate` so the operator sees
+    they were dropped because of *what* they are, not
+    because of *how bursty* they are.
+  - **Negative `total_tokens`**: dropped under
+    `droppedNegativeTokens`. Negative magnitudes are
+    meaningless under the Goh & Barabási interpretation
+    (which is a non-negative point-process spread vs
+    centre).
+  - **Bad `hour_start` / non-finite `total_tokens`**:
+    dropped under `droppedInvalidHourStart` /
+    `droppedInvalidTokens`.
+  - **`n < minRows`**: surfaces as
+    `droppedBelowMinRows`. `minRows >= 2` is required
+    (need at least two observations for any non-trivial
+    sigma); default 2.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (one IDE-style assistant source-id redacted):
+
+  ```
+  pew-insights source-row-token-burstiness-coefficient
+  sources: 6 (shown 6)    rows: 1,635    min-rows: 2    min-b: -1.0000    sort: b-desc
+
+  source                       rows  mean         stddev       cv      B       flat  degen
+  ---------------------------  ----  -----------  -----------  ------  ------  ----  -----
+  vscode-assistant-redacted    333   5662.84      14933.73     2.6371  0.4501  no    no
+  claude-code                  299   11512995.95  17605167.00  1.5292  0.2092  no    no
+  opencode                     331   10496177.53  13272080.10  1.2645  0.1168  no    no
+  openclaw                     437   4293353.95   4930548.05   1.1484  0.0691  no    no
+  hermes                       171   862958.33    982188.61    1.1382  0.0646  no    no
+  codex                        64    12650385.31  14252148.98  1.1266  0.0595  no    no
+  ```
+
+  Reading: every source is **above the Poisson
+  baseline** (B > 0, cv > 1) — across the 1,635-row
+  queue snapshot, each producer has stddev strictly
+  larger than its mean, i.e. all six are at least
+  mildly bursty rather than periodic. The IDE-style
+  micro-row producer (vscode-assistant-redacted, mean
+  ~ 5.7K tokens/row) sits noticeably further out at
+  `B = 0.4501` (`cv ~ 2.64` — its standard deviation
+  is ~2.6× its mean), reflecting an interactive surface
+  whose row volumes vary from tiny pings to the
+  occasional context-stuffed completion. The
+  long-running tool-execution producers (`claude-code`,
+  `opencode`, `openclaw`, `hermes`, `codex`) all
+  cluster between `B = 0.06` and `B = 0.21` —
+  super-Poisson but only modestly so (cv between ~1.13
+  and ~1.53), consistent with a more uniform
+  per-row workload. The cohort gate `--min-b 0`
+    surfaces exactly the producers above the Poisson
+  baseline (in this snapshot, all six).
+
+### Tests
+
+- 21 new unit tests in
+  `test/sourcerowtokenburstinesscoefficient.test.ts`
+  covering: empty input, option validation
+  (minRows/minB/top/sort/since/until including the
+  `[-1, 1]` bound on `--min-b`), invalid-row drops
+  (bad hour_start / NaN tokens / Infinity tokens /
+  negative tokens), source filter, time window,
+  `minRows` cohort, the three regime anchors
+  (constant non-zero -> B = -1 flat; all-zero -> B
+  = null degenerate; cv = 1 witness {0, 200} -> B =
+  0 exactly), the closed-form identity
+  `B = (cv - 1) / (cv + 1)` against an explicit
+  `{1, 1, 1, 1, 1000}` numerical witness (mean =
+  200.8, popstd = sqrt(159680.16)), an anti-bursty
+  near-constant series ({99, 100, 101} -> B < -0.9),
+  a randomised 200-row 5-source witness checking
+  `B ∈ [-1, 1]` for every emitted scalar, the
+  `--min-b 0` cohort gate (drops `s_flat` only;
+  retains `s_pois` at `B = 0` and `s_bursty` at
+  `B > 0`), the degenerate-vs-min-b interaction
+  (`--min-b -0.5` keeps `real` source whose
+  `B = -0.5` since `-0.5` is *not strictly less than*
+  `-0.5`, while degenerate all-zero source is dropped
+  via `droppedDegenerate` rather than
+  `droppedBelowMinB`), the default `--min-b -1`
+  preserves every regime including `B = -1` flat
+  sources (`droppedBelowMinB == 0`), all four
+  scalar sort modes (`b-desc`, `b-asc`,
+  `abs-b-desc` correctly surfaces extreme regimes
+  including `flat` first, `mean-desc`, `rows`,
+  `source`) with degenerate `null` rows always
+  sorting last, `--top` cap surfaces excess as
+  `droppedBelowTopCap`, and `minRows = 2` admits
+  2-row sources by default while `minRows = 3`
+  drops them.
+
 ## 0.6.98 — 2026-04-27
 
 ### Changed

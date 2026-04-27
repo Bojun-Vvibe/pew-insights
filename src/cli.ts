@@ -108,6 +108,7 @@ import {
   renderSourceSameModelStreak,
   renderSourceRowTokenAutocorrelationLag1,
   renderSourceRowTokenIqrRatio,
+  renderSourceRowTokenBurstinessCoefficient,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -276,6 +277,7 @@ import { buildSourceRowTokenGini } from './sourcerowtokengini.js';
 import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
 import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorrelationlag1.js';
 import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
+import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10667,6 +10669,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenIqrRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-burstiness-coefficient')
+  .description(
+    "Per-source Goh & Barabasi (2008) burstiness coefficient B = (sigma - mu) / (sigma + mu) of total_tokens across queue rows, with sigma the population stddev (divisor n) and mu the mean. B in [-1, 1]: -1 perfectly periodic / constant series, 0 exponential / Poisson-like baseline (sigma == mu), -> 1 maximally bursty (one or a handful of rows dwarf the rest). Bounded monotone transform of cv: B = (cv - 1) / (cv + 1). Same source ranking as cv but with three concrete anchor regimes that gate cleanly on a fixed threshold (e.g. --min-b 0 = 'show me only super-Poisson sources'). Distinct from source-row-token-coefficient-of-variation (raw open-ended cv on (0, +inf); same ranking but no built-in regime anchors), source-burstiness-fano-factor (Fano variance/mean on per-day totals — different grain, different functional form, different bounds, different anchor F=1~Poisson vs B=0~Poisson), source-row-token-iqr-ratio / source-row-token-mad (robust order-statistic / median-anchored spread vs centre — outlier-immune; B is moment-based and dominated by extreme rows), source-row-token-gini (Lorenz-curve concentration index integrating pairwise differences over the whole distribution — different axis), source-row-token-skewness / source-row-token-kurtosis (3rd / 4th moment shape, not the mean/stddev ratio), source-row-token-autocorrelation-lag1 (ordering persistence; blind to dispersion), source-same-model-streak (categorical stickiness, not numerical), source-output-tokens-per-row-percentiles (raw percentiles on output_tokens, no single comparable scalar). flat=true marks sources with sigma=0 (constant series; B=-1 unless all-zero). degenerate=true marks sources with sigma=0 AND mu=0 (B undefined; reported as null instead of NaN).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 2 (need at least two observations for any non-trivial sigma) (default 2)',
+    '2',
+  )
+  .option(
+    '--min-b <f>',
+    'drop sources whose burstiness coefficient b is strictly below f; cohort selector. f must be a finite number in [-1, 1]. With f > -1, drops degenerate (sigma=0, mu=0) sources too (their b is null) — counted under droppedDegenerate so the operator sees they were dropped because of *what* they are, not because of *how bursty* they are. (default -1, no floor)',
+    '-1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'b-desc' (default) | 'b-asc' | 'abs-b-desc' | 'mean-desc' | 'rows' | 'source'",
+    'b-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minB: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        const minB = Number.parseFloat(opts.minB);
+        if (!Number.isFinite(minB) || minB < -1 || minB > 1) {
+          throw new Error(
+            `--min-b must be a finite number in [-1, 1] (got ${opts.minB})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'b-desc',
+          'b-asc',
+          'abs-b-desc',
+          'mean-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenBurstinessCoefficient(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minB,
+          top,
+          sort: opts.sort as
+            | 'b-desc'
+            | 'b-asc'
+            | 'abs-b-desc'
+            | 'mean-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenBurstinessCoefficient(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

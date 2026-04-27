@@ -8551,3 +8551,77 @@ export function renderSourceSameModelStreak(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenBurstinessCoefficientReport,
+  SourceRowTokenBurstinessCoefficientRow,
+} from './sourcerowtokenburstinesscoefficient.js';
+
+export function renderSourceRowTokenBurstinessCoefficient(
+  r: SourceRowTokenBurstinessCoefficientReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-burstiness-coefficient'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-b: ${r.minB.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinB)} below min-b, ${formatNumber(r.droppedDegenerate)} degenerate (sigma=0, mu=0), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Goh & Barabasi burstiness coefficient B = (sigma - mu) / (sigma + mu) of per-row total_tokens, with sigma the population stddev (divisor n) and mu the mean. B in [-1, 1]: -1 perfectly periodic / constant series, 0 exponential / Poisson-like baseline (sigma == mu), -> 1 maximally bursty (one or a handful of rows dwarf the rest). Bounded monotone transform of cv: B = (cv - 1) / (cv + 1) — same source ranking as cv but with three concrete anchor regimes that gate cleanly on a fixed threshold. flat=true means sigma=0 (constant series; B=-1 unless all-zero). degenerate=true means sigma=0 AND mu=0 (B undefined; reported as null instead of NaN).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token burstiness coefficient (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'stddev',
+    'cv',
+    'B',
+    'flat',
+    'degen',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenBurstinessCoefficientRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.stddev.toFixed(2),
+      s.cv === null ? 'null' : s.cv.toFixed(4),
+      s.b === null ? 'null' : s.b.toFixed(4),
+      s.flat ? 'yes' : 'no',
+      s.degenerate ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
