@@ -175,6 +175,7 @@ export type SourceRowTokenSpectralEntropySort =
   | 'norm-asc'
   | 'norm-desc'
   | 'dom-share-desc'
+  | 'dom-share-asc'
   | 'rows'
   | 'source';
 
@@ -287,6 +288,7 @@ const VALID_SORTS = [
   'norm-asc',
   'norm-desc',
   'dom-share-desc',
+  'dom-share-asc',
   'rows',
   'source',
 ] as const;
@@ -511,6 +513,8 @@ export function buildSourceRowTokenSpectralEntropy(
       primary = b.entropyNorm - a.entropyNorm;
     } else if (sort === 'dom-share-desc') {
       primary = b.dominantShare - a.dominantShare;
+    } else if (sort === 'dom-share-asc') {
+      primary = a.dominantShare - b.dominantShare;
     } else if (sort === 'rows') {
       primary = b.rowsKept - a.rowsKept;
     } else {

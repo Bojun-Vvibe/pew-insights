@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.158 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-entropy` gains a `dom-share-asc`
+  sort mode (mirror of the existing `dom-share-desc`),
+  matching the symmetric pairing pattern already in place
+  for `norm-asc`/`norm-desc` and `entropy-asc`/`entropy-desc`.
+  Use `--sort dom-share-asc` to surface the sources whose
+  dominant frequency bin owns the *least* share of total
+  power (i.e. the most spread / broadband sources, ranked
+  by an alternative complementary-view axis to
+  `entropyNorm`).
+
+  Tests: 3345 -> 3346 (+1; sort ordering pin).
+
 ## 0.6.157 — 2026-04-28
 
 ### Added

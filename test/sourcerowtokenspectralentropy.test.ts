@@ -635,3 +635,15 @@ test('spectral-entropy: report fields wire through new minNormEntropy/maxNormEnt
   assert.equal(r.droppedBelowMinNormEntropy, 0);
   assert.equal(r.droppedAboveMaxNormEntropy, 0);
 });
+
+test('spectral-entropy: sort dom-share-asc orders most broadband (lowest dominant share) first', () => {
+  const a = series([1, 1, 1, 8, 1, 1, 1, 1, 1, 1], 'a');
+  const b = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'b');
+  const r = buildSourceRowTokenSpectralEntropy([...a, ...b], {
+    generatedAt: GEN,
+    sort: 'dom-share-asc',
+    minRows: 4,
+  });
+  assert.equal(r.sources.length, 2);
+  assert.ok(r.sources[0]!.dominantShare <= r.sources[1]!.dominantShare);
+});

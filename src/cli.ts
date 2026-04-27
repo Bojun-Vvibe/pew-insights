@@ -13778,7 +13778,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'norm-desc' (default; most broadband / white-like first) | 'norm-asc' (most tonal / concentrated first) | 'entropy-desc' | 'entropy-asc' | 'dom-share-desc' | 'rows' | 'source'",
+    "sort key: 'norm-desc' (default; most broadband / white-like first) | 'norm-asc' (most tonal / concentrated first) | 'entropy-desc' | 'entropy-asc' | 'dom-share-desc' | 'dom-share-asc' | 'rows' | 'source'",
     'norm-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -13840,6 +13840,7 @@ program
           'norm-asc',
           'norm-desc',
           'dom-share-desc',
+          'dom-share-asc',
           'rows',
           'source',
         ];
@@ -13863,6 +13864,7 @@ program
             | 'norm-asc'
             | 'norm-desc'
             | 'dom-share-desc'
+            | 'dom-share-asc'
             | 'rows'
             | 'source',
         });
