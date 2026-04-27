@@ -10695,6 +10695,11 @@ program
     '-1',
   )
   .option(
+    '--min-mean <f>',
+    'drop sources whose mean total_tokens is strictly below f; cohort selector that gates out "tiny producer noise" — sources whose typical row magnitude is so small that the burstiness coefficient B (a *relative* dispersion regime scalar) carries little absolute mass. Genuinely orthogonal to --min-b: a source can have mean=5K and B=0.45 (tiny rows but heavy-tailed regime — gated by --min-mean) or mean=12M and B=0.06 (huge rows but only mildly super-Poisson — gated by --min-b 0.1). f must be a finite, non-negative number. (default 0, no floor)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -10712,6 +10717,7 @@ program
         source?: string;
         minRows: string;
         minB: string;
+        minMean: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10731,6 +10737,12 @@ program
         if (!Number.isFinite(minB) || minB < -1 || minB > 1) {
           throw new Error(
             `--min-b must be a finite number in [-1, 1] (got ${opts.minB})`,
+          );
+        }
+        const minMean = Number.parseFloat(opts.minMean);
+        if (!Number.isFinite(minMean) || minMean < 0) {
+          throw new Error(
+            `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
           );
         }
         let top: number | null = null;
@@ -10761,6 +10773,7 @@ program
           source: opts.source ?? null,
           minRows,
           minB,
+          minMean,
           top,
           sort: opts.sort as
             | 'b-desc'

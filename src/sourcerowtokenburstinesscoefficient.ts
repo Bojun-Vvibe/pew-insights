@@ -163,12 +163,33 @@ export interface SourceRowTokenBurstinessCoefficientOptions {
    * under `droppedDegenerate` so the operator sees they were
    * dropped because of *what* they are, not because of *how
    * bursty* they are.
-   *
-   * Reserved for the v0.7.0 refinement commit; the v0.6.99
-   * implementation already wires the option end-to-end so the
-   * refinement is purely additive.
    */
   minB?: number;
+  /**
+   * Drop sources whose `mean` total_tokens is strictly below this
+   * value; cohort selector that gates out "tiny producer noise" —
+   * sources whose typical row magnitude is so small that the
+   * burstiness coefficient B (a *relative* dispersion regime
+   * scalar) carries little absolute mass. Genuinely orthogonal
+   * to `--min-b`:
+   *
+   *   - `--min-b` gates on the **regime** (where on the
+   *     periodic ↔ Poisson ↔ bursty axis a producer sits;
+   *     scale-free).
+   *   - `--min-mean` gates on the **absolute scale** of the
+   *     producer's typical row (do its rows actually move
+   *     meaningful token mass?).
+   *
+   * A source can have mean = 5K and B = 0.45 (tiny rows but
+   * heavy-tailed regime — gated by --min-mean), or mean = 12M
+   * and B = 0.06 (huge rows but only mildly super-Poisson —
+   * gated by --min-b 0.1). The two filters select different
+   * cohorts; an explicit orthogonality witness in the test
+   * suite constructs both. Must be a finite, non-negative
+   * number. Default 0 (no floor; preserves v0.6.99 behaviour
+   * exactly).
+   */
+  minMean?: number;
   /**
    * Cap the per-source table to the top N rows after sort.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
@@ -219,6 +240,7 @@ export interface SourceRowTokenBurstinessCoefficientReport {
   source: string | null;
   minRows: number;
   minB: number;
+  minMean: number;
   top: number | null;
   sort: SourceRowTokenBurstinessCoefficientSort;
   totalSources: number;
@@ -229,6 +251,7 @@ export interface SourceRowTokenBurstinessCoefficientReport {
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
   droppedBelowMinB: number;
+  droppedBelowMinMean: number;
   droppedDegenerate: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenBurstinessCoefficientRow[];
@@ -257,6 +280,12 @@ export function buildSourceRowTokenBurstinessCoefficient(
   if (!Number.isFinite(minB) || minB < -1 || minB > 1) {
     throw new Error(
       `minB must be a finite number in [-1, 1] (got ${opts.minB})`,
+    );
+  }
+  const minMean = opts.minMean ?? 0;
+  if (!Number.isFinite(minMean) || minMean < 0) {
+    throw new Error(
+      `minMean must be a finite, non-negative number (got ${opts.minMean})`,
     );
   }
   const top = opts.top ?? null;
@@ -388,9 +417,14 @@ export function buildSourceRowTokenBurstinessCoefficient(
   }
 
   let droppedBelowMinB = 0;
+  let droppedBelowMinMean = 0;
   let droppedDegenerate = 0;
   const survived: SourceRowTokenBurstinessCoefficientRow[] = [];
   for (const row of allRows) {
+    if (minMean > 0 && row.mean < minMean) {
+      droppedBelowMinMean += 1;
+      continue;
+    }
     if (minB > -1) {
       if (row.b === null) {
         // Degenerate rows have no comparable scalar; the floor
@@ -453,6 +487,7 @@ export function buildSourceRowTokenBurstinessCoefficient(
     source: sourceFilter,
     minRows,
     minB,
+    minMean,
     top,
     sort,
     totalSources,
@@ -463,6 +498,7 @@ export function buildSourceRowTokenBurstinessCoefficient(
     droppedSourceFilter,
     droppedBelowMinRows,
     droppedBelowMinB,
+    droppedBelowMinMean,
     droppedDegenerate,
     droppedBelowTopCap,
     sources: finalSources,
