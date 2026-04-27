@@ -2,6 +2,120 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.146 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-spectral-rolloff`.
+  Per-source **spectral roll-off frequency** of the per-row
+  `total_tokens` sequence: the smallest 1-based bin `R` of the
+  one-sided non-DC power spectrum `P[k] = |X[k]|^2` (after
+  mean-centering) such that the cumulative power
+  `sum_{j<=R} P[j] >= rolloff-fraction * sum P` (default
+  `rolloff-fraction = 0.85`). Reported quantities:
+
+  - `rolloffBin`         : 1-based integer bin `R`.
+  - `rolloffFractionBins`: `R / floor(n/2)`, in `(0, 1]` —
+                           a scale-free band-edge in
+                           "fraction-of-Nyquist" units.
+  - `cumulativeFraction` : realised cumulative fraction at `R`
+                           (>= rolloff-fraction by construction).
+  - `dominantBin` / `dominantBinShare` for context.
+
+  Citation: McKinney, M. F. & Breebaart, J. (2003), "Features
+  for Audio and Music Classification", Proc. ISMIR 2003,
+  pp. 151-158 — establishes spectral roll-off as a standard
+  timbral feature alongside spectral flatness, centroid, and
+  spread. Earlier appearance in Klapuri, A. (1999), "Sound
+  onset detection by applying psychoacoustic knowledge",
+  Proc. ICASSP-99 vol.6 pp.3089-3092.
+
+  **Why this lens is genuinely orthogonal** to every shipped
+  `source-row-token-*` lens (justification required):
+
+  - vs. `spectral-flatness` (the lens shipped in 0.6.144):
+    SF answers "**how peaked vs uniform** is the PSD" (an
+    entropy-like ratio `G/A`). Roll-off answers "**where
+    along the frequency axis** does the energy live" (a CDF
+    quantile of the same PSD). Two PSDs with identical SF can
+    have completely different roll-off bins (e.g. one peaked
+    at low frequency, one peaked at high frequency, both
+    equally peaked). The two are non-redundant by
+    construction.
+  - vs. spectral *moments* (`teager-kaiser`, `hjorth-mobility`,
+    `hjorth-complexity`): those are mass-weighted moments
+    (TKEO ~ omega^2 * A^2; mobility ~ centroid; complexity
+    ~ bandwidth). Roll-off is a *quantile* — robust to
+    high-frequency tail mass that pulls moments around.
+  - vs. amplitude-shape lenses (`crest-factor`, `gini`,
+    `mad`, `iqr-ratio`, `cv`, `kurtosis`, `skewness`,
+    `burstiness-coefficient`): amplitude-domain,
+    order-invariant. Roll-off is order-sensitive (test
+    included: same multiset, different orderings -> different
+    roll-off bins).
+  - vs. single-lag autocorrelation: integrates one lag; roll-off
+    integrates the whole PSD up to a quantile.
+  - vs. fractal/scaling lenses (`hurst-rs`, `dfa`, `higuchi-fd`,
+    `katz-fd`, `petrosian-fd`): those summarise PSD *slope* /
+    scaling exponent; roll-off summarises a PSD *quantile
+    location*.
+  - vs. time-domain symbolic entropies (`approximate-entropy`,
+    `sample-entropy`, `permutation-entropy`, `renyi-entropy`):
+    ordinal/symbolic reductions; lose the PSD entirely.
+  - vs. event counters (`zero-crossing-rate`, `runs-test`,
+    `turning-point`, `mann-kendall`): scalar event tallies;
+    roll-off is a band-edge frequency.
+  - vs. `lempel-ziv`: binarised factor count; roll-off uses
+    the full continuous PSD.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,716 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-spectral-rolloff
+  per-source row-token spectral roll-off (sorted by rolloff-asc; ties: source asc)
+  source       rows  bins  totPower   rolloffBin  rollFrac  cumFrac  domBin  domShare
+  -----------  ----  ----  ---------  ----------  --------  -------  ------  --------
+  opencode     360   180   1.080e+19  66          0.3667    0.8504   2       0.1069
+  codex        64    32    4.162e+17  18          0.5625    0.8695   1       0.2778
+  openclaw     465   232   2.527e+18  136         0.5862    0.8503   2       0.0915
+  claude-code  299   149   1.385e+19  98          0.6577    0.8505   1       0.2000
+  vscode-XXX   333   166   1.237e+13  113         0.6807    0.8525   2       0.0575
+  hermes       195   97    1.758e+16  76          0.7835    0.8518   1       0.1377
+  ```
+
+  Reading: the spread on `rollFrac` (0.367 -> 0.784) is wide
+  and well-resolved. **opencode** carries 85% of its non-DC
+  spectral energy below bin 66 of 180 (37% of Nyquist) — the
+  most low-frequency-loaded source: per-row token volume
+  fluctuates on slower scales, consistent with multi-hour
+  drafting/review cycles. **hermes** sits at 78% of Nyquist —
+  its row-to-row token series spreads energy across nearly
+  the entire frequency axis, the most high-frequency-loaded
+  signature in the deck (rapid, fine-grained per-row
+  variability). The redacted `vscode-XXX` and `claude-code`
+  cluster mid-band (0.66-0.68) — a balanced split between
+  multi-day envelope and per-row jitter. Note **codex** has
+  only 64 rows so its absolute rolloffBin (18) is small but
+  in fraction terms (0.5625) it sits with the mid-band group.
+  All `cumFrac` realisations are within `[0.85, 0.87]`,
+  confirming the rolloff threshold is being met cleanly with
+  no over-shoot from large terminal bins.
+
+  Composes with `spectral-flatness` (shipped 0.6.144): SF
+  gives "how peaked"; rolloff gives "where". Both are O(n^2)
+  direct-DFT pure builders; both mean-center the input; both
+  surface `droppedConstantSeries` for flat inputs.
+
+  Tests: 3082 -> 3120 (+38 new for this lens; covering math
+  correctness on pure sines, cumulative-fraction monotonicity
+  in `--rolloff-fraction`, scale/shift invariance,
+  order-sensitivity vs. amplitude-domain controls, JSON shape
+  stability, all sort modes + tiebreak, all error throws,
+  edge cases for constant series and `--rolloff-fraction`
+  bounds).
+
 ## 0.6.145 — 2026-04-28
 
 ### Added

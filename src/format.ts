@@ -9802,6 +9802,80 @@ export function renderSourceRowTokenSpectralFlatness(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+import type {
+  SourceRowTokenSpectralRolloffReport,
+  SourceRowTokenSpectralRolloffRow,
+} from './sourcerowtokenspectralrolloff.js';
+
+export function renderSourceRowTokenSpectralRolloff(
+  r: SourceRowTokenSpectralRolloffReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-rolloff'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    rolloff-fraction: ${r.rolloffFraction}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source spectral roll-off frequency on the one-sided non-DC power spectrum P[k] = |X[k]|^2 of the mean-centered per-row total_tokens series. rolloffBin = smallest k where sum_{j<=k} P[j] >= rolloff-fraction * sum P (default 0.85). rolloffFractionBins = rolloffBin / floor(n/2), in (0, 1] — a scale-free band-edge in fraction-of-Nyquist units. McKinney & Breebaart 2003 / Klapuri 1999. PSD *quantile* (CDF percentile), genuinely orthogonal to: spectral-flatness (entropy ratio G/A — same area can sit anywhere on the axis), spectral *moments* (TKEO, hjorth-mobility, hjorth-complexity — moments are mass-weighted, not quantile-located), single-lag autocorrelation, event-count lenses (zcr, runs-test, turning-point, mann-kendall), time-domain symbolic entropies (approximate, sample, permutation, renyi), scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd), and all amplitude-domain shape lenses (crest-factor, gini, mad, iqr-ratio, cv, kurtosis, skewness, burstiness-coefficient).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral roll-off (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'rolloffBin',
+    'rollFrac',
+    'cumFrac',
+    'domBin',
+    'domShare',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralRolloffRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      formatNumber(s.rolloffBin),
+      s.rolloffFractionBins.toFixed(4),
+      s.cumulativeFraction.toFixed(4),
+      formatNumber(s.dominantBin),
+      s.dominantBinShare.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderSourceRowTokenTeagerKaiser(
   r: SourceRowTokenTeagerKaiserReport,
 ): string {

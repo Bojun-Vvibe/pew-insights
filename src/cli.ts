@@ -122,6 +122,7 @@ import {
   renderSourceRowTokenTeagerKaiser,
   renderSourceRowTokenCrestFactor,
   renderSourceRowTokenSpectralFlatness,
+  renderSourceRowTokenSpectralRolloff,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -305,6 +306,7 @@ import { buildSourceRowTokenApproximateEntropy } from './sourcerowtokenapproxima
 import { buildSourceRowTokenTeagerKaiser } from './sourcerowtokenteagerkaiser.js';
 import { buildSourceRowTokenCrestFactor } from './sourcerowtokencrestfactor.js';
 import { buildSourceRowTokenSpectralFlatness } from './sourcerowtokenspectralflatness.js';
+import { buildSourceRowTokenSpectralRolloff } from './sourcerowtokenspectralrolloff.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -13047,6 +13049,108 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralFlatness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-rolloff')
+  .description(
+    "Per-source spectral roll-off frequency (rolloffBin = smallest k where cumulative one-sided non-DC power crosses --rolloff-fraction; default 0.85). McKinney & Breebaart 2003 / Klapuri 1999. PSD *quantile* of the mean-centered per-row total_tokens series. Reports rolloffBin, rolloffFractionBins (= rolloffBin / floor(n/2), scale-free band-edge), realised cumulativeFraction, dominantBin, and dominantBinShare. Frequency-domain functional, orthogonal to spectral-flatness (entropy ratio of the same PSD), to spectral *moments* (TKEO, hjorth-mobility/complexity), to single-lag autocorrelation, to event-count lenses (zcr, runs-test, turning-point, mann-kendall), to time-domain symbolic entropies (approximate, sample, permutation, renyi), to scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd), and to all amplitude-domain shape lenses (crest-factor, gini, mad, iqr-ratio, cv, kurtosis, skewness, burstiness-coefficient).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--rolloff-fraction <f>',
+    'cumulative-energy fraction at which to read the roll-off bin; in (0, 1] (default 0.85)',
+    '0.85',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'rolloff-asc' (default; most low-frequency-loaded first) | 'rolloff-desc' (most high-frequency-loaded first) | 'rows' | 'source'",
+    'rolloff-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        rolloffFraction: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const rolloffFraction = Number.parseFloat(opts.rolloffFraction);
+        if (
+          !Number.isFinite(rolloffFraction) ||
+          rolloffFraction <= 0 ||
+          rolloffFraction > 1
+        ) {
+          throw new Error(
+            `--rolloff-fraction must be in (0, 1] (got ${opts.rolloffFraction})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['rolloff-asc', 'rolloff-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralRolloff(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          rolloffFraction,
+          top,
+          sort: opts.sort as
+            | 'rolloff-asc'
+            | 'rolloff-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralRolloff(report) + '\n',
           );
         }
       } catch (e) {
