@@ -2,6 +2,114 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.110 — 2026-04-27
+
+### Added
+
+- `source-row-token-hurst-rs`: per-source **Hurst exponent
+  via classical rescaled-range (R/S) analysis** on the
+  per-row `total_tokens` time-ordered sequence. For each
+  window size `m` in a log-spaced grid in
+  `[--min-window, floor(n/2)]` (default min-window 8, up to
+  `--max-scales` 12 distinct rounded scales): split the
+  per-source series into `floor(n / m)` non-overlapping
+  chunks, compute `R = max(cum dev) - min(cum dev)` and the
+  population stddev `S = sqrt((1/m) sum (x - mu)^2)` per
+  chunk, average `R / S` across chunks, and fit an OLS line
+  on `(log m, log (R/S)_m)`. Reports `H` (slope), intercept,
+  centered `R^2` of the log-log fit, scales-used count,
+  smallest / largest `m` actually used, plus diagnostic
+  counters (`degenerateChunks`, `scalesDroppedAllDegenerate`,
+  `droppedAllDegenerate`).
+
+  Reading H:
+  - `H ~ 0.5`: random walk / no detectable long-range
+    memory.
+  - `H > 0.5`: **persistent** — busy stays busy, slow stays
+    slow, across many scales (heavy-tailed / bursty
+    generators sit here).
+  - `H < 0.5`: **anti-persistent / mean-reverting** — large
+    rows are more likely than chance to be followed by small
+    rows across many scales (regulated / quota-driven /
+    clipped generators sit here).
+  - Caveat: a strict monotone trend drives classical R/S
+    `H -> 1` spuriously; cross-check with
+    `source-row-token-mann-kendall-trend` before claiming
+    long-range dependence on a trended source. We surface
+    this honestly in the renderer description and do **not**
+    detrend.
+
+  Genuinely orthogonal to every existing `source-row-token-*`
+  lens:
+  - vs. `source-row-token-mann-kendall-trend` /
+    `source-daily-token-trend-slope`: those measure
+    **direction** (a single signed scalar per source). H is
+    direction-agnostic and aggregates correlation behaviour
+    across many scales — a source with `tau ~ 0` can still
+    show `H = 0.8` (long persistent runs that balance out)
+    or `H = 0.3` (anti-persistent zig-zag with no net trend).
+  - vs. `source-row-token-runs-test`: single-scale
+    dichotomous test on the median sign sequence.
+  - vs. `source-row-token-autocorrelation-lag1`: single-lag
+    linear-parametric Pearson rho. Hurst aggregates across
+    many scales and detects FARIMA-style slow-decay
+    correlation that lag-1 misses.
+  - vs. `source-row-token-permutation-entropy`: local
+    `m = 3` ordinal-pattern uniformity vs. global multi-scale
+    self-similarity scalar.
+  - vs. `source-row-token-turning-point-count`: local
+    first-difference jaggedness vs. multi-scale variance
+    scaling.
+  - vs. all order-invariant dispersion / shape lenses
+    (`-iqr-ratio` / `-mad` / `-gini` / `-burstiness` /
+    `-coefficient-of-variation` / `-skewness` /
+    `-kurtosis`): shuffling the row sequence leaves them
+    unchanged but pushes H toward 0.5.
+
+  9 unit tests verify: empty-input defaults,
+  below-min-rows drop, white-noise H near 0.5 (within
+  +/-0.2 over 512 rows), monotone-ramp H well above 0.7
+  with `R^2 > 0.9` (the documented R/S trended-series
+  failure mode), strict alternation H below 0.4 (canonical
+  anti-persistence), all-equal series surfacing under
+  `droppedAllDegenerate`, input-validation rejection of
+  bad opts (`min-rows < 16`, non-integer, `min-window < 4`,
+  `max-scales < 3`, `min-scales < 3`, `min-scales >
+  max-scales`, bad `top`, bad `sort`, bad `since`),
+  hour_start sort independence (shuffled-insertion ramp
+  reads as a ramp), and `--top` + `--sort` cohort
+  selection.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--top 5 --sort hurst-desc` (1,650 rows, 6 sources;
+  one source-name redacted from the excerpt below per repo
+  policy):
+
+  ```
+  per-source row-token Hurst R/S exponent (sorted by hurst-desc; ties: source asc)
+  source       rows  H       intercept  R^2     scales  mMin  mMax  degCh  degSc
+  -----------  ----  ------  ---------  ------  ------  ----  ----  -----  -----
+  codex        64    0.9688  -1.0963    0.9565  12      8     32    0      0
+  opencode     337   0.9458  -1.1123    0.9844  12      8     168   0      0
+  openclaw     443   0.8425  -0.7230    0.9944  12      8     221   0      0
+  claude-code  299   0.7596  -0.5813    0.9592  12      8     149   0      0
+  hermes       174   0.7556  -0.6804    0.9912  12      8     87    0      0
+  ```
+
+  Operator reading: every surviving source reports
+  `H >> 0.5` with `R^2 > 0.95`, i.e. **strongly persistent
+  long-range token-volume memory at every scale from 8 rows
+  up to floor(n/2)** — busy patches stay busy and slow
+  patches stay slow over hundreds of consecutive rows for
+  the high-row sources. The cross-check with v0.6.108-9
+  `source-row-token-mann-kendall-trend` (which reported
+  significant tau for several of these sources) means part
+  of this elevated H is the documented R/S-on-trended-data
+  failure mode — but the **magnitude** (e.g. H = 0.94 for
+  a source with `|tau| ~ 0.20`, vs. an unbiased `H ~ 0.6`
+  expectation under that mild trend) indicates genuine
+  multi-scale persistence on top of the monotone drift.
+
 ## 0.6.109 — 2026-04-27
 
 ### Changed
