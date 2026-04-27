@@ -2,6 +2,110 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.95 — 2026-04-27
+
+### Added
+
+- `source-row-token-autocorrelation-lag1`: per-source
+  lag-1 (Pearson) autocorrelation of `total_tokens`
+  across queue rows ordered by `hour_start` ascending
+  (with `model` asc, `device_id` asc as deterministic
+  tiebreaks). For every source the report emits:
+  - `rowsKept`  — kept rows after window/filter.
+  - `pairs`     — `rowsKept - 1` (number of adjacent
+                  pairs entering the numerator).
+  - `mean`      — mean `total_tokens` over the kept rows.
+  - `variance`  — biased variance (denominator divisor `n`).
+  - `rho1`      — `Σ_{i=0..n-2} (x[i]-μ)(x[i+1]-μ)
+                  / Σ_{i=0..n-1} (x[i]-μ)²`. In `[-1, 1]`.
+                  `>0` = sticky / persistent
+                  (consecutive rows similar);
+                  `<0` = anti-persistent
+                  (adjacent rows alternate big/small);
+                  `~0` = white-noise-like.
+  - `flat`      — `true` when `var(x) = 0`. `rho1` is
+                  conventionally reported as `0` so the
+                  operator can distinguish "literally
+                  undefined" (no variation to correlate)
+                  from "noisy zero" (genuine independence).
+
+  Headline question: **for each source, do consecutive
+  queue rows have similar `total_tokens` (sticky /
+  persistent producer) or effectively independent token
+  sizes (white-noise producer)?**
+
+  Genuinely orthogonal to every existing token /
+  ordering lens:
+
+  - `daily-token-autocorrelation-lag1` is **day-grain**
+    on aggregated daily totals; it cannot see within-day
+    stickiness — every row of a 50-row day collapses to
+    one daily total. This lens is **row-grain**:
+    adjacent calls inside the same hour count.
+  - `source-row-token-coefficient-of-variation`,
+    `source-row-token-mad`, `source-row-token-gini`,
+    `source-row-token-skewness`, `source-row-token-kurtosis`
+    all describe the **marginal distribution** (population
+    shape). They are blind to row ordering — shuffling a
+    source's rows leaves all of them unchanged but would
+    zero out lag-1 autocorrelation.
+  - `source-same-model-streak`, `model-switching`,
+    `provider-switching-frequency` are **categorical**
+    stickiness (which model is sticky), not **numerical**
+    stickiness of the row's token magnitude.
+  - `source-input-output-correlation-coefficient` is a
+    cross-axis Pearson on the **same row**; this is a
+    same-axis Pearson on **adjacent rows**.
+  - `interarrival-time` and `source-gap-hours-cv` describe
+    gap spacing, not value persistence.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to vscode-assistant-redacted):
+
+  ```
+  pew-insights source-row-token-autocorrelation-lag1
+  sources: 6 (shown 6)    rows: 1,628    min-rows: 3    sort: rho-desc
+
+  source                       rows  pairs  mean         variance              rho1    flat
+  ---------------------------  ----  -----  -----------  --------------------  ------  ----
+  opencode                     328   327    10488960.34  177758208588642.56    0.7052  no
+  openclaw                     434   433    4313832.07   24416878518533.46     0.5344  no
+  codex                        64    63     12650385.31  203123750617043.63    0.5296  no
+  claude-code                  299   298    11512995.95  309941905126295.25    0.4243  no
+  vscode-assistant-redacted    333   332    5662.84      223016393.84          0.3576  no
+  hermes                       170   169    867150.55    967363852176.82       0.1950  no
+  ```
+
+  Reading: the metric meaningfully discriminates across
+  the live source mix. `opencode` (rho1 = 0.7052) is the
+  most persistent — when one of its queued rows is large,
+  the next is also large. `hermes` (rho1 = 0.1950) is
+  closest to white-noise: its row sizes are nearly
+  independent of the previous call. All six sources
+  surface positive lag-1 autocorrelation but vary by ~3.5x
+  in magnitude — a signal a marginal-distribution lens
+  (CV / MAD / Gini / skewness / kurtosis) cannot recover
+  because shuffling the rows leaves it untouched.
+
+### Tests
+
+- 14 new unit tests in
+  `test/sourcerowtokenautocorrelationlag1.test.ts`
+  covering: empty input defaults; rejection of bad
+  `minRows` / `minAbsRho` / `top` / `sort` /
+  `since` / `until`; bad `hour_start` and bad
+  `total_tokens` drop counters; constant-series
+  flat=true, rho1=0; hand-computed perfect-monotone
+  rho1 = 0.5; hand-computed perfect-alternation
+  rho1 = -5/6; `minRows = 3` floor; `--since` / `--until`
+  window filter; `--source` filter; `--min-abs-rho`
+  cohort filter dropping flat sources; numerical clamp
+  of rho1 to `[-1, 1]`; `--sort abs-rho-desc`; `--top`
+  cap surfaces `droppedBelowTopCap`; deterministic
+  `source asc` final tiebreak.
+
+  Total: 2512 -> 2527.
+
 ## 0.6.94 — 2026-04-27
 
 ### Changed
