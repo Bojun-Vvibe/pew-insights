@@ -10019,12 +10019,12 @@ export function renderSourceRowTokenSpectralSkewness(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-skewness'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-skewness: ${r.minSkewness ?? '\u2014'}    max-skewness: ${r.maxSkewness ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-skewness: ${r.minSkewness ?? '\u2014'}    max-skewness: ${r.maxSkewness ?? '\u2014'}    min-bw-bin: ${r.minBandwidthBin ?? '\u2014'}    max-bw-bin: ${r.maxBandwidthBin ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinSkewness)} below min-skewness, ${formatNumber(r.droppedAboveMaxSkewness)} above max-skewness, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinSkewness)} below min-skewness, ${formatNumber(r.droppedAboveMaxSkewness)} above max-skewness, ${formatNumber(r.droppedBelowMinBandwidthBin)} below min-bw-bin, ${formatNumber(r.droppedAboveMaxBandwidthBin)} above max-bw-bin, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

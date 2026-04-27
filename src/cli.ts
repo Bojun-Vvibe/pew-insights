@@ -13457,6 +13457,14 @@ program
     'suppress sources whose standardized skewness is strictly above this threshold; surfaces them under droppedAboveMaxSkewness. Symmetric to --min-skewness; useful to surface only PSDs leaning towards the low-frequency tail.',
   )
   .option(
+    '--min-bw-bin <v>',
+    'suppress sources whose bandwidthBin (sqrt of m2, bin-units) is strictly below this threshold; surfaces them under droppedBelowMinBandwidthBin. Useful to avoid reading skewness off near-degenerate (almost-zero-variance) PSDs where the standardized 3rd moment is numerically fragile.',
+  )
+  .option(
+    '--max-bw-bin <v>',
+    'suppress sources whose bandwidthBin is strictly above this threshold; surfaces them under droppedAboveMaxBandwidthBin. Symmetric to --min-bw-bin.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'skewness-asc' (default; most negatively skewed / long low-frequency tail first) | 'skewness-desc' (most positively skewed / long high-frequency tail first) | 'abs-skewness-desc' (most asymmetric in either direction first) | 'rows' | 'source'",
     'skewness-asc',
@@ -13472,6 +13480,8 @@ program
         top?: string;
         minSkewness?: string;
         maxSkewness?: string;
+        minBwBin?: string;
+        maxBwBin?: string;
         sort: string;
         json?: boolean;
       },
@@ -13514,6 +13524,26 @@ program
           }
           maxSkewness = v;
         }
+        let minBandwidthBin: number | null = null;
+        if (opts.minBwBin != null) {
+          const v = Number.parseFloat(opts.minBwBin);
+          if (!Number.isFinite(v) || v < 0) {
+            throw new Error(
+              `--min-bw-bin must be a finite number >= 0 (got ${opts.minBwBin})`,
+            );
+          }
+          minBandwidthBin = v;
+        }
+        let maxBandwidthBin: number | null = null;
+        if (opts.maxBwBin != null) {
+          const v = Number.parseFloat(opts.maxBwBin);
+          if (!Number.isFinite(v) || v < 0) {
+            throw new Error(
+              `--max-bw-bin must be a finite number >= 0 (got ${opts.maxBwBin})`,
+            );
+          }
+          maxBandwidthBin = v;
+        }
         const validSorts = [
           'skewness-asc',
           'skewness-desc',
@@ -13535,6 +13565,8 @@ program
           top,
           minSkewness,
           maxSkewness,
+          minBandwidthBin,
+          maxBandwidthBin,
           sort: opts.sort as
             | 'skewness-asc'
             | 'skewness-desc'

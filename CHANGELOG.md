@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.153 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-skewness` gains a symmetric
+  `--min-bw-bin` / `--max-bw-bin` filter pair on the
+  `bandwidthBin` (sqrt of m2) column, matching the established
+  filter-flag pattern used by every other source-row-token-* lens
+  (centroid frac-bins, bandwidth frac-bins, etc.). Sources whose
+  `bandwidthBin` falls outside the requested range surface in
+  their own dropped buckets — `droppedBelowMinBandwidthBin` and
+  `droppedAboveMaxBandwidthBin` — so the operator can read which
+  gate a source fell through.
+
+  **Why this filter axis specifically.** Standardized skewness
+  `m3 / m2^(3/2)` is numerically fragile when `m2` is near zero:
+  a source with a near-degenerate (almost-zero-variance) PSD can
+  produce a large-magnitude skewness that is dominated by
+  floating-point noise rather than real asymmetry. The
+  `--min-bw-bin` filter lets the operator gate those sources out
+  *upstream* of any sort/cap, matching the
+  `--min-bandwidth-frac-bins` flag shipped on the bandwidth lens
+  in 0.6.150 and the centroid frac-bins flags shipped on the
+  centroid lens in 0.6.149.
+
+  **Compose-order.** Both new flags slot into the established
+  filter chain: `min-skewness` and `max-skewness` first (the
+  lens's headline filter axis), then `min-bw-bin` and
+  `max-bw-bin` (the sanity filter), then `--top` cap. Each gate
+  surfaces dropped rows in its own bucket; a source filtered
+  under `min-bw-bin` is NOT also counted under
+  `droppedBelowTopCap`. A new compose-order test pins this
+  semantics in code:
+
+  > 3 sources with varying bandwidth, threshold strictly
+  > between sortedBw[0] and sortedBw[1] -> drops 1 under
+  > `droppedBelowMinBandwidthBin`. Cap to top 1 -> the
+  > remaining 1 of 2 surfaces under `droppedBelowTopCap`.
+
+  Also pinned:
+
+  - `--min-bw-bin > --max-bw-bin` throws (operator error, not
+    silent empty report).
+  - Negative or non-finite values throw (positive bin units
+    only; `bandwidthBin >= 0` by construction).
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,730 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance) confirms the filter behaves as documented:
+
+  ```
+  pew-insights source-row-token-spectral-skewness --min-bw-bin 40
+  per-source row-token spectral skewness (sorted by skewness-asc; ties: source asc)
+  source       rows  bins  totPower   centroidBin  bwBin    m3        skewness
+  -----------  ----  ----  ---------  -----------  -------  --------  --------
+  vscode-XXX   333   166   1.237e+13  55.4502      47.7503  4.653e+4  0.4274
+  claude-code  299   149   1.385e+19  39.8729      45.6546  7.708e+4  0.8100
+  openclaw     470   235   2.569e+18  61.1503      61.9854  2.581e+5  1.0838
+  opencode     364   182   1.092e+19  30.9818      41.7813  1.419e+5  1.9452
+  ```
+
+  2 sources suppressed under `droppedBelowMinBandwidthBin`
+  (`codex` `bwBin = 8.3` and `hermes` `bwBin = 30.7`). Reading:
+  `--min-bw-bin 40` isolates the four sources whose per-row
+  token PSD has enough spectral spread for the standardized 3rd
+  moment to be a robust asymmetry signal — the operator-friendly
+  "skewness I can trust" subset. The two suppressed sources are
+  the narrowest-band, where a near-impulsive PSD makes any 3rd-
+  moment summary numerically fragile.
+
+  Tests: 3245 -> 3252 (+7 in this refinement, +170 cumulative
+  since the 0.6.145 baseline).
+
 ## 0.6.152 — 2026-04-28
 
 ### Added

@@ -656,3 +656,141 @@ test('spectral-skewness: composition order — minSkewness applied before top ca
   assert.equal(r.droppedBelowMinSkewness, 2);
   assert.equal(r.droppedBelowTopCap, 1);
 });
+
+test('spectral-skewness: minBandwidthBin filter surfaces droppedBelowMinBandwidthBin', () => {
+  const n = 32;
+  // Source A: very narrow PSD (single near-tone -> tiny bandwidth).
+  const vA: number[] = [];
+  for (let t = 0; t < n; t++) {
+    vA.push(100 * Math.sin((2 * Math.PI * 8 * t) / n));
+  }
+  // Source B: wide PSD (multi-tone -> larger bandwidth).
+  const vB: number[] = [];
+  for (let t = 0; t < n; t++) {
+    vB.push(
+      50 * Math.sin((2 * Math.PI * 2 * t) / n) +
+        50 * Math.sin((2 * Math.PI * 14 * t) / n),
+    );
+  }
+  const queue = [...series(vA, 'narrow'), ...series(vB, 'wide')];
+  const baseline = buildSourceRowTokenSpectralSkewness(queue, {
+    generatedAt: GEN,
+  });
+  assert.equal(baseline.sources.length, 2);
+  // Pick a threshold strictly between the two bandwidthBin values.
+  const narrowBw = baseline.sources.find((s) => s.source === 'narrow')!
+    .bandwidthBin;
+  const wideBw = baseline.sources.find((s) => s.source === 'wide')!
+    .bandwidthBin;
+  assert.ok(narrowBw < wideBw, `narrow bw (${narrowBw}) < wide bw (${wideBw})`);
+  const threshold = (narrowBw + wideBw) / 2;
+  const r = buildSourceRowTokenSpectralSkewness(queue, {
+    generatedAt: GEN,
+    minBandwidthBin: threshold,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'wide');
+  assert.equal(r.droppedBelowMinBandwidthBin, 1);
+  assert.equal(r.droppedAboveMaxBandwidthBin, 0);
+});
+
+test('spectral-skewness: maxBandwidthBin filter surfaces droppedAboveMaxBandwidthBin', () => {
+  const n = 32;
+  const vA: number[] = [];
+  for (let t = 0; t < n; t++) {
+    vA.push(100 * Math.sin((2 * Math.PI * 8 * t) / n));
+  }
+  const vB: number[] = [];
+  for (let t = 0; t < n; t++) {
+    vB.push(
+      50 * Math.sin((2 * Math.PI * 2 * t) / n) +
+        50 * Math.sin((2 * Math.PI * 14 * t) / n),
+    );
+  }
+  const queue = [...series(vA, 'narrow'), ...series(vB, 'wide')];
+  const baseline = buildSourceRowTokenSpectralSkewness(queue, {
+    generatedAt: GEN,
+  });
+  const narrowBw = baseline.sources.find((s) => s.source === 'narrow')!
+    .bandwidthBin;
+  const wideBw = baseline.sources.find((s) => s.source === 'wide')!
+    .bandwidthBin;
+  const threshold = (narrowBw + wideBw) / 2;
+  const r = buildSourceRowTokenSpectralSkewness(queue, {
+    generatedAt: GEN,
+    maxBandwidthBin: threshold,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'narrow');
+  assert.equal(r.droppedAboveMaxBandwidthBin, 1);
+  assert.equal(r.droppedBelowMinBandwidthBin, 0);
+});
+
+test('spectral-skewness: minBandwidthBin > maxBandwidthBin throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralSkewness([], {
+        minBandwidthBin: 10,
+        maxBandwidthBin: 5,
+      }),
+    /must be <=/,
+  );
+});
+
+test('spectral-skewness: negative minBandwidthBin throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenSpectralSkewness([], { minBandwidthBin: -1 }),
+    /minBandwidthBin must be a finite number >= 0/,
+  );
+});
+
+test('spectral-skewness: non-finite maxBandwidthBin throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenSpectralSkewness([], { maxBandwidthBin: NaN }),
+    /maxBandwidthBin must be a finite number >= 0/,
+  );
+});
+
+test('spectral-skewness: compose-order — bandwidthBin filter applies before top cap', () => {
+  const n = 32;
+  // 3 sources, varying bandwidth; cap to top 1 with min-bw threshold
+  // that drops 1 -> top should drop 1 of remaining 2 -> leaves 1.
+  const queue: QueueLine[] = [];
+  for (let s = 0; s < 3; s++) {
+    const v: number[] = [];
+    for (let t = 0; t < n; t++) {
+      v.push(
+        50 * Math.sin((2 * Math.PI * (3 + s * 2) * t) / n) +
+          (s + 1) * 25 * Math.sin((2 * Math.PI * 13 * t) / n),
+      );
+    }
+    queue.push(...series(v, `s-${s}`));
+  }
+  const baseline = buildSourceRowTokenSpectralSkewness(queue, {
+    generatedAt: GEN,
+  });
+  assert.equal(baseline.sources.length, 3);
+  const sortedBw = [...baseline.sources]
+    .map((r) => r.bandwidthBin)
+    .sort((a, b) => a - b);
+  // Threshold strictly between sortedBw[0] and sortedBw[1] -> drops 1.
+  const threshold = (sortedBw[0]! + sortedBw[1]!) / 2;
+  const r = buildSourceRowTokenSpectralSkewness(queue, {
+    generatedAt: GEN,
+    minBandwidthBin: threshold,
+    top: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinBandwidthBin, 1);
+  assert.equal(r.droppedBelowTopCap, 1);
+});
+
+test('spectral-skewness: option echoes include the new bw-bin bounds', () => {
+  const r = buildSourceRowTokenSpectralSkewness([], {
+    generatedAt: GEN,
+    minBandwidthBin: 1.5,
+    maxBandwidthBin: 30,
+  });
+  assert.equal(r.minBandwidthBin, 1.5);
+  assert.equal(r.maxBandwidthBin, 30);
+});

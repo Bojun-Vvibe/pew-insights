@@ -188,6 +188,22 @@ export interface SourceRowTokenSpectralSkewnessOptions {
    */
   maxSkewness?: number | null;
   /**
+   * Optional lower bound on reported `bandwidthBin` (sqrt of m2,
+   * bin-units). Sources whose value is strictly below this
+   * threshold are suppressed and counted under
+   * `droppedBelowMinBandwidthBin`. Useful to avoid reading
+   * skewness off near-degenerate (almost-zero-variance) PSDs
+   * where the standardized 3rd moment is numerically fragile.
+   */
+  minBandwidthBin?: number | null;
+  /**
+   * Optional upper bound on reported `bandwidthBin`. Symmetric
+   * counterpart. Surfaces in `droppedAboveMaxBandwidthBin`. If
+   * both are set and `minBandwidthBin > maxBandwidthBin` the
+   * constructor throws.
+   */
+  maxBandwidthBin?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'skewness-asc' (default): standardized skewness ascending
    *                               — most negatively skewed (long
@@ -233,6 +249,8 @@ export interface SourceRowTokenSpectralSkewnessReport {
   top: number | null;
   minSkewness: number | null;
   maxSkewness: number | null;
+  minBandwidthBin: number | null;
+  maxBandwidthBin: number | null;
   sort: SourceRowTokenSpectralSkewnessSort;
   totalSources: number;
   totalRowsKept: number;
@@ -245,6 +263,8 @@ export interface SourceRowTokenSpectralSkewnessReport {
   droppedDegenerate: number;
   droppedBelowMinSkewness: number;
   droppedAboveMaxSkewness: number;
+  droppedBelowMinBandwidthBin: number;
+  droppedAboveMaxBandwidthBin: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralSkewnessRow[];
 }
@@ -296,6 +316,31 @@ export function buildSourceRowTokenSpectralSkewness(
   ) {
     throw new Error(
       `minSkewness (${minSkewness}) must be <= maxSkewness (${maxSkewness})`,
+    );
+  }
+  const minBandwidthBin = opts.minBandwidthBin ?? null;
+  if (minBandwidthBin !== null) {
+    if (!Number.isFinite(minBandwidthBin) || minBandwidthBin < 0) {
+      throw new Error(
+        `minBandwidthBin must be a finite number >= 0 (got ${opts.minBandwidthBin})`,
+      );
+    }
+  }
+  const maxBandwidthBin = opts.maxBandwidthBin ?? null;
+  if (maxBandwidthBin !== null) {
+    if (!Number.isFinite(maxBandwidthBin) || maxBandwidthBin < 0) {
+      throw new Error(
+        `maxBandwidthBin must be a finite number >= 0 (got ${opts.maxBandwidthBin})`,
+      );
+    }
+  }
+  if (
+    minBandwidthBin !== null &&
+    maxBandwidthBin !== null &&
+    minBandwidthBin > maxBandwidthBin
+  ) {
+    throw new Error(
+      `minBandwidthBin (${minBandwidthBin}) must be <= maxBandwidthBin (${maxBandwidthBin})`,
     );
   }
   const sort = opts.sort ?? 'skewness-asc';
@@ -488,16 +533,35 @@ export function buildSourceRowTokenSpectralSkewness(
   let droppedBelowTopCap = 0;
   let droppedBelowMinSkewness = 0;
   let droppedAboveMaxSkewness = 0;
+  let droppedBelowMinBandwidthBin = 0;
+  let droppedAboveMaxBandwidthBin = 0;
   let postRows = allRows;
-  if (minSkewness !== null || maxSkewness !== null) {
+  if (
+    minSkewness !== null ||
+    maxSkewness !== null ||
+    minBandwidthBin !== null ||
+    maxBandwidthBin !== null
+  ) {
     const kept: SourceRowTokenSpectralSkewnessRow[] = [];
     for (const row of postRows) {
+      // Skewness filters first (the lens's headline filter axis),
+      // then the bandwidth-bin sanity filter. Both surface in their
+      // own dropped buckets so the operator can read which gate a
+      // source fell through.
       if (minSkewness !== null && row.skewness < minSkewness) {
         droppedBelowMinSkewness += 1;
         continue;
       }
       if (maxSkewness !== null && row.skewness > maxSkewness) {
         droppedAboveMaxSkewness += 1;
+        continue;
+      }
+      if (minBandwidthBin !== null && row.bandwidthBin < minBandwidthBin) {
+        droppedBelowMinBandwidthBin += 1;
+        continue;
+      }
+      if (maxBandwidthBin !== null && row.bandwidthBin > maxBandwidthBin) {
+        droppedAboveMaxBandwidthBin += 1;
         continue;
       }
       kept.push(row);
@@ -519,6 +583,8 @@ export function buildSourceRowTokenSpectralSkewness(
     top,
     minSkewness,
     maxSkewness,
+    minBandwidthBin,
+    maxBandwidthBin,
     sort,
     totalSources,
     totalRowsKept,
@@ -531,6 +597,8 @@ export function buildSourceRowTokenSpectralSkewness(
     droppedDegenerate,
     droppedBelowMinSkewness,
     droppedAboveMaxSkewness,
+    droppedBelowMinBandwidthBin,
+    droppedAboveMaxBandwidthBin,
     droppedBelowTopCap,
     sources: finalSources,
   };
