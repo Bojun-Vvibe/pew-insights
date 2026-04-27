@@ -115,6 +115,7 @@ import {
   renderSourceRowTokenSampleEntropy,
   renderSourceRowTokenHiguchiFd,
   renderSourceRowTokenLempelZiv,
+  renderSourceRowTokenRenyiEntropy,
   renderSourceRowTokenMannKendallTrend,
   renderSourceRowTokenHurstRs,
   renderSourcePeakHourOfDayArgmax,
@@ -292,6 +293,7 @@ import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutati
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
+import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
 import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
 import { buildSourceRowTokenHurstRs } from './sourcerowtokenhurstrs.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
@@ -11776,6 +11778,107 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenLempelZiv(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-renyi-entropy')
+  .description(
+    "Per-source Renyi entropy at alpha=2 (collision entropy) of the per-row total_tokens distribution, computed over an equal-width histogram on [min, max]. Reports h2 = -log2(sum p^2) in bits and normalised h2Norm = h2 / log2(support) in (0, 1]; h2Norm = 1 iff non-empty bins are equiprobable, h2Norm -> 0 as mass concentrates into one bin. Order-invariant complement to all order-sensitive lenses (lempel-ziv, permutation-entropy, sample-entropy, mann-kendall, runs, turning-point, autocorr-lag1, hurst-rs, higuchi-fd) and a histogram-based summary distinct from all moment / order-statistic shape lenses (gini, iqr-ratio, mad, skewness, kurtosis, burstiness-coefficient, coefficient-of-variation). Differs from Shannon (alpha=1) entropy: collision entropy is dominated by dominant bins; Shannon by rare bins.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 2 (default 8)',
+    '8',
+  )
+  .option(
+    '--bins <n>',
+    'number of equal-width histogram bins per source; integer >= 2 (default 16)',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'h2norm-asc' (default; most concentrated first) | 'h2norm-desc' | 'h2-asc' | 'h2-desc' | 'rows' | 'source'",
+    'h2norm-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        bins: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(`--min-rows must be an integer >= 2 (got ${opts.minRows})`);
+        }
+        const bins = Number.parseInt(opts.bins, 10);
+        if (!Number.isInteger(bins) || bins < 2) {
+          throw new Error(`--bins must be an integer >= 2 (got ${opts.bins})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'h2-asc',
+          'h2-desc',
+          'h2norm-asc',
+          'h2norm-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenRenyiEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          bins,
+          top,
+          sort: opts.sort as
+            | 'h2-asc'
+            | 'h2-desc'
+            | 'h2norm-asc'
+            | 'h2norm-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenRenyiEntropy(report) + '\n');
         }
       } catch (e) {
         die(e);

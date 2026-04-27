@@ -9147,6 +9147,78 @@ export function renderSourceRowTokenHiguchiFd(
 }
 
 import type {
+  SourceRowTokenRenyiEntropyReport,
+  SourceRowTokenRenyiEntropyRow,
+} from './sourcerowtokenrenyientropy.js';
+
+export function renderSourceRowTokenRenyiEntropy(
+  r: SourceRowTokenRenyiEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-renyi-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    bins: ${r.bins}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Renyi entropy at alpha=2 (collision entropy) of the per-row total_tokens distribution, computed over an equal-width histogram on [min, max]. h2 = -log2(sum p^2); h2Norm = h2 / log2(support) is in (0, 1]; h2Norm = 1 iff non-empty bins are equiprobable, h2Norm -> 0 as mass concentrates into one bin. Order-invariant complement to all order-sensitive lenses (lempel-ziv, permutation-entropy, sample-entropy, mann-kendall, runs, turning-point, autocorr-lag1, hurst-rs, higuchi-fd) and a histogram-based summary distinct from all moment / order-statistic shape lenses (gini, iqr-ratio, mad, skewness, kurtosis, burstiness-coefficient, coefficient-of-variation). Differs from Shannon (alpha=1) entropy: collision entropy is dominated by dominant bins; Shannon by rare bins.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Renyi-2 collision entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'min',
+    'max',
+    'support',
+    'sumP^2',
+    'h2',
+    'h2Norm',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenRenyiEntropyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.minValue.toFixed(2),
+      s.maxValue.toFixed(2),
+      formatNumber(s.support),
+      s.collisionProb.toFixed(4),
+      s.h2.toFixed(4),
+      s.h2Norm.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenLempelZivReport,
   SourceRowTokenLempelZivRow,
 } from './sourcerowtokenlempelziv.js';

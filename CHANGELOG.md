@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.122 — 2026-04-27
+
+### Added
+
+- `source-row-token-renyi-entropy`: new lens reporting per-source
+  **Rényi entropy at α=2 (collision entropy)** of the per-row
+  `total_tokens` distribution, computed over an equal-width
+  histogram on `[min, max]` with default 16 bins. Reports
+  `h2 = -log2(Σ p²)` in bits and normalised
+  `h2Norm = h2 / log2(support)` in `(0, 1]`. `h2Norm = 1` iff
+  non-empty bins are equiprobable; `h2Norm -> 0` as mass
+  collapses into one bin.
+
+  Why this is **genuinely orthogonal** to every existing
+  `source-row-token-*` lens:
+
+  - All **moment / order-statistic** shape lenses (`-gini`,
+    `-iqr-ratio`, `-mad`, `-skewness`, `-kurtosis`,
+    `-burstiness-coefficient`, `-coefficient-of-variation`)
+    compress the distribution to **values**. Rényi-2 here
+    compresses the **histogram** (a probability vector).
+    Two distributions with identical mean/var/IQR/Gini can have
+    very different `Σ p²` if one is bimodal-on-extremes and
+    the other unimodal-in-the-middle.
+  - All **order-sensitive** lenses (`-lempel-ziv`,
+    `-permutation-entropy`, `-sample-entropy`,
+    `-mann-kendall-trend`, `-runs-test`,
+    `-turning-point-count`, `-autocorrelation-lag1`,
+    `-hurst-rs`, `-higuchi-fd`) read the **temporal
+    sequence**. Rényi-2 is a pure multiset statistic
+    (shuffle-invariant) — exactly the order-blind / value-binned
+    complement.
+  - The other Shannon-entropy lenses in the suite are computed
+    on **other axes**: `model-mix-entropy`,
+    `hour-of-day-source-mix-entropy`,
+    `source-hour-of-day-token-mass-entropy` are mix / time-bin
+    Shannon. `source-row-token-permutation-entropy` is Shannon
+    over **ordinal patterns**. None is α=2 collision entropy
+    on per-row token-cost histograms.
+  - **Shannon (α=1) vs collision (α=2)**: Shannon is dominated
+    by **rare** bins; collision entropy by **dominant** bins.
+    On a two-bin mix at `(0.99, 0.01)`, `H_1 ~ 0.081 bits`,
+    `H_2 ~ 0.029 bits` — collision entropy is ~3× more
+    sensitive to the dominant mode. The two coincide only on
+    the uniform distribution, so this is a different summary,
+    not a redundant one.
+
+  CLI surface: `--since`, `--until`, `--source`, `--min-rows`
+  (default 8), `--bins` (default 16), `--top`, `--sort` (default
+  `h2norm-asc`; valid: `h2-asc`, `h2-desc`, `h2norm-asc`,
+  `h2norm-desc`, `rows`, `source`), `--json`. JSON shape:
+  19 top-level fields including 7 explicit drop counters
+  (`droppedInvalidHourStart`, `droppedInvalidTokens`,
+  `droppedNegativeTokens`, `droppedSourceFilter`,
+  `droppedBelowMinRows`, `droppedConstantSeries`,
+  `droppedBelowTopCap`); 8 per-source fields (`source`,
+  `rowsKept`, `minValue`, `maxValue`, `support`,
+  `collisionProb`, `h2`, `h2Norm`).
+
+  Test coverage: 19 new tests (2731 -> 2750), including a
+  hand-computed uniform case (`h2Norm = 1` exactly), a
+  hand-computed concentrated case (95/5 split → `Σ p² = 0.905`,
+  `h2 = -log2(0.905)`), explicit shuffle-invariance check
+  against a deterministic Fisher-Yates permutation, bins-option
+  sensitivity (4 vs 32 on the same data), and the standard
+  JSON shape guard asserting every documented field is present
+  and every numeric serialises finite.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (1,670 rows, 6 sources):
+
+  ```
+  pew-insights source-row-token-renyi-entropy
+  as of: 2026-04-27T12:04:38.104Z    sources: 6 (shown 6)    rows: 1,670    min-rows: 8    bins: 16    top: —    sort: h2norm-asc
+  dropped: 0 bad hour_start, 0 bad total_tokens, 0 negative total_tokens, 0 by source filter, 0 below min-rows, 0 constant-series, 0 below top cap
+
+  per-source row-token Renyi-2 collision entropy (sorted by h2norm-asc; ties: source asc)
+  source          rows  min        max           support  sumP^2  h2      h2Norm
+  --------------  ----  ---------  ------------  -------  ------  ------  ------
+  vscode-copilot  333   20.00      174625.00     9        0.8361  0.2582  0.0815
+  claude-code     299   5976.00    107646380.00  14       0.4295  1.2191  0.3202
+  openclaw        450   106759.00  45073562.00   13       0.3560  1.4903  0.4027
+  hermes          180   15525.00   5898713.00    13       0.2756  1.8596  0.5025
+  opencode        344   47789.00   69504417.00   16       0.2219  2.1720  0.5430
+  codex           64    47317.00   58840552.00   14       0.1938  2.3670  0.6217
+  ```
+
+  Reading this: `vscode-copilot` is by far the most
+  concentrated (h2Norm ~ 0.08, sum-p² ~ 0.84) — its rows pile
+  almost entirely into a single token-cost band. `codex` and
+  `opencode` spread their token costs across the full
+  16-bin width with much lower collision probability
+  (h2Norm > 0.5).
+
 ## 0.6.121 — 2026-04-27
 
 ### Changed
