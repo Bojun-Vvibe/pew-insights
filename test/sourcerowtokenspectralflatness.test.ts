@@ -551,3 +551,66 @@ test('spectral-flatness: equal-to-threshold rows are kept (strict comparison)', 
   assert.equal(r.droppedBelowMinSf, 0);
   assert.equal(r.droppedAboveMaxSf, 0);
 });
+
+// --- 0.6.146 property tests: monotonicity / scale-invariance ---
+
+test('spectral-flatness: scale-invariance — multiplying values by c > 0 preserves SF', () => {
+  const v = [1, 5, 2, 8, 3, 7, 4, 6, 9, 0, 11, 2];
+  const a = buildSourceRowTokenSpectralFlatness(series(v, 'a'), {
+    generatedAt: GEN,
+  });
+  const b = buildSourceRowTokenSpectralFlatness(
+    series(v.map((x) => x * 17), 'a'),
+    { generatedAt: GEN },
+  );
+  assert.equal(a.sources.length, 1);
+  assert.equal(b.sources.length, 1);
+  // SF = G/A; both numerator and denominator scale by c^2 -> ratio invariant.
+  assert.ok(
+    Math.abs(a.sources[0]!.spectralFlatness - b.sources[0]!.spectralFlatness) < 1e-9,
+    `SF should be scale-invariant: ${a.sources[0]!.spectralFlatness} vs ${b.sources[0]!.spectralFlatness}`,
+  );
+});
+
+test('spectral-flatness: shift-invariance via mean-centering — adding constant preserves SF', () => {
+  // We mean-center, so adding a DC shift must leave SF unchanged.
+  const v = [1, 5, 2, 8, 3, 7, 4, 6, 9, 0, 11, 2];
+  const a = buildSourceRowTokenSpectralFlatness(series(v, 'a'), {
+    generatedAt: GEN,
+  });
+  const b = buildSourceRowTokenSpectralFlatness(
+    series(v.map((x) => x + 1000), 'a'),
+    { generatedAt: GEN },
+  );
+  assert.ok(
+    Math.abs(a.sources[0]!.spectralFlatness - b.sources[0]!.spectralFlatness) < 1e-9,
+    `SF should be shift-invariant under DC offset: ${a.sources[0]!.spectralFlatness} vs ${b.sources[0]!.spectralFlatness}`,
+  );
+});
+
+test('spectral-flatness: monotonicity — adding a sinusoid lowers SF (more tonal)', () => {
+  // Fixed noise floor; layer in increasing-amplitude sine; SF should not increase.
+  let s = 1;
+  const rng = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const noise: number[] = [];
+  for (let t = 0; t < 64; t++) noise.push(Math.floor(rng() * 100));
+  const sf: number[] = [];
+  for (const amp of [0, 50, 200, 1000]) {
+    const v = noise.map((x, t) =>
+      Math.max(0, Math.round(x + amp * Math.sin((2 * Math.PI * 4 * t) / 64))),
+    );
+    const r = buildSourceRowTokenSpectralFlatness(series(v, 'a'), {
+      generatedAt: GEN,
+    });
+    sf.push(r.sources[0]!.spectralFlatness);
+  }
+  // Monotone non-increasing.
+  for (let i = 1; i < sf.length; i++) {
+    assert.ok(
+      sf[i]! <= sf[i - 1]! + 1e-9,
+      `SF should not rise as tonal amplitude grows: sf[${i - 1}]=${sf[i - 1]} sf[${i}]=${sf[i]}`,
+    );
+  }
+  // Strict monotonicity at the extremes.
+  assert.ok(sf[sf.length - 1]! < sf[0]!);
+});
