@@ -9474,3 +9474,75 @@ export function renderSourceRowTokenDfa(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenHjorthComplexityReport,
+  SourceRowTokenHjorthComplexityRow,
+} from './sourcerowtokenhjorthcomplexity.js';
+
+export function renderSourceRowTokenHjorthComplexity(
+  r: SourceRowTokenHjorthComplexityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-hjorth-complexity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (var(v)=0), ${formatNumber(r.droppedFlatDiff)} flat-diff (var(dv)=0; perfect linear ramp), ${formatNumber(r.droppedDegenerate)} degenerate (ratio non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hjorth Complexity (Hjorth 1970, EEG Clin. Neurophysiol. 29:306-310) on the per-row total_tokens time-ordered sequence. complexity = mobility(diff(v)) / mobility(v) = sqrt(var(ddv)*var(v)) / var(dv). Unitless. ~1 = single-tone / sinusoidal (the canonical sine case where dv and v share frequency); >1 = multi-frequency / noise-like / spectrally spread; <1 = first difference smoother than the original (slowly modulated tones / chirps). Genuinely orthogonal to hjorth-mobility (mobility tracks the first spectral moment; complexity tracks the second), to katz-fd / higuchi-fd (path-length geometric ratios), to dfa (cumulative-profile detrended scaling), to hurst-rs (R/S of cumulative deviations), to autocorrelation-lag1 (no closed-form identity because complexity carries lag-2 info via var(ddv)), to permutation-entropy / sample-entropy (ordinal / pattern-matching), to mann-kendall / runs / turning-point, to lempel-ziv / renyi-entropy (symbolic / histogrammatic), and to all order-invariant dispersion / shape lenses (shuffle changes complexity sharply).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Hjorth Complexity (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'var(v)',
+    'var(dv)',
+    'var(ddv)',
+    'mobility',
+    'mob(dv)',
+    'complexity',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenHjorthComplexityRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.varV.toFixed(2),
+      s.varDv.toFixed(2),
+      s.varDdv.toFixed(2),
+      s.mobility.toFixed(4),
+      s.mobilityDv.toFixed(4),
+      s.complexity.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

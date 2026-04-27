@@ -116,6 +116,7 @@ import {
   renderSourceRowTokenHiguchiFd,
   renderSourceRowTokenKatzFd,
   renderSourceRowTokenHjorthMobility,
+  renderSourceRowTokenHjorthComplexity,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
   renderSourceRowTokenDfa,
@@ -297,6 +298,7 @@ import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
+import { buildSourceRowTokenHjorthComplexity } from './sourcerowtokenhjorthcomplexity.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
 import { buildSourceRowTokenDfa } from './sourcerowtokendfa.js';
@@ -11865,6 +11867,96 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenHjorthMobility(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-hjorth-complexity')
+  .description(
+    "Per-source Hjorth Complexity (Hjorth 1970, EEG Clin. Neurophysiol. 29:306-310) on the per-row total_tokens time-ordered sequence. complexity = mobility(diff(v)) / mobility(v) = sqrt(var(ddv) * var(v)) / var(dv). Unitless. ~1 for single-tone / sinusoidal series (canonical sine: cos and -sin share frequency). >1 for multi-frequency / noise-like / spectrally spread series. <1 for first-difference-smoother-than-original (slowly modulated tones / chirps). Genuinely orthogonal to source-row-token-hjorth-mobility (mobility is the first spectral moment; complexity is the second — two sources with identical mobility can have very different complexities), to katz-fd / higuchi-fd (path-length geometric ratios), to dfa (cumulative-profile detrended scaling), to hurst-rs (R/S of cumulative deviations), to autocorrelation-lag1 (no closed-form identity because complexity carries lag-2 covariance via var(ddv)), to permutation-entropy / sample-entropy (ordinal / pattern-matching), to mann-kendall / runs / turning-point, to lempel-ziv / renyi-entropy (symbolic / histogrammatic), and to all order-invariant dispersion / shape lenses (shuffle changes complexity sharply).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 6 (default 24; complexity needs N-2 >= 4 for a stable second-diff variance)',
+    '24',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'complexity-asc' (default; most single-tone / sinusoidal first) | 'complexity-desc' (most multi-tone / noise-like first) | 'rows' | 'source'",
+    'complexity-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 6) {
+          throw new Error(
+            `--min-rows must be an integer >= 6 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'complexity-asc',
+          'complexity-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenHjorthComplexity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'complexity-asc'
+            | 'complexity-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenHjorthComplexity(report) + '\n',
           );
         }
       } catch (e) {
