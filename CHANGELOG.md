@@ -2,6 +2,94 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.136 — 2026-04-28
+
+### Added
+
+- `source-row-token-approximate-entropy`: per-source
+  **Approximate Entropy (ApEn)** of Pincus (1991, PNAS
+  88(6):2297-2301) on the per-row `total_tokens`
+  time-ordered sequence. ApEn(m, r) = phi^m - phi^(m+1)
+  where phi^k = mean over i of ln(C_i^k) and C_i^k is the
+  fraction of length-k templates within Chebyshev distance
+  `r * sigma` of template i. Crucially **self-matches are
+  included** — this is what distinguishes ApEn from SampEn
+  and guarantees C_i^k >= 1/Nk > 0 so ln is always finite
+  and ApEn is **never undefined** for a non-constant
+  series with n >= m+2 (no analogue of SampEn's
+  `degenerateNoMatches` / `degenerateNoExtensions` failure
+  modes). Lower = more regular; higher = more random.
+  White noise typically ~ 1.6-2.1 at the canonical
+  (m=2, r=0.2); perfectly periodic ~ 0.
+
+  **Orthogonality claim** (genuinely orthogonal to all 22
+  prior `source-row-token-*` lenses, in particular to the
+  closest cousin `source-row-token-sample-entropy`):
+  SampEn excludes self-matches and computes `-ln(A/B)`
+  with A, B as pair counts of length-(m+1) and length-m
+  matches respectively. ApEn includes self-matches and
+  computes `phi^m - phi^(m+1)` as a difference of
+  mean-log-conditional probabilities. The two are not
+  monotone-related on real data: ApEn is biased toward
+  regularity for short n (self-matches inflate C_i^k more
+  for length-(m+1) where Nk is smaller), so a series can
+  rank higher in ApEn but lower in SampEn or vice versa.
+  ApEn is also defined everywhere SampEn is undefined,
+  making the two complementary as diagnostics — exactly
+  the motivation Richman & Moorman (2000) gave when
+  introducing SampEn as a "fix" for ApEn's bias. Reporting
+  both in parallel is the standard practice.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,700
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-approximate-entropy
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,700
+  m: 2   r: 0.2   min-rows: 12   sort: apen-asc
+
+  per-source row-token Approximate Entropy (sorted by apen-asc; ties: source asc)
+  source       rows  sigma         tol          phiM     phiMp1   ApEn
+  -----------  ----  ------------  -----------  -------  -------  ------
+  vscode-XXX    333  14933.73      2986.75      -1.7232  -2.3529  0.6297
+  codex          64  14252148.98   2850429.80   -3.0675  -3.7006  0.6331
+  claude-code   299  17605167.00   3521033.40   -2.6975  -3.4454  0.7479
+  openclaw      460  4852243.72    970448.74    -2.8462  -3.7044  0.8582
+  opencode      354  12999183.73   2599836.75   -3.0044  -3.9088  0.9044
+  hermes        190  971430.60     194286.12   -3.2610  -4.1679  0.9069
+  ```
+
+  Reading the live smoke: `vscode-XXX` (0.6297) and `codex`
+  (0.6331) are the two **most regular** sources by ApEn —
+  their length-2 token-count templates extend reliably to
+  length-3 at tolerance r*sigma. `hermes` (0.9069) and
+  `opencode` (0.9044) are the **most irregular**, with
+  ApEn ~ 0.9 indicating template extensions hold less
+  often. All six sources clear the m+2 = 4 minimum
+  comfortably; no degenerate / zero-variance / below-min
+  drops. The dispersion (0.6297 -> 0.9069, span 0.28) is
+  comparable in magnitude to what we see in the SampEn
+  lens but the **ranking is not identical** — exactly the
+  ApEn / SampEn complementarity Pincus and Richman flagged.
+
+- 26 new unit tests for the lens, covering: empty input,
+  constant-series drop, below-min-rows drop, periodic
+  -> low ApEn, ApEn-finite-where-SampEn-degenerate,
+  random-vs-periodic ordering, alternating ~ 0,
+  sigma/tolerance recording, template counts, all option
+  validation paths (m, r, min-rows, sort, since/until,
+  top), source filter, all four sort modes, --top cap,
+  bad hour_start / negative tokens / NaN tokens
+  accounting, since/until window, integer-ramp finite
+  ApEn, Pincus phi^m >= phi^(m+1) monotonicity on noise,
+  m=1 / m=3 paths, full opts round-trip, equal-ApEn
+  source-asc tiebreak, empty-source-string -> "unknown",
+  orthogonality-to-SampEn-degeneracy regression, r-monotone
+  sensitivity, determinism with fixed `generatedAt`.
+
+  Test count: **2933 -> 2959** (+26).
+
 ## 0.6.135 — 2026-04-28
 
 ### Added
