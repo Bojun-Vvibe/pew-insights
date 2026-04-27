@@ -11191,6 +11191,11 @@ program
     '1',
   )
   .option(
+    '--min-abs-tau <g>',
+    "drop sources whose |tau| is strictly below g; cohort selector on the direction-agnostic concordance *effect size* — sample-size-independent (vs. --max-p which is sample-size-aware: a long source with a tiny tau can clear --max-p but fails --min-abs-tau). g must be a finite number in [0, 1]. Combined with --max-p both gates apply (logical AND); each gate counts its own drops separately. (default 0, no floor)",
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -11208,6 +11213,7 @@ program
         source?: string;
         minRows: string;
         maxP: string;
+        minAbsTau: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -11227,6 +11233,12 @@ program
         if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
           throw new Error(
             `--max-p must be a finite number in (0, 1] (got ${opts.maxP})`,
+          );
+        }
+        const minAbsTau = Number.parseFloat(opts.minAbsTau);
+        if (!Number.isFinite(minAbsTau) || minAbsTau < 0 || minAbsTau > 1) {
+          throw new Error(
+            `--min-abs-tau must be a finite number in [0, 1] (got ${opts.minAbsTau})`,
           );
         }
         let top: number | null = null;
@@ -11260,6 +11272,7 @@ program
           source: opts.source ?? null,
           minRows,
           maxP,
+          minAbsTau,
           top,
           sort: opts.sort as
             | 'z-asc'

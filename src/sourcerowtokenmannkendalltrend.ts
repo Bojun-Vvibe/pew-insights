@@ -167,6 +167,40 @@ export interface SourceRowTokenMannKendallTrendOptions {
    */
   maxP?: number;
   /**
+   * Drop sources whose **|tau|** is strictly **below** this
+   * threshold; cohort selector on the direction-agnostic
+   * **concordance effect size**. Must be a finite number in
+   * `[0, 1]`. Default `0` (no floor).
+   *
+   * Why this is genuinely orthogonal to `--max-p` even though Z
+   * and p are monotonically related under the normal-approx and
+   * Z is itself a monotone function of `tau` *for fixed n*:
+   *
+   *   - `--max-p f` filters on the **tail probability under H0**
+   *     — a hypothesis-testing gate. It is *sample-size aware*:
+   *     a long-running source with a very modest tau (e.g. 0.05
+   *     over `n = 2000` rows) can clear `--max-p 0.01` because
+   *     the variance of S scales with `n^{3/2}` while S grows
+   *     with `n^2`; the same `tau = 0.05` over `n = 12` rows is
+   *     nowhere near significant.
+   *   - `--min-abs-tau g` filters on the **concordance effect
+   *     size itself** — the fraction of pair comparisons that
+   *     are concordant minus the fraction that are discordant.
+   *     This is a sample-size-independent, operator-meaningful
+   *     scalar in `[0, 1]`: "show me sources whose later rows
+   *     are at least 20% more concordant-than-discordant with
+   *     the time index, regardless of whether I have enough
+   *     rows to call it statistically significant."
+   *
+   * Combined with `--max-p`, both gates are applied (logical
+   * AND); each surviving source must clear both. Counted
+   * separately so the operator sees which gate dropped what.
+   * `--min-abs-tau` runs first (and so claims its drops first)
+   * — symmetric with how `--min-abs-z` precedes `--max-p` in
+   * the runs-test lens.
+   */
+  minAbsTau?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -226,6 +260,7 @@ export interface SourceRowTokenMannKendallTrendReport {
   source: string | null;
   minRows: number;
   maxP: number;
+  minAbsTau: number;
   top: number | null;
   sort: SourceRowTokenMannKendallTrendSort;
   totalSources: number;
@@ -235,6 +270,7 @@ export interface SourceRowTokenMannKendallTrendReport {
   droppedNegativeTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
+  droppedBelowMinAbsTau: number;
   droppedAboveMaxP: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenMannKendallTrendRow[];
@@ -290,6 +326,12 @@ export function buildSourceRowTokenMannKendallTrend(
   if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
     throw new Error(
       `maxP must be a finite number in (0, 1] (got ${opts.maxP})`,
+    );
+  }
+  const minAbsTau = opts.minAbsTau ?? 0;
+  if (!Number.isFinite(minAbsTau) || minAbsTau < 0 || minAbsTau > 1) {
+    throw new Error(
+      `minAbsTau must be a finite number in [0, 1] (got ${opts.minAbsTau})`,
     );
   }
   const top = opts.top ?? null;
@@ -450,8 +492,13 @@ export function buildSourceRowTokenMannKendallTrend(
   }
 
   let droppedAboveMaxP = 0;
+  let droppedBelowMinAbsTau = 0;
   const survived: SourceRowTokenMannKendallTrendRow[] = [];
   for (const row of allRows) {
+    if (minAbsTau > 0 && Math.abs(row.tau) < minAbsTau) {
+      droppedBelowMinAbsTau += 1;
+      continue;
+    }
     if (maxP < 1 && row.pValue > maxP) {
       droppedAboveMaxP += 1;
       continue;
@@ -489,6 +536,7 @@ export function buildSourceRowTokenMannKendallTrend(
     source: sourceFilter,
     minRows,
     maxP,
+    minAbsTau,
     top,
     sort,
     totalSources,
@@ -498,6 +546,7 @@ export function buildSourceRowTokenMannKendallTrend(
     droppedNegativeTokens,
     droppedSourceFilter,
     droppedBelowMinRows,
+    droppedBelowMinAbsTau,
     droppedAboveMaxP,
     droppedBelowTopCap,
     sources: finalSources,

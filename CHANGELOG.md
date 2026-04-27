@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.109 — 2026-04-27
+
+### Changed
+
+- `source-row-token-mann-kendall-trend`: adds
+  `--min-abs-tau <g>` (`g` in `[0, 1]`, default `0` =
+  no floor). Drops sources whose `|tau|` is strictly below `g`;
+  surviving / dropped counts are surfaced separately as
+  `droppedBelowMinAbsTau`. Genuinely orthogonal to `--max-p`:
+
+  - `--max-p f` is **sample-size-aware**: a long-running source
+    with a very modest tau (e.g. `tau = 0.05` over `n = 2000`
+    rows) can clear `--max-p 0.01` because `Var[S] ~ n^3` while
+    `S ~ n^2`. The same `tau = 0.05` over `n = 12` rows is
+    nowhere near significant.
+  - `--min-abs-tau g` is **sample-size-independent**: it
+    filters on the **concordance effect size itself** — the
+    fraction of pair comparisons that are concordant minus the
+    fraction that are discordant. Operator vocabulary: "show me
+    sources whose later rows are at least 20% more
+    concordant-than-discordant with the time index, regardless
+    of whether I have the row count to call it significant."
+
+  Combined with `--max-p`, both gates are applied (logical
+  AND); each gate counts its own drops separately.
+  `--min-abs-tau` runs first — symmetric with the
+  `--min-abs-z` precedence in `source-row-token-runs-test`.
+
+  4 new unit tests verify the default-`0` no-op behaviour, the
+  drop semantics on a mixed (`mono` `tau = 1`, `flat`
+  `tau ~ 0.149`) two-source corpus at `g = 0.5`, the AND
+  combination with `--max-p` (and that `--min-abs-tau` claims
+  its drops first), and bad-input rejection (`g < 0`, `g > 1`,
+  `NaN`).
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--min-abs-tau 0.15 --top 5 --sort abs-tau-desc`
+  (1,648 rows, 6 sources, 2 dropped below `g`):
+
+  ```
+  per-source row-token Mann-Kendall trend test (sorted by abs-tau-desc; ties: source asc)
+  source       rows  S       sigmaS   Z        tau      p       tieGrp  tiePr
+  -----------  ----  ------  -------  -------  -------  ------  ------  -----
+  claude-code  299   11,035  1727.69  6.3866   0.2477   0.0000  0       0
+  opencode     337   11,538  2066.73  5.5823   0.2038   0.0000  0       0
+  hermes       173   -2,814  761.74   -3.6929  -0.1891  0.0002  0       0
+  codex        64    352     172.60   2.0336   0.1746   0.0420  0       0
+  ```
+
+  The gate filters out two sources that previously surfaced
+  under v0.6.108 — both had clear `Z` significance (one with
+  `|Z| > 3`) but `|tau|` below 0.15, i.e. statistically
+  detectable but operationally weak monotonic concordance.
+  Surfacing only the four `|tau| >= 0.15` results gives the
+  operator a sharper "actually-trending" cohort.
+
 ## 0.6.108 — 2026-04-27
 
 ### Added
