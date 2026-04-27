@@ -12120,6 +12120,19 @@ program
     "sort key: 'pfd-asc' (default; smoothest first) | 'pfd-desc' (wiggliest first) | 'rows' | 'source'",
     'pfd-asc',
   )
+  .option(
+    '--zero-rule <mode>',
+    "how to handle dv[i] == 0: 'positive' (default; zero -> +1, Esteller convention, matches 0.6.134 behaviour) | 'skip' (drop zero diffs entirely from the stream) | 'previous' (zero inherits the most recent non-zero sign; leading zeros dropped). Differs from 'positive' only on sources with long runs of repeated values; isolates non-flat diff structure.",
+    'positive',
+  )
+  .option(
+    '--min-pfd <v>',
+    'filter out sources with PFD strictly below v (post-compute, pre-cap); v must be in [1, 2]; surfaces in droppedBelowMinPfd',
+  )
+  .option(
+    '--max-pfd <v>',
+    'filter out sources with PFD strictly above v (post-compute, pre-cap); v must be in [1, 2]; surfaces in droppedAboveMaxPfd',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12130,6 +12143,9 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        zeroRule: string;
+        minPfd?: string;
+        maxPfd?: string;
         json?: boolean;
       },
       cmd,
@@ -12157,6 +12173,28 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        const validZeroRules = ['positive', 'skip', 'previous'];
+        if (!validZeroRules.includes(opts.zeroRule)) {
+          throw new Error(
+            `--zero-rule must be one of ${validZeroRules.join('|')} (got ${opts.zeroRule})`,
+          );
+        }
+        let minPfd: number | null = null;
+        if (opts.minPfd != null) {
+          const v = Number.parseFloat(opts.minPfd);
+          if (!Number.isFinite(v) || v < 1 || v > 2) {
+            throw new Error(`--min-pfd must be in [1, 2] (got ${opts.minPfd})`);
+          }
+          minPfd = v;
+        }
+        let maxPfd: number | null = null;
+        if (opts.maxPfd != null) {
+          const v = Number.parseFloat(opts.maxPfd);
+          if (!Number.isFinite(v) || v < 1 || v > 2) {
+            throw new Error(`--max-pfd must be in [1, 2] (got ${opts.maxPfd})`);
+          }
+          maxPfd = v;
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenPetrosianFd(queue, {
           since: opts.since ?? null,
@@ -12164,6 +12202,9 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          zeroRule: opts.zeroRule as 'positive' | 'skip' | 'previous',
+          minPfd,
+          maxPfd,
           sort: opts.sort as 'pfd-asc' | 'pfd-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

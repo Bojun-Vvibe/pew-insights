@@ -155,6 +155,34 @@ export type SourceRowTokenPetrosianFdSort =
   | 'rows'
   | 'source';
 
+/**
+ * Zero-rule: how to map `dv[i] == 0` (a flat step in the
+ * value series) to a binary sign symbol. Added in 0.6.135 as
+ * a refinement; default is 'positive' to preserve the
+ * 0.6.134 initial-release behaviour.
+ *
+ *   - 'positive' (default): zero -> +1, matching the ZCR
+ *     convention (Kedem 1986) and Esteller et al. 2001.
+ *     Effective length M = N - 1.
+ *   - 'skip': drop zero entries entirely from the diff
+ *     stream. M = (N - 1) - zeroDiffs.
+ *   - 'previous': zero inherits the sign of the most recent
+ *     non-zero diff; leading zeros (no prior non-zero diff)
+ *     are dropped. M = (N - 1) - leadingZeros.
+ *
+ * On continuous-valued token-count series the three rules
+ * typically agree because exact zero diffs are rare. Where
+ * they differ — sources with long runs of repeated values
+ * (e.g. a stalled queue) — 'skip' and 'previous' isolate the
+ * **non-flat** diff structure and prevent the spurious
+ * "monotone" reading that 'positive' produces when many zero
+ * diffs map to a single +1 run.
+ */
+export type SourceRowTokenPetrosianFdZeroRule =
+  | 'positive'
+  | 'skip'
+  | 'previous';
+
 export interface SourceRowTokenPetrosianFdOptions {
   /** Inclusive ISO lower bound on `hour_start`. null = no lower bound. */
   since?: string | null;
@@ -173,6 +201,26 @@ export interface SourceRowTokenPetrosianFdOptions {
    */
   top?: number | null;
   /**
+   * Zero-rule selector: how to handle `dv[i] == 0`. Default
+   * 'positive' (Esteller convention, 0.6.134 behaviour).
+   * Added in 0.6.135.
+   */
+  zeroRule?: SourceRowTokenPetrosianFdZeroRule;
+  /**
+   * Filter out sources with PFD strictly below this value
+   * (post-compute, pre-cap). Surfaces in `droppedBelowMinPfd`.
+   * Default null. Useful for isolating only the wiggly
+   * sources (e.g. `--min-pfd 1.04`). Added in 0.6.135.
+   */
+  minPfd?: number | null;
+  /**
+   * Filter out sources with PFD strictly above this value
+   * (post-compute, pre-cap). Surfaces in `droppedAboveMaxPfd`.
+   * Default null. Useful for isolating only the smooth
+   * sources (e.g. `--max-pfd 1.04`). Added in 0.6.135.
+   */
+  maxPfd?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'pfd-asc' (default): PFD ascending — smoothest first.
    *   - 'pfd-desc':          PFD descending — wiggliest first.
@@ -188,11 +236,11 @@ export interface SourceRowTokenPetrosianFdOptions {
 export interface SourceRowTokenPetrosianFdRow {
   source: string;
   rowsKept: number;
-  /** Effective length of the diff sign sequence (= N - 1). */
+  /** Effective length of the diff sign sequence (= N - 1 under 'positive'; smaller under 'skip' / 'previous' if zero diffs were dropped). */
   M: number;
   /** Number of adjacent sign changes in the diff sign sequence. */
   Nd: number;
-  /** Number of dv == 0 entries (informational). */
+  /** Number of dv == 0 entries (informational; relevant for non-default zeroRule). */
   zeroDiffs: number;
   /** Estimated Petrosian Fractal Dimension, clamped to [1, 2]. */
   pfd: number;
@@ -207,6 +255,9 @@ export interface SourceRowTokenPetrosianFdReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  zeroRule: SourceRowTokenPetrosianFdZeroRule;
+  minPfd: number | null;
+  maxPfd: number | null;
   sort: SourceRowTokenPetrosianFdSort;
   totalSources: number;
   totalRowsKept: number;
@@ -219,11 +270,14 @@ export interface SourceRowTokenPetrosianFdReport {
   droppedDegenerate: number;
   clampedBelow1: number;
   clampedAbove2: number;
+  droppedBelowMinPfd: number;
+  droppedAboveMaxPfd: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenPetrosianFdRow[];
 }
 
 const VALID_SORTS = ['pfd-asc', 'pfd-desc', 'rows', 'source'] as const;
+const VALID_ZERO_RULES = ['positive', 'skip', 'previous'] as const;
 
 export function buildSourceRowTokenPetrosianFd(
   queue: QueueLine[],
@@ -240,6 +294,30 @@ export function buildSourceRowTokenPetrosianFd(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const zeroRule: SourceRowTokenPetrosianFdZeroRule =
+    opts.zeroRule ?? 'positive';
+  if (!(VALID_ZERO_RULES as readonly string[]).includes(zeroRule)) {
+    throw new Error(
+      `zeroRule must be one of ${VALID_ZERO_RULES.join('|')} (got ${opts.zeroRule})`,
+    );
+  }
+  const minPfd = opts.minPfd ?? null;
+  if (
+    minPfd !== null &&
+    (!Number.isFinite(minPfd) || minPfd < 1 || minPfd > 2)
+  ) {
+    throw new Error(`minPfd must be in [1, 2] (got ${opts.minPfd})`);
+  }
+  const maxPfd = opts.maxPfd ?? null;
+  if (
+    maxPfd !== null &&
+    (!Number.isFinite(maxPfd) || maxPfd < 1 || maxPfd > 2)
+  ) {
+    throw new Error(`maxPfd must be in [1, 2] (got ${opts.maxPfd})`);
+  }
+  if (minPfd !== null && maxPfd !== null && minPfd > maxPfd) {
+    throw new Error(`minPfd (${minPfd}) must be <= maxPfd (${maxPfd})`);
   }
   const sort = opts.sort ?? 'pfd-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -310,6 +388,8 @@ export function buildSourceRowTokenPetrosianFd(
   let droppedDegenerate = 0;
   let clampedBelow1 = 0;
   let clampedAbove2 = 0;
+  let droppedBelowMinPfd = 0;
+  let droppedAboveMaxPfd = 0;
 
   const allRows: SourceRowTokenPetrosianFdRow[] = [];
 
@@ -337,13 +417,42 @@ export function buildSourceRowTokenPetrosianFd(
       continue;
     }
 
-    // Build the diff sign sequence; zero -> +1.
+    // Build the diff sign sequence per the zero-rule.
     let zeroDiffs = 0;
-    const signs: number[] = new Array(N - 1);
-    for (let i = 0; i < N - 1; i++) {
-      const d = v[i + 1]! - v[i]!;
-      if (d === 0) zeroDiffs += 1;
-      signs[i] = d >= 0 ? 1 : -1;
+    let signs: number[];
+    if (zeroRule === 'positive') {
+      signs = new Array(N - 1);
+      for (let i = 0; i < N - 1; i++) {
+        const d = v[i + 1]! - v[i]!;
+        if (d === 0) zeroDiffs += 1;
+        signs[i] = d >= 0 ? 1 : -1;
+      }
+    } else if (zeroRule === 'skip') {
+      signs = [];
+      for (let i = 0; i < N - 1; i++) {
+        const d = v[i + 1]! - v[i]!;
+        if (d === 0) {
+          zeroDiffs += 1;
+          continue;
+        }
+        signs.push(d > 0 ? 1 : -1);
+      }
+    } else {
+      // 'previous': zero inherits the most recent non-zero sign;
+      // leading zeros (no prior non-zero diff) are dropped.
+      signs = [];
+      let lastSign = 0;
+      for (let i = 0; i < N - 1; i++) {
+        const d = v[i + 1]! - v[i]!;
+        if (d === 0) {
+          zeroDiffs += 1;
+          if (lastSign === 0) continue;
+          signs.push(lastSign);
+        } else {
+          lastSign = d > 0 ? 1 : -1;
+          signs.push(lastSign);
+        }
+      }
     }
     const M = signs.length;
     if (M < 2) {
@@ -396,7 +505,21 @@ export function buildSourceRowTokenPetrosianFd(
     return row.pfd;
   }
 
-  allRows.sort((a, b) => {
+  // Apply min-pfd / max-pfd filters (post-compute, pre-cap).
+  const filteredRows: SourceRowTokenPetrosianFdRow[] = [];
+  for (const r of allRows) {
+    if (minPfd !== null && r.pfd < minPfd) {
+      droppedBelowMinPfd += 1;
+      continue;
+    }
+    if (maxPfd !== null && r.pfd > maxPfd) {
+      droppedAboveMaxPfd += 1;
+      continue;
+    }
+    filteredRows.push(r);
+  }
+
+  filteredRows.sort((a, b) => {
     let primary = 0;
     if (sort === 'pfd-asc') {
       primary = pfdKey(a, true) - pfdKey(b, true);
@@ -412,10 +535,10 @@ export function buildSourceRowTokenPetrosianFd(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = filteredRows;
+  if (top !== null && filteredRows.length > top) {
+    droppedBelowTopCap = filteredRows.length - top;
+    finalSources = filteredRows.slice(0, top);
   }
 
   return {
@@ -425,6 +548,9 @@ export function buildSourceRowTokenPetrosianFd(
     source: sourceFilter,
     minRows,
     top,
+    zeroRule,
+    minPfd,
+    maxPfd,
     sort,
     totalSources,
     totalRowsKept,
@@ -437,6 +563,8 @@ export function buildSourceRowTokenPetrosianFd(
     droppedDegenerate,
     clampedBelow1,
     clampedAbove2,
+    droppedBelowMinPfd,
+    droppedAboveMaxPfd,
     droppedBelowTopCap,
     sources: finalSources,
   };

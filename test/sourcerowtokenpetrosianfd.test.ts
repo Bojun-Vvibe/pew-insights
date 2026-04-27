@@ -315,3 +315,152 @@ test('petrosian-fd: PFD reported is bounded in [1, 2] on real data', () => {
     assert.ok(s.pfd >= 1 && s.pfd <= 2, `pfd=${s.pfd} out of [1, 2] for ${s.source}`);
   }
 });
+
+// ---------------------------------------------------------------
+// Refinement (0.6.135): --zero-rule, --min-pfd, --max-pfd flags
+// ---------------------------------------------------------------
+
+test('petrosian-fd: zero-rule "skip" drops zero diffs from the stream', () => {
+  // 24 values: alternating constant runs of length 3.
+  // [a, a, a, b, b, b, a, a, a, b, b, b, ...]
+  const v = [
+    1, 1, 1, 5, 5, 5, 1, 1, 1, 5, 5, 5,
+    1, 1, 1, 5, 5, 5, 1, 1, 1, 5, 5, 5,
+  ];
+  const rPos = buildSourceRowTokenPetrosianFd(series(v), {
+    generatedAt: GEN,
+    zeroRule: 'positive',
+  });
+  const rSkip = buildSourceRowTokenPetrosianFd(series(v), {
+    generatedAt: GEN,
+    zeroRule: 'skip',
+  });
+  // zero diffs: within each run-of-3 there are 2 zeros; 8 runs total -> 16 zeros.
+  // 23 diffs total -> 7 non-zero (the run boundaries) under 'skip'.
+  assert.equal(rPos.sources[0]!.zeroDiffs, 16);
+  assert.equal(rPos.sources[0]!.M, 23);
+  assert.equal(rSkip.sources[0]!.zeroDiffs, 16);
+  assert.equal(rSkip.sources[0]!.M, 7);
+  // PFD differs because Nd and M differ.
+  assert.notEqual(rPos.sources[0]!.pfd, rSkip.sources[0]!.pfd);
+});
+
+test('petrosian-fd: zero-rule "previous" inherits prior sign', () => {
+  // [1, 2, 2, 2, 1, ...] — diff sequence starts with +1 (no leading
+  // zeros), then zeros inherit the most recent sign. M = N - 1
+  // because no zeros are dropped under 'previous' here.
+  const v = [
+    1, 2, 2, 2, 1,
+    2, 2, 2, 1, 2,
+    2, 2, 1, 2, 2,
+    2, 1, 2, 2, 2,
+  ];
+  const r = buildSourceRowTokenPetrosianFd(series(v), {
+    generatedAt: GEN,
+    zeroRule: 'previous',
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.M, 19);
+  assert.ok(r.sources[0]!.zeroDiffs > 0);
+  // Sign stream: +1, 0->+1, 0->+1, -1, +1, 0->+1, 0->+1, -1, +1, ...
+  // Flips occur only at the +1 -> -1 and -1 -> +1 boundaries.
+  assert.ok(r.sources[0]!.Nd > 0);
+});
+
+test('petrosian-fd: zero-rule "previous" drops leading zeros', () => {
+  // First diff is zero (1->1), then +1, then more.
+  const v = [
+    1, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17,
+  ];
+  const r = buildSourceRowTokenPetrosianFd(series(v), {
+    generatedAt: GEN,
+    zeroRule: 'previous',
+  });
+  // 17 diffs, 1 leading zero (no prior non-zero) -> dropped, M = 16.
+  assert.equal(r.sources[0]!.M, 16);
+  assert.equal(r.sources[0]!.zeroDiffs, 1);
+  assert.equal(r.sources[0]!.Nd, 0);
+});
+
+test('petrosian-fd: invalid zero-rule throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenPetrosianFd([], {
+        zeroRule: 'bogus' as 'positive',
+      }),
+    /zeroRule must be one of/,
+  );
+});
+
+test('petrosian-fd: --min-pfd filters out smooth sources', () => {
+  const queue = [
+    ...series(Array.from({ length: 32 }, (_, i) => i), 'monotone'),
+    ...series(
+      Array.from({ length: 32 }, (_, i) => (i % 2 === 0 ? 0 : 50)),
+      'wiggle',
+    ),
+  ];
+  const r = buildSourceRowTokenPetrosianFd(queue, {
+    generatedAt: GEN,
+    minPfd: 1.05,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'wiggle');
+  assert.equal(r.droppedBelowMinPfd, 1);
+});
+
+test('petrosian-fd: --max-pfd filters out wiggly sources', () => {
+  const queue = [
+    ...series(Array.from({ length: 32 }, (_, i) => i), 'monotone'),
+    ...series(
+      Array.from({ length: 32 }, (_, i) => (i % 2 === 0 ? 0 : 50)),
+      'wiggle',
+    ),
+  ];
+  const r = buildSourceRowTokenPetrosianFd(queue, {
+    generatedAt: GEN,
+    maxPfd: 1.02,
+  });
+  assert.equal(r.totalSources, 2);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'monotone');
+  assert.equal(r.droppedAboveMaxPfd, 1);
+});
+
+test('petrosian-fd: min-pfd outside [1, 2] throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenPetrosianFd([], { minPfd: 0.5 }),
+    /minPfd must be in/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenPetrosianFd([], { maxPfd: 2.5 }),
+    /maxPfd must be in/,
+  );
+});
+
+test('petrosian-fd: minPfd > maxPfd throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenPetrosianFd([], {
+        minPfd: 1.5,
+        maxPfd: 1.2,
+      }),
+    /minPfd .* must be <= maxPfd/,
+  );
+});
+
+test('petrosian-fd: report exposes zeroRule, minPfd, maxPfd, droppedBelowMinPfd, droppedAboveMaxPfd', () => {
+  const r = buildSourceRowTokenPetrosianFd([], {
+    generatedAt: GEN,
+    zeroRule: 'skip',
+    minPfd: 1.01,
+    maxPfd: 1.99,
+  });
+  assert.equal(r.zeroRule, 'skip');
+  assert.equal(r.minPfd, 1.01);
+  assert.equal(r.maxPfd, 1.99);
+  assert.equal(r.droppedBelowMinPfd, 0);
+  assert.equal(r.droppedAboveMaxPfd, 0);
+});

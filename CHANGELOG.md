@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.135 — 2026-04-28
+
+### Added
+
+- `source-row-token-petrosian-fd` gains three refinement
+  flags that compose with the 0.6.134 base lens without
+  changing default behaviour:
+
+  - `--zero-rule {positive|skip|previous}`: how to map a
+    zero first-difference (`dv[i] == 0`) to a binary sign
+    symbol. Default `positive` (zero -> +1, the Esteller
+    2001 convention) preserves the 0.6.134 baseline. `skip`
+    drops zero diffs entirely from the symbol stream;
+    `previous` makes a zero inherit the most recent
+    non-zero sign (with leading zeros dropped). On
+    continuous-valued token series the three rules
+    typically agree because exact-equal consecutive values
+    are rare; they diverge for sources with long runs of
+    repeated values (e.g. a stalled queue), where `skip`
+    and `previous` isolate the **non-flat** diff structure
+    and prevent the spurious "monotone" reading that
+    `positive` produces when many zero diffs collapse into
+    a single +1 run.
+
+  - `--min-pfd <v>` / `--max-pfd <v>`: post-compute,
+    pre-cap PFD threshold filters in `[1, 2]`. Useful for
+    isolating only the wiggly sources (`--min-pfd 1.04`)
+    or only the smooth sources (`--max-pfd 1.04`).
+    Suppressed sources surface in `droppedBelowMinPfd` /
+    `droppedAboveMaxPfd` so the operator can audit how
+    many sources fell on each side of the threshold.
+    Combine with `--sort pfd-desc` for "show me only the
+    wiggly ones, sorted wiggliest first".
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,699
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-petrosian-fd --min-pfd 1.04 --sort pfd-desc
+  as of: 2026-04-28   sources: 6 (shown 3)   rows: 1,699
+  min-rows: 16   zero-rule: positive   min-pfd: 1.04   max-pfd: -
+  dropped: ... 3 below min-pfd, 0 above max-pfd, 0 below top cap
+
+  per-source row-token Petrosian Fractal Dimension (sorted by pfd-desc; ties: source asc)
+  source    rows  M    Nd   zeroDiffs  PFD     pfdRaw
+  --------  ----  ---  ---  ---------  ------  ------
+  codex      64    63   38  0          1.0550  1.0550
+  hermes    190   189  126  0          1.0472  1.0472
+  opencode  354   353  233  0          1.0416  1.0416
+  ```
+
+  Reading the live smoke: with `--min-pfd 1.04`, three
+  sources (`vscode-XXX` 1.0348, `openclaw` 1.0380,
+  `claude-code` 1.0393) fall below the threshold and
+  surface in `droppedBelowMinPfd`. The remaining three
+  (`codex`, `hermes`, `opencode`) are the queue's wiggliest
+  in PFD terms. Note `zeroDiffs == 0` for every source on
+  this real data — token totals are large continuous
+  integers so exact-equal consecutive values are essentially
+  never observed, and `--zero-rule skip` produces output
+  identical to the default `positive` here. The `skip` /
+  `previous` rules become discriminating on sources with
+  flat-step regimes (e.g. cached or rate-limited queues
+  where the same total is reported many times in a row).
+
 ## 0.6.134 — 2026-04-28
 
 ### Added
