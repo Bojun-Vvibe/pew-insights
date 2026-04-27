@@ -11337,6 +11337,10 @@ program
     "sort key: 'abs-hurst-deviation-desc' (default, |H - 0.5| desc) | 'hurst-asc' | 'hurst-desc' | 'r2-desc' | 'rows' | 'scales' | 'source'",
     'abs-hurst-deviation-desc',
   )
+  .option(
+    '--detrend',
+    'subtract a per-chunk OLS linear fit before R/S (DFA-style preprocessing). Removes the within-chunk linear ramp and so reads multi-scale memory of the *residuals* rather than gross trend; addresses the documented R/S H -> 1 failure mode on monotone series. Default off (classical R/S).',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -11350,6 +11354,7 @@ program
         minScales: string;
         top?: string;
         sort: string;
+        detrend?: boolean;
         json?: boolean;
       },
       cmd,
@@ -11426,6 +11431,7 @@ program
             | 'rows'
             | 'scales'
             | 'source',
+          detrend: opts.detrend === true,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

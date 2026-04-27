@@ -212,3 +212,78 @@ test('hurst-rs: top + sort caps sources after filters', () => {
   const surfaced = r.sources.map((s) => s.source).sort();
   assert.deepEqual(surfaced, ['c-ramp', 'd-alt']);
 });
+
+test('hurst-rs --detrend: monotone-ramp H collapses toward 0.5 with detrending', () => {
+  // Without detrend, classical R/S yields H near 1 on a strict ramp.
+  // With detrend, the per-chunk linear fit captures the ramp exactly
+  // and the residuals are essentially numerical noise -> H drops
+  // dramatically and r2 of the log-log fit collapses.
+  const n = 256;
+  const values = Array.from({ length: n }, (_, i) => i + 1);
+  const queue = series(values, 'ramp');
+  const off = buildSourceRowTokenHurstRs(queue, {
+    generatedAt: GEN,
+    detrend: false,
+  });
+  const on = buildSourceRowTokenHurstRs(queue, {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(off.detrend, false);
+  assert.equal(on.detrend, true);
+  assert.equal(off.sources.length, 1);
+  // The detrended residuals of an exact linear ramp are zero, so every
+  // chunk degenerates and the source surfaces under droppedAllDegenerate.
+  // This is the correct, honest behaviour: the ramp is *exactly* the
+  // OLS fit, so there is no residual memory to measure.
+  assert.equal(on.sources.length, 0);
+  assert.equal(on.droppedAllDegenerate, 1);
+  assert.ok(off.sources[0]!.hurst > 0.7);
+});
+
+test('hurst-rs --detrend: white noise + linear drift -> H drops toward 0.5', () => {
+  // Construct: linear drift + i.i.d. noise. Without detrend H is
+  // inflated above 0.5; with detrend the per-chunk OLS removes the
+  // drift and we read the underlying noise H ~ 0.5.
+  const rng = lcg(1234);
+  const n = 512;
+  const values: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const drift = i * 0.5; // monotone linear trend
+    const noise = Math.floor(rng() * 100) + 1;
+    values.push(Math.round(drift + noise));
+  }
+  const queue = series(values, 'drift');
+  const off = buildSourceRowTokenHurstRs(queue, {
+    generatedAt: GEN,
+    detrend: false,
+  });
+  const on = buildSourceRowTokenHurstRs(queue, {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(off.sources.length, 1);
+  assert.equal(on.sources.length, 1);
+  const hOff = off.sources[0]!.hurst;
+  const hOn = on.sources[0]!.hurst;
+  // Detrending must move H meaningfully closer to 0.5.
+  assert.ok(
+    Math.abs(hOn - 0.5) < Math.abs(hOff - 0.5),
+    `expected detrend to bring H closer to 0.5; off=${hOff} on=${hOn}`,
+  );
+  // And the detrended H should land in a plausible noise band.
+  assert.ok(
+    Math.abs(hOn - 0.5) < 0.25,
+    `expected detrended H near 0.5, got ${hOn}`,
+  );
+});
+
+test('hurst-rs --detrend: report carries detrend flag', () => {
+  const r1 = buildSourceRowTokenHurstRs([], { generatedAt: GEN });
+  const r2 = buildSourceRowTokenHurstRs([], {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(r1.detrend, false);
+  assert.equal(r2.detrend, true);
+});

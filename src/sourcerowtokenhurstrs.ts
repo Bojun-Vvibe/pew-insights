@@ -180,6 +180,31 @@ export interface SourceRowTokenHurstRsOptions {
    */
   top?: number | null;
   sort?: SourceRowTokenHurstRsSort;
+  /**
+   * If true, **detrend each chunk** before R/S: replace
+   * `d_i = x_i - mu` with `d_i = x_i - (a + b * i)` where `(a, b)`
+   * is the per-chunk OLS line on `(i, x_i)`. The cumulative
+   * deviation `Z_t = sum_{i<=t} d_i` is then formed from the
+   * residuals of the linear fit, not from deviations around the
+   * chunk mean. Stddev `S` likewise uses the residuals.
+   *
+   * Why this matters: classical R/S has a documented failure
+   * mode where a strictly monotone series drives `H -> 1`
+   * spuriously (the residuals from the mean accumulate
+   * monotonically in `Z`, which inflates `R`). Per-chunk linear
+   * detrending — the simplest form of "Detrended Fluctuation
+   * Analysis"-style preprocessing — removes the within-chunk
+   * linear ramp and so reads the **multi-scale memory of the
+   * residuals** rather than the gross trend.
+   *
+   * Caveat: if a chunk's regression has zero residual variance
+   * (S = 0 after detrending — only possible for an exactly
+   * linear chunk of length m), the chunk is counted under
+   * `degenerateChunks` exactly as in the un-detrended path.
+   *
+   * Default false (classical R/S).
+   */
+  detrend?: boolean;
   generatedAt?: string;
 }
 
@@ -215,6 +240,7 @@ export interface SourceRowTokenHurstRsReport {
   minScales: number;
   top: number | null;
   sort: SourceRowTokenHurstRsSort;
+  detrend: boolean;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -311,6 +337,7 @@ export function buildSourceRowTokenHurstRs(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
   }
+  const detrend = opts.detrend === true;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -411,19 +438,43 @@ export function buildSourceRowTokenHurstRs(
       let degenerateThisScale = 0;
       for (let c = 0; c < k; c++) {
         const start = c * m;
-        let sum = 0;
-        for (let i = 0; i < m; i++) sum += x[start + i]!;
-        const mu = sum / m;
         let cum = 0;
         let zMin = Infinity;
         let zMax = -Infinity;
         let sqDev = 0;
-        for (let i = 0; i < m; i++) {
-          const d = x[start + i]! - mu;
-          cum += d;
-          if (cum < zMin) zMin = cum;
-          if (cum > zMax) zMax = cum;
-          sqDev += d * d;
+        if (detrend) {
+          // OLS on (i, x[start + i]) for i in [0, m).
+          // x-mean of i in [0, m) is (m - 1) / 2; var sum is m*(m^2 - 1)/12.
+          let sumX = 0;
+          for (let i = 0; i < m; i++) sumX += x[start + i]!;
+          const meanX = sumX / m;
+          const meanI = (m - 1) / 2;
+          let sxy = 0;
+          // Closed-form sxx for i = 0..m-1.
+          const sxx = (m * (m * m - 1)) / 12;
+          for (let i = 0; i < m; i++) {
+            sxy += (i - meanI) * (x[start + i]! - meanX);
+          }
+          const b = sxx === 0 ? 0 : sxy / sxx;
+          const a = meanX - b * meanI;
+          for (let i = 0; i < m; i++) {
+            const d = x[start + i]! - (a + b * i);
+            cum += d;
+            if (cum < zMin) zMin = cum;
+            if (cum > zMax) zMax = cum;
+            sqDev += d * d;
+          }
+        } else {
+          let sum = 0;
+          for (let i = 0; i < m; i++) sum += x[start + i]!;
+          const mu = sum / m;
+          for (let i = 0; i < m; i++) {
+            const d = x[start + i]! - mu;
+            cum += d;
+            if (cum < zMin) zMin = cum;
+            if (cum > zMax) zMax = cum;
+            sqDev += d * d;
+          }
         }
         const stddev = Math.sqrt(sqDev / m);
         if (stddev === 0) {
@@ -542,6 +593,7 @@ export function buildSourceRowTokenHurstRs(
     minScales,
     top,
     sort,
+    detrend,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,

@@ -8934,7 +8934,7 @@ export function renderSourceRowTokenHurstRs(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-hurst-rs'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-window: ${r.minWindow}    max-scales: ${r.maxScales}    min-scales: ${r.minScales}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-window: ${r.minWindow}    max-scales: ${r.maxScales}    min-scales: ${r.minScales}    detrend: ${r.detrend ? 'on' : 'off'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(

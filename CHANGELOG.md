@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.111 — 2026-04-27
+
+### Changed
+
+- `source-row-token-hurst-rs`: adds `--detrend`. When set,
+  each chunk is **linearly detrended** before R/S: replace
+  `d_i = x_i - mu` with `d_i = x_i - (a + b * i)` where
+  `(a, b)` is the per-chunk OLS line on `(i, x_i)`. The
+  cumulative deviation `Z_t = sum_{i<=t} d_i` and the
+  stddev `S` are then formed from the residuals of the
+  linear fit, not from deviations around the chunk mean.
+
+  This is the simplest form of "Detrended Fluctuation
+  Analysis"-style preprocessing and addresses the documented
+  classical-R/S failure mode where a strictly monotone
+  series drives `H -> 1` spuriously: with `--detrend` on, an
+  exact linear ramp fits its OLS line exactly, every chunk
+  has zero residual variance, and the source surfaces
+  honestly under `droppedAllDegenerate` rather than
+  reporting a misleading `H ~ 1`.
+
+  The classical (un-detrended) and detrended H are
+  **complementary, not redundant**:
+
+  - Un-detrended H reads the **multi-scale memory of the
+    raw signal** (mixes gross trend with residual memory).
+  - Detrended H reads the **multi-scale memory of the
+    residuals after removing the within-chunk linear
+    component** (so `H_detrended >> 0.5` means residual
+    persistence beyond what a piecewise-linear fit
+    explains).
+
+  3 new unit tests cover: monotone-ramp degeneracy under
+  `--detrend` (collapses to `droppedAllDegenerate` while
+  un-detrended reports `H > 0.7`), white-noise + linear
+  drift (detrend brings `H` materially closer to 0.5 while
+  un-detrended is inflated by the drift), and the report
+  carrying the `detrend` flag.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--detrend --top 5 --sort hurst-desc` (1,650 rows,
+  6 sources; one source-name redacted from the excerpt
+  below per repo policy):
+
+  ```
+  per-source row-token Hurst R/S exponent (sorted by hurst-desc; ties: source asc)
+  source       rows  H       intercept  R^2     scales  mMin  mMax  degCh  degSc
+  -----------  ----  ------  ---------  ------  ------  ----  ----  -----  -----
+  opencode     337   0.8814  -1.0116    0.9914  12      8     168   0      0
+  openclaw     443   0.8224  -0.7613    0.9941  12      8     221   0      0
+  codex        64    0.7518  -0.6405    0.9234  12      8     32    0      0
+  claude-code  299   0.7053  -0.4884    0.9853  12      8     149   0      0
+  hermes       174   0.6706  -0.4550    0.9929  12      8     87    0      0
+  ```
+
+  Compared to the v0.6.110 un-detrended figures (codex
+  `0.9688 -> 0.7518`, opencode `0.9458 -> 0.8814`,
+  claude-code `0.7596 -> 0.7053`), every source's H drops
+  but stays well above 0.5. That is the diagnostic payoff:
+  the original elevated H was **not** purely the
+  documented R/S-on-trended-data failure mode — every
+  source still reports clear residual persistence after
+  removing the within-chunk linear drift, with `R^2 > 0.92`
+  on every log-log fit. Operator reading: token-volume
+  memory in this corpus is real multi-scale persistence on
+  top of (not a measurement artefact of) the monotone
+  trends already surfaced by `source-row-token-mann-
+  kendall-trend`.
+
 ## 0.6.110 — 2026-04-27
 
 ### Added
