@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.90 — 2026-04-27
+
+### Changed
+
+- `source-row-token-mad`: refinement adds the
+  `--min-mad-ratio <f>` flag. Drops sources whose `madRatio`
+  is strictly below `f`. The natural cohort selector for this
+  lens — the question "is this source's robust scale-free
+  spread meaningful, or is the bulk of rows tightly clustered
+  around the median?" is always madRatio-based.
+
+  Suggested operator thresholds:
+
+  - `--min-mad-ratio 0.1`  hide sources whose mad is less
+    than 10% of the median (a "rows are robustly tightly
+    clustered around the median" filter).
+  - `--min-mad-ratio 0.5`  hide everything tighter than
+    "median absolute deviation is half the median" — a
+    moderate-robust-spread cohort.
+  - `--min-mad-ratio 1.0`  surface only sources whose typical
+    absolute deviation equals or exceeds the typical row size
+    — a heavy-tailed-or-bimodal cohort.
+
+  Pair with `--sort mad-desc` (the default) for "show me the
+  sources with the biggest absolute robust spread, ordered by
+  the absolute spread" or with `--sort ratio-desc` for "show
+  me the sources with the biggest robust scale-free spread".
+
+  Display filter only; suppressed rows surface as
+  `droppedBelowMinMadRatio`. Default `--min-mad-ratio 0`
+  preserves v0.6.89 behaviour exactly. Strict-`<` semantics:
+  an exactly-`madRatio = 0` source (median = 0, or all rows
+  equal the median — i.e. `degen=y` or "perfectly tight")
+  is kept by the default `0`, but any positive threshold
+  including `--min-mad-ratio 0.0001` drops it. Same convention
+  as `--min-cv` (v0.6.88), `--min-abs-skew` (v0.6.81),
+  `--min-abs-kurt` (v0.6.84), and `--min-margin` (v0.6.86).
+
+  Live smoke at `--min-rows 5 --min-mad-ratio 0.8` against
+  `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-mad
+  as of: 2026-04-27T02:44:19.462Z    sources: 6 (shown 2)    rows: 1,620    min-rows: 5    min-median: 0.00    min-mad-ratio: 0.8000    top: —    sort: mad-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 2-row floor, 0 below min-rows, 0 below min-median, 4 below min-mad-ratio, 0 below top cap
+
+  per-source row total_tokens MAD (sorted by mad-desc; ties: source asc)
+  source       rows  median      mad         madScaled   madRatio  degen
+  -----------  ----  ----------  ----------  ----------  --------  -----
+  codex        64    7132861.00  6506096.00  9645937.93  0.9121    -
+  claude-code  299   3319967.00  3103438.00  4601157.18  0.9348    -
+  ```
+
+  At `--min-mad-ratio 0.8`, only `codex` (0.91) and
+  `claude-code` (0.93) survive. The four dropped sources
+  (`opencode` 0.78, `hermes` 0.78, `vscode-assistant-redacted`
+  0.75, `openclaw` 0.55) are the cohort whose robust scale-free
+  spread is below the "deviation is at least 80% of typical
+  row size" bar. With this gate engaged the lens transitions
+  from "report all robust dispersion" to "report only sources
+  whose middle-50% spread is on the same order as the typical
+  row itself" — a much sharper signature for the
+  bimodal-or-genuinely-heavy-tailed cohort.
+
+---
+
 ## 0.6.89 — 2026-04-27
 
 ### Added

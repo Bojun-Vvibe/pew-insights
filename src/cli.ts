@@ -9954,6 +9954,11 @@ program
     '0',
   )
   .option(
+    '--min-mad-ratio <f>',
+    'drop sources whose madRatio = mad / median is strictly below f; cohort selector for "robust scale-free spread is meaningful" (e.g. --min-mad-ratio 0.5 hides everything tighter than "median absolute deviation is half the median"; --min-mad-ratio 1.0 surfaces only sources whose typical absolute deviation equals or exceeds the typical row size — heavy-tailed-or-bimodal cohort) (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9971,6 +9976,7 @@ program
         source?: string;
         minRows: string;
         minMedian: string;
+        minMadRatio: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9990,6 +9996,12 @@ program
         if (!Number.isFinite(minMedian) || minMedian < 0) {
           throw new Error(
             `--min-median must be a finite, non-negative number (got ${opts.minMedian})`,
+          );
+        }
+        const minMadRatio = Number.parseFloat(opts.minMadRatio);
+        if (!Number.isFinite(minMadRatio) || minMadRatio < 0) {
+          throw new Error(
+            `--min-mad-ratio must be a finite, non-negative number (got ${opts.minMadRatio})`,
           );
         }
         let top: number | null = null;
@@ -10021,6 +10033,7 @@ program
           source: opts.source ?? null,
           minRows,
           minMedian,
+          minMadRatio,
           top,
           sort: opts.sort as
             | 'mad-desc'

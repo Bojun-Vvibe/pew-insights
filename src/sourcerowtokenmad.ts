@@ -165,6 +165,30 @@ export interface SourceRowTokenMadOptions {
    */
   minMedian?: number;
   /**
+   * Drop sources whose `madRatio` is strictly below this value.
+   * The cohort selector for this lens — the question "is this
+   * source's robust scale-free spread meaningful?". Suggested
+   * thresholds:
+   *   - `--min-mad-ratio 0.1`  hide sources whose mad is less
+   *     than 10% of the median (a "rows are robustly tightly
+   *     clustered around the median" filter).
+   *   - `--min-mad-ratio 0.5`  hide everything tighter than
+   *     "median absolute deviation is half the median" — a
+   *     moderate-robust-spread cohort.
+   *   - `--min-mad-ratio 1.0`  surface only sources whose
+   *     typical absolute deviation equals or exceeds the
+   *     typical row size — a heavy-tailed-or-bimodal cohort.
+   * Display filter only. Suppressed rows surface as
+   * `droppedBelowMinMadRatio`. Must be a finite, non-negative
+   * number. Default 0 = no floor (preserves v0.6.89 behaviour
+   * exactly). Strict-`<` semantics: an exactly-`madRatio = 0`
+   * source (median = 0, or all rows equal the median) is kept
+   * by the default `0`, but any positive threshold including
+   * `--min-mad-ratio 0.0001` drops it. Same convention as
+   * `--min-cv` (v0.6.88), `--min-margin` (v0.6.86), etc.
+   */
+  minMadRatio?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -210,6 +234,7 @@ export interface SourceRowTokenMadReport {
   source: string | null;
   minRows: number;
   minMedian: number;
+  minMadRatio: number;
   top: number | null;
   sort:
     | 'mad-desc'
@@ -228,6 +253,7 @@ export interface SourceRowTokenMadReport {
   droppedTooFewRowsForMad: number;
   droppedBelowMinRows: number;
   droppedBelowMinMedian: number;
+  droppedBelowMinMadRatio: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenMadRow[];
 }
@@ -270,6 +296,12 @@ export function buildSourceRowTokenMad(
   if (!Number.isFinite(minMedian) || minMedian < 0) {
     throw new Error(
       `minMedian must be a finite, non-negative number (got ${opts.minMedian})`,
+    );
+  }
+  const minMadRatio = opts.minMadRatio ?? 0;
+  if (!Number.isFinite(minMadRatio) || minMadRatio < 0) {
+    throw new Error(
+      `minMadRatio must be a finite, non-negative number (got ${opts.minMadRatio})`,
     );
   }
   const top = opts.top ?? null;
@@ -367,6 +399,7 @@ export function buildSourceRowTokenMad(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinMedian = 0;
+  let droppedBelowMinMadRatio = 0;
   const survived: SourceRowTokenMadRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -375,6 +408,10 @@ export function buildSourceRowTokenMad(
     }
     if (row.median < minMedian) {
       droppedBelowMinMedian += 1;
+      continue;
+    }
+    if (row.madRatio < minMadRatio) {
+      droppedBelowMinMadRatio += 1;
       continue;
     }
     survived.push(row);
@@ -407,6 +444,7 @@ export function buildSourceRowTokenMad(
     source: sourceFilter,
     minRows,
     minMedian,
+    minMadRatio,
     top,
     sort,
     totalSources,
@@ -416,6 +454,7 @@ export function buildSourceRowTokenMad(
     droppedTooFewRowsForMad,
     droppedBelowMinRows,
     droppedBelowMinMedian,
+    droppedBelowMinMadRatio,
     droppedBelowTopCap,
     sources: finalSources,
   };

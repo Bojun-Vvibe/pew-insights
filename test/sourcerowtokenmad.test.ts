@@ -303,3 +303,65 @@ test('row-token-mad: empty source string -> "unknown"', () => {
   const r = buildSourceRowTokenMad(q, { generatedAt: GEN });
   assert.equal(r.sources[0]!.source, 'unknown');
 });
+
+test('row-token-mad: rejects bad minMadRatio', () => {
+  assert.throws(() => buildSourceRowTokenMad([], { minMadRatio: -1 }));
+  assert.throws(() =>
+    buildSourceRowTokenMad([], { minMadRatio: Number.POSITIVE_INFINITY }),
+  );
+  assert.throws(() => buildSourceRowTokenMad([], { minMadRatio: Number.NaN }));
+});
+
+test('row-token-mad: minMadRatio gate (strict <)', () => {
+  // a: x=[1,1,1,1] -> median=1, mad=0, ratio=0
+  // b: x=[1,2,3,4] -> median=2.5, mad=1, ratio=0.4
+  // c: x=[10,10,90,90] -> median=50, mad=40, ratio=0.8
+  const q = [
+    ql('2026-04-27T00:00:00.000Z', 'a', 1),
+    ql('2026-04-27T01:00:00.000Z', 'a', 1),
+    ql('2026-04-27T02:00:00.000Z', 'a', 1),
+    ql('2026-04-27T03:00:00.000Z', 'a', 1),
+    ql('2026-04-27T00:00:00.000Z', 'b', 1),
+    ql('2026-04-27T01:00:00.000Z', 'b', 2),
+    ql('2026-04-27T02:00:00.000Z', 'b', 3),
+    ql('2026-04-27T03:00:00.000Z', 'b', 4),
+    ql('2026-04-27T00:00:00.000Z', 'c', 10),
+    ql('2026-04-27T01:00:00.000Z', 'c', 10),
+    ql('2026-04-27T02:00:00.000Z', 'c', 90),
+    ql('2026-04-27T03:00:00.000Z', 'c', 90),
+  ];
+  // default 0 keeps all 3
+  const r0 = buildSourceRowTokenMad(q, { generatedAt: GEN });
+  assert.equal(r0.sources.length, 3);
+  // 0.5 drops a (0) and b (0.4), keeps c (0.8)
+  const r5 = buildSourceRowTokenMad(q, {
+    generatedAt: GEN,
+    minMadRatio: 0.5,
+  });
+  assert.equal(r5.droppedBelowMinMadRatio, 2);
+  assert.equal(r5.sources.length, 1);
+  assert.equal(r5.sources[0]!.source, 'c');
+  // strict-< : exactly 0.4 drops a (0 < 0.4), keeps b (0.4 NOT < 0.4) and c
+  const r4 = buildSourceRowTokenMad(q, {
+    generatedAt: GEN,
+    minMadRatio: 0.4,
+  });
+  assert.equal(r4.droppedBelowMinMadRatio, 1);
+  assert.equal(r4.sources.length, 2);
+  // 0.0001 drops only the exactly-zero a
+  const rEps = buildSourceRowTokenMad(q, {
+    generatedAt: GEN,
+    minMadRatio: 0.0001,
+  });
+  assert.equal(rEps.droppedBelowMinMadRatio, 1);
+  assert.equal(rEps.sources.length, 2);
+});
+
+test('row-token-mad: report exposes minMadRatio in header fields', () => {
+  const r = buildSourceRowTokenMad([], {
+    generatedAt: GEN,
+    minMadRatio: 0.7,
+  });
+  assert.equal(r.minMadRatio, 0.7);
+  assert.equal(r.droppedBelowMinMadRatio, 0);
+});

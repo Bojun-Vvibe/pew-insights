@@ -1666,12 +1666,12 @@ export function renderSourceRowTokenMad(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-mad'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-median: ${r.minMedian.toFixed(2)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-median: ${r.minMedian.toFixed(2)}    min-mad-ratio: ${r.minMadRatio.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForMad)} below 2-row floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMedian)} below min-median, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedTooFewRowsForMad)} below 2-row floor, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMedian)} below min-median, ${formatNumber(r.droppedBelowMinMadRatio)} below min-mad-ratio, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
