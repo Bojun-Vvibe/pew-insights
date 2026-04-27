@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.112 — 2026-04-27
+
+### Added
+
+- `source-row-token-sample-entropy`: per-source **Sample
+  Entropy (SampEn)** of Richman & Moorman (2000) on the
+  per-row `total_tokens` time-ordered sequence.
+  `SampEn = -ln(A / B)`, where `B` = number of length-`m`
+  template-vector pairs `(i, j)`, `i < j`, that match in
+  Chebyshev (sup-norm) distance `<= r * sigma_v`, and `A`
+  = the subset of those pairs whose extension to length
+  `m + 1` also matches. `sigma_v` is the population stddev
+  of the per-source value sequence; the unitless tolerance
+  multiplier defaults to `r = 0.2` (the canonical
+  Richman-Moorman default), and `m` defaults to 2.
+
+  Reading SampEn:
+  - **Lower** SampEn (closer to `0`) = the next sample is
+    typically predictable from the immediately preceding
+    `m`-long pattern at this tolerance — i.e. **regular /
+    predictable** dynamics.
+  - **Higher** SampEn = the next sample is poorly
+    predictable from the last `m` — i.e. **irregular /
+    near-random** dynamics.
+
+  Strict numerical comparison across series is only valid
+  when `(m, r)` and (approximately) `n` are held fixed.
+
+  Degenerate cases are surfaced honestly, not collapsed:
+  - `B == 0` (tolerance too tight for the dynamic range at
+    this `m`): `sampEn = null`, `degenerate = true`,
+    counted under `degenerateNoMatches`.
+  - `A == 0, B > 0` (length-`m` matches exist but **none**
+    extend to length `m + 1`): `sampEn = +Infinity`,
+    `degenerate = true`, counted under
+    `degenerateNoExtensions`. Operator reading: high noise,
+    very short `n`, or a tolerance that admits length-`m`
+    noise-matches but is too tight to admit consistent
+    length-`m+1` matches.
+  - Constant series (`sigma_v == 0`): `droppedZeroVariance`
+    (the tolerance scale collapses; SampEn is undefined,
+    not "zero").
+
+  Why this lens is **genuinely orthogonal** to every other
+  `source-row-token-*` lens already in the suite:
+
+  - `source-row-token-permutation-entropy` collapses each
+    window to its **ordinal pattern** — fully value-blind
+    beyond rank order. SampEn keeps the **metric**
+    information and asks whether two windows are
+    numerically close at tolerance `r * sigma`. A series
+    can have `PE ~ 1` (uniform ordinal patterns) yet very
+    low SampEn (matching values reliably extend), and vice
+    versa.
+  - `source-row-token-hurst-rs` is a **multi-scale memory**
+    exponent from R/S over partition scales; SampEn is a
+    **single-scale conditional irregularity** scalar at one
+    chosen `(m, r)`.
+  - `source-row-token-mann-kendall-trend` /
+    `-runs-test` / `-turning-point-count` are
+    directional / dichotomy / extremum tests, not
+    pattern-extension matching.
+  - `source-row-token-autocorrelation-lag1` is linear,
+    parametric, lag-1 only; SampEn is non-parametric and
+    captures **m-th order** conditional structure.
+  - All order-invariant dispersion / shape lenses
+    (`-iqr-ratio`, `-mad`, `-skewness`, `-kurtosis`,
+    `-gini`, `-burstiness-coefficient`,
+    `-coefficient-of-variation`) are unchanged by
+    shuffling — that operation typically pushes SampEn
+    toward its high-randomness regime.
+
+  10 unit tests cover: empty input, constant-series
+  zero-variance drop, `n < m + 2` drop, regular periodic
+  series collapse to small SampEn, deterministic
+  alternating two-point series with hand-derived
+  `B = A = 72` and `SampEn = 0`, pseudo-random series
+  reaching the high-SampEn regime (or honestly surfacing
+  as `degenerateNoExtensions`), invalid `m` / `r` /
+  `min-rows` rejection, source filter + dropped counters,
+  `--top` cap with `droppedBelowTopCap`, and `source asc`
+  tiebreak on equal SampEn.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--top 5 --sort sampen-desc` (1,656 rows, 6 sources;
+  one source-name redacted from the excerpt below per repo
+  policy):
+
+  ```
+  per-source row-token Sample Entropy (sorted by sampen-desc; ties: source asc)
+  source       rows  N    sigma        tol         B       A      SampEn  deg
+  -----------  ----  ---  -----------  ----------  ------  -----  ------  ---
+  codex        64    62   14252148.98  2850429.80  111     25     1.4907  no
+  opencode     339   337  13272149.77  2654429.95  4,580   2,017  0.8201  no
+  hermes       176   174  975688.83    195137.77   1,378   613    0.8100  no
+  claude-code  299   297  17605167.00  3521033.40  7,420   4,023  0.6122  no
+  openclaw     445   443  4898412.87   979682.57   10,901  6,122  0.5770  no
+  ```
+
+  And with `--sort sampen-asc` (most-regular first; one
+  source-name redacted):
+
+  ```
+  per-source row-token Sample Entropy (sorted by sampen-asc; ties: source asc)
+  source       rows  N    sigma        tol         B       A       SampEn  deg
+  -----------  ----  ---  -----------  ----------  ------  ------  ------  ---
+  <redacted>   333   331  14933.73     2986.75     18,382  11,887  0.4359  no
+  openclaw     445   443  4898412.87   979682.57   10,901  6,122   0.5770  no
+  claude-code  299   297  17605167.00  3521033.40  7,420   4,023   0.6122  no
+  hermes       176   174  975688.83    195137.77   1,378   613     0.8100  no
+  opencode     339   337  13272149.77  2654429.95  4,580   2,017   0.8201  no
+  ```
+
+  Operator reading on this corpus: every source is
+  non-degenerate at default `(m=2, r=0.2)` — the chosen
+  tolerance is large enough (1k–3.5M tokens, scaled to
+  per-source `sigma`) to admit both length-`m` and
+  length-`(m + 1)` matches everywhere. SampEn ranges from
+  `0.44` (the redacted small-`sigma` source — small
+  per-row token swings, very predictable extensions) up to
+  `1.49` (`codex`, the smallest `n = 64` source — sparse
+  history makes the next sample harder to predict). The
+  ordering is **not** a re-statement of any existing lens:
+  `codex` is highest in SampEn here despite ranking middle
+  in the v0.6.110/v0.6.111 Hurst R/S table; `opencode`
+  swaps places with `openclaw` between `permutation-
+  entropy` (ordinal-only) and SampEn (metric-aware).
+
 ## 0.6.111 — 2026-04-27
 
 ### Changed

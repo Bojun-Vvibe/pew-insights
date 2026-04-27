@@ -8997,3 +8997,81 @@ export function renderSourceRowTokenHurstRs(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenSampleEntropyReport,
+  SourceRowTokenSampleEntropyRow,
+} from './sourcerowtokensampleentropy.js';
+
+export function renderSourceRowTokenSampleEntropy(
+  r: SourceRowTokenSampleEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-sample-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    m: ${r.m}    r: ${r.r.toFixed(4)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (sigma=0), ${formatNumber(r.degenerateNoMatches)} degenerate (B=0; tolerance too tight), ${formatNumber(r.degenerateNoExtensions)} degenerate (A=0; matches don't extend), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Sample Entropy (Richman-Moorman 2000) on the per-row total_tokens time-ordered sequence. SampEn = -ln(A / B), where B = number of length-m template-vector pairs (i,j), i<j, that match in Chebyshev distance <= r*sigma, and A = the subset whose extension to length m+1 also matches. Lower SampEn (~0) = more regular / more predictable. Higher SampEn = more random. Genuinely orthogonal to permutation-entropy (ordinal vs. metric matching), to hurst-rs (multi-scale memory vs. single-scale conditional irregularity), to mann-kendall / runs / turning-point (directional / dichotomy / extremum), to lag-1 autocorrelation (linear, parametric, lag-1 only), and to all order-invariant dispersion / shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Sample Entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'N',
+    'sigma',
+    'tol',
+    'B',
+    'A',
+    'SampEn',
+    'deg',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSampleEntropyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.templateCount),
+      s.sigma.toFixed(2),
+      s.tolerance.toFixed(2),
+      formatNumber(s.bMatches),
+      formatNumber(s.aMatches),
+      s.sampEn === null
+        ? 'n/a'
+        : !Number.isFinite(s.sampEn)
+          ? 'inf'
+          : s.sampEn.toFixed(4),
+      s.degenerate ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

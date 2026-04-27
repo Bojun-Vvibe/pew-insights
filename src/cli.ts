@@ -112,6 +112,7 @@ import {
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
   renderSourceRowTokenPermutationEntropy,
+  renderSourceRowTokenSampleEntropy,
   renderSourceRowTokenMannKendallTrend,
   renderSourceRowTokenHurstRs,
   renderSourcePeakHourOfDayArgmax,
@@ -286,6 +287,7 @@ import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenbursti
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
+import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
 import { buildSourceRowTokenHurstRs } from './sourcerowtokenhurstrs.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
@@ -11437,6 +11439,109 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenHurstRs(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-sample-entropy')
+  .description(
+    "Per-source Sample Entropy (Richman-Moorman 2000) on the per-row total_tokens time-ordered sequence. SampEn = -ln(A / B), where B = number of length-m template-vector pairs (i,j), i<j, that match in Chebyshev distance <= r*sigma, and A = the subset of those pairs whose extension to length m+1 also matches. Lower SampEn (~0) = more regular / more predictable length-m -> length-(m+1) extensions. Higher SampEn = more random. sigma is the population stddev of the per-source value sequence; tolerance r is unitless and defaults to 0.2 (canonical). Genuinely orthogonal to source-row-token-permutation-entropy (PE collapses each window to its ordinal pattern; SampEn keeps the metric information and asks whether two windows are numerically close at tolerance r*sigma — a series can be PE~1 and SampEn-low or vice versa), to source-row-token-hurst-rs (multi-scale memory exponent vs. single-scale conditional irregularity), to source-row-token-mann-kendall-trend / -runs-test / -turning-point-count (directional / dichotomy / extremum, not pattern-extension matching), to source-row-token-autocorrelation-lag1 (linear, parametric, lag-1 only vs. m-th order non-parametric), and to all order-invariant dispersion / shape lenses (-iqr-ratio / -mad / -skewness / -kurtosis / -gini / -burstiness / -coefficient-of-variation; shuffling leaves them unchanged but pushes SampEn toward its high-randomness regime).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--m <m>',
+    'embedding dimension m. Integer in [1, 6]. (default 2)',
+    '2',
+  )
+  .option(
+    '--r <f>',
+    'unitless tolerance multiplier r; absolute tolerance = r * sigma_v. Finite positive number. (default 0.2)',
+    '0.2',
+  )
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; must be an integer >= m+2 (default 12)',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'sampen-asc' (default; most-regular first; degenerate rows sink) | 'sampen-desc' (most-random first; degenerate rows sink) | 'rows' | 'source'",
+    'sampen-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        m: string;
+        r: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const m = Number.parseInt(opts.m, 10);
+        if (!Number.isInteger(m) || m < 1 || m > 6) {
+          throw new Error(`--m must be an integer in [1, 6] (got ${opts.m})`);
+        }
+        const r = Number.parseFloat(opts.r);
+        if (!Number.isFinite(r) || r <= 0) {
+          throw new Error(`--r must be a finite positive number (got ${opts.r})`);
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < m + 2) {
+          throw new Error(
+            `--min-rows must be an integer >= m+2 (=${m + 2}) (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['sampen-asc', 'sampen-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSampleEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          m,
+          r,
+          minRows,
+          top,
+          sort: opts.sort as 'sampen-asc' | 'sampen-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSampleEntropy(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
