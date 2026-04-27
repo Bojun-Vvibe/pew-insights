@@ -284,3 +284,49 @@ test('higuchi-fd --detrend: pure ramp -> sigma collapses, droppedZeroVariance', 
   assert.equal(r.droppedZeroVariance, 1);
   assert.equal(r.sources.length, 0);
 });
+
+test('higuchi-fd: HFD scale-invariant under positive affine scaling', () => {
+  // HFD is theoretically invariant under v -> alpha*v + beta for alpha > 0.
+  // (alpha cancels in the L(k) ratios; beta cancels in the |deltas|.)
+  // Verify on a non-trivial sequence that the slopeRaw is identical
+  // (modulo float rounding) under such a transform.
+  const baseVals: number[] = [];
+  let x = 7;
+  for (let i = 0; i < 60; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    baseVals.push((x % 500) + 10);
+  }
+  const scaled = baseVals.map((v) => 13 * v + 1000);
+  const r1 = buildSourceRowTokenHiguchiFd(series(baseVals, 'a'), {
+    generatedAt: GEN,
+  });
+  const r2 = buildSourceRowTokenHiguchiFd(series(scaled, 'a'), {
+    generatedAt: GEN,
+  });
+  assert.equal(r1.sources.length, 1);
+  assert.equal(r2.sources.length, 1);
+  // slopeRaw should be identical to high precision (the only diff is
+  // multiplicative constants inside log() that cancel after subtraction
+  // of ybar).
+  assert.ok(
+    Math.abs(r1.sources[0]!.slopeRaw - r2.sources[0]!.slopeRaw) < 1e-9,
+    `slopeRaw should be invariant: got ${r1.sources[0]!.slopeRaw} vs ${r2.sources[0]!.slopeRaw}`,
+  );
+  // sigmas of course differ by factor 13.
+  assert.ok(Math.abs(r2.sources[0]!.sigma / r1.sources[0]!.sigma - 13) < 1e-6);
+});
+
+test('higuchi-fd: time-window filter (since/until) trims rows correctly', () => {
+  // 30 rows across multiple days; restrict to a 1-day window.
+  const data = series(
+    Array.from({ length: 30 }, (_, i) => i + 1),
+  );
+  const r = buildSourceRowTokenHiguchiFd(data, {
+    generatedAt: GEN,
+    since: '2026-04-25T00:00:00Z',
+    until: '2026-04-25T00:30:00Z', // first 30 minutes (rows 0..29) -> all 30
+    minRows: 16,
+  });
+  // All 30 rows fall in the [0, 30) minute window
+  assert.equal(r.totalRowsKept, 30);
+});

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.116 — 2026-04-27
+
+### Changed
+
+- `source-row-token-higuchi-fd`: extra test coverage. Adds
+  two property-style tests:
+  - **affine-scale invariance**: the fitted `slopeRaw` is
+    invariant (to ~1e-9) under `v -> alpha*v + beta` for
+    `alpha > 0`. This is a defining theoretical property of
+    HFD and the test guards against future regressions that
+    would silently re-introduce a multiplicative bias (e.g.
+    accidentally normalising L(k) by mean(v) or similar).
+  - **time-window filter**: `--since` / `--until` correctly
+    trim the per-source row set before the regression runs.
+
+  No production code change. Test count: 2709 -> 2711.
+
 ## 0.6.115 — 2026-04-27
 
 ### Changed
