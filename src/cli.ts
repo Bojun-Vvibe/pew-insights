@@ -126,6 +126,7 @@ import {
   renderSourceRowTokenSpectralCentroid,
   renderSourceRowTokenSpectralBandwidth,
   renderSourceRowTokenSpectralSkewness,
+  renderSourceRowTokenSpectralKurtosis,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -313,6 +314,7 @@ import { buildSourceRowTokenSpectralRolloff } from './sourcerowtokenspectralroll
 import { buildSourceRowTokenSpectralCentroid } from './sourcerowtokenspectralcentroid.js';
 import { buildSourceRowTokenSpectralBandwidth } from './sourcerowtokenspectralbandwidth.js';
 import { buildSourceRowTokenSpectralSkewness } from './sourcerowtokenspectralskewness.js';
+import { buildSourceRowTokenSpectralKurtosis } from './sourcerowtokenspectralkurtosis.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -13579,6 +13581,102 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralSkewness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-kurtosis')
+  .description(
+    "Per-source standardized spectral kurtosis (4th standardized central moment of the one-sided non-DC PSD around its centroid) of the mean-centered per-row total_tokens series. kurtosis = m4 / m2^2 (Pearson; always >= 1); excess = kurtosis - 3 (Fisher; Gaussian baseline 0). Large excess => leptokurtic (sharply peaked PSD with heavy tails); negative excess => platykurtic (flatter-topped). Antoni 2006 / Peeters 2004 / Lerch 2012 / Joanes & Gill 1998. PSD *4th standardized central moment* (peakedness/tail-weight, sign-blind, location-blind, scale-blind), genuinely orthogonal to spectral-skewness (3rd standardized central moment / asymmetry — sign-bearing), spectral-bandwidth (2nd central moment / spread — standardization by m2^2 strips spread out so only shape remains), spectral-centroid (1st moment / location — kurtosis is location-blind), spectral-rolloff, spectral-flatness, hjorth-mobility (sign-blind), TKEO, single-lag autocorrelation, event-count lenses, time-domain symbolic entropies, scaling/fractal lenses, and amplitude-domain shape lenses (which are order-invariant; this lens is order-sensitive).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'excess-desc' (default; most leptokurtic — sharpest peaks / heaviest tails relative to Gaussian first) | 'excess-asc' (most platykurtic first) | 'kurtosis-desc' | 'kurtosis-asc' | 'abs-excess-desc' (furthest from Gaussian-shaped PSD in either direction first) | 'rows' | 'source'",
+    'excess-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'kurtosis-asc',
+          'kurtosis-desc',
+          'excess-asc',
+          'excess-desc',
+          'abs-excess-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralKurtosis(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'kurtosis-asc'
+            | 'kurtosis-desc'
+            | 'excess-asc'
+            | 'excess-desc'
+            | 'abs-excess-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralKurtosis(report) + '\n',
           );
         }
       } catch (e) {
