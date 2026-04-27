@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.101 — 2026-04-27
+
+### Added
+
+- `source-row-token-runs-test`: per-source **Wald-Wolfowitz
+  runs test** on the per-row `total_tokens` sequence,
+  dichotomised at the source's own median.
+
+  Headline question: **for each source, is the order in which
+  the row token volumes arrive consistent with an i.i.d. random
+  sequence — or are above-median and below-median rows clumped
+  (positive serial dependence) or alternating (negative serial
+  dependence / mean-reversion)?**
+
+  For each source: sort rows by `hour_start` ascending, compute
+  the median, drop ties, sign the rest (`+1` if above, `-1` if
+  below), count maximal contiguous same-sign blocks `R`, and
+  emit the normal-approximation Z statistic
+  `Z = (R - mu_R) / sigma_R` where
+  `mu_R = 1 + 2*n1*n2 / n` and
+  `var_R = 2*n1*n2*(2*n1*n2 - n) / (n^2 * (n - 1))`. Two-sided
+  p-value via the standard-normal CDF.
+
+  - `Z << 0` (e.g. `< -1.96`): **too few runs**; above/below-
+    median rows are **clumped** (regime persistence).
+  - `Z ~ 0`: order is consistent with i.i.d.
+  - `Z >> 0`: **too many runs**; above/below-median rows
+    **alternate** more than chance (mean-reversion).
+
+  Genuinely orthogonal to every existing `source-row-token-*`
+  lens — see the file-level header for the full taxonomy. Two
+  highlights:
+
+  - vs `source-row-token-autocorrelation-lag1` (Pearson rho on
+    raw values, **linear**, parametric): the runs test is
+    **non-parametric** on the **sign sequence**. A slow
+    above/below-median regime drift can leave linear lag-1 rho
+    near zero while the runs count drops far below its null
+    expectation.
+  - vs every dispersion / shape / concentration lens
+    (`-cv`, `-iqr-ratio`, `-mad`, `-burstiness-coefficient`,
+    `-gini`, `-skewness`, `-kurtosis`): those are
+    **order-invariant**. Shuffling rows leaves them unchanged
+    but typically pushes Z toward zero. The new test
+    `runs-test: orthogonality witness — same marginal
+    distribution, different ordering -> different Z` constructs
+    two sources with the same multiset `{1,1,1,1,1,10,10,10,10,
+    10}` — identical mean, stddev, B, cv, gini, skew, kurt —
+    but one strictly sorted ascending and one perfectly
+    alternating. Both have `n1 = n2 = 5` and identical
+    `E[R] = 6`, but the sorted source has `R = 2` (Z highly
+    negative) and the alternating source has `R = 10` (Z highly
+    positive) with magnitudes equal and signs opposite. Pins
+    that this lens captures structure invisible to every other
+    `source-row-token-*` scalar.
+
+  Flags:
+
+  - `--since` / `--until`: ISO half-open window on `hour_start`.
+  - `--source <id>`: restrict to a single source.
+  - `--min-rows <n>`: integer `>= 4`; drop sources with fewer
+    than `n` sign-classified rows. Default `8` (the
+    normal-approx Z is unreliable below this).
+  - `--max-p <f>`: drop sources whose two-sided p-value is
+    strictly above `f`; cohort selector that surfaces only
+    sources with statistically detectable non-randomness. `f`
+    in `(0, 1]`. Default `1` (no floor).
+  - `--top <n>`, `--sort
+    abs-z-desc|z-asc|z-desc|p-asc|rows|source` (default
+    `abs-z-desc` — surfaces the most-non-random sources first,
+    whether clumped or alternating).
+  - `--json` for machine-readable output.
+
+  Drop counters: `droppedAtMedian` (ties dropped per the
+  textbook two-class form), `droppedSingleClass` (sources where
+  every row falls on one side of the median; runs count is
+  degenerate), plus the standard window/source/min-rows/max-p/
+  top counters.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-runs-test --since 2026-04-20
+  sources: 6 (shown 5)    rows: 867    min-rows: 8    max-p: 1.0000    sort: abs-z-desc
+  dropped: 0 bad hour_start, 0 bad total_tokens, 0 negative total_tokens, 0 by source filter, 5 ties at median, 1 single-class sources, 0 below min-rows, 0 above max-p, 0 below top cap
+
+  source       rows  median       n+   n-   ties  runs  E[R]    sigmaR  Z         p
+  -----------  ----  -----------  ---  ---  ----  ----  ------  ------  --------  ------
+  openclaw     350   2701622.00   175  175  0     70    176.00  9.341   -11.3481  0.0000
+  opencode     332   7376861.00   166  166  1     100   167.00  9.097   -7.3653   0.0000
+  hermes       122   292280.00    61   61   1     46    62.00   5.500   -2.9092   0.0036
+  codex        14    25992248.00  7    7    1     5     8.00    1.797   -1.6690   0.0951
+  claude-code  44    24805395.00  22   22   1     18    23.00   3.278   -1.5254   0.1272
+  ```
+
+  Reading: every long-tenure source on this device shows
+  **strongly clumped** above/below-median row-token volumes
+  (every Z is negative, three are wildly significant at
+  Z < -2.9). The two short-tenure sources (codex with 14 rows,
+  claude-code with 44) trend the same direction but aren't yet
+  statistically resolved at p < 0.05. The dominant pattern on
+  this queue is **regime persistence**: when a source enters a
+  high-token-volume regime it tends to stay there for several
+  consecutive rows, and likewise for low-token-volume regimes.
+  No source on this queue shows evidence of mean-reverting
+  alternation (no `Z > 0`).
+
 ## 0.6.100 — 2026-04-27
 
 ### Changed
