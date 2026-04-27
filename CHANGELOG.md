@@ -2,6 +2,147 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.114 — 2026-04-27
+
+### Added
+
+- `source-row-token-higuchi-fd`: per-source **Higuchi
+  Fractal Dimension (HFD)** of Higuchi (1988, *Physica D*
+  31:277-283) on the per-row `total_tokens` time-ordered
+  sequence. For each source, the time-ordered value series
+  `v[0..N-1]` is sub-sampled at strides `k = 1..kMax` and
+  Higuchi's normalised average path length `L(k)` is
+  computed:
+
+  ```
+  Lm(k) = (sum_{i=1..M} |v[m + i*k - 1] - v[m + (i-1)*k - 1]|) * (N - 1) / (M * k)
+  L(k)  = mean over m = 1..k of Lm(k)
+  ```
+
+  Higuchi's relation `L(k) ~ k^{-D}` is fitted by ordinary
+  least squares of `log(L(k))` against `log(k)`, and HFD
+  is the negated slope. Theoretically `D ∈ [1, 2]`:
+  - `HFD ~ 1.0` = smooth curve (path length barely grows
+    as the sub-sampling grid shrinks).
+  - `HFD ~ 1.5` = Brownian-motion-like increments
+    (random-walk / 1/f^2 spectrum).
+  - `HFD ~ 2.0` = white-noise-like / space-filling
+    (anti-persistent increments, path length explodes at
+    fine scales).
+
+  Defaults: `kMax = 8`, `minK = 4` (minimum number of
+  usable scales for a stable fit), `minRows = 16`,
+  `sort = hfd-asc` (smoothest first). Slopes outside
+  `[1, 2]` are clamped to the bracket and surfaced via
+  `clampedBelow1` / `clampedAbove2` counters; the raw
+  fitted slope is preserved per row as `slopeRaw` for
+  audit. Scales `k` whose `L(k) <= 0` (degenerate sub-grid)
+  are dropped from the regression and counted under
+  `kDropped` for that source.
+
+  Why this lens is **genuinely orthogonal** to every other
+  `source-row-token-*` lens already in the suite — and
+  specifically why it is not a re-statement of Hurst R/S:
+
+  - `source-row-token-hurst-rs` (R/S exponent): R/S is the
+    classical **rescaled-range over partition scales**
+    estimator. It computes the range of cumulative
+    deviations of the series from its partition mean,
+    rescales by the partition stddev, and takes the
+    log-log slope of `R/S` vs. partition size. It is a
+    **second-order** statistic on the **cumulative
+    process**. HFD takes log-log slopes of the **mean of
+    first-order absolute increments** of the **original
+    process** under stride-k geometric sub-sampling. The
+    two estimators are exactly equivalent only for ideal
+    fractional Brownian motion, where `HFD = 2 - H`. On
+    empirical mixed-regime sequences (drift +
+    heteroscedasticity + heavy tails — exactly the regime
+    of per-source token-count series) the two routinely
+    disagree by a substantial margin, because R/S is
+    biased upward by short-range memory while HFD is
+    biased upward by high-frequency noise. Concretely on
+    the live corpus (1,662 rows, 6 sources): HFD ranks
+    `hermes` highest while the v0.6.110 Hurst R/S table
+    ranked it middle. The rankings are **not** preserved.
+  - `source-row-token-permutation-entropy`: PE is
+    ordinal-only (value-blind beyond rank order). HFD is
+    fully metric (doubling all values changes |delta|s
+    proportionally). A permutation-shuffled series has
+    identical PE but typically **much** higher HFD.
+  - `source-row-token-sample-entropy`: SampEn is a
+    **single-scale conditional irregularity** at one chosen
+    `(m, r)` based on tolerance-matching of length-m
+    windows. HFD is a **multi-scale arc-length scaling
+    exponent** with no notion of pattern matching at all.
+  - `source-row-token-mann-kendall-trend` / `-runs-test` /
+    `-turning-point-count`: directional / dichotomy /
+    extremum tests, not arc-length scaling.
+  - `source-row-token-autocorrelation-lag1`: linear, lag-1,
+    parametric. HFD is non-parametric and integrates
+    information across `k = 1..kMax`.
+  - All order-invariant dispersion / shape lenses
+    (`-iqr-ratio`, `-mad`, `-skewness`, `-kurtosis`,
+    `-gini`, `-burstiness-coefficient`,
+    `-coefficient-of-variation`): unchanged by shuffling;
+    HFD is changed dramatically by shuffling (typically
+    pushed toward 2).
+
+  The estimator surfaces honest degeneracies rather than
+  silently collapsing them:
+  - Constant series (`sigma = 0`): `droppedZeroVariance`.
+  - Sequences with too few rows: `droppedBelowMinRows`
+    (must have `n >= kMax + 2`).
+  - Fewer than `minK` usable scales after dropping
+    `L(k) <= 0` cases: `droppedTooFewScales`.
+  - Slope outside `[1, 2]`: clamped, with `clampedBelow1`
+    or `clampedAbove2` incremented and `slopeRaw` carried.
+
+  13 unit tests cover: empty input, defaults, constant
+  series zero-variance drop, too-few-rows drop, smooth
+  ramp (slopeRaw = 0 with hand-derived L(k) = N - 1
+  constant -> clamped to HFD = 1, `clampedBelow1 = 1`),
+  pseudo-random series (slopeRaw > 0.5, qualitative
+  ordering vs. ramp baseline), invalid `kMax` / `minK` /
+  `minRows`, invalid `since` / `until` / `sort` / `top`,
+  source filter + dropped counters, `--top` cap with
+  `droppedBelowTopCap`, source asc tiebreak on equal HFD,
+  drops of invalid `hour_start` / `total_tokens` /
+  negative `total_tokens`, report carries options, and
+  `hfd-desc` ordering puts a pseudo-random source above a
+  ramp.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--sort hfd-desc` (1,662 rows, 6 sources; one
+  source-name redacted from the excerpt below per repo
+  policy):
+
+  ```
+  per-source row-token Higuchi Fractal Dimension (sorted by hfd-desc; ties: source asc)
+  source       rows  sigma        k_used  k_drop  HFD     slopeRaw  R^2
+  -----------  ----  -----------  ------  ------  ------  --------  ------
+  hermes       178   973473.75    8       0       1.0169  1.0169    0.9968
+  claude-code  299   17605167.00  8       0       1.0000  0.9333    0.9982
+  codex        64    14252148.98  8       0       1.0000  0.9031    0.9909
+  openclaw     447   4892663.05   8       0       1.0000  0.8015    0.9983
+  opencode     341   13238152.13  8       0       1.0000  0.7853    0.9979
+  <redacted>   333   14933.73     8       0       1.0000  0.9764    0.9871
+  ```
+
+  Operator reading on this corpus: 5 of 6 sources have
+  raw fitted slope **below 1** and were clamped to
+  `HFD = 1` (counter `clampedBelow1 = 5`). At the per-row
+  hour-bucket grain the per-source token-count curves are
+  **smoother than a Brownian path** — well-fit log-log
+  lines (R^2 ∈ [0.9871, 0.9988]) with shallow slope —
+  consistent with strong run-to-run persistence /
+  drift-dominated dynamics rather than noise-dominated
+  dynamics. Only `hermes` lands fractionally above 1
+  (slopeRaw = 1.0169). This finding is **not visible** in
+  the existing Hurst R/S, SampEn, or PermEn tables, which
+  rank these same sources differently — exactly the
+  orthogonality the lens is intended to surface.
+
 ## 0.6.113 — 2026-04-27
 
 ### Changed

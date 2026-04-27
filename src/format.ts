@@ -9075,3 +9075,73 @@ export function renderSourceRowTokenSampleEntropy(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenHiguchiFdReport,
+  SourceRowTokenHiguchiFdRow,
+} from './sourcerowtokenhiguchifd.js';
+
+export function renderSourceRowTokenHiguchiFd(
+  r: SourceRowTokenHiguchiFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-higuchi-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    kMax: ${r.kMax}    minK: ${r.minK}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (sigma=0), ${formatNumber(r.droppedTooFewScales)} too-few-scales (<minK usable k), ${formatNumber(r.clampedBelow1)} clamped below 1, ${formatNumber(r.clampedAbove2)} clamped above 2, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Higuchi Fractal Dimension (Higuchi 1988) on the per-row total_tokens time-ordered sequence. HFD = -slope of OLS fit log(L(k)) vs log(k), k = 1..kMax, where L(k) is Higuchi's normalised average path length under stride-k sub-sampling. HFD ~ 1.0 = smooth curve; HFD ~ 1.5 = Brownian-like; HFD ~ 2.0 = white-noise-like / space-filling. Genuinely orthogonal to hurst-rs (R/S of cumulative deviations vs. arc-length scaling), to permutation-entropy (ordinal vs. metric), to sample-entropy (single-scale conditional irregularity vs. multi-scale arc-length), to mann-kendall / runs / turning-point, and to all order-invariant dispersion / shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Higuchi Fractal Dimension (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'sigma',
+    'k_used',
+    'k_drop',
+    'HFD',
+    'slopeRaw',
+    'R^2',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenHiguchiFdRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.sigma.toFixed(2),
+    formatNumber(s.scalesUsed),
+    formatNumber(s.kDropped),
+    s.hfd.toFixed(4),
+    s.slopeRaw.toFixed(4),
+    s.r2.toFixed(4),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

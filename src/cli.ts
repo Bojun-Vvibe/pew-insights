@@ -113,6 +113,7 @@ import {
   renderSourceRowTokenTurningPointCount,
   renderSourceRowTokenPermutationEntropy,
   renderSourceRowTokenSampleEntropy,
+  renderSourceRowTokenHiguchiFd,
   renderSourceRowTokenMannKendallTrend,
   renderSourceRowTokenHurstRs,
   renderSourcePeakHourOfDayArgmax,
@@ -288,6 +289,7 @@ import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
+import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
 import { buildSourceRowTokenHurstRs } from './sourcerowtokenhurstrs.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
@@ -11554,6 +11556,111 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSampleEntropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-higuchi-fd')
+  .description(
+    "Per-source Higuchi Fractal Dimension (Higuchi 1988, Physica D 31:277-283) on the per-row total_tokens time-ordered sequence. HFD is the negated OLS slope of log(L(k)) vs log(k) for k = 1..kMax, where L(k) is Higuchi's normalised average path length under stride-k sub-sampling. HFD ~ 1.0 = smooth curve; HFD ~ 1.5 = Brownian-like; HFD ~ 2.0 = white-noise-like / space-filling. Genuinely orthogonal to source-row-token-hurst-rs (R/S of cumulative deviations vs. arc-length scaling — equivalent only for ideal fBm; on empirical mixed-regime sequences the two estimators routinely disagree and rankings do not preserve), to source-row-token-permutation-entropy (ordinal-only vs. fully metric), to source-row-token-sample-entropy (single-scale conditional irregularity at one (m, r) vs. multi-scale arc-length scaling), to mann-kendall / runs / turning-point (directional / dichotomy / extremum), to lag-1 autocorrelation (linear, parametric, single lag), and to all order-invariant dispersion / shape lenses (shuffling leaves them invariant but pushes HFD toward its ~2 regime).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--k-max <n>',
+    'maximum sub-sampling stride kMax. Higuchi regression uses k = 1..kMax. Integer in [2, 64]. (default 8)',
+    '8',
+  )
+  .option(
+    '--min-k <n>',
+    'minimum number of usable scales required for the slope fit. Integer in [2, kMax]. (default 4)',
+    '4',
+  )
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; must be an integer >= kMax+2 (default 16)',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'hfd-asc' (default; smoothest first) | 'hfd-desc' (roughest first) | 'rows' | 'source'",
+    'hfd-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        kMax: string;
+        minK: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const kMax = Number.parseInt(opts.kMax, 10);
+        if (!Number.isInteger(kMax) || kMax < 2 || kMax > 64) {
+          throw new Error(`--k-max must be an integer in [2, 64] (got ${opts.kMax})`);
+        }
+        const minK = Number.parseInt(opts.minK, 10);
+        if (!Number.isInteger(minK) || minK < 2 || minK > kMax) {
+          throw new Error(
+            `--min-k must be an integer in [2, kMax=${kMax}] (got ${opts.minK})`,
+          );
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < kMax + 2) {
+          throw new Error(
+            `--min-rows must be an integer >= kMax+2 (=${kMax + 2}) (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['hfd-asc', 'hfd-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenHiguchiFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          kMax,
+          minK,
+          minRows,
+          top,
+          sort: opts.sort as 'hfd-asc' | 'hfd-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenHiguchiFd(report) + '\n',
           );
         }
       } catch (e) {
