@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.107 — 2026-04-27
+
+### Changed
+
+- `source-row-token-permutation-entropy`: adds
+  `--max-tie-window-fraction <f>` (`f` in `(0, 1]`, default 1 =
+  no floor). Drops sources whose fraction of windows containing
+  at least one tie is strictly above `f`; surviving / dropped
+  counts are surfaced separately as
+  `droppedAboveMaxTieWindowFraction`. Genuinely orthogonal to
+  `--min-rows`:
+
+  - `--min-rows` is a **statistical-power gate** — below
+    `~order!` windows the entropy estimate is biased low simply
+    because not every permutation can be observed.
+  - `--max-tie-window-fraction` gates on the **Bandt-Pompe
+    distinct-value premise itself**. A source whose row-token
+    series is, say, 70% repeated values within sliding windows
+    is violating the lens's continuous-value assumption so badly
+    that the reported PE is informative mostly about how the
+    `j<k` tiebreaker is resolving ties (which biases PE **down**
+    toward the identity permutation), not about the genuine
+    ordinal complexity of the underlying process.
+
+  3 new unit tests verify the default-1 no-op behaviour, the
+  drop semantics on a mixed (`tied`, `clean`) two-source
+  fixture with `f=0.5`, and the `(0, 1]` range validation.
+
+  Live smoke against `~/.config/pew/queue.jsonl` at the default
+  m=3 — every source has `tieWinFrac = 0.000`, so the new gate
+  is operationally a no-op on this dataset (token totals are
+  effectively continuous-valued at the per-row scale):
+
+  ```
+  pew-insights source-row-token-permutation-entropy --since 2026-04-20 \
+    --max-tie-window-fraction 0.5
+  source       rows  W    distinct  H(nats)  PE      domPat  domFrac  tieWinFrac
+  -----------  ----  ---  --------  -------  ------  ------  -------  ----------
+  codex        15    13   6         1.5858   0.8850  0       0.385    0.000
+  claude-code  45    43   6         1.7150   0.9571  0       0.256    0.000
+  openclaw     353   351  6         1.7766   0.9915  0       0.234    0.000
+  hermes       124   122  6         1.7859   0.9967  5       0.197    0.000
+  opencode     336   334  6         1.7903   0.9992  5       0.180    0.000
+  ```
+
+  Bonus: at `--order 4 --min-rows 30` the lens exposes a finer
+  ordinal structure (24 distinct patterns observed across the
+  longer sources, a notch below the 4! = 24 ceiling), and
+  `claude-code` falls out of cohort (`n = 45 < 30` is fine but
+  only 42 windows over 24 buckets is undersampled; PE drops
+  to `0.9067` which the operator should now read as
+  power-limited, not regularity-limited):
+
+  ```
+  pew-insights source-row-token-permutation-entropy --since 2026-04-20 \
+    --order 4 --min-rows 30
+  source       rows  W    distinct  H(nats)  PE      domPat  domFrac  tieWinFrac
+  -----------  ----  ---  --------  -------  ------  ------  -------  ----------
+  claude-code  45    42   21        2.8816   0.9067  18      0.119    0.000
+  openclaw     353   350  24        3.0907   0.9725  0       0.114    0.000
+  hermes       124   121  24        3.1372   0.9872  5       0.074    0.000
+  opencode     336   333  24        3.1500   0.9912  23      0.063    0.000
+  ```
+
+  Note that at m=4 `openclaw`'s dominant pattern is still
+  `[0,1,2,3]` (lex 0, monotone-up) but `opencode` and `hermes`
+  flip to `[3,2,1,0]`-family patterns (lex 23 and 5
+  respectively), corroborating the m=3 reading that opencode /
+  hermes look near-i.i.d. and openclaw has a faint persistent
+  upward drift at the row scale.
+
 ## 0.6.106 — 2026-04-27
 
 ### Added

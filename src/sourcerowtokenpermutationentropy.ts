@@ -147,6 +147,39 @@ export interface SourceRowTokenPermutationEntropyOptions {
    */
   minRows?: number;
   /**
+   * Drop sources whose **fraction of windows that contain at
+   * least one tie** (`tieWindowFraction`) is strictly **above**
+   * this threshold. Must be a finite number in `(0, 1]`. Default
+   * 1 (no floor — every source survives, including
+   * tiebreaker-dominated discrete series).
+   *
+   * Why this is genuinely orthogonal to `--min-rows`:
+   *
+   *   - `--min-rows` gates on the **sample size** of the
+   *     pattern distribution; below ~`order!` windows the
+   *     entropy estimate is biased low simply because not
+   *     every permutation can be observed even once. It is a
+   *     statistical-power gate.
+   *   - `--max-tie-window-fraction` gates on the **continuity
+   *     premise** of the lens itself. A source whose row-token
+   *     series is, say, 70% repeated values within sliding
+   *     windows (`tieWindowFraction = 0.70`) is violating the
+   *     Bandt-Pompe distinct-value assumption so badly that
+   *     the reported PE is informative mostly about how the
+   *     `j<k` tiebreaker is resolving ties (which biases PE
+   *     **down** toward the identity permutation), not about
+   *     the genuine ordinal complexity of the underlying
+   *     stochastic process. Filtering these out (e.g.
+   *     `--max-tie-window-fraction 0.30`) keeps the
+   *     surviving PE values interpretable as evidence about
+   *     ordinal complexity.
+   *
+   * Combined with `--min-rows` and `--top` the gates apply
+   * (logical AND); each gate counts its drops separately so the
+   * operator sees which gate dropped what.
+   */
+  maxTieWindowFraction?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -201,6 +234,7 @@ export interface SourceRowTokenPermutationEntropyReport {
   source: string | null;
   order: number;
   minRows: number;
+  maxTieWindowFraction: number;
   top: number | null;
   sort: SourceRowTokenPermutationEntropySort;
   totalSources: number;
@@ -210,6 +244,7 @@ export interface SourceRowTokenPermutationEntropyReport {
   droppedNegativeTokens: number;
   droppedSourceFilter: number;
   droppedBelowMinRows: number;
+  droppedAboveMaxTieWindowFraction: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenPermutationEntropyRow[];
 }
@@ -255,6 +290,16 @@ export function buildSourceRowTokenPermutationEntropy(
   if (!Number.isInteger(minRows) || minRows < order + 2) {
     throw new Error(
       `minRows must be an integer >= order+2 (=${order + 2}) (got ${opts.minRows})`,
+    );
+  }
+  const maxTieWindowFraction = opts.maxTieWindowFraction ?? 1;
+  if (
+    !Number.isFinite(maxTieWindowFraction) ||
+    maxTieWindowFraction <= 0 ||
+    maxTieWindowFraction > 1
+  ) {
+    throw new Error(
+      `maxTieWindowFraction must be a finite number in (0, 1] (got ${opts.maxTieWindowFraction})`,
     );
   }
   const top = opts.top ?? null;
@@ -400,7 +445,20 @@ export function buildSourceRowTokenPermutationEntropy(
     });
   }
 
-  allRows.sort((a, b) => {
+  let droppedAboveMaxTieWindowFraction = 0;
+  const survived: SourceRowTokenPermutationEntropyRow[] = [];
+  for (const row of allRows) {
+    if (
+      maxTieWindowFraction < 1 &&
+      row.tieWindowFraction > maxTieWindowFraction
+    ) {
+      droppedAboveMaxTieWindowFraction += 1;
+      continue;
+    }
+    survived.push(row);
+  }
+
+  survived.sort((a, b) => {
     let primary = 0;
     if (sort === 'pe-asc') primary = a.permutationEntropy - b.permutationEntropy;
     else if (sort === 'pe-desc') primary = b.permutationEntropy - a.permutationEntropy;
@@ -411,10 +469,10 @@ export function buildSourceRowTokenPermutationEntropy(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = survived;
+  if (top !== null && survived.length > top) {
+    droppedBelowTopCap = survived.length - top;
+    finalSources = survived.slice(0, top);
   }
 
   return {
@@ -424,6 +482,7 @@ export function buildSourceRowTokenPermutationEntropy(
     source: sourceFilter,
     order,
     minRows,
+    maxTieWindowFraction,
     top,
     sort,
     totalSources,
@@ -433,6 +492,7 @@ export function buildSourceRowTokenPermutationEntropy(
     droppedNegativeTokens,
     droppedSourceFilter,
     droppedBelowMinRows,
+    droppedAboveMaxTieWindowFraction,
     droppedBelowTopCap,
     sources: finalSources,
   };

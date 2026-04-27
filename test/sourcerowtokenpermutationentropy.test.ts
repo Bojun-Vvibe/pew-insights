@@ -347,3 +347,50 @@ test('permutation-entropy: top must be a positive integer when provided', () => 
     /top must be a positive integer/,
   );
 });
+
+test('permutation-entropy: --max-tie-window-fraction default 1 leaves all surviving sources in', () => {
+  const data = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const r = buildSourceRowTokenPermutationEntropy(data, { generatedAt: GEN });
+  assert.equal(r.maxTieWindowFraction, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedAboveMaxTieWindowFraction, 0);
+});
+
+test('permutation-entropy: --max-tie-window-fraction drops tie-saturated sources', () => {
+  // alternating series 1,10,1,10... -> tieWindowFraction = 1 (every window has a repeat)
+  const tied = series([1, 10, 1, 10, 1, 10, 1, 10, 1, 10], 'tied');
+  // strict monotone -> tieWindowFraction = 0
+  const clean = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'clean').map((q) => ({
+    ...q,
+    hour_start: q.hour_start.replace('2026-04-25', '2026-04-26'),
+  }));
+  const all = [...tied, ...clean];
+  const r = buildSourceRowTokenPermutationEntropy(all, {
+    generatedAt: GEN,
+    maxTieWindowFraction: 0.5,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'clean');
+  assert.equal(r.droppedAboveMaxTieWindowFraction, 1);
+  assert.equal(r.totalSources, 2);
+});
+
+test('permutation-entropy: --max-tie-window-fraction validates range', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenPermutationEntropy([], { maxTieWindowFraction: 0 }),
+    /maxTieWindowFraction must be a finite number in \(0, 1\]/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenPermutationEntropy([], { maxTieWindowFraction: 1.5 }),
+    /maxTieWindowFraction must be a finite number in \(0, 1\]/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenPermutationEntropy([], {
+        maxTieWindowFraction: NaN,
+      }),
+    /maxTieWindowFraction must be a finite number in \(0, 1\]/,
+  );
+});

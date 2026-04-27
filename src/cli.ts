@@ -11078,6 +11078,11 @@ program
     '8',
   )
   .option(
+    '--max-tie-window-fraction <f>',
+    'drop sources whose fraction of windows that contain at least one tie (tieWindowFraction) is strictly above f. f must be in (0, 1]. Orthogonal to --min-rows: that gates statistical power; this gates the Bandt-Pompe distinct-value premise itself, filtering out tiebreaker-dominated discrete series whose PE is biased low by the j<k tiebreak. (default 1, no floor)',
+    '1',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -11095,6 +11100,7 @@ program
         source?: string;
         order: string;
         minRows: string;
+        maxTieWindowFraction: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -11114,6 +11120,16 @@ program
         if (!Number.isInteger(minRows) || minRows < order + 2) {
           throw new Error(
             `--min-rows must be an integer >= order+2 (=${order + 2}) (got ${opts.minRows})`,
+          );
+        }
+        const maxTieWindowFraction = Number.parseFloat(opts.maxTieWindowFraction);
+        if (
+          !Number.isFinite(maxTieWindowFraction) ||
+          maxTieWindowFraction <= 0 ||
+          maxTieWindowFraction > 1
+        ) {
+          throw new Error(
+            `--max-tie-window-fraction must be a finite number in (0, 1] (got ${opts.maxTieWindowFraction})`,
           );
         }
         let top: number | null = null;
@@ -11137,6 +11153,7 @@ program
           source: opts.source ?? null,
           order,
           minRows,
+          maxTieWindowFraction,
           top,
           sort: opts.sort as 'pe-asc' | 'pe-desc' | 'rows' | 'source',
         });
