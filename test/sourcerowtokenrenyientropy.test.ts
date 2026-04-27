@@ -45,6 +45,7 @@ test('renyi-entropy: empty input -> empty report with defaults', () => {
   assert.equal(r.sources.length, 0);
   assert.equal(r.minRows, 8);
   assert.equal(r.bins, 16);
+  assert.equal(r.alpha, 2);
   assert.equal(r.sort, 'h2norm-asc');
   assert.equal(r.generatedAt, GEN);
 });
@@ -300,6 +301,7 @@ test('renyi-entropy: JSON shape — all documented fields present, finite numeri
     'source',
     'minRows',
     'bins',
+    'alpha',
     'top',
     'sort',
     'totalSources',
@@ -334,4 +336,129 @@ test('renyi-entropy: JSON shape — all documented fields present, finite numeri
       `${k} must serialise as a finite number, got ${round.sources[0][k]}`,
     );
   }
+});
+
+test('renyi-entropy: alpha != 2 changes h2 numerically', () => {
+  // Same data, alpha=2 vs alpha=8. With a concentrated distribution,
+  // alpha=8 (closer to min-entropy) is strictly less than alpha=2.
+  const vals: number[] = [];
+  for (let i = 0; i < 90; i++) vals.push(0);
+  for (let i = 0; i < 10; i++) vals.push(50);
+  const r2 = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 10,
+    alpha: 2,
+  });
+  const r8 = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 10,
+    alpha: 8,
+  });
+  assert.equal(r2.alpha, 2);
+  assert.equal(r8.alpha, 8);
+  assert.equal(r2.sources.length, 1);
+  assert.equal(r8.sources.length, 1);
+  // Renyi is monotonically non-increasing in alpha. Strict here.
+  assert.ok(
+    r8.sources[0]!.h2 < r2.sources[0]!.h2,
+    `H_8 (${r8.sources[0]!.h2}) should be < H_2 (${r2.sources[0]!.h2})`,
+  );
+});
+
+test('renyi-entropy: alpha=2 hand-computed value (90/10 split)', () => {
+  // bins=10, 90 zeros -> bin 0 (p=0.9), 10 fifties -> bin 9 (p=0.1).
+  // Sum p^2 = 0.81 + 0.01 = 0.82. H_2 = -log2(0.82) ~= 0.2863.
+  const vals: number[] = [];
+  for (let i = 0; i < 90; i++) vals.push(0);
+  for (let i = 0; i < 10; i++) vals.push(50);
+  const r = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 10,
+    alpha: 2,
+  });
+  const row = r.sources[0]!;
+  assert.ok(Math.abs(row.collisionProb - 0.82) < 1e-9);
+  assert.ok(Math.abs(row.h2 - -Math.log2(0.82)) < 1e-9);
+});
+
+test('renyi-entropy: alpha=0.5 hand-computed (90/10 split)', () => {
+  // bins=10, p=(0.9, 0.1). sum p^0.5 = sqrt(0.9) + sqrt(0.1) ~= 0.9487+0.3162 = 1.2649.
+  // H_0.5 = (1/(1-0.5)) * log2(1.2649) = 2 * log2(1.2649) ~= 0.6781.
+  const vals: number[] = [];
+  for (let i = 0; i < 90; i++) vals.push(0);
+  for (let i = 0; i < 10; i++) vals.push(50);
+  const r = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 10,
+    alpha: 0.5,
+  });
+  const row = r.sources[0]!;
+  const expected = 2 * Math.log2(Math.sqrt(0.9) + Math.sqrt(0.1));
+  assert.ok(
+    Math.abs(row.h2 - expected) < 1e-9,
+    `expected ${expected}, got ${row.h2}`,
+  );
+});
+
+test('renyi-entropy: alpha monotonicity — H is non-increasing in alpha', () => {
+  // Build a non-uniform histogram and check H_0.5 >= H_2 >= H_4 >= H_8.
+  const vals: number[] = [];
+  for (let i = 0; i < 60; i++) vals.push(0);
+  for (let i = 0; i < 30; i++) vals.push(20);
+  for (let i = 0; i < 10; i++) vals.push(50);
+  const get = (a: number) =>
+    buildSourceRowTokenRenyiEntropy(series(vals), {
+      generatedAt: GEN,
+      bins: 10,
+      alpha: a,
+    }).sources[0]!.h2;
+  const h05 = get(0.5);
+  const h2 = get(2);
+  const h4 = get(4);
+  const h8 = get(8);
+  assert.ok(h05 >= h2 - 1e-12, `H_0.5 (${h05}) should be >= H_2 (${h2})`);
+  assert.ok(h2 >= h4 - 1e-12, `H_2 (${h2}) should be >= H_4 (${h4})`);
+  assert.ok(h4 >= h8 - 1e-12, `H_4 (${h4}) should be >= H_8 (${h8})`);
+});
+
+test('renyi-entropy: alpha = 1 throws (Shannon limit not handled)', () => {
+  assert.throws(
+    () => buildSourceRowTokenRenyiEntropy([], { alpha: 1 }),
+    /alpha must be a finite number > 0 and != 1/,
+  );
+});
+
+test('renyi-entropy: alpha <= 0 or non-finite throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenRenyiEntropy([], { alpha: 0 }),
+    /alpha must be/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenRenyiEntropy([], { alpha: -1 }),
+    /alpha must be/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenRenyiEntropy([], { alpha: NaN }),
+    /alpha must be/,
+  );
+});
+
+test('renyi-entropy: alpha=2 on uniform distribution still yields h2Norm=1', () => {
+  // Uniform bins => every Renyi-alpha equals log2(K). h2Norm == 1.
+  const vals: number[] = [];
+  for (let v = 0; v < 8; v++) {
+    for (let k = 0; k < 10; k++) vals.push(v);
+  }
+  const r2 = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 8,
+    alpha: 2,
+  });
+  const r05 = buildSourceRowTokenRenyiEntropy(series(vals), {
+    generatedAt: GEN,
+    bins: 8,
+    alpha: 0.5,
+  });
+  assert.ok(Math.abs(r2.sources[0]!.h2Norm - 1) < 1e-12);
+  assert.ok(Math.abs(r05.sources[0]!.h2Norm - 1) < 1e-12);
 });

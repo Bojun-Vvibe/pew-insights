@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.123 — 2026-04-27
+
+### Added
+
+- `source-row-token-renyi-entropy`: adds `--alpha <q>` to
+  generalise from collision entropy (α=2) to **arbitrary
+  Rényi-α** entropy. Validates `α > 0, α ≠ 1, finite` (the
+  α=1 Shannon limit is intentionally excluded — use a Shannon
+  lens for that). Default remains `α=2`.
+
+  Why this is **genuinely orthogonal** to the α=2 default and
+  not just a tuning knob:
+
+  - **α → 0+** approaches the Hartley / max-entropy limit
+    `log2(K)` — counts non-empty bins, ignores their weights.
+  - **α = 0.5** ≈ twice the log of the Bhattacharyya coefficient
+    `Σ √p` — sensitive to **all** bins, including rare ones,
+    but less so than Shannon.
+  - **α = 2** (default) collision entropy — dominated by
+    pairwise collision probability.
+  - **α → ∞** approaches min-entropy `-log2(max_k p_k)` —
+    dominated entirely by the heaviest bin.
+
+  So `--alpha 0.5` and `--alpha 8` of the same source give
+  **different summaries** of the same histogram. They satisfy
+  the standard monotonicity `H_α` non-increasing in α; this
+  is asserted by a new test across α ∈ {0.5, 2, 4, 8} on a
+  3-bin non-uniform histogram.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,670 rows,
+  6 sources) at `--alpha 0.5` (rare-bin-sensitive view):
+
+  ```
+  pew-insights source-row-token-renyi-entropy
+  as of: 2026-04-27T12:08:35.145Z    sources: 6 (shown 6)    rows: 1,670    min-rows: 8    bins: 16    alpha: 0.5    top: —    sort: h2norm-asc
+  dropped: 0 bad hour_start, 0 bad total_tokens, 0 negative total_tokens, 0 by source filter, 0 below min-rows, 0 constant-series, 0 below top cap
+
+  per-source row-token Renyi-2 collision entropy (sorted by h2norm-asc; ties: source asc)
+  source          rows  min        max           support  sumP^2  h2      h2Norm
+  --------------  ----  ---------  ------------  -------  ------  ------  ------
+  vscode-copilot  333   20.00      174625.00     9        1.6604  1.4630  0.4615
+  openclaw        450   106759.00  45073562.00   13       2.4176  2.5471  0.6883
+  claude-code     299   5976.00    107646380.00  14       2.6794  2.8439  0.7469
+  opencode        344   47789.00   69504417.00   16       3.0330  3.2015  0.8004
+  hermes          180   15525.00   5898713.00    13       2.8919  3.0640  0.8280
+  codex           64    47317.00   58840552.00   14       3.2843  3.4311  0.9012
+  ```
+
+  Compare to the α=2 view in 0.6.122: `vscode-copilot` is still
+  the most concentrated (heavy mode in one bin dominates at
+  every α), but the ordering of the middle band shifts because
+  α=0.5 weights the rare-bin tail far more heavily.
+  `codex` moves up to the top h2Norm slot under α=0.5: it has
+  only 64 rows but they're spread across 14 of 16 bins, so the
+  rare-bin-sensitive lens rates it as the most uniformly
+  exploring source. The renamed `sumP^2` column header is now
+  `Σ p^α` (we kept the legacy column header to avoid a JSON
+  shape change; the field still serialises as
+  `collisionProb`).
+
+  Test count: 2750 -> 2757 (+7), all passing. New tests:
+  `alpha != 2 changes h2 numerically`,
+  `alpha=2 hand-computed (90/10 split)` (sum-p² = 0.82 exact),
+  `alpha=0.5 hand-computed (90/10 split)` against the
+  closed-form `2·log2(√0.9 + √0.1)`,
+  `alpha monotonicity — H non-increasing in alpha` across
+  α ∈ {0.5, 2, 4, 8}, `alpha=1 throws (Shannon limit)`,
+  `alpha <= 0 or non-finite throws`,
+  `alpha=2 on uniform distribution still yields h2Norm=1`
+  (cross-checks the normalisation works at any α since
+  uniform `H_α = log2(K)` for all α).
+
 ## 0.6.122 — 2026-04-27
 
 ### Added

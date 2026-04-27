@@ -11804,6 +11804,11 @@ program
     '16',
   )
   .option(
+    '--alpha <q>',
+    'Renyi entropy order (>0, !=1). 2 = collision (default), small alpha (e.g. 0.5) emphasises rare bins, large alpha (e.g. 8) approaches min-entropy (dominant bin)',
+    '2',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -11821,6 +11826,7 @@ program
         source?: string;
         minRows: string;
         bins: string;
+        alpha: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -11837,6 +11843,12 @@ program
         const bins = Number.parseInt(opts.bins, 10);
         if (!Number.isInteger(bins) || bins < 2) {
           throw new Error(`--bins must be an integer >= 2 (got ${opts.bins})`);
+        }
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha <= 0 || alpha === 1) {
+          throw new Error(
+            `--alpha must be a finite number > 0 and != 1 (got ${opts.alpha})`,
+          );
         }
         let top: number | null = null;
         if (opts.top != null) {
@@ -11866,6 +11878,7 @@ program
           source: opts.source ?? null,
           minRows,
           bins,
+          alpha,
           top,
           sort: opts.sort as
             | 'h2-asc'

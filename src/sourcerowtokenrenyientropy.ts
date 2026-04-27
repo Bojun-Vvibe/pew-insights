@@ -138,6 +138,29 @@ export interface SourceRowTokenRenyiEntropyOptions {
    */
   bins?: number;
   /**
+   * Rényi entropy order α. Must be a finite number > 0 and != 1
+   * (α=1 is the Shannon limit, intentionally not handled here —
+   * use a Shannon lens for that). Default 2 (collision entropy).
+   *
+   * General Rényi:  H_α = (1 / (1 - α)) * log2(Σ p_k^α)
+   *
+   * Notable values:
+   *   - α -> 0+ :  log2(K) — the **Hartley** / max-entropy
+   *     limit; just counts non-empty bins.
+   *   - α = 0.5 :  twice the log of the **Bhattacharyya
+   *     coefficient** Σ √p — sensitive to all bins, including
+   *     rare ones, but less so than Shannon.
+   *   - α = 2   :  collision entropy (default).
+   *   - α -> ∞  :  -log2(max_k p_k) — the **min-entropy**;
+   *     dominated entirely by the heaviest bin.
+   *
+   * Larger α weights dominant bins more heavily; smaller α
+   * weights rare bins more heavily. So `--alpha 0.5` and
+   * `--alpha 8` of the same source are genuinely different
+   * summaries of the same histogram, not just rescalings.
+   */
+  alpha?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -157,11 +180,11 @@ export interface SourceRowTokenRenyiEntropyRow {
   maxValue: number;
   /** Number of non-empty bins (effective support, K). */
   support: number;
-  /** Σ p_k² over non-empty bins (collision probability). */
+  /** Σ p_k^α over non-empty bins. At α=2 this is the collision probability. */
   collisionProb: number;
-  /** Rényi-2 entropy in bits: -log2(Σ p²). */
+  /** Rényi-α entropy in bits: (1/(1-α)) * log2(Σ p^α). */
   h2: number;
-  /** Normalised Rényi-2: h2 / log2(K). 1 iff non-empty bins equiprobable. */
+  /** Normalised: hα / log2(K). 1 iff non-empty bins equiprobable. */
   h2Norm: number;
 }
 
@@ -172,6 +195,7 @@ export interface SourceRowTokenRenyiEntropyReport {
   source: string | null;
   minRows: number;
   bins: number;
+  alpha: number;
   top: number | null;
   sort: SourceRowTokenRenyiEntropySort;
   totalSources: number;
@@ -206,6 +230,12 @@ export function buildSourceRowTokenRenyiEntropy(
   const bins = opts.bins ?? 16;
   if (!Number.isInteger(bins) || bins < 2) {
     throw new Error(`bins must be an integer >= 2 (got ${opts.bins})`);
+  }
+  const alpha = opts.alpha ?? 2;
+  if (!Number.isFinite(alpha) || alpha <= 0 || alpha === 1) {
+    throw new Error(
+      `alpha must be a finite number > 0 and != 1 (got ${opts.alpha})`,
+    );
   }
   const top = opts.top ?? null;
   if (top !== null) {
@@ -320,11 +350,12 @@ export function buildSourceRowTokenRenyiEntropy(
       if (c === 0) continue;
       support += 1;
       const p = c / N;
-      collisionProb += p * p;
+      collisionProb += Math.pow(p, alpha);
     }
 
-    // collisionProb is in (0, 1]. H_2 = -log2(collisionProb).
-    const h2 = -Math.log2(collisionProb);
+    // collisionProb is in (0, 1]. H_α = (1/(1-α)) * log2(Σ p^α).
+    // For α=2 this is exactly -log2(Σ p²).
+    const h2 = (1 / (1 - alpha)) * Math.log2(collisionProb);
     // support >= 2 is guaranteed: max != min implies values fall in
     // at least two distinct bins... unless every value lands in the
     // same bin due to integer floor on a tiny range. Guard explicitly.
@@ -374,6 +405,7 @@ export function buildSourceRowTokenRenyiEntropy(
     source: sourceFilter,
     minRows,
     bins,
+    alpha,
     top,
     sort,
     totalSources,
