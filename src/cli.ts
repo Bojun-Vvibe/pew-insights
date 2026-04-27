@@ -11935,6 +11935,11 @@ program
     '32',
   )
   .option(
+    '--detrend-order <p>',
+    "polynomial order p for the per-window detrend. p=1 is DFA-1 (linear, the canonical Peng 1994 default); p=2 is DFA-2 (quadratic — also removes local curvature); p=3 is DFA-3 (cubic). Higher orders are sensitive to higher-order non-stationarity and are genuinely orthogonal to DFA-1 on series with curvature (a sinusoidal modulation will be partially absorbed by DFA-2 but not DFA-1). Requires scale-min >= p + 2. Integer in [1, 3]. (default 1)",
+    '1',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -11955,6 +11960,7 @@ program
         minScales: string;
         minWindowsPerScale: string;
         minRows: string;
+        detrendOrder: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -11996,6 +12002,17 @@ program
             `--min-rows must be an integer >= 4*scale-min (=${4 * scaleMin}) (got ${opts.minRows})`,
           );
         }
+        const detrendOrder = Number.parseInt(opts.detrendOrder, 10);
+        if (!Number.isInteger(detrendOrder) || detrendOrder < 1 || detrendOrder > 3) {
+          throw new Error(
+            `--detrend-order must be an integer in [1, 3] (got ${opts.detrendOrder})`,
+          );
+        }
+        if (scaleMin < detrendOrder + 2) {
+          throw new Error(
+            `--scale-min must be >= --detrend-order + 2 (=${detrendOrder + 2}) (got scale-min=${scaleMin})`,
+          );
+        }
         let top: number | null = null;
         if (opts.top != null) {
           const t = Number.parseFloat(opts.top);
@@ -12020,6 +12037,7 @@ program
           minScales,
           minWindowsPerScale,
           minRows,
+          detrendOrder,
           top,
           sort: opts.sort as 'alpha-asc' | 'alpha-desc' | 'rows' | 'source',
         });

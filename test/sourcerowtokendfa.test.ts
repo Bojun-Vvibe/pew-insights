@@ -334,3 +334,101 @@ test('dfa: alpha clamped below 0 -> clampedBelow0 increments and alpha=0', () =>
   const row = r.sources[0]!;
   assert.ok(row.alpha < 0.5, `expected anti-persistent alpha < 0.5, got ${row.alpha}`);
 });
+
+test('dfa: detrendOrder defaults to 1 (DFA-1)', () => {
+  const r = buildSourceRowTokenDfa([], { generatedAt: GEN });
+  assert.equal(r.detrendOrder, 1);
+});
+
+test('dfa: invalid detrendOrder throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenDfa([], { detrendOrder: 0 }),
+    /detrendOrder/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenDfa([], { detrendOrder: 4 }),
+    /detrendOrder/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenDfa([], { detrendOrder: 1.5 }),
+    /detrendOrder/,
+  );
+});
+
+test('dfa: detrendOrder requires scaleMin >= order + 2', () => {
+  // scaleMin=4 (default) >= 1+2=3 OK for DFA-1.
+  // scaleMin=4 >= 3+2=5 fails for DFA-3.
+  assert.throws(
+    () => buildSourceRowTokenDfa([], { detrendOrder: 3, scaleMin: 4 }),
+    /scaleMin/,
+  );
+  // scaleMin=5 >= 3+2=5 OK for DFA-3.
+  const r = buildSourceRowTokenDfa([], { detrendOrder: 3, scaleMin: 5, minRows: 20 });
+  assert.equal(r.detrendOrder, 3);
+});
+
+test('dfa: DFA-3 absorbs a cubic profile better than DFA-1 (genuine orthogonality)', () => {
+  // Mathematically: integrating v - mean produces a profile Y. For
+  // v[i] proportional to a polynomial of degree d, Y is a polynomial
+  // of degree d+1. Window-local detrending of Y by a polynomial
+  // of order p eliminates exactly the first p+1 terms; the
+  // residual scales as s^(d+1-p), so alpha approaches d+1-p.
+  // For a quadratic v (d=2), Y is cubic (d+1=3): DFA-1 leaves
+  // s^2 residual (alpha~2, clamped), DFA-3 absorbs the cubic
+  // entirely (alpha drops). This is exactly the property the
+  // --detrend-order flag exposes.
+  const r0 = rng(123);
+  const vals: number[] = [];
+  for (let i = 0; i < 512; i++) {
+    vals.push(0.5 * i * i + r0() * 50);
+  }
+  const dfa1 = buildSourceRowTokenDfa(series(vals), {
+    generatedAt: GEN,
+    detrendOrder: 1,
+    scaleMin: 5,
+  });
+  const dfa3 = buildSourceRowTokenDfa(series(vals), {
+    generatedAt: GEN,
+    detrendOrder: 3,
+    scaleMin: 5,
+  });
+  assert.equal(dfa1.sources.length, 1);
+  assert.equal(dfa3.sources.length, 1);
+  // DFA-3 must absorb the cubic profile and report a strictly
+  // lower alpha than DFA-1 on this curvature-dominated signal.
+  assert.ok(
+    dfa3.sources[0]!.alphaRaw < dfa1.sources[0]!.alphaRaw,
+    `DFA-3 alphaRaw (${dfa3.sources[0]!.alphaRaw}) should be < DFA-1 alphaRaw (${dfa1.sources[0]!.alphaRaw}) on a strong-curvature signal`,
+  );
+});
+
+test('dfa: DFA-1 and DFA-2 agree on stationary white noise (within tolerance)', () => {
+  // Stationary fGn (white noise) has no curvature; DFA-p should
+  // give roughly the same alpha for any p.
+  const r0 = rng(2026);
+  const vals: number[] = [];
+  for (let i = 0; i < 1024; i++) vals.push(r0() * 1000);
+  const dfa1 = buildSourceRowTokenDfa(series(vals), {
+    generatedAt: GEN,
+    detrendOrder: 1,
+  });
+  const dfa2 = buildSourceRowTokenDfa(series(vals), {
+    generatedAt: GEN,
+    detrendOrder: 2,
+  });
+  // Both should report alpha near 0.5 and be within a reasonable
+  // delta of each other.
+  assert.ok(Math.abs(dfa1.sources[0]!.alpha - dfa2.sources[0]!.alpha) < 0.2,
+    `expected DFA-1 (${dfa1.sources[0]!.alpha}) and DFA-2 (${dfa2.sources[0]!.alpha}) to agree on white noise`);
+});
+
+test('dfa: detrendOrder is reported in the report', () => {
+  const r0 = rng(99);
+  const vals: number[] = [];
+  for (let i = 0; i < 64; i++) vals.push(r0() * 100);
+  const r = buildSourceRowTokenDfa(series(vals), {
+    generatedAt: GEN,
+    detrendOrder: 2,
+  });
+  assert.equal(r.detrendOrder, 2);
+});

@@ -161,6 +161,29 @@ export interface SourceRowTokenDfaOptions {
    */
   minRows?: number;
   /**
+   * Order of the per-window polynomial detrend (DFA-p).
+   * - `1` = linear detrend (DFA-1, the canonical Peng et al. 1994
+   *   default — eliminates first-order non-stationarity / linear
+   *   trends within each window).
+   * - `2` = quadratic detrend (DFA-2 — eliminates linear and
+   *   quadratic trends, exposes the scaling of higher-order
+   *   residual structure).
+   * - `3` = cubic detrend (DFA-3 — eliminates up to cubic
+   *   trends).
+   * Higher orders are sensitive to higher-frequency / higher-
+   * order non-stationarity and are **genuinely orthogonal** to
+   * DFA-1 on real series with curvature: DFA-1 reports the
+   * scaling of the residual after removing local *linear* drift,
+   * DFA-2 reports the scaling after also removing local
+   * *quadratic* drift. The two estimators agree on stationary
+   * fGn but diverge in the presence of curvature, e.g. a
+   * sinusoidal modulation will be partially absorbed by DFA-2
+   * but not by DFA-1. Requires `scaleMin >= detrendOrder + 2`
+   * so each window has residual DOF for the polynomial fit.
+   * Integer in [1, 3]. Default 1.
+   */
+  detrendOrder?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -216,6 +239,7 @@ export interface SourceRowTokenDfaReport {
   minScales: number;
   minWindowsPerScale: number;
   minRows: number;
+  detrendOrder: number;
   top: number | null;
   sort: SourceRowTokenDfaSort;
   totalSources: number;
@@ -254,6 +278,94 @@ function logScales(lo: number, hi: number): number[] {
   return out;
 }
 
+/**
+ * Sum of squared residuals after OLS-fitting a polynomial of
+ * the given `order` to the values `(j, Y[off + j])` for
+ * `j = 0..s-1`. Solves the (order+1)x(order+1) normal equations
+ * by Gaussian elimination with partial pivoting. Returns 0 if the
+ * system is singular (degenerate window).
+ *
+ * order = 1 -> linear (DFA-1).
+ * order = 2 -> quadratic (DFA-2).
+ * order = 3 -> cubic (DFA-3).
+ */
+function polyDetrendSSR(
+  Y: number[],
+  off: number,
+  s: number,
+  order: number,
+): number {
+  const k = order + 1;
+  // Normal equations: A * c = b, where
+  //   A[i][j] = sum_t t^(i+j),  b[i] = sum_t t^i * Y[off+t].
+  // Compute power sums up to t^(2*order).
+  const pSum = new Array<number>(2 * order + 1).fill(0);
+  const yPow = new Array<number>(k).fill(0);
+  for (let t = 0; t < s; t++) {
+    let pw = 1;
+    const yt = Y[off + t]!;
+    for (let p = 0; p < 2 * order + 1; p++) {
+      pSum[p]! += pw;
+      if (p < k) yPow[p]! += pw * yt;
+      pw *= t;
+    }
+  }
+  // Build augmented matrix [A | b].
+  const M: number[][] = [];
+  for (let i = 0; i < k; i++) {
+    const row = new Array<number>(k + 1).fill(0);
+    for (let j = 0; j < k; j++) row[j] = pSum[i + j]!;
+    row[k] = yPow[i]!;
+    M.push(row);
+  }
+  // Gaussian elimination with partial pivoting.
+  for (let i = 0; i < k; i++) {
+    let pivot = i;
+    let pivotAbs = Math.abs(M[i]![i]!);
+    for (let r = i + 1; r < k; r++) {
+      const a = Math.abs(M[r]![i]!);
+      if (a > pivotAbs) {
+        pivot = r;
+        pivotAbs = a;
+      }
+    }
+    if (pivotAbs === 0) return 0; // singular
+    if (pivot !== i) {
+      const tmp = M[i]!;
+      M[i] = M[pivot]!;
+      M[pivot] = tmp;
+    }
+    const inv = 1 / M[i]![i]!;
+    for (let r = i + 1; r < k; r++) {
+      const factor = M[r]![i]! * inv;
+      if (factor === 0) continue;
+      for (let c = i; c <= k; c++) {
+        M[r]![c]! -= factor * M[i]![c]!;
+      }
+    }
+  }
+  // Back-substitution for the coefficient vector c.
+  const c = new Array<number>(k).fill(0);
+  for (let i = k - 1; i >= 0; i--) {
+    let acc = M[i]![k]!;
+    for (let j = i + 1; j < k; j++) acc -= M[i]![j]! * c[j]!;
+    c[i] = acc / M[i]![i]!;
+  }
+  // Sum of squared residuals.
+  let ssr = 0;
+  for (let t = 0; t < s; t++) {
+    let yhat = 0;
+    let pw = 1;
+    for (let p = 0; p < k; p++) {
+      yhat += c[p]! * pw;
+      pw *= t;
+    }
+    const e = Y[off + t]! - yhat;
+    ssr += e * e;
+  }
+  return ssr;
+}
+
 export function buildSourceRowTokenDfa(
   queue: QueueLine[],
   opts: SourceRowTokenDfaOptions = {},
@@ -284,6 +396,17 @@ export function buildSourceRowTokenDfa(
   if (!Number.isInteger(minRows) || minRows < 4 * scaleMin) {
     throw new Error(
       `minRows must be an integer >= 4*scaleMin (=${4 * scaleMin}) (got ${opts.minRows})`,
+    );
+  }
+  const detrendOrder = opts.detrendOrder ?? 1;
+  if (!Number.isInteger(detrendOrder) || detrendOrder < 1 || detrendOrder > 3) {
+    throw new Error(
+      `detrendOrder must be an integer in [1, 3] (got ${opts.detrendOrder})`,
+    );
+  }
+  if (scaleMin < detrendOrder + 2) {
+    throw new Error(
+      `scaleMin must be >= detrendOrder + 2 (=${detrendOrder + 2}) (got scaleMin=${scaleMin})`,
     );
   }
   const top = opts.top ?? null;
@@ -423,36 +546,14 @@ export function buildSourceRowTokenDfa(
         scalesDropped += 1;
         continue;
       }
-      // Within each window, OLS-detrend Y[w*s .. w*s+s-1] vs the
-      // local index, sum residual squares, then average over
-      // windows.
+      // Within each window, polynomial-detrend Y[w*s .. w*s+s-1]
+      // (order = detrendOrder), sum residual squares, then average
+      // over windows. detrendOrder=1 is DFA-1 (Peng et al. 1994 default).
       let sumVar = 0;
       let usedWindows = 0;
       for (let w = 0; w < numWindows; w++) {
         const off = w * s;
-        // OLS on (j, Y[off+j]) for j = 0..s-1.
-        let sx = 0;
-        let sy = 0;
-        for (let j = 0; j < s; j++) {
-          sx += j;
-          sy += Y[off + j]!;
-        }
-        const xbar = sx / s;
-        const ybar = sy / s;
-        let sxx = 0;
-        let sxy = 0;
-        for (let j = 0; j < s; j++) {
-          const dx = j - xbar;
-          sxx += dx * dx;
-          sxy += dx * (Y[off + j]! - ybar);
-        }
-        const b = sxx === 0 ? 0 : sxy / sxx;
-        const a = ybar - b * xbar;
-        let ss = 0;
-        for (let j = 0; j < s; j++) {
-          const e = Y[off + j]! - (a + b * j);
-          ss += e * e;
-        }
+        const ss = polyDetrendSSR(Y, off, s, detrendOrder);
         sumVar += ss / s;
         usedWindows += 1;
       }
@@ -575,6 +676,7 @@ export function buildSourceRowTokenDfa(
     minScales,
     minWindowsPerScale,
     minRows,
+    detrendOrder,
     top,
     sort,
     totalSources,

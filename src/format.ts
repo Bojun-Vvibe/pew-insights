@@ -9292,7 +9292,7 @@ export function renderSourceRowTokenDfa(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-dfa'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    scaleMin: ${r.scaleMin}    scaleMax: ${r.scaleMax ?? '\u2014'}    minScales: ${r.minScales}    minWin/scale: ${r.minWindowsPerScale}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    scaleMin: ${r.scaleMin}    scaleMax: ${r.scaleMax ?? '\u2014'}    minScales: ${r.minScales}    minWin/scale: ${r.minWindowsPerScale}    DFA-${r.detrendOrder}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
