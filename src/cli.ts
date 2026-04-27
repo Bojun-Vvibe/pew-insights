@@ -104,6 +104,7 @@ import {
   renderSourceRowTokenKurtosis,
   renderSourceRowTokenCoefficientOfVariation,
   renderSourceRowTokenMad,
+  renderSourceRowTokenGini,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -268,6 +269,7 @@ import { buildSourceRowTokenSkewness } from './sourcerowtokenskewness.js';
 import { buildSourceRowTokenKurtosis } from './sourcerowtokenkurtosis.js';
 import { buildSourceRowTokenCoefficientOfVariation } from './sourcerowtokencoefficientofvariation.js';
 import { buildSourceRowTokenMad } from './sourcerowtokenmad.js';
+import { buildSourceRowTokenGini } from './sourcerowtokengini.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10048,6 +10050,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMad(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-gini')
+  .description(
+    "Per-source Gini coefficient of per-row total_tokens. G in [0,1); 0 = every row carries identical token mass; -> 1 = a single row carries essentially all mass. Reports gini, giniUnbiased = n/(n-1)*gini (small-sample bias-corrected), and meanToMedian as a skew-direction sanity check. Distinct from daily-token-gini-coefficient (per-day totals, day-grain inequality), bucket-token-gini (per-5min-bucket totals, bucket-grain), source-row-token-coefficient-of-variation (CV depends only on first two moments; identical CV can hide wildly different Gini), source-row-token-mad (median-anchored dispersion; bimodal symmetric distributions can have moderate MAD but Gini ~0.5), source-row-token-skewness/kurtosis (3rd/4th moments — shape, not concentration), source-input-token-top-row-share / source-cumulative-mass-half-life-day (single-quantile concentration; Gini integrates the entire Lorenz curve), source-output-tokens-per-row-percentiles (quantile spread on output_tokens not total_tokens), and the various share / count statistics.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; absolute floor 2 (default 2)',
+    '2',
+  )
+  .option(
+    '--min-mean <f>',
+    'drop sources whose per-row total_tokens mean is strictly below f (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'gini-desc' (default) | 'gini-asc' | 'unbiased-desc' | 'unbiased-asc' | 'rows' | 'mean' | 'source'",
+    'gini-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        const minMean = Number.parseFloat(opts.minMean);
+        if (!Number.isFinite(minMean) || minMean < 0) {
+          throw new Error(
+            `--min-mean must be a finite, non-negative number (got ${opts.minMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'gini-desc',
+          'gini-asc',
+          'unbiased-desc',
+          'unbiased-asc',
+          'rows',
+          'mean',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenGini(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMean,
+          top,
+          sort: opts.sort as
+            | 'gini-desc'
+            | 'gini-asc'
+            | 'unbiased-desc'
+            | 'unbiased-asc'
+            | 'rows'
+            | 'mean'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenGini(report) + '\n');
         }
       } catch (e) {
         die(e);
