@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.119 — 2026-04-27
+
+### Added
+
+- `source-row-token-lempel-ziv`: adds `--threshold <n>`. When
+  set, the binarisation rule becomes `s[i] = 1 if v[i] > threshold
+  else 0` (absolute-band comparison across sources). When unset
+  (default), the per-source **median** is used as before
+  (balanced, scale-invariant per source).
+
+  Why this is **genuinely orthogonal** to the median default:
+
+  - Median binarisation always yields a balanced bitstream
+    (`ones ~ zeros`). LZ76 then probes order patterns of
+    above-vs-below the per-source typical level, and sources
+    with wildly different value scales become directly
+    comparable.
+  - A fixed threshold (e.g. `--threshold 50000`) yields an
+    **absolute-band comparison**: which sources cross a
+    pre-defined token-cost level often, and in a complex
+    pattern? Sources that live entirely above or entirely
+    below the threshold collapse to a constant bitstream and
+    surface under `droppedConstantBitstream` — that drop is
+    itself a useful signal ("this source never produces a
+    row above 50k tokens", or symmetrically "this source
+    never produces one below 50k").
+
+  Report shape now carries `thresholdMode: 'median' | 'fixed'`
+  and `threshold: number | null` so the JSON consumer can
+  distinguish the two binarisation regimes deterministically.
+  In `'fixed'` mode the per-row `median` field carries the
+  literal threshold (so the per-source row is self-describing).
+
+  Live smoke against `~/.config/pew/queue.jsonl` with
+  `--threshold 50000` (1,664 rows across 6 sources):
+
+  ```
+  source          rows  median    ones  zeros  lz  lzNorm
+  --------------  ----  --------  ----  -----  --  ------
+  opencode        342   50000.00  341   1      10  0.2461
+  vscode-redact   333   50000.00  6     327    12  0.3020
+  claude-code     299   50000.00  286   13     16  0.4401
+  hermes          178   50000.00  168   10     15  0.6300
+  codex           64    50000.00  63    1      8   0.7500
+  ```
+
+  (One source dropped under `droppedConstantBitstream`: it
+  never crosses 50k tokens in either direction within the
+  recorded window.) The contrast with the default-median
+  smoke (all sources balanced, lzNorm 0.81-1.31) is the
+  whole point of the flag: at a fixed band, `opencode` is
+  almost always above 50k (rare dip below = isolated 1
+  factor amid a sea of 1s) and `vscode-redact` is almost
+  always below 50k (rare spike above = isolated 1 factor
+  amid a sea of 0s). The two opposite extremes both score
+  low lzNorm because both bitstreams are nearly constant —
+  which is exactly the absolute-band statistic the flag is
+  designed to surface.
+
+  4 new unit tests cover: default `thresholdMode='median'`,
+  fixed-band correctly drops a fully-below source while
+  keeping a crossing source, negative threshold validation,
+  and a long-tailed distribution where median and fixed-500
+  give materially different `onesCount` and `lz`. Test
+  count: 2725 -> 2729.
+
 ## 0.6.118 — 2026-04-27
 
 ### Added

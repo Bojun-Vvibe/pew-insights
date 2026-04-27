@@ -11699,6 +11699,10 @@ program
     "sort key: 'lznorm-asc' (default; most repetitive first) | 'lznorm-desc' | 'lz-asc' | 'lz-desc' | 'rows' | 'source'",
     'lznorm-asc',
   )
+  .option(
+    '--threshold <n>',
+    'binarisation threshold. When set, s[i] = 1 if v[i] > threshold else 0 (absolute-band comparison across sources). When unset (default), the per-source median is used (balanced split, scale-invariant per source). Sources entirely above or below the threshold collapse to a constant bitstream and surface under droppedConstantBitstream.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -11709,6 +11713,7 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        threshold?: string;
         json?: boolean;
       },
       cmd,
@@ -11727,6 +11732,16 @@ program
             throw new Error(`--top must be a positive integer (got ${opts.top})`);
           }
           top = t;
+        }
+        let threshold: number | null = null;
+        if (opts.threshold != null) {
+          const t = Number.parseFloat(opts.threshold);
+          if (!Number.isFinite(t) || t < 0) {
+            throw new Error(
+              `--threshold must be a finite non-negative number (got ${opts.threshold})`,
+            );
+          }
+          threshold = t;
         }
         const validSorts = [
           'lz-asc',
@@ -11748,6 +11763,7 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          threshold,
           sort: opts.sort as
             | 'lz-asc'
             | 'lz-desc'

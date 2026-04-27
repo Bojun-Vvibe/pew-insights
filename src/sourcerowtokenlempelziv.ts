@@ -153,6 +153,30 @@ export interface SourceRowTokenLempelZivOptions {
    */
   top?: number | null;
   /**
+   * Custom binarisation threshold. When set, `s[i] = 1 if v[i] > threshold
+   * else 0`. When null (default), the per-source **median** is used so
+   * each source gets a balanced 0/1 split that's invariant under any
+   * monotone rescaling of its own value range.
+   *
+   * Why this is **genuinely orthogonal** to the median default:
+   *
+   * - Median binarisation gives every source a balanced bitstream
+   *   (`ones ~ zeros`). LZ76 then probes **order patterns** of
+   *   above-vs-below the per-source typical level. Sources with
+   *   wildly different scales become directly comparable.
+   * - A fixed threshold (e.g. `--threshold 50000`) gives an
+   *   **absolute-band comparison**: which sources cross a
+   *   pre-defined token cost level often, in a complex pattern?
+   *   A source that lives entirely below the threshold (or
+   *   entirely above) collapses to a constant bitstream and
+   *   surfaces under `droppedConstantBitstream` — that's a
+   *   useful signal in itself ("this source never produces a
+   *   row above 50k tokens").
+   *
+   * Threshold must be a finite, non-negative number when set.
+   */
+  threshold?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'lznorm-asc' (default): normalised LZ ascending (most
    *     repetitive first).
@@ -193,6 +217,10 @@ export interface SourceRowTokenLempelZivReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  /** Effective threshold mode used: 'median' or the literal numeric threshold. */
+  thresholdMode: 'median' | 'fixed';
+  /** When thresholdMode='fixed', the configured threshold; else null. */
+  threshold: number | null;
   sort: SourceRowTokenLempelZivSort;
   totalSources: number;
   totalRowsKept: number;
@@ -284,6 +312,14 @@ export function buildSourceRowTokenLempelZiv(
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
   }
+  const threshold = opts.threshold ?? null;
+  if (threshold !== null) {
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      throw new Error(
+        `threshold must be a finite non-negative number (got ${opts.threshold})`,
+      );
+    }
+  }
   const sort = opts.sort ?? 'lznorm-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
@@ -363,8 +399,13 @@ export function buildSourceRowTokenLempelZiv(
     }
     const v = samples.map((s) => s[1]);
 
-    const sortedV = [...v].sort((a, b) => a - b);
-    const med = median(sortedV);
+    let med: number;
+    if (threshold !== null) {
+      med = threshold;
+    } else {
+      const sortedV = [...v].sort((a, b) => a - b);
+      med = median(sortedV);
+    }
 
     const bits = new Uint8Array(N);
     let ones = 0;
@@ -422,6 +463,8 @@ export function buildSourceRowTokenLempelZiv(
     source: sourceFilter,
     minRows,
     top,
+    thresholdMode: threshold !== null ? 'fixed' : 'median',
+    threshold,
     sort,
     totalSources,
     totalRowsKept,

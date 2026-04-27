@@ -199,3 +199,67 @@ test('lempel-ziv: report serialises cleanly through JSON', () => {
     assert.ok(Number.isFinite(s.median));
   }
 });
+
+test('lempel-ziv: --threshold default null -> thresholdMode=median', () => {
+  const data = series(new Array(20).fill(0).map((_, i) => i));
+  const r = buildSourceRowTokenLempelZiv(data, { generatedAt: GEN });
+  assert.equal(r.thresholdMode, 'median');
+  assert.equal(r.threshold, null);
+});
+
+test('lempel-ziv: --threshold splits at fixed band, drops fully-below sources', () => {
+  // a: values 0..19  median=9.5  threshold=100 -> all bits 0 -> dropped
+  // b: values 0,200,0,200,...   threshold=100 -> bits 0,1,0,1,...
+  const a = series(
+    new Array(20).fill(0).map((_, i) => i),
+    'a',
+  );
+  const b = series(
+    new Array(20).fill(0).map((_, i) => (i % 2 === 0 ? 0 : 200)),
+    'b',
+  );
+  const r = buildSourceRowTokenLempelZiv([...a, ...b], {
+    generatedAt: GEN,
+    threshold: 100,
+  });
+  assert.equal(r.thresholdMode, 'fixed');
+  assert.equal(r.threshold, 100);
+  assert.equal(r.droppedConstantBitstream, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'b');
+  // The reported median field carries the threshold when in fixed mode.
+  assert.equal(r.sources[0]!.median, 100);
+});
+
+test('lempel-ziv: --threshold negative throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenLempelZiv([], { threshold: -1 }),
+    /threshold must be a finite non-negative number/,
+  );
+});
+
+test('lempel-ziv: --threshold differs from median for asymmetric distributions', () => {
+  // values: [1,5,2,7,3,9,4,8,6,10, 1000, 1,5,2,7,3,9,4,8,6, 1000]
+  // sorted: 1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,1000,1000  median ~ 6
+  // -> ~half above median  (lots of bit variety, larger lz)
+  // threshold=500 -> only the two 1000s above (very few factors)
+  const vals = [
+    1, 5, 2, 7, 3, 9, 4, 8, 6, 10, 1000, 1, 5, 2, 7, 3, 9, 4, 8, 6, 1000,
+  ];
+  const med = buildSourceRowTokenLempelZiv(series(vals), { generatedAt: GEN });
+  const fixed = buildSourceRowTokenLempelZiv(series(vals), {
+    generatedAt: GEN,
+    threshold: 500,
+  });
+  assert.equal(med.sources.length, 1);
+  assert.equal(fixed.sources.length, 1);
+  // Median split is roughly balanced; fixed-500 picks up only the two 1000s.
+  assert.ok(
+    fixed.sources[0]!.onesCount < med.sources[0]!.onesCount,
+    `fixed-threshold ones (${fixed.sources[0]!.onesCount}) should be < median ones (${med.sources[0]!.onesCount})`,
+  );
+  assert.ok(
+    fixed.sources[0]!.lz <= med.sources[0]!.lz,
+    `fixed-threshold lz (${fixed.sources[0]!.lz}) should be <= median lz (${med.sources[0]!.lz})`,
+  );
+});
