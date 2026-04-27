@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.159 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-entropy` gains two
+  Shannon-theoretic invariant tests pinning the upper and
+  lower bounds of the reported quantities in code:
+
+  - **Shannon ceiling** (`H(p) <= log2(K)`, with equality
+    only at the uniform distribution): pins `entropyBits <=
+    log2(bins)` and `entropyNorm <= 1` across a range of
+    deliberately-skewed token-count patterns (smooth ramps,
+    repeating triplets, log-spaced spikes, single-outlier
+    series). This is the theoretical guarantee from
+    Shannon 1948 that operators reading the report can rely
+    on `entropyNorm` being a true `[0, 1]` axis without
+    having to validate per-source — codified.
+  - **Uniform-PSD floor** (`dominantShare >= 1/bins`): the
+    largest mass on any normalized distribution over `K`
+    bins is at least `1/K` (otherwise the masses sum to
+    less than 1). Pins `dominantShare >= 1/bins` for every
+    reported row. This is the lower-bound companion to the
+    Shannon ceiling: together they say
+    `dominantShare in [1/bins, 1]` and
+    `entropyNorm in [0, 1]` are both tight, codified
+    bounds, not merely empirical observations.
+
+  No behavior change; pure correctness pinning. These
+  invariants would have caught any future numerical
+  refactor that introduced a normalization bug.
+
+  Tests: 3346 -> 3348 (+2; Shannon-ceiling pin across 5
+  patterns, uniform-PSD floor pin across 3 patterns).
+
 ## 0.6.158 — 2026-04-28
 
 ### Added

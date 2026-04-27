@@ -647,3 +647,58 @@ test('spectral-entropy: sort dom-share-asc orders most broadband (lowest dominan
   assert.equal(r.sources.length, 2);
   assert.ok(r.sources[0]!.dominantShare <= r.sources[1]!.dominantShare);
 });
+
+test('spectral-entropy: entropyBits is upper-bounded by log2(bins) (Shannon ceiling)', () => {
+  // Shannon's theorem: H(p) <= log2(K) for any probability mass on K
+  // bins, with equality only for the uniform distribution. The
+  // normalized form must therefore satisfy entropyNorm <= 1 + eps
+  // across many random patterns.
+  const patterns: number[][] = [
+    [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3],
+    [10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0],
+    [1, 2, 4, 8, 16, 8, 4, 2, 1, 2, 4, 8],
+    [7, 7, 7, 0, 0, 0, 7, 7, 7, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1, 100, 1, 1, 1, 1, 1, 1, 1],
+  ];
+  for (const p of patterns) {
+    const r = buildSourceRowTokenSpectralEntropy(series(p, 's'), {
+      generatedAt: GEN,
+      minRows: 4,
+    });
+    assert.equal(r.sources.length, 1);
+    const row = r.sources[0]!;
+    const log2K = Math.log(row.bins) / Math.log(2);
+    assert.ok(
+      row.entropyBits <= log2K + 1e-9,
+      `entropyBits ${row.entropyBits} should be <= log2(${row.bins}) = ${log2K} for pattern ${JSON.stringify(p)}`,
+    );
+    assert.ok(
+      row.entropyNorm <= 1 + 1e-12,
+      `entropyNorm ${row.entropyNorm} should be <= 1 for pattern ${JSON.stringify(p)}`,
+    );
+  }
+});
+
+test('spectral-entropy: dominantShare lower bound is 1/bins (uniform PSD floor)', () => {
+  // For any normalized PSD on K bins, the largest p[k] is >= 1/K.
+  // (If every p[k] < 1/K, they would sum to < 1, contradiction.)
+  // So dominantShare >= 1/bins for every reported row.
+  const patterns: number[][] = [
+    [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3],
+    [1, 4, 2, 6, 3, 7, 2, 8, 1, 5, 4, 6],
+    [10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0],
+  ];
+  for (const p of patterns) {
+    const r = buildSourceRowTokenSpectralEntropy(series(p, 's'), {
+      generatedAt: GEN,
+      minRows: 4,
+    });
+    assert.equal(r.sources.length, 1);
+    const row = r.sources[0]!;
+    const floor = 1 / row.bins;
+    assert.ok(
+      row.dominantShare >= floor - 1e-12,
+      `dominantShare ${row.dominantShare} should be >= 1/${row.bins} = ${floor}`,
+    );
+  }
+});
