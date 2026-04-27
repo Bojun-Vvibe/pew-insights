@@ -357,3 +357,123 @@ test('crest-factor: defensive non-finite (impossible via API but covered) drops'
   });
   assert.equal(r.droppedDegenerate, 0);
 });
+
+// --- 0.6.143 refinement: --min-crest / --max-crest threshold filters ---
+
+test('crest-factor: minCrest defaults to null and surfaces no drops', () => {
+  const r = buildSourceRowTokenCrestFactor(series([1, 2, 3, 4, 5]), {
+    generatedAt: GEN,
+  });
+  assert.equal(r.minCrest, null);
+  assert.equal(r.maxCrest, null);
+  assert.equal(r.droppedBelowMinCrest, 0);
+  assert.equal(r.droppedAboveMaxCrest, 0);
+});
+
+test('crest-factor: minCrest suppresses sources strictly below threshold', () => {
+  // flat -> C ~ 1; spike -> C high
+  const queue = [
+    ...series([10, 10, 10, 10, 10], 'flat'),
+    ...series([100, 1, 1, 1, 1], 'spike'),
+  ];
+  const r = buildSourceRowTokenCrestFactor(queue, {
+    minCrest: 1.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'spike');
+  assert.equal(r.droppedBelowMinCrest, 1);
+});
+
+test('crest-factor: maxCrest suppresses sources strictly above threshold', () => {
+  const queue = [
+    ...series([10, 10, 10, 10, 10], 'flat'),
+    ...series([100, 1, 1, 1, 1], 'spike'),
+  ];
+  const r = buildSourceRowTokenCrestFactor(queue, {
+    maxCrest: 1.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'flat');
+  assert.equal(r.droppedAboveMaxCrest, 1);
+});
+
+test('crest-factor: minCrest + maxCrest band keeps middle and counts both sides', () => {
+  const queue = [
+    ...series([10, 10, 10, 10, 10], 'flat'),         // C ~ 1
+    ...series([10, 10, 10, 10, 20], 'mid'),          // C ~ moderate
+    ...series([100, 1, 1, 1, 1], 'spike'),           // C high
+  ];
+  const r = buildSourceRowTokenCrestFactor(queue, {
+    minCrest: 1.05,
+    maxCrest: 2.0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'mid');
+  assert.equal(r.droppedBelowMinCrest, 1);
+  assert.equal(r.droppedAboveMaxCrest, 1);
+});
+
+test('crest-factor: minCrest > maxCrest throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenCrestFactor([], {
+        minCrest: 5,
+        maxCrest: 2,
+      }),
+    /minCrest \(5\) must be <= maxCrest \(2\)/,
+  );
+});
+
+test('crest-factor: minCrest non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenCrestFactor([], {
+        minCrest: Number.POSITIVE_INFINITY,
+      }),
+    /minCrest must be a finite number/,
+  );
+});
+
+test('crest-factor: maxCrest non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenCrestFactor([], {
+        maxCrest: Number.NaN,
+      }),
+    /maxCrest must be a finite number/,
+  );
+});
+
+test('crest-factor: thresholds compose with top cap (filter first, then cap)', () => {
+  // Three sources, only two pass min-crest threshold; cap to 1.
+  const queue = [
+    ...series([10, 10, 10, 10, 10], 'flat'),         // C ~ 1
+    ...series([10, 10, 10, 10, 20], 'mid'),          // C moderate
+    ...series([100, 1, 1, 1, 1], 'spike'),           // C high
+  ];
+  const r = buildSourceRowTokenCrestFactor(queue, {
+    minCrest: 1.05,
+    top: 1,
+    sort: 'crest-asc',
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  // After min-crest, kept = [mid, spike]; sorted asc -> mid first; top=1 keeps mid.
+  assert.equal(r.sources[0]!.source, 'mid');
+  assert.equal(r.droppedBelowMinCrest, 1);
+  assert.equal(r.droppedBelowTopCap, 1);
+});
+
+test('crest-factor: equal-to-threshold rows are kept (strict comparison)', () => {
+  // Construct a series with exactly C = sqrt(2) (e.g., one large, one zero — but zeros valid)
+  // [4, 0, 0, 0]: peak=4, rms=sqrt(16/4)=2, C=2. Then minCrest=2 must keep it.
+  const r = buildSourceRowTokenCrestFactor(series([4, 0, 0, 0]), {
+    minCrest: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinCrest, 0);
+});

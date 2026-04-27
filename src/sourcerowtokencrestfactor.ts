@@ -119,6 +119,22 @@ export interface SourceRowTokenCrestFactorOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported `crestFactor`. Sources whose
+   * value is strictly below the threshold are suppressed and counted
+   * under `droppedBelowMinCrest`. Useful to surface only the
+   * peakier sources.
+   */
+  minCrest?: number | null;
+  /**
+   * Optional upper bound on reported `crestFactor`. Symmetric
+   * counterpart to `minCrest`. Surfaces in `droppedAboveMaxCrest`.
+   * Useful to surface only the flatter sources for diagnostics.
+   *
+   * If both are set and `minCrest > maxCrest`, the constructor
+   * throws — operator error, not a silent empty report.
+   */
+  maxCrest?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'crest-asc' (default): crestFactor ascending — least peaky first.
    *   - 'crest-desc':          crestFactor descending — most peaky first.
@@ -163,6 +179,8 @@ export interface SourceRowTokenCrestFactorReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  minCrest: number | null;
+  maxCrest: number | null;
   sort: SourceRowTokenCrestFactorSort;
   totalSources: number;
   totalRowsKept: number;
@@ -173,6 +191,8 @@ export interface SourceRowTokenCrestFactorReport {
   droppedBelowMinRows: number;
   droppedZeroRms: number;
   droppedDegenerate: number;
+  droppedBelowMinCrest: number;
+  droppedAboveMaxCrest: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenCrestFactorRow[];
 }
@@ -201,6 +221,23 @@ export function buildSourceRowTokenCrestFactor(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const minCrest = opts.minCrest ?? null;
+  if (minCrest !== null) {
+    if (!Number.isFinite(minCrest)) {
+      throw new Error(`minCrest must be a finite number (got ${opts.minCrest})`);
+    }
+  }
+  const maxCrest = opts.maxCrest ?? null;
+  if (maxCrest !== null) {
+    if (!Number.isFinite(maxCrest)) {
+      throw new Error(`maxCrest must be a finite number (got ${opts.maxCrest})`);
+    }
+  }
+  if (minCrest !== null && maxCrest !== null && minCrest > maxCrest) {
+    throw new Error(
+      `minCrest (${minCrest}) must be <= maxCrest (${maxCrest})`,
+    );
   }
   const sort = opts.sort ?? 'crest-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -342,10 +379,28 @@ export function buildSourceRowTokenCrestFactor(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinCrest = 0;
+  let droppedAboveMaxCrest = 0;
+  let postRows = allRows;
+  if (minCrest !== null || maxCrest !== null) {
+    const kept: SourceRowTokenCrestFactorRow[] = [];
+    for (const row of postRows) {
+      if (minCrest !== null && row.crestFactor < minCrest) {
+        droppedBelowMinCrest += 1;
+        continue;
+      }
+      if (maxCrest !== null && row.crestFactor > maxCrest) {
+        droppedAboveMaxCrest += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -355,6 +410,8 @@ export function buildSourceRowTokenCrestFactor(
     source: sourceFilter,
     minRows,
     top,
+    minCrest,
+    maxCrest,
     sort,
     totalSources,
     totalRowsKept,
@@ -365,6 +422,8 @@ export function buildSourceRowTokenCrestFactor(
     droppedBelowMinRows,
     droppedZeroRms,
     droppedDegenerate,
+    droppedBelowMinCrest,
+    droppedAboveMaxCrest,
     droppedBelowTopCap,
     sources: finalSources,
   };

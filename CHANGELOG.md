@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.143 — 2026-04-28
+
+### Added
+
+- `source-row-token-crest-factor` gains two refinement
+  threshold flags that compose with the 0.6.142 base lens
+  without changing default behaviour:
+
+  - `--min-crest <v>`: suppress sources whose `crestFactor`
+    is strictly below `v`. Suppressed sources surface in
+    `droppedBelowMinCrest`. Useful to surface only the
+    peakier sources.
+  - `--max-crest <v>`: symmetric counterpart. Suppress
+    sources whose `crestFactor` is strictly above `v`.
+    Surfaces in `droppedAboveMaxCrest`. Useful to surface
+    only the flatter sources for diagnostics.
+
+  Both default to `null` (no filter); both must be finite
+  if set; if both are set and `min > max` the constructor
+  throws (operator error, not a silent empty report).
+  Pure post-compute filters — they do not affect the
+  underlying crest-factor computation, only which rows
+  are reported. Composes cleanly with `--top`: filter is
+  applied first, then the cap.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,709
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-crest-factor --min-crest 5
+  per-source row-token crest factor (sorted by crest-asc; ties: source asc)
+  source       rows  peak          rms          crestFactor  cMax     cNorm
+  -----------  ----  ------------  -----------  -----------  -------  ------
+  claude-code   299  107646380.00  21035469.59   5.1174      17.2916  0.2527
+  openclaw      463   45073562.00   6362585.33   7.0842      21.5174  0.2965
+  vscode-XXX    333     174625.00     15971.36  10.9336      18.2483  0.5759
+  ```
+
+  3 sources suppressed under `droppedBelowMinCrest`
+  (`codex` 3.09, `opencode` 4.14, `hermes` 4.60). Reading:
+  the three "peakiest by raw C" sources are precisely the
+  three with the smallest mean row size (`vscode-XXX` and
+  `hermes` produce mostly tiny rows punctuated by occasional
+  big ones; `openclaw` has the largest `n` and so the most
+  room to accumulate extreme outliers). The two heaviest
+  workloads (`codex`, `opencode`) sit below the threshold,
+  consistent with their consistently-large row sizes
+  smoothing out the peak/RMS ratio.
+
+  Tests: 3032 -> 3041 (+9 in this refinement, +35 cumulative
+  since the 0.6.142 baseline).
+
 ## 0.6.142 — 2026-04-28
 
 ### Added

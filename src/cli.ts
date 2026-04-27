@@ -12853,6 +12853,14 @@ program
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-crest <n>',
+    'suppress sources whose crestFactor is strictly below this threshold; surfaces them under droppedBelowMinCrest. Useful to surface only the peakier sources.',
+  )
+  .option(
+    '--max-crest <n>',
+    'suppress sources whose crestFactor is strictly above this threshold; surfaces them under droppedAboveMaxCrest. Symmetric to --min-crest; useful to surface flatter sources for diagnostics.',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'crest-asc' (default; least peaky first) | 'crest-desc' (most peaky first) | 'norm-asc' | 'norm-desc' | 'rows' | 'source'",
     'crest-asc',
@@ -12866,6 +12874,8 @@ program
         source?: string;
         minRows: string;
         top?: string;
+        minCrest?: string;
+        maxCrest?: string;
         sort: string;
         json?: boolean;
       },
@@ -12888,6 +12898,22 @@ program
           }
           top = t;
         }
+        let minCrest: number | null = null;
+        if (opts.minCrest != null) {
+          const v = Number.parseFloat(opts.minCrest);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--min-crest must be a finite number (got ${opts.minCrest})`);
+          }
+          minCrest = v;
+        }
+        let maxCrest: number | null = null;
+        if (opts.maxCrest != null) {
+          const v = Number.parseFloat(opts.maxCrest);
+          if (!Number.isFinite(v)) {
+            throw new Error(`--max-crest must be a finite number (got ${opts.maxCrest})`);
+          }
+          maxCrest = v;
+        }
         const validSorts = ['crest-asc', 'crest-desc', 'norm-asc', 'norm-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -12901,6 +12927,8 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minCrest,
+          maxCrest,
           sort: opts.sort as 'crest-asc' | 'crest-desc' | 'norm-asc' | 'norm-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {
