@@ -2,6 +2,146 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.132 — 2026-04-27
+
+### Added
+
+- `source-row-token-hjorth-complexity`: per-source **Hjorth
+  Complexity** (Hjorth 1970, EEG Clin. Neurophysiol.
+  29:306-310) on the per-row `total_tokens` time-ordered
+  sequence. Computes
+  `complexity = mobility(diff(v)) / mobility(v) =
+  sqrt(var(ddv) * var(v)) / var(dv)`. Unitless. Natural
+  follow-up to last tick's `source-row-token-hjorth-mobility`:
+  composes mobility on `v` and on `diff(v)`.
+
+  Reading: `complexity ~ 1` = signal's first difference has the
+  same characteristic frequency as the signal itself; pure
+  sinusoid is the canonical case (cos and -sin share frequency).
+  `complexity > 1` = first difference is "more wiggly" than the
+  original; multi-frequency / noise-like / more spectral spread.
+  Empirical pure white noise asymptotes to `~ sqrt(3/2) ~ 1.225`.
+  `complexity < 1` = first difference is *smoother* than the
+  original; happens for slowly modulated tones / chirps.
+
+  Why this lens is **genuinely orthogonal** to
+  `source-row-token-hjorth-mobility` and not just a follow-up:
+  mobility is the **first** spectral moment of the signal
+  (variance of `dv` over variance of `v`); complexity is the
+  **ratio of two mobilities** and thus tracks the **second**
+  spectral moment (loosely, the spread of the spectrum, not its
+  centre). Two sources with identical mobility can have very
+  different complexities: a pure sinusoid at angular frequency
+  `w` has mobility `~ w` and complexity `~ 1`, whereas
+  band-limited white noise truncated at the same `w` has similar
+  mobility but complexity strictly `> 1`. There is no closed-form
+  algebraic identity between complexity and lag-1
+  autocorrelation the way there is for mobility
+  (`mobility^2 = 2 * (1 - rho_1)` for stationary series);
+  complexity's denominator carries information about lag-2
+  covariance through `var(ddv)`, which `rho_1` never sees.
+
+  Honest drops: `droppedZeroVariance` (constant series;
+  complexity `0/0`), `droppedFlatDiff` (perfect linear ramp;
+  `var(dv)=0` while `var(v)>0`, so complexity `0/0` even though
+  mobility is well-defined and equals 0), `droppedDegenerate`
+  (any computed quantity non-finite). Each surfaces in its own
+  counter rather than emitting a `0/0` or `NaN` row.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,688 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-hjorth-complexity
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,688
+  min-rows: 24   min-complexity: -   top: -   sort: complexity-asc
+
+  per-source row-token Hjorth Complexity (sorted by complexity-asc; ties: source asc)
+  source       rows  var(v)              var(dv)             var(ddv)            mobility  mob(dv)  complexity
+  -----------  ----  ------------------  ------------------  ------------------  --------  -------  ----------
+  hermes        186     957892913242.81    1603265709623.84    4702246068987.24   1.2937   1.7126   1.3237
+  vscode-XXX    333        223016393.84        287108965.56        777392511.58   1.1346   1.6455   1.4502
+  codex          64  203123750617043.63  192303227566319.81  449449660478635.75   0.9730   1.5288   1.5712
+  openclaw      456   23663823091103.53   21686681007148.93   54264641514389.24   0.9573   1.5818   1.6524
+  claude-code   299  309941905126295.25  323281135365393.00  933987416345659.63   1.0213   1.6997   1.6643
+  opencode      350  170838820932335.38   88992683474645.36  218771368513364.88   0.7217   1.5679   2.1724
+  ```
+
+  Reading the live smoke: every source on the live queue lands
+  in the noise-like regime (`complexity > 1`), but the spread is
+  meaningful. `hermes` (1.32) and `vscode-XXX` (1.45) are the
+  most "single-tone" — their token-count series have a dominant
+  characteristic frequency. `opencode` (2.17) is the most
+  spectrally-spread, nearly twice the white-noise asymptote;
+  combined with its low mobility (0.72, well below `sqrt(2)`),
+  this signature points to a source whose token series has
+  **both** a strong slow envelope (suppresses mobility) **and**
+  fast jagged structure on top (inflates complexity through
+  `var(ddv)`). That's a different finding than mobility alone
+  surfaces — mobility marks `opencode` as smoothest, but
+  complexity says its smoothness is hiding multi-scale spectral
+  content. The complexity ranking is **not** monotone in
+  mobility (`codex` mob 0.97 > `openclaw` mob 0.96 but `codex`
+  complexity 1.57 < `openclaw` complexity 1.65), confirming
+  complexity is genuinely a second axis.
+
+- `source-row-token-hjorth-complexity`: adds
+  `--min-complexity <n>` flag. Suppresses sources whose computed
+  complexity is strictly below the threshold; surfaces them
+  under `droppedBelowMinComplexity`.
+
+  Why this is **genuinely orthogonal** to the unfiltered default
+  and not just a tuning knob: the typical operator question with
+  this lens is "which sources have single-frequency-dominant
+  token traffic (complexity ~ 1) and which have
+  spectrally-spread, noise-like traffic (complexity > 1)". On a
+  queue with many sources, the single-tone tail at
+  complexity `~ 1` dominates the report visually and crowds out
+  the few high-complexity outliers that are actually anomaly
+  candidates. `--min-complexity 1.5` suppresses the well-behaved
+  sinusoidal majority and surfaces only the spectrally-spread
+  sources worth investigating. The filter applies **after** the
+  natural-mathematical drops (zero-variance, flat-diff,
+  degenerate); a source that fails to compute a complexity is
+  still surfaced under its honest-drop counter, not silently
+  absorbed into the threshold counter — regression-pinned by
+  test `minComplexity applied AFTER honest drops`.
+
+  Live smoke at `--min-complexity 1.5` against the same queue:
+
+  ```
+  pew-insights source-row-token-hjorth-complexity
+  as of: 2026-04-27   sources: 6 (shown 4)   rows: 1,688
+  min-rows: 24   min-complexity: 1.5   top: -   sort: complexity-asc
+  dropped: ... 2 below min-complexity ...
+
+  per-source row-token Hjorth Complexity (sorted by complexity-asc; ties: source asc)
+  source       rows  var(v)              var(dv)             var(ddv)            mobility  mob(dv)  complexity
+  -----------  ----  ------------------  ------------------  ------------------  --------  -------  ----------
+  codex          64  203123750617043.63  192303227566319.81  449449660478635.75   0.9730   1.5288   1.5712
+  openclaw      456   23663823091103.53   21686681007148.93   54264641514389.24   0.9573   1.5818   1.6524
+  claude-code   299  309941905126295.25  323281135365393.00  933987416345659.63   1.0213   1.6997   1.6643
+  opencode      350  170782387910823.47   88955305688383.13  218713937290451.78   0.7217   1.5680   2.1726
+  ```
+
+  Reading: 2 sources (`hermes` and `vscode-XXX`) suppressed,
+  surfacing the spectrally-spread tail of the distribution.
+  Operator can now focus directly on the four sources whose
+  token-count traffic carries multi-scale structure.
+
+  Adds 21 new tests total: 16 for the lens (empty, defaults,
+  zero-variance drop, flat-diff drop, sinusoid `~ 1`,
+  white-noise `~ sqrt(3/2)`, alternation `= 1`, `mobility = 2`,
+  minRows gate and validation, scale-invariance, shift-
+  invariance, three sort variants and tiebreak, top cap,
+  source filter, invalid-input counters, since/until clipping,
+  and the `complexity == mobilityDv / mobility` identity check)
+  plus 5 for the refinement (round-trip, validation,
+  sine-vs-noise demo, lower-inclusive `0` boundary, and the
+  after-honest-drops contract). 2862 tests passing
+  (was 2841; +21).
+
 ## 0.6.131 — 2026-04-27
 
 ### Added
