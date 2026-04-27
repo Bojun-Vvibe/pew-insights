@@ -124,6 +124,7 @@ import {
   renderSourceRowTokenSpectralFlatness,
   renderSourceRowTokenSpectralRolloff,
   renderSourceRowTokenSpectralCentroid,
+  renderSourceRowTokenSpectralBandwidth,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -309,6 +310,7 @@ import { buildSourceRowTokenCrestFactor } from './sourcerowtokencrestfactor.js';
 import { buildSourceRowTokenSpectralFlatness } from './sourcerowtokenspectralflatness.js';
 import { buildSourceRowTokenSpectralRolloff } from './sourcerowtokenspectralrolloff.js';
 import { buildSourceRowTokenSpectralCentroid } from './sourcerowtokenspectralcentroid.js';
+import { buildSourceRowTokenSpectralBandwidth } from './sourcerowtokenspectralbandwidth.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -13302,6 +13304,123 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralCentroid(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-bandwidth')
+  .description(
+    "Per-source spectral bandwidth (sqrt of the 2nd central moment of the one-sided non-DC PSD around its centroid) of the mean-centered per-row total_tokens series. bandwidthBin = sqrt(sum_k (k - c)^2 * P[k] / sum_k P[k]); bandwidthFractionBins = bandwidthBin / floor(n/2). Klapuri 1999 / Peeters 2004 (CUIDADO §6.1, spectral spread). PSD *2nd central moment* (spread around centroid), genuinely orthogonal to spectral-centroid (1st moment / location), spectral-rolloff (CDF quantile), spectral-flatness (entropy ratio), hjorth-mobility (sqrt of *non-central* 2nd moment), TKEO, single-lag autocorrelation, event-count lenses, time-domain symbolic entropies, scaling/fractal lenses, and amplitude-domain shape lenses.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--min-bandwidth-frac-bins <v>',
+    'suppress sources whose bandwidthFractionBins is strictly below this threshold; surfaces them under droppedBelowMinBandwidthFracBins. Useful to surface only the more spectrally spread sources.',
+  )
+  .option(
+    '--max-bandwidth-frac-bins <v>',
+    'suppress sources whose bandwidthFractionBins is strictly above this threshold; surfaces them under droppedAboveMaxBandwidthFracBins. Symmetric to --min-bandwidth-frac-bins; useful to surface only the more spectrally concentrated sources.',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'bandwidth-asc' (default; most spectrally concentrated first) | 'bandwidth-desc' (most spectrally spread first) | 'rows' | 'source'",
+    'bandwidth-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        minBandwidthFracBins?: string;
+        maxBandwidthFracBins?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        let minBandwidthFracBins: number | null = null;
+        if (opts.minBandwidthFracBins != null) {
+          const v = Number.parseFloat(opts.minBandwidthFracBins);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-bandwidth-frac-bins must be a finite number (got ${opts.minBandwidthFracBins})`,
+            );
+          }
+          minBandwidthFracBins = v;
+        }
+        let maxBandwidthFracBins: number | null = null;
+        if (opts.maxBandwidthFracBins != null) {
+          const v = Number.parseFloat(opts.maxBandwidthFracBins);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-bandwidth-frac-bins must be a finite number (got ${opts.maxBandwidthFracBins})`,
+            );
+          }
+          maxBandwidthFracBins = v;
+        }
+        const validSorts = ['bandwidth-asc', 'bandwidth-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralBandwidth(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          minBandwidthFracBins,
+          maxBandwidthFracBins,
+          sort: opts.sort as
+            | 'bandwidth-asc'
+            | 'bandwidth-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralBandwidth(report) + '\n',
           );
         }
       } catch (e) {

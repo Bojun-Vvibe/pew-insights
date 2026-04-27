@@ -10003,6 +10003,77 @@ import type {
   SourceRowTokenSpectralCentroidReport,
   SourceRowTokenSpectralCentroidRow,
 } from './sourcerowtokenspectralcentroid.js';
+import type {
+  SourceRowTokenSpectralBandwidthReport,
+  SourceRowTokenSpectralBandwidthRow,
+} from './sourcerowtokenspectralbandwidth.js';
+
+export function renderSourceRowTokenSpectralBandwidth(
+  r: SourceRowTokenSpectralBandwidthReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-bandwidth'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-bandwidth-frac-bins: ${r.minBandwidthFracBins ?? '\u2014'}    max-bandwidth-frac-bins: ${r.maxBandwidthFracBins ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinBandwidthFracBins)} below min-bandwidth-frac-bins, ${formatNumber(r.droppedAboveMaxBandwidthFracBins)} above max-bandwidth-frac-bins, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source spectral bandwidth (sqrt of the 2nd central moment) of the one-sided non-DC PSD P[k] around its centroid c, computed on the mean-centered per-row total_tokens series. bandwidthBin = sqrt(sum_k (k - c)^2 * P[k] / sum_k P[k]). bandwidthFractionBins = bandwidthBin / floor(n/2). bandwidthFractionMax = bandwidthBin / ((bins - 1) / 2) where the denominator is the bandwidth of a 2-spike PSD at bins 1 and K (max-possible spread on the band), so the value sits in [0, 1]. Klapuri 1999 / Peeters 2004 (CUIDADO §6.1, spectral spread). PSD *2nd central moment* (spread around centroid), genuinely orthogonal to: spectral-centroid (1st moment / location — equal-centroid PSDs can have very different bandwidths), spectral-rolloff (CDF quantile), spectral-flatness (entropy ratio G/A — flatness is position-blind, bandwidth is position-aware), hjorth-mobility (sqrt of *non-central* 2nd moment, differs by centroid^2 via the parallel-axis theorem), TKEO, single-lag autocorrelation, event-count lenses (zcr, runs-test, turning-point, mann-kendall), time-domain symbolic entropies (approximate, sample, permutation, renyi, lempel-ziv), scaling/fractal lenses (hurst-rs, dfa, higuchi-fd, katz-fd, petrosian-fd), and all amplitude-domain shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral bandwidth (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'centroidBin',
+    'bwBin',
+    'bwFrac',
+    'bwFracMax',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralBandwidthRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      s.centroidBin.toFixed(4),
+      s.bandwidthBin.toFixed(4),
+      s.bandwidthFractionBins.toFixed(4),
+      s.bandwidthFractionMax.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenSpectralCentroid(
   r: SourceRowTokenSpectralCentroidReport,
