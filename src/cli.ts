@@ -111,6 +111,7 @@ import {
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
+  renderSourceRowTokenPermutationEntropy,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -282,6 +283,7 @@ import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
+import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -11049,6 +11051,100 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenTurningPointCount(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-permutation-entropy')
+  .description(
+    "Per-source Bandt-Pompe permutation entropy on the per-row total_tokens time-ordered sequence (default order m=3). Each length-m sliding window is mapped to its ordinal pattern (rank order with j<k tiebreak for equal values); PE = -sum p log p / log(m!) is reported in [0, 1]. PE near 1 = ordinal patterns ~uniform, series order-equivalent to i.i.d. continuous noise at scale m. PE near 0 = a single permutation dominates (strict monotone or strict alternation). Genuinely orthogonal to runs-test (median dichotomy, not ordinal triples), to turning-point-count (collapses the m=3 permutations into 2 classes; PE separates monotone-up from monotone-down within the no-turning-point class), to lag-1 autocorrelation (linear, parametric, on raw values vs. non-parametric on ranks), and to all order-invariant dispersion / shape lenses.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--order <m>',
+    'embedding dimension m (a.k.a. order). Integer in [2, 6]. (default 3)',
+    '3',
+  )
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n post-window rows; must be an integer >= order+2 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'pe-asc' (default; most-regular first) | 'pe-desc' (most-complex first) | 'rows' | 'source'",
+    'pe-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        order: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const order = Number.parseInt(opts.order, 10);
+        if (!Number.isInteger(order) || order < 2 || order > 6) {
+          throw new Error(
+            `--order must be an integer in [2, 6] (got ${opts.order})`,
+          );
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < order + 2) {
+          throw new Error(
+            `--min-rows must be an integer >= order+2 (=${order + 2}) (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['pe-asc', 'pe-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenPermutationEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          order,
+          minRows,
+          top,
+          sort: opts.sort as 'pe-asc' | 'pe-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenPermutationEntropy(report) + '\n',
           );
         }
       } catch (e) {

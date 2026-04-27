@@ -8703,6 +8703,78 @@ export function renderSourceRowTokenRunsTest(
 }
 
 import type {
+  SourceRowTokenPermutationEntropyReport,
+  SourceRowTokenPermutationEntropyRow,
+} from './sourcerowtokenpermutationentropy.js';
+
+export function renderSourceRowTokenPermutationEntropy(
+  r: SourceRowTokenPermutationEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-permutation-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    order: ${r.order}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Bandt-Pompe permutation entropy on the per-row total_tokens time-ordered sequence. Each length-m sliding window is mapped to its ordinal pattern (rank order with j<k tiebreak for equal values); PE = -sum p log p / log(m!) is reported in [0, 1]. PE near 1 = ordinal patterns ~uniform, series order-equivalent to i.i.d. continuous noise at scale m. PE near 0 = a single permutation dominates (strict monotone or strict alternation). Genuinely orthogonal to runs-test (median dichotomy, not ordinal triples), to turning-point-count (collapses the m=3 permutations into 2 classes; PE distinguishes monotone-up from monotone-down within the no-turning-point class), to lag-1 autocorrelation (linear, parametric, on raw values vs. non-parametric on ranks), and to all order-invariant dispersion / shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token permutation entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'W',
+    'distinct',
+    'H(nats)',
+    'PE',
+    'domPat',
+    'domFrac',
+    'tieWinFrac',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenPermutationEntropyRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    formatNumber(s.windowCount),
+    formatNumber(s.distinctPatterns),
+    s.entropyNats.toFixed(4),
+    s.permutationEntropy.toFixed(4),
+    formatNumber(s.dominantPattern),
+    s.dominantPatternFraction.toFixed(3),
+    s.tieWindowFraction.toFixed(3),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenTurningPointCountReport,
   SourceRowTokenTurningPointCountRow,
 } from './sourcerowtokenturningpointcount.js';
