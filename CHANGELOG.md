@@ -2,6 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.103 — 2026-04-27
+
+### Added
+
+- `source-row-token-turning-point-count`: per-source
+  **Wallis-Moore turning-point test** on the per-row
+  `total_tokens` time-ordered sequence. For each source, sorts
+  rows by `hour_start` ascending and counts T = number of
+  interior positions `i` where `v[i]` is a strict local extremum
+  (peak: `v[i]>v[i-1]` AND `v[i]>v[i+1]`; or trough:
+  `v[i]<v[i-1]` AND `v[i]<v[i+1]`). Equality at either neighbour
+  disqualifies position `i` and is counted under `tiePositions`.
+
+  Under H0 (i.i.d. continuous):
+  - `E[T]    = 2*(n-2)/3`
+  - `Var[T]  = (16*n - 29)/90`
+  - `Z = (T - E[T]) / sqrt(Var[T])` ~ N(0,1) asymptotically.
+
+  Reading:
+  - `Z << 0` (e.g. `< -1.96`): **too few** turning points —
+    series is **too smooth** for i.i.d. noise; consistent with
+    trend / regime persistence at the first-difference scale.
+  - `Z >> 0` (e.g. `> +1.96`): **too many** turning points —
+    series is **too jagged**; consistent with first-difference
+    mean-reversion / over-alternation at the step scale.
+
+  **Why this is genuinely orthogonal to the runs-test that
+  shipped in 0.6.101**: the runs-test dichotomises at the
+  source's *median* and counts maximal same-sign runs in the
+  level sequence — it is sensitive to long regimes above/below a
+  *value*. The turning-point test ignores levels entirely and
+  looks only at the **first-difference sign pattern at each
+  interior point**. The two are non-redundant: a slow saw-tooth
+  that crosses the median often will look "alternating" to the
+  runs-test (high Z) but smooth to the turning-point test (low
+  T) because each ramp has many same-direction steps. A noisy
+  series tightly clustered around the median may have few runs
+  (regime persistence around the level) but many turning points
+  (jagged at the step scale).
+
+  Also orthogonal to `source-row-token-autocorrelation-lag1`
+  (linear Pearson rho on raw values; parametric, magnitude-
+  sensitive — turning-point T is non-parametric and depends
+  only on the relative ordering of consecutive triples) and to
+  every existing dispersion / shape lens
+  (`-burstiness-coefficient`, `-coefficient-of-variation`,
+  `-iqr-ratio`, `-mad`, `-skewness`, `-kurtosis`, `-gini`),
+  which are all order-invariant — shuffling the sequence leaves
+  them unchanged but typically pushes T toward its i.i.d.
+  expectation.
+
+  Flags: `--since`, `--until`, `--source`, `--min-rows` (>= 4,
+  default 8), `--max-p` (default 1), `--min-abs-z` (default 0),
+  `--top`, `--sort` (`abs-z-desc` default | `z-asc` | `z-desc` |
+  `p-asc` | `rows` | `source`), `--json`.
+
+  16 unit tests covering empty input, validation rejection
+  matrix, drop counters (bad hour_start, bad/negative tokens,
+  source filter, below min-rows), strictly-monotone series
+  (T=0, Z << 0), perfectly-alternating series (T=n-2, Z >> 0),
+  all-equal series (`tiePositions = n-2`, T=0), insertion-order
+  vs hour_start ordering, since/until window, max-p / min-abs-z
+  cohort filters with separate drop counters, every sort key,
+  and `--top` cap.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-turning-point-count --since 2026-04-20
+  sources: 6 (shown 5)    rows: 870    min-rows: 8    sort: abs-z-desc
+  dropped: ... 1 below min-rows ...
+
+  source       rows  T    E[T]    sigmaT  Z        p       ties
+  -----------  ----  ---  ------  ------  -------  ------  ----
+  openclaw     351   212  232.67  7.879   -2.6230  0.0087  0
+  claude-code  45    25   28.67   2.771   -1.3233  0.1857  0
+  codex        15    7    8.67    1.531   -1.0885  0.2764  0
+  hermes       123   80   80.67   4.642   -0.1436  0.8858  0
+  opencode     335   221  222.00  7.696   -0.1299  0.8966  0
+  ```
+
+  Reading: `openclaw` is the only source whose row-token series
+  is detectably **too smooth** for i.i.d. (T = 212 vs E[T] =
+  232.67, Z = -2.62, p = 0.0087 — significant at `p < 0.01`).
+  This is a **different finding** than what the runs-test
+  reported in 0.6.102: there `openclaw` showed Z = -11.35
+  (extreme median-level clumping). The turning-point Z of -2.62
+  says that *even at the first-difference step scale*, openclaw's
+  per-row token series has fewer direction reversals than i.i.d.
+  noise would produce — i.e. the source not only spends long
+  stretches above/below its median (runs-test finding) but also
+  exhibits short-run **directional persistence** in the
+  first-difference sequence (turning-point finding). The
+  `opencode` source, by contrast, looked extremely clumped to
+  the runs-test (Z = -7.37) but has a turning-point Z of -0.13 —
+  a textbook example of a source whose level-regime structure
+  and step-direction structure live on different timescales.
+  None of the four other sources show first-difference
+  non-randomness at any conventional threshold. (Zero ties
+  across the board: row token counts are effectively continuous
+  for all six sources in the window.)
+
 ## 0.6.102 — 2026-04-27
 
 ### Changed
