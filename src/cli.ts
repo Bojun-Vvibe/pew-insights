@@ -105,6 +105,7 @@ import {
   renderSourceRowTokenCoefficientOfVariation,
   renderSourceRowTokenMad,
   renderSourceRowTokenGini,
+  renderSourceSameModelStreak,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -270,6 +271,7 @@ import { buildSourceRowTokenKurtosis } from './sourcerowtokenkurtosis.js';
 import { buildSourceRowTokenCoefficientOfVariation } from './sourcerowtokencoefficientofvariation.js';
 import { buildSourceRowTokenMad } from './sourcerowtokenmad.js';
 import { buildSourceRowTokenGini } from './sourcerowtokengini.js';
+import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10170,6 +10172,126 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenGini(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-same-model-streak')
+  .description(
+    "Per-source longest run of consecutive queue rows (ordered by hour_start asc, model asc tiebreak) sharing the same model. Reports rowsKept, streakCount (number of maximal same-model runs; equivalently 1 + adjacent model switches), longestStreak, longestStreakModel, longestStreakRatio = longestStreak/rowsKept (1.0 = source pinned to a single model on every row; ~1/n = source rotates models every row), and meanStreakLength = rowsKept/streakCount. Distinct from model-switching (rate of switches, not the longest run between them; identical switch rates can mask wildly different longest runs), bucket-streak-length (per-MODEL runs of consecutive active BUCKETS — bucket-grain, model-grouped; this is per-SOURCE runs of consecutive ROWS — row-grain, source-grouped), source-run-lengths (run-lengths of same-SOURCE across SESSIONS; this is run-lengths of same-MODEL across QUEUE ROWS within a single source), model-tenure / model-cohabitation (lifetimes / overlap, not longest uninterrupted stretch).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows (default 2)',
+    '2',
+  )
+  .option(
+    '--min-streak <n>',
+    'drop sources whose longestStreak is strictly below n (default 1)',
+    '1',
+  )
+  .option(
+    '--min-ratio <f>',
+    'drop sources whose longestStreakRatio is strictly below f; cohort selector for "model-locked" sources (e.g. --min-ratio 0.9 surfaces only sources where the longest run covers >=90% of rows). Must be in [0, 1]. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'streak-desc' (default) | 'streak-asc' | 'ratio-desc' | 'ratio-asc' | 'rows' | 'switches' | 'source'",
+    'streak-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minStreak: string;
+        minRatio: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be a positive integer (got ${opts.minRows})`,
+          );
+        }
+        const minStreak = Number.parseInt(opts.minStreak, 10);
+        if (!Number.isInteger(minStreak) || minStreak < 1) {
+          throw new Error(
+            `--min-streak must be a positive integer (got ${opts.minStreak})`,
+          );
+        }
+        const minRatio = Number.parseFloat(opts.minRatio);
+        if (!Number.isFinite(minRatio) || minRatio < 0 || minRatio > 1) {
+          throw new Error(
+            `--min-ratio must be a finite number in [0, 1] (got ${opts.minRatio})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'streak-desc',
+          'streak-asc',
+          'ratio-desc',
+          'ratio-asc',
+          'rows',
+          'switches',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceSameModelStreak(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minStreak,
+          minRatio,
+          top,
+          sort: opts.sort as
+            | 'streak-desc'
+            | 'streak-asc'
+            | 'ratio-desc'
+            | 'ratio-asc'
+            | 'rows'
+            | 'switches'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceSameModelStreak(report) + '\n');
         }
       } catch (e) {
         die(e);

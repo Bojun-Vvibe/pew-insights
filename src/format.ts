@@ -8340,3 +8340,71 @@ export function renderSourceRowTokenGini(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceSameModelStreakReport,
+  SourceSameModelStreakRow,
+} from './sourcesamemodelstreak.js';
+
+export function renderSourceSameModelStreak(
+  r: SourceSameModelStreakReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-same-model-streak'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-streak: ${r.minStreak}    min-ratio: ${r.minRatio.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinStreak)} below min-streak, ${formatNumber(r.droppedBelowMinRatio)} below min-ratio, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source longest run of consecutive rows sharing the same model. ratio = longestStreak / rowsKept; 1.0 = source pinned to one model on every row; ~1/n = source rotates models every row. meanStreak = rowsKept / streakCount.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source same-model streak (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'streaks',
+    'longest',
+    'ratio',
+    'meanStreak',
+    'longestModel',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceSameModelStreakRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    formatNumber(s.streakCount),
+    formatNumber(s.longestStreak),
+    s.longestStreakRatio.toFixed(4),
+    s.meanStreakLength.toFixed(2),
+    s.longestStreakModel,
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
