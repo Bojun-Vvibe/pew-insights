@@ -161,6 +161,29 @@ export interface SourceRowTokenHiguchiFdOptions {
    */
   top?: number | null;
   /**
+   * If true, subtract the OLS linear trend from each per-source
+   * value sequence before computing L(k). Default false.
+   *
+   * Why this matters and is genuinely orthogonal to the no-detrend
+   * default: a strong linear drift dominates the path length at
+   * every stride k by the same additive amount per |delta|, which
+   * pushes the fitted slope toward zero (HFD toward 1) regardless
+   * of the residual high-frequency roughness — i.e. drifty
+   * sources look artificially smooth. Detrending isolates the
+   * **deviation from drift**, exposing the genuine roughness
+   * regime of the increments. The Higuchi literature explicitly
+   * recommends detrending whenever a non-stationary trend is
+   * present (this is also the philosophical motivation behind
+   * DFA, Detrended Fluctuation Analysis, which subtracts a
+   * **piecewise** trend; the flag here uses a single global
+   * linear trend, which is the simpler and faster baseline).
+   *
+   * The reported `sigma` is the stddev of the detrended series
+   * when this flag is on, so the zero-variance gate also sees
+   * the detrended residuals.
+   */
+  detrend?: boolean;
+  /**
    * Sort key for `sources[]`:
    *   - 'hfd-asc' (default): HFD ascending — smoothest first.
    *   - 'hfd-desc':          HFD descending — roughest first.
@@ -205,6 +228,7 @@ export interface SourceRowTokenHiguchiFdReport {
   minK: number;
   minRows: number;
   top: number | null;
+  detrend: boolean;
   sort: SourceRowTokenHiguchiFdSort;
   totalSources: number;
   totalRowsKept: number;
@@ -249,6 +273,7 @@ export function buildSourceRowTokenHiguchiFd(
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
   }
+  const detrend = opts.detrend ?? false;
   const sort = opts.sort ?? 'hfd-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
@@ -326,12 +351,36 @@ export function buildSourceRowTokenHiguchiFd(
     totalRowsKept += samples.length;
 
     samples.sort((a, b) => a[0] - b[0]);
-    const v = samples.map((s) => s[1]);
+    let v = samples.map((s) => s[1]);
     const N = v.length;
 
     if (N < minRows) {
       droppedBelowMinRows += 1;
       continue;
+    }
+
+    if (detrend) {
+      // OLS detrend: x = 0..N-1, fit y = a + b*x, subtract.
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < N; i++) {
+        sx += i;
+        sy += v[i]!;
+      }
+      const xbar = sx / N;
+      const ybar = sy / N;
+      let sxx = 0;
+      let sxy = 0;
+      for (let i = 0; i < N; i++) {
+        const dx = i - xbar;
+        sxx += dx * dx;
+        sxy += dx * (v[i]! - ybar);
+      }
+      const b = sxx === 0 ? 0 : sxy / sxx;
+      const a = ybar - b * xbar;
+      const detrended: number[] = new Array(N);
+      for (let i = 0; i < N; i++) detrended[i] = v[i]! - (a + b * i);
+      v = detrended;
     }
 
     // Population stddev (informational + zero-variance gate).
@@ -487,6 +536,7 @@ export function buildSourceRowTokenHiguchiFd(
     minK,
     minRows,
     top,
+    detrend,
     sort,
     totalSources,
     totalRowsKept,

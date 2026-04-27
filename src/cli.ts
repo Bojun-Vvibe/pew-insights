@@ -11596,6 +11596,10 @@ program
     "sort key: 'hfd-asc' (default; smoothest first) | 'hfd-desc' (roughest first) | 'rows' | 'source'",
     'hfd-asc',
   )
+  .option(
+    '--detrend',
+    'subtract the OLS linear trend from each per-source value sequence before computing L(k). Isolates deviation-from-drift roughness; recommended for sources with strong monotone drift, where the raw HFD is biased toward 1 by the trend.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -11608,6 +11612,7 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        detrend?: boolean;
         json?: boolean;
       },
       cmd,
@@ -11654,6 +11659,7 @@ program
           minK,
           minRows,
           top,
+          detrend: opts.detrend === true,
           sort: opts.sort as 'hfd-asc' | 'hfd-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

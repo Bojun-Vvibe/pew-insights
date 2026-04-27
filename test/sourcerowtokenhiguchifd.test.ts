@@ -228,3 +228,59 @@ test('higuchi-fd: hfd-desc sort ranks roughest source first', () => {
   assert.equal(r.sources[1]!.source, 'smooth');
   assert.ok(r.sources[0]!.hfd > r.sources[1]!.hfd);
 });
+
+test('higuchi-fd --detrend: defaults to false; report carries flag', () => {
+  const r = buildSourceRowTokenHiguchiFd([], { generatedAt: GEN });
+  assert.equal(r.detrend, false);
+  const r2 = buildSourceRowTokenHiguchiFd([], {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(r2.detrend, true);
+});
+
+test('higuchi-fd --detrend: pure ramp + tiny noise -> with detrend exposes residual roughness', () => {
+  // Pure ramp + small alternating perturbation. Without detrend
+  // the linear drift dominates path length and HFD slope is ~0.
+  // With detrend the residual is just the small alternating
+  // signal -> path length DOES grow as stride shrinks -> slope > 0.
+  const vals: number[] = [];
+  for (let i = 0; i < 80; i++) vals.push(100 * (i + 1) + (i % 2 === 0 ? 0 : 1));
+  const data = series(vals);
+  const noTrend = buildSourceRowTokenHiguchiFd(data, {
+    generatedAt: GEN,
+    detrend: false,
+  });
+  const withTrend = buildSourceRowTokenHiguchiFd(data, {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  // Both produce one row.
+  assert.equal(noTrend.sources.length, 1);
+  assert.equal(withTrend.sources.length, 1);
+  // Without detrend: slope is essentially 0 (drift dominates).
+  assert.ok(
+    Math.abs(noTrend.sources[0]!.slopeRaw) < 0.05,
+    `no-detrend slopeRaw should be ~0, got ${noTrend.sources[0]!.slopeRaw}`,
+  );
+  // With detrend: residual = alternating -> slope strictly larger.
+  assert.ok(
+    withTrend.sources[0]!.slopeRaw > noTrend.sources[0]!.slopeRaw + 0.1,
+    `detrend should increase slope, got ${withTrend.sources[0]!.slopeRaw} vs ${noTrend.sources[0]!.slopeRaw}`,
+  );
+});
+
+test('higuchi-fd --detrend: pure ramp -> sigma collapses, droppedZeroVariance', () => {
+  // A pure linear ramp has zero residuals after OLS detrend ->
+  // sigma = 0 -> droppedZeroVariance. (Without detrend, the ramp
+  // has positive sigma and is processed normally.)
+  const vals: number[] = [];
+  for (let i = 0; i < 50; i++) vals.push(i + 1);
+  const data = series(vals);
+  const r = buildSourceRowTokenHiguchiFd(data, {
+    generatedAt: GEN,
+    detrend: true,
+  });
+  assert.equal(r.droppedZeroVariance, 1);
+  assert.equal(r.sources.length, 0);
+});

@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.115 — 2026-04-27
+
+### Changed
+
+- `source-row-token-higuchi-fd`: adds `--detrend`. When set,
+  the OLS linear trend `a + b*i` is fitted to each per-source
+  value sequence `v[0..N-1]` (with `i = 0..N-1`) and
+  subtracted before `L(k)` is computed. Default off (classical
+  Higuchi 1988 estimator on the raw series).
+
+  Why this is **genuinely orthogonal** to the no-detrend
+  default and to all other gates / flags on this lens:
+
+  - `--detrend off` measures the **arc-length scaling of the
+    raw process**, drift included. A monotone-drifty series
+    has |delta| dominated by the trend at every stride k, so
+    L(k) is roughly constant in k, the OLS slope is pulled
+    toward 0, and HFD is reported (after clamping) as 1
+    regardless of the residual high-frequency roughness.
+  - `--detrend on` measures the **arc-length scaling of the
+    residuals from a global linear fit** — i.e. the
+    deviation-from-drift roughness regime. The Higuchi
+    literature explicitly recommends detrending whenever a
+    non-stationary trend is present; this is also the
+    philosophical motivation behind DFA (Detrended Fluctuation
+    Analysis), which subtracts a piecewise trend per chunk.
+    The flag here uses a single global linear trend, which is
+    the cheapest baseline and the one that pairs cleanly with
+    the existing `--detrend` flag on `source-row-token-hurst-rs`
+    so that operators can compare the two estimators after the
+    same preprocessing.
+
+  Combined with `--detrend`, the zero-variance gate and
+  `clampedBelow1` / `clampedAbove2` counters operate on the
+  detrended residuals: a pure linear ramp -> residuals all
+  zero -> `sigma = 0` -> `droppedZeroVariance` (correctly
+  surfaced as "no roughness signal beyond the trend").
+
+  3 new unit tests cover: default = false and report carries
+  the flag, ramp + tiny alternating perturbation (without
+  detrend slopeRaw ~ 0 because drift dominates; with detrend
+  slopeRaw is strictly larger because the residual
+  alternation is exposed), and pure linear ramp under
+  `--detrend` collapses to `droppedZeroVariance`.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  with `--detrend --sort hfd-desc` (1,662 rows, 6 sources;
+  one source-name redacted from the excerpt below per repo
+  policy):
+
+  ```
+  per-source row-token Higuchi Fractal Dimension (sorted by hfd-desc; ties: source asc)
+  source       rows  sigma        k_used  k_drop  HFD     slopeRaw  R^2
+  -----------  ----  -----------  ------  ------  ------  --------  ------
+  hermes       178   919755.24    8       0       1.0154  1.0154    0.9967
+  claude-code  299   15301380.41  8       0       1.0000  0.9316    0.9982
+  codex        64    13368734.36  8       0       1.0000  0.8949    0.9917
+  openclaw     447   4764761.39   8       0       1.0000  0.8007    0.9983
+  opencode     341   13208669.48  8       0       1.0000  0.7849    0.9979
+  <redacted>   333   14619.75     8       0       1.0000  0.9762    0.9871
+  ```
+
+  Operator reading vs. the v0.6.114 no-detrend table on the
+  same corpus: the per-source `sigma` drops modestly across
+  the board (e.g. `claude-code`: 17.6M -> 15.3M; `openclaw`:
+  4.90M -> 4.76M), confirming the global linear trend
+  carried only a small fraction of the per-row token-count
+  variance — the dynamics are dominated by short-term
+  variation, not gross drift. The slopeRaw values barely
+  move (`hermes` 1.0169 -> 1.0154; `claude-code` 0.9333 ->
+  0.9316; `openclaw` 0.8015 -> 0.8007) — consistent with the
+  conclusion that on this corpus the raw HFD slope was
+  **not** materially biased by trend, and the
+  smoother-than-Brownian regime (`clampedBelow1 = 5`) is a
+  property of the residuals themselves, not an artefact of
+  drift. This is exactly the diagnostic that `--detrend`
+  exists to provide: an operator who suspects "this source
+  looks smooth only because of the trend" can re-run with
+  the flag and confirm or refute the suspicion in one shot.
+
 ## 0.6.114 — 2026-04-27
 
 ### Added
