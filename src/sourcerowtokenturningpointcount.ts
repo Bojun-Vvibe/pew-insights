@@ -213,6 +213,14 @@ export interface SourceRowTokenTurningPointCountRow {
   turningPoints: number;
   /** number of interior positions with a tie at either neighbour. */
   tiePositions: number;
+  /**
+   * Fraction of interior positions that are ties:
+   * `tiePositions / max(rowsKept - 2, 1)`. In `[0, 1]`. Surfaced
+   * for operator readability so the continuity-premise audit
+   * (paired with `--max-tie-fraction`) does not require manual
+   * arithmetic on the table.
+   */
+  tieFraction: number;
   /** expected turning points under H0. */
   expectedTurningPoints: number;
   /** stddev of T under H0. */
@@ -424,6 +432,7 @@ export function buildSourceRowTokenTurningPointCount(
       rowsKept: n,
       turningPoints: T,
       tiePositions,
+      tieFraction: n > 2 ? tiePositions / (n - 2) : 0,
       expectedTurningPoints: expected,
       stddevTurningPoints: stddev,
       z,

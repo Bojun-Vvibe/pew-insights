@@ -291,3 +291,17 @@ test('turning-point: --max-tie-fraction defaults expose new fields', () => {
   assert.equal(r.maxTieFraction, 1);
   assert.equal(r.droppedAboveMaxTieFraction, 0);
 });
+
+test('turning-point: tieFraction surfaced per row, in [0,1]', () => {
+  const queue: QueueLine[] = [
+    ...series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'mono'),
+    ...series([0, 0, 0, 0, 0, 0, 0, 0, 100, 200], 'plat'),
+  ];
+  const r = buildSourceRowTokenTurningPointCount(queue, { generatedAt: GEN });
+  const mono = r.sources.find((s) => s.source === 'mono')!;
+  const plat = r.sources.find((s) => s.source === 'plat')!;
+  assert.equal(mono.tieFraction, 0);
+  assert.equal(plat.tieFraction, 7 / 8);
+  assert.ok(mono.tieFraction >= 0 && mono.tieFraction <= 1);
+  assert.ok(plat.tieFraction >= 0 && plat.tieFraction <= 1);
+});

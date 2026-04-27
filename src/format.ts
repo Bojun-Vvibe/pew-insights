@@ -8756,6 +8756,7 @@ export function renderSourceRowTokenTurningPointCount(
     'Z',
     'p',
     'ties',
+    'tieFrac',
   ];
   const rows: string[][] = r.sources.map((s: SourceRowTokenTurningPointCountRow) => [
     s.source,
@@ -8766,6 +8767,7 @@ export function renderSourceRowTokenTurningPointCount(
     s.z.toFixed(4),
     s.pValue.toFixed(4),
     formatNumber(s.tiePositions),
+    s.tieFraction.toFixed(3),
   ]);
   lines.push(renderTableLocal(headers, rows));
 

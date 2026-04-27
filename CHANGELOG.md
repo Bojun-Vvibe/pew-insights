@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.105 — 2026-04-27
+
+### Changed
+
+- `source-row-token-turning-point-count`: surfaces a precomputed
+  `tieFraction = tiePositions / max(rowsKept - 2, 1)` field on
+  every report row (and a `tieFrac` column in the pretty
+  renderer). Operator-readability polish so the
+  continuity-premise audit paired with `--max-tie-fraction`
+  doesn't require manual arithmetic on the table. New unit
+  test `tieFraction surfaced per row, in [0,1]` constructs a
+  monotone witness (`tieFraction = 0`) and a near-plateau
+  witness (`[0,0,0,0,0,0,0,0,100,200]` -> `tieFraction = 7/8 =
+  0.875`) and verifies the field is in range.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-turning-point-count --since 2026-04-20
+  source       rows  T    E[T]    sigmaT  Z        p       ties  tieFrac
+  -----------  ----  ---  ------  ------  -------  ------  ----  -------
+  openclaw     352   212  233.33  7.890   -2.7038  0.0069  0     0.000
+  claude-code  45    25   28.67   2.771   -1.3233  0.1857  0     0.000
+  codex        15    7    8.67    1.531   -1.0885  0.2764  0     0.000
+  hermes       123   80   80.67   4.642   -0.1436  0.8858  0     0.000
+  opencode     335   221  222.00  7.696   -0.1299  0.8966  0     0.000
+  ```
+
+  Reading: `tieFrac = 0.000` for every surviving source confirms
+  what the raw `ties = 0` column already showed in 0.6.104 — the
+  Wallis-Moore continuous-distribution premise is cleanly
+  satisfied for all six sources in the window, so the headline
+  finding (`openclaw` Z = -2.70 / p = 0.0069) is interpretable
+  as genuine first-difference persistence, not as a discreteness
+  artefact. (Note: `openclaw` row count drifted from 351 -> 352
+  between 0.6.104 and 0.6.105 because the queue is live; the
+  Z statistic moved from -2.62 to -2.70 — same direction, same
+  conclusion, marginally stronger evidence as the sample grew.)
+
 ## 0.6.104 — 2026-04-27
 
 ### Changed
