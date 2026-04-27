@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.102 — 2026-04-27
+
+### Changed
+
+- `source-row-token-runs-test`: refinement adds the
+  `--min-abs-z <f>` flag, a direction-agnostic effect-size
+  cohort selector that is **operator-orthogonal** to `--max-p`
+  even though Z and p are monotonically related under the
+  normal-approx.
+
+  The two gates use different operator vocabularies:
+
+  - `--max-p f` filters on the **tail probability under H0** —
+    a Neyman-Pearson hypothesis-testing gate. *Sample-size
+    aware*: a source with `|Z| = 1.6` and `n = 9` and a source
+    with `|Z| = 1.6` and `n = 500` both report `p ~ 0.11` and
+    survive `--max-p 0.2` together — even though the larger
+    sample is pinning down a much smaller true effect with
+    much higher precision.
+  - `--min-abs-z f` filters on the **normalised effect size
+    itself** — how many null-stddevs `R` is from `E[R]`,
+    regardless of how that translates to a tail probability.
+    Familiar from physics / signal-detection contexts (a
+    "5-sigma" cut, etc.).
+
+  Combined with `--max-p`, both gates apply (logical AND); each
+  gate counts its drops separately under `droppedBelowMinAbsZ`
+  and `droppedAboveMaxP` so the operator sees which gate
+  dropped what.
+
+  New unit test
+  `runs-test: --min-abs-z and --max-p combine via logical AND,
+  with separate drop counters` constructs a two-source witness
+  (`mono`: |Z| ~ 2.683; `rand`: |Z| ~ 0.671) and verifies that
+  `--min-abs-z 2` and `--max-p 0.05` both drop `rand` but count
+  it under their respective counters.
+
+  Live smoke against `~/.config/pew/queue.jsonl` with the new
+  flag at a strict 3-sigma threshold:
+
+  ```
+  pew-insights source-row-token-runs-test --since 2026-04-20 --min-abs-z 3
+  sources: 6 (shown 2)    rows: 867    min-abs-z: 3.0000    sort: abs-z-desc
+  dropped: ... 3 below min-abs-z ...
+
+  source    rows  median      n+   n-   ties  runs  E[R]    sigmaR  Z         p
+  --------  ----  ----------  ---  ---  ----  ----  ------  ------  --------  ------
+  openclaw  350   2701622.00  175  175  0     70    176.00  9.341   -11.3481  0.0000
+  opencode  332   7376861.00  166  166  1     100   167.00  9.097   -7.3653   0.0000
+  ```
+
+  Reading: tightening from the v0.6.101 default to a 3-sigma
+  effect-size cut isolates the two sources with overwhelming
+  evidence of clumped above/below-median row-token regimes
+  (Z = -11.35 and Z = -7.37). The hermes source — which v0.6.101
+  surfaced at Z = -2.91 / p = 0.0036 (rejected at p < 0.01 under
+  `--max-p`) — is now correctly gated out by the effect-size
+  cut, demonstrating that `--min-abs-z` and `--max-p` select
+  different cohorts even on the same queue.
+
 ## 0.6.101 — 2026-04-27
 
 ### Added
