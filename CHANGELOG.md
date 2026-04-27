@@ -2,6 +2,150 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.87 — 2026-04-27
+
+### Added
+
+- `source-row-token-coefficient-of-variation`: per-source
+  coefficient of variation `cv = stddev / mean` of the per-row
+  `total_tokens` distribution. Scale-free dispersion: doubling
+  every row leaves `cv` unchanged. The canonical companion to
+  the existing 3rd-moment (`source-row-token-skewness` v0.6.81)
+  and 4th-moment (`source-row-token-kurtosis` v0.6.82) shape
+  lenses — this is the **2nd**-moment, scale-normalised
+  dispersion lens at the same per-row grain.
+
+  Reading guide:
+
+  - `cv = 0`        : all rows identical (zero dispersion).
+  - `cv ~ 0.1`      : rows tightly clustered around the mean
+                      (~10% relative spread).
+  - `cv ~ 0.5`      : moderate dispersion; one stddev is half
+                      the mean.
+  - `cv = 1.0`      : stddev equals mean — the canonical
+                      "exponential-distribution" baseline and
+                      the dispersion floor for any non-trivial
+                      heavy-tailed series with a strict zero
+                      floor.
+  - `cv >> 1.0`     : per-row sizes are extremely spread out
+                      relative to the mean; a few rows dwarf
+                      the typical row by an order of magnitude
+                      or more.
+
+  Why this is genuinely orthogonal to every existing per-source
+  dispersion lens in the codebase:
+
+  - `source-burstiness-fano-factor` reports `variance / mean`
+    of **per-source-active-day** `total_tokens` totals. Two
+    differences: (1) Fano carries token units and grows with
+    absolute scale (doubling every value doubles the Fano
+    factor); CV is dimensionless and scale-free. They rank
+    sources differently. (2) Fano operates on day totals (one
+    observation per active day); CV here operates on **per-row**
+    values (typically tens-to-thousands of observations per
+    source). A source with smooth daily totals but per-row
+    spikiness has low Fano + high CV.
+  - `source-row-token-skewness` is the 3rd standardised moment
+    (asymmetry); `source-row-token-kurtosis` is the 4th
+    (tail weight). CV is the 2nd, scale-normalised. They are
+    mathematically independent: a Normal(mu, sigma) has g1=0
+    for any sigma, while CV = sigma/mu varies arbitrarily; an
+    exponential has CV=1 and g1=2 for any rate parameter.
+  - `source-output-tokens-per-row-percentiles` reports
+    p50/p90/p99 of per-row `output_tokens` (NOT `total_tokens`).
+    Quantile shape on a different numerator.
+  - `source-output-tokens-by-hour-cv` *also* reports CV, but on
+    a wholly different sample: per-source `output_tokens`
+    aggregated by hour-of-day (24 bins), then CV across those
+    24 bin totals. That is a **temporal** dispersion stat —
+    does the day have flat hour-of-day mass or spiky? The lens
+    here is on raw per-row values with no hour bucketing.
+  - `source-gap-hours-cv` is CV of inter-row hour gap lengths
+    (cadence on spacing). Different sample axis entirely.
+  - `source-cache-share-by-day-cv`, `source-reasoning-share-by-day-cv`,
+    `source-io-ratio-stability` are all CV-of-daily-ratio stats —
+    stability of a derived fraction at day grain, not raw
+    per-row dispersion.
+  - `burstiness` and `rolling-bucket-cv` are global / windowed
+    CVs of token-per-bucket; not per-source row CV.
+
+  Knobs:
+
+  - `--since` / `--until`: ISO time-window filter on `hour_start`.
+  - `--source <id>`: restrict to a single source.
+  - `--min-rows <n>` (default 2): structural floor (2nd moment
+    needs >=2 samples). Suppressed surface as
+    `droppedBelowMinRows`.
+  - `--min-mean <f>` (default 0): drop sources whose per-row
+    `total_tokens` mean is strictly below `f`. Useful for
+    suppressing tiny-row sources where a single outlier
+    dominates CV.
+  - `--top <n>` (default no cap): display cap on `sources[]`.
+  - `--sort <key>` (default `cv-desc`): `cv-desc`|`cv-asc`|
+    `rows`|`mean`|`stddev`|`source`.
+  - `--json`: emit JSON instead of pretty.
+
+  Edge cases:
+
+  - All-zero rows: `mean = 0`, `cv` reported as 0 with
+    `degenerate = true`. Surfaces in the table; not silently
+    dropped (a source that emits only `total_tokens = 0` rows
+    is "perfectly stable" in a degenerate sense).
+  - Single non-zero row in n>=2: `cv` is finite but very large
+    (mean is small, stddev = sqrt(non-zero variance)).
+    `degenerate = false`; operator should read row count
+    column to gauge stability.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (one
+  IDE-assistant source name redacted to `ide-assistant-A` per
+  banned-string policy):
+
+  ```
+  pew-insights source-row-token-coefficient-of-variation
+  as of: 2026-04-27T02:11:49.745Z    sources: 6 (shown 6)    rows: 1,618    min-rows: 5    min-mean: 0.00    top: —    sort: cv-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 2-row floor, 0 below min-rows, 0 below min-mean, 0 below top cap
+
+  per-source row total_tokens coefficient of variation (sorted by cv-desc; ties: source asc)
+  source           rows  mean         stddev       cv      degen
+  ---------------  ----  -----------  -----------  ------  -----
+  ide-assistant-A  333   5662.84      14933.73     2.6371  -
+  claude-code      299   11512995.95  17605167.00  1.5292  -
+  opencode         324   10352887.06  13340291.55  1.2886  -
+  openclaw         430   4341243.73   4955817.96   1.1416  -
+  hermes           168   870008.29    988968.55    1.1367  -
+  codex            64    12650385.31  14252148.98  1.1266  -
+  ```
+
+  Reading: every source is over `cv = 1.0` — meaning across the
+  board, per-row `total_tokens` stddev exceeds the mean. This is
+  exactly the heavy-tailed-with-zero-floor regime predicted by
+  the existing skewness lens (every source on this dataset
+  reports `g1 > 0`). The standout is `ide-assistant-A` at
+  `cv = 2.64` — its mean per-row is only ~5.7K tokens, yet its
+  stddev is ~14.9K tokens, i.e. a typical row is dwarfed by the
+  tail rows by ~3x. This is **scale-orthogonal** to the absolute
+  ranking: in raw `total_tokens` mass, `ide-assistant-A` is by
+  far the smallest source on this dataset (~1.9M tokens total
+  vs. claude-code's ~3.4B), but its dispersion-relative-to-its-
+  own-mean is the highest. The existing Fano-factor lens cannot
+  surface this — Fano scales with absolute mean, so a small-mean
+  source naturally has a small Fano factor regardless of how
+  spread-out its rows are. CV is the right scale-free axis to
+  ask the dispersion question on.
+
+  The middle of the pack — `claude-code` (1.53), `opencode`
+  (1.29), `openclaw` (1.14), `hermes` (1.14), `codex` (1.13) —
+  cluster tightly. Their per-row token usage all sits in roughly
+  the same dispersion regime: stddev between 1.1x and 1.6x the
+  mean. This is the "noisy heavy-tailed but not extreme" band.
+  No source on this dataset is `cv < 1`, i.e. there is no
+  source whose per-row distribution is **tighter** than an
+  exponential — consistent with the universal observation that
+  IDE/agent token usage has a strict zero floor and a long
+  right tail.
+
+---
+
 ## 0.6.86 — 2026-04-27
 
 ### Changed
