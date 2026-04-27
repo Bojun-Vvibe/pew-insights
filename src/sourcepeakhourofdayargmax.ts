@@ -122,6 +122,22 @@ export interface SourcePeakHourOfDayArgmaxOptions {
    */
   minMass?: number;
   /**
+   * Drop sources whose `margin` (= peakShare - secondShare) is
+   * strictly below this value. Useful as a cohort selector for
+   * sources whose argmax is statistically meaningful — e.g.
+   * `--min-margin 0.05` hides every source where #1 and #2 differ
+   * by less than 5 percentage points. Display filter only.
+   * Suppressed rows surface as `droppedBelowMinMargin`. Must be a
+   * finite number in [0, 1]. Default 0 = no floor (preserves
+   * v0.6.85 behaviour exactly).
+   *
+   * Strict-`<` semantics: a single-active-hour source has
+   * `margin = 1.0` and survives any threshold. Two perfectly
+   * tied hours give `margin = 0`, which the default `0` keeps
+   * but any positive threshold including `0.0001` drops.
+   */
+  minMargin?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null =
    * no cap.
@@ -173,6 +189,7 @@ export interface SourcePeakHourOfDayArgmaxReport {
   source: string | null;
   minRows: number;
   minMass: number;
+  minMargin: number;
   top: number | null;
   sort:
     | 'margin-desc'
@@ -190,6 +207,7 @@ export interface SourcePeakHourOfDayArgmaxReport {
   droppedZeroMassSources: number;
   droppedBelowMinRows: number;
   droppedBelowMinMass: number;
+  droppedBelowMinMargin: number;
   droppedBelowTopCap: number;
   sources: SourcePeakHourOfDayArgmaxRow[];
 }
@@ -224,6 +242,12 @@ export function buildSourcePeakHourOfDayArgmax(
   if (!Number.isFinite(minMass) || minMass < 0) {
     throw new Error(
       `minMass must be a finite, non-negative number (got ${opts.minMass})`,
+    );
+  }
+  const minMargin = opts.minMargin ?? 0;
+  if (!Number.isFinite(minMargin) || minMargin < 0 || minMargin > 1) {
+    throw new Error(
+      `minMargin must be a finite number in [0, 1] (got ${opts.minMargin})`,
     );
   }
   const top = opts.top ?? null;
@@ -355,6 +379,7 @@ export function buildSourcePeakHourOfDayArgmax(
 
   let droppedBelowMinRows = 0;
   let droppedBelowMinMass = 0;
+  let droppedBelowMinMargin = 0;
   const survived: SourcePeakHourOfDayArgmaxRow[] = [];
   for (const row of allRows) {
     if (row.rowsKept < minRows) {
@@ -363,6 +388,10 @@ export function buildSourcePeakHourOfDayArgmax(
     }
     if (row.totalMass < minMass) {
       droppedBelowMinMass += 1;
+      continue;
+    }
+    if (row.margin < minMargin) {
+      droppedBelowMinMargin += 1;
       continue;
     }
     survived.push(row);
@@ -395,6 +424,7 @@ export function buildSourcePeakHourOfDayArgmax(
     source: sourceFilter,
     minRows,
     minMass,
+    minMargin,
     top,
     sort,
     totalSources,
@@ -405,6 +435,7 @@ export function buildSourcePeakHourOfDayArgmax(
     droppedZeroMassSources,
     droppedBelowMinRows,
     droppedBelowMinMass,
+    droppedBelowMinMargin,
     droppedBelowTopCap,
     sources: finalSources,
   };

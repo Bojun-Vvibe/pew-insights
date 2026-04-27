@@ -441,3 +441,129 @@ test('peak-hour-argmax: JSON shape stability — keys present', () => {
     assert.ok(k in row, `missing row key ${k}`);
   }
 });
+
+// --- v0.6.86 refinement: --min-margin cohort selector ---
+
+test('peak-hour-argmax: rejects bad minMargin', () => {
+  assert.throws(() => buildSourcePeakHourOfDayArgmax([], { minMargin: -0.1 }));
+  assert.throws(() => buildSourcePeakHourOfDayArgmax([], { minMargin: 1.5 }));
+  assert.throws(() =>
+    buildSourcePeakHourOfDayArgmax([], { minMargin: Number.NaN }),
+  );
+  assert.throws(() =>
+    buildSourcePeakHourOfDayArgmax([], { minMargin: Number.POSITIVE_INFINITY }),
+  );
+});
+
+test('peak-hour-argmax: minMargin default 0 preserves v0.6.85 behaviour', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00Z', 'a', 100),
+    ql('2026-04-20T06:00:00Z', 'a', 100),
+  ];
+  const r0 = buildSourcePeakHourOfDayArgmax(q, { generatedAt: GEN });
+  const r1 = buildSourcePeakHourOfDayArgmax(q, {
+    minMargin: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r0.sources.length, r1.sources.length);
+  assert.equal(r1.minMargin, 0);
+  assert.equal(r0.droppedBelowMinMargin, 0);
+});
+
+test('peak-hour-argmax: minMargin drops sources below threshold', () => {
+  // 'sharp': all mass at one hour -> margin = 1.
+  // 'flat': two equal hours -> margin = 0.
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00Z', 'sharp', 100),
+    ql('2026-04-20T05:00:00Z', 'sharp', 200),
+    ql('2026-04-20T08:00:00Z', 'flat', 100),
+    ql('2026-04-20T16:00:00Z', 'flat', 100),
+  ];
+  const r = buildSourcePeakHourOfDayArgmax(q, {
+    minMargin: 0.5,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'sharp');
+  assert.equal(r.droppedBelowMinMargin, 1);
+  assert.equal(r.minMargin, 0.5);
+});
+
+test('peak-hour-argmax: minMargin = 0 keeps tied (margin = 0) sources', () => {
+  // Two equal hours: margin = 0; default 0 -> kept (strict <).
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00Z', 'tied', 100),
+    ql('2026-04-20T06:00:00Z', 'tied', 100),
+  ];
+  const r = buildSourcePeakHourOfDayArgmax(q, {
+    minMargin: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.margin, 0);
+});
+
+test('peak-hour-argmax: minMargin 0.0001 drops tied (margin = 0) sources', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00Z', 'tied', 100),
+    ql('2026-04-20T06:00:00Z', 'tied', 100),
+  ];
+  const r = buildSourcePeakHourOfDayArgmax(q, {
+    minMargin: 0.0001,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedBelowMinMargin, 1);
+});
+
+test('peak-hour-argmax: minMargin 1.0 keeps only single-active-hour sources', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-20T05:00:00Z', 'mono', 100),
+    ql('2026-04-21T05:00:00Z', 'mono', 200),
+    ql('2026-04-20T05:00:00Z', 'multi', 100),
+    ql('2026-04-20T06:00:00Z', 'multi', 50),
+  ];
+  const r = buildSourcePeakHourOfDayArgmax(q, {
+    minMargin: 1,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'mono');
+  assert.equal(r.sources[0]!.margin, 1);
+});
+
+test('peak-hour-argmax: minMargin combines with sort margin-desc', () => {
+  const q: QueueLine[] = [];
+  // sharp1: margin = 1
+  q.push(ql('2026-04-20T05:00:00Z', 'sharp1', 1000));
+  // sharp2: margin = 1
+  q.push(ql('2026-04-20T17:00:00Z', 'sharp2', 1000));
+  // mid: 700/200 -> margin 0.555..
+  q.push(ql('2026-04-20T10:00:00Z', 'mid', 700));
+  q.push(ql('2026-04-20T11:00:00Z', 'mid', 200));
+  // flat: 100/100 -> margin 0
+  q.push(ql('2026-04-20T03:00:00Z', 'flat', 100));
+  q.push(ql('2026-04-20T04:00:00Z', 'flat', 100));
+  const r = buildSourcePeakHourOfDayArgmax(q, {
+    minMargin: 0.3,
+    sort: 'margin-desc',
+    generatedAt: GEN,
+  });
+  // mid (0.555) and the two sharps (1.0) survive; flat drops.
+  assert.equal(r.sources.length, 3);
+  assert.equal(r.droppedBelowMinMargin, 1);
+  // margin-desc tiebreak source-asc: sharp1, sharp2, mid.
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['sharp1', 'sharp2', 'mid'],
+  );
+});
+
+test('peak-hour-argmax: report carries minMargin in metadata', () => {
+  const r = buildSourcePeakHourOfDayArgmax([], {
+    minMargin: 0.42,
+    generatedAt: GEN,
+  });
+  assert.equal(r.minMargin, 0.42);
+  assert.ok('droppedBelowMinMargin' in r);
+});

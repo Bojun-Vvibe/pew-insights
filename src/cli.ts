@@ -9830,6 +9830,11 @@ program
     '0',
   )
   .option(
+    '--min-margin <f>',
+    'drop sources whose margin (peakShare - secondShare) is strictly below f; cohort selector for sources with statistically meaningful peaks (e.g. --min-margin 0.05 hides sources where #1 and #2 differ by less than 5pp). f must be in [0, 1]. (default 0)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -9847,6 +9852,7 @@ program
         source?: string;
         minRows: string;
         minMass: string;
+        minMargin: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -9866,6 +9872,12 @@ program
         if (!Number.isFinite(minMass) || minMass < 0) {
           throw new Error(
             `--min-mass must be a finite, non-negative number (got ${opts.minMass})`,
+          );
+        }
+        const minMargin = Number.parseFloat(opts.minMargin);
+        if (!Number.isFinite(minMargin) || minMargin < 0 || minMargin > 1) {
+          throw new Error(
+            `--min-margin must be a finite number in [0, 1] (got ${opts.minMargin})`,
           );
         }
         let top: number | null = null;
@@ -9897,6 +9909,7 @@ program
           source: opts.source ?? null,
           minRows,
           minMass,
+          minMargin,
           top,
           sort: opts.sort as
             | 'margin-desc'

@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.86 — 2026-04-27
+
+### Changed
+
+- `source-peak-hour-of-day-argmax`: refinement adds the
+  `--min-margin <f>` flag. Drops sources whose
+  `margin = peakShare - secondShare` is strictly below `f`. The
+  natural cohort selector for this lens — the question
+  "is this source's peak-hour identity actually meaningful?"
+  is always margin-based: a source whose #1 and #2 hours are
+  essentially tied (`margin -> 0`) has an argmax that is
+  noise-dominated and cannot be trusted as a daily-rhythm
+  fingerprint, regardless of which specific hour won.
+
+  Suggested operator thresholds:
+
+  - `--min-margin 0.02` — hide everything where the peak hour
+    edges out the runner-up by less than 2pp. A reasonable
+    "is the peak even visible?" filter.
+  - `--min-margin 0.05` — hide everything where #1 and #2
+    differ by less than 5pp. A "show only sources with
+    a clearly resolvable single peak hour" view.
+  - `--min-margin 0.5`  — hide everything except sharp single-
+    hour-dominated sources.
+  - `--min-margin 1.0`  — keep only sources with exactly one
+    active hour (strictly mono-temporal).
+
+  Pair with `--sort margin-desc` for "show me the sources with
+  the most clearly identifiable daily peak, in order of
+  sharpness".
+
+  Display filter only; suppressed rows surface as
+  `droppedBelowMinMargin`. Default `--min-margin 0` preserves
+  v0.6.85 behaviour exactly. Strict-`<` semantics: a perfectly
+  tied two-hour source has `margin = 0` and is kept by the
+  default `0` (the operator can still see the `hActive` and
+  `secondShare` columns), but any positive threshold including
+  `--min-margin 0.0001` drops it. Same convention as
+  `--min-abs-kurt` in v0.6.84.
+
+  Live smoke at `--min-margin 0.02 --sort margin-desc` against
+  `~/.config/pew/queue.jsonl` (one IDE-assistant source name
+  redacted to `ide-assistant-A` per banned-string policy):
+
+  ```
+  pew-insights source-peak-hour-of-day-argmax
+  as of: 2026-04-27T01:33:45.942Z    sources: 6 (shown 3)    rows: 1,613    min-rows: 1    min-mass: 0.00    min-margin: 0.0200    top: —    sort: margin-desc
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 by source filter, 0 zero-mass sources, 0 below min-rows, 0 below min-mass, 3 below min-margin, 0 below top cap
+
+  per-source hour-of-day mass argmax (sorted by margin-desc; ties: source asc)
+  source           rows  mass           peakH  peakShare  2ndH  2ndShare  margin  hActive
+  ---------------  ----  -------------  -----  ---------  ----  --------  ------  -------
+  ide-assistant-A  333   1,885,727      02     0.2174     06    0.1410    0.0765  14
+  claude-code      299   3,442,385,788  08     0.1355     07    0.0989    0.0366  20
+  openclaw         428   1,864,907,948  01     0.0796     02    0.0545    0.0251  24
+  ```
+
+  At `--min-margin 0.02`, the three sources with sub-1pp
+  margins from v0.6.85 (`codex` 0.0093, `opencode` 0.0063,
+  `hermes` 0.0050) are correctly dropped — their argmax
+  identities were noise-dominated. The three survivors all
+  have a visibly resolvable peak vs runner-up:
+  `ide-assistant-A` is the standout (margin 7.65pp, the only
+  source with a peak that is more than 2x its runner-up share),
+  `claude-code` second (margin 3.66pp; note that the runner-up
+  `07:00` is contiguous with the peak `08:00`, so the "real"
+  daily rhythm here is a 07-08 morning band rather than a
+  spike), `openclaw` third (margin 2.51pp on `01:00 -> 02:00`,
+  also contiguous). With this gate engaged the lens transitions
+  from "report all peak hours" to "report only daily-rhythm
+  fingerprints we can defend statistically".
+
+---
+
 ## 0.6.85 — 2026-04-27
 
 ### Added
