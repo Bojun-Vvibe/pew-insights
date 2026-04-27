@@ -238,6 +238,72 @@ test('lempel-ziv: --threshold negative throws', () => {
   );
 });
 
+test('lempel-ziv: --threshold non-finite throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenLempelZiv([], { threshold: Number.NaN }),
+    /threshold must be a finite non-negative number/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenLempelZiv([], { threshold: Number.POSITIVE_INFINITY }),
+    /threshold must be a finite non-negative number/,
+  );
+});
+
+test('lempel-ziv: JSON shape guard - all documented fields present and finite', () => {
+  const data = series(
+    new Array(20).fill(0).map((_, i) => (i * 17) % 13),
+  );
+  const r = buildSourceRowTokenLempelZiv(data, {
+    generatedAt: GEN,
+    threshold: 5,
+  });
+  const round = JSON.parse(JSON.stringify(r));
+  // Top-level documented fields:
+  for (const k of [
+    'generatedAt',
+    'windowStart',
+    'windowEnd',
+    'source',
+    'minRows',
+    'top',
+    'thresholdMode',
+    'threshold',
+    'sort',
+    'totalSources',
+    'totalRowsKept',
+    'droppedInvalidHourStart',
+    'droppedInvalidTokens',
+    'droppedNegativeTokens',
+    'droppedSourceFilter',
+    'droppedBelowMinRows',
+    'droppedConstantBitstream',
+    'droppedBelowTopCap',
+    'sources',
+  ]) {
+    assert.ok(k in round, `missing top-level field ${k}`);
+  }
+  assert.equal(round.thresholdMode, 'fixed');
+  assert.equal(round.threshold, 5);
+  // Per-row documented fields:
+  for (const s of round.sources) {
+    for (const k of [
+      'source',
+      'rowsKept',
+      'median',
+      'onesCount',
+      'zerosCount',
+      'lz',
+      'lzNorm',
+    ]) {
+      assert.ok(k in s, `missing per-row field ${k}`);
+    }
+    assert.ok(Number.isFinite(s.lz), 'lz must serialise as finite');
+    assert.ok(Number.isFinite(s.lzNorm), 'lzNorm must serialise as finite');
+    assert.ok(Number.isFinite(s.median), 'median must serialise as finite');
+  }
+});
+
 test('lempel-ziv: --threshold differs from median for asymmetric distributions', () => {
   // values: [1,5,2,7,3,9,4,8,6,10, 1000, 1,5,2,7,3,9,4,8,6, 1000]
   // sorted: 1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,1000,1000  median ~ 6

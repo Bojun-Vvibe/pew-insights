@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.120 — 2026-04-27
+
+### Changed
+
+- `source-row-token-lempel-ziv`: extra test coverage. Adds:
+  - `--threshold` non-finite rejection (NaN, +Inf both throw).
+  - **JSON shape guard**: asserts every documented top-level
+    field is present on the round-tripped JSON
+    (`generatedAt`, `windowStart`, `windowEnd`, `source`,
+    `minRows`, `top`, `thresholdMode`, `threshold`, `sort`,
+    the eight `dropped*` counters, and `sources`), every
+    documented per-row field is present (`source`, `rowsKept`,
+    `median`, `onesCount`, `zerosCount`, `lz`, `lzNorm`),
+    and that `lz` / `lzNorm` / `median` serialise as finite
+    numbers (not NaN, not +Inf, not undefined). Catches future
+    regressions where a field is renamed or silently dropped
+    from the JSON shape — same pattern as the
+    `source-row-token-higuchi-fd` shape guard from 0.6.117.
+
+  No production code change. Test count: 2729 -> 2731.
+
 ## 0.6.119 — 2026-04-27
 
 ### Added
