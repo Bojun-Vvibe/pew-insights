@@ -161,6 +161,19 @@ export interface SourceRowTokenTeagerKaiserOptions {
    *   - 'tkeo-asc' (default): tkeoMean ascending — quietest
    *                           (lowest amplitude*frequency energy) first.
    *   - 'tkeo-desc':          tkeoMean descending — most-energetic first.
+   *   - 'abs-asc':            |tkeoMean| ascending — smallest
+   *                           magnitude first. Useful when the
+   *                           operator is signed (the Kaiser
+   *                           operator is only guaranteed
+   *                           non-negative for true mono-component
+   *                           AM-FM signals; on noisy real-world
+   *                           series the mean can drift slightly
+   *                           negative, in which case "most-energetic"
+   *                           is more naturally read as "largest
+   *                           magnitude" rather than "largest signed
+   *                           value").
+   *   - 'abs-desc':           |tkeoMean| descending — largest
+   *                           magnitude first.
    *   - 'rows':               rowsKept desc.
    *   - 'source':             source asc (lex).
    * Final tiebreak in all cases: source key asc.

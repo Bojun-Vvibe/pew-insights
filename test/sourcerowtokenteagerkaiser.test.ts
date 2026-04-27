@@ -501,3 +501,19 @@ test('tkeo: invalid sort still throws (regression after expanding sort set)', ()
     buildSourceRowTokenTeagerKaiser([], { sort: 'tkeo-bogus' as any }),
   );
 });
+
+test('tkeo: sort tiebreak is source asc across all six modes', () => {
+  // Three sources with identical tkeoMean (all linear ramps n+offset)
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');
+  const b = series(Array.from({ length: 20 }, (_, i) => i + 1), 'b');
+  const c = series(Array.from({ length: 20 }, (_, i) => i + 1), 'c');
+  for (const sort of ['tkeo-asc', 'tkeo-desc', 'abs-asc', 'abs-desc'] as const) {
+    const r = buildSourceRowTokenTeagerKaiser([...c, ...b, ...a], {
+      generatedAt: GEN,
+      sort,
+    });
+    assert.equal(r.sources[0]!.source, 'a', `sort=${sort}: tiebreak should put 'a' first`);
+    assert.equal(r.sources[1]!.source, 'b', `sort=${sort}: tiebreak should put 'b' second`);
+    assert.equal(r.sources[2]!.source, 'c', `sort=${sort}: tiebreak should put 'c' third`);
+  }
+});

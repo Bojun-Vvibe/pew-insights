@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.141 — 2026-04-28
+
+### Added
+
+- `source-row-token-teager-kaiser`: docstring expansion
+  for the `sort` option to clearly document the rationale
+  for the new `abs-asc` / `abs-desc` modes (the Kaiser
+  operator can drift slightly negative on non-AM-FM
+  signals, so |tkeoMean| is the operationally relevant
+  quantity for "most-energetic" rankings on noisy real-
+  world series). No behaviour change.
+
+- 1 new unit test: tiebreak ordering across all four
+  value-based sort modes (`tkeo-asc`, `tkeo-desc`,
+  `abs-asc`, `abs-desc`) is `source` asc when primary
+  keys collide. Covers a regression class where adding
+  new sort modes might have forgotten to apply the
+  shared tiebreak.
+
+  Test count: **3005 -> 3006** (+1 in this refinement,
+  +73 cumulative since baseline 2933).
+
 ## 0.6.140 — 2026-04-28
 
 ### Added
