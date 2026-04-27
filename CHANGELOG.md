@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.85 — 2026-04-27
+
+### Added
+
+- `source-peak-hour-of-day-argmax`: per-source the **UTC
+  hour-of-day [0..23] at which `total_tokens` mass peaks** —
+  `peakHour = argmax_h sum_{rows in hour h} total_tokens` —
+  plus `peakShare` (peak / total), the runner-up hour and its
+  share, and the **margin** between #1 and #2 (`peakShare -
+  secondShare`).
+
+  This is a **mode-like** statistic on the per-source hour-of-day
+  mass histogram, deliberately distinct from
+  `source-token-mass-hour-centroid` which is the **mean-like**
+  centroid of the same histogram. They coincide only for
+  unimodal-symmetric daily patterns; for multimodal or skewed
+  daily patterns they diverge by an arbitrary amount.
+
+  Reading guide:
+
+  - `margin -> 1.0` : razor-sharp single-hour spike (only one
+    hour of the day is ever active).
+  - `margin in [0.3, 0.7]` : a clear daily peak with a weaker
+    echo (e.g. lunch break, CI re-run window).
+  - `margin -> 0`   : two or more hours essentially tied; the
+    "peak" identity is statistically meaningless and the
+    `centroid` lens is the right one.
+  - `peakShare ~ 1/24 (= 0.042)` : near-uniform across the
+    day; argmax is noise.
+
+  Why this is genuinely orthogonal to every per-source temporal
+  lens already in the codebase:
+
+  - `source-token-mass-hour-centroid` is the **mean** of the
+    hour-of-day mass distribution (1st-moment, location).
+    Argmax is the **mode** (0th-order, peak-selection).
+  - `source-hour-of-day-token-mass-entropy` is Shannon
+    dispersion. Two sources with identical entropy can have
+    different argmax hours.
+  - `source-hour-of-day-top-k-mass-share` is cumulative
+    top-`k` mass; at `k=1` it gives the same numeric
+    `peakShare` value but **does not tell you which hour**
+    and does not give the margin to #2.
+  - `source-dead-hour-count` counts *empty* hours; argmax
+    cares about the busiest hour.
+  - `source-active-hour-longest-run` / `-active-hour-span`
+    are about contiguous active windows; argmax picks the
+    single dominant hour regardless of contiguity.
+  - `peak-hour` (top-level) is workspace-wide collapsed; this
+    is per-source.
+
+  Tiebreak inside `argmax`: lowest hour wins (stable +
+  deterministic). Sort modes: `margin-desc` (default,
+  sharpest peaks first), `margin-asc`, `peak-share`,
+  `peak-hour` (ascending UTC hour — handy as a chronological
+  daily timeline view), `mass`, `rows`, `source`. Final
+  tiebreak: source key asc.
+
+  Live smoke at default sort against `~/.config/pew/queue.jsonl`
+  (one IDE-assistant source name redacted to `ide-assistant-A`
+  per banned-string policy):
+
+  ```
+  pew-insights source-peak-hour-of-day-argmax
+  as of: 2026-04-27T01:30:53.576Z    sources: 6 (shown 6)    rows: 1,613    min-rows: 1    min-mass: 0.00    top: —    sort: margin-desc
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 by source filter, 0 zero-mass sources, 0 below min-rows, 0 below min-mass, 0 below top cap
+
+  per-source hour-of-day mass argmax (sorted by margin-desc; ties: source asc)
+  source           rows  mass           peakH  peakShare  2ndH  2ndShare  margin  hActive
+  ---------------  ----  -------------  -----  ---------  ----  --------  ------  -------
+  ide-assistant-A  333   1,885,727      02     0.2174     06    0.1410    0.0765  14
+  claude-code      299   3,442,385,788  08     0.1355     07    0.0989    0.0366  20
+  openclaw         428   1,864,907,948  01     0.0796     02    0.0545    0.0251  24
+  codex            64    809,624,660    12     0.1278     16    0.1185    0.0093  16
+  opencode         322   3,343,522,821  17     0.0930     18    0.0868    0.0063  24
+  hermes           167   145,791,852    14     0.1076     06    0.1026    0.0050  24
+  ```
+
+  Reading the live data:
+
+  - `ide-assistant-A` is the only source with a meaningful
+    daily peak (margin = 0.0765, more than 2x the next source).
+    Its 02:00 UTC peak captures 21.7% of its daily mass and is
+    visibly separated from its 06:00 echo (14.1%). It is also
+    the most temporally compressed source — only 14 of the 24
+    hours are active.
+  - `claude-code` peaks at 08:00 UTC with 13.6% mass, with
+    07:00 as the runner-up at 9.9% — a shoulder, not an echo.
+    Contiguous `07-08` peak suggests a daily morning work
+    window.
+  - `openclaw` is **active in all 24 hours** (`hActive = 24`)
+    with a flat distribution; the 01:00 peak at 8.0% has a
+    margin of just 2.5pp over 02:00. This is essentially a
+    background process — argmax here is statistically marginal.
+  - `codex`, `opencode`, `hermes` all have margins below 1pp:
+    the argmax identity is **not stable** for these sources
+    and the centroid / entropy / top-k lenses are more
+    informative for them.
+  - `opencode` and `hermes` are also `hActive = 24` (24/7
+    activity), reinforcing that "peak hour" is largely noise
+    for them; `opencode`'s nominal 17:00 peak edges out 18:00
+    by only 0.63pp.
+  - The chronological view (`--sort peak-hour`) reads
+    `openclaw 01 -> ide-assistant-A 02 -> claude-code 08 ->
+    codex 12 -> hermes 14 -> opencode 17`, suggesting six
+    different daily rhythm bands across the workspace —
+    although for the four high-`hActive` sources the "peak"
+    placement is noise-dominated.
+
+---
+
 ## 0.6.84 — 2026-04-27
 
 ### Changed
