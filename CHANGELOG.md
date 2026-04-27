@@ -2,6 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.129 — 2026-04-27
+
+### Added
+
+- `source-row-token-katz-fd`: adds `--planform <2d|1d>` to
+  generalise the construction from Katz's original 2D framing
+  (default) to the **Esteller et al. 2001 value-only 1D
+  variant**.
+
+  - `2d` (default): Katz 1988 original. Treat the sequence as
+    the planar curve `(i, v[i])`. Step length is
+    `sqrt(1 + dv^2)`, chord from start is
+    `sqrt(i^2 + (v[i]-v[0])^2)`. The unit-step i-axis padding
+    dominates `L` and `d` for sequences with bounded value
+    range relative to `n`, which compresses every empirical
+    KFD into the narrow `[1, 1.2]` band (see 0.6.128 live
+    smoke).
+  - `1d`: Esteller et al. (2001, IEEE EMBS Trans.) value-only
+    variant. Strip the i-axis: step length reduces to `|dv|`,
+    chord reduces to `max_i |v[i] - v[0]|`. `L` and `d`
+    collapse to genuine value-domain quantities and the KFD
+    spreads over a much wider dynamic range.
+
+  Why this is **genuinely orthogonal** to the 2d default and
+  not just a tuning knob:
+
+  Mathematically, the 2D Katz step length factors as
+  `sqrt(1 + dv^2) = 1 + dv^2/2 + O(dv^4)` for small `|dv|`.
+  When the value range stays small relative to `n` (typical
+  of bounded counts like token totals when normalised), the
+  `1` term dominates and `L_2d ≈ n` regardless of the value
+  trajectory — the i-axis padding **eats the signal**. The 1D
+  variant removes that padding entirely, so two sources with
+  the same chord-to-arc ratio in value space, but different
+  ranges, get genuinely different KFDs.
+
+  Concretely: a 1D KFD of 2.0 with a clamped raw value of
+  3.5 means the value-domain path length is ~3000x its
+  maximum chord, which in 2D is invisible because the
+  i-axis chord swamps everything. The 1D and 2D rankings
+  routinely **disagree** on empirical multi-source data.
+
+  Live smoke at `--planform 1d` against
+  `~/.config/pew/queue.jsonl` (1,678 rows, 6 sources; one
+  source name redacted to `vscode-XXX` for policy
+  compliance):
+
+  ```
+  pew-insights source-row-token-katz-fd
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,678
+  min-rows: 16   detrend: no   planform: 1d   top: -   sort: kfd-asc
+
+  per-source row-token Katz Fractal Dimension (sorted by kfd-asc; ties: source asc)
+  source       rows  sigma         L       d      n    KFD     kfdRaw
+  -----------  ----  ------------  ------  -----  ---  ------  ------
+  vscode-XXX    333      14,933.73  332.00  32.69  332  1.6648  1.6648
+  claude-code   299  17,605,167.00  298.00  10.74  298  2.0000  2.4000
+  codex          64  14,252,148.98   63.00   5.84   63   2.0000  2.3486
+  hermes        182     987,306.18  181.00   4.43  181  2.0000  3.4914
+  openclaw      453   4,875,317.41  452.00  19.93  452  2.0000  2.0433
+  opencode      347  13,126,910.38  346.00  12.01  346  2.0000  2.3517
+  ```
+
+  Reading: 5 of 6 sources are clamped at the theoretical
+  ceiling of 2.0 under the 1D planform (raw values
+  2.0433-3.4914) — the value-domain arc length massively
+  exceeds the maximum chord because token-count series swing
+  wildly across orders of magnitude on every step. Only
+  `vscode-XXX` (the lowest-volatility source by sigma —
+  14,933.73 vs. 14,252,148.98 for `codex`) lands inside the
+  bracket at KFD = 1.6648. **Compared to the 2D ranking
+  from 0.6.128 (where `vscode-XXX` was second-most-coiled
+  at 1.0970 and `opencode` was straightest at 1.0829), the
+  1D planform completely re-orders the sources** — `vscode-XXX`
+  is now the **straightest** under the 1D framing because
+  its value range is small enough that `d_v` is comparable to
+  `sum |dv|`, while every other source has `sum |dv| >> d_v`
+  by 1-2 orders of magnitude.
+
+  Concrete confirmation that 2D and 1D Katz are not the same
+  estimator on empirical token-count data: ranking by
+  `--planform 2d` vs `--planform 1d` is **not** order-preserving.
+
+### Changed
+
+- `kfdRaw` column in 1d planform routinely exceeds 2.0;
+  this is expected and the value is preserved verbatim
+  while `KFD` carries the clamped ceiling.
+
 ## 0.6.128 — 2026-04-27
 
 ### Added

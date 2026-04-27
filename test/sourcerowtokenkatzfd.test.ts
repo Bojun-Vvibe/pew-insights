@@ -278,3 +278,56 @@ test('katz-fd: kfdRaw equals kfd when no clamp fires', () => {
   assert.equal(r.clampedBelow1, 0);
   assert.equal(r.clampedAbove2, 0);
 });
+
+test('katz-fd: planform default is 2d', () => {
+  const v = Array.from({ length: 32 }, (_, i) => Math.sin(i / 2) * 100);
+  const r = buildSourceRowTokenKatzFd(series(v), { generatedAt: GEN });
+  assert.equal(r.planform, '2d');
+});
+
+test('katz-fd: planform=1d produces wider KFD spread than 2d on rough vs smooth signals', () => {
+  // Two signals: nearly straight ramp, vs. moderate oscillation
+  // riding on a ramp. 1d planform should magnify the gap because
+  // the i-axis padding that compresses 2d KFDs is removed. We
+  // pick a moderate oscillation amplitude (not 0/100 alternation,
+  // which collapses 1d log(d/L) to -log(N) and triggers the
+  // degenerate-denominator drop).
+  const ramp = Array.from({ length: 64 }, (_, i) => i);
+  const rough = Array.from({ length: 64 }, (_, i) => i + (i % 2 === 0 ? 0 : 5));
+  const queue = [...series(ramp, 'r'), ...series(rough, 'o')];
+  const r2d = buildSourceRowTokenKatzFd(queue, { generatedAt: GEN, planform: '2d' });
+  const r1d = buildSourceRowTokenKatzFd(queue, { generatedAt: GEN, planform: '1d' });
+  assert.equal(r2d.sources.length, 2);
+  assert.equal(r1d.sources.length, 2);
+  const gap2d =
+    r2d.sources.find((s) => s.source === 'o')!.kfd -
+    r2d.sources.find((s) => s.source === 'r')!.kfd;
+  const gap1d =
+    r1d.sources.find((s) => s.source === 'o')!.kfd -
+    r1d.sources.find((s) => s.source === 'r')!.kfd;
+  assert.ok(
+    gap1d > gap2d,
+    `1d gap=${gap1d} should exceed 2d gap=${gap2d}`,
+  );
+});
+
+test('katz-fd: planform=1d on monotone ramp -> KFD ~ 1', () => {
+  const v = Array.from({ length: 32 }, (_, i) => i * 3);
+  const r = buildSourceRowTokenKatzFd(series(v), {
+    generatedAt: GEN,
+    planform: '1d',
+  });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  // Strictly monotone -> sum|dv| equals max|v[i]-v[0]|, so log(d/L)=0
+  // and KFD = 1 exactly.
+  assert.ok(Math.abs(row.kfd - 1) < 1e-9, `kfd=${row.kfd} should be ~1`);
+});
+
+test('katz-fd: invalid planform throws', () => {
+  assert.throws(() =>
+    buildSourceRowTokenKatzFd([], {
+      planform: 'bad' as '2d',
+    }),
+  );
+});

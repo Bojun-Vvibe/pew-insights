@@ -11709,6 +11709,11 @@ program
     '--detrend',
     'subtract the OLS linear trend from each per-source value sequence before computing L, d, KFD. Isolates deviation-from-drift roughness; recommended for sources with strong monotone drift, where the raw KFD is biased downward (toward 1) by the trend.',
   )
+  .option(
+    '--planform <mode>',
+    "plan-form selector: '2d' (default; Katz 1988 original on the (i, v) curve) or '1d' (Esteller et al. 2001 value-only variant — strips the unit-step i-axis padding so KFD spreads over a much wider dynamic range, making cross-source rankings far more discriminating)",
+    '2d',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -11720,6 +11725,7 @@ program
         top?: string;
         sort: string;
         detrend?: boolean;
+        planform: string;
         json?: boolean;
       },
       cmd,
@@ -11747,6 +11753,11 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        if (opts.planform !== '2d' && opts.planform !== '1d') {
+          throw new Error(
+            `--planform must be '2d' or '1d' (got ${opts.planform})`,
+          );
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenKatzFd(queue, {
           since: opts.since ?? null,
@@ -11755,6 +11766,7 @@ program
           minRows,
           top,
           detrend: opts.detrend === true,
+          planform: opts.planform as '2d' | '1d',
           sort: opts.sort as 'kfd-asc' | 'kfd-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {

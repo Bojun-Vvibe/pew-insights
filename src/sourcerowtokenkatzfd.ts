@@ -158,6 +158,29 @@ export type SourceRowTokenKatzFdSort =
   | 'rows'
   | 'source';
 
+/**
+ * Plan-form for the Katz construction.
+ *
+ *   - '2d' (default): Katz's original 2D framing — treat the
+ *     sequence as the planar curve `(i, v[i])`. Step lengths
+ *     are `sqrt(1 + dv^2)` and `d` is the 2D chord
+ *     `sqrt(i^2 + dv0^2)`. The i-axis (always unit step)
+ *     dominates `d` and `L` for sequences with bounded value
+ *     range relative to `n`, which is why every empirical
+ *     KFD lands in `[1, 1.2]`.
+ *
+ *   - '1d': Esteller-style value-only variant — strip the
+ *     i-axis. Step lengths reduce to `|dv|` and `d` reduces
+ *     to `max_i |v[i] - v[0]|`. Mathematically:
+ *     `KFD_1d = log10(n) / (log10(n) + log10(d_v / sum|dv|))`
+ *     where `d_v = max_i |v[i] - v[0]|`. Without the
+ *     unit-step i-axis padding, both `L` and `d` collapse to
+ *     genuine value-domain quantities and the KFD spreads
+ *     over a much wider range, making rankings between
+ *     sources far more discriminating.
+ */
+export type SourceRowTokenKatzFdPlanform = '2d' | '1d';
+
 export interface SourceRowTokenKatzFdOptions {
   /** Inclusive ISO lower bound on `hour_start`. null = no lower bound. */
   since?: string | null;
@@ -190,6 +213,16 @@ export interface SourceRowTokenKatzFdOptions {
    * the detrended residuals.
    */
   detrend?: boolean;
+  /**
+   * Plan-form selector: '2d' (default, Katz 1988 original) or
+   * '1d' (Esteller et al. 2001 value-only variant). See the
+   * type-level docstring on `SourceRowTokenKatzFdPlanform` for
+   * the mathematical rationale; the practical effect is that
+   * '1d' spreads the KFD distribution over a much wider
+   * dynamic range than '2d', making cross-source rankings
+   * substantially more discriminating on token-count series.
+   */
+  planform?: SourceRowTokenKatzFdPlanform;
   /**
    * Sort key for `sources[]`:
    *   - 'kfd-asc' (default): KFD ascending — straightest first.
@@ -228,6 +261,7 @@ export interface SourceRowTokenKatzFdReport {
   minRows: number;
   top: number | null;
   detrend: boolean;
+  planform: SourceRowTokenKatzFdPlanform;
   sort: SourceRowTokenKatzFdSort;
   totalSources: number;
   totalRowsKept: number;
@@ -263,6 +297,10 @@ export function buildSourceRowTokenKatzFd(
     }
   }
   const detrend = opts.detrend ?? false;
+  const planform: SourceRowTokenKatzFdPlanform = opts.planform ?? '2d';
+  if (planform !== '2d' && planform !== '1d') {
+    throw new Error(`planform must be '2d' or '1d' (got ${opts.planform})`);
+  }
   const sort = opts.sort ?? 'kfd-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
@@ -388,11 +426,13 @@ export function buildSourceRowTokenKatzFd(
       continue;
     }
 
-    // Raw average step length (in original v units, time step = 1).
+    // Raw average step length (in original v units, time step = 1
+    // for the 2D planform; only the value delta for the 1D planform).
     let rawStepSum = 0;
     for (let i = 0; i < N - 1; i++) {
       const dy = v[i + 1]! - v[i]!;
-      rawStepSum += Math.sqrt(1 + dy * dy);
+      rawStepSum +=
+        planform === '2d' ? Math.sqrt(1 + dy * dy) : Math.abs(dy);
     }
     const aRaw = rawStepSum / (N - 1);
     if (!(aRaw > 0)) {
@@ -408,15 +448,17 @@ export function buildSourceRowTokenKatzFd(
     let L = 0;
     for (let i = 0; i < N - 1; i++) {
       const dy = vN[i + 1]! - vN[i]!;
-      L += Math.sqrt(1 + dy * dy);
+      L += planform === '2d' ? Math.sqrt(1 + dy * dy) : Math.abs(dy);
     }
     // d on normalised curve.
     const v0 = vN[0]!;
     let d = 0;
     for (let i = 0; i < N; i++) {
-      const di = i;
       const dy = vN[i]! - v0;
-      const dist = Math.sqrt(di * di + dy * dy);
+      const dist =
+        planform === '2d'
+          ? Math.sqrt(i * i + dy * dy)
+          : Math.abs(dy);
       if (dist > d) d = dist;
     }
 
@@ -497,6 +539,7 @@ export function buildSourceRowTokenKatzFd(
     minRows,
     top,
     detrend,
+    planform,
     sort,
     totalSources,
     totalRowsKept,

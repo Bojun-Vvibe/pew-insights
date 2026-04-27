@@ -9158,7 +9158,7 @@ export function renderSourceRowTokenKatzFd(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-katz-fd'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    detrend: ${r.detrend ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    detrend: ${r.detrend ? 'yes' : 'no'}    planform: ${r.planform}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
