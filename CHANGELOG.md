@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.142 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-crest-factor`.
+  Per-source crest factor `C = peak / rms` on the per-row
+  `total_tokens` sequence. `peak = max_i x_i`,
+  `rms = sqrt(mean(x_i^2))`. `C` is bounded in
+  `[1, sqrt(n)]`: 1 means a perfectly flat positive series,
+  `sqrt(n)` means one nonzero sample among `n - 1` zeros.
+
+  This is a classic peakiness measure from signal processing
+  (sine wave: `C = sqrt(2)`; square wave: `C = 1`; impulse-
+  in-noise: `C` grows with the impulse). Operationally on
+  token streams: low `C` means a source is "always producing
+  similar-sized rows", high `C` means a source has occasional
+  outsized blowouts dominating an otherwise quiet baseline.
+
+  **Genuinely orthogonal** to every other `source-row-token-*`
+  lens already shipped:
+
+  - vs. **coefficient-of-variation / mad / iqr-ratio /
+    gini / kurtosis / skewness**: those are centered
+    distributional shape moments. `C` is an
+    L^infinity-vs-L^2 ratio dominated by the single
+    extremal sample.
+  - vs. **burstiness-coefficient `B = (sigma - mu) / (sigma + mu)`**:
+    `B` is bounded in `[-1, +1]`; `C` is unbounded above
+    and floors at 1.
+  - vs. **fano-factor (variance / mean)**: `F` is unaffected
+    by where the variance lives; `C` is dominated by the
+    single largest sample.
+  - vs. **TKEO / hjorth-mobility / -complexity /
+    autocorrelation-lag1 / zero-crossing-rate / runs-test /
+    turning-point / mann-kendall**: order-sensitive lenses.
+    `C` is order-invariant (a property of the multiset).
+  - vs. **approximate / sample / permutation / renyi
+    entropy**: information-theoretic / ordinal. `C` is a
+    deterministic ratio of two specific scalars.
+  - vs. **higuchi / katz / petrosian fractal dimensions /
+    dfa / hurst-rs**: scaling / geometry of the path. `C`
+    ignores path geometry entirely.
+  - vs. **lempel-ziv**: factor-count over a binarised
+    alphabet — value-blind beyond sign. `C` keeps full
+    real-valued amplitude.
+
+  Output also surfaces `crestFactorMax = sqrt(n)` (the
+  theoretical upper bound) and
+  `crestFactorNorm = (C - 1) / (sqrt(n) - 1)` in `[0, 1]`,
+  which puts heterogeneous-`n` sources on the same scale
+  for cross-source comparison.
+
+  Edge cases: `n < minRows` → `droppedBelowMinRows`;
+  all-zero series → `droppedZeroRms`; non-finite (defensive)
+  → `droppedDegenerate`.
+
+  Sort modes: `crest-asc` (default; least peaky first),
+  `crest-desc`, `norm-asc`, `norm-desc`, `rows`, `source`.
+  Tiebreak in all modes: `source` asc.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,709 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-crest-factor
+  per-source row-token crest factor (sorted by crest-asc; ties: source asc)
+  source       rows  peak          rms          crestFactor  cMax     cNorm
+  -----------  ----  ------------  -----------  -----------  -------  ------
+  codex         64   58840552.00   19056652.36  3.0877        8.0000  0.2982
+  opencode     357   69504417.00   16780578.59  4.1420       18.8944  0.1756
+  hermes       193    5898713.00    1282008.01  4.6012       13.8924  0.2793
+  claude-code  299  107646380.00   21035469.59  5.1174       17.2916  0.2527
+  openclaw     463   45073562.00    6362585.33  7.0842       21.5174  0.2965
+  vscode-XXX   333     174625.00      15971.36 10.9336       18.2483  0.5759
+  ```
+
+  Reading the live smoke: all six sources sit comfortably
+  inside `[1, sqrt(n)]`. `codex` is the **least peaky**
+  source by raw `crestFactor` (3.09) — its rare-but-large
+  rows are within ~3x of its RMS; consistent with a heavy-
+  tailed but populated distribution. `vscode-XXX` is the
+  **most peaky** by both raw `C` (10.93) and normalised
+  `cNorm` (0.576) — over half-way to the theoretical
+  maximum, indicating a small number of outsized rows
+  dominate an otherwise very quiet baseline. By the
+  `cNorm` ranking the order changes meaningfully:
+  `opencode` becomes the least peaky on a same-`n`-adjusted
+  scale (0.176) despite a higher raw `C` than `codex`,
+  because `opencode` has many more rows for `C` to
+  potentially grow into. This is exactly when `--sort
+  norm-*` earns its keep.
+
+  Tests: 3006 -> 3032 (+26 new, all green).
+
 ## 0.6.141 — 2026-04-28
 
 ### Added
