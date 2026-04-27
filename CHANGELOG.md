@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.127 — 2026-04-27
+
+### Added
+
+- `source-row-token-dfa`: adds `--detrend-order <p>` to
+  generalise the per-window detrend from DFA-1 (linear, the
+  canonical Peng et al. 1994 default) to DFA-p with `p` in
+  `[1, 3]`.
+
+  - `p=1`: DFA-1, linear detrend (default).
+  - `p=2`: DFA-2, quadratic detrend — also removes local
+    curvature.
+  - `p=3`: DFA-3, cubic detrend.
+
+  Validates `detrendOrder ∈ {1, 2, 3}` and `scaleMin >= p + 2`
+  (each window needs residual DOF after the polynomial fit).
+
+  Why this is **genuinely orthogonal** to the DFA-1 default
+  and not just a tuning knob:
+
+  Mathematically, integrating `v - mean` produces a profile
+  `Y`. For `v[i]` proportional to a polynomial of degree `d`,
+  `Y` is a polynomial of degree `d+1`. Window-local detrending
+  of `Y` by a polynomial of order `p` eliminates exactly the
+  first `p+1` terms; the residual scales as `s^(d+1-p)`, so
+  `alpha → d+1-p`. A sinusoidal modulation is partially
+  absorbed by DFA-2 but not DFA-1, and a cubic-profile signal
+  collapses under DFA-3 but stays at the `alpha = 2` ceiling
+  under DFA-1. So `--detrend-order 1` vs `--detrend-order 3`
+  of the same source give **different summaries** of the same
+  temporal correlation structure on any signal with curvature.
+
+  Live smoke at `--detrend-order 2` against
+  `~/.config/pew/queue.jsonl` (1,673 rows, 6 sources; one
+  source name redacted to `vscode-XXX` for policy compliance):
+
+  ```
+  pew-insights source-row-token-dfa
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,673
+  scaleMin: 4   scaleMax: -   minScales: 4   minWin/scale: 4
+  DFA-2   min-rows: 32   top: -   sort: alpha-asc
+
+  per-source row-token DFA-1 alpha (sorted by alpha-asc; ties: source asc)
+  source       rows  sigma         s_min  s_max  s_used  s_drop  alpha   alphaRaw  R^2
+  -----------  ----  ------------  -----  -----  ------  ------  ------  --------  ------
+  vscode-XXX    333      14,933.73    4    83      16       0    0.6246  0.6246   0.6350
+  hermes        181     982,497.87    4    45      14       0    0.6297  0.6297   0.9652
+  claude-code   299  17,605,167.00    4    74      16       0    0.6861  0.6861   0.9769
+  codex          64  14,252,148.98    4    16       8       0    0.7375  0.7375   0.8377
+  openclaw      451   4,880,313.92    4   112      16       0    0.9234  0.9234   0.9775
+  opencode      345  13,157,374.47    4    86      16       0    1.0977  1.0977   0.9857
+  ```
+
+  Comparing to the DFA-1 column from 0.6.126 on the same data:
+
+  - `hermes`: DFA-1 alpha = 0.5841 -> DFA-2 alpha = 0.6297
+    (+0.05) — adding the local quadratic detrend exposed a
+    bit more persistence that DFA-1's residual was missing
+    (a small linearly absorbed quadratic).
+  - `vscode-XXX`: DFA-1 = 0.7334 -> DFA-2 = 0.6246 (-0.11) —
+    DFA-2 absorbed a non-trivial local curvature that DFA-1
+    was attributing to long-range correlation.
+  - `claude-code`: DFA-1 = 0.7441 -> DFA-2 = 0.6861 (-0.06)
+    — same story, milder.
+  - `opencode`: DFA-1 = 1.0317 -> DFA-2 = 1.0977 (+0.07) —
+    consistent ranking (still the highest), suggesting the
+    persistence is genuine rather than a curvature artefact.
+
+  Rankings are **not** preserved (vscode-XXX moved from
+  position 3 under DFA-1 to position 1 under DFA-2; codex
+  moved from position 2 to position 4) — exactly the
+  orthogonality the flag exposes.
+
+  Test count: 2780 -> 2786. 6 new unit tests covering: default
+  `detrendOrder = 1`, three invalid-input variants (out of
+  range, non-integer), `scaleMin >= order + 2` validation,
+  DFA-3 absorbs a strong-curvature cubic profile better than
+  DFA-1 on the same signal (asserts strict
+  `alphaRaw_3 < alphaRaw_1`), DFA-1 and DFA-2 agree to within
+  0.2 on stationary white noise (no curvature -> estimators
+  converge), `detrendOrder` is reflected in the report.
+
 ## 0.6.126 — 2026-04-27
 
 ### Added
