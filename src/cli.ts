@@ -106,6 +106,7 @@ import {
   renderSourceRowTokenMad,
   renderSourceRowTokenGini,
   renderSourceSameModelStreak,
+  renderSourceRowTokenAutocorrelationLag1,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -272,6 +273,7 @@ import { buildSourceRowTokenCoefficientOfVariation } from './sourcerowtokencoeff
 import { buildSourceRowTokenMad } from './sourcerowtokenmad.js';
 import { buildSourceRowTokenGini } from './sourcerowtokengini.js';
 import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
+import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorrelationlag1.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -10425,6 +10427,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourcePeakHourOfDayArgmax(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-autocorrelation-lag1')
+  .description(
+    "Per-source lag-1 (Pearson) autocorrelation of `total_tokens` across queue rows ordered by hour_start asc (model asc, device_id asc as tiebreaks). rho1 in [-1, 1]: positive = consecutive rows have similar token sizes (sticky/persistent producer), negative = adjacent rows alternate big/small (anti-persistent), ~0 = white-noise-like. Distinct from daily-token-autocorrelation-lag1 (day-grain on aggregated daily totals; cannot see within-day stickiness — every row of a 50-row day collapses to one daily total; this is row-grain so adjacent calls inside the same hour count), source-row-token-coefficient-of-variation / source-row-token-mad / source-row-token-gini / source-row-token-skewness / source-row-token-kurtosis (marginal distribution shape; blind to row ordering — shuffling rows leaves them unchanged but zeros out lag-1 autocorrelation), source-same-model-streak / model-switching / provider-switching-frequency (categorical stickiness — which model is sticky — not numerical stickiness of token magnitude), source-input-output-correlation-coefficient (cross-axis Pearson on the same row vs this lens which is same-axis Pearson on adjacent rows), interarrival-time / source-gap-hours-cv (gap-spacing stats, not value persistence). flat=true marks sources with var(x)=0 where rho1 is conventionally reported as 0 to distinguish 'literally undefined' from 'noisy zero'.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 3 (need >= 2 adjacent pairs for a meaningful Pearson) (default 3)',
+    '3',
+  )
+  .option(
+    '--min-abs-rho <f>',
+    "drop sources whose |rho1| is strictly below f; cohort selector for sources with non-trivial autocorrelation in either direction. Drops `flat: true` sources too. f must be in [0, 1]. (default 0)",
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'rho-desc' (default) | 'rho-asc' | 'abs-rho-desc' | 'rows' | 'mean' | 'source'",
+    'rho-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minAbsRho: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 3) {
+          throw new Error(
+            `--min-rows must be an integer >= 3 (got ${opts.minRows})`,
+          );
+        }
+        const minAbsRho = Number.parseFloat(opts.minAbsRho);
+        if (!Number.isFinite(minAbsRho) || minAbsRho < 0 || minAbsRho > 1) {
+          throw new Error(
+            `--min-abs-rho must be a finite number in [0, 1] (got ${opts.minAbsRho})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'rho-desc',
+          'rho-asc',
+          'abs-rho-desc',
+          'rows',
+          'mean',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenAutocorrelationLag1(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minAbsRho,
+          top,
+          sort: opts.sort as
+            | 'rho-desc'
+            | 'rho-asc'
+            | 'abs-rho-desc'
+            | 'rows'
+            | 'mean'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenAutocorrelationLag1(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

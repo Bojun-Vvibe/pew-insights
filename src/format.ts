@@ -8342,6 +8342,78 @@ export function renderSourceRowTokenGini(
 }
 
 import type {
+  SourceRowTokenAutocorrelationLag1Report,
+  SourceRowTokenAutocorrelationLag1Row,
+} from './sourcerowtokenautocorrelationlag1.js';
+
+export function renderSourceRowTokenAutocorrelationLag1(
+  r: SourceRowTokenAutocorrelationLag1Report,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-autocorrelation-lag1'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-abs-rho: ${r.minAbsRho.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinAbsRho)} below min-abs-rho, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source lag-1 Pearson autocorrelation of total_tokens across queue rows in hour_start order. rho1>0 = consecutive rows have similar token sizes (sticky/persistent); rho1<0 = adjacent rows alternate big/small (anti-persistent); rho1~0 = white-noise-like; flat=true means var(x)=0 so rho1 is conventionally reported as 0.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token lag-1 autocorrelation (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'pairs',
+    'mean',
+    'variance',
+    'rho1',
+    'flat',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenAutocorrelationLag1Row) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.pairs),
+      s.mean.toFixed(2),
+      s.variance.toFixed(2),
+      s.rho1.toFixed(4),
+      s.flat ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceSameModelStreakReport,
   SourceSameModelStreakRow,
 } from './sourcesamemodelstreak.js';
