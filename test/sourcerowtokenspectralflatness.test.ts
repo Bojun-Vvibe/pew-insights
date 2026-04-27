@@ -614,3 +614,50 @@ test('spectral-flatness: monotonicity — adding a sinusoid lowers SF (more tona
   // Strict monotonicity at the extremes.
   assert.ok(sf[sf.length - 1]! < sf[0]!);
 });
+
+// --- 0.6.146 JSON shape stability test ---
+
+test('spectral-flatness: JSON shape is stable and complete', () => {
+  // Lock the report keys + per-row keys so accidental schema drift is caught.
+  const r = buildSourceRowTokenSpectralFlatness(
+    series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    { generatedAt: GEN, minSf: 0, maxSf: 1, top: 1 },
+  );
+  const reportKeys = Object.keys(r).sort();
+  assert.deepEqual(reportKeys, [
+    'droppedAboveMaxSf',
+    'droppedBelowMinRows',
+    'droppedBelowMinSf',
+    'droppedBelowTopCap',
+    'droppedConstantSeries',
+    'droppedDegenerate',
+    'droppedInvalidHourStart',
+    'droppedInvalidTokens',
+    'droppedNegativeTokens',
+    'droppedSourceFilter',
+    'generatedAt',
+    'maxSf',
+    'minRows',
+    'minSf',
+    'sort',
+    'source',
+    'sources',
+    'top',
+    'totalRowsKept',
+    'totalSources',
+    'windowEnd',
+    'windowStart',
+  ]);
+  assert.equal(r.sources.length, 1);
+  const rowKeys = Object.keys(r.sources[0]!).sort();
+  assert.deepEqual(rowKeys, [
+    'arithmeticMean',
+    'bins',
+    'dominantBin',
+    'dominantBinShare',
+    'geometricMean',
+    'rowsKept',
+    'source',
+    'spectralFlatness',
+  ]);
+});
