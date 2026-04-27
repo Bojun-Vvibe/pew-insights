@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.106 — 2026-04-27
+
+### Added
+
+- **`source-row-token-permutation-entropy`** — per-source
+  Bandt-Pompe permutation entropy (default order m=3) on the
+  per-row `total_tokens` time-ordered sequence. Each length-m
+  sliding window is mapped to its ordinal pattern (rank order
+  with `j<k` tiebreak for equal values); the normalised
+  permutation entropy `PE = H / ln(m!)` is reported in `[0, 1]`.
+
+  - `PE` near 1 -> ordinal patterns approximately uniform; the
+    series is order-equivalent to i.i.d. continuous noise at
+    scale m.
+  - `PE` near 0 -> a single permutation dominates (strict
+    monotone, strict anti-monotone, or pure period-m oscillation).
+  - The report surfaces `dominantPattern` (lex-rank of the
+    most-frequent permutation in `[0, m!)`),
+    `dominantPatternFraction` (its observed mass), and
+    `tieWindowFraction` so the operator can audit how much of
+    the entropy comes from arbitrary `j<k` tiebreaking on a
+    discrete-valued series.
+
+  **Why this is genuinely orthogonal** to every other
+  `source-row-token-*` lens already in the suite:
+
+  - `source-row-token-runs-test` dichotomises around the
+    **median**; PE works on **ordinal patterns of length m**
+    (three-way relations among consecutive triples for m=3),
+    not two-way relations to a level.
+  - `source-row-token-turning-point-count` only counts
+    `{peak, trough}` events — equivalently, it groups the 6
+    m=3 permutations into 2 classes. PE distinguishes a series
+    dominated by `[0,1,2]` (monotone-up) from one dominated by
+    `[2,1,0]` (monotone-down); the turning-point test puts both
+    in the "no turning point" bin and reports the same Z. PE
+    is therefore strictly finer at scale m=3 and non-redundant
+    at higher m.
+  - `source-row-token-autocorrelation-lag1` is linear Pearson
+    rho on raw values; PE is non-parametric and invariant to
+    any strictly monotone rescaling.
+  - All dispersion / shape lenses (`-iqr-ratio`, `-mad`,
+    `-skewness`, `-kurtosis`, `-gini`, `-burstiness`,
+    `-coefficient-of-variation`) are order-invariant; PE moves
+    toward 1 under shuffling.
+
+  CLI: `--since`, `--until`, `--source`, `--order` (integer in
+  `[2, 6]`, default 3), `--min-rows` (must be `>= order+2`,
+  default 8), `--top`, `--sort`
+  (`pe-asc` (default; most-regular first) | `pe-desc` (most-complex
+  first) | `rows` | `source`), `--json`. 20 unit tests with
+  closed-form numeric expectations.
+
+  Live smoke against `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-permutation-entropy --since 2026-04-20
+  source       rows  W    distinct  H(nats)  PE      domPat  domFrac  tieWinFrac
+  -----------  ----  ---  --------  -------  ------  ------  -------  ----------
+  codex        15    13   6         1.5858   0.8850  0       0.385    0.000
+  claude-code  45    43   6         1.7150   0.9571  0       0.256    0.000
+  openclaw     353   351  6         1.7766   0.9915  0       0.234    0.000
+  hermes       124   122  6         1.7859   0.9967  5       0.197    0.000
+  opencode     336   334  6         1.7903   0.9992  5       0.180    0.000
+  ```
+
+  Reading: `opencode` and `hermes` have the highest PE
+  (`0.999`, `0.997`) -> their per-row token sequences are
+  almost indistinguishable from i.i.d. continuous noise at
+  scale m=3, with the dominant pattern (lex 5 = `[2,1,0]`,
+  monotone-down) carrying only ~18-20% of the windows; this
+  is the regime where the runs-test and turning-point lenses
+  also report Z near 0. `openclaw` (`PE = 0.991`,
+  `domPat = 0` = `[0,1,2]` monotone-up at 23%) sits a notch
+  below — consistent with the modestly negative
+  turning-point Z reported in the v0.6.105 smoke. `codex`,
+  on only 13 windows, drops to `PE = 0.885` — the
+  most-regular surviving source, though the small sample
+  size means this is the operator's first reach for the new
+  `--min-rows` cohort gate (refined further in v0.6.107).
+
 ## 0.6.105 — 2026-04-27
 
 ### Changed
