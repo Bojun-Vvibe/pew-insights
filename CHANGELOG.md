@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.155 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-kurtosis` gains a symmetric
+  `--min-excess` / `--max-excess` filter pair on the Fisher
+  excess column (`kurtosis - 3`, Gaussian baseline 0),
+  complementing the `--min-kurtosis` / `--max-kurtosis` filter
+  pair on the Pearson kurtosis column shipped in 0.6.154.
+  Sources whose `excess` falls outside the requested range
+  surface in their own dropped buckets — `droppedBelowMinExcess`
+  and `droppedAboveMaxExcess` — so the operator can read which
+  gate a source fell through.
+
+  **Why this filter axis specifically.** The Fisher excess form
+  is the operator-friendly axis for the question "is this PSD
+  sharper or flatter than a Gaussian?". `--min-excess 0`
+  isolates the leptokurtic subset (sharper-than-Gaussian PSDs,
+  the Antoni 2006 impulsiveness regime); `--max-excess 0`
+  isolates the platykurtic subset (flatter-than-Gaussian PSDs,
+  approaching the uniform-on-band floor). The Pearson
+  `--min-kurtosis` / `--max-kurtosis` flags retain the
+  fundamental numerical axis (always `>= 1` by Cauchy-Schwarz),
+  but reaching for `--min-kurtosis 3` to mean "leptokurtic only"
+  is awkward; `--min-excess 0` says it directly.
+
+  **Compose-order.** Both new flags slot into the established
+  filter chain: `min-kurtosis` and `max-kurtosis` first (the
+  fundamental axis), then `min-excess` and `max-excess` (the
+  operator-friendly axis), then `--top` cap. Each gate surfaces
+  dropped rows in its own bucket; a source filtered under
+  `min-kurtosis` is NOT also counted under `droppedBelowMinExcess`
+  or `droppedBelowTopCap`. A new compose-order test pins this
+  semantics in code:
+
+  > 3 sources, `min-excess` strictly between sortedExcess[1]
+  > and sortedExcess[2] -> drops 1 under `droppedBelowMinExcess`.
+  > Cap to top 1 -> the remaining 1 of 2 surfaces under
+  > `droppedBelowTopCap`. Filter and cap counts do not overlap.
+
+  Also pinned:
+
+  - `--min-excess > --max-excess` throws (operator error, not
+    silent empty report).
+  - Non-finite values throw.
+  - `--min-excess 0` isolates exactly the `excess >= 0` subset;
+    `--max-excess 0` isolates exactly the `excess <= 0` subset.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,735 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance) confirms the filter behaves as documented:
+
+  ```
+  pew-insights source-row-token-spectral-kurtosis --min-excess 0
+  per-source row-token spectral kurtosis (sorted by excess-desc; ties: source asc)
+  source    rows  bins  totPower   centroidBin  bwBin    m4        kurtosis  excess
+  --------  ----  ----  ---------  -----------  -------  --------  --------  ------
+  opencode  366   183   1.099e+19  31.0610      41.8301  1.873e+7  6.1173    3.1173
+  openclaw  472   236   2.587e+18  61.2603      62.2199  4.803e+7  3.2050    0.2050
+  ```
+
+  4 sources suppressed under `droppedBelowMinExcess` (`codex`,
+  `claude-code`, `vscode-XXX`, `hermes` — all platykurtic /
+  Gaussian-or-flatter PSDs). Reading: `--min-excess 0` isolates
+  the two sources whose per-row token PSD is meaningfully
+  sharper than a Gaussian-shaped reference — the
+  operator-friendly "leptokurtic / impulsive PSD" subset. The
+  four suppressed sources are at-or-below the Gaussian shape
+  baseline; for those, the Antoni 2006 impulsiveness signature
+  does not fire, and any peakedness story would be reading
+  noise off near-Gaussian or flatter PSDs.
+
+  Tests: 3295 -> 3303 (+8 in this refinement, +51 cumulative
+  since the 0.6.153 baseline; covers throw paths for
+  non-finite/inverted bounds, the `--min-excess 0` ↔
+  leptokurtic-subset semantics, the `--max-excess 0` ↔
+  platykurtic-subset semantics, the kurtosis-gate-runs-first
+  ordering, and the filter+top compose-order test).
+
 ## 0.6.154 — 2026-04-28
 
 ### Added

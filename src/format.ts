@@ -10023,12 +10023,12 @@ export function renderSourceRowTokenSpectralKurtosis(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-kurtosis'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-kurtosis: ${r.minKurtosis ?? '\u2014'}    max-kurtosis: ${r.maxKurtosis ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-kurtosis: ${r.minKurtosis ?? '\u2014'}    max-kurtosis: ${r.maxKurtosis ?? '\u2014'}    min-excess: ${r.minExcess ?? '\u2014'}    max-excess: ${r.maxExcess ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinKurtosis)} below min-kurtosis, ${formatNumber(r.droppedAboveMaxKurtosis)} above max-kurtosis, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinKurtosis)} below min-kurtosis, ${formatNumber(r.droppedAboveMaxKurtosis)} above max-kurtosis, ${formatNumber(r.droppedBelowMinExcess)} below min-excess, ${formatNumber(r.droppedAboveMaxExcess)} above max-excess, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

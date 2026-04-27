@@ -557,3 +557,135 @@ test('spectral-kurtosis: totalRowsKept counts pre-min-rows samples per source', 
   assert.equal(r.droppedBelowMinRows, 1);
   assert.equal(r.sources.length, 1);
 });
+
+test('spectral-kurtosis refinement: minExcess non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralKurtosis([], {
+        minExcess: Number.NaN,
+      }),
+    /minExcess must be a finite number/,
+  );
+});
+
+test('spectral-kurtosis refinement: maxExcess non-finite throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralKurtosis([], {
+        maxExcess: Number.NEGATIVE_INFINITY,
+      }),
+    /maxExcess must be a finite number/,
+  );
+});
+
+test('spectral-kurtosis refinement: minExcess > maxExcess throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralKurtosis([], {
+        minExcess: 1,
+        maxExcess: -1,
+      }),
+    /minExcess \(1\) must be <= maxExcess \(-1\)/,
+  );
+});
+
+test('spectral-kurtosis refinement: minExcess 0 isolates leptokurtic subset', () => {
+  // Build a mixed batch and assert the filter splits exactly on
+  // excess >= 0, with non-matching sources surfacing in
+  // droppedBelowMinExcess.
+  const a = series([1, 1, 1, 8, 1, 1, 1, 1, 1, 1], 'a'); // peaky -> likely lepto
+  const b = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'b'); // smooth ramp
+  const c = series([8, 1, 1, 1, 8, 1, 1, 1, 8, 1], 'c'); // periodic
+  const all = buildSourceRowTokenSpectralKurtosis([...a, ...b, ...c], {
+    generatedAt: GEN,
+    minRows: 4,
+  });
+  assert.equal(all.sources.length, 3);
+  const lepto = all.sources.filter((s) => s.excess >= 0).length;
+  const platy = all.sources.filter((s) => s.excess < 0).length;
+  const r = buildSourceRowTokenSpectralKurtosis([...a, ...b, ...c], {
+    generatedAt: GEN,
+    minExcess: 0,
+    minRows: 4,
+  });
+  assert.equal(r.sources.length, lepto);
+  assert.equal(r.droppedBelowMinExcess, platy);
+});
+
+test('spectral-kurtosis refinement: maxExcess 0 isolates platykurtic subset', () => {
+  const a = series([1, 1, 1, 8, 1, 1, 1, 1, 1, 1], 'a');
+  const b = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'b');
+  const c = series([8, 1, 1, 1, 8, 1, 1, 1, 8, 1], 'c');
+  const all = buildSourceRowTokenSpectralKurtosis([...a, ...b, ...c], {
+    generatedAt: GEN,
+    minRows: 4,
+  });
+  const lepto = all.sources.filter((s) => s.excess > 0).length;
+  const platy = all.sources.filter((s) => s.excess <= 0).length;
+  const r = buildSourceRowTokenSpectralKurtosis([...a, ...b, ...c], {
+    generatedAt: GEN,
+    maxExcess: 0,
+    minRows: 4,
+  });
+  assert.equal(r.sources.length, platy);
+  assert.equal(r.droppedAboveMaxExcess, lepto);
+});
+
+test('spectral-kurtosis refinement: kurtosis & excess filters are independent gates', () => {
+  // Verify each gate surfaces in its own dropped bucket and that
+  // a source dropped by the kurtosis gate is NOT also counted in
+  // the excess-gate bucket. Compose order: kurtosis filters first,
+  // then excess filters, then top cap.
+  const a = series([1, 1, 1, 8, 1, 1, 1, 1, 1, 1], 'a'); // high kurtosis
+  const b = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'b'); // smooth ramp
+  const r = buildSourceRowTokenSpectralKurtosis([...a, ...b], {
+    generatedAt: GEN,
+    maxKurtosis: 0.5, // every kurtosis is >= 1, so both fall through this gate
+    minExcess: 100, // would also drop them, but kurtosis gate runs first
+    minRows: 4,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedAboveMaxKurtosis, 2);
+  assert.equal(r.droppedBelowMinExcess, 0);
+});
+
+test('spectral-kurtosis refinement: filter+top compose order — filter first, then top cap', () => {
+  // Three sources, drop one via min-excess so only two remain,
+  // then cap top to 1. The dropped-via-filter source must surface
+  // in droppedBelowMinExcess and the cap-suppressed source in
+  // droppedBelowTopCap; neither gets double-counted.
+  const a = series([1, 1, 1, 8, 1, 1, 1, 1, 1, 1], 'a');
+  const b = series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'b');
+  const c = series([8, 1, 1, 1, 8, 1, 1, 1, 8, 1], 'c');
+  const all = buildSourceRowTokenSpectralKurtosis([...a, ...b, ...c], {
+    generatedAt: GEN,
+    sort: 'excess-desc',
+    minRows: 4,
+  });
+  assert.equal(all.sources.length, 3);
+  // Pick a min-excess strictly between sortedExcess[1] and sortedExcess[2]
+  // so exactly one source falls to the filter.
+  const sortedExcess = all.sources.map((s) => s.excess);
+  const cut = (sortedExcess[1]! + sortedExcess[2]!) / 2;
+  const r = buildSourceRowTokenSpectralKurtosis([...a, ...b, ...c], {
+    generatedAt: GEN,
+    sort: 'excess-desc',
+    minExcess: cut,
+    top: 1,
+    minRows: 4,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinExcess, 1);
+  assert.equal(r.droppedBelowTopCap, 1);
+  assert.equal(r.droppedAboveMaxExcess, 0);
+});
+
+test('spectral-kurtosis refinement: report fields wire minExcess/maxExcess through', () => {
+  const r = buildSourceRowTokenSpectralKurtosis([], {
+    generatedAt: GEN,
+    minExcess: -1.5,
+    maxExcess: 5,
+  });
+  assert.equal(r.minExcess, -1.5);
+  assert.equal(r.maxExcess, 5);
+});

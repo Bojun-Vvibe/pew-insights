@@ -197,6 +197,26 @@ export interface SourceRowTokenSpectralKurtosisOptions {
    */
   maxKurtosis?: number | null;
   /**
+   * Optional lower bound on reported `excess` (Fisher form;
+   * `kurtosis - 3`, Gaussian baseline 0). Sources whose value is
+   * strictly below this threshold are suppressed and counted
+   * under `droppedBelowMinExcess`. Operator-friendly companion to
+   * `minKurtosis`: `--min-excess 0` isolates the leptokurtic
+   * subset (PSDs sharper-than-Gaussian); `--min-excess -1.2`
+   * isolates everything not approaching the uniform-PSD floor.
+   */
+  minExcess?: number | null;
+  /**
+   * Optional upper bound on reported `excess`. Symmetric
+   * counterpart. Surfaces in `droppedAboveMaxExcess`.
+   * `--max-excess 0` isolates the platykurtic subset (PSDs
+   * flatter-than-Gaussian).
+   *
+   * If both are set and `minExcess > maxExcess`, the constructor
+   * throws — operator error, not a silent empty report.
+   */
+  maxExcess?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'kurtosis-asc':         Pearson kurtosis ascending (least
    *                             peaked / flat-topped first).
@@ -248,6 +268,8 @@ export interface SourceRowTokenSpectralKurtosisReport {
   top: number | null;
   minKurtosis: number | null;
   maxKurtosis: number | null;
+  minExcess: number | null;
+  maxExcess: number | null;
   sort: SourceRowTokenSpectralKurtosisSort;
   totalSources: number;
   totalRowsKept: number;
@@ -260,6 +282,8 @@ export interface SourceRowTokenSpectralKurtosisReport {
   droppedDegenerate: number;
   droppedBelowMinKurtosis: number;
   droppedAboveMaxKurtosis: number;
+  droppedBelowMinExcess: number;
+  droppedAboveMaxExcess: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralKurtosisRow[];
 }
@@ -313,6 +337,31 @@ export function buildSourceRowTokenSpectralKurtosis(
   ) {
     throw new Error(
       `minKurtosis (${minKurtosis}) must be <= maxKurtosis (${maxKurtosis})`,
+    );
+  }
+  const minExcess = opts.minExcess ?? null;
+  if (minExcess !== null) {
+    if (!Number.isFinite(minExcess)) {
+      throw new Error(
+        `minExcess must be a finite number (got ${opts.minExcess})`,
+      );
+    }
+  }
+  const maxExcess = opts.maxExcess ?? null;
+  if (maxExcess !== null) {
+    if (!Number.isFinite(maxExcess)) {
+      throw new Error(
+        `maxExcess must be a finite number (got ${opts.maxExcess})`,
+      );
+    }
+  }
+  if (
+    minExcess !== null &&
+    maxExcess !== null &&
+    minExcess > maxExcess
+  ) {
+    throw new Error(
+      `minExcess (${minExcess}) must be <= maxExcess (${maxExcess})`,
     );
   }
   const sort = opts.sort ?? 'excess-desc';
@@ -513,16 +562,39 @@ export function buildSourceRowTokenSpectralKurtosis(
   let droppedBelowTopCap = 0;
   let droppedBelowMinKurtosis = 0;
   let droppedAboveMaxKurtosis = 0;
+  let droppedBelowMinExcess = 0;
+  let droppedAboveMaxExcess = 0;
   let postRows = allRows;
-  if (minKurtosis !== null || maxKurtosis !== null) {
+  if (
+    minKurtosis !== null ||
+    maxKurtosis !== null ||
+    minExcess !== null ||
+    maxExcess !== null
+  ) {
     const kept: SourceRowTokenSpectralKurtosisRow[] = [];
     for (const row of postRows) {
+      // Kurtosis (Pearson) filter first — the fundamental
+      // numerical axis (always >= 1 by Cauchy-Schwarz). Then the
+      // operator-friendly excess (Fisher) filter, which is just
+      // `kurtosis - 3` but is the axis operators reach for when
+      // they want "leptokurtic only" (excess > 0) or
+      // "platykurtic only" (excess < 0). Each gate surfaces in
+      // its own dropped bucket so the operator can read which
+      // gate a source fell through.
       if (minKurtosis !== null && row.kurtosis < minKurtosis) {
         droppedBelowMinKurtosis += 1;
         continue;
       }
       if (maxKurtosis !== null && row.kurtosis > maxKurtosis) {
         droppedAboveMaxKurtosis += 1;
+        continue;
+      }
+      if (minExcess !== null && row.excess < minExcess) {
+        droppedBelowMinExcess += 1;
+        continue;
+      }
+      if (maxExcess !== null && row.excess > maxExcess) {
+        droppedAboveMaxExcess += 1;
         continue;
       }
       kept.push(row);
@@ -544,6 +616,8 @@ export function buildSourceRowTokenSpectralKurtosis(
     top,
     minKurtosis,
     maxKurtosis,
+    minExcess,
+    maxExcess,
     sort,
     totalSources,
     totalRowsKept,
@@ -556,6 +630,8 @@ export function buildSourceRowTokenSpectralKurtosis(
     droppedDegenerate,
     droppedBelowMinKurtosis,
     droppedAboveMaxKurtosis,
+    droppedBelowMinExcess,
+    droppedAboveMaxExcess,
     droppedBelowTopCap,
     sources: finalSources,
   };

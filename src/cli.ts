@@ -2475,7 +2475,7 @@ program
   )
   .option(
     '--top <n>',
-    'cap the per-source table to the top N rows after sort and min-buckets; suppressed rows surface as droppedBelowTopCap',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
     '--sort <key>',
@@ -13607,6 +13607,22 @@ program
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-kurtosis <v>',
+    'suppress sources whose Pearson kurtosis is strictly below this threshold; surfaces them under droppedBelowMinKurtosis. Note kurtosis is always >= 1 by Cauchy-Schwarz, so --min-kurtosis 1 is a no-op.',
+  )
+  .option(
+    '--max-kurtosis <v>',
+    'suppress sources whose Pearson kurtosis is strictly above this threshold; surfaces them under droppedAboveMaxKurtosis. Symmetric to --min-kurtosis.',
+  )
+  .option(
+    '--min-excess <v>',
+    'suppress sources whose Fisher excess kurtosis (kurtosis - 3) is strictly below this threshold; surfaces them under droppedBelowMinExcess. Operator-friendly: --min-excess 0 isolates leptokurtic PSDs (sharper-than-Gaussian).',
+  )
+  .option(
+    '--max-excess <v>',
+    'suppress sources whose Fisher excess kurtosis is strictly above this threshold; surfaces them under droppedAboveMaxExcess. Operator-friendly: --max-excess 0 isolates platykurtic PSDs (flatter-than-Gaussian).',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'excess-desc' (default; most leptokurtic — sharpest peaks / heaviest tails relative to Gaussian first) | 'excess-asc' (most platykurtic first) | 'kurtosis-desc' | 'kurtosis-asc' | 'abs-excess-desc' (furthest from Gaussian-shaped PSD in either direction first) | 'rows' | 'source'",
     'excess-desc',
@@ -13620,6 +13636,10 @@ program
         source?: string;
         minRows: string;
         top?: string;
+        minKurtosis?: string;
+        maxKurtosis?: string;
+        minExcess?: string;
+        maxExcess?: string;
         sort: string;
         json?: boolean;
       },
@@ -13642,6 +13662,46 @@ program
           }
           top = t;
         }
+        let minKurtosis: number | null = null;
+        if (opts.minKurtosis != null) {
+          const v = Number.parseFloat(opts.minKurtosis);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-kurtosis must be a finite number (got ${opts.minKurtosis})`,
+            );
+          }
+          minKurtosis = v;
+        }
+        let maxKurtosis: number | null = null;
+        if (opts.maxKurtosis != null) {
+          const v = Number.parseFloat(opts.maxKurtosis);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-kurtosis must be a finite number (got ${opts.maxKurtosis})`,
+            );
+          }
+          maxKurtosis = v;
+        }
+        let minExcess: number | null = null;
+        if (opts.minExcess != null) {
+          const v = Number.parseFloat(opts.minExcess);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-excess must be a finite number (got ${opts.minExcess})`,
+            );
+          }
+          minExcess = v;
+        }
+        let maxExcess: number | null = null;
+        if (opts.maxExcess != null) {
+          const v = Number.parseFloat(opts.maxExcess);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-excess must be a finite number (got ${opts.maxExcess})`,
+            );
+          }
+          maxExcess = v;
+        }
         const validSorts = [
           'kurtosis-asc',
           'kurtosis-desc',
@@ -13663,6 +13723,10 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minKurtosis,
+          maxKurtosis,
+          minExcess,
+          maxExcess,
           sort: opts.sort as
             | 'kurtosis-asc'
             | 'kurtosis-desc'
