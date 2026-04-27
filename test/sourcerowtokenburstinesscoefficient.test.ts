@@ -433,3 +433,169 @@ test('row-burst-b: minRows = 2 (default) admits 2-row sources but minRows = 3 dr
   assert.equal(r3.sources.length, 0);
   assert.equal(r3.droppedBelowMinRows, 1);
 });
+
+test('row-burst-b: rejects bad minMean', () => {
+  assert.throws(() =>
+    buildSourceRowTokenBurstinessCoefficient([], { minMean: -1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenBurstinessCoefficient([], { minMean: Number.NaN }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenBurstinessCoefficient([], {
+      minMean: Number.POSITIVE_INFINITY,
+    }),
+  );
+});
+
+test('row-burst-b: --min-mean default 0 keeps every source (no behaviour change vs v0.6.99)', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00Z', 'tiny', 1),
+    ql('2026-04-25T01:00:00Z', 'tiny', 2),
+    ql('2026-04-25T00:00:00Z', 'huge', 1000000),
+    ql('2026-04-25T01:00:00Z', 'huge', 2000000),
+  ];
+  const r = buildSourceRowTokenBurstinessCoefficient(queue, {
+    generatedAt: GEN,
+  });
+  assert.equal(r.minMean, 0);
+  assert.equal(r.droppedBelowMinMean, 0);
+  assert.equal(r.sources.length, 2);
+});
+
+test('row-burst-b: --min-mean drops sources whose mean < f', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00Z', 'tiny', 100),
+    ql('2026-04-25T01:00:00Z', 'tiny', 200),
+    ql('2026-04-25T00:00:00Z', 'huge', 1000000),
+    ql('2026-04-25T01:00:00Z', 'huge', 2000000),
+  ];
+  const r = buildSourceRowTokenBurstinessCoefficient(queue, {
+    minMean: 1000,
+    generatedAt: GEN,
+  });
+  // tiny.mean = 150 < 1000 -> dropped; huge.mean = 1.5M -> survives
+  assert.equal(r.droppedBelowMinMean, 1);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'huge');
+});
+
+test('row-burst-b: --min-mean is orthogonal to --min-b (gates distinct cohorts)', () => {
+  // Three sources constructed as an explicit orthogonality witness:
+  //   A: tiny mean (50) but high B (heavy-tailed regime)
+  //      survives --min-b 0.3 alone, killed by --min-mean 1000
+  //   B: huge mean (1.5M) but low B (mildly super-Poisson)
+  //      survives --min-mean 1000 alone, killed by --min-b 0.3
+  //   C: huge mean and high B (both)
+  //      survives both filters
+  const queue: QueueLine[] = [];
+  // A: {1, 1, 1, 1, 246} -> mean = 50, popstd = sqrt((4 + 60516)/5 - 2500)
+  //    = sqrt(12104 - 2500) = sqrt(9604) = 98; cv = 1.96; B = 0.96/2.96 = 0.3243
+  for (let i = 0; i < 4; i++)
+    queue.push(ql(`2026-04-25T${i.toString().padStart(2, '0')}:00:00Z`, 'A', 1));
+  queue.push(ql('2026-04-25T04:00:00Z', 'A', 246));
+  // B: {1000000, 2000000} -> mean = 1.5M, popstd = 500K; cv = 1/3; B = -0.5
+  queue.push(ql('2026-04-25T00:00:00Z', 'B', 1000000));
+  queue.push(ql('2026-04-25T01:00:00Z', 'B', 2000000));
+  // C: {0,0,0,0,0,0,0,0,0, 50_000_000} -> n=10, mean=5M;
+  //    var = 2.25e14, std = 1.5e7, cv = 3, B = 0.5
+  for (let i = 0; i < 9; i++)
+    queue.push(
+      ql(
+        `2026-04-25T${i.toString().padStart(2, '0')}:00:00Z`,
+        'C',
+        0,
+      ),
+    );
+  queue.push(ql('2026-04-25T09:00:00Z', 'C', 50000000));
+
+  // Sanity: no-filter run shows all three
+  const r0 = buildSourceRowTokenBurstinessCoefficient(queue, {
+    generatedAt: GEN,
+    sort: 'source',
+  });
+  assert.equal(r0.sources.length, 3);
+  const aRow = r0.sources.find((s) => s.source === 'A')!;
+  const bRow = r0.sources.find((s) => s.source === 'B')!;
+  const cRow = r0.sources.find((s) => s.source === 'C')!;
+  // Witness invariants
+  assert.equal(aRow.mean, 50);
+  assert.ok(aRow.b! > 0.3 && aRow.b! < 0.4);
+  assert.equal(bRow.mean, 1500000);
+  assert.ok(Math.abs(bRow.b! - -0.5) < 1e-12);
+  assert.ok(cRow.mean > 1000);
+  assert.ok(cRow.b! > 0.3, `cRow.b expected > 0.3, got ${cRow.b}`);
+
+  // --min-b 0.3 alone: drops B (b=-0.5), keeps A and C
+  const rB = buildSourceRowTokenBurstinessCoefficient(queue, {
+    minB: 0.3,
+    generatedAt: GEN,
+    sort: 'source',
+  });
+  assert.deepEqual(rB.sources.map((s) => s.source), ['A', 'C']);
+  assert.equal(rB.droppedBelowMinB, 1);
+  assert.equal(rB.droppedBelowMinMean, 0);
+
+  // --min-mean 1000 alone: drops A (mean=50), keeps B and C
+  const rM = buildSourceRowTokenBurstinessCoefficient(queue, {
+    minMean: 1000,
+    generatedAt: GEN,
+    sort: 'source',
+  });
+  assert.deepEqual(rM.sources.map((s) => s.source), ['B', 'C']);
+  assert.equal(rM.droppedBelowMinMean, 1);
+  assert.equal(rM.droppedBelowMinB, 0);
+
+  // BOTH: only C survives — proves the two filters select distinct cohorts
+  // and cannot be substituted for one another.
+  const rBoth = buildSourceRowTokenBurstinessCoefficient(queue, {
+    minB: 0.3,
+    minMean: 1000,
+    generatedAt: GEN,
+    sort: 'source',
+  });
+  assert.deepEqual(rBoth.sources.map((s) => s.source), ['C']);
+  assert.equal(rBoth.droppedBelowMinMean, 1); // A
+  assert.equal(rBoth.droppedBelowMinB, 1); // B
+});
+
+test('row-burst-b: --min-mean applied before --min-b (low-mean degenerates counted under droppedBelowMinMean)', () => {
+  // A degenerate (all-zero) source has mean = 0; with --min-mean > 0 it should
+  // be dropped under droppedBelowMinMean *before* the --min-b degenerate
+  // check is reached. This pins the documented filter order.
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00Z', 'zero', 0),
+    ql('2026-04-25T01:00:00Z', 'zero', 0),
+    ql('2026-04-25T00:00:00Z', 'real', 100),
+    ql('2026-04-25T01:00:00Z', 'real', 200),
+  ];
+  const r = buildSourceRowTokenBurstinessCoefficient(queue, {
+    minB: -0.5,
+    minMean: 50,
+    generatedAt: GEN,
+  });
+  // 'zero' has mean = 0 < 50 -> dropped under droppedBelowMinMean.
+  // It is NOT counted under droppedDegenerate because the min-mean
+  // filter ran first.
+  assert.equal(r.droppedBelowMinMean, 1);
+  assert.equal(r.droppedDegenerate, 0);
+  // 'real' has mean = 150 (survives min-mean), B = -0.5 (NOT strictly < -0.5,
+  // survives min-b).
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'real');
+});
+
+test('row-burst-b: --min-mean = 0 (default) does NOT count any droppedBelowMinMean even for mean=0 degen sources', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00Z', 'zero', 0),
+    ql('2026-04-25T01:00:00Z', 'zero', 0),
+    ql('2026-04-25T00:00:00Z', 'real', 100),
+    ql('2026-04-25T01:00:00Z', 'real', 200),
+  ];
+  const r = buildSourceRowTokenBurstinessCoefficient(queue, {
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinMean, 0);
+  // both survive; default minB = -1 keeps degenerate too
+  assert.equal(r.sources.length, 2);
+});
