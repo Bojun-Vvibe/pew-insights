@@ -2,6 +2,139 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.83 — 2026-04-27
+
+### Added
+
+- `source-row-token-kurtosis`: per-source Fisher **excess** kurtosis
+  (`g2`) of the per-row `total_tokens` distribution. The natural
+  4th-moment companion to v0.6.81's `source-row-token-skewness`
+  (3rd moment).
+
+  For each source's `n` per-row `total_tokens` samples with sample
+  mean `m`, second central moment `m2 = (1/n) sum (x - m)^2`, and
+  fourth central moment `m4 = (1/n) sum (x - m)^4`,
+
+  ```
+  g2 = m4 / (m2^2) - 3
+  ```
+
+  The `-3` calibrates a Normal distribution to `g2 = 0`. Reading
+  guide: `g2 > 0` (leptokurtic) means heavier tails AND a more
+  peaked centre than a Normal of the same variance — extreme rows
+  dominate the 4th moment disproportionately. `g2 < 0` (platykurtic)
+  means thinner tails than Normal; a discrete uniform on `{1..10}`
+  has `g2 = -1.2242` exactly. Reference values: Normal = 0,
+  Laplace = 3, Exponential = 6, log-normal can run into the
+  hundreds. Two-point symmetric (perfectly bimodal) hits the
+  theoretical floor `g2 = -2`.
+
+  Why this is genuinely orthogonal to every per-source lens already
+  in the codebase, including the v0.6.81 skewness lens:
+
+  - `source-row-token-skewness` (v0.6.81) is the **3rd**
+    standardised moment. Skewness measures asymmetry (tail
+    direction); kurtosis measures **tail weight + peakedness**
+    (4th moment). They are mathematically independent: a symmetric
+    Laplace has `g1 = 0` and `g2 = 3`; a symmetric triangular has
+    `g1 = 0` and `g2 = -0.6`; a skewed distribution can have any
+    kurtosis. So a high-skew low-kurtosis source has an asymmetric
+    body but no fat tail beyond the asymmetry — versus a high-skew
+    high-kurtosis source where rare extreme rows dominate the
+    fourth moment.
+  - `source-burstiness-fano-factor` is `variance / mean` of
+    per-source-active-day totals (2nd moment, on day totals).
+    Kurtosis is the 4th moment on per-row values. A perfectly
+    symmetric high-Fano source has zero excess kurtosis if its
+    per-row distribution is Normal.
+  - `source-output-tokens-per-row-percentiles` is quantile shape on
+    `output_tokens`. Kurtosis integrates the entire tail (to the
+    4th power) on `total_tokens`. p99 >> p90 is suggestive of high
+    kurtosis but not the same statistic.
+  - `source-input-token-top-row-share` is mass concentration on
+    input tokens, not a moment statistic.
+  - `source-output-token-benford-deviation` is digit-distribution,
+    not a moment.
+  - `source-cumulative-mass-half-life-day` and
+    `source-first-vs-last-quartile-output-mean-shift` are
+    temporal / chronological lenses; kurtosis is one-shot pooled
+    and time-axis-free.
+  - `daily-token-gini-coefficient` is cross-day inequality;
+    a perfectly mesokurtic source can still have any gini.
+
+  Algorithm: filter by [since, until) + optional `--source`, drop
+  rows with non-finite `hour_start`, clamp negative/non-finite
+  `total_tokens` to 0 (codebase convention), compute per-source
+  `mean`, `m2`, `m4`. Sources with fewer than 4 rows are dropped
+  as `droppedTooFewRowsForKurtosis` (a non-degenerate sample 4th
+  moment requires `n >= 4`). If `m2 = 0` (all rows identical),
+  kurtosis is mathematically undefined — reported as
+  `excessKurtosis = 0` with `degenerate = true`. Display gates
+  `--min-rows` (default 4, the absolute floor) and `--min-mean`
+  (default 0). Sort: `kurt-desc` (default), `kurt-asc`,
+  `abs-kurt`, `rows`, `mean`, `source`. Tiebreak: `source` asc.
+  Pure builder; wall-clock only via `opts.generatedAt`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (one IDE-assistant
+  source name redacted to `ide-assistant-A` per banned-string
+  policy):
+
+  ```
+  pew-insights source-row-token-kurtosis
+  as of: 2026-04-27T00:50:04.896Z    sources: 6 (shown 6)    rows: 1,611    min-rows: 4    min-mean: 0.00    top: —    sort: kurt-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 4-row floor, 0 below min-rows, 0 below min-mean, 0 below top cap
+
+  per-source row total_tokens excess kurtosis (sorted by kurt-desc; ties: source asc)
+  source           rows  mean         stddev       excessKurt  degen
+  ---------------  ----  -----------  -----------  ----------  -----
+  ide-assistant-A  333   5662.84      14933.73     74.7811     -
+  openclaw         427   4323900.45   4920540.60   23.8884     -
+  opencode         321   10364291.12  13401116.19  5.2950      -
+  claude-code      299   11512995.95  17605167.00  4.9976      -
+  hermes           167   873005.10    991164.28    3.8568      -
+  codex            64    12650385.31  14252148.98  1.6733      -
+  ```
+
+  Reading the live result: `ide-assistant-A` is in a different
+  league entirely with `g2 = 74.78` — the per-row distribution is
+  catastrophically fat-tailed. Its mean is small (~5,663 tokens)
+  but stddev is ~3x the mean, meaning a handful of monster rows
+  are pulling almost the entire 4th moment by themselves. Compare
+  to the v0.6.81 skewness smoke for the same source: it had
+  `g1 = 7.98`, also the highest skewness, so high-kurtosis high-
+  skewness is a coherent reading — the tail is both extremely
+  heavy AND one-sided.
+
+  `openclaw` at `g2 = 23.89` is the second-heaviest tail but its
+  skewness was `g1 = 4.11`. Squaring intuition: kurtosis grows
+  roughly like `g1^2` when one outlier dominates, and indeed
+  `4.11^2 ≈ 16.9` — the residual gap above 16.9 is what's left
+  after the asymmetry is accounted for. Useful as a sanity check.
+
+  `opencode` and `claude-code` have nearly identical excess
+  kurtosis (5.30 and 5.00) — both are leptokurtic but in the
+  "Exponential-ish" range (Exponential = 6). Their per-row
+  distributions are heavy-tailed but not pathological.
+
+  `hermes` at `g2 = 3.86` is the closest to a Laplace (`g2 = 3`),
+  meaning a roughly two-sided exponential tail — matches the
+  intuition of a source with frequent moderate rows and a
+  stretched-but-not-extreme tail in both directions.
+
+  `codex` at `g2 = 1.67` (and only 64 rows) is the most Normal-
+  like of the cohort. Its row count is also lowest; the `--min-
+  rows` gate could be raised to suppress it from a kurtosis
+  comparison if the operator wants only well-supported estimates.
+
+  Note the row total dropped from 1,607 in the v0.6.82 smoke to
+  1,611 here — the queue file gained 4 rows in the ~32-hour
+  interval between captures. The per-source row counts have also
+  shifted slightly (e.g. `openclaw` 425 -> 427, `opencode` 319 ->
+  321, `hermes` is new in the visible cohort here vs. v0.6.82's
+  2-source dropout); this is expected for a live queue.
+
+---
+
 ## 0.6.82 — 2026-04-27
 
 ### Changed
