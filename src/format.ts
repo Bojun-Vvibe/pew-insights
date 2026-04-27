@@ -8921,3 +8921,79 @@ export function renderSourceRowTokenMannKendallTrend(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenHurstRsReport,
+  SourceRowTokenHurstRsRow,
+} from './sourcerowtokenhurstrs.js';
+
+export function renderSourceRowTokenHurstRs(
+  r: SourceRowTokenHurstRsReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-hurst-rs'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-window: ${r.minWindow}    max-scales: ${r.maxScales}    min-scales: ${r.minScales}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinScales)} below min-scales, ${formatNumber(r.droppedAllDegenerate)} all-degenerate after R/S, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      "(per-source Hurst exponent via classical rescaled-range (R/S) analysis on the per-row total_tokens time-ordered sequence. For each window size m in a log-spaced grid in [min-window, floor(n/2)], split the series into floor(n/m) non-overlapping chunks; per chunk compute R = max(cum dev) - min(cum dev) and S = sqrt((1/m) sum (x - mu)^2); average R/S over chunks. H = OLS slope of log((R/S)_m) vs log(m). H ~ 0.5 = random walk. H > 0.5 = persistent (busy stays busy across many scales). H < 0.5 = anti-persistent / mean-reverting. Genuinely orthogonal: Mann-Kendall and trend-slope measure direction; runs-test is single-scale dichotomy; lag-1 autocorr is single-lag linear; permutation-entropy is local m=3 ordinal; turning-point is jaggedness; dispersion / shape lenses (-iqr-ratio / -mad / -gini / -burstiness / -cv / -skewness / -kurtosis) are order-invariant. Caveat: a strict monotone trend can drive R/S H -> 1 spuriously — cross-check with mann-kendall-trend before claiming long-range dependence on a trended source.)",
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Hurst R/S exponent (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'H',
+    'intercept',
+    'R^2',
+    'scales',
+    'mMin',
+    'mMax',
+    'degCh',
+    'degSc',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenHurstRsRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.hurst.toFixed(4),
+      s.intercept.toFixed(4),
+      s.r2.toFixed(4),
+      formatNumber(s.scalesUsed),
+      formatNumber(s.minScaleUsed),
+      formatNumber(s.maxScaleUsed),
+      formatNumber(s.degenerateChunks),
+      formatNumber(s.scalesDroppedAllDegenerate),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

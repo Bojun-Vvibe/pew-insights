@@ -113,6 +113,7 @@ import {
   renderSourceRowTokenTurningPointCount,
   renderSourceRowTokenPermutationEntropy,
   renderSourceRowTokenMannKendallTrend,
+  renderSourceRowTokenHurstRs,
   renderSourcePeakHourOfDayArgmax,
   renderModelTenure,
   renderProviderTenure,
@@ -286,6 +287,7 @@ import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
+import { buildSourceRowTokenHurstRs } from './sourcerowtokenhurstrs.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
 import { buildModelTenure } from './modeltenure.js';
 import { buildProviderTenure } from './providertenure.js';
@@ -11291,6 +11293,144 @@ program
           process.stdout.write(
             renderSourceRowTokenMannKendallTrend(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-hurst-rs')
+  .description(
+    "Per-source Hurst exponent via classical rescaled-range (R/S) analysis on the per-row total_tokens time-ordered sequence. For each window size m in a log-spaced grid in [min-window, floor(n/2)], split the series into floor(n/m) non-overlapping chunks; per chunk compute R = max(cum dev) - min(cum dev) and S = sqrt((1/m) sum (x - mu)^2); average R/S over chunks. H = OLS slope of log((R/S)_m) vs log(m). H ~ 0.5 = random walk; H > 0.5 = persistent (long-range positive memory across many scales); H < 0.5 = anti-persistent / mean-reverting. Genuinely orthogonal to mann-kendall-trend / daily-trend-slope (direction lenses), to runs-test (single-scale dichotomy), to lag-1 autocorrelation (single-lag linear-parametric), to permutation-entropy (local m=3 ordinal patterns), to turning-point-count (jaggedness), and to every order-invariant dispersion / shape lens. Caveat: a strict monotone trend can drive R/S H -> 1 spuriously — cross-check with mann-kendall-trend before claiming long-range dependence on a trended source.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 16. Default 32 (R/S needs enough rows to support a multi-scale regression).',
+    '32',
+  )
+  .option(
+    '--min-window <n>',
+    'smallest window size m in the log-spaced scale grid; integer >= 4. Default 8.',
+    '8',
+  )
+  .option(
+    '--max-scales <n>',
+    'maximum distinct log-spaced scales evaluated; integer >= 3. Default 12.',
+    '12',
+  )
+  .option(
+    '--min-scales <n>',
+    'minimum usable scales required to keep a source; integer >= 3 and <= max-scales. Default 3.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'abs-hurst-deviation-desc' (default, |H - 0.5| desc) | 'hurst-asc' | 'hurst-desc' | 'r2-desc' | 'rows' | 'scales' | 'source'",
+    'abs-hurst-deviation-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minWindow: string;
+        maxScales: string;
+        minScales: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 16) {
+          throw new Error(
+            `--min-rows must be an integer >= 16 (got ${opts.minRows})`,
+          );
+        }
+        const minWindow = Number.parseInt(opts.minWindow, 10);
+        if (!Number.isInteger(minWindow) || minWindow < 4) {
+          throw new Error(
+            `--min-window must be an integer >= 4 (got ${opts.minWindow})`,
+          );
+        }
+        const maxScales = Number.parseInt(opts.maxScales, 10);
+        if (!Number.isInteger(maxScales) || maxScales < 3) {
+          throw new Error(
+            `--max-scales must be an integer >= 3 (got ${opts.maxScales})`,
+          );
+        }
+        const minScales = Number.parseInt(opts.minScales, 10);
+        if (!Number.isInteger(minScales) || minScales < 3) {
+          throw new Error(
+            `--min-scales must be an integer >= 3 (got ${opts.minScales})`,
+          );
+        }
+        if (minScales > maxScales) {
+          throw new Error(
+            `--min-scales (${minScales}) must not exceed --max-scales (${maxScales})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'hurst-asc',
+          'hurst-desc',
+          'abs-hurst-deviation-desc',
+          'r2-desc',
+          'rows',
+          'scales',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenHurstRs(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minWindow,
+          maxScales,
+          minScales,
+          top,
+          sort: opts.sort as
+            | 'hurst-asc'
+            | 'hurst-desc'
+            | 'abs-hurst-deviation-desc'
+            | 'r2-desc'
+            | 'rows'
+            | 'scales'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenHurstRs(report) + '\n');
         }
       } catch (e) {
         die(e);
