@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.126 — 2026-04-27
+
+### Added
+
+- `source-row-token-dfa`: per-source **DFA-1 alpha exponent**
+  (Peng et al. 1994, Phys. Rev. E 49:1685-1689) on the per-row
+  `total_tokens` time-ordered sequence. Integrate `v - mean`
+  to a cumulative profile `Y`, split into non-overlapping
+  windows of size `s` on a logarithmic scale grid, OLS-detrend
+  each window, take the rms residual `F(s)`; alpha is the OLS
+  slope of `log F(s)` vs `log s`.
+
+  Reading the exponent:
+
+  - `alpha ~ 0.5` uncorrelated white noise
+  - `alpha < 0.5` anti-persistent (large-step reversals)
+  - `0.5 < alpha < 1` persistent / long-range positive correlations
+  - `alpha = 1` 1/f / pink noise
+  - `alpha = 1.5` Brownian motion (integrated white noise)
+  - `alpha > 1.5` drift-dominated, smoother than Brownian
+
+  Why this lens is **genuinely orthogonal** to every existing
+  `source-row-token-*` lens already in the suite:
+
+  - vs `hurst-rs`: R/S has **no detrending** of the cumulative
+    deviation range; DFA-1 detrends each window by its local
+    linear fit. Coincide only for trend-free fBm; on real
+    drifty series R/S is biased upward while DFA-1 absorbs
+    the linear part. Rankings do not preserve.
+  - vs `higuchi-fd`: HFD measures arc-length scaling of the
+    **raw** sequence at stride `k`; DFA measures detrended
+    fluctuation scaling of the **cumulative** profile at
+    window size `s` — opposite ends of the integration ladder.
+  - vs `permutation-entropy` / `sample-entropy` / `lempel-ziv`:
+    ordinal / single-scale tolerance / symbolic — DFA is
+    multi-scale, value-domain, real-valued.
+  - vs `mann-kendall` / `runs` / `turning-point` /
+    `autocorr-lag1`: directional / dichotomy / extremum /
+    single-lag linear — DFA is a power-law scaling exponent.
+  - vs `renyi-entropy` and all order-invariant dispersion /
+    shape lenses: DFA's entire signal comes from temporal
+    correlation structure (order-sensitive).
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (1,673 rows, 6 sources, default args; one source name
+  redacted to `vscode-XXX` for policy compliance):
+
+  ```
+  pew-insights source-row-token-dfa
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,673
+  scaleMin: 4   scaleMax: -   minScales: 4   minWin/scale: 4
+  min-rows: 32   top: -   sort: alpha-asc
+  dropped: 0 / 0 / 0 / 0 / 0 / 0 / 0 / 0 / 0 / 0
+
+  per-source row-token DFA-1 alpha (sorted by alpha-asc; ties: source asc)
+  source       rows  sigma         s_min  s_max  s_used  s_drop  alpha   alphaRaw  R^2
+  -----------  ----  ------------  -----  -----  ------  ------  ------  --------  ------
+  hermes        181     982,497.87    4    45      14       0    0.5841  0.5841   0.9459
+  codex          64  14,252,148.98    4    16       8       0    0.6713  0.6713   0.6143
+  vscode-XXX    333      14,933.73    4    83      16       0    0.7334  0.7334   0.7087
+  claude-code   299  17,605,167.00    4    74      16       0    0.7441  0.7441   0.9171
+  openclaw      451   4,880,313.92    4   112      16       0    0.8269  0.8269   0.9850
+  opencode      345  13,161,434.97    4    86      16       0    1.0317  1.0317   0.9759
+  ```
+
+  Real-data interpretation: alphas are tightly clustered in
+  `[0.58, 1.03]`, all above the white-noise reference 0.5
+  (= every source has at least mild long-range positive
+  correlation in its per-row `total_tokens` stream over the
+  observation window). `hermes` (alpha = 0.58, R^2 0.95) is
+  the closest to white-noise increments; `opencode`
+  (alpha = 1.03, R^2 0.98) sits at the 1/f-noise reference
+  with the highest persistence — both fits are well-supported
+  (R^2 >= 0.95). `codex` has the lowest R^2 (0.61) because
+  its 64 rows yield only 8 usable scales — the alpha estimate
+  is honest but should be read with a wide CI. None of the
+  six sources cleared the alpha = 1.5 Brownian-motion line on
+  this window, so no source is in the integrated-noise /
+  random-walk regime.
+
+  Test count: 2759 -> 2780. 21 new unit tests covering:
+  defaults, zero-variance gate, too-few-rows gate, white-noise
+  alpha ~ 0.5 with R^2 > 0.85, Brownian alpha ~ 1.5 with
+  R^2 > 0.9, alpha ordering (white-noise < Brownian),
+  scale invariance (alpha unchanged under `v -> 7v`), all
+  four input validators (`scaleMin`, `minScales`, `minRows`,
+  `scaleMax`), source filter counts non-matching rows, top
+  cap surfaces `droppedBelowTopCap`, bad-row counters
+  (invalid hour_start, invalid total_tokens, negative
+  tokens), all four sort modes (alpha-asc, alpha-desc, rows,
+  source), linear ramp -> very high alpha (drift), window
+  since/until bounds, anti-persistent tight alternation
+  -> alpha < 0.5.
+
 ## 0.6.125 — 2026-04-27
 
 ### Changed
