@@ -2,6 +2,139 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.154 — 2026-04-28
+
+### Added
+
+- **New subcommand**: `source-row-token-spectral-kurtosis`.
+  Per-source **standardized spectral kurtosis** — the 4th
+  standardized central moment of the one-sided non-DC power
+  spectrum `P[k] = |X[k]|^2`, `k = 1..K = floor(n/2)`, of the
+  mean-centered per-row `total_tokens` sequence, taken *around
+  the spectral centroid `c`*:
+
+      m2       = sum_k (k - c)^2 * P[k] / sum_k P[k]
+      m4       = sum_k (k - c)^4 * P[k] / sum_k P[k]
+      kurtosis = m4 / m2^2          (Pearson; always >= 1)
+      excess   = kurtosis - 3       (Fisher; Gaussian baseline 0)
+
+  where `c = sum_k k * P[k] / sum_k P[k]` is the spectral
+  centroid (first moment, shipped in 0.6.148). The Cauchy-Schwarz
+  inequality gives `kurtosis >= 1` for any non-degenerate PSD;
+  values near `1.8` indicate a uniform-on-band PSD; values near
+  `3` indicate a Gaussian-shaped PSD.
+
+  Reported quantities:
+
+  - `centroidBin`  : first-moment bin (real); recomputed inline
+                     so the four-moment quartet stays internally
+                     consistent.
+  - `bandwidthBin` : `sqrt(m2)`; bin-units. Reported because
+                     `kurtosis` is undefined when this is `0`.
+  - `m4`           : raw 4th central moment (bin^4 units).
+  - `kurtosis`     : Pearson form `m4 / m2^2`. Sign-blind
+                     peakedness/tail-weight summary.
+  - `excess`       : Fisher form `kurtosis - 3`. **Positive** =>
+                     leptokurtic (sharply peaked PSD with heavy
+                     tails around the centroid); **negative** =>
+                     platykurtic (flatter-topped / lighter tails
+                     than Gaussian).
+
+  Citation: **Antoni, J. (2006), "The spectral kurtosis: a useful
+  tool for characterising non-stationary signals", Mech. Syst.
+  Signal Process., 20(2), 282-307** — the canonical reference for
+  spectral kurtosis as a non-stationarity / impulsiveness
+  descriptor in vibration & condition monitoring. See also
+  Peeters, G. (2004), CUIDADO §6.1.4 (4th central moment of the
+  power spectrum as the canonical spectral peakedness descriptor);
+  Lerch, A. (2012), §3.3.2; and Joanes & Gill (1998) for the
+  Pearson vs Fisher (excess) conventions.
+
+  **Why this lens is genuinely orthogonal** to every other
+  `source-row-token-*` lens already in the suite:
+
+  - vs. `source-row-token-spectral-skewness` (0.6.152): skewness
+    is the 3rd standardized central moment (sign-bearing,
+    asymmetry). Kurtosis is the 4th standardized central moment
+    (sign-blind, peakedness/tail-weight). Two PSDs with identical
+    skewness can have wildly different kurtosis: a symmetric
+    two-tone PSD around the centroid has skewness `0` and
+    kurtosis `~1`; a symmetric PSD with mass piled at the
+    centroid plus thin symmetric tails has skewness `0` and
+    kurtosis `>> 3`. Asymmetry vs. peakedness — orthogonal.
+  - vs. `source-row-token-spectral-bandwidth` (0.6.150):
+    bandwidth is the 2nd central moment (spread). Kurtosis
+    divides the *4th* central moment by the *square* of the
+    second, deliberately scaling spread out so only shape
+    (peakedness vs. flatness) remains. Two PSDs with identical
+    bandwidth can have very different kurtosis (uniform-on-band
+    `~1.8` vs. spike-at-centroid `>> 3`). Spread vs. *shape*.
+  - vs. `source-row-token-spectral-centroid` (0.6.148): centroid
+    is location only; kurtosis is location-blind.
+  - vs. `source-row-token-spectral-rolloff` (0.6.146): roll-off
+    is one CDF *quantile*; kurtosis is a 4th-moment summary of
+    the whole PSD shape.
+  - vs. `source-row-token-spectral-flatness`: SF is the
+    geometric/arithmetic mean ratio `G/A` of `P[k]` —
+    position-blind, bounded in `[0, 1]`. Kurtosis is also
+    position-blind but is a moment-based, unbounded peakedness
+    summary; the two diverge when the PSD has heavy tails around
+    a strong centroid (high kurtosis but moderate flatness)
+    versus uniform-on-band (low kurtosis with high flatness).
+  - vs. all amplitude-domain shape lenses including
+    amplitude-kurtosis: spectral kurtosis is **order-sensitive**
+    (it is a PSD descriptor) — shuffle the sequence and the
+    spectral kurtosis changes; amplitude-kurtosis does not.
+  - vs. fractal/scaling lenses (DFA, Higuchi-FD, Katz-FD,
+    Petrosian-FD, Hurst-RS): those summarise PSD *slope* on a
+    log-log axis. Kurtosis is a 4th-moment summary on the
+    linear axis. Not collapsible.
+
+  Determinism: pure builder, wall clock only via
+  `opts.generatedAt`. Sort tiebreak is `source` asc in every
+  sort mode. Default sort is `excess-desc` (most leptokurtic
+  first — sharpest peaks / heaviest tails relative to a
+  Gaussian-shaped PSD).
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,735 rows,
+  6 sources; one source name redacted to `vscode-XXX` for policy
+  compliance):
+
+  ```
+  pew-insights source-row-token-spectral-kurtosis
+  per-source row-token spectral kurtosis (sorted by excess-desc; ties: source asc)
+  source       rows  bins  totPower   centroidBin  bwBin    m4        kurtosis  excess
+  -----------  ----  ----  ---------  -----------  -------  --------  --------  -------
+  opencode     366   183   1.099e+19  31.0539      41.8058  1.866e+7  6.1100    3.1100
+  openclaw     472   236   2.587e+18  61.2579      62.2142  4.802e+7  3.2051    0.2051
+  codex        64    32    4.162e+17  8.5305       8.2935   1.358e+4  2.8712    -0.1288
+  claude-code  299   149   1.385e+19  39.8729      45.6546  9.419e+6  2.1680    -0.8320
+  vscode-XXX   333   166   1.237e+13  55.4502      47.7503  9.291e+6  1.7872    -1.2128
+  hermes       201   100   1.818e+16  41.9001      30.7954  1.514e+6  1.6835    -1.3165
+  ```
+
+  Reading: `opencode` is the standout leptokurtic source
+  (excess `+3.11`, kurtosis above `6`) — its per-row token PSD
+  has a sharply peaked centroid with heavy tails, consistent
+  with a strongly impulsive / non-stationary token-arrival
+  pattern around its centroid bin (Antoni 2006's signature use
+  case). `openclaw` and `codex` sit close to Gaussian-shaped
+  PSDs (excess `~0`). `claude-code`, the redacted vscode source,
+  and `hermes` are platykurtic — their PSDs are flatter-topped
+  than a Gaussian, with `hermes` (`kurtosis 1.68`) approaching
+  the uniform-PSD lower bound `~1.8` (the Cauchy-Schwarz floor
+  is `1`; near-uniform-on-band concentrates PSD mass evenly,
+  giving low 4th-moment standardized weight).
+
+  Tests: 3252 -> 3295 (+43 covering construction, validation,
+  drop buckets, sort modes, top cap, threshold filters, edge
+  cases including the Cauchy-Schwarz `kurtosis >= 1` lower
+  bound on a battery of patterns, the Pearson/Fisher relation
+  `excess == kurtosis - 3`, DC-shift invariance, and
+  time-reversal invariance of the PSD-derived kurtosis as an
+  orthogonality check against the time-direction-sensitive
+  spectral-skewness shipped in 0.6.152).
+
 ## 0.6.153 — 2026-04-28
 
 ### Added
