@@ -2,6 +2,123 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.93 — 2026-04-27
+
+### Added
+
+- `source-same-model-streak`: per-source longest run of
+  consecutive queue rows (ordered by `hour_start` ascending,
+  then `model` ascending as a stable tie-break) sharing the
+  same `model`. For every source the report emits:
+  - `rowsKept`            — kept rows after window/filter.
+  - `streakCount`         — number of maximal same-model runs;
+                            equivalently, `1 + (number of
+                            adjacent model switches)`.
+  - `longestStreak`       — length of the longest run, in
+                            `[1, rowsKept]`.
+  - `longestStreakModel`  — the model that drove that run
+                            (lex tiebreak on ties — earliest
+                            model id wins).
+  - `longestStreakRatio`  — `longestStreak / rowsKept`. In
+                            `(0, 1]`. `1.0` iff every row
+                            uses the same model (a perfectly
+                            model-locked source); `~1/n` iff
+                            the source rotates models on
+                            almost every row.
+  - `meanStreakLength`    — `rowsKept / streakCount`. The
+                            average length of an
+                            uninterrupted same-model run.
+
+  Headline question: **for each source, what is the longest
+  uninterrupted stretch of rows pinned to a single model, and
+  how does that streak compare to the source's total row
+  count?**
+
+  Genuinely orthogonal to every existing model-routing /
+  rotation lens in the codebase:
+
+  - `model-switching` reports the *rate* of model switches —
+    it cannot recover the longest sustained run between
+    switches. Two sources with identical 50% switch rates
+    can have wildly different longest runs (one alternating
+    every row, the other doing 50 rows of m1 then 50 rows of
+    m2). `streakCount` is essentially `switches + 1`, but
+    `longestStreak` is independent of either.
+  - `bucket-streak-length` is per-**model** runs of
+    consecutive **active buckets** — bucket-grain,
+    model-grouped. This new lens is per-**source** runs of
+    consecutive **rows** sharing the same model — row-grain,
+    source-grouped. Two completely different aggregations.
+  - `source-run-lengths` is run-lengths of same-**source**
+    across **sessions**. This is run-lengths of same-**model**
+    across **queue rows** within a single source.
+  - `model-tenure` / `model-cohabitation` describe model
+    lifetimes / overlap — they cannot recover the longest
+    uninterrupted stretch.
+
+  CLI surface mirrors the rest of the per-source dispersion
+  family:
+
+  ```
+  pew-insights source-same-model-streak \
+    [--since <iso>] [--until <iso>] [--source <id>] \
+    [--min-rows <n>] [--min-streak <n>] [--min-ratio <f>] \
+    [--top <n>] [--sort streak-desc|streak-asc|ratio-desc|ratio-asc|rows|switches|source] \
+    [--json]
+  ```
+
+  `--min-ratio` is the cohort selector for "model-locked"
+  sources (e.g. `--min-ratio 0.9` surfaces only sources
+  whose longest run covers `>= 90%` of their rows).
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (top 20; one IDE-assistant source redacted to
+  `vscode-assistant-redacted` per pushed-content policy):
+
+  ```
+  pew-insights source-same-model-streak
+  sources: 6 (shown 6)    rows: 1,626    sort: streak-desc
+
+  source                       rows  streaks  longest  ratio   meanStreak  longestModel
+  ---------------------------  ----  -------  -------  ------  ----------  ---------------
+  openclaw                     433   1        433      1.0000  433.00      gpt-5.4
+  opencode                     327   130      122      0.3731  2.52        claude-opus-4.7
+  hermes                       170   5        79       0.4647  34.00       claude-opus-4.7
+  claude-code                  299   68       64       0.2140  4.40        claude-opus-4.7
+  codex                        64    1        64       1.0000  64.00       gpt-5.4
+  vscode-assistant-redacted    333   49       64       0.1922  6.80        gpt-5
+  ```
+
+  Reading: two sources are perfectly model-locked
+  (`openclaw` ratio=1.0 over 433 rows on `gpt-5.4`; `codex`
+  ratio=1.0 over 64 rows on `gpt-5.4`). `opencode` rotates
+  hardest (130 streaks across 327 rows, longest=122 ratio
+  0.37 on `claude-opus-4.7`). `hermes` has a remarkably high
+  meanStreak of 34 — only 5 streaks total across 170 rows,
+  the second-most-locked operator pattern after the
+  ratio-1.0 cohort. `vscode-assistant-redacted` and
+  `claude-code` look similar at the headline (longest=64
+  each), but the ratio (0.19 vs 0.21) and streakCount (49
+  vs 68) reveal `claude-code` rotates more aggressively
+  even with a comparable max run.
+
+### Tests
+
+- 14 new unit tests in `test/sourcesamemodelstreak.test.ts`
+  covering: empty input defaults; argument validation
+  (`minRows`, `minStreak`, `minRatio`, `top`, `sort`,
+  `since`, `until`); `droppedInvalidHourStart` accounting;
+  all-equal-model and model-rotates-every-row endpoints;
+  the canonical mixed timeline `[m1,m1,m1,m2,m2,m1] ->
+  longest=3 streakCount=3 ratio=0.5 meanStreak=2`;
+  input-order invariance via `hour_start` sort; empty model
+  coercion to `'unknown'`; `--min-rows` /  `--min-ratio` /
+  `--top` filters; sort variants (`streak-desc`,
+  `streak-asc`, `switches`); `--source` filter accounting;
+  `--since`/`--until` window cuts.
+
+  Total: 2495 -> 2509.
+
 ## 0.6.92 — 2026-04-27
 
 ### Changed
