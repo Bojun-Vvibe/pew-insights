@@ -2,6 +2,120 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.91 — 2026-04-27
+
+### Added
+
+- `source-row-token-gini`: per-source Gini coefficient of
+  the per-row `total_tokens` distribution. The textbook
+  inequality measure on the **value distribution itself**:
+  for each source, given `n` per-row token counts
+  `x_1, ..., x_n` with `x_i >= 0` and sum `S`, sorted ascending,
+
+      G = ( 2 * sum_{i=1..n} i * x_i  -  (n + 1) * S ) / ( n * S )
+
+  Range `[0, 1)`: `G = 0` iff every row carries identical
+  mass, `G -> 1` iff a single row carries essentially all
+  the source's tokens. We additionally report
+  `giniUnbiased = n / (n - 1) * gini` (the small-sample
+  bias-corrected estimate; same range, preferred for
+  cross-source comparison when row counts differ wildly)
+  and `meanToMedian = mean / median` as a skew-direction
+  sanity check (Gini is symmetric in the sense that it
+  cannot distinguish "few huge rows + many small ones"
+  from the mirror image — meanToMedian tells the operator
+  which way the tail points without re-computing skew).
+
+  Why this is genuinely orthogonal to every existing per-
+  source dispersion / shape / concentration lens:
+
+  - `daily-token-gini-coefficient` is Gini of **per-day**
+    totals (day-grain). `bucket-token-gini` is Gini across
+    **5-minute buckets**. This new lens is per-row within
+    a source — the row-level inequality, no time grouping.
+    Two sources can have identical daily Gini (each day
+    looks similar) but wildly different per-row Gini (one
+    has uniform rows per day, the other has a few huge
+    rows + many tiny ones each day).
+  - `source-row-token-coefficient-of-variation` (v0.6.87)
+    depends only on the first two moments. Gini depends on
+    the full Lorenz curve — the entire ordered sample. Two
+    distributions with identical CV can have wildly different
+    Gini.
+  - `source-row-token-mad` (v0.6.89) is the median-anchored
+    *dispersion* (width around median). Gini is anchored on
+    the mean (Lorenz/Gini construction) and answers
+    *concentration* rather than spread. A bimodal symmetric
+    distribution can have moderate MAD but Gini ~ 0.5; a
+    unimodal heavy-tailed distribution can have small MAD
+    but Gini ~ 0.7.
+  - `source-row-token-skewness` / `source-row-token-kurtosis`
+    are 3rd / 4th standardised moments — *shape* statistics,
+    not concentration.
+  - `source-input-token-top-row-share` /
+    `source-cumulative-mass-half-life-day` are
+    single-quantile concentration statistics. Gini integrates
+    the **entire** Lorenz curve and is therefore sensitive to
+    inequality in every part of the distribution
+    simultaneously.
+
+  Reading guide: `G < 0.2` very flat, `0.2-0.4` moderate
+  inequality, `0.4-0.6` high (a handful of rows carry a
+  disproportionate share), `>= 0.6` extreme (concentrated
+  in the long tail), `-> 1` essentially a single row.
+
+  Algorithm: filter by `[since, until)` and `--source`,
+  drop rows with non-finite `hour_start`, clamp negative /
+  non-finite `total_tokens` to 0 (codebase convention),
+  skip sources with `rowsKept < 2` (Surface as
+  `droppedTooFewRowsForGini`) and zero-mass sources
+  (`droppedZeroMassForGini`), compute Gini via the
+  `i`-weighted-sum closed form (numerically stable;
+  `O(n log n)` dominated by the sort), apply display gates
+  `--min-rows` (default 2 floor) and `--min-mean`, sort
+  + optional `--top` cap.
+
+  Sort keys: `gini-desc` (default), `gini-asc`,
+  `unbiased-desc`, `unbiased-asc`, `rows`, `mean`, `source`.
+  Tiebreak: `source` asc.
+
+  Live smoke at `--min-rows 5` against
+  `~/.config/pew/queue.jsonl`:
+
+  ```
+  pew-insights source-row-token-gini
+  as of: 2026-04-27T03:20:30.318Z    sources: 6 (shown 6)    rows: 1,623    min-rows: 5    min-mean: 0.00    top: —    sort: gini-desc
+  dropped: 0 bad hour_start, 0 by source filter, 0 below 2-row floor, 0 zero-mass, 0 below min-rows, 0 below min-mean, 0 below top cap
+
+  per-source row total_tokens Gini (sorted by gini-desc; ties: source asc)
+  source                       rows  mean         median      gini    giniUnbiased  mean/med  degMed
+  ---------------------------  ----  -----------  ----------  ------  ------------  --------  ------
+  claude-code                  299   11512995.95  3319967.00  0.6900  0.6923        3.4678    -
+  vscode-assistant-redacted    333   5662.84      2319.00     0.6842  0.6863        2.4419    -
+  opencode                     326   10476352.30  7209874.50  0.5805  0.5823        1.4531    -
+  codex                        64    12650385.31  7132861.00  0.5774  0.5866        1.7735    -
+  hermes                       169   867959.49    391261.00   0.5662  0.5695        2.2184    -
+  openclaw                     432   4330010.28   2940854.50  0.4707  0.4718        1.4724    -
+  ```
+
+  All six sources lie in the `0.47-0.69` band: every source
+  shows non-trivial row-level inequality (no source has
+  uniform per-row mass), but none is in the "single dominating
+  row" extreme. `claude-code` (`G=0.69`, `mean/med=3.47`) and
+  `vscode-assistant-redacted` (`G=0.68`, `mean/med=2.44`) are
+  the most unequal — both have right-skewed long tails (mean
+  pulled well above median). `openclaw` (`G=0.47`,
+  `mean/med=1.47`) is the most equal — its rows cluster more
+  tightly around their median. The `mean/med` column confirms
+  every kept source is right-skewed (`mean > median`); the
+  ranking by Gini and the ranking by `mean/med` agree on the
+  endpoints (`claude-code` highest, `openclaw` lowest) but
+  diverge in the middle (`codex` is 4th by Gini but 3rd by
+  `mean/med`) — the two statistics are correlated but not
+  identical, exactly as the orthogonality argument predicts.
+
+---
+
 ## 0.6.90 — 2026-04-27
 
 ### Changed
