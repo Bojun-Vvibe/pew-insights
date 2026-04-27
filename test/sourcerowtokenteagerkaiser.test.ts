@@ -454,3 +454,50 @@ test('tkeo: --min-tkeo + --max-tkeo combine as a window', () => {
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedAboveMaxTkeo, 1);
 });
+
+test('tkeo: sort abs-desc puts largest |tkeo| first', () => {
+  // Construct sources with known different |tkeo|
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');  // tkeo=1
+  const bVals: number[] = [];
+  for (let i = 0; i < 20; i++) bVals.push(100 + 50 * Math.cos((Math.PI * i) / 3));
+  const b = series(bVals, 'b');  // |tkeo| much larger
+  const r = buildSourceRowTokenTeagerKaiser([...a, ...b], {
+    generatedAt: GEN,
+    sort: 'abs-desc',
+  });
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.sources[1]!.source, 'a');
+});
+
+test('tkeo: sort abs-asc puts smallest |tkeo| first', () => {
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');
+  const bVals: number[] = [];
+  for (let i = 0; i < 20; i++) bVals.push(100 + 50 * Math.cos((Math.PI * i) / 3));
+  const b = series(bVals, 'b');
+  const r = buildSourceRowTokenTeagerKaiser([...a, ...b], {
+    generatedAt: GEN,
+    sort: 'abs-asc',
+  });
+  assert.equal(r.sources[0]!.source, 'a');
+  assert.equal(r.sources[1]!.source, 'b');
+});
+
+test('tkeo: abs-* sort matches tkeo-* when all values are non-negative', () => {
+  // For a series x_n = n (linear ramp), tkeo = 1 > 0 always, so |.| == .
+  const a = series(Array.from({ length: 20 }, (_, i) => i + 1), 'a');
+  const b = series(Array.from({ length: 20 }, (_, i) => i + 100), 'b');
+  const c = series(Array.from({ length: 30 }, (_, i) => i + 1), 'c');
+  const all = [...a, ...b, ...c];
+  const r1 = buildSourceRowTokenTeagerKaiser(all, { generatedAt: GEN, sort: 'tkeo-desc' });
+  const r2 = buildSourceRowTokenTeagerKaiser(all, { generatedAt: GEN, sort: 'abs-desc' });
+  // All have tkeo ~ 1 (positive), so both sort orders are equivalent up to tiebreak (source asc)
+  for (let i = 0; i < r1.sources.length; i++) {
+    assert.equal(r1.sources[i]!.source, r2.sources[i]!.source);
+  }
+});
+
+test('tkeo: invalid sort still throws (regression after expanding sort set)', () => {
+  assert.throws(() =>
+    buildSourceRowTokenTeagerKaiser([], { sort: 'tkeo-bogus' as any }),
+  );
+});

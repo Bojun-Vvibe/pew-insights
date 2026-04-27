@@ -12749,7 +12749,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'tkeo-asc' (default; quietest first) | 'tkeo-desc' (most-energetic first) | 'rows' | 'source'. With --normalize, the sort key uses tkeoMeanNormalized.",
+    "sort key: 'tkeo-asc' (default; quietest first) | 'tkeo-desc' (most-energetic first) | 'abs-asc' (smallest |tkeo| first) | 'abs-desc' (largest |tkeo| first) | 'rows' | 'source'. With --normalize, the sort key uses tkeoMeanNormalized.",
     'tkeo-asc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -12802,7 +12802,7 @@ program
           }
           maxTkeo = v;
         }
-        const validSorts = ['tkeo-asc', 'tkeo-desc', 'rows', 'source'];
+        const validSorts = ['tkeo-asc', 'tkeo-desc', 'abs-asc', 'abs-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
@@ -12818,7 +12818,7 @@ program
           top,
           minTkeo,
           maxTkeo,
-          sort: opts.sort as 'tkeo-asc' | 'tkeo-desc' | 'rows' | 'source',
+          sort: opts.sort as 'tkeo-asc' | 'tkeo-desc' | 'abs-asc' | 'abs-desc' | 'rows' | 'source',
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

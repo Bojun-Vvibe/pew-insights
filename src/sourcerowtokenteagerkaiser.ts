@@ -110,6 +110,8 @@ import type { QueueLine } from './types.js';
 export type SourceRowTokenTeagerKaiserSort =
   | 'tkeo-asc'
   | 'tkeo-desc'
+  | 'abs-asc'
+  | 'abs-desc'
   | 'rows'
   | 'source';
 
@@ -213,7 +215,7 @@ export interface SourceRowTokenTeagerKaiserReport {
   sources: SourceRowTokenTeagerKaiserRow[];
 }
 
-const VALID_SORTS = ['tkeo-asc', 'tkeo-desc', 'rows', 'source'] as const;
+const VALID_SORTS = ['tkeo-asc', 'tkeo-desc', 'abs-asc', 'abs-desc', 'rows', 'source'] as const;
 
 export function buildSourceRowTokenTeagerKaiser(
   queue: QueueLine[],
@@ -392,6 +394,10 @@ export function buildSourceRowTokenTeagerKaiser(
       primary = tkeoKey(a) - tkeoKey(b);
     } else if (sort === 'tkeo-desc') {
       primary = tkeoKey(b) - tkeoKey(a);
+    } else if (sort === 'abs-asc') {
+      primary = Math.abs(tkeoKey(a)) - Math.abs(tkeoKey(b));
+    } else if (sort === 'abs-desc') {
+      primary = Math.abs(tkeoKey(b)) - Math.abs(tkeoKey(a));
     } else if (sort === 'rows') {
       primary = b.rowsKept - a.rowsKept;
     } else {

@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.140 — 2026-04-28
+
+### Added
+
+- `source-row-token-teager-kaiser` gains two additional
+  sort modes: `abs-asc` and `abs-desc`. Both sort by the
+  **absolute value** of the TKEO key (raw `tkeoMean` or
+  normalised `tkeoMeanNormalized` depending on
+  `--normalize`). This matters because the Kaiser operator
+  is only guaranteed non-negative for true mono-component
+  AM-FM signals; on real-world mixed / noisy series the
+  per-source mean can drift slightly negative, in which
+  case "most-energetic" is more naturally read as
+  "largest magnitude" rather than "largest signed value".
+
+  Concretely:
+
+  - `--sort tkeo-desc` ranks `+10` above `-100` (signed).
+  - `--sort abs-desc` ranks `-100` above `+10` (magnitude).
+
+  The pre-existing four sort modes (`tkeo-asc`,
+  `tkeo-desc`, `rows`, `source`) keep their exact prior
+  semantics; default sort is unchanged (`tkeo-asc`).
+  Tiebreak across all six modes remains `source` asc.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,706
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-teager-kaiser --sort abs-desc
+  per-source row-token Teager-Kaiser energy mean (sorted by abs-desc; ties: source asc)
+  source       rows  sigma        tkeoMean
+  -----------  ----  -----------  ------------------
+  claude-code   299  17605167.00  181729574266352.81
+  codex          64  14252148.98  152260567998039.09
+  opencode      356  12969698.51   67912263643754.73
+  openclaw      462   4846236.29   15959265315975.05
+  hermes        192    967511.72     822308397670.58
+  vscode-XXX    333     14933.73          184179236.15
+  ```
+
+  Reading the live smoke: on this dataset every per-source
+  `tkeoMean` is positive (confirmed by the v0.6.138 smoke
+  output), so `--sort abs-desc` produces an order
+  identical to `--sort tkeo-desc`. The new sort modes
+  become diagnostically distinct only when at least one
+  source returns a negative `tkeoMean`, which signals
+  non-AM-FM structure in that source's token-count
+  cadence — a future operator workflow once we observe
+  such a source.
+
+- 4 new unit tests: abs-desc puts largest |tkeo| first,
+  abs-asc puts smallest |tkeo| first, abs-* ordering
+  matches tkeo-* when all values are non-negative,
+  invalid sort still throws after the sort-set expansion.
+
+  Test count: **3001 -> 3005** (+4 in this refinement,
+  +72 cumulative since baseline 2933).
+
 ## 0.6.139 — 2026-04-28
 
 ### Added
