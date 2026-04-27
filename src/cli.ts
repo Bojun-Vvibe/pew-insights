@@ -10817,6 +10817,11 @@ program
     '1',
   )
   .option(
+    '--min-abs-z <f>',
+    'drop sources whose absolute Z statistic is strictly below f; cohort selector on the direction-agnostic non-randomness *effect size* (how many null-stddevs R is from E[R], regardless of how that translates to a tail probability). f must be a finite, non-negative number. Combined with --max-p both gates apply (logical AND); each gate counts its own drops separately. (default 0, no floor)',
+    '0',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
@@ -10834,6 +10839,7 @@ program
         source?: string;
         minRows: string;
         maxP: string;
+        minAbsZ: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10853,6 +10859,12 @@ program
         if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
           throw new Error(
             `--max-p must be a finite number in (0, 1] (got ${opts.maxP})`,
+          );
+        }
+        const minAbsZ = Number.parseFloat(opts.minAbsZ);
+        if (!Number.isFinite(minAbsZ) || minAbsZ < 0) {
+          throw new Error(
+            `--min-abs-z must be a finite, non-negative number (got ${opts.minAbsZ})`,
           );
         }
         let top: number | null = null;
@@ -10883,6 +10895,7 @@ program
           source: opts.source ?? null,
           minRows,
           maxP,
+          minAbsZ,
           top,
           sort: opts.sort as
             | 'z-asc'

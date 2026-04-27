@@ -127,6 +127,47 @@ export interface SourceRowTokenRunsTestOptions {
    */
   maxP?: number;
   /**
+   * Drop sources whose **absolute Z statistic** is strictly
+   * **below** this threshold; cohort selector on the direction-
+   * agnostic non-randomness *effect size*. Must be a finite,
+   * non-negative number. Default 0 (no floor).
+   *
+   * Why this is genuinely orthogonal to `--max-p` even though Z
+   * and p are monotonically related under the normal-approx:
+   *
+   *   - `--max-p f` filters on the **tail probability under H0**
+   *     — a hypothesis-testing gate. It is *sample-size aware*:
+   *     a source with `|Z| = 1.6` and `n = 9` survives `--max-p
+   *     0.2` (its p-value is ~0.11) but a source with the same
+   *     `|Z| = 1.6` and `n = 500` *also* survives at the same
+   *     threshold (p still ~0.11). The two are reported as
+   *     equally "marginally significant" even though the larger
+   *     sample is pinning down a much smaller true effect.
+   *   - `--min-abs-z g` filters on the **normalised effect size
+   *     itself** — how many null-stddevs is `R` from `E[R]`,
+   *     regardless of how that translates to a tail probability.
+   *     Useful when the operator wants "show me sources whose
+   *     run-count is at least 2 sigma off its null expectation,
+   *     period" rather than "show me sources whose null
+   *     hypothesis I can reject at p < f".
+   *
+   * Under the normal-approx these two scalars are
+   * monotonically related (`p = 2*(1 - Phi(|Z|))`), so for a
+   * given pair `(g, f)` *one filter is strictly stronger than
+   * the other* — but the operator-facing semantics differ:
+   * `--min-abs-z` is the more conservative *effect-size* gate
+   * familiar from physics / signal-detection contexts;
+   * `--max-p` is the *Neyman-Pearson* gate familiar from
+   * frequentist hypothesis testing. Both are documented
+   * thresholds; offering both lets the operator pick the
+   * vocabulary that matches their downstream use.
+   *
+   * Combined with `--max-p`, both gates are applied (logical
+   * AND); each surviving source must clear both. Counted
+   * separately so the operator sees which gate dropped what.
+   */
+  minAbsZ?: number;
+  /**
    * Cap the per-source table to the top N rows after sort + filters.
    * Suppressed rows surface as `droppedBelowTopCap`. Default null.
    */
@@ -181,6 +222,7 @@ export interface SourceRowTokenRunsTestReport {
   source: string | null;
   minRows: number;
   maxP: number;
+  minAbsZ: number;
   top: number | null;
   sort: SourceRowTokenRunsTestSort;
   totalSources: number;
@@ -193,6 +235,7 @@ export interface SourceRowTokenRunsTestReport {
   droppedSingleClass: number;
   droppedBelowMinRows: number;
   droppedAboveMaxP: number;
+  droppedBelowMinAbsZ: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenRunsTestRow[];
 }
@@ -252,6 +295,12 @@ export function buildSourceRowTokenRunsTest(
   if (!Number.isFinite(maxP) || maxP <= 0 || maxP > 1) {
     throw new Error(
       `maxP must be a finite number in (0, 1] (got ${opts.maxP})`,
+    );
+  }
+  const minAbsZ = opts.minAbsZ ?? 0;
+  if (!Number.isFinite(minAbsZ) || minAbsZ < 0) {
+    throw new Error(
+      `minAbsZ must be a finite, non-negative number (got ${opts.minAbsZ})`,
     );
   }
   const top = opts.top ?? null;
@@ -401,8 +450,13 @@ export function buildSourceRowTokenRunsTest(
   }
 
   let droppedAboveMaxP = 0;
+  let droppedBelowMinAbsZ = 0;
   const survived: SourceRowTokenRunsTestRow[] = [];
   for (const row of allRows) {
+    if (minAbsZ > 0 && Math.abs(row.z) < minAbsZ) {
+      droppedBelowMinAbsZ += 1;
+      continue;
+    }
     if (maxP < 1 && row.pValue > maxP) {
       droppedAboveMaxP += 1;
       continue;
@@ -436,6 +490,7 @@ export function buildSourceRowTokenRunsTest(
     source: sourceFilter,
     minRows,
     maxP,
+    minAbsZ,
     top,
     sort,
     totalSources,
@@ -448,6 +503,7 @@ export function buildSourceRowTokenRunsTest(
     droppedSingleClass,
     droppedBelowMinRows,
     droppedAboveMaxP,
+    droppedBelowMinAbsZ,
     droppedBelowTopCap,
     sources: finalSources,
   };

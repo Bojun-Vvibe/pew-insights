@@ -8638,12 +8638,12 @@ export function renderSourceRowTokenRunsTest(
   lines.push(chalk.bold.cyan('pew-insights source-row-token-runs-test'));
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    max-p: ${r.maxP.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    max-p: ${r.maxP.toFixed(4)}    min-abs-z: ${r.minAbsZ.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAtMedian)} ties at median, ${formatNumber(r.droppedSingleClass)} single-class sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAboveMaxP)} above max-p, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedAtMedian)} ties at median, ${formatNumber(r.droppedSingleClass)} single-class sources, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinAbsZ)} below min-abs-z, ${formatNumber(r.droppedAboveMaxP)} above max-p, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
     ),
   );
   if (r.windowStart || r.windowEnd) {

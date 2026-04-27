@@ -388,3 +388,89 @@ test('runs-test: orthogonality witness — same marginal distribution, different
   assert.ok(Math.abs(altRow.z + sortedRow.z) < 1e-12);
   assert.ok(sortedRow.z < 0 && altRow.z > 0);
 });
+
+test('runs-test: rejects bad minAbsZ', () => {
+  assert.throws(() => buildSourceRowTokenRunsTest([], { minAbsZ: -1 }));
+  assert.throws(() => buildSourceRowTokenRunsTest([], { minAbsZ: Number.NaN }));
+  assert.throws(() =>
+    buildSourceRowTokenRunsTest([], { minAbsZ: Number.POSITIVE_INFINITY }),
+  );
+});
+
+test('runs-test: --min-abs-z default 0 keeps every source (no behaviour change vs v0.6.101)', () => {
+  const queue: QueueLine[] = [
+    ...series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'mono'),
+    ...series([1, 10, 1, 1, 10, 10, 1, 10, 10, 1], 'rand'),
+  ];
+  const r = buildSourceRowTokenRunsTest(queue, { generatedAt: GEN });
+  assert.equal(r.minAbsZ, 0);
+  assert.equal(r.droppedBelowMinAbsZ, 0);
+  assert.equal(r.sources.length, 2);
+});
+
+test('runs-test: --min-abs-z drops sources whose |Z| < g, counts under droppedBelowMinAbsZ', () => {
+  const queue: QueueLine[] = [
+    ...series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'mono'), // |Z| ~ 2.683
+    ...series([1, 10, 1, 1, 10, 10, 1, 10, 10, 1], 'rand'), // |Z| ~ 0.671
+  ];
+  const r = buildSourceRowTokenRunsTest(queue, {
+    minAbsZ: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'mono');
+  assert.equal(r.droppedBelowMinAbsZ, 1);
+  assert.equal(r.droppedAboveMaxP, 0);
+});
+
+test('runs-test: --min-abs-z and --max-p combine via logical AND, with separate drop counters', () => {
+  const queue: QueueLine[] = [
+    ...series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'mono'), // |Z| ~ 2.683, p ~ 0.0073
+    ...series([1, 10, 1, 1, 10, 10, 1, 10, 10, 1], 'rand'), // |Z| ~ 0.671, p ~ 0.50
+  ];
+  // min-abs-z 2 alone -> only 'mono' survives, droppedBelowMinAbsZ=1
+  const r1 = buildSourceRowTokenRunsTest(queue, {
+    minAbsZ: 2,
+    generatedAt: GEN,
+  });
+  assert.deepEqual(r1.sources.map((s) => s.source), ['mono']);
+  assert.equal(r1.droppedBelowMinAbsZ, 1);
+  assert.equal(r1.droppedAboveMaxP, 0);
+
+  // max-p 0.05 alone -> only 'mono' survives, droppedAboveMaxP=1
+  const r2 = buildSourceRowTokenRunsTest(queue, {
+    maxP: 0.05,
+    generatedAt: GEN,
+  });
+  assert.deepEqual(r2.sources.map((s) => s.source), ['mono']);
+  assert.equal(r2.droppedAboveMaxP, 1);
+  assert.equal(r2.droppedBelowMinAbsZ, 0);
+
+  // Both together: 'rand' is killed by min-abs-z (gate runs first per impl).
+  // Logical AND: only 'mono' survives.
+  const r3 = buildSourceRowTokenRunsTest(queue, {
+    minAbsZ: 2,
+    maxP: 0.05,
+    generatedAt: GEN,
+  });
+  assert.deepEqual(r3.sources.map((s) => s.source), ['mono']);
+  // 'rand' gets counted under droppedBelowMinAbsZ (the first gate it hit).
+  // 'mono' clears both gates.
+  assert.equal(r3.droppedBelowMinAbsZ, 1);
+  assert.equal(r3.droppedAboveMaxP, 0);
+});
+
+test('runs-test: --min-abs-z = 0 is no-op even when --max-p is restrictive', () => {
+  const queue: QueueLine[] = [
+    ...series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'mono'),
+    ...series([1, 10, 1, 1, 10, 10, 1, 10, 10, 1], 'rand'),
+  ];
+  const r = buildSourceRowTokenRunsTest(queue, {
+    maxP: 0.05,
+    minAbsZ: 0,
+    generatedAt: GEN,
+  });
+  assert.equal(r.droppedBelowMinAbsZ, 0);
+  assert.equal(r.droppedAboveMaxP, 1);
+  assert.equal(r.sources.length, 1);
+});
