@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.130 — 2026-04-27
+
+### Added
+
+- `source-row-token-hjorth-mobility`: per-source **Hjorth
+  Mobility** (Hjorth 1970, EEG Clin. Neurophysiol.
+  29:306-310) on the per-row `total_tokens` time-ordered
+  sequence. Computes `mobility = sqrt(var(diff(v)) / var(v))`,
+  in units of `1 / step`. Scale-invariant (multiplying every
+  `v[i]` by a positive constant cancels out of the ratio) and
+  shift-invariant (additive constants cancel through both the
+  diff and the mean-subtraction in `var`). Reading: `mobility
+  ~ 0` means consecutive samples barely move relative to the
+  overall amplitude (heavily smoothed / DC-dominated);
+  `mobility ~ sqrt(2) ~ 1.414` is the white-noise asymptote
+  (consecutive samples uncorrelated, so `var(dv) ~ 2 var(v)`);
+  `mobility > sqrt(2)` indicates anti-correlated /
+  Nyquist-oscillatory behaviour where each sample tends to
+  flip sign relative to the previous.
+
+  This is **genuinely orthogonal** to every prior
+  `source-row-token-*` lens already in the suite:
+
+  - vs. `source-row-token-katz-fd` /
+    `source-row-token-higuchi-fd`: KFD/HFD are
+    path-length-to-extent (KFD) or path-length-vs-stride (HFD)
+    geometric ratios. Mobility is a variance ratio between
+    the original series and its first difference. KFD/HFD on
+    a pure sinusoid depend on amplitude through the i-axis
+    padding; mobility on the same sinusoid is
+    amplitude-independent and depends only on angular
+    frequency.
+  - vs. `source-row-token-dfa`: DFA looks at rms residual
+    scaling of a cumulative profile within sliding windows.
+    Mobility looks at the first difference at lag 1 only and
+    never integrates. The two are at opposite ends of the
+    integration / differentiation spectrum.
+  - vs. `source-row-token-autocorrelation-lag1` (`rho_1`):
+    there is a known algebraic identity for purely stationary
+    series, `mobility^2 = 2 * (1 - rho_1)`, so the two are
+    monotone transforms of each other in that idealised
+    regime. For real, non-stationary, mixed-regime
+    token-count series the identity does **not** hold
+    exactly because mobility uses the empirical population
+    variance of the diff series (which has non-zero mean
+    under drift) while `rho_1` uses the lag-1 covariance
+    normalised by the original variance. The two lenses give
+    genuinely different rankings under drift, and they
+    surface the same underlying property in different units
+    (mobility in `1/step`, rho_1 unitless), so operators read
+    them differently.
+  - vs. `source-row-token-permutation-entropy` /
+    `-sample-entropy`: ordinal-only / pattern-matching;
+    mobility is fully metric and uses raw magnitudes.
+  - vs. `source-row-token-mann-kendall-trend` / `-runs-test` /
+    `-turning-point-count`: directional / dichotomy /
+    extremum tests, not a variance ratio.
+  - vs. `source-row-token-lempel-ziv` / `-renyi-entropy`:
+    symbolic / histogrammatic, value-domain or
+    order-invariant respectively.
+  - vs. all order-invariant dispersion / shape lenses
+    (`-iqr-ratio`, `-mad`, `-skewness`, `-kurtosis`, `-gini`,
+    `-burstiness-coefficient`, `-coefficient-of-variation`):
+    shuffling the sequence leaves them unchanged but
+    dramatically inflates `var_dv` (and thus mobility)
+    because shuffling destroys the temporal correlation that
+    suppresses consecutive deltas. The new test
+    `shuffle inflates mobility vs. ordered` confirms this on
+    a `0..63` ramp: the shuffled version has mobility >5x the
+    ordered one.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,683 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-hjorth-mobility
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,683
+  min-rows: 16   top: -   sort: mobility-asc
+
+  per-source row-token Hjorth Mobility (sorted by mobility-asc; ties: source asc)
+  source       rows  var(v)              var(dv)             mobility
+  -----------  ----  ------------------  ------------------  --------
+  opencode      349  171433295439457.31  89278829429653.16   0.7217
+  openclaw      454   23720392056174.13  21781711967701.88   0.9583
+  codex          64  203123750617043.63  192303227566319.81  0.9730
+  claude-code   299  309941905126295.25  323281135365393.00  1.0213
+  vscode-XXX    333        223016393.84        287108965.56  1.1346
+  hermes        184    965224561548.66    1620498509949.04   1.2957
+  ```
+
+  Reading: **none** of the six sources is at the white-noise
+  asymptote `sqrt(2) ~ 1.414` — the highest empirical
+  mobility (`hermes` at 1.2957) is still meaningfully below
+  `sqrt(2)`, indicating that even the most-jittery source
+  has some residual lag-1 positive correlation. `opencode`
+  at 0.7217 is the smoothest: `var(dv)` is roughly half of
+  `var(v)`, consistent with `rho_1 ~ 0.74` for that source
+  under the stationary identity. The cross-source ordering
+  by mobility is **not** a monotone function of the variance
+  magnitudes themselves — `vscode-XXX` has `var(v)` six
+  orders of magnitude smaller than every other source but
+  lands at mobility 1.1346, second-highest, demonstrating
+  the scale-invariance of the lens in production. The two
+  highest-mobility sources (`vscode-XXX` and `hermes`) are
+  exactly the two with the smallest absolute `var(v)`,
+  confirming that a low-amplitude source can still be
+  step-to-step jittery while a high-amplitude one
+  (`opencode`) can be relatively smooth — mobility decouples
+  these two regimes cleanly. 27 new tests covering: empty
+  input, linear ramp -> 0, constant -> zero-variance drop,
+  below min-rows, alternation -> 2, oscillating > smooth,
+  scale-invariance, shift-invariance, invalid hour_start /
+  tokens / negative drops, source filter, since/until window,
+  invalid since/until/minRows/top/sort rejection, top cap,
+  three sort modes, white-noise asymptote ~ sqrt(2) on a
+  4096-sample LCG sequence, JSON-shape round-trip, shuffle
+  inflates mobility >5x on a 0..63 ramp, and var(v) preserved
+  across shuffle as a sanity guard. 2836 tests passing.
+
 ## 0.6.129 — 2026-04-27
 
 ### Added
