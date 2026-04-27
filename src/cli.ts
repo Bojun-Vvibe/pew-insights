@@ -116,6 +116,7 @@ import {
   renderSourceRowTokenHiguchiFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
+  renderSourceRowTokenDfa,
   renderSourceRowTokenMannKendallTrend,
   renderSourceRowTokenHurstRs,
   renderSourcePeakHourOfDayArgmax,
@@ -294,6 +295,7 @@ import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenLempelZiv } from './sourcerowtokenlempelziv.js';
 import { buildSourceRowTokenRenyiEntropy } from './sourcerowtokenrenyientropy.js';
+import { buildSourceRowTokenDfa } from './sourcerowtokendfa.js';
 import { buildSourceRowTokenMannKendallTrend } from './sourcerowtokenmannkendalltrend.js';
 import { buildSourceRowTokenHurstRs } from './sourcerowtokenhurstrs.js';
 import { buildSourcePeakHourOfDayArgmax } from './sourcepeakhourofdayargmax.js';
@@ -11892,6 +11894,139 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenRenyiEntropy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-dfa')
+  .description(
+    "Per-source DFA-1 alpha exponent (Peng et al. 1994, Phys. Rev. E 49:1685-1689) on the per-row total_tokens time-ordered sequence. Integrate v - mean to a cumulative profile Y, split into non-overlapping windows of size s, OLS-detrend each window, take the rms residual F(s); alpha is the OLS slope of log F(s) vs log s. alpha ~ 0.5 = uncorrelated noise; alpha < 0.5 = anti-persistent; 0.5 < alpha < 1 = persistent / long-range positive correlations; alpha = 1 = 1/f noise; alpha = 1.5 = Brownian; alpha > 1.5 = drift-dominated. Genuinely orthogonal to source-row-token-hurst-rs (no detrending of cumulative deviations vs. local linear detrending of cumulative profile - coincide only for trend-free fBm), to source-row-token-higuchi-fd (arc length on raw values vs. detrended fluctuation on cumulative profile - opposite ends of the integration ladder), to permutation-entropy / sample-entropy / lempel-ziv (ordinal / single-scale tolerance / symbolic vs. multi-scale value-domain), to mann-kendall / runs / turning-point (directional / dichotomy / extremum), to autocorr-lag1 (single-lag linear), to renyi-entropy (order-invariant histogram), and to all order-invariant dispersion / shape lenses.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--scale-min <n>',
+    'minimum window size s (integer >= 4). (default 4)',
+    '4',
+  )
+  .option(
+    '--scale-max <n>',
+    'maximum window size s. If omitted, defaults to floor(N/4) per source. Integer >= scale-min*2.',
+  )
+  .option(
+    '--min-scales <n>',
+    'minimum number of usable scales required to estimate alpha. Integer >= 3. (default 4)',
+    '4',
+  )
+  .option(
+    '--min-windows-per-scale <n>',
+    'minimum number of windows per scale required for that scale to enter the regression. Integer >= 2. (default 4)',
+    '4',
+  )
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4*scale-min. (default 32)',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'alpha-asc' (default; most anti-persistent first) | 'alpha-desc' (drift-dominated first) | 'rows' | 'source'",
+    'alpha-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        scaleMin: string;
+        scaleMax?: string;
+        minScales: string;
+        minWindowsPerScale: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const scaleMin = Number.parseInt(opts.scaleMin, 10);
+        if (!Number.isInteger(scaleMin) || scaleMin < 4) {
+          throw new Error(`--scale-min must be an integer >= 4 (got ${opts.scaleMin})`);
+        }
+        let scaleMax: number | null = null;
+        if (opts.scaleMax != null) {
+          const sm = Number.parseInt(opts.scaleMax, 10);
+          if (!Number.isInteger(sm) || sm < scaleMin * 2) {
+            throw new Error(
+              `--scale-max must be an integer >= scale-min*2 (=${scaleMin * 2}) (got ${opts.scaleMax})`,
+            );
+          }
+          scaleMax = sm;
+        }
+        const minScales = Number.parseInt(opts.minScales, 10);
+        if (!Number.isInteger(minScales) || minScales < 3) {
+          throw new Error(
+            `--min-scales must be an integer >= 3 (got ${opts.minScales})`,
+          );
+        }
+        const minWindowsPerScale = Number.parseInt(opts.minWindowsPerScale, 10);
+        if (!Number.isInteger(minWindowsPerScale) || minWindowsPerScale < 2) {
+          throw new Error(
+            `--min-windows-per-scale must be an integer >= 2 (got ${opts.minWindowsPerScale})`,
+          );
+        }
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4 * scaleMin) {
+          throw new Error(
+            `--min-rows must be an integer >= 4*scale-min (=${4 * scaleMin}) (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['alpha-asc', 'alpha-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenDfa(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          scaleMin,
+          scaleMax,
+          minScales,
+          minWindowsPerScale,
+          minRows,
+          top,
+          sort: opts.sort as 'alpha-asc' | 'alpha-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenDfa(report) + '\n');
         }
       } catch (e) {
         die(e);

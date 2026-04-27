@@ -9279,3 +9279,77 @@ export function renderSourceRowTokenLempelZiv(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenDfaReport,
+  SourceRowTokenDfaRow,
+} from './sourcerowtokendfa.js';
+
+export function renderSourceRowTokenDfa(
+  r: SourceRowTokenDfaReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-dfa'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    scaleMin: ${r.scaleMin}    scaleMax: ${r.scaleMax ?? '\u2014'}    minScales: ${r.minScales}    minWin/scale: ${r.minWindowsPerScale}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (sigma=0), ${formatNumber(r.droppedTooFewScales)} too-few-scales (<minScales usable s), ${formatNumber(r.clampedBelow0)} clamped below 0, ${formatNumber(r.clampedAbove2)} clamped above 2, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DFA-1 alpha exponent (Peng et al. 1994) on the per-row total_tokens time-ordered sequence. Integrate v - mean to a profile Y, split into non-overlapping windows of size s, OLS-detrend each window, take the rms residual F(s); alpha is the OLS slope of log F(s) vs log s. alpha ~ 0.5 = uncorrelated noise; alpha < 0.5 = anti-persistent; 0.5 < alpha < 1 = persistent (long-range positive correlations); alpha = 1 = 1/f noise; alpha = 1.5 = Brownian; alpha > 1.5 = drift-dominated. Genuinely orthogonal to hurst-rs (no detrending vs. local linear detrending), to higuchi-fd (arc length on raw values vs. detrended fluctuation on cumulative profile), to permutation-entropy / sample-entropy / lempel-ziv / runs / mann-kendall / turning-point / autocorr-lag1 / renyi-entropy and to all order-invariant dispersion / shape lenses.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token DFA-1 alpha (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'sigma',
+    's_min',
+    's_max',
+    's_used',
+    's_drop',
+    'alpha',
+    'alphaRaw',
+    'R^2',
+  ];
+  const rows: string[][] = r.sources.map((s: SourceRowTokenDfaRow) => [
+    s.source,
+    formatNumber(s.rowsKept),
+    s.sigma.toFixed(2),
+    formatNumber(s.scaleMinUsed),
+    formatNumber(s.scaleMaxUsed),
+    formatNumber(s.scalesUsed),
+    formatNumber(s.scalesDropped),
+    s.alpha.toFixed(4),
+    s.alphaRaw.toFixed(4),
+    s.r2.toFixed(4),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
