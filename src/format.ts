@@ -9673,6 +9673,76 @@ import type {
   SourceRowTokenApproximateEntropyReport,
   SourceRowTokenApproximateEntropyRow,
 } from './sourcerowtokenapproximateentropy.js';
+import type {
+  SourceRowTokenTeagerKaiserReport,
+  SourceRowTokenTeagerKaiserRow,
+} from './sourcerowtokenteagerkaiser.js';
+
+export function renderSourceRowTokenTeagerKaiser(
+  r: SourceRowTokenTeagerKaiserReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-teager-kaiser'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    normalize: ${r.normalize}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroVariance)} zero-variance (constant series), ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source mean Teager-Kaiser Energy Operator (Kaiser 1990, ICASSP-90 vol.1 pp.381-384) on the per-row total_tokens time-ordered sequence. psi(x_n) = x_n^2 - x_{n-1} * x_{n+1}; for x_n = A cos(omega n + phi) yields ~ A^2 * sin^2(omega), simultaneously coupling local amplitude AND frequency in a single 3-point computation. Distinct from variance (psi is a 3-point cross product, not a centered second moment), from autocorrelation (non-linear), from hjorth-mobility/complexity (variance ratios on differences, not energy products), from entropy/fractal/ordinal lenses (TKEO is a deterministic real-valued energy, not an information-theoretic or scaling quantity), and from all order-invariant dispersion / shape lenses (TKEO is annihilated by reordering since it depends on three consecutive samples).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Teager-Kaiser energy mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = r.normalize
+    ? ['source', 'rows', 'sigma', 'tkeoMean', 'tkeoMean/sigma^2']
+    : ['source', 'rows', 'sigma', 'tkeoMean'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTeagerKaiserRow) => {
+      const base = [
+        s.source,
+        formatNumber(s.rowsKept),
+        s.sigma.toFixed(2),
+        s.tkeoMean.toFixed(2),
+      ];
+      if (r.normalize) {
+        base.push(
+          s.tkeoMeanNormalized === null
+            ? '\u2014'
+            : s.tkeoMeanNormalized.toFixed(4),
+        );
+      }
+      return base;
+    },
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenApproximateEntropy(
   r: SourceRowTokenApproximateEntropyReport,

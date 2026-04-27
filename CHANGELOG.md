@@ -2,6 +2,159 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.138 — 2026-04-28
+
+### Added
+
+- `source-row-token-teager-kaiser`: per-source **mean
+  Teager-Kaiser Energy Operator (TKEO)** of Kaiser (1990,
+  "On a simple algorithm to calculate the 'energy' of a
+  signal", ICASSP-90 vol.1 pp.381-384) on the per-row
+  `total_tokens` time-ordered sequence. The discrete
+  Kaiser operator is `psi(x_n) = x_n^2 - x_{n-1} * x_{n+1}`
+  for interior samples `n in [1, N-2]`; for a pure tone
+  `x_n = A cos(omega n + phi)` it yields
+  `psi ~ A^2 * sin^2(omega)`, i.e. it **simultaneously
+  couples local amplitude AND local frequency** in a single
+  3-point computation. We report the arithmetic mean of
+  psi over the `n - 2` interior samples per source.
+
+  Flags: `--since`, `--until`, `--source`, `--min-rows`
+  (>= 3, default 8), `--normalize` (divide by sigma^2 to
+  yield an amplitude-invariant proxy for instantaneous
+  frequency-squared), `--top`, `--sort {tkeo-asc | tkeo-desc
+  | rows | source}`, `--json`. With `--normalize`, the
+  sort key applies to `tkeoMeanNormalized = tkeoMean /
+  sigma^2`. Constant series surface under
+  `droppedZeroVariance`. ApEn-style `degenerateNoMatches`
+  failure mode does **not** apply: TKEO is a deterministic
+  3-point real-valued operator with no probability ratio.
+
+  **How this lens is mathematically orthogonal to the
+  existing battery** (verified against the full
+  `source-row-token-*` set in the suite — none implement
+  TKEO):
+
+  - vs. `-coefficient-of-variation`, `-mad`, `-iqr-ratio`,
+    `-skewness`, `-kurtosis`, `-gini`,
+    `-burstiness-coefficient`: all order-invariant. TKEO
+    is annihilated by reordering — it lives entirely in
+    the temporal-adjacency structure that those lenses
+    discard.
+  - vs. `-autocorrelation-lag1`: linear lag-1 cross product
+    after centering. TKEO is a **non-linear** product of
+    three consecutive samples with the centre squared.
+  - vs. `-hjorth-mobility` / `-hjorth-complexity`: variance
+    **ratios** on differenced series. TKEO is a per-sample
+    energy product, not a difference-of-variances.
+  - vs. `-zero-crossing-rate`: pure single-scale sign-count;
+    carries no amplitude information. TKEO is fully metric.
+  - vs. `-approximate-entropy`, `-sample-entropy`,
+    `-permutation-entropy`, `-renyi-entropy`: conditional /
+    ordinal / distributional irregularity. TKEO is a
+    deterministic real-valued energy, not an
+    information-theoretic quantity.
+  - vs. `-lempel-ziv`: median-binarised factor count over
+    a 2-letter alphabet — value-blind beyond sign. TKEO
+    keeps the full real-valued metric structure and squares
+    it.
+  - vs. `-dfa`, `-hurst-rs`: multi-scale memory scaling
+    exponents (slope of log-log fluctuation plots). TKEO
+    is a single-scale pointwise operator averaged.
+  - vs. `-higuchi-fd`, `-katz-fd`, `-petrosian-fd`:
+    path-length / fractal-dimension scalars that grow with
+    ruggedness but do not square sample magnitudes. TKEO
+    grows quadratically in amplitude.
+  - vs. `-mann-kendall-trend`, `-runs-test`,
+    `-turning-point-count`: directional / dichotomy /
+    extremum tests on signs only. TKEO uses signed real
+    values multiplicatively.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,706
+  rows, 6 sources; one source name redacted to `vscode-XXX`
+  for policy compliance):
+
+  ```
+  pew-insights source-row-token-teager-kaiser --sort tkeo-desc
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,706
+  min-rows: 8   normalize: false   sort: tkeo-desc
+  dropped: ... 0 below min-rows, 0 zero-variance, 0 degenerate, 0 below top cap
+
+  per-source row-token Teager-Kaiser energy mean (sorted by tkeo-desc; ties: source asc)
+  source       rows  sigma        tkeoMean
+  -----------  ----  -----------  ------------------
+  claude-code   299  17605167.00  181729574266352.81
+  codex          64  14252148.98  152260567998039.09
+  opencode      356  12974243.40   68058162797803.44
+  openclaw      462   4846362.91   15959409102309.25
+  hermes        192    968177.84     822736797698.95
+  vscode-XXX    333     14933.73          184179236.15
+  ```
+
+  ```
+  pew-insights source-row-token-teager-kaiser --normalize --sort tkeo-desc
+  as of: 2026-04-27   sources: 6 (shown 6)   rows: 1,706
+  min-rows: 8   normalize: true   sort: tkeo-desc
+
+  per-source row-token Teager-Kaiser energy mean (sorted by tkeo-desc; ties: source asc)
+  source       rows  sigma        tkeoMean            tkeoMean/sigma^2
+  -----------  ----  -----------  ------------------  ----------------
+  hermes        192    968177.84     822736797698.95            0.8777
+  vscode-XXX    333     14933.73          184179236.15           0.8259
+  codex          64  14252148.98  152260567998039.09             0.7496
+  openclaw      462   4846362.91   15959409102309.25             0.6795
+  claude-code   299  17605167.00  181729574266352.81             0.5863
+  opencode      356  12974243.40   68058162797803.44             0.4043
+  ```
+
+  Reading the live smoke: the unnormalised ranking is
+  **dominated by amplitude scale** — `claude-code` /
+  `codex` / `opencode` lead because they emit the
+  largest-amplitude token-count series (sigma in the
+  millions). `vscode-XXX`, with sigma ~ 1.5e4, sits 6
+  orders of magnitude below at the unnormalised tail.
+  Switching on `--normalize` (dividing by sigma^2)
+  **completely re-orders the table**: `hermes` and
+  `vscode-XXX` jump to the top because their normalised
+  energy ~ 0.88 / 0.83 means their token-count series
+  carry comparatively **more high-frequency oscillatory
+  energy per unit variance** than `opencode` (0.40), which
+  drops to last. This is the classic Kaiser-operator
+  diagnostic: amplitude-scale and frequency-content can
+  disagree, and the operator quantifies both. None of the
+  existing dispersion (-mad, -iqr-ratio,
+  -coefficient-of-variation), shape (-skewness, -kurtosis,
+  -gini), entropy (-approximate-entropy, -sample-entropy,
+  -permutation-entropy, -renyi-entropy), fractal
+  (-higuchi-fd, -katz-fd, -petrosian-fd, -dfa, -hurst-rs),
+  or ordering (-mann-kendall-trend, -runs-test,
+  -turning-point-count, -zero-crossing-rate) lenses
+  produces this particular re-ranking — which is the
+  empirical confirmation that TKEO is genuinely
+  orthogonal information.
+
+- 29 new unit tests covering: empty input default,
+  constant-series zero-variance drop, too-few-rows
+  drop, **algebraic identity** (linear ramp `x_n = n`
+  -> `psi == 1` exactly), high-frequency cosine yields
+  positive mean, **closed-form check** (pure cosine of
+  known omega yields `~ A^2 sin^2(omega)` within 15%),
+  shuffle-sensitivity (orthogonality vs. dispersion
+  lenses), `--normalize` semantics (= tkeoMean / sigma^2),
+  null when not normalised, minRows validation (>= 3,
+  integer), sort validation, top validation, since/until
+  validation, bad-hour_start counting, bad-tokens counting,
+  negative-tokens counting, source-filter exclusion,
+  window filtering, all 4 sort modes including the new
+  tkeo-desc / tkeo-asc, top cap with droppedBelowTopCap,
+  empty-source -> "unknown" coercion, **scaling property**
+  (`x -> k*x` => `tkeoMean -> k^2 * tkeoMean`), temporal
+  re-sort invariance under reverse input, custom minRows,
+  full report-shape check, multi-source independence.
+
+  Test count: **2965 -> 2994** (+29 in this lens, +61
+  cumulative since baseline 2933).
+
 ## 0.6.137 — 2026-04-28
 
 ### Added

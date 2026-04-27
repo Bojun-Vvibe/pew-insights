@@ -119,6 +119,7 @@ import {
   renderSourceRowTokenHjorthComplexity,
   renderSourceRowTokenZeroCrossingRate,
   renderSourceRowTokenApproximateEntropy,
+  renderSourceRowTokenTeagerKaiser,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -299,6 +300,7 @@ import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpoi
 import { buildSourceRowTokenPermutationEntropy } from './sourcerowtokenpermutationentropy.js';
 import { buildSourceRowTokenSampleEntropy } from './sourcerowtokensampleentropy.js';
 import { buildSourceRowTokenApproximateEntropy } from './sourcerowtokenapproximateentropy.js';
+import { buildSourceRowTokenTeagerKaiser } from './sourcerowtokenteagerkaiser.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -12708,6 +12710,93 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenApproximateEntropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-teager-kaiser')
+  .description(
+    "Per-source mean Teager-Kaiser Energy Operator (Kaiser 1990, ICASSP-90 vol.1 pp.381-384) on the per-row total_tokens time-ordered sequence. psi(x_n) = x_n^2 - x_{n-1} * x_{n+1}; for x_n = A cos(omega n + phi) yields ~ A^2 * sin^2(omega), simultaneously coupling local amplitude AND frequency in a single 3-point computation. Distinct from variance (psi is a 3-point cross product, not a centered second moment), from autocorrelation (non-linear, three samples), from hjorth-mobility/complexity (variance ratios on differences, not energy products), from entropy/fractal/ordinal lenses (TKEO is a deterministic real-valued energy, not an information-theoretic or scaling quantity), and from all order-invariant dispersion / shape lenses (TKEO is annihilated by reordering). Optional --normalize divides by sigma^2 to yield an amplitude-invariant proxy for instantaneous frequency-squared.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 3 (default 8)',
+    '8',
+  )
+  .option(
+    '--normalize',
+    'divide tkeoMean by sigma^2 (amplitude-invariant proxy for instantaneous frequency-squared); affects sort key when sort is tkeo-asc/tkeo-desc',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'tkeo-asc' (default; quietest first) | 'tkeo-desc' (most-energetic first) | 'rows' | 'source'. With --normalize, the sort key uses tkeoMeanNormalized.",
+    'tkeo-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        normalize?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 3) {
+          throw new Error(
+            `--min-rows must be an integer >= 3 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['tkeo-asc', 'tkeo-desc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTeagerKaiser(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          normalize: opts.normalize ?? false,
+          top,
+          sort: opts.sort as 'tkeo-asc' | 'tkeo-desc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenTeagerKaiser(report) + '\n',
           );
         }
       } catch (e) {
