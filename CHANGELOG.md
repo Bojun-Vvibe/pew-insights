@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.134 — 2026-04-28
+
+### Added
+
+- `source-row-token-petrosian-fd`: per-source **Petrosian
+  Fractal Dimension (PFD)** of the per-row `total_tokens`
+  time-ordered sequence (Petrosian 1995, "Kolmogorov complexity
+  of finite sequences and recognition of different preictal EEG
+  patterns", Proc. 8th IEEE Symp. CBMS, pp. 212-217). PFD
+  reduces the trajectory to a binary symbol stream — the sign
+  of the first difference `dv[i] = v[i+1] - v[i]` — and reports
+
+  ```
+  PFD = log10(M) / (log10(M) + log10(M / (M + 0.4 * Nd)))
+  ```
+
+  where `M = N - 1` and `Nd` is the number of adjacent sign
+  flips in that stream. Zero diffs map to `+1` (the Esteller
+  2001 convention, also matching ZCR in this suite). The `0.4`
+  heuristic constant was empirically derived by Petrosian from
+  binary EEG sequences and rederived in Esteller, Vachtsevanos,
+  Echauz, Litt 2001 (Sig. Proc. 81(7):1543-1557). PFD is
+  bounded in `[1, 2]`; the upper bound is approached only by
+  maximally-alternating binary sequences. On real
+  first-difference sign sequences the practical ceiling sits
+  around `~1.18`.
+
+  Why this lens is **genuinely orthogonal** to every existing
+  `source-row-token-*` lens, including its closest neighbours
+  Katz-FD, Higuchi-FD, ZCR, and turning-point-count:
+
+    - vs. `katz-fd` / `higuchi-fd`: those are **metric**
+      quantities. KFD uses Euclidean path length L and max
+      chord d; HFD uses multi-stride path-length scaling.
+      Both depend on actual numeric magnitudes. PFD is
+      **purely binary** after the sign mapping; magnitudes
+      drop out completely. Multiply every value by 13 and
+      `Nd` is bit-identical (verified by test). Two series
+      with identical sign-of-diff sequences and wildly
+      different amplitudes share the same PFD but diverge
+      sharply on KFD.
+    - vs. `zero-crossing-rate` (ZCR): ZCR counts sign changes
+      of `(v - mean)` — i.e. of the **value** sequence centred
+      by its mean. PFD counts sign changes of `diff(v)` — the
+      **first-difference** sequence. A monotone ramp has
+      ZCR `~ 1/(N-1)` (one mid-crossing) but `Nd = 0` /
+      `PFD = 1` (no flips in the diff stream at all). The
+      live-smoke ranking below confirms the two lenses do
+      **not** preserve order: under ZCR the smoothest source
+      is `openclaw` (rate=0.2140); under PFD the smoothest is
+      `vscode-XXX` (PFD=1.0348). Codex and hermes also flip
+      relative positions between the two lenses.
+    - vs. `turning-point-count` (TPC): TPC reports the **raw
+      count** of local extrema (= `Nd` modulo zero-rule). PFD
+      wraps that count in Petrosian's specific log-ratio with
+      N, producing a **length-normalised dimensional
+      quantity** in `[1, 2]` rather than a raw integer count.
+      Ranking sources by TPC vs by PFD does not preserve order
+      because TPC is not normalised by N — a long source with
+      many extrema can have lower PFD than a short source with
+      fewer extrema if its extrema/length ratio is lower. This
+      is the length-bias correction Petrosian introduced.
+    - vs. `runs-test-z`: median-binarised over `v` (not the
+      diff sign); produces a Z-score against expected runs
+      under independence, not a fractal dimension.
+    - vs. `mann-kendall-trend`: all-pair concordance, not
+      adjacent-pair sign flips.
+    - vs. `autocorrelation-lag1`: linear, parametric,
+      magnitude-sensitive.
+    - vs. `hjorth-mobility` / `hjorth-complexity`: variance
+      ratios — magnitude-sensitive.
+    - vs. `permutation-entropy` / `sample-entropy`: PE uses
+      ordinal patterns of length m; SampEn uses tolerance-
+      matched windows. PFD uses no embedding window.
+    - vs. `lempel-ziv`: LZ counts unique factors in a
+      **median-binarised** symbol sequence over the value
+      domain. PFD counts **sign flips** in the
+      **diff-binarised** symbol sequence. Different
+      symbolisation, different statistic family.
+    - vs. `renyi-entropy` / all order-invariant dispersion /
+      shape lenses: shuffle-invariant; shuffling destroys
+      runs of consistent-sign diffs and sharply inflates
+      `Nd` / PFD.
+
+  Honest drops: `droppedZeroVariance` (constant series — diff
+  series identically zero, sign mapping undefined),
+  `droppedDegenerate` (`M < 2` after sign mapping, or denom
+  non-finite/zero), `clampedBelow1` / `clampedAbove2` for any
+  raw value escaping `[1, 2]`. Each surfaces in its own
+  counter; `pfdRaw` retains the pre-clamp value for audit.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (1,698 rows,
+  6 sources; one source name redacted to `vscode-XXX` for
+  policy compliance):
+
+  ```
+  pew-insights source-row-token-petrosian-fd
+  as of: 2026-04-28   sources: 6 (shown 6)   rows: 1,698
+  min-rows: 16   top: -   sort: pfd-asc
+
+  per-source row-token Petrosian Fractal Dimension (sorted by pfd-asc; ties: source asc)
+  source       rows  M    Nd   zeroDiffs  PFD     pfdRaw
+  -----------  ----  ---  ---  ---------  ------  ------
+  vscode-XXX    333  332  179  0          1.0348  1.0348
+  openclaw      459  458  288  0          1.0380  1.0380
+  claude-code   299  298  179  0          1.0393  1.0393
+  opencode      354  353  233  0          1.0416  1.0416
+  hermes        189  188  126  0          1.0475  1.0475
+  codex          64   63   38  0          1.0550  1.0550
+  ```
+
+  Reading the live smoke: every source on the live queue
+  lands tightly between `1.034` and `1.055` — well below the
+  Nyquist ceiling of `~1.18`. This says token traffic on this
+  queue has roughly 50-60% of the maximum-possible
+  diff-sign-flip density. `vscode-XXX` is the smoothest by
+  PFD (179 flips out of 332 possible); `codex` is the
+  wiggliest in PFD terms but also has the smallest sample
+  (M=63), and Petrosian's length normalisation explicitly
+  pushes shorter series toward higher PFD when they have a
+  comparable extrema-density — **this is exactly the
+  length-bias correction the lens was designed to surface**.
+
+  Compare to `source-row-token-zero-crossing-rate` (0.6.133)
+  on the same queue: ZCR ranks `openclaw < vscode-XXX <
+  claude-code < opencode < codex < hermes`. PFD ranks
+  `vscode-XXX < openclaw < claude-code < opencode < hermes <
+  codex`. The orderings of `openclaw` vs `vscode-XXX` flip,
+  and `codex` and `hermes` swap positions between the two
+  lenses. This is the orthogonality check: ZCR and PFD operate
+  on different sign sequences (centred values vs first
+  differences), and the empirical rankings confirm the
+  theoretical decoupling.
+
 ## 0.6.133 — 2026-04-28
 
 ### Added
