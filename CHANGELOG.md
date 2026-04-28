@@ -2,6 +2,150 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.181 — 2026-04-28
+
+### Added
+
+- New subcommand
+  **`source-row-token-coefficient-of-quartile-deviation`** —
+  per-source coefficient of quartile deviation (CQD) of the
+  per-row `total_tokens` distribution.
+
+  For each source, given the type-7 (linear-interpolation)
+  quantiles `q1 = Q(0.25)` and `q3 = Q(0.75)`, the
+  coefficient of quartile deviation is
+
+      CQD = (q3 - q1) / (q3 + q1)
+
+  For non-negative data (which `total_tokens` always is — we
+  drop negative rows under `droppedNegativeTokens`), CQD lies
+  in `[0, 1]`:
+
+  - `CQD = 0`  iff `q1 = q3` (the central 50 % collapses to
+                a single value).
+  - `CQD = 1`  iff `q1 = 0` and `q3 > 0` (the lower
+                quartile sits on zero — at least 25 % of rows
+                carry zero tokens).
+
+  CQD is **scale-invariant** (rescaling all rows by `c > 0`
+  leaves it unchanged), **order-invariant** (depends only on
+  the multiset of values, not on row order), and **robust**
+  with 50 %-breakdown (a single arbitrarily-large row cannot
+  move it).
+
+  Genuinely orthogonal to:
+
+  - `source-row-token-iqr-ratio` reports `(q3 - q1) / median`
+    — same numerator (the IQR), but the denominator is the
+    **median (Q2)**, not `q3 + q1`. iqr-ratio is *unbounded
+    above* (it can exceed 1 for any source where the IQR is
+    wider than the median) and is *undefined* (forced null)
+    when median = 0. CQD is hard-bounded in `[0, 1]`, never
+    undefined for any source with `q3 > 0`, and treats
+    "lower quartile sits on zero" as the natural saturation
+    point `CQD = 1` rather than an undefined edge case. The
+    two ranks can disagree when one source has small median
+    vs another with median ~ q3.
+  - `source-row-token-bowley-skewness` uses the same three
+    quantiles `(q1, q2, q3)` to measure **direction** of
+    central skew. CQD is direction-blind: two sources can
+    share `CQD = 0.6` and have Bowley = `+0.8` vs `-0.8`.
+    Together CQD and Bowley partition the (q1, q2, q3)
+    signal cleanly: CQD = "how wide", Bowley = "which side".
+  - `source-row-token-coefficient-of-variation` is `sigma /
+    mu`, a **moment-based** dispersion (mean and stddev).
+    One huge row inflates both; CV is unbounded above, has
+    50 %-breakdown 0 %, and is dominated by extreme rows.
+    CQD uses only Q1 and Q3 (50 %-breakdown), is hard-
+    bounded in `[0, 1]`, and a single huge row leaves it
+    unchanged.
+  - `source-row-token-burstiness-coefficient` is
+    `(sigma - mu) / (sigma + mu)` in `[-1, +1]`. CQD has the
+    same `(b - a) / (b + a)` algebraic form but with order
+    statistics `(q3 - q1) / (q3 + q1)` instead of moments
+    `(sigma - mu) / (sigma + mu)`. The two ranks can
+    disagree because the moment-based form is dominated by
+    outliers and the quantile-based form is not.
+  - `source-row-token-mad / -gini / -kurtosis / -skewness`
+    (different functionals; mean-absolute-deviation,
+    Lorenz concentration, fourth- and third-standardised
+    moments — all answer different questions).
+  - all order-sensitive lenses (`-autocorrelation-lag1`,
+    `-runs-test`, `-turning-point-count`,
+    `-mann-kendall-trend`, `-permutation-entropy`,
+    `-sample-entropy`, `-hurst-rs`, `-dfa`, fractal family,
+    Hjorth family, spectral family, temporal family,
+    `-zero-crossing-rate`, `-teager-kaiser`, `-lempel-ziv`,
+    `-renyi-entropy`) — shuffling rows leaves CQD unchanged
+    but moves all of them.
+
+  `degenerate = true` marks sources with `q3 + q1 = 0`
+  (`q1 = q3 = 0`; CQD is mathematically `0/0`; reported as
+  `0` so the column stays numeric). The operator can read
+  `degenerate` to know the value was forced.
+
+  Options: `--since`, `--until`, `--source`, `--min-rows`
+  (>=4, default 4), `--min-q3` (default 0; the natural
+  cohort gate for a CQD lens because median can be 0 even
+  when q3 > 0), `--min-cqd` (in `[0, 1]`, default 0;
+  degenerate rows are dropped under `droppedDegenerate`
+  rather than `droppedBelowMinCqd` so the operator can
+  distinguish "filtered for dispersion" from "no usable CQD
+  signal at all"), `--top`, and
+  `--sort cqd-desc|cqd-asc|iqr-desc|q3-desc|rows|source`
+  with source-asc tiebreak. `--json` emits the full report.
+
+### Tests
+
+38 unit + invariant tests covering: empty input / option
+validation; worked numerics (n=9 type-7 -> q1=3, q3=7,
+CQD=0.4); all-equal positive series -> CQD=0 (NOT
+degenerate); all-zero series -> CQD=0 (degenerate=true);
+>=25 % zeros + q3 > 0 -> CQD=1 (saturation); q1=q3>0
+(constant central half) -> CQD=0; scale-invariance under
+c in {1e-3, 0.5, 1, 2, 17, 1e3, 1e6}; order-invariance
+under permutation; outlier-immunity (replacing the largest
+of n=8 with `1e12` leaves CQD unchanged because xs[7] does
+not enter type-7 Q3); `0 <= CQD <= 1` invariant on 20
+pseudo-random trials with deterministic LCG (mix of zeros
+and positives); all dropped counters; `--min-q3` and
+`--min-cqd` filters with degenerate-vs-min-cqd separation;
+since/until inclusive/exclusive; all 6 sort modes with
+source-asc tiebreak; identity `cqd === iqr / qsum` when
+not degenerate; determinism. Test count grew from 3659 ->
+3697 (+38).
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, 1,778 rows, 6 sources)
+
+`pew-insights source-row-token-coefficient-of-quartile-deviation --sort source`:
+
+```
+source          rows  q1            median       q3            iqr           qsum          cqd
+claude-code     299   728733.00     3319967.00   13677924.50   12949191.50   14406657.50   0.8988
+codex           64    1664220.25    7132861.00   18367242.00   16703021.75   20031462.25   0.8338
+hermes          216   190300.50     410854.00    1202927.25    1012626.75    1393227.75    0.7268
+openclaw        486   1330712.50    2512272.00   4957226.00    3626513.50    6287938.50    0.5767
+opencode        380   1960023.00    7812639.50   12432746.75   10472723.75   14392769.75   0.7276
+vscode-XXX      333   815.00        2319.00      5116.00       4301.00       5931.00       0.7252
+```
+
+Reading: every source has its central 50 % strongly
+dispersed, with `claude-code` the most extreme at
+`CQD ~ 0.90` (its IQR of ~13M tokens is fully 90 % of
+`q3 + q1`) — operationally, the typical "central" row
+varies enormously in magnitude. `codex` follows at
+`CQD ~ 0.83`, then a tight cluster `{hermes, opencode,
+vscode-XXX}` near `CQD ~ 0.72-0.73`, with `openclaw` the
+most concentrated of the six at `CQD ~ 0.58`. **No source
+saturates at CQD = 1** (none has >=25 % zero-token rows in
+its central half), and **no source is degenerate** (all
+have q3 + q1 > 0). The CQD ranking is genuinely different
+from the iqr-ratio ranking (which is unbounded and
+median-anchored): for example `vscode-XXX` and `hermes`
+share CQD ~ 0.72 here but their iqr/median values differ
+substantially because their medians sit at very different
+fractions of `q3 + q1`.
+
 ## 0.6.180 — 2026-04-28
 
 ### Added
