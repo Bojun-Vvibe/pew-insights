@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.170 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-skewness` refinement:
+  - New `--min-ts3 <x>` and `--max-ts3 <x>` filter flags
+    (any finite real, since `ts3` is unbounded in
+    principle). Sources with `ts3 < min-ts3` surface
+    under the new `droppedBelowMinTs3` counter; sources
+    with `ts3 > max-ts3` surface under
+    `droppedAboveMaxTs3`. Filters apply *before* sort
+    and *before* `--top` cap, so the sort window matches
+    the operator's stated `ts3` band and `--top N`
+    returns the top N within the band.
+  - Operator-relevant ergonomic bands:
+      - `--min-ts3 0` isolates the **front-loaded
+        cohort** (early peak + long trailing tail).
+      - `--max-ts3 0` isolates the **back-loaded
+        cohort** (long quiet build-up + late peak).
+      - `--min-ts3 -0.1 --max-ts3 0.1` isolates the
+        **near-symmetric cohort** (envelope is
+        approximately balanced around `tc`).
+    When both bounds are set, `min-ts3 <= max-ts3` is
+    enforced. Equal bounds (`--min-ts3 X --max-ts3 X`)
+    is not an error and produces a single-point band.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--min-ts3 0` (sources: 6, kept: 3, rows: 1,758;
+  3 dropped below min-ts3):
+
+      source    rows  totalAmp  tcIndex  tsIndex  ts3
+      --------  ----  --------  -------  -------  ------
+      hermes    209   1.725e+8  83.22    58.07    0.6094
+      openclaw  480   1.922e+9  193.18   127.85   0.3137
+      opencode  373   3.954e+9  176.95   117.03   0.1190
+
+  Operator reading: `--min-ts3 0` cleanly carves out the
+  **front-loaded half** of the cohort. All three retained
+  sources have ts3 > 0, meaning their amplitude mass
+  leans *back* of their own temporal centroid — i.e.,
+  they peaked early in their row history and have been
+  trailing off since. `hermes` is the most pronounced
+  front-loader (ts3 = +0.6094 with one of the lowest
+  tcIndex values, 83.22 out of 208 rows — peak well
+  before the midpoint), while `opencode` (ts3 = +0.1190)
+  is mildly front-loaded but close to symmetric. The
+  three excluded sources (`vscode-XXX`, `codex`,
+  `claude-code`; all ts3 < 0) form the complementary
+  back-loaded cohort. Combined with `--max-ts3 0` for
+  the dual band, this filter pair lets operators
+  partition the population on time-domain asymmetry
+  *direction* — a 1D slice that no single sort axis can
+  produce, since both `ts3-desc` and `ts3-asc` always
+  return all sources, just reordered. The pair also
+  composes cleanly with the `(tc, ts, ts3)` triplet
+  from 0.6.167 / 0.6.168 / 0.6.169 to give operators a
+  three-moment time-domain envelope summary per source.
+
 ## 0.6.169 — 2026-04-28
 
 ### Added

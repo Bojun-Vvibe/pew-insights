@@ -14373,6 +14373,14 @@ program
     "sort key: 'ts3-desc' (default; most front-loaded first) | 'ts3-asc' (most back-loaded first) | 'abs-ts3-desc' (most asymmetric first) | 'abs-ts3-asc' (most symmetric first) | 'rows' | 'source'",
     'ts3-desc',
   )
+  .option(
+    '--min-ts3 <x>',
+    'inclusive lower bound on ts3 (any finite real); sources with ts3 < x surface as droppedBelowMinTs3',
+  )
+  .option(
+    '--max-ts3 <x>',
+    'inclusive upper bound on ts3 (any finite real); sources with ts3 > x surface as droppedAboveMaxTs3',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -14383,6 +14391,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minTs3?: string;
+        maxTs3?: string;
         json?: boolean;
       },
       cmd,
@@ -14417,6 +14427,22 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        let minTs3: number | null = null;
+        if (opts.minTs3 != null) {
+          const x = Number.parseFloat(opts.minTs3);
+          if (!Number.isFinite(x)) {
+            throw new Error(`--min-ts3 must be a finite real (got ${opts.minTs3})`);
+          }
+          minTs3 = x;
+        }
+        let maxTs3: number | null = null;
+        if (opts.maxTs3 != null) {
+          const x = Number.parseFloat(opts.maxTs3);
+          if (!Number.isFinite(x)) {
+            throw new Error(`--max-ts3 must be a finite real (got ${opts.maxTs3})`);
+          }
+          maxTs3 = x;
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenTemporalSkewness(queue, {
           since: opts.since ?? null,
@@ -14431,6 +14457,8 @@ program
             | 'abs-ts3-asc'
             | 'rows'
             | 'source',
+          minTs3,
+          maxTs3,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

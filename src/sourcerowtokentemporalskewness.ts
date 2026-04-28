@@ -212,6 +212,23 @@ export interface SourceRowTokenTemporalSkewnessOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenTemporalSkewnessSort;
+  /**
+   * Optional inclusive lower bound on `ts3`. Sources with
+   * ts3 < minTs3 surface under `droppedBelowMinTs3`. Must
+   * be a finite real (ts3 is unbounded in principle, though
+   * practically bounded for non-negative `a[n]` on a
+   * bounded row index). Useful for "show me only the
+   * front-loaded cohort" (e.g. `--min-ts3 0`). Default null.
+   */
+  minTs3?: number | null;
+  /**
+   * Optional inclusive upper bound on `ts3`. Sources with
+   * ts3 > maxTs3 surface under `droppedAboveMaxTs3`. Must
+   * be a finite real and `>= minTs3` when both are set.
+   * Useful for "show me only the back-loaded cohort"
+   * (e.g. `--max-ts3 0`). Default null.
+   */
+  maxTs3?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -237,6 +254,8 @@ export interface SourceRowTokenTemporalSkewnessReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenTemporalSkewnessSort;
+  minTs3: number | null;
+  maxTs3: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -247,6 +266,8 @@ export interface SourceRowTokenTemporalSkewnessReport {
   droppedZeroSeries: number;
   droppedZeroVariance: number;
   droppedDegenerate: number;
+  droppedBelowMinTs3: number;
+  droppedAboveMaxTs3: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTemporalSkewnessRow[];
 }
@@ -281,6 +302,22 @@ export function buildSourceRowTokenTemporalSkewness(
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
+  }
+
+  const minTs3 = opts.minTs3 ?? null;
+  if (minTs3 !== null) {
+    if (!Number.isFinite(minTs3)) {
+      throw new Error(`minTs3 must be a finite real (got ${opts.minTs3})`);
+    }
+  }
+  const maxTs3 = opts.maxTs3 ?? null;
+  if (maxTs3 !== null) {
+    if (!Number.isFinite(maxTs3)) {
+      throw new Error(`maxTs3 must be a finite real (got ${opts.maxTs3})`);
+    }
+  }
+  if (minTs3 !== null && maxTs3 !== null && minTs3 > maxTs3) {
+    throw new Error(`minTs3 (${minTs3}) must be <= maxTs3 (${maxTs3})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -414,7 +451,28 @@ export function buildSourceRowTokenTemporalSkewness(
     });
   }
 
-  allRows.sort((a, b) => {
+  // Apply min/max-ts3 filters (post-compute). These filter
+  // BEFORE sort and BEFORE top-cap so the sort window matches
+  // the operator's stated ts3 band.
+  let droppedBelowMinTs3 = 0;
+  let droppedAboveMaxTs3 = 0;
+  let filteredRows = allRows;
+  if (minTs3 !== null || maxTs3 !== null) {
+    filteredRows = [];
+    for (const row of allRows) {
+      if (minTs3 !== null && row.ts3 < minTs3) {
+        droppedBelowMinTs3 += 1;
+        continue;
+      }
+      if (maxTs3 !== null && row.ts3 > maxTs3) {
+        droppedAboveMaxTs3 += 1;
+        continue;
+      }
+      filteredRows.push(row);
+    }
+  }
+
+  filteredRows.sort((a, b) => {
     let primary = 0;
     if (sort === 'ts3-desc') {
       primary = b.ts3 - a.ts3;
@@ -434,10 +492,10 @@ export function buildSourceRowTokenTemporalSkewness(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = filteredRows;
+  if (top !== null && filteredRows.length > top) {
+    droppedBelowTopCap = filteredRows.length - top;
+    finalSources = filteredRows.slice(0, top);
   }
 
   return {
@@ -448,6 +506,8 @@ export function buildSourceRowTokenTemporalSkewness(
     minRows,
     top,
     sort,
+    minTs3,
+    maxTs3,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -458,6 +518,8 @@ export function buildSourceRowTokenTemporalSkewness(
     droppedZeroSeries,
     droppedZeroVariance,
     droppedDegenerate,
+    droppedBelowMinTs3,
+    droppedAboveMaxTs3,
     droppedBelowTopCap,
     sources: finalSources,
   };

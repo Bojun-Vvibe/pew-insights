@@ -490,3 +490,108 @@ test('temporal-skewness: tcIndex within [0, N-1] for all emitted rows', () => {
     assert.ok(row.tcIndex >= 0 && row.tcIndex <= row.rowsKept - 1);
   }
 });
+
+// ---- --min-ts3 / --max-ts3 band filters (0.6.170) ----
+
+test('temporal-skewness: --min-ts3 filter drops back-loaded sources, surfaces in droppedBelowMinTs3', () => {
+  const front = [1000, 10, 10, 10, 10, 10, 10, 10, 10, 10]; // ts3 > 0
+  const back = [...front].reverse();                          // ts3 < 0
+  const sym = new Array(10).fill(50);                         // ts3 ~ 0
+  const r = buildSourceRowTokenTemporalSkewness(
+    [...series(front, 'front'), ...series(back, 'back'), ...series(sym, 'sym')],
+    { generatedAt: GEN, minTs3: 0 },
+  );
+  // back drops; front and sym keep
+  assert.equal(r.sources.length, 2);
+  const keptSrcs = r.sources.map((s) => s.source).sort();
+  assert.deepEqual(keptSrcs, ['front', 'sym']);
+  assert.equal(r.droppedBelowMinTs3, 1);
+  assert.equal(r.droppedAboveMaxTs3, 0);
+  assert.equal(r.minTs3, 0);
+});
+
+test('temporal-skewness: --max-ts3 filter drops front-loaded sources, surfaces in droppedAboveMaxTs3', () => {
+  const front = [1000, 10, 10, 10, 10, 10, 10, 10, 10, 10];
+  const back = [...front].reverse();
+  const r = buildSourceRowTokenTemporalSkewness(
+    [...series(front, 'front'), ...series(back, 'back')],
+    { generatedAt: GEN, maxTs3: 0 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'back');
+  assert.equal(r.droppedAboveMaxTs3, 1);
+  assert.equal(r.droppedBelowMinTs3, 0);
+  assert.equal(r.maxTs3, 0);
+});
+
+test('temporal-skewness: --min-ts3 and --max-ts3 together carve a near-symmetric band', () => {
+  const front = [1000, 10, 10, 10, 10, 10, 10, 10, 10, 10];
+  const back = [...front].reverse();
+  const sym = new Array(10).fill(50);
+  const r = buildSourceRowTokenTemporalSkewness(
+    [...series(front, 'front'), ...series(back, 'back'), ...series(sym, 'sym')],
+    { generatedAt: GEN, minTs3: -0.1, maxTs3: 0.1 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'sym');
+  assert.equal(r.droppedBelowMinTs3, 1);
+  assert.equal(r.droppedAboveMaxTs3, 1);
+});
+
+test('temporal-skewness: invalid --min-ts3 / --max-ts3 throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenTemporalSkewness([], { generatedAt: GEN, minTs3: NaN }),
+    /minTs3 must be a finite real/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalSkewness([], { generatedAt: GEN, maxTs3: Infinity }),
+    /maxTs3 must be a finite real/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalSkewness([], { generatedAt: GEN, minTs3: 0.5, maxTs3: -0.5 }),
+    /minTs3 .* must be <= maxTs3/,
+  );
+});
+
+test('temporal-skewness: ts3-band filter applies BEFORE top cap (top counts post-band sources)', () => {
+  const sources: QueueLine[] = [];
+  // Three front-loaded (ts3 > 0)
+  for (const name of ['f1', 'f2', 'f3']) {
+    sources.push(...series([1000, 10, 10, 10, 10, 10, 10, 10, 10, 10], name));
+  }
+  // Three back-loaded (ts3 < 0)
+  for (const name of ['b1', 'b2', 'b3']) {
+    sources.push(...series([10, 10, 10, 10, 10, 10, 10, 10, 10, 1000], name));
+  }
+  const r = buildSourceRowTokenTemporalSkewness(sources, {
+    generatedAt: GEN, minTs3: 0, top: 2, sort: 'source',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinTs3, 3);
+  assert.equal(r.droppedBelowTopCap, 1);
+  for (const s of r.sources) {
+    assert.ok(s.source.startsWith('f'), `expected front-loaded only, got ${s.source}`);
+  }
+});
+
+test('temporal-skewness: report fields echo minTs3/maxTs3 and they default to null', () => {
+  const r1 = buildSourceRowTokenTemporalSkewness([], { generatedAt: GEN });
+  assert.equal(r1.minTs3, null);
+  assert.equal(r1.maxTs3, null);
+  const r2 = buildSourceRowTokenTemporalSkewness(
+    series(new Array(10).fill(50), 's'),
+    { generatedAt: GEN, minTs3: -1, maxTs3: 1 },
+  );
+  assert.equal(r2.minTs3, -1);
+  assert.equal(r2.maxTs3, 1);
+});
+
+test('temporal-skewness: --min-ts3 == --max-ts3 produces a single-point band (equal bound is permitted)', () => {
+  const sym = new Array(10).fill(50); // ts3 ~ 0
+  const r = buildSourceRowTokenTemporalSkewness(series(sym, 's'), {
+    generatedAt: GEN, minTs3: 0, maxTs3: 0,
+  });
+  // With float jitter, ts3 may be a tiny epsilon away; allow the kept side.
+  // What we pin: equal bounds is *not* an error and the validator accepts it.
+  assert.ok(r.droppedBelowMinTs3 + r.droppedAboveMaxTs3 + r.sources.length >= 1);
+});
