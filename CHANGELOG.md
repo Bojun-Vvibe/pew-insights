@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.204 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-trim-mean-10`** — per-source
+  **10 % symmetrically trimmed mean** of per-row `total_tokens`.
+  Sort the rows ascending, **drop** the bottom `k = floor(0.10 n)`
+  and top `k` order statistics entirely, then take the
+  arithmetic mean of the central `n - 2k` surviving rows.
+  Symmetric L-estimator with 10 % breakdown.
+
+  **Mechanically distinct from `source-row-token-winsorized-mean-10`**
+  (v0.6.202) at the same `alpha = 0.10`: WM-10 **clips** the
+  `2k` extreme rows to the boundary values `x_(k+1)` and
+  `x_(n-k)` and keeps `n` rows in the denominator; TM-10
+  **drops** them entirely and keeps only `n - 2k` rows in the
+  denominator. On the same data the two are not generally
+  equal — WM-10's mean is pulled toward the boundary by the
+  clipped rows still counting at boundary value, while TM-10
+  is the unweighted mean of the surviving central body.
+
+  **Mechanically distinct from `source-row-token-trim-mean-25`**:
+  same DROP mechanism but different `alpha` (0.10 vs 0.25),
+  different breakdown (10 % vs 25 %), different `k`. TM-10
+  retains 80 % of the body where TM-25 retains only 50 %, so
+  TM-10 sits closer to the raw mean.
+
+  Free byproducts: `loBoundary = x_(k+1)`, `hiBoundary = x_(n-k)`,
+  `trimmedPerTail = k`, `mean` (raw arithmetic mean of all `n`),
+  and `tmMeanGap = trim_mean - mean` (negative ⇒ upper tail
+  is pulling raw mean up; positive ⇒ lower tail is dragging
+  raw mean down; zero on tail-symmetric data).
+
+  Properties exercised in tests: scale-equivariance,
+  translation-equivariance, order-invariance, identity on
+  constant + all-zero series, bounded by `[loBoundary,
+  hiBoundary]`, hard-coded `n = 10` `[1..10]` numeric check
+  (`k = 1`, `lo = 2`, `hi = 9`, `TM = 5.5 = mean`, gap = 0
+  by tail-symmetry), heavy-upper-tail diagnostic
+  (`tmMeanGap < 0`), heavy-lower-tail diagnostic
+  (`tmMeanGap > 0`), reference-implementation agreement on a
+  137-point deterministic pseudo-random series.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to `vscode-XXX`):
+
+  ```
+  pew-insights source-row-token-trim-mean-10
+  sources: 6 (shown 6)    rows: 1,879    dropped: 0 across all gates
+
+  source       rows  k/tail  lo         hi           mean         trim-mean    tm-mean
+  -----------  ----  ------  ---------  -----------  -----------  -----------  -----------
+  codex        64    6       272614.00  35169577.00  12650385.31  10197882.92  -2452502.39
+  opencode     414   41      401761.00  19130481.00  10402868.68  7803886.10   -2598982.58
+  claude-code  299   29      166590.00  41758583.00  11512995.95  7529871.77   -3983124.18
+  openclaw     520   52      770009.00  7633642.00   3799819.90   2936554.55   -863265.35
+  hermes       249   24      97306.00   1997115.00   774960.64    606929.79    -168030.85
+  vscode-XXX   333   33      322.00     10675.00     5662.84      3060.98      -2601.86
+  ```
+
+  All 6 sources show `tmMeanGap < 0`, confirming the same
+  upper-tail-dominant signal v0.6.202 (WM-10) and v0.6.203
+  (WM-20) detected. Largest absolute gap on `claude-code`:
+  `-3,983,124.18` tokens (~35 % of its raw mean), with the
+  raw `hi` boundary at `41,758,583` revealing an extreme
+  upper-tail row at the 90th percentile or above. Smallest
+  absolute gap on `hermes` at `-168,030.85` tokens (~22 % of
+  its raw mean). Note that `opencode` grew to 414 rows (vs
+  412 at v0.6.203 capture) — queue continues to accumulate.
+
+### Tests
+
+- Test count grew from 4700 → 4731 (+31). New file
+  `test/sourcerowtokentrimmean10.test.ts` covers shape /
+  option validation (10 tests), identity on constant +
+  all-zero series, hard-coded `n = 10` `[1..10]` numeric
+  check, heavy-upper-tail / heavy-lower-tail diagnostics,
+  gate behaviour (`min-rows`, `min-trim-mean`, `top`,
+  `source` filter, bad rows), and four property tests
+  (scale-equivariance, translation-equivariance,
+  order-invariance, central-window boundedness, plus
+  reference-implementation agreement on a 137-point
+  pseudo-random series).
+
 ## 0.6.203 — 2026-04-29
 
 ### Added
