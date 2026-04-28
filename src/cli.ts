@@ -109,6 +109,7 @@ import {
   renderSourceRowTokenAutocorrelationLag1,
   renderSourceRowTokenIqrRatio,
   renderSourceRowTokenBowleySkewness,
+  renderSourceRowTokenCoefficientOfQuartileDeviation,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -312,6 +313,7 @@ import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
 import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorrelationlag1.js';
 import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourceRowTokenBowleySkewness } from './sourcerowtokenbowleyskewness.js';
+import { buildSourceRowTokenCoefficientOfQuartileDeviation } from './sourcerowtokencoefficientofquartiledeviation.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -10862,6 +10864,126 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenBowleySkewness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-coefficient-of-quartile-deviation')
+  .description(
+    "Per-source coefficient of quartile deviation CQD = (q3 - q1) / (q3 + q1) of per-row total_tokens (type-7 quantiles). CQD in [0, 1] for non-negative data: 0 iff q1=q3 (central 50% collapses to a single value), 1 iff q1=0 with q3>0 (lower quartile sits on zero — at least 25% of rows carry zero tokens). Robust 50%-breakdown analog of CV; outlier-immune; scale-invariant; hard-bounded. Distinct from source-row-token-iqr-ratio (same numerator but denominator is the MEDIAN, not q3+q1; iqr-ratio is unbounded above and undefined when median=0; the two ranks can disagree when one source has small median vs another with median ~ q3), source-row-token-bowley-skewness (uses same three quantiles to measure DIRECTION of central skew; CQD is direction-blind — two sources can share CQD=0.6 with Bowley=+0.8 and -0.8), source-row-token-mad (uses all rows then summarises by median of absolute deviations; CQD uses only Q1 and Q3 and discards both tails), source-row-token-coefficient-of-variation (sigma/mu, moment-based, unbounded above, dominated by outliers; CQD uses order statistics and is bounded), source-row-token-burstiness-coefficient (same (b-a)/(b+a) algebraic form but with sigma and mu instead of q3 and q1; the two ranks can disagree because moments are outlier-dominated), source-row-token-gini (Lorenz concentration over the WHOLE distribution; CQD uses three order statistics), and every order-sensitive lens (-autocorrelation-lag1 / -runs-test / -turning-point-count / -mann-kendall-trend / -permutation-entropy / -sample-entropy / -hurst-rs / -dfa / -hjorth-* / -spectral-* / -temporal-* etc — shuffling rows leaves CQD unchanged but moves all of them). degenerate=true marks sources with q3+q1=0 (q1=q3=0; CQD mathematically 0/0, reported as 0).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need at least one observation per quartile slot for a meaningful Q1/Q3) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-q3 <f>',
+    'drop sources whose q3 (75th percentile) of total_tokens is strictly below f; cohort selector that gates out tiny-row producers. The natural anchor for a CQD lens — median can be 0 even when q3 > 0; q3 itself is the right "is there any usable upper-half magnitude" gate. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--min-cqd <f>',
+    'drop sources whose CQD is strictly below f; cohort selector for meaningfully dispersed central halves (e.g. --min-cqd 0.5 hides sources whose central 50% is tightly clustered). With f > 0, degenerate (q3+q1=0) sources are also dropped under droppedDegenerate, not droppedBelowMinCqd. f must be in [0, 1]. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'cqd-desc' (default) | 'cqd-asc' | 'iqr-desc' | 'q3-desc' | 'rows' | 'source'",
+    'cqd-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minQ3: string;
+        minCqd: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minQ3 = Number.parseFloat(opts.minQ3);
+        if (!Number.isFinite(minQ3) || minQ3 < 0) {
+          throw new Error(
+            `--min-q3 must be a finite, non-negative number (got ${opts.minQ3})`,
+          );
+        }
+        const minCqd = Number.parseFloat(opts.minCqd);
+        if (!Number.isFinite(minCqd) || minCqd < 0 || minCqd > 1) {
+          throw new Error(
+            `--min-cqd must be a finite number in [0, 1] (got ${opts.minCqd})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'cqd-desc',
+          'cqd-asc',
+          'iqr-desc',
+          'q3-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenCoefficientOfQuartileDeviation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minQ3,
+          minCqd,
+          top,
+          sort: opts.sort as
+            | 'cqd-desc'
+            | 'cqd-asc'
+            | 'iqr-desc'
+            | 'q3-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenCoefficientOfQuartileDeviation(report) + '\n',
           );
         }
       } catch (e) {

@@ -10945,3 +10945,81 @@ export function renderSourceRowTokenTemporalEntropy(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenCoefficientOfQuartileDeviationReport,
+  SourceRowTokenCoefficientOfQuartileDeviationRow,
+} from './sourcerowtokencoefficientofquartiledeviation.js';
+
+export function renderSourceRowTokenCoefficientOfQuartileDeviation(
+  r: SourceRowTokenCoefficientOfQuartileDeviationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-coefficient-of-quartile-deviation'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-q3: ${formatNumber(r.minQ3)}    min-cqd: ${r.minCqd.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinQ3)} below min-q3, ${formatNumber(r.droppedBelowMinCqd)} below min-cqd, ${formatNumber(r.droppedDegenerate)} degenerate (q3+q1=0), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source coefficient of quartile deviation CQD = (q3 - q1) / (q3 + q1) on per-row total_tokens, type-7 quantiles. CQD in [0, 1] for non-negative data: 0 = central 50% collapses to a single value, 1 = lower quartile sits on zero (>=25% zero-token rows). Robust 50%-breakdown analog of CV; outlier-immune; scale-invariant; bounded. degenerate=true means q3+q1=0 (q1=q3=0); CQD forced to 0.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token CQD (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'q1',
+    'median',
+    'q3',
+    'iqr',
+    'qsum',
+    'cqd',
+    'degen',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenCoefficientOfQuartileDeviationRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.q1.toFixed(2),
+      s.median.toFixed(2),
+      s.q3.toFixed(2),
+      s.iqr.toFixed(2),
+      s.qsum.toFixed(2),
+      s.cqd.toFixed(4),
+      s.degenerate ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
