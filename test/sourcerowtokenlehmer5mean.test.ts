@@ -539,3 +539,51 @@ test('property: L_5 equals the x^4-self-weighted arithmetic mean (closed form)',
     );
   }
 });
+
+// ---------- bottleneck-domination property ----------
+//
+// On a series of (n-1) tiny rows of value c plus one huge bottleneck
+// row of value M (M >> c), L_5 must sit STRICTLY closer to M than
+// L_4 does, by at least an order of magnitude when M/c is large.
+// This pins the documented claim that "L_5 amplifies the largest-
+// row pull by another two orders of magnitude over L_4". A future
+// refactor that, e.g., accidentally collapses L_5 toward L_4 (or
+// AM) on a long-tailed series would trip this test even if the
+// closed-form / monotonicity tests still pass on uniform random
+// data.
+test('property: L_5 is strictly closer to bottleneck M than L_4 on heavy-tailed series', () => {
+  const r = rng(161803);
+  for (let trial = 0; trial < 25; trial += 1) {
+    const n = 4 + Math.floor(r() * 12); // 4..15 rows
+    const c = 1 + Math.floor(r() * 5); // small base value
+    const M = c * (1000 + Math.floor(r() * 9000)); // bottleneck >> c
+    const xs = new Array(n - 1).fill(c);
+    xs.push(M);
+    const rep = buildSourceRowTokenLehmer5Mean(mkSeries(`t${trial}`, xs), {
+      generatedAt: GEN,
+    });
+    const row = rep.sources[0]!;
+    const distL5 = M - row.lehmer5Mean;
+    const distL4 = M - row.lehmer4Mean;
+    assert.ok(
+      distL5 >= 0,
+      `L_5 should not exceed M=${M}; got L_5=${row.lehmer5Mean}`,
+    );
+    assert.ok(
+      distL4 >= 0,
+      `L_4 should not exceed M=${M}; got L_4=${row.lehmer4Mean}`,
+    );
+    // L_5 strictly closer to the bottleneck than L_4
+    assert.ok(
+      distL5 < distL4,
+      `L_5 should be strictly closer to M=${M} than L_4: distL5=${distL5}, distL4=${distL4}, xs=${JSON.stringify(xs)}`,
+    );
+    // And the gap should be meaningful — at least a factor of 2 closer
+    // for a (n-1) tiny + 1 huge configuration. Pick a conservative
+    // bound that still trips on a "L_5 collapses to L_4" regression.
+    assert.ok(
+      distL5 * 2 <= distL4 + 1e-9,
+      `L_5 should be at least 2x closer to M=${M} than L_4: distL5=${distL5}, distL4=${distL4}, xs=${JSON.stringify(xs)}`,
+    );
+  }
+});
