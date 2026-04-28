@@ -112,6 +112,7 @@ import {
   renderSourceRowTokenCoefficientOfQuartileDeviation,
   renderSourceRowTokenTrimean,
   renderSourceRowTokenMidhinge,
+  renderSourceRowTokenMidRange,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -318,6 +319,7 @@ import { buildSourceRowTokenBowleySkewness } from './sourcerowtokenbowleyskewnes
 import { buildSourceRowTokenCoefficientOfQuartileDeviation } from './sourcerowtokencoefficientofquartiledeviation.js';
 import { buildSourceRowTokenTrimean } from './sourcerowtokentrimean.js';
 import { buildSourceRowTokenMidhinge } from './sourcerowtokenmidhinge.js';
+import { buildSourceRowTokenMidRange } from './sourcerowtokenmidrange.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15280,6 +15282,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMidhinge(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-mid-range')
+  .description(
+    "Per-source mid-range MR = (min + max) / 2 of per-row total_tokens. Extreme L-estimator with 0%-breakdown — uses ONLY the two tail order statistics, the perfect robustness complement to the midhinge (25%-breakdown, IQR-only) and the median (50%-breakdown, central). Translation- and scale-equivariant; equals the median only when the median sits exactly at the midpoint of [min, max]. Distinct from every existing source-row-token-* lens: source-row-token-midhinge = (q1+q3)/2 ignores the bottom 25% and top 25% entirely, mid-range listens to ONLY the bottom 1/n and top 1/n; source-row-token-trimean = (q1+2*median+q3)/4 blends three central quantiles, mid-range uses zero central quantiles; source-row-token-mad reports a SPREAD; source-row-token-coefficient-of-quartile-deviation, source-row-token-bowley-skewness, source-row-token-iqr-ratio measure SHAPE from q1/q3; source-row-token-coefficient-of-variation, source-row-token-burstiness-coefficient, source-row-token-skewness, source-row-token-kurtosis are MOMENT-based shape statistics; source-output-tokens-per-row-percentiles exposes raw P50/P75/P90/P99 of output_tokens (different field, never reports absolute min or max). Two distributions sharing min and max but with arbitrarily different inner shapes have identical mid-ranges. mrMedianGap = mid_range - median is reported as a free signal for where the median sits inside the full range (positive = median in lower half of [min, max], i.e. upper tail longer; bounded by [-(max-min)/2, +(max-min)/2]). Free byproduct range = max - min is also reported.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 2 (need at least one min and one max for a meaningful range midpoint) (default 2)',
+    '2',
+  )
+  .option(
+    '--min-mid-range <f>',
+    'drop sources whose mid-range is strictly below f; cohort selector for "this source actually carries non-trivial range-center token magnitude" — useful to hide low-volume noise sources before ranking. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'mid-range-desc' (default) | 'mid-range-asc' | 'median-desc' | 'gap-desc' (|mrMedianGap| desc — median furthest from range center first) | 'range-desc' (widest support first) | 'rows' | 'source'",
+    'mid-range-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMidRange: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        const minMidRange = Number.parseFloat(opts.minMidRange);
+        if (!Number.isFinite(minMidRange) || minMidRange < 0) {
+          throw new Error(
+            `--min-mid-range must be a finite, non-negative number (got ${opts.minMidRange})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'mid-range-desc',
+          'mid-range-asc',
+          'median-desc',
+          'gap-desc',
+          'range-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMidRange(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMidRange,
+          top,
+          sort: opts.sort as
+            | 'mid-range-desc'
+            | 'mid-range-asc'
+            | 'median-desc'
+            | 'gap-desc'
+            | 'range-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMidRange(report) + '\n');
         }
       } catch (e) {
         die(e);

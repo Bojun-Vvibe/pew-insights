@@ -11169,3 +11169,77 @@ export function renderSourceRowTokenMidhinge(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenMidRangeReport,
+  SourceRowTokenMidRangeRow,
+} from './sourcerowtokenmidrange.js';
+
+export function renderSourceRowTokenMidRange(
+  r: SourceRowTokenMidRangeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-mid-range'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-mid-range: ${formatNumber(r.minMidRange)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMidRange)} below min-mid-range, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source mid-range MR = (min + max) / 2 on per-row total_tokens. Extreme L-estimator with 0% breakdown — uses ONLY the two tail order statistics; the perfect robustness complement to the midhinge (25%-breakdown, IQR-only) and the median (50%-breakdown, central). Translation- and scale-equivariant. mrMedianGap = mid_range - median is a free signal for where the median sits inside the full range (positive = median in lower half of [min, max], i.e. upper tail longer; bounded by [-(max-min)/2, +(max-min)/2]).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token mid-range (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'min',
+    'median',
+    'max',
+    'range',
+    'mid-range',
+    'mr-med',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenMidRangeRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.min.toFixed(2),
+      s.median.toFixed(2),
+      s.max.toFixed(2),
+      s.range.toFixed(2),
+      s.midRange.toFixed(2),
+      (s.mrMedianGap >= 0 ? '+' : '') + s.mrMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
