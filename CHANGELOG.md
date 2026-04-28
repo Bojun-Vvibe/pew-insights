@@ -2,6 +2,106 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.194 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-5-mean`** —
+  per-source **Lehmer mean of order 5** (a.k.a. **L_5**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of fifth powers by the
+  sum of fourth powers:
+
+      L_5 = ( sum_{i=1..n} x_i^5 ) / ( sum_{i=1..n} x_i^4 )
+
+  Equivalently, L_5 is the `x_i^4`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *fourth
+  power*.
+
+  This is the natural one-step-RIGHT extension of v0.6.193's
+  L_4 lens. By Lehmer monotonicity, `L_4 <= L_5` for any
+  non-negative sample with at least one strictly positive
+  row, with equality iff every positive row is equal. So
+  L_5 extends the integer Lehmer-mean ladder shipped to
+  date one further step right of L_4:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5
+                              L_0                       L_2   L_3   L_4   new
+
+  L_5 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as harmonic-mean / quadratic-
+  mean / contraharmonic-mean / lehmer-3-mean / lehmer-4-mean
+  / the negative Lehmer rungs.
+
+  Three free byproducts are reported in every row:
+
+  - `l5L4Gap = L_5 - L_4` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-fourth-power
+    weighting amplification** above L_4: how much further
+    the largest rows pull the location when each row's
+    weight is its own `x^4` rather than its own `x^3`.
+  - `l5L3Gap = L_5 - L_3` — always `>= 0`. Strictly
+    larger than v0.6.193's `l4L3Gap` for any non-constant
+    positive series.
+  - `l5AmGap = L_5 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-fourth-power-weighted location.
+
+  Identity on a constant positive series: if every kept row
+  equals `c > 0`, then `L_5 = L_4 = L_3 = mean = c` and all
+  three gaps collapse to zero (pinned in tests, including a
+  closed-form property test that L_5 equals the
+  `sum(x*x^4) / sum(x^4)` self-weighted arithmetic mean).
+
+  Single-bottleneck-row sensitivity: on `[1, 1, 1, 1, 1000]`
+  (AM = 200.8, L_3 ~ 999.996, L_4 ~ 999.99996), L_5
+  ~ 999.9999996 — within ~4e-8 % of the bottleneck row's
+  value, vs L_4's ~4e-6 % and L_3's ~4e-4 %. L_5 amplifies
+  the largest-row pull by another two orders of magnitude
+  over L_4.
+
+  Empty rows / mixed positives / single-row sources / ISO
+  windowing / source filter / `--min-rows` / `--top` /
+  `--min-lehmer-5-mean` cohort selector all behave as in
+  every other `source-row-token-*` lens. All-zero sources
+  (sum(x^4) = 0) are surfaced as `droppedAllZeroSources`.
+
+  Sort keys: `lehmer-5-mean-desc` (default) | `lehmer-5-
+  mean-asc` | `mean-desc` | `l4-gap-desc` (l5L4Gap desc) |
+  `l3-gap-desc` (l5L3Gap desc) | `am-gap-desc`
+  (l5AmGap desc) | `rows` | `source`. Tiebreak: source asc.
+
+  Live smoke (sanitized; `--top 8`, full local
+  `~/.config/pew/queue.jsonl`, 1,838 rows across 6 sources):
+
+  ```
+  pew-insights source-row-token-lehmer-5-mean
+  sources: 6 (shown 6)    rows: 1,838    sort: lehmer-5-mean-desc
+
+  source          rows  mean         lehmer-3-mean  lehmer-4-mean  lehmer-5-mean  l5-l4        l5-l3         l5-mean
+  --------------  ----  -----------  -------------  -------------  -------------  -----------  ------------  ------------
+  claude-code     299   11512995.95  54516204.52    65497172.30    74987768.13    +9490595.83  +20471563.61  +63474772.18
+  opencode        400   10404085.48  40168865.81    49524749.87    53987195.90    +4462446.03  +13818330.09  +43583110.43
+  codex           64    12650385.31  38508868.27    44948811.14    49193365.10    +4244553.96  +10684496.83  +36542979.79
+  openclaw        506   3858353.99   20559896.00    30563870.03    35857012.29    +5293142.26  +15297116.29  +31998658.30
+  hermes          236   790137.08    2750483.99     3497151.05     4144443.48     +647292.42   +1393959.49   +3354306.39
+  vscode-XXX      333   5662.84      119764.03      147776.06      157230.80      +9454.74     +37466.77     +151567.96
+  ```
+
+  Lehmer monotonicity holds row-by-row in the live data:
+  for every source `mean <= L_3 <= L_4 <= L_5`, with
+  l5L4Gap, l5L3Gap, l5AmGap all `>= 0`. The largest
+  l5L4Gap (`+9,490,595.83` tokens on `claude-code`,
+  `+5,293,142.26` on `openclaw`) shows the incremental pull
+  above L_4 that comes from raising the weight power from
+  `x^3` to `x^4` — even at L_4 the largest rows still
+  haven't fully dominated. The smallest-magnitude lens
+  (`vscode-XXX`) shows the same qualitative pattern at three
+  orders of magnitude smaller scale — confirming scale-
+  equivariance in the wild.
+
 ## 0.6.193 — 2026-04-28
 
 ### Added
