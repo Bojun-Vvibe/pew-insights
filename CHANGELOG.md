@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.183 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-midhinge`** — per-source
+  **Tukey midhinge** of the per-row `total_tokens` distribution.
+
+  For each source, given the type-7 (linear-interpolation)
+  quantiles `q1 = Q(0.25)` and `q3 = Q(0.75)`, the Tukey
+  midhinge (Tukey, 1977, *Exploratory Data Analysis*) is
+
+      MH = (q1 + q3) / 2
+
+  This is a **pure-IQR L-estimator of central tendency** with
+  **25 %-breakdown** — same robustness floor as the trimean,
+  but the midhinge gives the median **weight 0** while the
+  trimean gives it weight 1/2 (`trimean = MH/2 + median/2`).
+  MH is **translation- and scale-equivariant**, **equals the
+  median only when the central half is symmetric**, **always
+  lies in `[q1, q3]`**, **identity on a constant series**
+  (MH = c), and **always finite** (no division — never
+  undefined).
+
+  Two distributions sharing q1 and q3 but with very different
+  medians have **identical midhinges**, which makes the
+  midhinge a clean "where is the IQR centered?" signal that
+  is not contaminated by the median's location inside its own
+  IQR. The signed gap `mhMedianGap = midhinge - median` is
+  reported as a free byproduct: positive means the median
+  sits in the **lower** half of `[q1, q3]` (upper central
+  half is longer), zero means perfectly symmetric central
+  half, negative means the median sits in the **upper** half.
+  Bounded by `[-(q3-q1)/2, +(q3-q1)/2]`.
+
+  This **completes the Tukey-quantile location lens family**
+  alongside `source-row-token-trimean` and is genuinely
+  orthogonal to every existing `source-row-token-*` lens:
+
+  - `source-row-token-trimean` blends the midhinge with the
+    median 50/50; midhinge drops the median entirely. The two
+    disagree by exactly `(median - midhinge) / 2` on any
+    asymmetric central half.
+  - `source-row-token-mad` reports a *spread* (median of
+    absolute deviations), not a center.
+  - `source-row-token-coefficient-of-quartile-deviation`,
+    `source-row-token-bowley-skewness`,
+    `source-row-token-iqr-ratio` all use the same q1/q3 to
+    measure *shape* (dispersion / direction / spread-vs-center
+    ratio); midhinge is *location* in the same units as
+    total_tokens.
+  - `source-row-token-coefficient-of-variation`,
+    `source-row-token-burstiness-coefficient`,
+    `source-row-token-skewness`,
+    `source-row-token-kurtosis` are *moment*-based shape
+    statistics dominated by mean and stddev; midhinge is a
+    quantile-based L-estimator of location.
+  - `source-output-tokens-per-row-percentiles` exposes the
+    raw `P50/P75/P90/P99` of `output_tokens` (different field,
+    no L-estimator blend).
+
+  Options: `--since`, `--until`, `--source`, `--min-rows`
+  (>=4, default 4), `--min-midhinge` (>=0, default 0),
+  `--top`, `--sort` (`midhinge-desc` (default), `midhinge-asc`,
+  `median-desc`, `gap-desc` (most asymmetric central halves
+  first), `rows`, `source`), `--json`. Tiebreak: `source` asc.
+
+  **Live smoke** against `~/.config/pew/queue.jsonl`
+  (1,787 rows, 6 sources, all kept):
+
+  ```
+  source          rows  q1          median      q3           midhinge     mh-med
+  --------------  ----  ----------  ----------  -----------  -----------  -----------
+  codex           64    1664220.25  7132861.00  18367242.00  10015731.13  +2882870.13
+  claude-code     299   728733.00   3319967.00  13677924.50  7203328.75   +3883361.75
+  opencode        383   1981061.50  7807839.00  12424202.50  7202632.00   -605207.00
+  openclaw        489   1325543.00  2495823.00  4952663.00   3139103.00   +643280.00
+  hermes          219   191477.50   398689.00   1203955.50   697716.50    +299027.50
+  vscode-XXX      333   815.00      2319.00     5116.00      2965.50      +646.50
+  ```
+
+  Real per-source readout: `codex` has the largest IQR-center
+  (~10.0 M tokens) — its middle 50 % of rows centers above
+  every other source. `claude-code` and `opencode` are
+  essentially tied at the IQR center (~7.2 M) but disagree
+  sharply on `mhMedianGap`: claude-code's median sits **far
+  below** its midhinge (+3.88 M gap, upper central half is
+  much longer — heavy-call mix), while opencode's median is
+  *above* its midhinge (-0.61 M gap, lower central half is
+  longer — high baseline call cost). `openclaw` and
+  `hermes` show modest positive gaps consistent with light
+  upper-tail skew. `vscode-XXX` is two orders of magnitude
+  smaller and nearly symmetric at its scale (gap +646
+  on a midhinge of ~2.97 K).
+
 ## 0.6.182 — 2026-04-28
 
 ### Added
