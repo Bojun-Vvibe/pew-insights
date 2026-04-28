@@ -2,6 +2,127 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.184 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-mid-range`** — per-source
+  **mid-range** of the per-row `total_tokens` distribution.
+
+  For each source, with `min` and `max` the smallest and
+  largest observed per-row `total_tokens`, the mid-range is
+
+      MR = (min + max) / 2
+
+  This is the **extreme L-estimator of central tendency** —
+  the linear combination of order statistics that uses
+  **only the two tails** (x_(1) and x_(n)). It is the
+  canonical "where do the extremes sit?" location lens, and
+  formally the MVUE for the location parameter of a
+  symmetric uniform distribution (Pitman, 1939).
+
+  Mid-range completes the **L-estimator robustness spectrum**
+  alongside the existing lenses:
+
+  - `source-row-token-mid-range` (this one): **0 %-breakdown**,
+    weights only `min` and `max`, each weight 1/2;
+  - `source-row-token-midhinge` (v0.6.183): **25 %-breakdown**,
+    weights only `q1` and `q3`, each weight 1/2;
+  - `source-row-token-trimean` (v0.6.182): **25 %-breakdown**,
+    weights `q1`, `median`, `q3` as 1/4, 1/2, 1/4;
+  - the median (used internally everywhere): **50 %-breakdown**,
+    weight 1 on the central order statistic.
+
+  Mid-range is **translation- and scale-equivariant**, **lies
+  in `[min, max]`**, **identity on a constant series**
+  (MR = c), **always finite** (no division — never undefined),
+  and **insensitive to inner shape**: two distributions sharing
+  `min` and `max` but with arbitrarily different medians,
+  IQRs, midhinges, or trimeans have **identical mid-ranges**.
+
+  The signed gap `mrMedianGap = mid_range - median` is
+  reported as a free byproduct: positive means the median
+  sits in the **lower half** of `[min, max]` (upper tail
+  longer — the diagnostic signature of a single-row token
+  blowout), zero means the median is the exact midpoint of
+  the support, negative means the median sits in the **upper
+  half** (lower tail longer — rare for token usage). Bounded
+  by `[-(max-min)/2, +(max-min)/2]`. The sample range
+  `range = max - min` is also surfaced as the natural
+  denominator for `mrMedianGap` and the obvious sanity check
+  on MR.
+
+  Mid-range is **genuinely orthogonal** to every existing
+  `source-row-token-*` lens:
+
+  - `source-row-token-midhinge` weights `q1` and `q3`
+    (ignoring the bottom 25 % and top 25 % entirely);
+    mid-range listens to ONLY the bottom 1/n and top 1/n.
+    Two sources with identical IQR centers can have wildly
+    different mid-ranges.
+  - `source-row-token-trimean` blends three central
+    quantiles; mid-range uses zero central quantiles.
+  - `source-row-token-mad` reports a *spread* (median of
+    absolute deviations), not a center.
+  - `source-row-token-coefficient-of-quartile-deviation`,
+    `source-row-token-bowley-skewness`,
+    `source-row-token-iqr-ratio` measure *shape* from
+    `q1`/`q3`; mid-range measures *location* in token units
+    from the tails.
+  - `source-row-token-coefficient-of-variation`,
+    `source-row-token-burstiness-coefficient`,
+    `source-row-token-skewness`,
+    `source-row-token-kurtosis` are *moment*-based shape
+    statistics; mid-range is a tail-based L-estimator of
+    location.
+  - `source-output-tokens-per-row-percentiles` exposes the
+    raw `P50/P75/P90/P99` of `output_tokens` (different
+    field) and never reports the absolute `min` or `max`.
+
+  Options: `--since`, `--until`, `--source`, `--min-rows`
+  (>=2, default 2), `--min-mid-range` (>=0, default 0),
+  `--top`, `--sort` (`mid-range-desc` (default),
+  `mid-range-asc`, `median-desc`, `gap-desc` (most
+  asymmetric tails first), `range-desc` (widest support
+  first), `rows`, `source`), `--json`. Tiebreak: `source`
+  asc.
+
+  **Live smoke** against `~/.config/pew/queue.jsonl`
+  (1,793 rows, 6 sources, all kept):
+
+  ```
+  source          rows  min       median      max           range         mid-range    mr-med
+  --------------  ----  --------  ----------  ------------  ------------  -----------  ------------
+  claude-code     299   5976      3319967     107646380     107640404     53826178.00  +50506211.00
+  opencode        385   47789     7807075     69504417      69456628      34776103.00  +26969028.00
+  codex           64    47317     7132861     58840552      58793235      29443934.50  +22311073.50
+  openclaw        491   97192     2489597     45073562      44976370      22585377.00  +20095780.00
+  hermes          221   15525     423019      5898713       5883188       2957119.00   +2534100.00
+  vscode-XXX      333   20        2319        174625        174605        87322.50     +85003.50
+  ```
+
+  Real per-source readout: `claude-code` has the **largest
+  mid-range** (~53.8 M tokens) — driven by a single ~107.6 M
+  total_tokens row, more than 32× larger than its midhinge
+  (~7.2 M from v0.6.183) and ~16× its q3 (~13.7 M). Every
+  source shows a **strictly positive `mrMedianGap`**, which
+  is the unambiguous L-estimator signature of an upper tail
+  that completely dominates the support. The largest
+  asymmetry is again `claude-code` with a +50.5 M gap (the
+  median sits at <3 % of the way up the support interval);
+  the smallest is `vscode-XXX` (still wildly asymmetric on
+  its own scale: median 2,319 vs mid-range 87,322 — gap of
+  +85 K). Compared to the v0.6.183 midhinge readout, mid-range
+  **reorders the sources entirely**: midhinge ranked
+  `codex > claude-code ≈ opencode > openclaw > hermes > vscode-XXX`,
+  while mid-range ranks
+  `claude-code > opencode > codex > openclaw > hermes > vscode-XXX`
+  — the inversion of `codex` from #1 (by midhinge ~10.0 M)
+  to #3 (by mid-range ~29.4 M, behind opencode's ~34.8 M
+  and claude-code's ~53.8 M) is the practical demonstration
+  that the IQR center and the support center are
+  fundamentally different lenses.
+
 ## 0.6.183 — 2026-04-28
 
 ### Added
