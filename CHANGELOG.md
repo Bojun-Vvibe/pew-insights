@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.202 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-winsorized-mean-10`** —
+  per-source **10 % symmetrically winsorized mean** of per-row
+  `total_tokens`. Departs from the Lehmer-mean ladder of
+  v0.6.190..v0.6.201 (L_3..L_12) to introduce a robust
+  **L-estimator** lens — translation- AND scale-equivariant,
+  with a 10 % breakdown point.
+
+  **Definition.** Sort the per-source per-row total_tokens
+  samples `x_(1) <= x_(2) <= ... <= x_(n)`. With
+  `alpha = 0.10` and `k = floor(alpha * n)`:
+
+      y_(i) = x_(k+1)        for i in 1..k          (clip bottom)
+            = x_(i)           for i in k+1..n-k
+            = x_(n-k)         for i in n-k+1..n     (clip top)
+      WM    = mean(y_(1), y_(2), ..., y_(n))
+
+  REPLACE (do not discard) the bottom `k` and top `k` order
+  statistics with the boundary values `lo = x_(k+1)` and
+  `hi = x_(n-k)` respectively, then arithmetic-mean all `n`
+  now-clipped rows. Unlike `trim-mean-25` (v0.6.184) which
+  drops the trimmed tails entirely, `winsorized-mean-10`
+  keeps every row in the denominator and replaces only their
+  tail values — so it is mechanically distinct from every
+  existing `source-row-token-*` location lens.
+
+  Reports four free byproducts: `loBoundary = x_(k+1)`,
+  `hiBoundary = x_(n-k)`, `clippedPerTail = k`, and
+  `wmMeanGap = winsorized_mean - mean` (the diagnostic
+  signature: `< 0` means the raw mean is being pulled up by
+  an upper tail the winsorized mean clips out; `> 0` means
+  a lower tail is dragging the raw mean down; `= 0` on a
+  tail-symmetric distribution).
+
+  Properties exercised in tests:
+  scale-equivariance, translation-equivariance, order-
+  invariance, identity on constant + all-zero series,
+  bounded by `[loBoundary, hiBoundary]`, round-trip
+  `sumWinsor == n * winsorizedMean`, `lo == sorted[k]` /
+  `hi == sorted[n-k-1]`, and outlier-attenuation
+  (`|wm_delta| < 100` vs `|mean_delta| > 100,000` when a
+  single 10M-token row is appended to a body of [10..19]).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to `vscode-XXX`):
+
+  ```
+  pew-insights source-row-token-winsorized-mean-10
+  sources: 6 (shown 6)    rows: 1,868    dropped: 0 across all gates
+
+  source       rows  k/tail  lo         hi           mean         wins-mean    wm-mean
+  -----------  ----  ------  ---------  -----------  -----------  -----------  -----------
+  codex        64    6       272614.00  35169577.00  12650385.31  11608485.28  -1041900.03
+  claude-code  299   29      166590.00  41758583.00  11512995.95  10135548.87  -1377447.07
+  opencode     410   41      401761.00  19130481.00  10434228.56  8202337.03   -2231891.53
+  openclaw     516   51      796767.00  7680262.00   3824827.95   3215239.88   -609588.07
+  hermes       246   24      97306.00   1997115.00   778700.87    694529.30    -84171.57
+  vscode-XXX   333   33      322.00     10675.00     5662.84      3544.09      -2118.75
+  ```
+
+  All 6 sources show `wmMeanGap < 0`, confirming every source's
+  raw mean is upper-tail-dominant: clipping the top 10 %
+  pulls the location estimate down everywhere, hardest on
+  `opencode` (`-2,231,891.57` tokens, `~21 %` of its raw mean)
+  and softest on `hermes` (`-84,171.57` tokens, `~11 %` of
+  its raw mean). The boundary spread `hi / lo` quantifies
+  the residual within-body multiplicative range after the
+  most-extreme 10 % of each tail has been clipped: tightest
+  on `vscode-XXX` (`33.2x`), widest on `claude-code`
+  (`250.7x`).
+
+### Tests
+
+- Test count grew from 4612 → 4648 (+36). New per-builder
+  file `test/sourcerowtokenwinsorizedmean10.test.ts` covers
+  shape/option validation (9 tests), identity on constant +
+  all-zero series, hard-coded `n = 10` `[1..10]` numeric
+  check (`WM = 5.5 = mean`, gap = 0 by tail-symmetry),
+  heavy-upper-tail diagnostic (`wmMeanGap < 0`), heavy-
+  lower-tail diagnostic (`wmMeanGap > 0`), reference-impl
+  agreement on a 137-point deterministic pseudo-random
+  series, scale-equivariance, translation-equivariance,
+  order-invariance, `[loBoundary, hiBoundary]` bounding,
+  WM-vs-trim-mean-25 placement under heavy upper tail
+  (cross-builder property), round-trip identity, boundary
+  identities, all filter / drop accounting (8 tests across
+  minRows, invalid hour_start, invalid total_tokens,
+  negative total_tokens, source filter, since/until window,
+  top cap, minWinsorizedMean), all sort modes (5 tests),
+  empty-source -> `'unknown'` fallback, and an outlier-
+  attenuation property test.
+
 ## 0.6.201 — 2026-04-29
 
 ### Added
