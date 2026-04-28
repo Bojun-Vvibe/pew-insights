@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.165 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-centroid` test hardening:
+  - New sort-tiebreak determinism test: when multiple
+    sources share an identical `tc` (true ties), the
+    output order is *always* `source` ascending across
+    every sort mode (`tc-desc`, `tc-asc`, `rows`,
+    `source`). Pinned because downstream callers can
+    safely diff snapshot output.
+  - New windowed-vs-full smoke test: confirms that
+    `--since` is a real semantic operator on tc, not just
+    a row filter — windowing into a uniform-amplitude
+    sub-range collapses tc to exactly `0.5` even when the
+    full-range tc is back-loaded `> 0.6`. This nails down
+    that tc is row-index-relative-to-the-filtered-window,
+    which is the lens contract.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--since 2026-04-01T00:00:00Z` (sources: 5; one source
+  dropped because its history pre-dates the window;
+  one source name redacted to `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tc
+      ------------ ----  --------  -------  ------
+      claude-code  192   3.058e+9  127.09   0.6654
+      codex        64    8.096e+8  38.71    0.6145
+      opencode     371   3.929e+9  175.73   0.4749
+      openclaw     477   1.920e+9  192.88   0.4052
+      hermes       207   1.710e+8  82.11    0.3986
+
+  Operator reading: relative to the unfiltered ranking
+  in 0.6.163, `claude-code`'s `rows` shrinks 299 -> 192
+  and its `tc` shifts 0.7190 -> 0.6654 — the early-window
+  rows that previously sat at small `n` are now excluded,
+  so the energy-position descriptor correctly re-anchors
+  on the post-2026-04-01 sub-history. `vscode-XXX` drops
+  out entirely (pre-window history only). `codex`,
+  `opencode`, `openclaw`, `hermes` are essentially
+  unchanged because their history is already post-window.
+  This is the time-shift-sensitivity property the
+  windowing test now pins.
+
 ## 0.6.164 — 2026-04-28
 
 ### Added

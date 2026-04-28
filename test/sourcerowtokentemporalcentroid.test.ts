@@ -454,3 +454,55 @@ test('temporal-centroid: --min-tc=0 and --max-tc=1 are no-ops (echo bounds, drop
   assert.equal(r.minTc, 0);
   assert.equal(r.maxTc, 1);
 });
+
+test('temporal-centroid: sort tiebreak is source asc across all sort modes (deterministic order)', () => {
+  // Two identical-shape sources -> identical tc -> tie. Tiebreak: source asc.
+  const a = series(new Array(10).fill(50), 'aaa');
+  const b = series(new Array(10).fill(50), 'bbb');
+  const c = series(new Array(10).fill(50), 'ccc');
+  for (const sort of ['tc-desc', 'tc-asc', 'rows', 'source'] as const) {
+    const r = buildSourceRowTokenTemporalCentroid([...c, ...a, ...b], {
+      generatedAt: GEN,
+      sort,
+    });
+    assert.deepEqual(
+      r.sources.map((s) => s.source),
+      ['aaa', 'bbb', 'ccc'],
+      `sort ${sort} did not produce stable source-asc tiebreak`,
+    );
+  }
+});
+
+test('temporal-centroid: windowing with --since shifts the row index origin and can change tc', () => {
+  // 20 rows: front half low, back half high. Full window => tc back-loaded.
+  // Windowed to back half only => tc midway-ish (the high values now span
+  // the entire window). Demonstrates tc is NOT time-shift invariant — it
+  // depends on the row index origin, which is what the lens is for.
+  const lows = new Array(10).fill(1);
+  const highs = new Array(10).fill(1000);
+  const all = [...lows, ...highs];
+  const series20 = series(all, 'src');
+
+  const rFull = buildSourceRowTokenTemporalCentroid(series20, {
+    generatedAt: GEN,
+  });
+  const tcFull = rFull.sources[0]!.tc;
+  assert.ok(tcFull > 0.6, `full-window tc should be back-loaded; got ${tcFull}`);
+
+  // Window to just the high half (rows 10..19 in series20). The first row
+  // in series20 corresponds to day 1 hour 0; row 10 corresponds to day 1
+  // hour 0 minute 10. Use --since at day 1 00:10:00.
+  const rWindow = buildSourceRowTokenTemporalCentroid(series20, {
+    generatedAt: GEN,
+    since: '2026-04-01T00:10:00Z',
+    minRows: 2,
+  });
+  // Now all 10 rows are uniform highs => tc = 0.5 exactly.
+  assert.equal(rWindow.sources[0]!.rowsKept, 10);
+  assert.ok(
+    Math.abs(rWindow.sources[0]!.tc - 0.5) < 1e-12,
+    `windowed-to-uniform tc should be 0.5; got ${rWindow.sources[0]!.tc}`,
+  );
+  // Confirms windowing changed tc (full was > 0.6, windowed is exactly 0.5).
+  assert.ok(rFull.sources[0]!.tc > rWindow.sources[0]!.tc);
+});
