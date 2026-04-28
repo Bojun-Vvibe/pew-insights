@@ -108,6 +108,7 @@ import {
   renderSourceSameModelStreak,
   renderSourceRowTokenAutocorrelationLag1,
   renderSourceRowTokenIqrRatio,
+  renderSourceRowTokenBowleySkewness,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -310,6 +311,7 @@ import { buildSourceRowTokenGini } from './sourcerowtokengini.js';
 import { buildSourceSameModelStreak } from './sourcesamemodelstreak.js';
 import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorrelationlag1.js';
 import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
+import { buildSourceRowTokenBowleySkewness } from './sourcerowtokenbowleyskewness.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -10735,6 +10737,132 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenIqrRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-bowley-skewness')
+  .description(
+    "Per-source Bowley / Yule-Kendall robust quartile skewness of per-row total_tokens: B = ((q3 - q2) - (q2 - q1)) / (q3 - q1) using type-7 quantiles. B in [-1, +1]: 0 = central 50% symmetric around the median, B>0 = right-skewed central half (median sits closer to Q1; upper quartile gap dominates), B<0 = left-skewed central half. 50%-breakdown robust analog of Fisher-Pearson g1 — uses only Q1, median, Q3, so a single huge outlier cannot move it. Distinct from source-row-token-skewness (third standardised moment of the WHOLE distribution; unbounded; one outlier moves it arbitrarily — Bowley uses three order statistics and is hard-bounded in [-1,+1]; the two ranks can disagree when asymmetry is in the tail vs central half), source-row-token-kurtosis (fourth moment, tail weight not asymmetry), source-row-token-iqr-ratio (uses the same three quantiles to measure WIDTH of central 50% relative to median; says nothing about which side of Q2 the spread sits — two sources can share iqrRatio=1.0 with B=+0.8 and B=-0.8), source-row-token-mad / -gini / -coefficient-of-variation / -burstiness-coefficient (dispersion or concentration; direction-blind), and every order-sensitive lens (-autocorrelation-lag1 / -runs-test / -turning-point-count / -mann-kendall-trend / -permutation-entropy / -sample-entropy / -hurst-rs / -dfa / -higuchi-fd / -petrosian-fd / -katz-fd / -hjorth-* / -spectral-* / -zero-crossing-rate / -teager-kaiser / -lempel-ziv / -renyi-entropy — shuffling rows leaves Bowley unchanged but moves all of them). Also distinct from hour-of-day-token-skew (g1 on per-day totals grouped by hour, pooled across all sources — different grain, different aggregation). degenerate=true marks sources with iqr=0 (q1=q2=q3; Bowley mathematically 0/0, reported as 0).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need at least one observation per quartile slot for a meaningful Q1/Q3) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-median <f>',
+    'drop sources whose median total_tokens is strictly below f; cohort selector that gates out tiny-row producers where the central-half asymmetry rides on a handful of small rows. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--min-abs-bowley <f>',
+    'drop sources whose |bowley| is strictly below f; cohort selector for meaningfully asymmetric central halves (e.g. --min-abs-bowley 0.1 hides sources whose median sits within 10% of the IQR midpoint). With f > 0, degenerate (iqr=0) sources are also dropped under droppedDegenerate, not droppedBelowMinAbsBowley. f must be in [0, 1]. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'bowley-desc' (default) | 'bowley-asc' | 'abs-bowley' | 'iqr-desc' | 'median-desc' | 'rows' | 'source'",
+    'bowley-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMedian: string;
+        minAbsBowley: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minMedian = Number.parseFloat(opts.minMedian);
+        if (!Number.isFinite(minMedian) || minMedian < 0) {
+          throw new Error(
+            `--min-median must be a finite, non-negative number (got ${opts.minMedian})`,
+          );
+        }
+        const minAbsBowley = Number.parseFloat(opts.minAbsBowley);
+        if (
+          !Number.isFinite(minAbsBowley) ||
+          minAbsBowley < 0 ||
+          minAbsBowley > 1
+        ) {
+          throw new Error(
+            `--min-abs-bowley must be a finite number in [0, 1] (got ${opts.minAbsBowley})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'bowley-desc',
+          'bowley-asc',
+          'abs-bowley',
+          'iqr-desc',
+          'median-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenBowleySkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMedian,
+          minAbsBowley,
+          top,
+          sort: opts.sort as
+            | 'bowley-desc'
+            | 'bowley-asc'
+            | 'abs-bowley'
+            | 'iqr-desc'
+            | 'median-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenBowleySkewness(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

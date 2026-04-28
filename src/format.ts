@@ -8533,6 +8533,81 @@ import type {
   SourceRowTokenIqrRatioReport,
   SourceRowTokenIqrRatioRow,
 } from './sourcerowtokeniqrratio.js';
+import type {
+  SourceRowTokenBowleySkewnessReport,
+  SourceRowTokenBowleySkewnessRow,
+} from './sourcerowtokenbowleyskewness.js';
+
+export function renderSourceRowTokenBowleySkewness(
+  r: SourceRowTokenBowleySkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-bowley-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-median: ${formatNumber(r.minMedian)}    min-abs-bowley: ${r.minAbsBowley.toFixed(4)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMedian)} below min-median, ${formatNumber(r.droppedBelowMinAbsBowley)} below min-abs-bowley, ${formatNumber(r.droppedDegenerate)} degenerate (iqr=0), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Bowley/Yule-Kendall robust quartile skewness B = (q1 + q3 - 2*median) / (q3 - q1) on per-row total_tokens. B in [-1, +1]: 0 = symmetric central 50%, B>0 = right-skewed central half (median closer to Q1), B<0 = left-skewed central half (median closer to Q3). 50%-breakdown robust analog of Fisher-Pearson g1; outlier-immune. degenerate=true means iqr=0 (q1=q2=q3); B forced to 0.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Bowley skewness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'q1',
+    'median',
+    'q3',
+    'iqr',
+    'bowley',
+    'absBowley',
+    'degen',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenBowleySkewnessRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.q1.toFixed(2),
+      s.median.toFixed(2),
+      s.q3.toFixed(2),
+      s.iqr.toFixed(2),
+      s.bowley.toFixed(4),
+      s.absBowley.toFixed(4),
+      s.degenerate ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderSourceRowTokenIqrRatio(
   r: SourceRowTokenIqrRatioReport,
