@@ -662,3 +662,109 @@ test('refinement: bottleneck-tracking error of L_7 is <= 10 % of L_6 on heavy-ta
     );
   }
 });
+
+// ---------- refinement: defining-identity round-trip ----------
+//
+// Pin the defining identity L_7 * sum(x^6) == sum(x^7) directly, by
+// recomputing both sides with independent scalar accumulators and
+// checking that the builder-reported L_7 multiplied back by the
+// independently-computed sum(x^6) recovers sum(x^7) to within a
+// strict relative tolerance. This is *the* identity that defines
+// the lens — it's stronger than the closed-form self-weighted-mean
+// property above (which checks the algebraically-equivalent
+// rearrangement sum(x*x^6) / sum(x^6)) because it tests the raw
+// numerator-denominator pair the builder must produce. A future
+// refactor that, e.g., swapped sum6 and sum7 (collapsing L_7 to
+// L_6 / L_8 mash) would trip this test even on small uniform-
+// random series where the bottleneck-domination property has
+// little signal.
+test('refinement: L_7 satisfies L_7 * sum(x^6) == sum(x^7) round-trip identity', () => {
+  const r = rng(57721566);
+  for (let trial = 0; trial < 50; trial += 1) {
+    const n = 2 + Math.floor(r() * 30);
+    const xs: number[] = [];
+    for (let i = 0; i < n; i += 1) xs.push(Math.floor(r() * 2000));
+    if (xs.every((x) => x === 0)) continue;
+    let s6 = 0;
+    let s7 = 0;
+    for (const x of xs) {
+      const x2 = x * x;
+      const x3 = x2 * x;
+      const x6 = x3 * x3;
+      s6 += x6;
+      s7 += x6 * x;
+    }
+    if (s6 === 0) continue;
+    const rep = buildSourceRowTokenLehmer7Mean(mkSeries(`t${trial}`, xs), {
+      generatedAt: GEN,
+    });
+    if (rep.sources.length === 0) continue;
+    const got = rep.sources[0]!.lehmer7Mean;
+    const recovered = got * s6;
+    assert.ok(
+      Math.abs(recovered - s7) < 1e-9 * Math.max(1, s7),
+      `L_7 * sum(x^6) should recover sum(x^7): got=${got}, sum6=${s6}, sum7=${s7}, recovered=${recovered}, xs=${JSON.stringify(xs)}`,
+    );
+  }
+});
+
+// ---------- refinement: equality case L_7 = max(x) iff all positive rows == max ----------
+//
+// Lehmer monotonicity bounds L_7 in [L_6, max]. The upper bound is
+// saturated *exactly* when every strictly-positive row equals max.
+// Pin both directions:
+//
+//   (a) on a series of (k) max-valued rows mixed with (n - k) zero
+//       rows, L_7 == max exactly (zeros contribute 0 to both sums);
+//   (b) on a series with at least two distinct positive values,
+//       L_7 < max strictly.
+//
+// A future refactor that, e.g., accidentally clamped L_7 at max or
+// allowed L_7 > max via an unsigned-overflow bug would trip this.
+test('refinement: L_7 = max iff all positive rows equal max', () => {
+  // (a) saturating case: any mix of {0, max}-valued rows -> L_7 == max
+  const cases: { xs: number[]; max: number }[] = [
+    { xs: [10, 10, 10, 10], max: 10 },
+    { xs: [0, 7], max: 7 },
+    { xs: [0, 0, 0, 99, 99], max: 99 },
+    { xs: [42], max: 42 },
+  ];
+  for (const { xs, max } of cases) {
+    const rep = buildSourceRowTokenLehmer7Mean(mkSeries('s', xs), {
+      generatedAt: GEN,
+    });
+    if (rep.sources.length === 0) continue;
+    const got = rep.sources[0]!.lehmer7Mean;
+    assert.ok(
+      Math.abs(got - max) < 1e-9 * max,
+      `L_7 should equal max=${max} when positive rows are uniform; got ${got} on xs=${JSON.stringify(xs)}`,
+    );
+  }
+  // (b) non-saturating case: any series with two distinct positive values
+  //     must have L_7 strictly below max.
+  const r = rng(12345);
+  for (let trial = 0; trial < 25; trial += 1) {
+    const n = 2 + Math.floor(r() * 10);
+    const max = 100 + Math.floor(r() * 1000);
+    const xs: number[] = [max];
+    // Add at least one strictly-smaller positive row.
+    const small = 1 + Math.floor(r() * (max - 1));
+    xs.push(small);
+    // Pad with arbitrary positive rows below max.
+    for (let i = 2; i < n; i += 1) {
+      xs.push(1 + Math.floor(r() * (max - 1)));
+    }
+    const rep = buildSourceRowTokenLehmer7Mean(mkSeries(`t${trial}`, xs), {
+      generatedAt: GEN,
+    });
+    const got = rep.sources[0]!.lehmer7Mean;
+    assert.ok(
+      got < max,
+      `L_7 should be strictly < max=${max} on non-uniform positive series; got ${got} on xs=${JSON.stringify(xs)}`,
+    );
+    assert.ok(
+      got >= rep.sources[0]!.lehmer6Mean - 1e-9 * max,
+      `L_7 should be >= L_6 on xs=${JSON.stringify(xs)}; got L_7=${got}, L_6=${rep.sources[0]!.lehmer6Mean}`,
+    );
+  }
+});
