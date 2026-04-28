@@ -7652,6 +7652,74 @@ export function renderSourceZeroOutputRowShare(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderSourceRowTokenSpectralIrregularity(
+  r: SourceRowTokenSpectralIrregularityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-spectral-irregularity'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Jensen 1999 spectral irregularity of the one-sided non-DC PSD P[k] of the mean-centered per-row total_tokens series. irregularity = sum_{k=1..K-1} (P[k]-P[k+1])^2 / sum_{k=1..K} P[k]^2. A bin-difference-energy descriptor: 0 iff PSD is perfectly flat across non-DC bins; small => locally smooth bin-to-bin; large => spiky/comb-shaped PSD. Jensen 1999 (DIKU 99/7 §3.5) simplification of Krimphoff/McAdams/Winsberg 1994. Order-sensitive (depends on bin order). Genuinely orthogonal to: spectral-centroid (1st moment / location), spectral-bandwidth (2nd central moment around centroid), spectral-skewness/-kurtosis (3rd/4th standardized central moments around centroid — global shape, no local-difference term), spectral-rolloff (CDF quantile — integral, not derivative-like), spectral-flatness (geometric/arithmetic mean ratio — bin-permutation-invariant), spectral-entropy (Shannon — bin-permutation-invariant; irregularity captures the bin-order info entropy throws away), spectral-decrease (1/(k-1)-weighted slope-from-anchor at bin 1 — a monotone-smooth-decreasing PSD has strong decrease but low irregularity), and the time-domain / amplitude-domain lenses (which lose the PSD entirely or are order-invariant).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral irregularity (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'sumP2',
+    'diffEnergy',
+    'irregularity',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralIrregularityRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      s.sumP2.toExponential(3),
+      s.diffEnergy.toExponential(3),
+      s.irregularity.toExponential(3),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+
 export function renderSourceCacheShareByDayCv(
   r: SourceCacheShareByDayCvReport,
 ): string {
@@ -10023,6 +10091,10 @@ import type {
   SourceRowTokenSpectralDecreaseReport,
   SourceRowTokenSpectralDecreaseRow,
 } from './sourcerowtokenspectraldecrease.js';
+import type {
+  SourceRowTokenSpectralIrregularityReport,
+  SourceRowTokenSpectralIrregularityRow,
+} from './sourcerowtokenspectralirregularity.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,

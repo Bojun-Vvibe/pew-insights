@@ -129,6 +129,7 @@ import {
   renderSourceRowTokenSpectralKurtosis,
   renderSourceRowTokenSpectralEntropy,
   renderSourceRowTokenSpectralDecrease,
+  renderSourceRowTokenSpectralIrregularity,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -319,6 +320,7 @@ import { buildSourceRowTokenSpectralSkewness } from './sourcerowtokenspectralske
 import { buildSourceRowTokenSpectralKurtosis } from './sourcerowtokenspectralkurtosis.js';
 import { buildSourceRowTokenSpectralEntropy } from './sourcerowtokenspectralentropy.js';
 import { buildSourceRowTokenSpectralDecrease } from './sourcerowtokenspectraldecrease.js';
+import { buildSourceRowTokenSpectralIrregularity } from './sourcerowtokenspectralirregularity.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -14001,6 +14003,96 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralDecrease(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-spectral-irregularity')
+  .description(
+    "Per-source Jensen 1999 spectral irregularity (bin-difference energy normalized by total bin energy of the one-sided non-DC PSD) of the mean-centered per-row total_tokens series. irregularity = sum_{k=1..K-1} (P[k] - P[k+1])^2 / sum_{k=1..K} P[k]^2. Dimensionless local-jitter PSD descriptor: 0 iff the PSD is perfectly flat across non-DC bins; small => locally smooth bin-to-bin; large => spiky/comb-shaped PSD. Order-sensitive (depends on bin order). Genuinely orthogonal to spectral-centroid (1st moment / location), spectral-bandwidth (2nd central moment around centroid), spectral-skewness/-kurtosis (3rd/4th standardized central moments around centroid — global shape, no local-difference term), spectral-rolloff (CDF quantile — integral, not derivative-like), spectral-flatness (geometric/arithmetic mean ratio — bin-permutation-invariant), spectral-entropy (Shannon — bin-permutation-invariant), spectral-decrease (1/(k-1)-weighted slope-from-anchor at bin 1 — a monotone-smooth-decreasing PSD has strong decrease but low irregularity), and the time-domain / amplitude-domain lenses (which lose the PSD entirely or are order-invariant). Jensen 1999 (DIKU 99/7 §3.5) simplification of Krimphoff/McAdams/Winsberg 1994.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'irregularity-desc' (default; jaggedest PSD first) | 'irregularity-asc' | 'rows' | 'source'",
+    'irregularity-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'irregularity-desc',
+          'irregularity-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralIrregularity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'irregularity-desc'
+            | 'irregularity-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralIrregularity(report) + '\n',
           );
         }
       } catch (e) {
