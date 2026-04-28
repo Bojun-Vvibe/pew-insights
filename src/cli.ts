@@ -132,6 +132,7 @@ import {
   renderSourceRowTokenSpectralIrregularity,
   renderSourceRowTokenTemporalCentroid,
   renderSourceRowTokenTemporalSpread,
+  renderSourceRowTokenTemporalSkewness,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -325,6 +326,7 @@ import { buildSourceRowTokenSpectralDecrease } from './sourcerowtokenspectraldec
 import { buildSourceRowTokenSpectralIrregularity } from './sourcerowtokenspectralirregularity.js';
 import { buildSourceRowTokenTemporalCentroid } from './sourcerowtokentemporalcentroid.js';
 import { buildSourceRowTokenTemporalSpread } from './sourcerowtokentemporalspread.js';
+import { buildSourceRowTokenTemporalSkewness } from './sourcerowtokentemporalskewness.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -14349,5 +14351,98 @@ program
     },
   );
 
-program.parseAsync(process.argv).catch(die);
+program
+  .command('source-row-token-temporal-skewness')
+  .description(
+    "Per-source Peeters 2004 temporal skewness: standardized 3rd central moment of the time-row index around the temporal centroid of the per-row total_tokens series. ts3 = (sum_n (n - tc_index)^3 * a[n] / sum a[n]) / ts_index^3 (unitless). ts3 > 0 = early peak with long trailing tail (front-loaded); ts3 < 0 = long quiet build-up with late peak (back-loaded); ts3 ~ 0 = symmetric envelope (uniform / centered). Time-domain dual of spectral-skewness (3rd freq-domain moment). Order-sensitive on rows; not time-shift invariant. Genuinely orthogonal to temporal-centroid (1st vs 3rd time-domain moment), to temporal-spread (sign-blind 2nd moment vs sign-aware 3rd; same tc and ts can yield opposite-sign ts3), to amplitude-shape skewness (order-invariant — permuting rows leaves it unchanged), to all spectral-* lenses (frequency-domain), and to fractal/scaling/Hjorth lenses (position-invariant in time). Peeters, G. (2004), CUIDADO IRCAM Tech. Rep., §6.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 3 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'ts3-desc' (default; most front-loaded first) | 'ts3-asc' (most back-loaded first) | 'abs-ts3-desc' (most asymmetric first) | 'abs-ts3-asc' (most symmetric first) | 'rows' | 'source'",
+    'ts3-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 3) {
+          throw new Error(
+            `--min-rows must be an integer >= 3 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'ts3-desc',
+          'ts3-asc',
+          'abs-ts3-desc',
+          'abs-ts3-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTemporalSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'ts3-desc'
+            | 'ts3-asc'
+            | 'abs-ts3-desc'
+            | 'abs-ts3-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenTemporalSkewness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
 
+program.parseAsync(process.argv).catch(die);

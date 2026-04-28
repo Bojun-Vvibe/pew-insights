@@ -10219,6 +10219,10 @@ import type {
   SourceRowTokenTemporalSpreadReport,
   SourceRowTokenTemporalSpreadRow,
 } from './sourcerowtokentemporalspread.js';
+import type {
+  SourceRowTokenTemporalSkewnessReport,
+  SourceRowTokenTemporalSkewnessRow,
+} from './sourcerowtokentemporalskewness.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,
@@ -10615,6 +10619,64 @@ export function renderSourceRowTokenSpectralDecrease(
       s.firstBinPower.toExponential(3),
       s.tailPower.toExponential(3),
       s.decrease.toExponential(3),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenTemporalSkewness(
+  r: SourceRowTokenTemporalSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-temporal-skewness'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroSeries)} zero-series, ${formatNumber(r.droppedZeroVariance)} zero-variance (single-row spike), ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Peeters 2004 temporal skewness: standardized 3rd central moment of the time-row index around the temporal centroid of the per-row total_tokens series. ts3 = (sum_n (n - tc_index)^3 * a[n] / sum a[n]) / ts_index^3. ts3 > 0 = early peak with long trailing tail (front-loaded); ts3 < 0 = long quiet build-up with late peak (back-loaded); ts3 ~ 0 = symmetric envelope. Order-sensitive on rows; not time-shift invariant. Genuinely orthogonal to temporal-centroid (1st vs 3rd time-domain moment), to temporal-spread (sign-blind 2nd moment vs sign-aware 3rd), to amplitude-shape skewness (order-invariant — permuting rows leaves it unchanged), to all spectral-* lenses (frequency-domain), and to fractal/scaling/Hjorth lenses (position-invariant in time). Peeters, G. (2004), CUIDADO IRCAM Tech. Rep., §6.1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token temporal skewness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'totalAmp', 'tcIndex', 'tsIndex', 'ts3'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTemporalSkewnessRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.totalAmp.toExponential(3),
+      s.tcIndex.toFixed(2),
+      s.tsIndex.toFixed(2),
+      s.ts3.toFixed(4),
     ],
   );
   lines.push(renderTableLocal(headers, rows));
