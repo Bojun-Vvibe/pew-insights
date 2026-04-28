@@ -2,6 +2,114 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.205 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-trim-mean-20`** — per-source
+  **20 % symmetrically trimmed mean** of per-row `total_tokens`.
+  Sort the rows ascending, **drop** the bottom `k = floor(0.20 n)`
+  and top `k` order statistics entirely, then take the
+  arithmetic mean of the central `n - 2k` surviving rows.
+  Symmetric L-estimator with 20 % breakdown.
+
+  **Mechanically distinct from `source-row-token-winsorized-mean-20`**
+  (v0.6.203) at the same `alpha = 0.20`: WM-20 **clips** the
+  `2k` extreme rows to the boundary values `x_(k+1)` and
+  `x_(n-k)` and keeps `n` rows in the denominator; TM-20
+  **drops** them entirely and keeps only `n - 2k` rows in the
+  denominator. On the same data the two are not generally
+  equal — WM-20's mean is pulled toward the boundary by the
+  clipped rows still counting at boundary value, while TM-20
+  is the unweighted mean of the surviving central body.
+
+  **Mechanically distinct from `source-row-token-trim-mean-10`**
+  (v0.6.204): same DROP mechanism but different `alpha` (0.20
+  vs 0.10), different breakdown (20 % vs 10 %), different `k`.
+  TM-20 trims twice as much per tail and retains 60 % of the
+  body (vs TM-10's 80 %), so TM-20 is strictly more robust to
+  outliers than TM-10 and strictly less robust than TM-25
+  (which retains only 50 %).
+
+  **Mechanically distinct from `source-row-token-trim-mean-25`**:
+  same DROP mechanism, smaller `alpha` (0.20 vs 0.25), wider
+  central body retained. TM-20 sits between TM-10 and TM-25
+  on the L-estimator robustness ladder.
+
+  Free byproducts: `loBoundary = x_(k+1)`, `hiBoundary = x_(n-k)`,
+  `trimmedPerTail = k`, `mean` (raw arithmetic mean of all `n`),
+  and `tmMeanGap = trim_mean - mean` (negative ⇒ upper tail
+  is pulling raw mean up; positive ⇒ lower tail is dragging
+  raw mean down; zero on tail-symmetric data).
+
+  Properties exercised in tests: scale-equivariance,
+  translation-equivariance, order-invariance, identity on
+  constant + all-zero series, bounded by `[loBoundary,
+  hiBoundary]`, hard-coded `n = 10` `[1..10]` numeric check
+  (`k = 2`, `lo = 3`, `hi = 8`, `TM = 5.5 = mean`, gap = 0
+  by tail-symmetry), hard-coded `n = 5` `[1..5]` boundary
+  check (`k = 1`, central window = `{2, 3, 4}`, TM = 3),
+  heavy-upper-tail diagnostic (`tmMeanGap < 0`),
+  heavy-lower-tail diagnostic (`tmMeanGap > 0`), `k`
+  doubling at `n = 20` vs TM-10 (`k = 4` vs `k = 2`),
+  reference-implementation agreement on a 137-point
+  deterministic pseudo-random series, and 20-trial random
+  size sweep against the naive reference.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to `vscode-XXX`):
+
+  ```
+  pew-insights source-row-token-trim-mean-20
+  sources: 6 (shown 6)    rows: 1,883    dropped: 0 across all gates
+
+  source       rows  k/tail  lo          hi           mean         trim-mean   tm-mean
+  -----------  ----  ------  ----------  -----------  -----------  ----------  -----------
+  codex        64    12      992920.00   23129827.00  12650385.31  8872056.60  -3778328.71
+  opencode     415   83      1334799.00  13810863.00  10400525.21  7717418.04  -2683107.17
+  claude-code  299   59      441423.00   17769444.00  11512995.95  5125697.77  -6387298.18
+  openclaw     521   104     1070773.00  5284055.00   3793360.12   2661479.66  -1131880.45
+  hermes       251   50      177095.00   1255242.00   771978.83    499228.36   -272750.48
+  vscode-XXX   333   66      673.00      6372.00      5662.84      2625.26     -3037.58
+  ```
+
+  All 6 sources show `tmMeanGap < 0`, confirming the same
+  upper-tail-dominant signal v0.6.202 (WM-10), v0.6.203
+  (WM-20), and v0.6.204 (TM-10) detected. Largest absolute
+  gap on `claude-code`: `-6,387,298.18` tokens (~55 % of its
+  raw mean) — substantially larger than TM-10's
+  `-3,983,124.18` gap (35 % of mean) on the same source,
+  exactly as expected from the doubled trim fraction:
+  TM-20 strips an additional 30 rows of upper tail that
+  TM-10 still admitted into its central body. Smallest
+  absolute gap on `vscode-XXX` at `-3,037.58` tokens (~54 %
+  of its raw mean — much higher fraction than TM-10's 46 %,
+  again confirming the more aggressive trim). Note that
+  `opencode` grew to 415 rows (vs 414 at v0.6.204 capture)
+  and `hermes` to 251 rows (vs 249) — queue continues to
+  accumulate.
+
+### Tests
+
+- Test count grew from 4736 → 4772 (+36). New file
+  `test/sourcerowtokentrimmean20.test.ts` covers shape /
+  option validation (10 tests), identity on constant +
+  all-zero series, hard-coded `n = 10` `[1..10]` and
+  `n = 5` `[1..5]` numeric checks, heavy-upper-tail and
+  heavy-lower-tail diagnostics, `k` divergence from TM-10
+  at `n = 20`, `--min-rows`, `--min-trim-mean`, `--top`,
+  `--source` filter, bad-input dropping (hour_start /
+  non-finite / negative tokens), `--since` / `--until`
+  windowing, `unknown` source mapping, all five non-default
+  sort orderings (`mean-desc`, `trim-mean-asc`, `source`,
+  `rows`, `gap-desc`), and seven property tests
+  (scale-equivariance, translation-equivariance,
+  order-invariance, `[lo, hi]` boundedness across 30
+  random series, naive-reference agreement on a 137-point
+  pseudo-random series, heavy-tailed diagnostic on
+  80/20 mix, 20-trial random size sweep against the naive
+  reference).
+
 ## 0.6.204 — 2026-04-29
 
 ### Added
