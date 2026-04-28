@@ -7777,6 +7777,65 @@ export function renderSourceRowTokenTemporalCentroid(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+
+export function renderSourceRowTokenTemporalSpread(
+  r: SourceRowTokenTemporalSpreadReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-temporal-spread'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroSeries)} zero-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Peeters 2004 temporal spread / temporal bandwidth: amplitude-weighted std of the time-row index around the temporal centroid of the per-row total_tokens series. ts_index = sqrt(sum_{n} (n-tc_index)^2 * a[n] / sum a[n]); ts = ts_index / (N-1) in [0, 0.5]. ts -> 0 = impulse-like (tightly clustered in time); ts ~= 0.289 (= 1/sqrt(12)) = uniform amplitude across rows; ts -> 0.5 = max-bimodal (mass split between row 0 and row N-1). Time-domain dual of spectral-bandwidth (frequency-domain 2nd moment). Order-sensitive on rows; not time-shift invariant. Genuinely orthogonal to temporal-centroid (1st vs 2nd time-domain moment), to all spectral-* lenses (frequency-domain), to fractal/scaling/Hjorth lenses (position-invariant in time), to time-domain symbolic entropies, and to amplitude-shape lenses (cv/mad/iqr-ratio/skewness/kurtosis/gini/crest-factor/burstiness — all order-invariant). Peeters, G. (2004), CUIDADO IRCAM Tech. Rep., §6.1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token temporal spread (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'totalAmp', 'tcIndex', 'tsIndex', 'ts'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTemporalSpreadRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.totalAmp.toExponential(3),
+      s.tcIndex.toFixed(2),
+      s.tsIndex.toFixed(2),
+      s.ts.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderSourceCacheShareByDayCv(
   r: SourceCacheShareByDayCvReport,
 ): string {
@@ -10156,6 +10215,10 @@ import type {
   SourceRowTokenTemporalCentroidReport,
   SourceRowTokenTemporalCentroidRow,
 } from './sourcerowtokentemporalcentroid.js';
+import type {
+  SourceRowTokenTemporalSpreadReport,
+  SourceRowTokenTemporalSpreadRow,
+} from './sourcerowtokentemporalspread.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,

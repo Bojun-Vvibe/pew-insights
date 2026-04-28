@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.167 — 2026-04-28
+
+### Added
+
+- New subcommand `source-row-token-temporal-spread`:
+  per-source **Peeters 2004 temporal spread** (a.k.a.
+  **temporal bandwidth**) of the per-row `total_tokens`
+  series. For a non-negative amplitude time series
+  `a[n]`, `n = 0..N-1`,
+
+      tc_index = sum_{n} n * a[n] / sum_{n} a[n]
+      ts_index = sqrt( sum_{n} (n - tc_index)^2 * a[n]
+                       / sum_{n} a[n] )
+      ts       = ts_index / (N - 1)            in [0, 0.5]
+
+  — the amplitude-weighted standard deviation of the
+  *time-row index* around the source's own temporal
+  centroid, normalized by the row-index span. The
+  normalization gives three reference points: `ts -> 0`
+  is a perfect impulse (all energy at one row);
+  `ts ~= 1/sqrt(12) = 0.289` is uniform amplitude across
+  all rows; `ts -> 0.5` is the max-bimodal extreme (mass
+  split between row 0 and row N-1).
+
+  This is the **time-domain dual of spectral-bandwidth**
+  (Peeters 2004 §6.1, paired with §6.2): both are
+  amplitude-weighted second moments around their
+  respective first moments, but spectral-bandwidth lives
+  in frequency-bin space on the PSD, while temporal
+  spread lives in row-index space on the raw non-negative
+  envelope. Together with `temporal-centroid` (0.6.163,
+  the 1st time-domain moment) it completes the time-domain
+  mean+std pair, mirroring the spectral-centroid +
+  spectral-bandwidth pair already in the suite.
+
+  **Why this lens is genuinely orthogonal.** All
+  `spectral-*` lenses are *frequency-domain* descriptors
+  on the PSD (centroid, bandwidth, skewness, kurtosis,
+  rolloff, flatness, entropy, decrease, irregularity);
+  none describe *temporal* width. All fractal / scaling
+  / Hjorth lenses (DFA, Higuchi-FD, Katz-FD,
+  Petrosian-FD, Hurst-RS, Hjorth-mobility,
+  Hjorth-complexity, TKEO) are *position-invariant in
+  time* — translating the series in row index leaves
+  them unchanged. All amplitude-shape lenses (cv, mad,
+  iqr-ratio, skewness, kurtosis, gini, crest-factor,
+  burstiness) and all time-domain symbolic entropies
+  (approximate, sample, permutation, renyi, lempel-ziv)
+  are *order-invariant* — permuting the series gives
+  the same value. Even temporal-centroid (the only other
+  amplitude-weighted, position-aware lens) cannot
+  reconstruct ts: centroid asks *where* the mass sits;
+  spread asks *how wide* it is around that position.
+  Two sources with identical tc=0.5 can have ts
+  anywhere in [0, 0.5].
+
+  Citation: Peeters, G. (2004), "A large set of audio
+  features for sound description (similarity and
+  classification) in the CUIDADO project", IRCAM
+  Tech. Rep., §6.1 (Temporal Centroid + Temporal Spread:
+  amplitude-weighted mean and standard deviation of the
+  time index of an energy envelope).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (sources: 6, rows: 1,754, sort: ts-desc; one source
+  name redacted to `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tsIndex  ts
+      ------------ ----  --------  -------  -------  ------
+      codex        64    8.096e+8  38.71    21.61    0.3430
+      opencode     372   3.936e+9  176.08   116.56   0.3142
+      vscode-XXX   333   1.886e+6  217.71   101.24   0.3050
+      hermes       208   1.716e+8  82.55    57.50    0.2778
+      openclaw     478   1.921e+9  193.01   127.69   0.2677
+      claude-code  299   3.442e+9  214.28   72.56    0.2435
+
+  Operator reading: every kept source lands in a
+  surprisingly tight band of ts ~= 0.24..0.34, *all
+  hovering around the uniform-amplitude reference value
+  1/sqrt(12) = 0.289*. None are anywhere near the
+  impulse extreme (ts -> 0) or the bimodal extreme
+  (ts -> 0.5). This is the headline finding: real-world
+  per-source token series in this queue are roughly
+  spread-uniform in row-index amplitude — not
+  impulsive (no single dominant row) and not bimodal
+  (no early-vs-late split). The smallest-history source
+  `codex` (N=64) shows the widest normalized spread
+  (0.343) — its 64 rows include some heterogeneity that
+  the larger histories average out. `claude-code`
+  (N=299, ts=0.2435) is the *narrowest*: its energy is
+  the most temporally concentrated of the cohort,
+  consistent with its already-known back-loaded centroid
+  (tc=0.7190 in 0.6.163) — its mass sits late *and*
+  tightly clustered. The pair `(tc, ts)` cleanly
+  separates `claude-code` (late, narrow) from `openclaw`
+  (early-ish, wide), which the back-loaded-vs-front-loaded
+  centroid axis alone could not do. This is exactly the
+  size-vs-shape distinction the new lens exposes.
+
 ## 0.6.166 — 2026-04-28
 
 ### Added
