@@ -2,6 +2,129 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.179 — 2026-04-28
+
+### Added
+
+- New subcommand
+  **`source-row-token-temporal-entropy`** — per-source
+  Shannon entropy of the normalized per-row
+  `total_tokens` amplitude envelope, computed directly
+  in the row-index domain (NOT on a transformed
+  spectrum or symbolic alphabet).
+
+  For each source, the per-row token series
+  `a[n] = total_tokens[n]` is normalized into a
+  probability mass function `p[n] = a[n] / sum(a)`,
+  and the Shannon entropy in nats
+
+      H(p) = - sum_{n : p[n] > 0} p[n] * ln(p[n])
+
+  is reported alongside its normalized form
+
+      H_norm = H(p) / ln(N)   in [0, 1]
+
+  where `ln(N)` is the maximum-entropy uniform
+  reference. `H_norm == 1` iff the envelope is
+  uniform across all rows; `H_norm == 0` iff a single
+  row carries all token mass. The lens is genuinely
+  orthogonal to:
+
+  - `source-row-token-spectral-entropy` (same Shannon
+    formula but on PSD bins; sine wave / constant /
+    impulse occupy distinct (H_temp, H_spec)
+    quadrants).
+  - `source-row-token-temporal-flatness` (G/A ratio is
+    multiplicative concentration; Shannon H is
+    information-theoretic spread — they agree at
+    extremes but diverge in the middle, e.g. half-mass
+    half-zero gives `tf = 0` but `H_norm > 0`).
+  - all temporal moments centroid / spread / skewness
+    / kurtosis (those are index-weighted; H is
+    index-blind).
+  - all amplitude-shape concentration ratios (gini /
+    mad / iqr / cv / kurtosis / skewness / burstiness
+    / crest factor — different concentration
+    functionals).
+  - symbolic entropies (approximate / sample /
+    permutation / renyi / lempel-ziv operate on
+    symbolic coarse-grainings; H here is on the raw
+    amplitude mass function).
+  - event-counters (zcr / runs / turning / mann-
+    kendall) and fractal / Hjorth lenses (those are
+    order-sensitive; H is order-invariant).
+
+  Headline invariants pinned by 43 unit tests:
+  `H >= 0` and `H <= ln(N)` (Shannon bounds);
+  `H_norm == 1` iff p is uniform; `H_norm == 0` iff p
+  is a single-point mass; **amplitude-scale invariant**
+  (rescaling all `a[n]` by `c > 0` leaves
+  `p[n] = a[n]/sum(a)` and hence H unchanged);
+  **order-invariant** (H depends only on the multiset
+  `{p[n]}`, not on row order). Plus an explicit-
+  formula cross-check and a 20-trial randomized
+  bounds-property test.
+
+  Implementation surface:
+
+  - `--since` / `--until` window on `hour_start`
+  - `--source <id>` to restrict to one source
+  - `--min-rows <n>` (integer >= 4, default 8)
+  - `--top <n>` cap on output table
+  - `--sort` accepts `norm-entropy-desc` (default;
+    most-uniform / most-spread mass first),
+    `norm-entropy-asc` (most-concentrated first),
+    `dist-uniform-asc` (closest to H_norm=1 first),
+    `dist-uniform-desc` (farthest first), `rows`,
+    `source`. Final tiebreak is `source` asc.
+  - `--min-norm-entropy <x>` / `--max-norm-entropy <x>`
+    (band filter in [0, 1]; rejected rows surface
+    under `droppedBelowMinNormEntropy` /
+    `droppedAboveMaxNormEntropy`).
+  - `--json` for the structured report.
+
+  Citation: Shannon, C. E. (1948), "A Mathematical
+  Theory of Communication", Bell Sys. Tech. J.
+  27:379-423, 623-656. Application to a time-domain
+  amplitude envelope (rather than a power spectrum)
+  follows the same pattern as Peeters (2004),
+  CUIDADO IRCAM Tech. Rep., §6.1.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, all-time)
+
+    $ pew-insights source-row-token-temporal-entropy --top 20
+
+    sources: 6 (shown 6)    rows: 1,772    sort: norm-entropy-desc
+    dropped: 0 / 0 / 0 / 0 / 0 / 0 / 0 / 0 / 0 / 0
+
+    source         rows  nonZero  totalAmp   H(nats)     maxH        normH
+    -------------  ----  -------  ---------  ----------  ----------  ----------
+    openclaw       484   484      1.925e+9   5.7342e+0   6.1821e+0   9.2756e-1
+    opencode       378   378      3.996e+9   5.3911e+0   5.9349e+0   9.0837e-1
+    hermes         214   214      1.746e+8   4.8421e+0   5.3660e+0   9.0237e-1
+    codex          64    64       8.096e+8   3.5830e+0   4.1589e+0   8.6154e-1
+    claude-code    299   299      3.442e+9   4.8283e+0   5.7004e+0   8.4701e-1
+    vscode-XXX     333   333      1.886e+6   4.7237e+0   5.8081e+0   8.1330e-1
+
+  Reading: every source runs at `H_norm >= 0.81`,
+  i.e. all six sources spread their token mass fairly
+  evenly across rows in the row-index domain — none of
+  them are pathologically concentrated on a small
+  handful of rows. `openclaw` is the most uniform
+  envelope (`H_norm = 0.928`), only ~7% short of the
+  uniform reference; `vscode-XXX` is the most
+  concentrated of the six (`H_norm = 0.813`), with
+  ~19% of its row mass packed into a smaller minority
+  of rows. Notably ALL six have `nonZeroRows == rows`
+  (every row carries strictly positive token mass),
+  so the spread differences come from amplitude
+  imbalance among non-zero rows rather than from any
+  zero-mass rows. This is the time-domain dual of the
+  spectral-entropy ranking and complements the
+  G/A-ratio ranking from `temporal-flatness` v0.6.178
+  with an information-theoretic measure on the same
+  amplitude envelope.
+
 ## 0.6.178 — 2026-04-28
 
 ### Added
