@@ -839,3 +839,71 @@ testGap(
     }
   },
 );
+
+// ---------- refinement: full-ladder monotonicity L_6 <= L_7 <= L_8 <= L_9 ----------
+//
+// End-to-end Lehmer-monotonicity pin: on a single random non-negative
+// integer series, build L_6, L_7, L_8 and L_9 from their respective
+// builders, fetch the headline mean from each, and assert the full
+// chain holds row-by-row. This is strictly stronger than the per-rung
+// monotonicity tests above (which only compare consecutive rungs)
+// because it pins that *every* rung is monotone with *every* prior
+// rung — a future refactor that, e.g., accidentally swapped sum8 and
+// sum6 in only one builder (collapsing L_8 below L_6 on a heavy-tailed
+// series) would still pass the L_8-vs-L_7 and L_9-vs-L_8 tests but
+// would trip this end-to-end chain.
+import { test as testChain } from 'node:test';
+import { strict as assertChain } from 'node:assert';
+testChain(
+  'refinement: full integer Lehmer ladder L_6 <= L_7 <= L_8 <= L_9 holds end-to-end',
+  () => {
+    const r = (() => {
+      let s = 0xfeedface;
+      return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0x100000000;
+      };
+    })();
+    let trialsRun = 0;
+    for (let trial = 0; trial < 60; trial += 1) {
+      const n = 3 + Math.floor(r() * 25);
+      const xs: number[] = [];
+      for (let i = 0; i < n; i += 1) xs.push(Math.floor(r() * 5000));
+      if (xs.every((x) => x === 0)) continue;
+      const queue = mkSeries(`chain${trial}`, xs);
+      const r9 = buildSourceRowTokenLehmer9Mean(queue, { generatedAt: GEN });
+      const r8 = buildSourceRowTokenLehmer8Mean(queue, { generatedAt: GEN });
+      const r7 = buildSourceRowTokenLehmer7Mean(queue, { generatedAt: GEN });
+      const r6 = buildSourceRowTokenLehmer6Mean(queue, { generatedAt: GEN });
+      if (
+        r9.sources.length === 0 ||
+        r8.sources.length === 0 ||
+        r7.sources.length === 0 ||
+        r6.sources.length === 0
+      )
+        continue;
+      const L9 = r9.sources[0]!.lehmer9Mean;
+      const L8 = r8.sources[0]!.lehmer8Mean;
+      const L7 = r7.sources[0]!.lehmer7Mean;
+      const L6 = r6.sources[0]!.lehmer6Mean;
+      const eps = 1e-9 * Math.max(1, L9);
+      assertChain.ok(
+        L6 <= L7 + eps,
+        `L_6 <= L_7 expected: L_6=${L6}, L_7=${L7}, xs=${JSON.stringify(xs)}`,
+      );
+      assertChain.ok(
+        L7 <= L8 + eps,
+        `L_7 <= L_8 expected: L_7=${L7}, L_8=${L8}, xs=${JSON.stringify(xs)}`,
+      );
+      assertChain.ok(
+        L8 <= L9 + eps,
+        `L_8 <= L_9 expected: L_8=${L8}, L_9=${L9}, xs=${JSON.stringify(xs)}`,
+      );
+      trialsRun += 1;
+    }
+    assertChain.ok(
+      trialsRun >= 30,
+      `expected at least 30 trials with non-empty results, got ${trialsRun}`,
+    );
+  },
+);
