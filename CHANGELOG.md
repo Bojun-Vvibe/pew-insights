@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.186 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-harmonic-mean`** — per-source
+  **harmonic mean** of the per-row `total_tokens` distribution.
+
+  For each source, take the reciprocal of every row's
+  `total_tokens`, average those reciprocals, and take the
+  reciprocal of that average:
+
+      HM = n / sum_{i=1..n} (1 / x_i)
+
+  This is the **Pythagorean lower bound**: by the
+  AM-GM-HM inequality, for any strictly positive sample,
+  `HM <= GM <= AM`, with equality iff every row is equal.
+  HM is the smallest of the three classical Pythagorean
+  means and lies strictly below the arithmetic mean
+  unless the series is constant.
+
+  HM is the **qualitative break** from every existing
+  `source-row-token-*` location lens: mean, median,
+  midhinge (v0.6.183), trimean (v0.6.182), mid-range
+  (v0.6.184), and trim-mean-25 (v0.6.185) are all
+  **L-estimators** — linear combinations of order
+  statistics — and all are translation- and
+  scale-equivariant. HM is **not an L-estimator** (it
+  is a non-linear function of every row's value), is
+  **scale-equivariant** but **NOT translation-equivariant**.
+  Where every existing location lens treats `min(x)+c`
+  as `min(x)` shifted by `c`, HM does not — shifting
+  every row up by `c` moves HM by something other than
+  `c`. This is the structural property that makes HM
+  the right average for rates and ratios (km/h, tokens
+  per second, etc.).
+
+  HM is **dominated by the smallest rows**: a single
+  row of value `epsilon` contributes `1/epsilon` to the
+  sum of reciprocals, which alone forces
+  `HM <= n * epsilon`. This is the **opposite** of the
+  arithmetic mean (dominated by the largest rows): a
+  single huge row pulls AM up unboundedly but barely
+  registers in HM. Concretely on `[1, 1, 1, 1,
+  1_000_000]`: AM ~200,000, HM ~1.25 — HM stays anchored
+  to the typical-small-row bottleneck.
+
+  The signed gap `hmAmGap = HM - mean` is reported as
+  a free byproduct and is **always <= 0** by AM-GM-HM,
+  with `0` iff the series is constant; the magnitude
+  of the gap is a model-free measure of the
+  **multiplicative spread** of the distribution.
+
+  **Live smoke** (`source-row-token-harmonic-mean
+  --min-rows 4`, full queue, 1,802 rows across 6
+  sources, sort `harmonic-mean-desc`):
+
+      source        rows   mean          harmonic-mean   hm-mean
+      ------------  -----  ------------  --------------  --------------
+      openclaw      494    3,916,360.86  1,577,914.72    -2,338,446.14
+      opencode      388   10,492,565.14  1,241,602.31    -9,250,962.83
+      codex          64   12,650,385.31    788,948.06   -11,861,437.26
+      claude-code   299   11,512,995.95    305,188.99   -11,207,806.96
+      hermes        224      805,945.92    213,802.96      -592,142.96
+      vscode-XXX    333        5,662.84        708.17        -4,954.67
+
+  Every `hmAmGap` is negative as expected. The
+  ordering by HM differs sharply from the ordering by
+  AM: `openclaw` overtakes `opencode` / `codex` /
+  `claude-code` because its small-row body is
+  comparatively larger (the others have heavy upper
+  tails that pull AM up but barely move HM).
+  `vscode-XXX` is uniformly small in token magnitude
+  on both axes — the harmonic mean of ~708 confirms
+  the typical row in that source is a small,
+  bounded-cost call.
+
+  No invalid / negative / zero `total_tokens` were
+  dropped on the live data; no source fell below the
+  `--min-rows 4` floor.
+
+### Tests
+
+- Test count grew from 3,921 -> 3,974 (+53) in the
+  new `sourcerowtokenharmonicmean.test.ts` suite.
+  Coverage: shape / option validation (11), core math
+  (10 — including pinned values, AM-GM-HM inequality,
+  bounds, reference-impl agreement, order-invariance),
+  equivariance (3 — scale, NOT translation, small-row
+  dominance, large-row inertness), filtering / dropped
+  counters (8 — including the dedicated
+  `droppedZeroTokens` counter that prevents `1/0`
+  blow-ups), min-rows / min-harmonic-mean gates (2),
+  sort / cap (8), empty / window guards (2),
+  multi-source aggregation (2), generatedAt + report
+  metadata (2), additional pinned values (5).
+
 ## 0.6.185 — 2026-04-28
 
 ### Added
