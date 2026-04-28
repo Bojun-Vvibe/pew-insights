@@ -700,3 +700,81 @@ test('bowley: source filter "" treated as no filter', () => {
   assert.equal(r.sources.length, 2);
   assert.equal(r.source, null);
 });
+
+// ---------------------------------------------------------------------
+// Refinement pins: orthogonality predicates vs the existing Fisher g1
+// lens. The whole reason we shipped Bowley as a separate lens is that
+// the two skewness families disagree on outlier-heavy series. These
+// tests pin the disagreement so the orthogonality claim in the
+// CHANGELOG stays falsifiable.
+// ---------------------------------------------------------------------
+
+import { buildSourceRowTokenSkewness } from '../src/sourcerowtokenskewness.js';
+
+test('bowley vs g1: same value on a clean arithmetic progression (both ~0)', () => {
+  const vals = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  const rB = buildSourceRowTokenBowleySkewness(mkSeries('a', vals), {
+    generatedAt: GEN,
+  });
+  const rG = buildSourceRowTokenSkewness(mkSeries('a', vals), {
+    generatedAt: GEN,
+  });
+  assert.ok(Math.abs(rB.sources[0]!.bowley) < 1e-12);
+  assert.ok(Math.abs(rG.sources[0]!.skewness) < 1e-9);
+});
+
+test('bowley vs g1: outlier-injection — Bowley stays bounded, g1 explodes', () => {
+  // base series is symmetric; inject a single huge outlier at the top.
+  const base = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  const withOutlier = [...base, 1_000_000];
+
+  const rB1 = buildSourceRowTokenBowleySkewness(mkSeries('a', base), {
+    generatedAt: GEN,
+  });
+  const rB2 = buildSourceRowTokenBowleySkewness(
+    mkSeries('a', withOutlier),
+    { generatedAt: GEN },
+  );
+  const rG1 = buildSourceRowTokenSkewness(mkSeries('a', base), {
+    generatedAt: GEN,
+  });
+  const rG2 = buildSourceRowTokenSkewness(mkSeries('a', withOutlier), {
+    generatedAt: GEN,
+  });
+
+  // Bowley both before and after stays well inside [-1, +1] (and very
+  // close to 0 because the central 50% is not affected much by adding
+  // a single point at the very top).
+  assert.ok(Math.abs(rB1.sources[0]!.bowley) < 0.1);
+  assert.ok(Math.abs(rB2.sources[0]!.bowley) < 0.2);
+
+  // g1 changes massively: it's essentially 0 on the clean series and
+  // > 2.5 once the outlier is added.
+  assert.ok(Math.abs(rG1.sources[0]!.skewness) < 0.1);
+  assert.ok(rG2.sources[0]!.skewness > 2.5);
+
+  // The PIN: outlier-injection moves Bowley by < 0.2 but moves g1 by
+  // > 2.0. This is the qualitative orthogonality the CHANGELOG claims.
+  const dB = Math.abs(rB2.sources[0]!.bowley - rB1.sources[0]!.bowley);
+  const dG = Math.abs(rG2.sources[0]!.skewness - rG1.sources[0]!.skewness);
+  assert.ok(dB < 0.2, `expected dBowley<0.2 got ${dB}`);
+  assert.ok(dG > 2.0, `expected dG1>2.0 got ${dG}`);
+  assert.ok(dG > 10 * dB, `expected g1 to move >>10x more than Bowley`);
+});
+
+test('bowley vs g1: bounded vs unbounded (|B| <= 1 always, |g1| can be huge)', () => {
+  // 50 small values + 1 enormous outlier
+  const huge = Array.from({ length: 50 }, () => 1);
+  huge.push(10_000_000);
+  const rB = buildSourceRowTokenBowleySkewness(mkSeries('a', huge), {
+    generatedAt: GEN,
+  });
+  const rG = buildSourceRowTokenSkewness(mkSeries('a', huge), {
+    generatedAt: GEN,
+  });
+  assert.ok(Math.abs(rB.sources[0]!.bowley) <= 1 + 1e-12);
+  // g1 should be at least several units (~ sqrt(n) - ish for a single
+  // extreme outlier). Pin the unbounded behaviour empirically.
+  assert.ok(Math.abs(rG.sources[0]!.skewness) > 3);
+});
+
