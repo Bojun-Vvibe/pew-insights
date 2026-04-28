@@ -10227,6 +10227,10 @@ import type {
   SourceRowTokenTemporalKurtosisReport,
   SourceRowTokenTemporalKurtosisRow,
 } from './sourcerowtokentemporalkurtosis.js';
+import type {
+  SourceRowTokenTemporalFlatnessReport,
+  SourceRowTokenTemporalFlatnessRow,
+} from './sourcerowtokentemporalflatness.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,
@@ -10739,6 +10743,64 @@ export function renderSourceRowTokenTemporalKurtosis(
       s.tcIndex.toFixed(2),
       s.tsIndex.toFixed(2),
       s.ts4.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenTemporalFlatness(
+  r: SourceRowTokenTemporalFlatnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-temporal-flatness'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroSeries)} zero-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source temporal flatness: tf = G(a)/A(a), the AM-GM ratio of the per-row total_tokens amplitude envelope. tf in (0, 1]; tf == 1 iff the envelope is constant positive; tf -> 0 as more rows floor to zero. Time-domain dual of spectral-flatness (same G/A ratio applied to PSD bins). Order-invariant and amplitude-scale invariant. Genuinely orthogonal to spectral-flatness (different domain), to all temporal moments centroid/spread/skewness/kurtosis (index-blind here, weighted by index there), and to all amplitude-shape concentration ratios (gini/mad/iqr/cv/kurtosis/skewness/burstiness/crest). Johnston 1988 / Peeters 2004.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token temporal flatness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'totalAmp', 'arithMean', 'geomMean', 'tf'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTemporalFlatnessRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.totalAmp.toExponential(3),
+      s.arithmeticMean.toExponential(3),
+      s.geometricMean.toExponential(3),
+      s.tf.toExponential(4),
     ],
   );
   lines.push(renderTableLocal(headers, rows));

@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.175 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-flatness` lens: per-source
+  Wiener-entropy analog of the spectral-flatness ratio,
+  computed directly on the per-row `total_tokens`
+  amplitude envelope rather than on its PSD.
+
+  Formula: `tf = G(a) / A(a)`, where
+    - `G(a) = exp((1/N) * sum_n log(max(a[n], EPS)))`
+      (geometric mean; sub-EPS rows floored at `1e-300`
+      for the log sum, matching the Welch / log-MS
+      convention used by spectral-flatness)
+    - `A(a) = (1/N) * sum_n a[n]` (arithmetic mean)
+
+  By the AM-GM inequality, `0 < tf <= 1`. `tf == 1` iff
+  every row carries identical positive mass (perfectly
+  flat envelope); `tf -> 0` as more rows floor to zero
+  while a small handful concentrate the mass.
+
+  Headline question: **for each source, how *flat vs.
+  spiky* is the per-row token amplitude envelope itself,
+  in the row-index domain?**
+
+  This is the *time-domain dual* of
+  `source-row-token-spectral-flatness` (which applies
+  the same G/A ratio to the PSD bins). The two are
+  genuinely different:
+    - A perfectly tonal sine wave has very low spectral
+      flatness (one PSD bin dominates) but high
+      temporal flatness (the |sine| envelope is fairly
+      uniform).
+    - A constant DC level has high temporal flatness
+      (envelope is flat) and undefined spectral
+      flatness after mean-centering (zero variance).
+    - An impulsive single-row spike has very low
+      temporal flatness (one row dominates) and high
+      spectral flatness (spike has flat broadband
+      spectrum after centering).
+
+  Provenance: Johnston, J. D. (1988), "Transform Coding
+  of Audio Signals Using Perceptual Noise Criteria",
+  IEEE J. Selected Areas in Comms 6(2):314-323
+  (defines the AM-GM flatness ratio in the spectral
+  domain). Peeters, G. (2004), CUIDADO IRCAM Tech.
+  Rep., §6.1 (treats the amplitude envelope `a[n]` as a
+  first-class time-domain object — same role here).
+
+  Reported per-source columns: `rowsKept`, `totalAmp`,
+  `arithmeticMean`, `geometricMean`, `tf`. Sort modes:
+  `tf-desc` (default; flattest envelope first), `tf-asc`
+  (spikiest first), `rows`, `source`. Final tiebreak in
+  all sort modes: `source` asc.
+
+  Two key invariants pinned by the test suite:
+    - **Order-invariance** (permuting rows leaves tf
+      unchanged): tf depends only on the multiset of
+      amplitudes, not on row order.
+    - **Amplitude-scale invariance** (`a[n] -> c * a[n]`
+      for any `c > 0` leaves tf unchanged): tf picks up
+      only envelope shape, not overall magnitude.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--sort tf-desc` (sources: 6, kept: 6, rows: 1,766):
+
+      source       rows  totalAmp  arithMean  geomMean  tf
+      -----------  ----  --------  ---------  --------  ---------
+      openclaw     482   1.924e+9  3.991e+6   2.569e+6  6.4381e-1
+      hermes       212   1.739e+8  8.202e+5   4.334e+5  5.2834e-1
+      opencode     376   3.979e+9  1.058e+7   4.767e+6  4.5048e-1
+      codex        64    8.096e+8  1.265e+7   4.783e+6  3.7807e-1
+      vscode-XXX   333   1.886e+6  5.663e+3   2.070e+3  3.6556e-1
+      claude-code  299   3.442e+9  1.151e+7   2.827e+6  2.4552e-1
+
+  Operator reading: `openclaw` has the flattest
+  amplitude envelope (`tf = 0.644` — geometric mean is
+  64% of arithmetic mean, indicating fairly uniform
+  per-row token totals across its 482 rows). At the
+  other extreme, `claude-code` has the spikiest
+  envelope (`tf = 0.246` — geometric mean is only 25%
+  of arithmetic mean, indicating heavy concentration of
+  total_tokens in a small subset of its 299 rows).
+  Crucially, this ranking is *orthogonal* to ts4
+  (temporal-kurtosis): `claude-code` has both the
+  lowest tf (most spiky envelope) AND the highest ts4
+  (most peaked around its centroid) — but the
+  `vscode-XXX` source has the lowest tf among the
+  flat-envelope cohort while having a near-uniform ts4.
+  tf measures *amplitude concentration* (how multi-
+  plicative the gap between rows is); ts4 measures
+  *position concentration around the centroid* (how
+  peaked the envelope is around tc_index). They surface
+  different operators of "spikiness".
+
+  Test count 3518 -> 3545 (+27).
+
 ## 0.6.174 — 2026-04-28
 
 ### Added
