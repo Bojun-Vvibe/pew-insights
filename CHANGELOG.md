@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.203 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-winsorized-mean-20`** —
+  per-source **20 % symmetrically winsorized mean** of per-row
+  `total_tokens`. Doubles the tail-attenuation budget of
+  v0.6.202's `winsorized-mean-10`: at `n = 100` it clips the
+  20 most extreme rows to the body boundary instead of the
+  10 most extreme. Sits one rung up the L-estimator robustness
+  ladder — strictly more robust than the mean and mid-range
+  (both 0 % breakdown) and `winsorized-mean-10` (10 %), strictly
+  less than the median (50 %) and `trim-mean-25` (25 %).
+
+  **Definition.** Sort the per-source per-row total_tokens
+  samples `x_(1) <= x_(2) <= ... <= x_(n)`. With
+  `alpha = 0.20` and `k = floor(alpha * n)`:
+
+      y_(i) = x_(k+1)        for i in 1..k          (clip bottom)
+            = x_(i)           for i in k+1..n-k
+            = x_(n-k)         for i in n-k+1..n     (clip top)
+      WM    = mean(y_(1), y_(2), ..., y_(n))
+
+  REPLACE (do not discard) the bottom `k` and top `k` order
+  statistics with the boundary values `lo = x_(k+1)` and
+  `hi = x_(n-k)` respectively, then arithmetic-mean all `n`
+  now-clipped rows. Mechanically distinct from every existing
+  `source-row-token-*` location lens including `winsorized-mean-10`
+  itself: different `alpha` (0.20 vs 0.10), different breakdown
+  (20 % vs 10 %), different boundary positions (`x_(k+1)`
+  / `x_(n-k)` at different `k`), and on the same data the two
+  produce strictly different `lo` / `hi` / WM whenever the
+  series has any non-trivial body shape.
+
+  Reports four free byproducts: `loBoundary = x_(k+1)`,
+  `hiBoundary = x_(n-k)`, `clippedPerTail = k`, and
+  `wmMeanGap = winsorized_mean - mean` (the diagnostic
+  signature: `< 0` means the raw mean is being pulled up by
+  an upper tail the winsorized mean clips out; `> 0` means
+  a lower tail is dragging the raw mean down; `= 0` on a
+  tail-symmetric distribution).
+
+  Properties exercised in tests: scale-equivariance,
+  translation-equivariance, order-invariance, identity on
+  constant + all-zero series, bounded by `[loBoundary,
+  hiBoundary]`, round-trip `sumWinsor == n * winsorizedMean`,
+  `lo == sorted[k]` / `hi == sorted[n-k-1]`, hard-coded
+  `n = 10` `[1..10]` numeric check (`k = 2`, lo = 3, hi = 8,
+  `WM = 5.5 = mean`, gap = 0 by tail-symmetry of the ladder),
+  heavy-upper-tail diagnostic (`wmMeanGap < 0`), heavy-
+  lower-tail diagnostic (`wmMeanGap > 0`), reference-impl
+  agreement on a 137-point deterministic pseudo-random
+  series, WM-vs-trim-mean-25 placement under heavy upper
+  tail, and outlier-attenuation (`|wm_delta| < 100` vs
+  `|mean_delta| > 100,000` when a single 10M-token row is
+  appended to a body of [10..19]).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to `vscode-XXX`):
+
+  ```
+  pew-insights source-row-token-winsorized-mean-20
+  sources: 6 (shown 6)    rows: 1,873    dropped: 0 across all gates
+
+  source       rows  k/tail  lo          hi           mean         wins-mean    wm-mean
+  -----------  ----  ------  ----------  -----------  -----------  -----------  -----------
+  codex        64    12      992920.00   23129827.00  12650385.31  10068050.44  -2582334.88
+  opencode     412   82      1294761.00  13830219.00  10420170.26  7657238.24   -2762932.02
+  claude-code  299   59      441423.00   17769444.00  11512995.95  6696295.82   -4816700.13
+  openclaw     518   103     1091584.00  5401477.00   3812185.20   2905542.10   -906643.11
+  hermes       247   49      177095.00   1323986.00   777859.98    602286.01    -175573.97
+  vscode-XXX   333   66      673.00      6372.00      5662.84      2980.92      -2681.92
+  ```
+
+  All 6 sources show `wmMeanGap < 0`, confirming the same
+  upper-tail-dominant signal v0.6.202's WM-10 detected — but
+  the WM-20 gap is **uniformly larger in magnitude** because
+  doubling `k` clips twice as many high-tail rows down to
+  the (lower) `hi` boundary. Largest absolute gap shifts
+  from `opencode` (under WM-10) to `claude-code` under WM-20:
+  `-4,816,700.13` tokens (`~42 %` of its raw mean), revealing
+  that `claude-code`'s upper tail is fatter (more rows above
+  the new `x_(n-k)` boundary at k=59 than at k=29). Smallest
+  absolute gap stays on `hermes` at `-175,573.97` tokens
+  (`~23 %` of its raw mean — note this is roughly double its
+  WM-10 ratio of 11 %, the expected 2× tail-attenuation
+  signal). Interestingly, `opencode`'s sample size jumped
+  from 410 → 412 rows (queue grew between captures).
+
+### Tests
+
+- Test count grew from 4648 → 4700 (+52). New per-builder
+  file `test/sourcerowtokenwinsorizedmean20.test.ts` covers
+  shape/option validation (9 tests), identity on constant +
+  all-zero series, hard-coded `n = 10` `[1..10]` numeric
+  check (`WM = 5.5 = mean`, gap = 0 by tail-symmetry),
+  heavy-upper-tail diagnostic (`wmMeanGap < 0`), heavy-
+  lower-tail diagnostic (`wmMeanGap > 0`), reference-impl
+  agreement on a 137-point deterministic pseudo-random
+  series, scale-equivariance, translation-equivariance,
+  order-invariance, `[loBoundary, hiBoundary]` bounding,
+  WM-vs-trim-mean-25 placement under heavy upper tail
+  (cross-builder property), round-trip identity, boundary
+  identities, all filter / drop accounting (8 tests across
+  minRows, invalid hour_start, invalid total_tokens,
+  negative total_tokens, source filter, since/until window,
+  top cap, minWinsorizedMean), all sort modes (5 tests),
+  empty-source -> `'unknown'` fallback, and an outlier-
+  attenuation property test. Companion property file
+  `test/sourcerowtokenwinsorizedmean20.property.test.ts`
+  covers tail-symmetry-around-clip-replacement, `WM` bounded
+  by `sorted[k] / sorted[n-k-1]`, trim-mean-25-vs-WM-20
+  placement on right-skew, body-row-insert leaves
+  `wmMeanGap` sign unchanged, doubling-the-series doubles
+  WM/mean/gap (large-`n` scale-equivariance), `WM == mean`
+  when boundary replacement is a no-op, sign-rule predicts
+  upper-vs-lower-tail dominance, and `clippedPerTail ==
+  floor(0.20 n)` across 13 sample sizes from `n = 10` to
+  `n = 500`.
+
 ## 0.6.202 — 2026-04-29
 
 ### Added
