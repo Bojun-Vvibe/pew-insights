@@ -118,6 +118,7 @@ import {
   renderSourceRowTokenQuadraticMean,
   renderSourceRowTokenContraharmonicMean,
   renderSourceRowTokenLehmer3Mean,
+  renderSourceRowTokenLehmer4Mean,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -333,6 +334,7 @@ import { buildSourceRowTokenHarmonicMean } from './sourcerowtokenharmonicmean.js
 import { buildSourceRowTokenQuadraticMean } from './sourcerowtokenquadraticmean.js';
 import { buildSourceRowTokenContraharmonicMean } from './sourcerowtokencontraharmonicmean.js';
 import { buildSourceRowTokenLehmer3Mean } from './sourcerowtokenlehmer3mean.js';
+import { buildSourceRowTokenLehmer4Mean } from './sourcerowtokenlehmer4mean.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -15942,6 +15944,117 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenLehmer3Mean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-lehmer-4-mean')
+  .description(
+    "Per-source Lehmer mean of order 4 (L_4) of per-row total_tokens. L_4 = sum(x^4) / sum(x^3). Extends v0.6.188's Lehmer ladder one step further to the right of L_3: HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 (Lehmer monotonicity). Equivalently, the x^3-self-weighted arithmetic mean — each row weights itself by its own CUBE. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more aggressively than L_3: a single bottleneck row pushes L_4 toward that row's value faster than L_3 does. Distinct from every existing lens: L-estimators (mid-range / midhinge / trimean / trim-mean-25) are translation- AND scale-equivariant; mad reports a SPREAD; coefficient-of-quartile-deviation / bowley-skewness / iqr-ratio measure SHAPE; coefficient-of-variation / burstiness-coefficient / skewness / kurtosis / gini are MOMENT- or distribution-shape statistics; crest-factor is a dimensionless ratio; lehmer-3-mean (L_3) weights by x^2, this lens (L_4) weights by x^3. l4L3Gap = L_4 - L_3, l4ChmGap = L_4 - CHM, l4AmGap = L_4 - mean are reported as free signals: ALL >= 0, with magnitude growing as the multiplicative spread of the positive part of the series grows.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-lehmer-4-mean <f>',
+    'drop sources whose Lehmer-4 mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lehmer-4-mean-desc' (default) | 'lehmer-4-mean-asc' | 'mean-desc' | 'l3-gap-desc' (l4L3Gap desc) | 'chm-gap-desc' (l4ChmGap desc) | 'am-gap-desc' (l4AmGap desc) | 'rows' | 'source'",
+    'lehmer-4-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minLehmer4Mean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLehmer4Mean = Number.parseFloat(opts.minLehmer4Mean);
+        if (!Number.isFinite(minLehmer4Mean) || minLehmer4Mean < 0) {
+          throw new Error(
+            `--min-lehmer-4-mean must be a finite, non-negative number (got ${opts.minLehmer4Mean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lehmer-4-mean-desc',
+          'lehmer-4-mean-asc',
+          'mean-desc',
+          'l3-gap-desc',
+          'chm-gap-desc',
+          'am-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLehmer4Mean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minLehmer4Mean,
+          top,
+          sort: opts.sort as
+            | 'lehmer-4-mean-desc'
+            | 'lehmer-4-mean-asc'
+            | 'mean-desc'
+            | 'l3-gap-desc'
+            | 'chm-gap-desc'
+            | 'am-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenLehmer4Mean(report) + '\n',
           );
         }
       } catch (e) {
