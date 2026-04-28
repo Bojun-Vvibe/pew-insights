@@ -766,3 +766,110 @@ test('trim-mean-25: zero rows kept across all sources -> empty sources, totalRow
   assert.equal(r.totalRowsKept, 0);
   assert.equal(r.droppedInvalidHourStart, 1);
 });
+
+// ---------- refinement: extra property pins + orthogonality ----------
+
+test('trim-mean-25: refinement — full-tail replacement with arbitrary extreme values leaves trim-mean exactly unchanged (the 25%-breakdown signature) over 25 random trials', () => {
+  const r = rng(31415);
+  for (let trial = 0; trial < 25; trial += 1) {
+    const n = 8 + Math.floor(r() * 30); // n >= 8 so k >= 2
+    const central = Array.from({ length: n - 4 }, () =>
+      100 + Math.floor(r() * 100),
+    );
+    // Two-row tails on each side, sandwiching the central body.
+    const baseLow = [1, 2];
+    const baseHigh = [10_000, 20_000];
+    const xs1 = [...baseLow, ...central, ...baseHigh];
+    // Replace the SAME tail rows with arbitrarily extreme values.
+    const newLow = [-0 + Math.floor(r() * 50), Math.floor(r() * 50)];
+    const newHigh = [
+      1_000_000 + Math.floor(r() * 1_000_000),
+      10_000_000 + Math.floor(r() * 1_000_000),
+    ];
+    const xs2 = [...newLow, ...central, ...newHigh];
+    const rep1 = buildSourceRowTokenTrimMean25(mkSeries('s', xs1), {
+      generatedAt: GEN,
+    });
+    const rep2 = buildSourceRowTokenTrimMean25(mkSeries('s', xs2), {
+      generatedAt: GEN,
+    });
+    // For the breakdown property to apply cleanly, both extreme low values
+    // and both extreme high values must remain the bottom-2 and top-2
+    // after sort. Verify and only then assert equality.
+    const sorted1 = xs1.slice().sort((a, b) => a - b);
+    const sorted2 = xs2.slice().sort((a, b) => a - b);
+    const k = Math.floor(0.25 * xs1.length);
+    if (k < 2) continue;
+    // Skip trials where the perturbation broke the assumption that the
+    // injected extremes still bracket the central body.
+    if (
+      sorted1.slice(k, xs1.length - k).join(',') !==
+      sorted2.slice(k, xs2.length - k).join(',')
+    ) {
+      continue;
+    }
+    assert.equal(
+      rep1.sources[0]!.trimMean,
+      rep2.sources[0]!.trimMean,
+      `trial ${trial}: trim-mean must be unchanged when only tails differ`,
+    );
+  }
+});
+
+test('trim-mean-25: refinement — orthogonality: two distributions with identical mid-range but different trim-mean exist (proves trim-mean is not a function of (min, max) alone)', () => {
+  // Both: min=0, max=100, n=8 -> mid-range = 50 in both cases.
+  // But the central 4 differ.
+  const a = [0, 10, 20, 30, 40, 50, 60, 100];
+  const b = [0, 10, 80, 85, 90, 95, 99, 100];
+  const ra = buildSourceRowTokenTrimMean25(mkSeries('a', a), {
+    generatedAt: GEN,
+  });
+  const rb = buildSourceRowTokenTrimMean25(mkSeries('b', b), {
+    generatedAt: GEN,
+  });
+  // central 4 of a (drop 0,10 and 60,100): 20,30,40,50 -> 35
+  assert.equal(ra.sources[0]!.trimMean, 35);
+  // central 4 of b (drop 0,10 and 99,100): 80,85,90,95 -> 87.5
+  assert.equal(rb.sources[0]!.trimMean, 87.5);
+  // sanity: same mid-range
+  assert.equal((Math.min(...a) + Math.max(...a)) / 2, 50);
+  assert.equal((Math.min(...b) + Math.max(...b)) / 2, 50);
+  assert.notEqual(ra.sources[0]!.trimMean, rb.sources[0]!.trimMean);
+});
+
+test('trim-mean-25: refinement — orthogonality: two distributions with identical midhinge but different trim-mean exist (proves trim-mean is not a function of (q1, q3) alone)', () => {
+  // Construct two n=8 series sharing q1 and q3 (type-7 quantile) but with
+  // different central body shapes. q1 at p=0.25 with n=8 sits between
+  // x_(2) and x_(3) (h = 1.75). q3 at p=0.75 sits between x_(6) and
+  // x_(7) (h = 5.25). Pin x_(2),x_(3),x_(6),x_(7) the same; vary x_(4),x_(5).
+  const a = [1, 10, 20, 30, 40, 80, 90, 200];
+  const b = [1, 10, 20, 75, 75, 80, 90, 200];
+  // q1(a) = 10 + 0.75*(20-10) = 17.5; q3(a) = 80 + 0.25*(90-80) = 82.5
+  // q1(b) = 10 + 0.75*(20-10) = 17.5; q3(b) = 80 + 0.25*(90-80) = 82.5
+  // central 4 of a (drop 1,10 and 90,200): 20,30,40,80 -> 42.5
+  // central 4 of b (drop 1,10 and 90,200): 20,75,75,80 -> 62.5
+  const ra = buildSourceRowTokenTrimMean25(mkSeries('a', a), {
+    generatedAt: GEN,
+  });
+  const rb = buildSourceRowTokenTrimMean25(mkSeries('b', b), {
+    generatedAt: GEN,
+  });
+  assert.equal(ra.sources[0]!.trimMean, 42.5);
+  assert.equal(rb.sources[0]!.trimMean, 62.5);
+  assert.notEqual(ra.sources[0]!.trimMean, rb.sources[0]!.trimMean);
+});
+
+test('trim-mean-25: refinement — n - 2k window count appears as trimmedPerTail*2 dropped from rowsKept', () => {
+  for (const n of [4, 5, 7, 8, 11, 16, 23, 100]) {
+    const xs = Array.from({ length: n }, (_, i) => i + 1);
+    const rep = buildSourceRowTokenTrimMean25(mkSeries('s', xs), {
+      generatedAt: GEN,
+    });
+    const k = rep.sources[0]!.trimmedPerTail;
+    assert.equal(k, Math.floor(0.25 * n));
+    // Reconstruct trim-mean by hand from the central window and confirm.
+    const central = xs.slice(k, n - k);
+    const expected = central.reduce((a, b) => a + b, 0) / central.length;
+    assert.equal(rep.sources[0]!.trimMean, expected, `n=${n}`);
+  }
+});
