@@ -506,3 +506,43 @@ test('temporal-centroid: windowing with --since shifts the row index origin and 
   // Confirms windowing changed tc (full was > 0.6, windowed is exactly 0.5).
   assert.ok(rFull.sources[0]!.tc > rWindow.sources[0]!.tc);
 });
+
+test('temporal-centroid: tc-index-desc orders by raw row-index magnitude (size-aware)', () => {
+  // Two sources both back-loaded with tc=1.0 but very different N:
+  // small -> tcIndex small; big -> tcIndex large. tc-desc would tie;
+  // tc-index-desc puts the bigger-history source first.
+  const small: number[] = new Array(8).fill(0);
+  small[7] = 100;
+  const big: number[] = new Array(40).fill(0);
+  big[39] = 100;
+  const all = [...series(small, 'small'), ...series(big, 'big')];
+  const r = buildSourceRowTokenTemporalCentroid(all, {
+    generatedAt: GEN,
+    sort: 'tc-index-desc',
+  });
+  assert.equal(r.sources[0]!.source, 'big');
+  assert.equal(r.sources[1]!.source, 'small');
+  // both at tc=1
+  for (const row of r.sources) {
+    assert.ok(Math.abs(row.tc - 1) < 1e-12);
+  }
+  // tc-index-asc reverses
+  const r2 = buildSourceRowTokenTemporalCentroid(all, {
+    generatedAt: GEN,
+    sort: 'tc-index-asc',
+  });
+  assert.equal(r2.sources[0]!.source, 'small');
+  assert.equal(r2.sources[1]!.source, 'big');
+});
+
+test('temporal-centroid: invalid sort still rejected after adding tc-index modes', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenTemporalCentroid([], {
+        generatedAt: GEN,
+        // @ts-expect-error
+        sort: 'tc-index',
+      }),
+    /sort must be one of/,
+  );
+});

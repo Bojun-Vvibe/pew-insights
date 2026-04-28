@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.166 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-centroid` adds two new sort
+  modes: `tc-index-desc` and `tc-index-asc`. These sort by
+  the *raw* row-index centroid (`tcIndex`, units of rows)
+  rather than the normalized fraction (`tc`, in `[0, 1]`).
+  Useful when you want to compare *absolute* row-position
+  energy across sources of varying history length: two
+  sources with `tc = 1.0` (both fully back-loaded) but
+  `N = 8` vs `N = 40` will tie on `tc-desc` but split on
+  `tc-index-desc` (the bigger-history source ranks first
+  because its centroid sits at a larger absolute row index).
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--sort tc-index-desc` (sources: 6, rows: 1,750; one
+  source name redacted to `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tc
+      ------------ ----  --------  -------  ------
+      vscode-XXX   333   1.886e+6  217.71   0.6558
+      claude-code  299   3.442e+9  214.28   0.7190
+      openclaw     477   1.920e+9  192.88   0.4052
+      opencode     371   3.929e+9  175.73   0.4749
+      hermes       207   1.710e+8  82.11    0.3986
+      codex        64    8.096e+8  38.71    0.6145
+
+  Operator reading: under `tc-index-desc`, `vscode-XXX`
+  edges out `claude-code` for the top slot (217.71 vs
+  214.28 row-units) even though `claude-code` ranks higher
+  on the normalized `tc` (0.7190 vs 0.6558). The two
+  rankings disagree because `vscode-XXX` has more rows
+  total (333 vs 299), so its absolute centroid index is
+  shifted right even though its proportional position is
+  less back-loaded. `codex` collapses to last on this sort
+  (`tcIndex = 38.71`) because its full history is only 64
+  rows — its tc=0.6145 is back-loaded *for its size*, but
+  in raw row-units its centroid sits very early. This is
+  precisely the size-vs-shape distinction the new sort
+  exposes.
+
 ## 0.6.165 — 2026-04-28
 
 ### Added

@@ -153,6 +153,8 @@ import type { QueueLine } from './types.js';
 export type SourceRowTokenTemporalCentroidSort =
   | 'tc-desc'
   | 'tc-asc'
+  | 'tc-index-desc'
+  | 'tc-index-asc'
   | 'rows'
   | 'source';
 
@@ -239,7 +241,14 @@ export interface SourceRowTokenTemporalCentroidReport {
   sources: SourceRowTokenTemporalCentroidRow[];
 }
 
-const VALID_SORTS = ['tc-desc', 'tc-asc', 'rows', 'source'] as const;
+const VALID_SORTS = [
+  'tc-desc',
+  'tc-asc',
+  'tc-index-desc',
+  'tc-index-asc',
+  'rows',
+  'source',
+] as const;
 
 export function buildSourceRowTokenTemporalCentroid(
   queue: QueueLine[],
@@ -433,6 +442,10 @@ export function buildSourceRowTokenTemporalCentroid(
       primary = b.tc - a.tc;
     } else if (sort === 'tc-asc') {
       primary = a.tc - b.tc;
+    } else if (sort === 'tc-index-desc') {
+      primary = b.tcIndex - a.tcIndex;
+    } else if (sort === 'tc-index-asc') {
+      primary = a.tcIndex - b.tcIndex;
     } else if (sort === 'rows') {
       primary = b.rowsKept - a.rowsKept;
     } else {

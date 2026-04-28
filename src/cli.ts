@@ -14122,7 +14122,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'tc-desc' (default; most back-loaded first) | 'tc-asc' (most front-loaded first) | 'rows' | 'source'",
+    "sort key: 'tc-desc' (default; most back-loaded first) | 'tc-asc' (most front-loaded first) | 'tc-index-desc' | 'tc-index-asc' (raw row-index units rather than normalized fraction) | 'rows' | 'source'",
     'tc-desc',
   )
   .option(
@@ -14166,7 +14166,14 @@ program
           }
           top = t;
         }
-        const validSorts = ['tc-desc', 'tc-asc', 'rows', 'source'];
+        const validSorts = [
+          'tc-desc',
+          'tc-asc',
+          'tc-index-desc',
+          'tc-index-asc',
+          'rows',
+          'source',
+        ];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
@@ -14195,7 +14202,13 @@ program
           source: opts.source ?? null,
           minRows,
           top,
-          sort: opts.sort as 'tc-desc' | 'tc-asc' | 'rows' | 'source',
+          sort: opts.sort as
+            | 'tc-desc'
+            | 'tc-asc'
+            | 'tc-index-desc'
+            | 'tc-index-asc'
+            | 'rows'
+            | 'source',
           minTc,
           maxTc,
         });
