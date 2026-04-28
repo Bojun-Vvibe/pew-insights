@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.193 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-4-mean`** —
+  per-source **Lehmer mean of order 4** (a.k.a. **L_4**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of fourth powers by the
+  sum of cubes:
+
+      L_4 = ( sum_{i=1..n} x_i^4 ) / ( sum_{i=1..n} x_i^3 )
+
+  Equivalently, L_4 is the `x_i^3`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *cube*.
+
+  This is the natural one-step-RIGHT extension of v0.6.188's
+  L_3 lens. By Lehmer monotonicity, `L_3 <= L_4` for any
+  non-negative sample with at least one strictly positive
+  row, with equality iff every positive row is equal. So
+  L_4 extends the integer Lehmer-mean ladder shipped to
+  date one further step right of L_3:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4
+                              L_0                       L_2   L_3   new
+
+  L_4 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as harmonic-mean / quadratic-
+  mean / contraharmonic-mean / lehmer-3-mean / the negative
+  Lehmer rungs.
+
+  Three free byproducts are reported in every row:
+
+  - `l4L3Gap = L_4 - L_3` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-cube weighting
+    amplification** above L_3: how much further the
+    largest rows pull the location when each row's weight
+    is its own `x^3` rather than its own `x^2`.
+  - `l4ChmGap = L_4 - CHM` — always `>= 0`. Strictly
+    larger than v0.6.188's `l3ChmGap` for any non-constant
+    positive series.
+  - `l4AmGap = L_4 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-cube-weighted location.
+
+  Identity on a constant positive series: if every kept row
+  equals `c > 0`, then `L_4 = L_3 = CHM = mean = c` and all
+  three gaps collapse to zero (pinned in tests).
+
+  Single-bottleneck-row sensitivity: on `[1, 1, 1, 1, 1000]`
+  (AM = 200.8, CHM ~ 996.0, L_3 ~ 999.996), L_4 ~ 999.99996
+  — within ~4e-6 % of the bottleneck row's value, vs L_3's
+  ~4e-4 % and CHM's ~0.4 %. L_4 amplifies the largest-row
+  pull by another two orders of magnitude over L_3.
+
+  Empty rows / mixed positives / single-row sources / ISO
+  windowing / source filter / `--min-rows` / `--top` /
+  `--min-lehmer-4-mean` cohort selector all behave as in
+  every other `source-row-token-*` lens. All-zero sources
+  (sum(x^3) = 0) are surfaced as `droppedAllZeroSources`.
+
+  Sort keys: `lehmer-4-mean-desc` (default) | `lehmer-4-
+  mean-asc` | `mean-desc` | `l3-gap-desc` (l4L3Gap desc) |
+  `chm-gap-desc` (l4ChmGap desc) | `am-gap-desc`
+  (l4AmGap desc) | `rows` | `source`. Tiebreak: source asc.
+
+  Live smoke (sanitized; `--top 8`, full local
+  `~/.config/pew/queue.jsonl`, 1,835 rows across 6 sources):
+
+  ```
+  pew-insights source-row-token-lehmer-4-mean
+  sources: 6 (shown 6)    rows: 1,835    sort: lehmer-4-mean-desc
+
+  source         rows  mean         chm          lehmer-3-mean  lehmer-4-mean  l4-l3         l4-chm        l4-mean
+  -------------  ----  -----------  -----------  -------------  -------------  ------------  ------------  ------------
+  claude-code    299   11512995.95  38434042.96  54516204.52    65497172.30    +10980967.78  +27063129.34  +53984176.35
+  opencode       399   10397083.72  24975374.83  40208796.03    49538379.52    +9329583.48   +24563004.69  +39141295.80
+  codex          64    12650385.31  28707109.72  38508868.27    44948811.14    +6439942.87   +16241701.42  +32298425.83
+  openclaw       505   3861266.86   9635367.44   20564374.96    30564457.56    +10000082.60  +20929090.12  +26703190.70
+  hermes         235   791446.74    1828626.17   2751665.65     3497357.51     +745691.86    +1668731.34   +2705910.78
+  vscode-XXX     333   5662.84      45045.25     119764.03      147776.06      +28012.04     +102730.82    +142113.22
+  ```
+
+  Lehmer monotonicity holds row-by-row in the live data:
+  for every source `mean <= chm <= L_3 <= L_4`, with
+  l4L3Gap, l4ChmGap, l4AmGap all `>= 0`. The largest
+  l4L3Gap (`+10,980,967.78` tokens on `claude-code`,
+  `+10,000,082.60` on `openclaw`) shows that even at L_3
+  the location is still being pulled meaningfully by
+  cubing the row weights — the largest rows are still not
+  fully dominating until you weight them by `x^3`. The
+  smallest-magnitude lens (`vscode-XXX`) shows the same
+  qualitative pattern at three orders of magnitude smaller
+  scale — confirming scale-equivariance in the wild.
+
 ## 0.6.192 — 2026-04-28
 
 ### Added
