@@ -598,3 +598,66 @@ test('property: L_6 is strictly closer to bottleneck M than L_5 on heavy-tailed 
     );
   }
 });
+
+// ---------- refinement: bottleneck-tracking error ratio ----------
+//
+// Sharper version of the bottleneck-domination property: on a series
+// with a single dominant element of value M and (n-1) tiny rows of
+// value c, the closed-form bottleneck-tracking error of each Lehmer
+// rung is dominated by the (k-1) tiny rows. For L_p:
+//
+//     dist_p(M) = M - L_p = M * (n-1) c^p / ( (n-1) c^p + M^p )
+//                          ~ (n-1) * c^p / M^{p-1}     when M >> c
+//
+// So the asymptotic ratio
+//
+//     dist_{p+1}(M) / dist_p(M) ~ c / M
+//
+// which is *much* smaller than 0.5 once `M / c` is large. This is a
+// strictly stronger claim than the previous "L_6 is at least 2x closer
+// to M than L_5" property: here we pin that on a sufficiently long-
+// tailed series the ratio is below 0.5 with a comfortable margin (we
+// require <= 0.05, i.e. L_6's bottleneck-tracking error is at most
+// 5 % of L_5's). A future refactor that, for example, accidentally
+// shifted L_6's exponent back to 5 (collapsing it to L_5) would still
+// have ratio = 1 here and would trip this test very loudly.
+test('refinement: bottleneck-tracking error of L_6 is <= 10 % of L_5 on heavy-tailed (M/c in [50, 200]) series', () => {
+  const r = rng(31415927);
+  for (let trial = 0; trial < 30; trial += 1) {
+    const n = 4 + Math.floor(r() * 12); // 4..15 rows
+    const c = 1 + Math.floor(r() * 5); // small base value
+    // Pick M/c in [50, 200]. Reasoning:
+    //
+    //   dist_p(M) / M  ~  (n-1) * (c/M)^p     (M >> c, p >= 1)
+    //   ratio = dist_6 / dist_5  ~  c / M  in  [1/200, 1/50]
+    //                            =  [0.5%, 2%]
+    //   dist_5 / M  ~  (n-1) * (c/M)^5
+    //
+    //   At M/c = 50, n = 4: dist_5/M ~ 3 * 50^-5 ~ 1e-8
+    //   -> distL5 absolute ~ 1e-8 * M ~ 1e-6 for M ~ 100. Plenty
+    //      above the 64-bit FP noise floor of M*~1e-15.
+    //
+    //   The 10 % bound is a conservative ceiling on the asymptotic
+    //   2 % — pads for finite-n and FP noise. A future refactor
+    //   that accidentally collapsed L_6 to L_5 would have ratio = 1
+    //   and trip this test by ~10x.
+    const M = c * (50 + Math.floor(r() * 150));
+    const xs = new Array(n - 1).fill(c);
+    xs.push(M);
+    const rep = buildSourceRowTokenLehmer6Mean(mkSeries(`t${trial}`, xs), {
+      generatedAt: GEN,
+    });
+    const row = rep.sources[0]!;
+    const distL6 = Math.max(0, M - row.lehmer6Mean);
+    const distL5 = Math.max(0, M - row.lehmer5Mean);
+    assert.ok(
+      distL5 > 1e-12 * M,
+      `expected L_5 measurably below M=${M} on xs=${JSON.stringify(xs)}; got distL5=${distL5}`,
+    );
+    const ratio = distL6 / distL5;
+    assert.ok(
+      ratio <= 0.1,
+      `L_6 bottleneck-tracking error should be <= 10 % of L_5: M=${M}, c=${c}, n=${n}, distL6=${distL6}, distL5=${distL5}, ratio=${ratio}, xs=${JSON.stringify(xs)}`,
+    );
+  }
+});
