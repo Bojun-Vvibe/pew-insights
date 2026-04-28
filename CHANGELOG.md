@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.164 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-centroid` refinement:
+  - New `--min-tc <x>` and `--max-tc <x>` filter flags (both
+    in `[0, 1]`). Sources with `tc < min-tc` surface under
+    the new `droppedBelowMinTc` counter; sources with
+    `tc > max-tc` surface under `droppedAboveMaxTc`. Filters
+    apply *before* sort and *before* `--top` cap, so the
+    sort window matches the operator's stated tc band and
+    `--top N` returns the top N within the band.
+  - Both bounds may be combined to carve a tc band (e.g.,
+    `--min-tc 0.4 --max-tc 0.6` for "show me only roughly
+    balanced sources"). When both are set, `min-tc <= max-tc`
+    is enforced.
+  - **Pinned invariant** in the builder: every emitted row
+    has `tc in [0, 1]` and `tcIndex in [0, rowsKept - 1]`
+    and `tcIndex == tc * (rowsKept - 1)`. This is true by
+    construction (for non-negative `a[n]` with at least one
+    positive value, `tc_index = sum(n * a[n]) / sum(a[n])`
+    is a convex combination of `{0, 1, ..., N-1}`), but is
+    now also a defensive guard with explicit
+    `droppedDegenerate` fallback. A new test sweeps 12
+    seeded-random sources of varying size and asserts the
+    invariant holds for every emitted row.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--min-tc 0.5` (sources: 6, kept: 3, rows: 1,751,
+  3 dropped below min-tc; one source name redacted to
+  `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tc
+      ------------ ----  --------  -------  ------
+      claude-code  299   3.442e+9  214.28   0.7190
+      vscode-XXX   333   1.886e+6  217.71   0.6558
+      codex        64    8.096e+8  38.71    0.6145
+
+  Operator reading: applying `--min-tc 0.5` cleanly isolates
+  the back-loaded cohort (claude-code, vscode-XXX, codex)
+  from the balanced/front-loaded cohort (opencode, openclaw,
+  hermes) reported in 0.6.163. The 3-vs-3 split exactly
+  matches the unfiltered ranking and confirms the band
+  filter is doing what it says — useful for "give me only
+  sources whose energy has shifted to the late half of
+  their own history" without wading through the full table.
+
 ## 0.6.163 — 2026-04-28
 
 ### Added

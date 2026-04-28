@@ -14125,6 +14125,14 @@ program
     "sort key: 'tc-desc' (default; most back-loaded first) | 'tc-asc' (most front-loaded first) | 'rows' | 'source'",
     'tc-desc',
   )
+  .option(
+    '--min-tc <x>',
+    'inclusive lower bound on tc (in [0,1]); sources with tc < x surface as droppedBelowMinTc',
+  )
+  .option(
+    '--max-tc <x>',
+    'inclusive upper bound on tc (in [0,1]); sources with tc > x surface as droppedAboveMaxTc',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -14135,6 +14143,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minTc?: string;
+        maxTc?: string;
         json?: boolean;
       },
       cmd,
@@ -14162,6 +14172,22 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        let minTc: number | null = null;
+        if (opts.minTc != null) {
+          const x = Number.parseFloat(opts.minTc);
+          if (!Number.isFinite(x) || x < 0 || x > 1) {
+            throw new Error(`--min-tc must be in [0, 1] (got ${opts.minTc})`);
+          }
+          minTc = x;
+        }
+        let maxTc: number | null = null;
+        if (opts.maxTc != null) {
+          const x = Number.parseFloat(opts.maxTc);
+          if (!Number.isFinite(x) || x < 0 || x > 1) {
+            throw new Error(`--max-tc must be in [0, 1] (got ${opts.maxTc})`);
+          }
+          maxTc = x;
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenTemporalCentroid(queue, {
           since: opts.since ?? null,
@@ -14170,6 +14196,8 @@ program
           minRows,
           top,
           sort: opts.sort as 'tc-desc' | 'tc-asc' | 'rows' | 'source',
+          minTc,
+          maxTc,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

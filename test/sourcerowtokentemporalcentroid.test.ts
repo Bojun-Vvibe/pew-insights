@@ -46,6 +46,10 @@ test('temporal-centroid: empty input -> empty report with defaults', () => {
   assert.equal(r.minRows, 8);
   assert.equal(r.top, null);
   assert.equal(r.sort, 'tc-desc');
+  assert.equal(r.minTc, null);
+  assert.equal(r.maxTc, null);
+  assert.equal(r.droppedBelowMinTc, 0);
+  assert.equal(r.droppedAboveMaxTc, 0);
   assert.equal(r.generatedAt, GEN);
 });
 
@@ -302,4 +306,151 @@ test('temporal-centroid: time-shift is NOT invariant — prepending zero rows sh
     rShifted.sources[0]!.tc > rBase.sources[0]!.tc,
     `shifted tc (${rShifted.sources[0]!.tc}) should exceed base tc (${rBase.sources[0]!.tc})`,
   );
+});
+
+test('temporal-centroid: --min-tc filter drops front-loaded sources, surfaces in droppedBelowMinTc', () => {
+  const front = series([10000, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'front');
+  const back = series([1, 1, 1, 1, 1, 1, 1, 1, 1, 10000], 'back');
+  const balanced = series(new Array(10).fill(50), 'balanced');
+  const r = buildSourceRowTokenTemporalCentroid(
+    [...front, ...back, ...balanced],
+    { generatedAt: GEN, minTc: 0.5 },
+  );
+  // front (~0.0) drops, balanced (=0.5) keeps, back (~1.0) keeps
+  assert.equal(r.sources.length, 2);
+  const keptSrcs = r.sources.map((s) => s.source).sort();
+  assert.deepEqual(keptSrcs, ['back', 'balanced']);
+  assert.equal(r.droppedBelowMinTc, 1);
+  assert.equal(r.droppedAboveMaxTc, 0);
+  assert.equal(r.minTc, 0.5);
+});
+
+test('temporal-centroid: --max-tc filter drops back-loaded sources, surfaces in droppedAboveMaxTc', () => {
+  const front = series([10000, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'front');
+  const back = series([1, 1, 1, 1, 1, 1, 1, 1, 1, 10000], 'back');
+  const r = buildSourceRowTokenTemporalCentroid([...front, ...back], {
+    generatedAt: GEN,
+    maxTc: 0.5,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'front');
+  assert.equal(r.droppedAboveMaxTc, 1);
+  assert.equal(r.droppedBelowMinTc, 0);
+  assert.equal(r.maxTc, 0.5);
+});
+
+test('temporal-centroid: --min-tc and --max-tc together carve a band; non-band sources drop on the correct side', () => {
+  const front = series([10000, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'front');
+  const back = series([1, 1, 1, 1, 1, 1, 1, 1, 1, 10000], 'back');
+  const balanced = series(new Array(10).fill(50), 'balanced');
+  const r = buildSourceRowTokenTemporalCentroid(
+    [...front, ...back, ...balanced],
+    { generatedAt: GEN, minTc: 0.4, maxTc: 0.6 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'balanced');
+  assert.equal(r.droppedBelowMinTc, 1);
+  assert.equal(r.droppedAboveMaxTc, 1);
+});
+
+test('temporal-centroid: invalid --min-tc / --max-tc bounds throw', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenTemporalCentroid([], {
+        generatedAt: GEN,
+        minTc: -0.1,
+      }),
+    /minTc must be in \[0, 1\]/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenTemporalCentroid([], {
+        generatedAt: GEN,
+        maxTc: 1.1,
+      }),
+    /maxTc must be in \[0, 1\]/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenTemporalCentroid([], {
+        generatedAt: GEN,
+        minTc: 0.7,
+        maxTc: 0.3,
+      }),
+    /minTc .* must be <= maxTc/,
+  );
+});
+
+test('temporal-centroid: tc-band filter applies BEFORE top cap (top counts post-band sources, not raw)', () => {
+  // Six sources, three back-loaded, three front-loaded.
+  const sources: QueueLine[] = [];
+  for (const name of ['b1', 'b2', 'b3']) {
+    sources.push(...series([1, 1, 1, 1, 1, 1, 1, 1, 1, 10000], name));
+  }
+  for (const name of ['f1', 'f2', 'f3']) {
+    sources.push(...series([10000, 1, 1, 1, 1, 1, 1, 1, 1, 1], name));
+  }
+  const r = buildSourceRowTokenTemporalCentroid(sources, {
+    generatedAt: GEN,
+    minTc: 0.5,
+    top: 2,
+    sort: 'source',
+  });
+  // back-loaded survive band; top=2 then keeps 2 of those 3
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinTc, 3); // f1,f2,f3 dropped by band
+  assert.equal(r.droppedBelowTopCap, 1); // 1 back-loaded dropped by cap
+  for (const s of r.sources) {
+    assert.ok(s.source.startsWith('b'), `expected back-loaded only, got ${s.source}`);
+  }
+});
+
+test('temporal-centroid: invariant — every emitted row has tc in [0,1] and tcIndex in [0, rows-1] (broad random sweep)', () => {
+  // Seeded LCG so the test is deterministic.
+  let s = 1234567;
+  const rand = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+  const sources: QueueLine[] = [];
+  for (let k = 0; k < 12; k++) {
+    const n = 8 + Math.floor(rand() * 40); // 8..47 rows
+    const v: number[] = [];
+    for (let i = 0; i < n; i++) v.push(Math.floor(rand() * 1000));
+    sources.push(...series(v, `src${k}`));
+  }
+  const r = buildSourceRowTokenTemporalCentroid(sources, {
+    generatedAt: GEN,
+    minRows: 4,
+  });
+  assert.ok(r.sources.length >= 10);
+  for (const row of r.sources) {
+    assert.ok(
+      row.tc >= 0 && row.tc <= 1,
+      `INVARIANT BROKEN: tc=${row.tc} out of [0,1] for ${row.source}`,
+    );
+    assert.ok(
+      row.tcIndex >= 0 && row.tcIndex <= row.rowsKept - 1,
+      `INVARIANT BROKEN: tcIndex=${row.tcIndex} out of [0, ${row.rowsKept - 1}] for ${row.source}`,
+    );
+    // Also: tcIndex == tc * (N-1) by construction
+    assert.ok(
+      Math.abs(row.tcIndex - row.tc * (row.rowsKept - 1)) < 1e-9,
+      `INVARIANT BROKEN: tcIndex (${row.tcIndex}) != tc*(N-1) (${row.tc * (row.rowsKept - 1)})`,
+    );
+  }
+});
+
+test('temporal-centroid: --min-tc=0 and --max-tc=1 are no-ops (echo bounds, drop nothing)', () => {
+  const v = [10000, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+  const r = buildSourceRowTokenTemporalCentroid(series(v), {
+    generatedAt: GEN,
+    minTc: 0,
+    maxTc: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinTc, 0);
+  assert.equal(r.droppedAboveMaxTc, 0);
+  assert.equal(r.minTc, 0);
+  assert.equal(r.maxTc, 1);
 });

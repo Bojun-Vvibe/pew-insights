@@ -184,14 +184,20 @@ export interface SourceRowTokenTemporalCentroidOptions {
    */
   sort?: SourceRowTokenTemporalCentroidSort;
   /**
-   * Optional inclusive lower bound on rowsKept after filters.
-   * Sources with rowsKept < this surface under
-   * `droppedBelowMinRows`. Defaults to `minRows`. Useful when
-   * the operator wants tc only for sources with substantial
-   * history (e.g. --min-rows-kept 50). Must be >= minRows.
-   * (Reserved for the refinement commit; not exposed in this
-   * baseline commit.)
+   * Optional inclusive lower bound on `tc`. Sources with
+   * tc < minTc surface under `droppedBelowMinTc`. Must be in
+   * [0, 1]. Useful for "show me only back-loaded sources".
+   * Default null.
    */
+  minTc?: number | null;
+  /**
+   * Optional inclusive upper bound on `tc`. Sources with
+   * tc > maxTc surface under `droppedAboveMaxTc`. Must be in
+   * [0, 1] and >= minTc when both are set. Useful for "show
+   * me only front-loaded sources". Default null.
+   */
+  maxTc?: number | null;
+  /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
 
@@ -216,6 +222,8 @@ export interface SourceRowTokenTemporalCentroidReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenTemporalCentroidSort;
+  minTc: number | null;
+  maxTc: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -225,6 +233,8 @@ export interface SourceRowTokenTemporalCentroidReport {
   droppedBelowMinRows: number;
   droppedZeroSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinTc: number;
+  droppedAboveMaxTc: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTemporalCentroidRow[];
 }
@@ -251,6 +261,24 @@ export function buildSourceRowTokenTemporalCentroid(
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
+    );
+  }
+
+  const minTc = opts.minTc ?? null;
+  if (minTc !== null) {
+    if (!Number.isFinite(minTc) || minTc < 0 || minTc > 1) {
+      throw new Error(`minTc must be in [0, 1] (got ${opts.minTc})`);
+    }
+  }
+  const maxTc = opts.maxTc ?? null;
+  if (maxTc !== null) {
+    if (!Number.isFinite(maxTc) || maxTc < 0 || maxTc > 1) {
+      throw new Error(`maxTc must be in [0, 1] (got ${opts.maxTc})`);
+    }
+  }
+  if (minTc !== null && maxTc !== null && minTc > maxTc) {
+    throw new Error(
+      `minTc (${minTc}) must be <= maxTc (${maxTc})`,
     );
   }
 
@@ -355,6 +383,19 @@ export function buildSourceRowTokenTemporalCentroid(
       continue;
     }
 
+    // Pinned invariant: tc must lie in [0, 1] for every emitted
+    // row (already enforced above as a degenerate guard, but
+    // make the contract explicit so downstream consumers can
+    // rely on it). For non-negative a[n] with at least one
+    // positive value, tc_index = sum(n * a[n]) / sum(a[n]) is
+    // a convex combination of {0, 1, ..., N-1}, so tc_index in
+    // [0, N-1] and tc = tc_index / (N-1) in [0, 1] by
+    // construction.
+    if (tc < 0 || tc > 1) {
+      droppedDegenerate += 1;
+      continue;
+    }
+
     allRows.push({
       source,
       rowsKept: n,
@@ -365,7 +406,28 @@ export function buildSourceRowTokenTemporalCentroid(
     });
   }
 
-  allRows.sort((a, b) => {
+  // Apply min/max-tc filters (post-compute). These filter
+  // BEFORE sort and BEFORE top-cap so the sort window matches
+  // the operator's stated tc range.
+  let droppedBelowMinTc = 0;
+  let droppedAboveMaxTc = 0;
+  let filteredRows = allRows;
+  if (minTc !== null || maxTc !== null) {
+    filteredRows = [];
+    for (const row of allRows) {
+      if (minTc !== null && row.tc < minTc) {
+        droppedBelowMinTc += 1;
+        continue;
+      }
+      if (maxTc !== null && row.tc > maxTc) {
+        droppedAboveMaxTc += 1;
+        continue;
+      }
+      filteredRows.push(row);
+    }
+  }
+
+  filteredRows.sort((a, b) => {
     let primary = 0;
     if (sort === 'tc-desc') {
       primary = b.tc - a.tc;
@@ -381,10 +443,10 @@ export function buildSourceRowTokenTemporalCentroid(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = filteredRows;
+  if (top !== null && filteredRows.length > top) {
+    droppedBelowTopCap = filteredRows.length - top;
+    finalSources = filteredRows.slice(0, top);
   }
 
   return {
@@ -395,6 +457,8 @@ export function buildSourceRowTokenTemporalCentroid(
     minRows,
     top,
     sort,
+    minTc,
+    maxTc,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -404,6 +468,8 @@ export function buildSourceRowTokenTemporalCentroid(
     droppedBelowMinRows,
     droppedZeroSeries,
     droppedDegenerate,
+    droppedBelowMinTc,
+    droppedAboveMaxTc,
     droppedBelowTopCap,
     sources: finalSources,
   };
