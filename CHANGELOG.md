@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.163 — 2026-04-28
+
+### Added
+
+- New subcommand `source-row-token-temporal-centroid`:
+  per-source **Peeters 2004 temporal centroid** of the
+  per-row `total_tokens` series. For a non-negative-amplitude
+  time series `a[n]`, `n = 0..N-1`, the temporal centroid is
+
+      tc_index = sum_{n=0..N-1} n * a[n] / sum_{n=0..N-1} a[n]
+      tc       = tc_index / (N - 1)            in [0, 1]
+
+  — the amplitude-weighted mean of the *time-row index*,
+  normalized so that `tc = 0.5` is "balanced", `tc < 0.5` is
+  "front-loaded" (energy concentrated in early rows), and
+  `tc > 0.5` is "back-loaded" (energy concentrated in late
+  rows). The n-axis is the row ordinal of the source's own
+  appearances in the queue, not calendar time, which makes
+  the descriptor pure-shape and immune to inter-source-rate
+  differences.
+
+  **Why this lens is genuinely orthogonal.** Every
+  spectral-* lens already in the suite (centroid, bandwidth,
+  rolloff, flatness, skewness, kurtosis, entropy, decrease,
+  irregularity) is a *frequency-domain* descriptor on the
+  PSD of the mean-centered series. None of them carry
+  time-position information. Conversely, the time-domain
+  scaling / fractal / Hjorth lenses (DFA, Higuchi-FD,
+  Katz-FD, Petrosian-FD, Hurst-RS, Hjorth-mobility,
+  Hjorth-complexity, TKEO) are *position-invariant in time*:
+  translating the series in row index leaves them unchanged.
+  The amplitude-shape lenses (cv, mad, iqr-ratio, skewness,
+  kurtosis, gini, crest-factor, burstiness) are
+  *order-invariant*: permuting the series gives the same
+  value. Temporal centroid is the *only* lens in the suite
+  that is both amplitude-weighted *and* row-position-aware
+  *and* not time-shift invariant — it is the time-domain
+  dual of spectral-centroid, asking "where in your own
+  history does your energy sit?" rather than "where in the
+  spectrum does your energy sit?".
+
+  Citation: Peeters, G. (2004), "A large set of audio
+  features for sound description (similarity and
+  classification) in the CUIDADO project", IRCAM
+  Tech. Rep., §6.1 (Temporal Centroid: amplitude-weighted
+  mean of the time index of an energy envelope).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (sources: 6, rows: 1,750, sort: tc-desc; one source name
+  redacted to `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tc
+      ------------ ----  --------  -------  ------
+      claude-code  299   3.442e+9  214.28   0.7190
+      vscode-XXX   333   1.886e+6  217.71   0.6558
+      codex        64    8.096e+8  38.71    0.6145
+      opencode     371   3.926e+9  175.57   0.4745
+      openclaw     477   1.920e+9  192.88   0.4052
+      hermes       206   1.709e+8  82.07    0.4003
+
+  Operator reading: `claude-code`, `vscode-XXX`, and
+  `codex` are clearly **back-loaded** (tc 0.61-0.72),
+  meaning their token usage has accelerated relative to
+  their early history — most of their cumulative `total_tokens`
+  mass sits in the *later* portion of their own row index.
+  This is the signature of sources whose adoption / intensity
+  is on an upward trajectory across their own activity
+  history. `opencode`, `openclaw`, and `hermes` cluster near
+  or below `tc = 0.5` (0.40-0.47): their energy is roughly
+  balanced or slightly front-loaded, indicating either
+  steady-state usage or a flatter-to-declining recent
+  trajectory across their own row index. The amplitude
+  spread between `vscode-XXX` (totalAmp 1.886e+6) and
+  `opencode` (totalAmp 3.926e+9) — three orders of magnitude
+  — is irrelevant to the tc reading: the descriptor is
+  intentionally normalized by total amplitude so that
+  back-loadedness is comparable across sources of any
+  absolute size. Compare against the spectral-irregularity
+  reading in 0.6.162: `vscode-XXX` ranked second on
+  irregularity (0.77, jagged PSD) and now ranks second on
+  tc (0.66, back-loaded) — the orthogonality between
+  *frequency-domain jaggedness* and *time-domain energy
+  position* is exactly what the lens is designed to surface.
+
 ## 0.6.162 — 2026-04-28
 
 ### Added

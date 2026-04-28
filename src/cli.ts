@@ -130,6 +130,7 @@ import {
   renderSourceRowTokenSpectralEntropy,
   renderSourceRowTokenSpectralDecrease,
   renderSourceRowTokenSpectralIrregularity,
+  renderSourceRowTokenTemporalCentroid,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -321,6 +322,7 @@ import { buildSourceRowTokenSpectralKurtosis } from './sourcerowtokenspectralkur
 import { buildSourceRowTokenSpectralEntropy } from './sourcerowtokenspectralentropy.js';
 import { buildSourceRowTokenSpectralDecrease } from './sourcerowtokenspectraldecrease.js';
 import { buildSourceRowTokenSpectralIrregularity } from './sourcerowtokenspectralirregularity.js';
+import { buildSourceRowTokenTemporalCentroid } from './sourcerowtokentemporalcentroid.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -14093,6 +14095,87 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralIrregularity(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-temporal-centroid')
+  .description(
+    "Per-source Peeters 2004 temporal centroid (amplitude-weighted mean of the time-row index) of the per-row total_tokens series. tc_index = sum_{n=0..N-1} n*a[n] / sum_{n=0..N-1} a[n]; tc = tc_index/(N-1) in [0,1]. tc < 0.5 => front-loaded (early-row energy); tc = 0.5 => balanced; tc > 0.5 => back-loaded (late-row energy). Time-domain dual of spectral-centroid (frequency-domain 1st moment). Order-sensitive on rows; not time-shift invariant. Genuinely orthogonal to all spectral-* lenses (frequency-domain), to fractal/scaling/Hjorth lenses (position-invariant), to time-domain symbolic entropies (which discard amplitude weight), and to amplitude-shape lenses (cv/mad/iqr-ratio/skewness/kurtosis/gini/crest-factor/burstiness — all order-invariant). Peeters, G. (2004), CUIDADO IRCAM Tech. Rep., §6.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 2 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'tc-desc' (default; most back-loaded first) | 'tc-asc' (most front-loaded first) | 'rows' | 'source'",
+    'tc-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 2) {
+          throw new Error(
+            `--min-rows must be an integer >= 2 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = ['tc-desc', 'tc-asc', 'rows', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTemporalCentroid(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as 'tc-desc' | 'tc-asc' | 'rows' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenTemporalCentroid(report) + '\n',
           );
         }
       } catch (e) {
