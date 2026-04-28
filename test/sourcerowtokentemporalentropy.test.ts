@@ -592,3 +592,123 @@ test('temporal-entropy: handles many sources with mixed shapes', () => {
   // spike should be at the bottom
   assert.equal(r.sources[r.sources.length - 1]!.source, 'spike');
 });
+
+// ---- Refinement: invariant-pin property tests (randomized, deterministic seed) ----
+
+function fisherYates<T>(arr: T[], rand: () => number): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+test('temporal-entropy: pin: order invariance under Fisher-Yates shuffle (8 trials)', () => {
+  let seed = 7777;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let trial = 0; trial < 8; trial++) {
+    const len = 12 + Math.floor(rand() * 20);
+    const orig = new Array(len)
+      .fill(0)
+      .map(() => Math.floor(rand() * 1000));
+    if (orig.reduce((a, b) => a + b, 0) === 0) continue;
+    const shuffled = fisherYates(orig, rand);
+    const a = buildSourceRowTokenTemporalEntropy(series(orig, `o${trial}`), {
+      generatedAt: GEN,
+    });
+    const b = buildSourceRowTokenTemporalEntropy(
+      series(shuffled, `o${trial}`),
+      { generatedAt: GEN },
+    );
+    assert.equal(a.sources.length, 1);
+    assert.equal(b.sources.length, 1);
+    assert.ok(
+      Math.abs(a.sources[0]!.entropyNats - b.sources[0]!.entropyNats) < 1e-9,
+      `trial ${trial}: H drifted under shuffle: ${a.sources[0]!.entropyNats} vs ${b.sources[0]!.entropyNats}`,
+    );
+    assert.ok(
+      Math.abs(a.sources[0]!.normEntropy - b.sources[0]!.normEntropy) < 1e-12,
+      `trial ${trial}: H_norm drifted under shuffle`,
+    );
+  }
+});
+
+test('temporal-entropy: pin: amplitude-scale invariance for c in {0.001, 1, 1e3, 1e6} (6 trials)', () => {
+  let seed = 31337;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  const scales = [0.001, 1, 1000, 1_000_000];
+  for (let trial = 0; trial < 6; trial++) {
+    const len = 10 + Math.floor(rand() * 15);
+    const base = new Array(len)
+      .fill(0)
+      .map(() => Math.floor(rand() * 500) + 1); // strictly positive
+    const ref = buildSourceRowTokenTemporalEntropy(series(base, `b${trial}`), {
+      generatedAt: GEN,
+    });
+    const refNorm = ref.sources[0]!.normEntropy;
+    for (const c of scales) {
+      const scaled = base.map((v) => v * c);
+      const r = buildSourceRowTokenTemporalEntropy(
+        series(scaled, `b${trial}`),
+        { generatedAt: GEN },
+      );
+      assert.ok(
+        Math.abs(r.sources[0]!.normEntropy - refNorm) < 1e-12,
+        `trial ${trial} c=${c}: H_norm drifted: ${r.sources[0]!.normEntropy} vs ${refNorm}`,
+      );
+    }
+  }
+});
+
+test('temporal-entropy: pin: H_norm monotonically non-increasing as mass concentrates', () => {
+  // Start from a uniform 12-row series, gradually concentrate all mass
+  // into row 0. H_norm should be monotonically non-increasing.
+  const N = 12;
+  let prev = Number.POSITIVE_INFINITY;
+  for (let k = 0; k <= 10; k++) {
+    // weight w_0 = 1 + k * 5, others = 1
+    const w0 = 1 + k * 5;
+    const v = new Array(N).fill(1);
+    v[0] = w0;
+    const r = buildSourceRowTokenTemporalEntropy(series(v, `c${k}`), {
+      generatedAt: GEN,
+    });
+    const ne = r.sources[0]!.normEntropy;
+    assert.ok(
+      ne <= prev + 1e-12,
+      `H_norm not non-increasing at k=${k}: ${ne} > ${prev}`,
+    );
+    prev = ne;
+  }
+});
+
+test('temporal-entropy: pin: dist-uniform-asc sort puts strictly closer-to-1 first', () => {
+  const rows: QueueLine[] = [
+    ...series(new Array(10).fill(5), 'flat'), // ne == 1
+    ...series([10, 9, 11, 10, 9, 11, 10, 9, 11, 10], 'near'), // ne ~ 1
+    ...series([100, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'spike'), // ne low
+  ];
+  const r = buildSourceRowTokenTemporalEntropy(rows, {
+    generatedAt: GEN,
+    sort: 'dist-uniform-asc',
+  });
+  // flat (ne=1) should be first, spike should be last
+  assert.equal(r.sources[0]!.source, 'flat');
+  assert.equal(r.sources[r.sources.length - 1]!.source, 'spike');
+  // monotone non-decreasing distance-from-1
+  for (let i = 1; i < r.sources.length; i++) {
+    const dPrev = Math.abs(r.sources[i - 1]!.normEntropy - 1);
+    const dCur = Math.abs(r.sources[i]!.normEntropy - 1);
+    assert.ok(
+      dCur >= dPrev - 1e-12,
+      `dist-uniform-asc not non-decreasing at i=${i}: ${dCur} < ${dPrev}`,
+    );
+  }
+});
