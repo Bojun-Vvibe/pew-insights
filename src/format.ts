@@ -11469,6 +11469,10 @@ import type {
   SourceRowTokenLehmer8MeanReport,
   SourceRowTokenLehmer8MeanRow,
 } from './sourcerowtokenlehmer8mean.js';
+import type {
+  SourceRowTokenLehmer9MeanReport,
+  SourceRowTokenLehmer9MeanRow,
+} from './sourcerowtokenlehmer9mean.js';
 
 import type {
   SourceRowTokenLehmerNegOneMeanReport,
@@ -12191,6 +12195,77 @@ export function renderSourceRowTokenLehmer8Mean(
       (s.l8L7Gap >= 0 ? '+' : '') + s.l8L7Gap.toFixed(2),
       (s.l8L6Gap >= 0 ? '+' : '') + s.l8L6Gap.toFixed(2),
       (s.l8AmGap >= 0 ? '+' : '') + s.l8AmGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenLehmer9Mean(
+  r: SourceRowTokenLehmer9MeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-lehmer-9-mean'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-lehmer-9-mean: ${formatNumber(r.minLehmer9Mean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAllZeroSources)} all-zero sources (sum(x^8)=0), ${formatNumber(r.droppedBelowMinLehmer9Mean)} below min-lehmer-9-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Lehmer mean of order 9 of per-row total_tokens: L_9 = sum(x^9) / sum(x^8). Extends the Lehmer ladder one step right of L_8: HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7 <= L_8 <= L_9 (Lehmer monotonicity). Equivalently, the x^8-self-weighted arithmetic mean: each row weights itself by its own eighth power. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more than L_8. l9L8Gap = L_9 - L_8, l9L7Gap = L_9 - L_7, l9AmGap = L_9 - mean are reported as free signals: all >= 0, all 0 iff the positive part of the series is constant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Lehmer-9 mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'lehmer-7-mean',
+    'lehmer-8-mean',
+    'lehmer-9-mean',
+    'l9-l8',
+    'l9-l7',
+    'l9-mean',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenLehmer9MeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.lehmer7Mean.toFixed(2),
+      s.lehmer8Mean.toFixed(2),
+      s.lehmer9Mean.toFixed(2),
+      (s.l9L8Gap >= 0 ? '+' : '') + s.l9L8Gap.toFixed(2),
+      (s.l9L7Gap >= 0 ? '+' : '') + s.l9L7Gap.toFixed(2),
+      (s.l9AmGap >= 0 ? '+' : '') + s.l9AmGap.toFixed(2),
     ],
   );
   lines.push(renderTableLocal(headers, rows));

@@ -123,6 +123,7 @@ import {
   renderSourceRowTokenLehmer6Mean,
   renderSourceRowTokenLehmer7Mean,
   renderSourceRowTokenLehmer8Mean,
+  renderSourceRowTokenLehmer9Mean,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -343,6 +344,7 @@ import { buildSourceRowTokenLehmer5Mean } from './sourcerowtokenlehmer5mean.js';
 import { buildSourceRowTokenLehmer6Mean } from './sourcerowtokenlehmer6mean.js';
 import { buildSourceRowTokenLehmer7Mean } from './sourcerowtokenlehmer7mean.js';
 import { buildSourceRowTokenLehmer8Mean } from './sourcerowtokenlehmer8mean.js';
+import { buildSourceRowTokenLehmer9Mean } from './sourcerowtokenlehmer9mean.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -6971,6 +6973,117 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenLehmer8Mean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-lehmer-9-mean')
+  .description(
+    "Per-source Lehmer mean of order 9 (L_9) of per-row total_tokens. L_9 = sum(x^9) / sum(x^8). Extends v0.6.197's Lehmer ladder one step further to the right of L_8: HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7 <= L_8 <= L_9 (Lehmer monotonicity). Equivalently, the x^8-self-weighted arithmetic mean — each row weights itself by its own EIGHTH POWER. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more aggressively than L_8. l9L8Gap = L_9 - L_8, l9L7Gap = L_9 - L_7, l9AmGap = L_9 - mean are reported as free signals: ALL >= 0.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-lehmer-9-mean <f>',
+    'drop sources whose Lehmer-9 mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lehmer-9-mean-desc' (default) | 'lehmer-9-mean-asc' | 'mean-desc' | 'l8-gap-desc' (l9L8Gap desc) | 'l7-gap-desc' (l9L7Gap desc) | 'am-gap-desc' (l9AmGap desc) | 'rows' | 'source'",
+    'lehmer-9-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minLehmer9Mean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLehmer9Mean = Number.parseFloat(opts.minLehmer9Mean);
+        if (!Number.isFinite(minLehmer9Mean) || minLehmer9Mean < 0) {
+          throw new Error(
+            `--min-lehmer-9-mean must be a finite, non-negative number (got ${opts.minLehmer9Mean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lehmer-9-mean-desc',
+          'lehmer-9-mean-asc',
+          'mean-desc',
+          'l8-gap-desc',
+          'l7-gap-desc',
+          'am-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLehmer9Mean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minLehmer9Mean,
+          top,
+          sort: opts.sort as
+            | 'lehmer-9-mean-desc'
+            | 'lehmer-9-mean-asc'
+            | 'mean-desc'
+            | 'l8-gap-desc'
+            | 'l7-gap-desc'
+            | 'am-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenLehmer9Mean(report) + '\n',
           );
         }
       } catch (e) {
