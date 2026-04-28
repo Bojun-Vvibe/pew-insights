@@ -12573,3 +12573,79 @@ export function renderSourceRowTokenWinsorizedMean10(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenWinsorizedMean20Report,
+  SourceRowTokenWinsorizedMean20Row,
+} from './sourcerowtokenwinsorizedmean20.js';
+
+export function renderSourceRowTokenWinsorizedMean20(
+  r: SourceRowTokenWinsorizedMean20Report,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-winsorized-mean-20'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-winsorized-mean: ${formatNumber(r.minWinsorizedMean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinWinsorizedMean)} below min-winsorized-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source 20 % symmetrically winsorized mean of per-row total_tokens: clip the bottom k = floor(0.20 n) order statistics to x_(k+1) and the top k to x_(n-k), then arithmetic-mean all n now-clipped rows. Symmetric L-estimator with 20 % breakdown — strictly more robust than winsorized-mean-10 (10 %) and mean / mid-range (0 %), strictly less than median (50 %) and trim-mean-25 (25 %). Translation- and scale-equivariant. Unlike trim-mean, KEEPS every row but caps tail influence. wmMeanGap = winsorized_mean - mean is reported as a free signal: negative means the raw mean is being pulled up by an upper tail that the winsorized mean clips out; positive means a lower tail is dragging the raw mean down.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token 20 %-winsorized mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'k/tail',
+    'lo',
+    'hi',
+    'mean',
+    'wins-mean',
+    'wm-mean',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenWinsorizedMean20Row) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.clippedPerTail),
+      s.loBoundary.toFixed(2),
+      s.hiBoundary.toFixed(2),
+      s.mean.toFixed(2),
+      s.winsorizedMean.toFixed(2),
+      (s.wmMeanGap >= 0 ? '+' : '') + s.wmMeanGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

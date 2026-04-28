@@ -128,6 +128,7 @@ import {
   renderSourceRowTokenLehmer11Mean,
   renderSourceRowTokenLehmer12Mean,
   renderSourceRowTokenWinsorizedMean10,
+  renderSourceRowTokenWinsorizedMean20,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -353,6 +354,7 @@ import { buildSourceRowTokenLehmer10Mean } from './sourcerowtokenlehmer10mean.js
 import { buildSourceRowTokenLehmer11Mean } from './sourcerowtokenlehmer11mean.js';
 import { buildSourceRowTokenLehmer12Mean } from './sourcerowtokenlehmer12mean.js';
 import { buildSourceRowTokenWinsorizedMean10 } from './sourcerowtokenwinsorizedmean10.js';
+import { buildSourceRowTokenWinsorizedMean20 } from './sourcerowtokenwinsorizedmean20.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -7533,6 +7535,113 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenWinsorizedMean10(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-winsorized-mean-20')
+  .description(
+    "Per-source 20 % symmetrically winsorized mean of per-row total_tokens. Sort the rows, REPLACE the bottom k = floor(0.20 n) order statistics with x_(k+1) and the top k with x_(n-k), then take the arithmetic mean of all n now-clipped rows. Symmetric L-estimator with 20 % breakdown — strictly more robust than winsorized-mean-10 (10 % breakdown) and the mean / mid-range (0 % breakdown), strictly less robust than the median (50 %) and the 25 % trimmed mean (25 %). Doubles the tail-attenuation budget of winsorized-mean-10: at n = 100 it clips the 20 most extreme rows to the boundary instead of the 10 most extreme. Unlike trim-mean-25 which DISCARDS the trimmed tails, winsorized-mean CLIPS the tails to boundary values (boundary contributes to numerator, row still counts in denominator). Translation- and scale-equivariant. Distinct from every existing source-row-token-* lens including winsorized-mean-10 (different alpha 0.20 vs 0.10, different breakdown 20 % vs 10 %, different boundary positions x_(k+1)/x_(n-k) at different k). Distinct from trim-mean-25 (different fraction 20 vs 25, different mechanism clip vs drop). source-row-token-mid-range = (min+max)/2 listens to ONLY the two tails; this lens clips them. source-row-token-midhinge = (q1+q3)/2 weights ZERO central rows. source-row-token-trimean weights three quantiles. source-row-token-mad reports a SPREAD; CQD/Bowley/IQR-ratio measure SHAPE; CV/burstiness/skewness/kurtosis/gini are MOMENT- or distribution-shape statistics. Distinct from every Lehmer / contraharmonic mean: those are POWER-weighted, non-linear in row values, NOT translation-equivariant; this lens is a linear L-estimator. wmMeanGap = winsorized_mean - mean is reported as a free signal: negative means an upper tail is pulling the raw mean up that the winsorized mean clips out; positive means a lower tail is dragging the raw mean down.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 10 (with alpha = 0.20, n = 10 yields k = 2 — the smallest meaningful symmetric 20 % winsorization) (default 10)',
+    '10',
+  )
+  .option(
+    '--min-winsorized-mean <f>',
+    'drop sources whose winsorized-mean is strictly below f; cohort selector for "this source actually carries non-trivial body-location token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'winsorized-mean-desc' (default) | 'winsorized-mean-asc' | 'mean-desc' | 'gap-desc' (|wmMeanGap| desc — mean furthest from clipped body first) | 'rows' | 'source'",
+    'winsorized-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minWinsorizedMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 10) {
+          throw new Error(
+            `--min-rows must be an integer >= 10 (got ${opts.minRows})`,
+          );
+        }
+        const minWinsorizedMean = Number.parseFloat(opts.minWinsorizedMean);
+        if (!Number.isFinite(minWinsorizedMean) || minWinsorizedMean < 0) {
+          throw new Error(
+            `--min-winsorized-mean must be a finite, non-negative number (got ${opts.minWinsorizedMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'winsorized-mean-desc',
+          'winsorized-mean-asc',
+          'mean-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenWinsorizedMean20(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minWinsorizedMean,
+          top,
+          sort: opts.sort as
+            | 'winsorized-mean-desc'
+            | 'winsorized-mean-asc'
+            | 'mean-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenWinsorizedMean20(report) + '\n',
           );
         }
       } catch (e) {
