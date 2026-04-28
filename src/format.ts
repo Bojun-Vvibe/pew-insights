@@ -11023,3 +11023,77 @@ export function renderSourceRowTokenCoefficientOfQuartileDeviation(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenTrimeanReport,
+  SourceRowTokenTrimeanRow,
+} from './sourcerowtokentrimean.js';
+
+export function renderSourceRowTokenTrimean(
+  r: SourceRowTokenTrimeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-trimean'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-trimean: ${formatNumber(r.minTrimean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinTrimean)} below min-trimean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Tukey trimean TM = (q1 + 2*median + q3) / 4 on per-row total_tokens, type-7 quantiles. Robust central-tendency L-estimator with 25% breakdown — sits between the mean (0% breakdown) and the median (50%). Translation- and scale-equivariant; equals the median for any symmetric distribution and shifts towards the longer tail otherwise. tmMedianGap = trimean - median is a free robust skew direction signal (positive = upper tail heavier).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Tukey trimean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'q1',
+    'median',
+    'q3',
+    'midhinge',
+    'trimean',
+    'tm-med',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTrimeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.q1.toFixed(2),
+      s.median.toFixed(2),
+      s.q3.toFixed(2),
+      s.midhinge.toFixed(2),
+      s.trimean.toFixed(2),
+      (s.tmMedianGap >= 0 ? '+' : '') + s.tmMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

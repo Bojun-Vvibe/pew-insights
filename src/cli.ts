@@ -110,6 +110,7 @@ import {
   renderSourceRowTokenIqrRatio,
   renderSourceRowTokenBowleySkewness,
   renderSourceRowTokenCoefficientOfQuartileDeviation,
+  renderSourceRowTokenTrimean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -314,6 +315,7 @@ import { buildSourceRowTokenAutocorrelationLag1 } from './sourcerowtokenautocorr
 import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourceRowTokenBowleySkewness } from './sourcerowtokenbowleyskewness.js';
 import { buildSourceRowTokenCoefficientOfQuartileDeviation } from './sourcerowtokencoefficientofquartiledeviation.js';
+import { buildSourceRowTokenTrimean } from './sourcerowtokentrimean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15066,6 +15068,111 @@ program
           process.stdout.write(
             renderSourceRowTokenTemporalEntropy(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-trimean')
+  .description(
+    "Per-source Tukey trimean TM = (q1 + 2*median + q3) / 4 of per-row total_tokens (type-7 quantiles). Robust central-tendency L-estimator with 25%-breakdown — sits between the mean (0%-breakdown, dominated by single huge rows) and the median (50%-breakdown, ignores both tails). Translation- and scale-equivariant; equals the median for any symmetric distribution and shifts towards the longer tail otherwise. Distinct from every existing source-row-token-* lens because no current lens reports a robust central-tendency scalar in the same units as total_tokens: source-row-token-mad reports a SPREAD (median of absolute deviations); source-row-token-coefficient-of-quartile-deviation, source-row-token-bowley-skewness, source-row-token-iqr-ratio all use the same three quantiles to measure SHAPE (dispersion / direction / spread-vs-center ratio); source-row-token-coefficient-of-variation, source-row-token-burstiness-coefficient, source-row-token-skewness, source-row-token-kurtosis are MOMENT-based shape statistics, not location; source-output-tokens-per-row-percentiles exposes the raw P50/P75/P90/P99 of output_tokens (different field, no L-estimator blend). Trimean and the (implicit) mean disagree on any non-symmetric distribution; trimean and the median agree on symmetric distributions but trimean shifts towards the longer tail by exactly half the gap between midhinge and median. tmMedianGap = trimean - median is reported as a free robust skew direction signal (positive = upper central half heavier; bounded by [-(q3-q1)/4, +(q3-q1)/4]).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need at least one observation per quartile slot for meaningful Q1/Q3) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-trimean <f>',
+    'drop sources whose trimean is strictly below f; cohort selector for "this source actually carries non-trivial central token magnitude" — useful to hide low-volume noise sources before ranking. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'trimean-desc' (default) | 'trimean-asc' | 'median-desc' | 'gap-desc' (|tmMedianGap| desc — most asymmetric central halves first) | 'rows' | 'source'",
+    'trimean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minTrimean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minTrimean = Number.parseFloat(opts.minTrimean);
+        if (!Number.isFinite(minTrimean) || minTrimean < 0) {
+          throw new Error(
+            `--min-trimean must be a finite, non-negative number (got ${opts.minTrimean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'trimean-desc',
+          'trimean-asc',
+          'median-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTrimean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minTrimean,
+          top,
+          sort: opts.sort as
+            | 'trimean-desc'
+            | 'trimean-asc'
+            | 'median-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenTrimean(report) + '\n');
         }
       } catch (e) {
         die(e);
