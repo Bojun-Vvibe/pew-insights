@@ -442,3 +442,157 @@ test('temporal-spread: windowing with --since changes ts (re-anchored row index)
   );
   assert.notEqual(tsFull, rWindow.sources[0]!.ts);
 });
+
+test('temporal-spread: --min-ts filter drops impulse-like sources, surfaces in droppedBelowMinTs', () => {
+  const tight: number[] = new Array(10).fill(0);
+  tight[5] = 100; // ts ~ 0
+  const smeared: number[] = new Array(10).fill(10); // ts ~ 0.302
+  const bimodal: number[] = new Array(10).fill(0);
+  bimodal[0] = 100; bimodal[9] = 100; // ts = 0.5
+  const r = buildSourceRowTokenTemporalSpread(
+    [...series(tight, 'tight'), ...series(smeared, 'smear'), ...series(bimodal, 'bimodal')],
+    { generatedAt: GEN, minTs: 0.2 },
+  );
+  // tight (~0) drops; smear (~0.302) keeps; bimodal (=0.5) keeps
+  assert.equal(r.sources.length, 2);
+  const keptSrcs = r.sources.map((s) => s.source).sort();
+  assert.deepEqual(keptSrcs, ['bimodal', 'smear']);
+  assert.equal(r.droppedBelowMinTs, 1);
+  assert.equal(r.droppedAboveMaxTs, 0);
+  assert.equal(r.minTs, 0.2);
+});
+
+test('temporal-spread: --max-ts filter drops widely-spread sources, surfaces in droppedAboveMaxTs', () => {
+  const tight: number[] = new Array(10).fill(0);
+  tight[5] = 100;
+  const bimodal: number[] = new Array(10).fill(0);
+  bimodal[0] = 100; bimodal[9] = 100;
+  const r = buildSourceRowTokenTemporalSpread(
+    [...series(tight, 'tight'), ...series(bimodal, 'bimodal')],
+    { generatedAt: GEN, maxTs: 0.2 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'tight');
+  assert.equal(r.droppedAboveMaxTs, 1);
+  assert.equal(r.droppedBelowMinTs, 0);
+  assert.equal(r.maxTs, 0.2);
+});
+
+test('temporal-spread: --min-ts and --max-ts together carve a band', () => {
+  const tight: number[] = new Array(10).fill(0);
+  tight[5] = 100;
+  const smeared: number[] = new Array(10).fill(10); // ~0.302
+  const bimodal: number[] = new Array(10).fill(0);
+  bimodal[0] = 100; bimodal[9] = 100; // 0.5
+  const r = buildSourceRowTokenTemporalSpread(
+    [...series(tight, 'tight'), ...series(smeared, 'smear'), ...series(bimodal, 'bimodal')],
+    { generatedAt: GEN, minTs: 0.2, maxTs: 0.4 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'smear');
+  assert.equal(r.droppedBelowMinTs, 1);
+  assert.equal(r.droppedAboveMaxTs, 1);
+});
+
+test('temporal-spread: invalid --min-ts / --max-ts bounds throw', () => {
+  assert.throws(
+    () => buildSourceRowTokenTemporalSpread([], { generatedAt: GEN, minTs: -0.1 }),
+    /minTs must be in \[0, 0\.5\]/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalSpread([], { generatedAt: GEN, maxTs: 0.6 }),
+    /maxTs must be in \[0, 0\.5\]/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalSpread([], { generatedAt: GEN, minTs: 0.4, maxTs: 0.2 }),
+    /minTs .* must be <= maxTs/,
+  );
+});
+
+test('temporal-spread: ts-band filter applies BEFORE top cap (top counts post-band sources)', () => {
+  // Three bimodal (ts=0.5), three impulse (ts~0). Band keeps bimodals; top=2 keeps 2 of 3.
+  const sources: QueueLine[] = [];
+  for (const name of ['b1', 'b2', 'b3']) {
+    const v: number[] = new Array(10).fill(0); v[0] = 100; v[9] = 100;
+    sources.push(...series(v, name));
+  }
+  for (const name of ['i1', 'i2', 'i3']) {
+    const v: number[] = new Array(10).fill(0); v[5] = 100;
+    sources.push(...series(v, name));
+  }
+  const r = buildSourceRowTokenTemporalSpread(sources, {
+    generatedAt: GEN, minTs: 0.4, top: 2, sort: 'source',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinTs, 3);
+  assert.equal(r.droppedBelowTopCap, 1);
+  for (const s of r.sources) {
+    assert.ok(s.source.startsWith('b'), `expected bimodal only, got ${s.source}`);
+  }
+});
+
+test('temporal-spread: --min-ts=0 and --max-ts=0.5 are no-ops (echo bounds, drop nothing)', () => {
+  const v = new Array(10).fill(0); v[5] = 100;
+  const r = buildSourceRowTokenTemporalSpread(series(v), {
+    generatedAt: GEN, minTs: 0, maxTs: 0.5,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedBelowMinTs, 0);
+  assert.equal(r.droppedAboveMaxTs, 0);
+  assert.equal(r.minTs, 0);
+  assert.equal(r.maxTs, 0.5);
+});
+
+test('temporal-spread: invariant pin — for every emitted row, ts*(N-1) == tsIndex AND tsIndex^2 ~ amp-weighted variance of n around tcIndex', () => {
+  // Hardened invariant beyond the existing random sweep: for each emitted
+  // row, recompute the amp-weighted variance from scratch and verify it
+  // matches tsIndex^2 within tight tolerance. This pins the *definition*
+  // of ts, not just its range. Done with a deterministic LCG.
+  let s = 424242;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const allLines: QueueLine[] = [];
+  const truth: Map<string, number[]> = new Map();
+  for (let k = 0; k < 10; k++) {
+    const n = 8 + Math.floor(rand() * 30);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 500));
+    const name = `inv${k}`;
+    truth.set(name, vals);
+    allLines.push(...series(vals, name));
+  }
+  const r = buildSourceRowTokenTemporalSpread(allLines, { generatedAt: GEN, minRows: 4 });
+  for (const row of r.sources) {
+    const vals = truth.get(row.source)!;
+    // Recompute totalAmp, tcIndex, tsIndex from scratch
+    let amp = 0, ws = 0;
+    for (let i = 0; i < vals.length; i++) { amp += vals[i]!; ws += i * vals[i]!; }
+    if (amp <= 0) continue;
+    const tcRef = ws / amp;
+    let m2 = 0;
+    for (let i = 0; i < vals.length; i++) { const d = i - tcRef; m2 += d * d * vals[i]!; }
+    const tsIdxRef = Math.sqrt(Math.max(0, m2 / amp));
+    assert.ok(
+      Math.abs(row.tsIndex - tsIdxRef) < 1e-7,
+      `INVARIANT BROKEN: tsIndex (${row.tsIndex}) != recomputed (${tsIdxRef}) for ${row.source}`,
+    );
+    assert.ok(
+      Math.abs(row.ts * (row.rowsKept - 1) - row.tsIndex) < 1e-9,
+      `INVARIANT BROKEN: ts*(N-1) (${row.ts * (row.rowsKept - 1)}) != tsIndex (${row.tsIndex}) for ${row.source}`,
+    );
+  }
+});
+
+test('temporal-spread: sort tiebreak across ALL sort modes incl. ts-index variants is source asc (deterministic)', () => {
+  // Three sources with identical shape & N -> identical ts and tsIndex -> tie everywhere.
+  const a = series(new Array(10).fill(50), 'aaa');
+  const b = series(new Array(10).fill(50), 'bbb');
+  const c = series(new Array(10).fill(50), 'ccc');
+  for (const sort of ['ts-desc', 'ts-asc', 'ts-index-desc', 'ts-index-asc', 'rows', 'source'] as const) {
+    const r = buildSourceRowTokenTemporalSpread([...c, ...a, ...b], { generatedAt: GEN, sort });
+    assert.deepEqual(
+      r.sources.map((s) => s.source),
+      ['aaa', 'bbb', 'ccc'],
+      `sort ${sort} did not produce stable source-asc tiebreak`,
+    );
+  }
+});
