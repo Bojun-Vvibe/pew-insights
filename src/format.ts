@@ -10231,6 +10231,10 @@ import type {
   SourceRowTokenTemporalFlatnessReport,
   SourceRowTokenTemporalFlatnessRow,
 } from './sourcerowtokentemporalflatness.js';
+import type {
+  SourceRowTokenTemporalEntropyReport,
+  SourceRowTokenTemporalEntropyRow,
+} from './sourcerowtokentemporalentropy.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,
@@ -10801,6 +10805,65 @@ export function renderSourceRowTokenTemporalFlatness(
       s.arithmeticMean.toExponential(3),
       s.geometricMean.toExponential(3),
       s.tf.toExponential(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenTemporalEntropy(
+  r: SourceRowTokenTemporalEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-temporal-entropy'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-norm-entropy: ${r.minNormEntropy ?? '\u2014'}    max-norm-entropy: ${r.maxNormEntropy ?? '\u2014'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroSeries)} zero-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowMinNormEntropy)} below min-norm-entropy, ${formatNumber(r.droppedAboveMaxNormEntropy)} above max-norm-entropy, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source temporal Shannon entropy of the per-row total_tokens amplitude envelope, normalized by ln(N) to a [0,1] uniform-reference fraction. H_norm == 1 iff the envelope is uniform across all rows; H_norm == 0 iff a single row carries all token mass. Time-domain dual of spectral-entropy (same Shannon formula on PSD bins). Order-invariant and amplitude-scale invariant. Genuinely orthogonal to spectral-entropy (different domain), to temporal-flatness (G/A ratio answers a different question than Shannon H), to all temporal moments centroid/spread/skewness/kurtosis (index-blind here, weighted by index there), and to all amplitude-shape concentration ratios (gini/mad/iqr/cv/kurtosis/skewness/burstiness/crest). Shannon 1948 / Peeters 2004.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token temporal Shannon entropy (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'nonZero', 'totalAmp', 'H(nats)', 'maxH', 'normH'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTemporalEntropyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.nonZeroRows),
+      s.totalAmp.toExponential(3),
+      s.entropyNats.toExponential(4),
+      s.maxEntropy.toExponential(4),
+      s.normEntropy.toExponential(4),
     ],
   );
   lines.push(renderTableLocal(headers, rows));

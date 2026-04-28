@@ -135,6 +135,7 @@ import {
   renderSourceRowTokenTemporalSkewness,
   renderSourceRowTokenTemporalKurtosis,
   renderSourceRowTokenTemporalFlatness,
+  renderSourceRowTokenTemporalEntropy,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -331,6 +332,7 @@ import { buildSourceRowTokenTemporalSpread } from './sourcerowtokentemporalsprea
 import { buildSourceRowTokenTemporalSkewness } from './sourcerowtokentemporalskewness.js';
 import { buildSourceRowTokenTemporalKurtosis } from './sourcerowtokentemporalkurtosis.js';
 import { buildSourceRowTokenTemporalFlatness } from './sourcerowtokentemporalflatness.js';
+import { buildSourceRowTokenTemporalEntropy } from './sourcerowtokentemporalentropy.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -14687,6 +14689,132 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenTemporalFlatness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-temporal-entropy')
+  .description(
+    "Per-source temporal Shannon entropy (computed directly on the per-row total_tokens amplitude envelope rather than on a PSD or symbolic alphabet): normalize a[n] = total_tokens[n] into p[n] = a[n] / sum(a), then H(p) = -sum p ln p in nats, with H_norm = H / ln(N) reported as the headline value in [0, 1]. H_norm == 1 iff the envelope is uniform across all rows (mass spread perfectly evenly); H_norm == 0 iff a single row carries all token mass. Time-domain dual of spectral-entropy (which applies the SAME Shannon formula to PSD bins). Order-invariant and amplitude-scale invariant: depends only on the multiset {p[n]}, not on row order or overall magnitude. Genuinely orthogonal to spectral-entropy (different domain — sine wave has low spectral entropy and high temporal entropy; constant series has high temporal entropy and undefined spectral entropy; single-row impulse has low temporal entropy and high spectral entropy), to temporal-flatness (G/A ratio is multiplicative concentration; Shannon H is information-theoretic spread — they agree at extremes but diverge in the middle), to all temporal moments (centroid/spread/skewness/kurtosis weight by row INDEX; H is index-blind), to amplitude-shape gini/mad/iqr-ratio/cv/kurtosis/skewness/burstiness/crest-factor (different concentration ratios), to symbolic entropies (approximate/sample/permutation/renyi/lempel-ziv operate on a symbolic coarse-graining; H here is on the raw amplitude mass), to event-counters (zcr/runs/turning/mann-kendall), and to fractal/Hjorth lenses. Shannon 1948 / Peeters 2004.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'norm-entropy-desc' (default; most-uniform / most-spread mass first) | 'norm-entropy-asc' (most-concentrated mass first) | 'dist-uniform-asc' (closest to uniform reference H_norm=1 first) | 'dist-uniform-desc' (farthest from uniform first; most concentrated) | 'rows' | 'source'",
+    'norm-entropy-desc',
+  )
+  .option(
+    '--min-norm-entropy <x>',
+    'inclusive lower bound on normEntropy (finite real in [0, 1]); sources with normEntropy < x surface as droppedBelowMinNormEntropy. e.g. --min-norm-entropy 0.7 isolates the spread-mass cohort.',
+  )
+  .option(
+    '--max-norm-entropy <x>',
+    'inclusive upper bound on normEntropy (finite real in [0, 1]); sources with normEntropy > x surface as droppedAboveMaxNormEntropy. e.g. --max-norm-entropy 0.4 isolates the concentrated cohort.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        minNormEntropy?: string;
+        maxNormEntropy?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'norm-entropy-desc',
+          'norm-entropy-asc',
+          'dist-uniform-asc',
+          'dist-uniform-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        let minNormEntropy: number | null = null;
+        if (opts.minNormEntropy != null) {
+          const x = Number.parseFloat(opts.minNormEntropy);
+          if (!Number.isFinite(x)) {
+            throw new Error(
+              `--min-norm-entropy must be a finite real (got ${opts.minNormEntropy})`,
+            );
+          }
+          minNormEntropy = x;
+        }
+        let maxNormEntropy: number | null = null;
+        if (opts.maxNormEntropy != null) {
+          const x = Number.parseFloat(opts.maxNormEntropy);
+          if (!Number.isFinite(x)) {
+            throw new Error(
+              `--max-norm-entropy must be a finite real (got ${opts.maxNormEntropy})`,
+            );
+          }
+          maxNormEntropy = x;
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTemporalEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'norm-entropy-desc'
+            | 'norm-entropy-asc'
+            | 'dist-uniform-asc'
+            | 'dist-uniform-desc'
+            | 'rows'
+            | 'source',
+          minNormEntropy,
+          maxNormEntropy,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenTemporalEntropy(report) + '\n',
           );
         }
       } catch (e) {
