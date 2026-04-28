@@ -2,6 +2,121 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.180 — 2026-04-28
+
+### Added
+
+- New subcommand
+  **`source-row-token-bowley-skewness`** — per-source
+  Bowley / Yule–Kendall robust quartile skewness of the
+  per-row `total_tokens` distribution.
+
+  For each source, given the type-7 (linear-interpolation)
+  quantiles `q1 = Q(0.25)`, `q2 = Q(0.5)` (median),
+  `q3 = Q(0.75)`, the Bowley skewness is
+
+      B = ((q3 - q2) - (q2 - q1)) / (q3 - q1)
+        = (q1 + q3 - 2 * q2) / (q3 - q1)
+
+  - `B = 0`  central 50 % is symmetric around the
+              median.
+  - `B > 0`  right-skewed central half (median sits
+              closer to Q1; upper quartile gap dominates).
+  - `B < 0`  left-skewed central half (median sits
+              closer to Q3).
+  - `|B| <= 1` by construction.
+
+  This is the **50 %-breakdown robust analog** of the
+  Fisher–Pearson moment skewness `g1`. A single huge
+  outlier cannot move it (Q1, median, Q3 are bounded
+  by the rank, not the value), unlike `g1` which is
+  unbounded above and dominated by extreme rows.
+
+  Genuinely orthogonal to:
+
+  - `source-row-token-skewness` (Fisher–Pearson g1 on
+    the WHOLE distribution; unbounded; one outlier
+    moves it arbitrarily — Bowley uses three order
+    statistics and is hard-bounded).
+  - `source-row-token-kurtosis` (4th moment, tail
+    weight not asymmetry).
+  - `source-row-token-iqr-ratio` (uses the same three
+    quantiles to measure WIDTH of the central 50 %;
+    says nothing about which side of Q2 the spread
+    sits — two sources can share `iqrRatio = 1.0` with
+    `B = +0.8` and `B = -0.8` respectively).
+  - `source-row-token-mad / -gini / -coefficient-of-
+    variation / -burstiness-coefficient` (dispersion or
+    concentration; direction-blind).
+  - all order-sensitive lenses (`-autocorrelation-lag1`,
+    `-runs-test`, `-turning-point-count`,
+    `-mann-kendall-trend`, `-permutation-entropy`,
+    `-sample-entropy`, `-hurst-rs`, `-dfa`, fractal
+    family, Hjorth family, spectral family,
+    `-zero-crossing-rate`, `-teager-kaiser`,
+    `-lempel-ziv`, `-renyi-entropy`) — shuffling rows
+    leaves Bowley unchanged but moves all of them.
+  - `hour-of-day-token-skew` (g1 on per-day totals
+    grouped by hour, pooled across sources — different
+    grain, different aggregation).
+
+  `degenerate=true` marks sources with `iqr=0` (q1=q2=q3;
+  Bowley is mathematically `0/0`; reported as `0` so
+  the column stays numeric).
+
+  Options: `--since`, `--until`, `--source`, `--min-rows`
+  (>=4, default 4), `--min-median` (default 0),
+  `--min-abs-bowley` (in [0, 1], default 0;
+  degenerate rows are dropped under
+  `droppedDegenerate` rather than
+  `droppedBelowMinAbsBowley` so the operator can
+  distinguish "filtered for asymmetry" from "no usable
+  Bowley signal at all"), `--top`, and
+  `--sort bowley-desc|bowley-asc|abs-bowley|iqr-desc|median-desc|rows|source`
+  with source-asc tiebreak. `--json` emits the full
+  report.
+
+### Tests
+
+51 unit + invariant tests covering: empty / option
+validation; arithmetic-progression -> `B=0` invariant
+across `n in {4, 5, 7, 9, 13, 21, 50, 100}`; all-equal
+degenerate path; single-outlier insensitivity (|B|
+change `< 0.2` vs Fisher g1 which would explode);
+worked example `B ≈ 0.81` for clumped-low / upper-tail
+series; reflection `v -> max-v` flips sign;
+shift-invariance and positive-scale-invariance;
+order-invariance under shuffle; `|B| <= 1` invariant on
+pseudo-random sources; all 7 sort modes with source-asc
+tiebreak; `--min-rows`, `--min-median`,
+`--min-abs-bowley` filters; degenerate-vs-min-abs-bowley
+separation in dropped counters; `--top` cap; window
+since/until inclusive/exclusive; source filter; and
+determinism. Test count grew from 3608 → 3659 (+51).
+
+### Live smoke (against `~/.config/pew/queue.jsonl`, 1,775 rows, 6 sources)
+
+`pew-insights source-row-token-bowley-skewness --sort source`:
+
+```
+source          rows   q1           median       q3            iqr           bowley   absBowley  degen
+claude-code     299    728733.00    3319967.00   13677924.50   12949191.50   0.5998   0.5998     no
+codex           64     1664220.25   7132861.00   18367242.00   16703021.75   0.3452   0.3452     no
+hermes          215    189420.00    423019.00    1203955.50    1014535.50    0.5395   0.5395     no
+openclaw        485    1335745.00   2515895.00   4958747.00    3623002.00    0.3485   0.3485     no
+opencode        379    1954400.00   7807075.00   12435743.50   10481343.50   -0.1168  0.1168     no
+vscode-XXX      333    815.00       2319.00      5116.00       4301.00       0.3006   0.3006     no
+```
+
+Reading: every source except `opencode` reports a
+**right-skewed central half** (the upper-quartile gap is
+wider than the lower-quartile gap), with `claude-code`
+the most extreme at `B ≈ 0.60` — its median (~3.3 M
+tokens) sits at only ~20 % of the way from Q1 to Q3.
+`opencode` is the lone left-skewed source at
+`B ≈ -0.12`, meaning its median (~7.8 M) sits closer
+to Q3 than to Q1. No source is degenerate.
+
 ## 0.6.179 — 2026-04-28
 
 ### Added
