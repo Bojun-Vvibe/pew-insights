@@ -239,6 +239,16 @@ export interface SourceRowTokenHarmonicMeanRow {
   rowsKept: number;
   /** Arithmetic mean of all `rowsKept` strictly positive rows. */
   mean: number;
+  /**
+   * Geometric mean = exp( mean(log x_i) ) of all `rowsKept`
+   * strictly positive rows. Reported as a free byproduct: by
+   * AM-GM-HM, `harmonicMean <= geometricMean <= mean` for any
+   * strictly positive sample, with equality iff the series is
+   * constant. Computed in log-space (sum of `Math.log(x)` /
+   * `n`, then `Math.exp`) so very large products do not
+   * overflow.
+   */
+  geometricMean: number;
   /** Harmonic mean = n / sum(1 / x_i). Always in (0, mean]. */
   harmonicMean: number;
   /**
@@ -248,6 +258,15 @@ export interface SourceRowTokenHarmonicMeanRow {
    * spread.
    */
   hmAmGap: number;
+  /**
+   * Signed gap harmonicMean - geometricMean. Always <= 0 by
+   * the right half of AM-GM-HM (HM <= GM), with equality iff
+   * the series is constant. Together with `hmAmGap` and the
+   * derived `gmAmGap = geometricMean - mean` (also <= 0), the
+   * three classical Pythagorean means form the verifiable
+   * sandwich `HM <= GM <= AM` directly in each row.
+   */
+  hmGmGap: number;
 }
 
 export interface SourceRowTokenHarmonicMeanReport {
@@ -393,21 +412,27 @@ export function buildSourceRowTokenHarmonicMean(
 
     let sumRecip = 0;
     let totalSum = 0;
+    let sumLog = 0;
     for (let i = 0; i < n; i += 1) {
       const v = samples[i]!;
       sumRecip += 1 / v;
       totalSum += v;
+      sumLog += Math.log(v);
     }
     const mean = totalSum / n;
     const harmonicMean = n / sumRecip;
+    const geometricMean = Math.exp(sumLog / n);
     const hmAmGap = harmonicMean - mean;
+    const hmGmGap = harmonicMean - geometricMean;
 
     allRows.push({
       source,
       rowsKept: n,
       mean,
+      geometricMean,
       harmonicMean,
       hmAmGap,
+      hmGmGap,
     });
   }
 

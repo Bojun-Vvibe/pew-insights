@@ -11276,7 +11276,7 @@ export function renderSourceRowTokenHarmonicMean(
   }
   lines.push(
     chalk.dim(
-      `(per-source harmonic mean of per-row total_tokens: HM = n / sum(1/x_i). Pythagorean lower bound — by AM-GM-HM, HM <= GM <= AM with equality iff constant. Scale-equivariant, NOT translation-equivariant. Dominated by the smallest rows: a single tiny row pulls HM toward zero hard. hmAmGap = HM - mean is reported as a free signal: always <= 0, with magnitude growing as the multiplicative spread of the series grows.)`,
+      `(per-source harmonic mean of per-row total_tokens: HM = n / sum(1/x_i). Pythagorean lower bound — by AM-GM-HM, HM <= GM <= AM with equality iff constant. Scale-equivariant, NOT translation-equivariant. Dominated by the smallest rows: a single tiny row pulls HM toward zero hard. hmAmGap = HM - mean and hmGmGap = HM - GM are reported as free signals: both always <= 0 by AM-GM-HM, magnitude grows with the multiplicative spread of the series. Geometric mean (exp(mean(log x))) is reported as the sandwich middle term.)`,
     ),
   );
   lines.push('');
@@ -11291,14 +11291,16 @@ export function renderSourceRowTokenHarmonicMean(
       `per-source row-token harmonic mean (sorted by ${r.sort}; ties: source asc)`,
     ),
   );
-  const headers = ['source', 'rows', 'mean', 'harmonic-mean', 'hm-mean'];
+  const headers = ['source', 'rows', 'mean', 'geo-mean', 'harmonic-mean', 'hm-mean', 'hm-gm'];
   const rows: string[][] = r.sources.map(
     (s: SourceRowTokenHarmonicMeanRow) => [
       s.source,
       formatNumber(s.rowsKept),
       s.mean.toFixed(2),
+      s.geometricMean.toFixed(2),
       s.harmonicMean.toFixed(2),
       (s.hmAmGap >= 0 ? '+' : '') + s.hmAmGap.toFixed(2),
+      (s.hmGmGap >= 0 ? '+' : '') + s.hmGmGap.toFixed(2),
     ],
   );
   lines.push(renderTableLocal(headers, rows));

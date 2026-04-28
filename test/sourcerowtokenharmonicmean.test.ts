@@ -684,3 +684,110 @@ test('harmonic-mean: ascending vs descending input agree (order-invariant under 
     Math.abs(ra.sources[0]!.harmonicMean - rd.sources[0]!.harmonicMean) < 1e-12,
   );
 });
+
+// ---------- refinement: geometric-mean byproduct + AM-GM-HM sandwich ----------
+
+test('harmonic-mean: refinement — geometricMean reported on every row', () => {
+  const r = buildSourceRowTokenHarmonicMean(
+    mkSeries('s', [2, 4, 8]),
+    { generatedAt: GEN },
+  );
+  // GM = (2*4*8)^(1/3) = 64^(1/3) = 4.
+  assert.ok(Math.abs(r.sources[0]!.geometricMean - 4) < 1e-9);
+});
+
+test('harmonic-mean: refinement — geometricMean equals c on a constant series', () => {
+  const r = buildSourceRowTokenHarmonicMean(
+    mkSeries('s', [13, 13, 13, 13]),
+    { generatedAt: GEN },
+  );
+  assert.ok(Math.abs(r.sources[0]!.geometricMean - 13) < 1e-9);
+  assert.ok(Math.abs(r.sources[0]!.hmGmGap) < 1e-9);
+});
+
+test('harmonic-mean: refinement — AM-GM-HM sandwich holds: HM <= GM <= AM on every row', () => {
+  for (const xs of [
+    [1, 2, 3, 4, 5],
+    [10, 20, 50, 100],
+    [3, 7, 11, 13, 17, 19],
+    [1, 1000],
+    [1, 1, 1, 1, 1000],
+    [99, 99, 99, 99, 99, 100],
+    [42],
+  ]) {
+    const r = buildSourceRowTokenHarmonicMean(mkSeries('s', xs), {
+      generatedAt: GEN,
+    });
+    const row = r.sources[0]!;
+    assert.ok(
+      row.harmonicMean <= row.geometricMean + 1e-9,
+      `HM <= GM for ${xs}`,
+    );
+    assert.ok(
+      row.geometricMean <= row.mean + 1e-9,
+      `GM <= AM for ${xs}`,
+    );
+  }
+});
+
+test('harmonic-mean: refinement — hmGmGap is always <= 0', () => {
+  for (const xs of [
+    [1, 2, 3],
+    [10, 100, 1000],
+    [5, 5, 5, 100],
+    [42],
+    [7, 7, 7],
+  ]) {
+    const r = buildSourceRowTokenHarmonicMean(mkSeries('s', xs), {
+      generatedAt: GEN,
+    });
+    assert.ok(r.sources[0]!.hmGmGap <= 1e-12, `hmGmGap<=0 for ${xs}`);
+  }
+});
+
+test('harmonic-mean: refinement — geometricMean is scale-equivariant (rescale by c rescales GM by c)', () => {
+  const xs = [3, 7, 11, 13, 17];
+  const c = 100;
+  const r1 = buildSourceRowTokenHarmonicMean(mkSeries('s', xs), {
+    generatedAt: GEN,
+  });
+  const r2 = buildSourceRowTokenHarmonicMean(
+    mkSeries(
+      's',
+      xs.map((x) => x * c),
+    ),
+    { generatedAt: GEN },
+  );
+  assert.ok(
+    Math.abs(r2.sources[0]!.geometricMean - c * r1.sources[0]!.geometricMean) <
+      1e-7,
+  );
+});
+
+test('harmonic-mean: refinement — geometricMean computed in log-space does not overflow on large products', () => {
+  // 30 rows of 1e9 each: naive product is 1e270 (still finite double),
+  // but 50 rows of 1e9 = 1e450 overflows. Use 100 rows.
+  const xs = Array.from({ length: 100 }, () => 1e9);
+  const r = buildSourceRowTokenHarmonicMean(mkSeries('s', xs), {
+    generatedAt: GEN,
+  });
+  // GM of constant series == constant.
+  assert.ok(Math.abs(r.sources[0]!.geometricMean - 1e9) < 1);
+  assert.ok(Number.isFinite(r.sources[0]!.geometricMean));
+});
+
+test('harmonic-mean: refinement — pinned sandwich [1, 4, 16] -> HM=48/21, GM=4, AM=7', () => {
+  const r = buildSourceRowTokenHarmonicMean(
+    mkSeries('s', [1, 4, 16]),
+    { generatedAt: GEN },
+  );
+  // HM = 3 / (1 + 1/4 + 1/16) = 3 / 1.3125 = 48/21 ~ 2.2857
+  assert.ok(Math.abs(r.sources[0]!.harmonicMean - 48 / 21) < 1e-9);
+  // GM = (1*4*16)^(1/3) = 64^(1/3) = 4
+  assert.ok(Math.abs(r.sources[0]!.geometricMean - 4) < 1e-9);
+  // AM = 21/3 = 7
+  assert.equal(r.sources[0]!.mean, 7);
+  // gaps both negative
+  assert.ok(r.sources[0]!.hmAmGap < 0);
+  assert.ok(r.sources[0]!.hmGmGap < 0);
+});
