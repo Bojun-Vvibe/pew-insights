@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.182 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-trimean`** — per-source
+  **Tukey trimean** of the per-row `total_tokens` distribution.
+
+  For each source, given the type-7 (linear-interpolation)
+  quantiles `q1 = Q(0.25)`, `q2 = Q(0.50)` (median),
+  `q3 = Q(0.75)`, the Tukey trimean (Tukey, 1977,
+  *Exploratory Data Analysis*) is
+
+      TM = (q1 + 2*q2 + q3) / 4
+         = median/2 + midhinge/2
+
+  where `midhinge = (q1 + q3) / 2`. This is an **L-estimator
+  of central tendency** with **25 %-breakdown** — it sits
+  between the mean (0 %-breakdown, dominated by single huge
+  rows) and the median (50 %-breakdown, ignores both tails).
+  TM is **translation- and scale-equivariant** (location, not
+  shape), **order-invariant** (depends only on the multiset
+  of values), **identity on a constant series** (TM = c), and
+  **always finite** (no division — never undefined).
+
+  TM equals the median for any symmetric distribution and
+  shifts towards the longer tail by exactly half the gap
+  between the midhinge and the median. The signed gap
+  `tmMedianGap = trimean - median` is reported as a free
+  robust skew direction signal (positive = upper central
+  half heavier; bounded by `[-(q3-q1)/4, +(q3-q1)/4]`).
+
+  This **completes the per-source location lens family** and
+  is genuinely orthogonal to every existing
+  `source-row-token-*` lens: **no current lens reports a
+  robust central-tendency scalar in the same units as
+  total_tokens.**
+
+  - `source-row-token-mad` reports a *spread* (median of
+    absolute deviations), not a center.
+  - `source-row-token-coefficient-of-quartile-deviation`,
+    `source-row-token-bowley-skewness`,
+    `source-row-token-iqr-ratio` all use the same three
+    quantiles to measure *shape* (dispersion / direction /
+    spread-vs-center ratio) — TM is location.
+  - `source-row-token-coefficient-of-variation`,
+    `source-row-token-burstiness-coefficient`,
+    `source-row-token-skewness`,
+    `source-row-token-kurtosis` are *moment*-based shape
+    statistics dominated by the mean and stddev; trimean is
+    a quantile-based L-estimator of location.
+  - `source-output-tokens-per-row-percentiles` exposes the
+    raw `P50/P75/P90/P99` of `output_tokens` (different
+    field, no L-estimator blend).
+
+  Trimean and the (implicit) mean disagree on any
+  non-symmetric distribution; trimean and the median agree
+  on symmetric distributions but trimean shifts towards the
+  longer tail otherwise.
+
+  Surface: `--since/--until` window, `--source` filter,
+  `--min-rows` (>= 4, default 4), `--min-trimean` (cohort
+  gate; finite, non-negative; default 0), `--top`,
+  `--sort trimean-desc|trimean-asc|median-desc|gap-desc|rows|source`
+  (source-asc tiebreak), `--json`.
+
+  **Live smoke against `~/.config/pew/queue.jsonl`** (1 783
+  rows, 6 sources, sort `trimean-desc`):
+
+      source           rows   q1            median        q3             midhinge       trimean       tm-med
+      ---------------  -----  ------------  ------------  -------------  -------------  ------------  ------------
+      codex            64     1 664 220.25  7 132 861.00  18 367 242.00  10 015 731.13  8 574 296.06  +1 441 435.06
+      opencode         382    1 973 353.75  7 807 457.00  12 426 976.25   7 200 165.00  7 503 811.00    -303 646.00
+      claude-code      299      728 733.00  3 319 967.00  13 677 924.50   7 203 328.75  5 261 647.88  +1 941 680.88
+      openclaw         488    1 324 407.00  2 502 236.00   4 954 184.00   3 139 295.50  2 820 765.75    +318 529.75
+      hermes           217      191 181.00    423 019.00   1 206 012.00     698 596.50    560 807.75    +137 788.75
+      vscode-XXX       333          815.00      2 319.00       5 116.00       2 965.50      2 642.25       +323.25
+
+  Reads cleanly:
+
+  - **codex** has the largest robust central per-row token
+    magnitude (~8.57M tokens / row) with a clear positive
+    `tmMedianGap` (+1.44M) — upper central half is heavier.
+  - **opencode** is the only source with a *negative*
+    `tmMedianGap` (-303k) — lower central half is heavier
+    despite the high median (~7.81M); the bottom of the
+    central 50 % is wider than the top.
+  - **claude-code** has the largest *signed* gap
+    (+1.94M) — the most upper-heavy central half in the
+    cohort, with q3 sitting almost an order of magnitude
+    above the median.
+  - **vscode-XXX** trimean (~2.6k) is ~3 200× smaller than
+    codex, surfacing the cohort-wide spread of robust
+    centers.
+
+  Tests: 3 707 → 3 758 (+51).
+
 ## 0.6.181 — 2026-04-28
 
 ### Added
