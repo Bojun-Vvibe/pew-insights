@@ -11097,3 +11097,75 @@ export function renderSourceRowTokenTrimean(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type {
+  SourceRowTokenMidhingeReport,
+  SourceRowTokenMidhingeRow,
+} from './sourcerowtokenmidhinge.js';
+
+export function renderSourceRowTokenMidhinge(
+  r: SourceRowTokenMidhingeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-midhinge'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-midhinge: ${formatNumber(r.minMidhinge)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinMidhinge)} below min-midhinge, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Tukey midhinge MH = (q1 + q3) / 2 on per-row total_tokens, type-7 quantiles. Pure-IQR central-tendency L-estimator with 25% breakdown — drops the median entirely (trimean weights median 1/2; midhinge weights it 0). Translation- and scale-equivariant; equals the median only when the central half is symmetric. mhMedianGap = midhinge - median is a free signal for where the median sits inside its IQR (positive = median in lower half of [q1, q3], i.e. upper central half longer).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Tukey midhinge (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'q1',
+    'median',
+    'q3',
+    'midhinge',
+    'mh-med',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenMidhingeRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.q1.toFixed(2),
+      s.median.toFixed(2),
+      s.q3.toFixed(2),
+      s.midhinge.toFixed(2),
+      (s.mhMedianGap >= 0 ? '+' : '') + s.mhMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

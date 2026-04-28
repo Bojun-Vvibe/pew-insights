@@ -111,6 +111,7 @@ import {
   renderSourceRowTokenBowleySkewness,
   renderSourceRowTokenCoefficientOfQuartileDeviation,
   renderSourceRowTokenTrimean,
+  renderSourceRowTokenMidhinge,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -316,6 +317,7 @@ import { buildSourceRowTokenIqrRatio } from './sourcerowtokeniqrratio.js';
 import { buildSourceRowTokenBowleySkewness } from './sourcerowtokenbowleyskewness.js';
 import { buildSourceRowTokenCoefficientOfQuartileDeviation } from './sourcerowtokencoefficientofquartiledeviation.js';
 import { buildSourceRowTokenTrimean } from './sourcerowtokentrimean.js';
+import { buildSourceRowTokenMidhinge } from './sourcerowtokenmidhinge.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15173,6 +15175,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenTrimean(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-midhinge')
+  .description(
+    "Per-source Tukey midhinge MH = (q1 + q3) / 2 of per-row total_tokens (type-7 quantiles). Pure-IQR central-tendency L-estimator with 25%-breakdown — drops the median entirely (the trimean weights median 1/2; midhinge weights it 0). Translation- and scale-equivariant; equals the median only when the central half is symmetric. Distinct from every existing source-row-token-* lens: source-row-token-trimean = MH/2 + median/2 (blends midhinge with median 50/50, so trimean and midhinge disagree by exactly (median - midhinge)/2 on any asymmetric central half); source-row-token-mad reports a SPREAD (median of absolute deviations); source-row-token-coefficient-of-quartile-deviation, source-row-token-bowley-skewness, source-row-token-iqr-ratio all use the same q1/q3 to measure SHAPE (dispersion / direction / spread-vs-center ratio); source-row-token-coefficient-of-variation, source-row-token-burstiness-coefficient, source-row-token-skewness, source-row-token-kurtosis are MOMENT-based shape statistics, not location; source-output-tokens-per-row-percentiles exposes the raw P50/P75/P90/P99 of output_tokens (different field, no L-estimator blend). Two distributions sharing q1 and q3 but with very different medians have identical midhinges. mhMedianGap = midhinge - median is reported as a free signal for where the median sits inside its own IQR (positive = median in lower half of [q1, q3], i.e. upper central half longer; bounded by [-(q3-q1)/2, +(q3-q1)/2]).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need at least one observation per quartile slot for meaningful Q1/Q3) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-midhinge <f>',
+    'drop sources whose midhinge is strictly below f; cohort selector for "this source actually carries non-trivial central token magnitude" — useful to hide low-volume noise sources before ranking. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'midhinge-desc' (default) | 'midhinge-asc' | 'median-desc' | 'gap-desc' (|mhMedianGap| desc — median furthest from IQR center first) | 'rows' | 'source'",
+    'midhinge-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minMidhinge: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minMidhinge = Number.parseFloat(opts.minMidhinge);
+        if (!Number.isFinite(minMidhinge) || minMidhinge < 0) {
+          throw new Error(
+            `--min-midhinge must be a finite, non-negative number (got ${opts.minMidhinge})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'midhinge-desc',
+          'midhinge-asc',
+          'median-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMidhinge(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minMidhinge,
+          top,
+          sort: opts.sort as
+            | 'midhinge-desc'
+            | 'midhinge-asc'
+            | 'median-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMidhinge(report) + '\n');
         }
       } catch (e) {
         die(e);
