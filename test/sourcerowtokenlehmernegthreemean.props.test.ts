@@ -158,3 +158,29 @@ test('lehmer-neg-3-mean property: gap monotonicity — negThreeHmGap >= negTwoHm
     assert.ok(l3row.negThreeHmGap + tol >= l2row.negTwoHmGap);
   }
 });
+
+test('lehmer-neg-3-mean property: self-weighted-mean closed form L_-3 = sum(x*w)/sum(w) with w=x^-4', () => {
+  // Verify that L_-3 equals the x^-4-weighted arithmetic mean of x.
+  // sum(x_i * x_i^-4) / sum(x_i^-4) = sum(x_i^-3) / sum(x_i^-4) = L_-3.
+  const rng = lcg(33333);
+  for (let trial = 0; trial < 60; trial++) {
+    const n = 3 + Math.floor(rng() * 15);
+    const xs: number[] = [];
+    for (let i = 0; i < n; i++) xs.push(0.5 + rng() * 5000);
+    const queue = mkSeries('s', xs);
+    const l3 = buildSourceRowTokenLehmerNegThreeMean(queue, {
+      generatedAt: GEN,
+    }).sources[0]!.lehmerNegThreeMean;
+
+    let num = 0;
+    let den = 0;
+    for (const x of xs) {
+      const w = 1 / (x * x * x * x);
+      num += x * w;
+      den += w;
+    }
+    const expected = num / den;
+    const tol = 1e-9 * Math.max(1, expected);
+    assert.ok(Math.abs(l3 - expected) < tol, `trial ${trial}: ${l3} vs ${expected}`);
+  }
+});
