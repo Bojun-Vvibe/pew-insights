@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.200 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-11-mean`** —
+  per-source **Lehmer mean of order 11** (a.k.a. **L_11**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of eleventh powers by the
+  sum of tenth powers:
+
+      L_11 = ( sum_{i=1..n} x_i^11 ) / ( sum_{i=1..n} x_i^10 )
+
+  Equivalently, L_11 is the `x_i^10`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *tenth
+  power*. Natural one-step-RIGHT extension of v0.6.199's
+  L_10 lens. By Lehmer monotonicity, `L_10 <= L_11` for any
+  non-negative sample with at least one strictly positive
+  row, with equality iff every positive row is equal. So
+  L_11 extends the integer Lehmer-mean ladder one further
+  step right of L_10:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7 <= L_8 <= L_9 <= L_10 <= L_11
+
+  L_11 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as the rest of the Lehmer
+  family at orders other than 1.
+
+  Three free byproducts are reported in every row:
+
+  - `l11L10Gap = L_11 - L_10` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-tenth-power
+    weighting amplification** above L_10.
+  - `l11L9Gap = L_11 - L_9` — always `>= 0`. Strictly
+    larger than v0.6.199's `l10L9Gap` for any non-constant
+    positive series.
+  - `l11AmGap = L_11 - mean` — always `>= 0`. Cumulative
+    pull from the equal-weight average all the way up to
+    the size-tenth-power-weighted location.
+
+### Live smoke
+
+Ran against `~/.config/pew/queue.jsonl` on 2026-04-29
+(`vscode-copilot` redacted to `vscode-XXX`):
+
+```
+pew-insights source-row-token-lehmer-11-mean
+sources: 6 (shown 6)    rows: 1,862    sort: lehmer-11-mean-desc
+dropped: 0 across all gates
+
+per-source row-token Lehmer-11 mean
+source        rows  mean         l9            l10            l11            l11-l10      l11-l9       l11-mean
+------------  ----  -----------  ------------  -------------  -------------  -----------  -----------  ------------
+claude-code   299   11512995.95   98698474.09   101210243.15   102949485.21  +1739242.07  +4251011.13  +91436489.27
+opencode      408   10417505.28   60401240.60    61313925.63    62118480.21   +804554.58  +1717239.60  +51700974.92
+codex          64   12650385.31   56099697.33    56729928.13    57174624.55   +444696.42  +1074927.21  +44524239.23
+openclaw      514    3835643.17   41733155.44    42322981.70    42796073.11   +473091.40  +1062917.66  +38960429.94
+hermes        244     780368.12    5557073.72     5679355.26     5757559.13    +78203.87   +200485.41   +4977191.01
+vscode-XXX    333       5662.84     168411.88      169589.13      170520.29      +931.16     +2108.41   +164857.44
+```
+
+Per-source row-by-row monotonicity `L_9 <= L_10 <= L_11`
+holds across all 6 sources (1,862 rows total, 0 drops).
+Diff vs v0.6.199 L_10 column on the same queue:
+
+```
+source        L_10 (v0.6.199)  L_11 (v0.6.200)  delta (l11L10Gap)
+------------  ---------------  ---------------  -----------------
+claude-code      101210243.15     102949485.21        +1739242.07
+opencode          61313925.63      62118480.21         +804554.58
+codex             56729928.13      57174624.55         +444696.42
+openclaw          42322981.70      42796073.11         +473091.40
+hermes             5679355.26       5757559.13          +78203.87
+vscode-XXX          169589.13        170520.29             +931.16
+```
+
+All deltas `>= 0` as required by Lehmer monotonicity.
+Largest `l11L10Gap` is on `claude-code` at +1,739,242 tokens
+— the heaviest-tail source again dominates the tenth-power
+weighting amplification.
+
+### Tests
+
+- Test count grew from 4,527 -> 4,568 (+41). New file
+  `test/sourcerowtokenlehmer11mean.test.ts` (41 cases) pins:
+  shape / option validation, identity on constant positive
+  series, identity on single positive row, reference identity
+  vs manual `sum(x^11)/sum(x^10)`, cross-builder L_9 / L_10
+  consistency vs `lehmer-9-mean` and `lehmer-10-mean`
+  builders, scale-equivariance, order-invariance,
+  monotonicity vs L_9/L_10, closed-form weighted-mean
+  identity, round-trip `L_11 * sum(x^10) == sum(x^11)`,
+  closed-form gap identity for `l11L10Gap`, equality case
+  `L_11 = max iff all positive rows == max`, and end-to-end
+  ladder `L_8 <= L_9 <= L_10 <= L_11` monotonicity property.
+
 ## 0.6.199 — 2026-04-29
 
 ### Added
