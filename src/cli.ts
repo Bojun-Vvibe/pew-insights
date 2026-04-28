@@ -130,6 +130,7 @@ import {
   renderSourceRowTokenWinsorizedMean10,
   renderSourceRowTokenWinsorizedMean20,
   renderSourceRowTokenTrimMean10,
+  renderSourceRowTokenTrimMean20,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -357,6 +358,7 @@ import { buildSourceRowTokenLehmer12Mean } from './sourcerowtokenlehmer12mean.js
 import { buildSourceRowTokenWinsorizedMean10 } from './sourcerowtokenwinsorizedmean10.js';
 import { buildSourceRowTokenWinsorizedMean20 } from './sourcerowtokenwinsorizedmean20.js';
 import { buildSourceRowTokenTrimMean10 } from './sourcerowtokentrimmean10.js';
+import { buildSourceRowTokenTrimMean20 } from './sourcerowtokentrimmean20.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -7750,6 +7752,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenTrimMean10(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-trim-mean-20')
+  .description(
+    "Per-source 20 % symmetrically trimmed mean of per-row total_tokens. Sort the rows, DROP the bottom k = floor(0.20 n) and top k order statistics entirely, then take the arithmetic mean of the central n - 2k surviving rows. Symmetric L-estimator with 20 % breakdown — strictly more robust than mean / mid-range (0 %) and TM-10 (10 %), strictly less than TM-25 (25 %) and median (50 %). Mechanically distinct from source-row-token-winsorized-mean-20 (same alpha = 0.20 but CLIPS tails to boundary values vs DROPS them; WM-20 denominator is n, TM-20 denominator is n - 2k). Mechanically distinct from source-row-token-trim-mean-10 (same DROP mechanism but different alpha; TM-20 trims twice as much per tail). Mechanically distinct from source-row-token-trim-mean-25 (same DROP mechanism, different alpha; TM-20 retains a wider central body). Translation- and scale-equivariant. tmMeanGap = trim_mean - mean is reported as a free signal: negative means the raw mean is being pulled UP by an upper tail that the trimmed mean filters out; positive means a lower tail is dragging the raw mean down. Free byproducts loBoundary = x_(k+1), hiBoundary = x_(n-k), and trimmedPerTail = k expose where the trim cut falls.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 5 (need k = floor(0.20 n) >= 1 to actually trim — at n < 5, k = 0 and the trimmed mean degenerates to the arithmetic mean) (default 5)',
+    '5',
+  )
+  .option(
+    '--min-trim-mean <f>',
+    'drop sources whose trim-mean is strictly below f; cohort selector for "this source actually carries non-trivial body-location token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'trim-mean-desc' (default) | 'trim-mean-asc' | 'mean-desc' | 'gap-desc' (|tmMeanGap| desc) | 'rows' | 'source'",
+    'trim-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minTrimMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 5) {
+          throw new Error(
+            `--min-rows must be an integer >= 5 (got ${opts.minRows})`,
+          );
+        }
+        const minTrimMean = Number.parseFloat(opts.minTrimMean);
+        if (!Number.isFinite(minTrimMean) || minTrimMean < 0) {
+          throw new Error(
+            `--min-trim-mean must be a finite, non-negative number (got ${opts.minTrimMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'trim-mean-desc',
+          'trim-mean-asc',
+          'mean-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTrimMean20(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minTrimMean,
+          top,
+          sort: opts.sort as
+            | 'trim-mean-desc'
+            | 'trim-mean-asc'
+            | 'mean-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenTrimMean20(report) + '\n');
         }
       } catch (e) {
         die(e);
