@@ -148,6 +148,8 @@ import type { QueueLine } from './types.js';
 export type SourceRowTokenTemporalFlatnessSort =
   | 'tf-desc'
   | 'tf-asc'
+  | 'dist-flat-asc'
+  | 'dist-flat-desc'
   | 'rows'
   | 'source';
 
@@ -237,7 +239,22 @@ export interface SourceRowTokenTemporalFlatnessReport {
   sources: SourceRowTokenTemporalFlatnessRow[];
 }
 
-const VALID_SORTS = ['tf-desc', 'tf-asc', 'rows', 'source'] as const;
+const VALID_SORTS = [
+  'tf-desc',
+  'tf-asc',
+  'dist-flat-asc',
+  'dist-flat-desc',
+  'rows',
+  'source',
+] as const;
+
+/**
+ * Reference value for the "perfectly flat" envelope's
+ * temporal flatness. By the AM-GM inequality, tf <= 1
+ * with equality iff all a[n] are equal positive. We pin
+ * 1 as the reference for the `dist-flat-*` sort modes.
+ */
+const FLAT_TF = 1;
 
 /** Floor for sub-EPS amplitudes when taking logs (Welch / log-MS convention). */
 const EPS = 1e-300;
@@ -406,6 +423,10 @@ export function buildSourceRowTokenTemporalFlatness(
       primary = b.tf - a.tf;
     } else if (sort === 'tf-asc') {
       primary = a.tf - b.tf;
+    } else if (sort === 'dist-flat-asc') {
+      primary = Math.abs(a.tf - FLAT_TF) - Math.abs(b.tf - FLAT_TF);
+    } else if (sort === 'dist-flat-desc') {
+      primary = Math.abs(b.tf - FLAT_TF) - Math.abs(a.tf - FLAT_TF);
     } else if (sort === 'rows') {
       primary = b.rowsKept - a.rowsKept;
     } else {

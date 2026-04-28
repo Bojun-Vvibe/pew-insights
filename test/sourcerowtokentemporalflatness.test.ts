@@ -568,3 +568,75 @@ test('temporal-flatness: --max-tf == 1 (upper bound) keeps all valid emitted sou
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedAboveMaxTf, 0);
 });
+
+// ---- dist-flat sort modes (0.6.177) ----
+
+test('temporal-flatness: sort dist-flat-asc puts closest-to-flat (tf=1) source first', () => {
+  const flat = new Array(15).fill(50);                       // tf == 1
+  const mild = new Array(15).fill(1); mild[7] = 50;          // tf < 1
+  const spike = new Array(15).fill(1); spike[7] = 5000;      // tf << 1
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(flat, 'flat'), ...series(mild, 'mild'), ...series(spike, 'spk')],
+    { generatedAt: GEN, sort: 'dist-flat-asc' },
+  );
+  // 'flat' is closest to 1; should sort first.
+  assert.equal(r.sources[0]!.source, 'flat');
+});
+
+test('temporal-flatness: sort dist-flat-desc puts farthest-from-flat (most concentrated) first', () => {
+  const flat = new Array(15).fill(50);
+  const mild = new Array(15).fill(1); mild[7] = 50;
+  const spike = new Array(15).fill(1); spike[7] = 5000;
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(flat, 'flat'), ...series(mild, 'mild'), ...series(spike, 'spk')],
+    { generatedAt: GEN, sort: 'dist-flat-desc' },
+  );
+  // 'spk' is farthest from 1.
+  assert.equal(r.sources[0]!.source, 'spk');
+  assert.equal(r.sources[2]!.source, 'flat');
+});
+
+test('temporal-flatness: dist-flat sort modes — equidistant tie breaks by source asc', () => {
+  // Three identical envelopes -> identical tf -> tie -> source-asc tiebreak.
+  const v = new Array(15).fill(1); v[7] = 100;
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(v, 'zz'), ...series(v, 'aa'), ...series(v, 'mm')],
+    { generatedAt: GEN, sort: 'dist-flat-asc' },
+  );
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['aa', 'mm', 'zz'],
+  );
+});
+
+test('temporal-flatness: invalid sort still rejected; all six valid modes accepted', () => {
+  assert.throws(
+    () => buildSourceRowTokenTemporalFlatness([], { sort: 'dist-flat-bogus' as any }),
+    /sort must be one of/,
+  );
+  for (const s of [
+    'tf-desc', 'tf-asc', 'dist-flat-asc', 'dist-flat-desc', 'rows', 'source',
+  ] as const) {
+    buildSourceRowTokenTemporalFlatness([], { sort: s });
+  }
+});
+
+test('temporal-flatness: dist-flat-asc / dist-flat-desc are exact reverses on distinct tf values', () => {
+  // Three sources with strictly distinct tf — the two dist-flat sort modes
+  // should produce reversed orderings of one another.
+  const a = new Array(15).fill(50);                          // tf == 1
+  const b = new Array(15).fill(1); b[7] = 100;               // some tf
+  const c = new Array(15).fill(1); c[7] = 10000;             // smaller tf
+  const asc = buildSourceRowTokenTemporalFlatness(
+    [...series(a, 'a'), ...series(b, 'b'), ...series(c, 'c')],
+    { generatedAt: GEN, sort: 'dist-flat-asc' },
+  );
+  const desc = buildSourceRowTokenTemporalFlatness(
+    [...series(a, 'a'), ...series(b, 'b'), ...series(c, 'c')],
+    { generatedAt: GEN, sort: 'dist-flat-desc' },
+  );
+  assert.deepEqual(
+    asc.sources.map((s) => s.source),
+    desc.sources.map((s) => s.source).reverse(),
+  );
+});

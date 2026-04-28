@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.177 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-flatness` refinement:
+  two new sort modes `dist-flat-asc` and
+  `dist-flat-desc`. Both sort by `|tf - 1|` (the
+  perfectly-flat reference value pinned as a module-
+  level constant `FLAT_TF`):
+    - `dist-flat-asc`: closest to perfectly-flat first.
+      Surfaces the most **envelope-uniform** sources —
+      those whose per-row token totals sit closest to a
+      constant. Equivalent to `tf-desc` *only when all
+      sources have tf <= 1* (always true by AM-GM), so
+      operationally `dist-flat-asc` ranks sources the
+      same way as `tf-desc`. The mode is included for
+      *symmetry* with the dist-uniform-asc/desc pair on
+      ts4 (0.6.173) and to make the operator's intent
+      explicit at the CLI: "give me the most flat-like".
+    - `dist-flat-desc`: farthest from perfectly-flat
+      first. Surfaces the most **multiplicatively
+      concentrated** sources, equivalent under the
+      AM-GM upper bound to `tf-asc` but with the
+      operator-facing name pinning the *reference
+      value* (tf = 1) explicitly.
+
+  Tiebreak across both new modes is `source` asc, same
+  as the rest of the suite.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--sort dist-flat-desc` (sources: 6, kept: 6, rows:
+  ~1,767):
+
+      source       rows  totalAmp  arithMean  geomMean  tf
+      -----------  ----  --------  ---------  --------  ---------
+      claude-code  299   3.442e+9  1.151e+7   2.827e+6  2.4552e-1
+      vscode-XXX   333   1.886e+6  5.663e+3   2.070e+3  3.6556e-1
+      codex        64    8.096e+8  1.265e+7   4.783e+6  3.7807e-1
+      opencode     377   3.982e+9  1.056e+7   4.760e+6  4.5063e-1
+      hermes       212   1.740e+8  8.208e+5   4.338e+5  5.2847e-1
+      openclaw     482   1.924e+9  3.992e+6   2.573e+6  6.4459e-1
+
+  Operator reading: `dist-flat-desc` immediately
+  reveals the descending order of multiplicative
+  concentration relative to the perfectly-flat tf=1
+  reference. `claude-code` is the most concentrated
+  (|tf - 1| = 0.755), followed by the `vscode-XXX`
+  source (|tf - 1| = 0.634), then `codex`, `opencode`,
+  `hermes`, with `openclaw` (|tf - 1| = 0.355) the
+  closest to a perfectly flat envelope. The ordering
+  exactly mirrors that of `tf-asc` because tf is
+  bounded above by 1 — but the dist-flat-* names pin
+  the reference value at the CLI surface, making the
+  operator intent unambiguous.
+
+  Test count 3552 -> 3557 (+5).
+
 ## 0.6.176 — 2026-04-28
 
 ### Added

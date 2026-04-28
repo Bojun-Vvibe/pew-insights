@@ -14605,7 +14605,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'tf-desc' (default; flattest envelope first) | 'tf-asc' (spikiest / most concentrated first) | 'rows' | 'source'",
+    "sort key: 'tf-desc' (default; flattest envelope first) | 'tf-asc' (spikiest / most concentrated first) | 'dist-flat-asc' (closest to perfectly-flat reference tf=1 first) | 'dist-flat-desc' (farthest from tf=1 first; most concentrated) | 'rows' | 'source'",
     'tf-desc',
   )
   .option(
@@ -14649,7 +14649,7 @@ program
           }
           top = t;
         }
-        const validSorts = ['tf-desc', 'tf-asc', 'rows', 'source'];
+        const validSorts = ['tf-desc', 'tf-asc', 'dist-flat-asc', 'dist-flat-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
@@ -14678,7 +14678,7 @@ program
           source: opts.source ?? null,
           minRows,
           top,
-          sort: opts.sort as 'tf-desc' | 'tf-asc' | 'rows' | 'source',
+          sort: opts.sort as 'tf-desc' | 'tf-asc' | 'dist-flat-asc' | 'dist-flat-desc' | 'rows' | 'source',
           minTf,
           maxTf,
         });
