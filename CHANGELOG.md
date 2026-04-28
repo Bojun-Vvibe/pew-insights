@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.196 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-7-mean`** —
+  per-source **Lehmer mean of order 7** (a.k.a. **L_7**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of seventh powers by the
+  sum of sixth powers:
+
+      L_7 = ( sum_{i=1..n} x_i^7 ) / ( sum_{i=1..n} x_i^6 )
+
+  Equivalently, L_7 is the `x_i^6`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *sixth
+  power*.
+
+  This is the natural one-step-RIGHT extension of v0.6.195's
+  L_6 lens. By Lehmer monotonicity, `L_6 <= L_7` for any
+  non-negative sample with at least one strictly positive
+  row, with equality iff every positive row is equal. So
+  L_7 extends the integer Lehmer-mean ladder shipped to
+  date one further step right of L_6:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7
+                                    L_0                       L_2   L_3   L_4   L_5   L_6   new
+
+  L_7 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as the rest of the Lehmer
+  family at orders other than 1.
+
+  Three free byproducts are reported in every row:
+
+  - `l7L6Gap = L_7 - L_6` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-sixth-power
+    weighting amplification** above L_6: how much further
+    the largest rows pull the location when each row's
+    weight is its own `x^6` rather than its own `x^5`.
+  - `l7L5Gap = L_7 - L_5` — always `>= 0`. Strictly
+    larger than v0.6.195's `l6L5Gap` for any non-constant
+    positive series.
+  - `l7AmGap = L_7 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-sixth-power-weighted location.
+
+  Identity on a constant positive series: if every kept row
+  equals `c > 0`, then `L_7 = L_6 = L_5 = mean = c` and all
+  three gaps collapse to zero (pinned in tests, including a
+  closed-form property test that L_7 equals the
+  `sum(x*x^6) / sum(x^6)` self-weighted arithmetic mean).
+
+  Single-bottleneck-row sensitivity: on `[1, 1, 1, 1, 1000]`
+  (AM = 200.8, L_5 ~ 999.99996, L_6 ~ 999.9999996), L_7
+  saturates the bottleneck within ~4e-12 % — vs L_6's
+  ~4e-10 %. A property test pins that on a long-tailed
+  `(n-1) tiny + 1 huge` series, L_7 sits at least 2x
+  closer to the bottleneck than L_6, and a refinement
+  test pins the closed-form bottleneck-tracking-error
+  ratio at <= 10 % of L_6's on `M/c in [50, 200]`.
+
+  Sort keys: `lehmer-7-mean-desc` (default) | `lehmer-7-
+  mean-asc` | `mean-desc` | `l6-gap-desc` | `l5-gap-desc`
+  | `am-gap-desc` | `rows` | `source`. The standard
+  `--since` / `--until` / `--source` / `--min-rows` /
+  `--min-lehmer-7-mean` cohort selectors all behave as in
+  the rest of the row-token Lehmer family.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (1,844 rows, 6 sources; vscode-XXX redacted in the
+  output below):
+
+  ```
+  pew-insights source-row-token-lehmer-7-mean
+  sources: 6 (shown 6)    rows: 1,844    sort: lehmer-7-mean-desc
+
+  source        rows  mean         lehmer-5-mean  lehmer-6-mean  lehmer-7-mean  l7-l6        l7-l5         l7-mean
+  ------------  ----  -----------  -------------  -------------  -------------  -----------  ------------  ------------
+  claude-code   299   11512995.95  74987768.13    83284537.01    90021322.41    +6736785.40  +15033554.28  +78508326.46
+  opencode      402   10431779.59  53972532.80    56421322.56    58069619.21    +1648296.65  +4097086.41   +47637839.62
+  codex         64    12650385.31  49193365.10    52005666.14    53900819.55    +1895153.41  +4707454.45   +41250434.24
+  openclaw      508   3854546.02   35856680.77    38459519.94    39962262.17    +1502742.23  +4105581.39   +36107716.15
+  hermes        238   789070.40    4144253.56     4679978.21     5084808.57     +404830.36   +940555.01    +4295738.16
+  vscode-XXX    333   5662.84      157230.80      161923.95      164846.27      +2922.32     +7615.47      +159183.43
+  ```
+
+  Notice every row has `l7-l6 > 0`, `l7-l5 > 0`, and
+  `l7-mean > 0` as Lehmer monotonicity requires. The
+  size-sixth-power weighting pushes `claude-code`'s
+  reported center from L_6's 83.3M further up to L_7's
+  90.0M (+6.7M, ~8.1 % amplification above L_6 alone),
+  while `vscode-XXX`'s L_7 is +2.9k above its L_6 — the
+  same lens applied to two distributions an order of
+  magnitude apart in scale, both rendered in their own
+  token units courtesy of L_7's scale-equivariance.
+
 ## 0.6.195 — 2026-04-29
 
 ### Added
