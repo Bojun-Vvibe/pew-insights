@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.162 — 2026-04-28
+
+### Added
+
+- New subcommand `source-row-token-spectral-irregularity`:
+  per-source **Jensen 1999 spectral irregularity** of the
+  one-sided non-DC PSD of the mean-centered per-row
+  `total_tokens` series. Computes
+
+      irregularity = sum_{k=1..K-1} (P[k] - P[k+1])^2
+                     / sum_{k=1..K} P[k]^2
+
+  — a dimensionless, sign-free, *local-jitter* PSD descriptor.
+  `irregularity = 0` iff the PSD is perfectly flat across
+  non-DC bins (every adjacent pair `P[k] = P[k+1]`); small
+  values mean the PSD is locally smooth bin-to-bin even if
+  globally tilted; large values (toward and above 1) mean
+  the PSD has strong bin-to-bin discontinuities — a "comb"
+  or "spiky" PSD shape.
+
+  **Why this lens is genuinely orthogonal.** Every spectral-*
+  lens already in the suite summarises *global* PSD shape:
+  centroid is the 1st moment (location), bandwidth is the 2nd
+  central moment around centroid (spread), skewness/kurtosis
+  are the 3rd/4th standardized central moments around centroid
+  (asymmetry/peakedness), rolloff is a CDF quantile (an
+  integral), flatness is the geometric/arithmetic mean ratio
+  (a global concentration scalar), entropy is Shannon on the
+  normalized PSD (also a global concentration scalar), and
+  decrease is the Peeters 2004 1/(k-1)-weighted slope-from-
+  anchor at bin 1. Crucially, **flatness and entropy are
+  bin-permutation-invariant** — permuting the PSD bins gives
+  the same value — so they cannot detect local jitter.
+  Irregularity is the *only* lens in the suite that depends on
+  *adjacent-pair differences* and is therefore order-sensitive
+  to local bin-to-bin transitions. A monotonically-decreasing
+  PSD has strongly-negative decrease but low irregularity
+  (smooth descent); a same-decrease-on-average PSD with a
+  jagged staircase has the same decrease but high
+  irregularity.
+
+  Citation: Jensen, K. (1999), "Timbre Models of Musical
+  Sounds", PhD thesis, University of Copenhagen, DIKU
+  Tech. Rep. 99/7, §3.5; Krimphoff, J., McAdams, S.,
+  Winsberg, S. (1994), "Caracterisation du timbre des sons
+  complexes. II Analyses acoustiques et quantification
+  psychophysique", Journal de Physique IV, 4(C5):625-628.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (sources: 6, rows: 1,747, sort: irregularity-desc; one
+  source name redacted to `vscode-XXX`):
+
+      source       rows bins totPower   sumP2      diffEnergy irregularity
+      ------------ ---- ---- ---------- ---------- ---------- ------------
+      hermes       205  102  1.877e+16  1.135e+31  9.651e+30  8.500e-1
+      vscode-XXX   333  166  1.237e+13  2.602e+24  1.997e+24  7.673e-1
+      openclaw     476  238  2.621e+18  1.342e+35  9.930e+34  7.400e-1
+      codex        64   32   4.162e+17  1.956e+34  7.179e+33  3.671e-1
+      opencode     370  185  1.112e+19  4.709e+36  1.477e+36  3.137e-1
+      claude-code  299  149  1.385e+19  1.263e+37  3.535e+36  2.798e-1
+
+  Operator reading: `hermes`, `vscode-XXX`, and `openclaw`
+  cluster at the top with irregularity ≈ 0.74-0.85, meaning
+  their per-row `total_tokens` PSDs are noticeably spiky —
+  adjacent bins differ a lot relative to their own squared
+  energy. This is consistent with sequences whose row-to-row
+  variance carries a few sharp spectral peaks rather than a
+  broadband signature. `claude-code` and `opencode` sit at
+  the smooth end (≈ 0.28-0.31): their PSDs are more locally
+  uniform bin-to-bin, consistent with broader-band per-row
+  token sequences. Compare against the spectral-decrease
+  reading in 0.6.160 — `claude-code` and `codex` had the
+  most strongly-negative decrease (steepest drop from bin 1)
+  but here `codex` ranks *mid* on irregularity (0.37) and
+  `claude-code` ranks *lowest* (0.28). This is exactly the
+  orthogonality the lens is designed to surface: a
+  monotone-smooth steep-decrease PSD reads as low
+  irregularity. Decrease tells you the slope-from-bin-1;
+  irregularity tells you whether the descent is jagged or
+  smooth. Different physics, different operator question.
+
+  Tests: 3363 -> 3378 (+15; default-defaults pin, single-bin
+  tone -> high irregularity, broad-band signal -> lower
+  irregularity than single-bin, closed-form match
+  diffEnergy/sumP2, constant-series gate, below-min-rows
+  gate, invalid minRows/sort/top throw, top-cap drop bucket,
+  sort=source lex order, sort=irregularity-asc/desc
+  monotonicity, deterministic across calls, source-filter
+  drop bucket, invalid since/until throw, tiebreak
+  source-asc on equal irregularity).
+
 ## 0.6.161 — 2026-04-28
 
 ### Added
