@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.199 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-10-mean`** —
+  per-source **Lehmer mean of order 10** (a.k.a. **L_10**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of tenth powers by the
+  sum of ninth powers:
+
+      L_10 = ( sum_{i=1..n} x_i^10 ) / ( sum_{i=1..n} x_i^9 )
+
+  Equivalently, L_10 is the `x_i^9`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *ninth
+  power*. This is the natural one-step-RIGHT extension of
+  v0.6.198's L_9 lens. By Lehmer monotonicity, `L_9 <= L_10`
+  for any non-negative sample with at least one strictly
+  positive row, with equality iff every positive row is
+  equal. So L_10 extends the integer Lehmer-mean ladder
+  shipped to date one further step right of L_9:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7 <= L_8 <= L_9 <= L_10
+
+  L_10 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as the rest of the Lehmer
+  family at orders other than 1.
+
+  Three free byproducts are reported in every row:
+
+  - `l10L9Gap = L_10 - L_9` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-ninth-power
+    weighting amplification** above L_9: how much further
+    the largest rows pull the location when each row's
+    weight is its own `x^9` rather than its own `x^8`.
+  - `l10L8Gap = L_10 - L_8` — always `>= 0`. Strictly
+    larger than v0.6.198's `l9L8Gap` for any non-constant
+    positive series.
+  - `l10AmGap = L_10 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-ninth-power-weighted location.
+
+### Live smoke
+
+Ran against `~/.config/pew/queue.jsonl` on 2026-04-29
+(`vscode-copilot` redacted to `vscode-XXX`):
+
+```
+pew-insights source-row-token-lehmer-10-mean
+sources: 6 (shown 6)    rows: 1,856    sort: lehmer-10-mean-desc
+dropped: 0 across all gates
+
+per-source row-token Lehmer-10 mean
+source        rows  mean         l8           l9           l10           l10-l9       l10-l8       l10-mean
+------------  ----  -----------  -----------  -----------  ------------  -----------  -----------  ------------
+claude-code   299   11512995.95  95086154.02  98698474.09  101210243.15  +2511769.06  +6124089.12  +89697247.20
+opencode      406   10436283.68  59343042.64  60401288.07   61313937.62   +912649.55  +1970894.99  +50877653.94
+codex          64   12650385.31  55199228.84  56099697.33   56729928.13   +630230.80  +1530699.29  +44079542.82
+openclaw      512    3845164.30  40978107.25  41733155.45   42322981.70   +589826.25  +1344874.45  +38477817.40
+hermes        242     784338.48   5368276.40   5557073.78    5679355.27   +122281.49   +311078.87   +4895016.79
+vscode-XXX    333       5662.84    166889.44    168411.88     169589.13     +1177.25     +2699.68    +163926.28
+```
+
+Per-source row-by-row monotonicity `L_8 <= L_9 <= L_10`
+holds across all 6 sources (1,856 rows total, 0 drops).
+Diff vs v0.6.198 L_9 column on the same queue:
+
+```
+source        L_9 (v0.6.198)  L_10 (v0.6.199)  delta (l10L9Gap)
+------------  --------------  ---------------  ----------------
+claude-code      98698474.09     101210243.15      +2511769.06
+opencode         60401288.07      61313937.62       +912649.55
+codex            56099697.33      56729928.13       +630230.80
+openclaw         41733155.45      42322981.70       +589826.25
+hermes            5557073.78       5679355.27       +122281.49
+vscode-XXX         168411.88        169589.13         +1177.25
+```
+
+All deltas `>= 0` as required by Lehmer monotonicity.
+Largest `l10L9Gap` is on `claude-code` at +2,511,769 tokens
+— the source with the heaviest tail also dominates the
+ninth-power weighting amplification.
+
+### Tests
+
+- Test count grew from 4,485 → 4,526 (+41). New file
+  `test/sourcerowtokenlehmer10mean.test.ts` (41 cases) pins:
+  shape / option validation, identity on constant positive
+  series, identity on single positive row, reference
+  identity vs manual `sum(x^10)/sum(x^9)`, cross-builder
+  L_8 / L_9 consistency vs `lehmer-8-mean` and
+  `lehmer-9-mean` builders, scale-equivariance,
+  order-invariance, monotonicity vs L_8/L_9, closed-form
+  weighted-mean identity, round-trip `L_10 * sum(x^9) ==
+  sum(x^10)`, and end-to-end ladder
+  `L_6 <= L_7 <= L_8 <= L_10` monotonicity property.
+
+### Commits
+
+- `feat: add source-row-token-lehmer-10-mean subcommand`
+  → `75fac41`
+- `test: add L_10 unit + property coverage`
+  → `40c2717`
+- `chore: release v0.6.199 with L_10 changelog + live-smoke`
+  → (this commit)
+
 ## 0.6.198 — 2026-04-29
 
 ### Added
