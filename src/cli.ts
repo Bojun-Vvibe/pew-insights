@@ -128,6 +128,7 @@ import {
   renderSourceRowTokenSpectralSkewness,
   renderSourceRowTokenSpectralKurtosis,
   renderSourceRowTokenSpectralEntropy,
+  renderSourceRowTokenSpectralDecrease,
   renderSourceRowTokenPetrosianFd,
   renderSourceRowTokenLempelZiv,
   renderSourceRowTokenRenyiEntropy,
@@ -317,6 +318,7 @@ import { buildSourceRowTokenSpectralBandwidth } from './sourcerowtokenspectralba
 import { buildSourceRowTokenSpectralSkewness } from './sourcerowtokenspectralskewness.js';
 import { buildSourceRowTokenSpectralKurtosis } from './sourcerowtokenspectralkurtosis.js';
 import { buildSourceRowTokenSpectralEntropy } from './sourcerowtokenspectralentropy.js';
+import { buildSourceRowTokenSpectralDecrease } from './sourcerowtokenspectraldecrease.js';
 import { buildSourceRowTokenHiguchiFd } from './sourcerowtokenhiguchifd.js';
 import { buildSourceRowTokenKatzFd } from './sourcerowtokenkatzfd.js';
 import { buildSourceRowTokenHjorthMobility } from './sourcerowtokenhjorthmobility.js';
@@ -13873,6 +13875,100 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSpectralEntropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+
+program
+  .command('source-row-token-spectral-decrease')
+  .description(
+    "Per-source Peeters 2004 spectral decrease (1/(k-1)-weighted slope-from-anchor of the one-sided non-DC PSD anchored at bin 1) of the mean-centered per-row total_tokens series. decrease = (1 / sum_{k=2..K} P[k]) * sum_{k=2..K} (P[k] - P[1]) / (k - 1). Sign-bearing perceptually-motivated PSD shape descriptor: < 0 => PSD genuinely decreases away from bin 1; ~ 0 => holds up flat past bin 1; > 0 => mass piles higher up the band. Peeters 2004 (CUIDADO §6.1.2) / Lerch 2012 §3.3.1. Anchored at bin 1 (NOT at the centroid like the central-moment lenses), so genuinely orthogonal to spectral-centroid (location), spectral-bandwidth (2nd central moment around centroid), spectral-skewness/-kurtosis (3rd/4th standardized central moments around centroid), spectral-rolloff (CDF quantile), spectral-flatness (entropy ratio G/A — position-blind, anchor-blind), spectral-entropy (Shannon on normalized PSD — bin-permutation-invariant; decrease depends on bin order), hjorth-mobility, TKEO, single-lag autocorrelation, event counters, time-domain symbolic entropies, scaling/fractal lenses (log-log slope across decades, not linear 1/(k-1)-weighted ratio anchored at bin 1), and all amplitude-domain shape lenses.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n rows; integer >= 4 (default 8)',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'decrease-asc' (default; PSD drops most steeply away from bin 1 first) | 'decrease-desc' | 'abs-decrease-desc' | 'rows' | 'source'",
+    'decrease-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'decrease-asc',
+          'decrease-desc',
+          'abs-decrease-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSpectralDecrease(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          top,
+          sort: opts.sort as
+            | 'decrease-asc'
+            | 'decrease-desc'
+            | 'abs-decrease-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSpectralDecrease(report) + '\n',
           );
         }
       } catch (e) {

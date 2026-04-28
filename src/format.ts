@@ -10019,6 +10019,10 @@ import type {
   SourceRowTokenSpectralEntropyReport,
   SourceRowTokenSpectralEntropyRow,
 } from './sourcerowtokenspectralentropy.js';
+import type {
+  SourceRowTokenSpectralDecreaseReport,
+  SourceRowTokenSpectralDecreaseRow,
+} from './sourcerowtokenspectraldecrease.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,
@@ -10350,6 +10354,71 @@ export function renderSourceRowTokenSpectralCentroid(
       s.centroidFractionBins.toFixed(4),
       formatNumber(s.dominantBin),
       s.dominantBinShare.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenSpectralDecrease(
+  r: SourceRowTokenSpectralDecreaseReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-spectral-decrease'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedConstantSeries)} constant-series, ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Peeters 2004 spectral decrease of the one-sided non-DC PSD P[k] of the mean-centered per-row total_tokens series. decrease = (1 / sum_{k=2..K} P[k]) * sum_{k=2..K} (P[k] - P[1]) / (k - 1). A perceptually-motivated, slope-from-anchor PSD descriptor with 1/(k-1) weighting that emphasizes the immediate drop past the fundamental and de-emphasizes the high-frequency tail. decrease < 0 => PSD genuinely decreases away from bin 1; ~0 => holds up flat; > 0 => mass piles higher up the band. Peeters 2004 (CUIDADO §6.1.2) / Lerch 2012 §3.3.1. Anchored at bin 1 (NOT at the centroid like the central-moment lenses), so genuinely orthogonal to: spectral-centroid (location), spectral-bandwidth (2nd central moment around centroid), spectral-skewness/-kurtosis (3rd/4th standardized central moments around centroid — all centroid-anchored, NOT bin-1-anchored), spectral-rolloff (CDF quantile), spectral-flatness (entropy ratio G/A — position-blind, anchor-blind), spectral-entropy (Shannon on normalized PSD — bin-permutation-invariant; decrease depends on bin order), hjorth-mobility, TKEO, single-lag autocorrelation, event counters, time-domain symbolic entropies, scaling/fractal lenses (log-log slope across decades, not linear 1/(k-1)-weighted ratio anchored at bin 1), and all amplitude-domain shape lenses (which are order-invariant; this lens is order-sensitive).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token spectral decrease (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'bins',
+    'totPower',
+    'P[1]',
+    'tailPower',
+    'decrease',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenSpectralDecreaseRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.bins),
+      s.totalPower.toExponential(3),
+      s.firstBinPower.toExponential(3),
+      s.tailPower.toExponential(3),
+      s.decrease.toExponential(3),
     ],
   );
   lines.push(renderTableLocal(headers, rows));

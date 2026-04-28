@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.160 — 2026-04-28
+
+### Added
+
+- New subcommand `source-row-token-spectral-decrease`:
+  per-source Peeters 2004 **spectral decrease** of the
+  one-sided non-DC PSD of the mean-centered per-row
+  `total_tokens` series. Computes
+
+      decrease = (1 / sum_{k=2..K} P[k])
+                 * sum_{k=2..K} (P[k] - P[1]) / (k - 1)
+
+  — a sign-bearing, perceptually-motivated PSD shape
+  descriptor anchored at bin 1 with `1/(k-1)` weighting that
+  emphasizes the immediate drop past the fundamental.
+  `decrease < 0` => PSD genuinely decreases away from bin 1
+  (low-frequency mass with monotone-ish decline);
+  `decrease ~ 0` => mass holds up flat past bin 1;
+  `decrease > 0` => mass actually grows toward higher
+  frequencies (a high-pass-shaped sequence around its mean).
+
+  **Why this lens is genuinely orthogonal.** Decrease is
+  *anchored at bin 1*, NOT at the centroid like the
+  central-moment lenses (skewness, kurtosis, bandwidth all
+  compute moments around `centroidBin`). Two PSDs with
+  identical centroids and identical bandwidth can have
+  decrease values of opposite sign depending on how mass
+  sits relative to bin 1 specifically. The `1/(k-1)`
+  weighting is also unique: spectral-centroid weights bins
+  linearly by `k`, spectral-rolloff is a quantile,
+  spectral-flatness/-entropy are concentration scalars
+  position-blind to bin order — only spectral decrease
+  combines a fixed bin-1 anchor with the perceptually-
+  motivated harmonic decay weighting from Peeters 2004
+  §6.1.2.
+
+  Citation: Peeters, G. (2004), "A large set of audio
+  features for sound description (similarity and
+  classification) in the CUIDADO project", IRCAM Tech.
+  Rep., §6.1.2; Lerch, A. (2012), "An Introduction to
+  Audio Content Analysis", Wiley/IEEE Press, §3.3.1.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (sources: 6, rows: 1,742, sort: decrease-asc):
+
+      source         rows bins totPower   P[1]       tailPower  decrease
+      -------------- ---- ---- ---------- ---------- ---------- ----------
+      codex          64   32   4.162e+17  1.156e+17  3.006e+17  -1.266e+0
+      claude-code    299  149  1.385e+19  2.771e+18  1.108e+19  -1.164e+0
+      hermes         204  102  1.866e+16  2.554e+15  1.611e+16  -7.618e-1
+      opencode       368  184  1.105e+19  8.446e+17  1.020e+19  -2.701e-1
+      openclaw       474  237  2.604e+18  7.403e+16  2.530e+18  -3.047e-2
+      vscode-XXX     333  166  1.237e+13  8.932e+10  1.228e+13   8.207e-2
+
+  Operator reading: `codex` and `claude-code` show the most
+  strongly-negative decrease (≈ −1.2 to −1.27) — their
+  per-row `total_tokens` PSDs both anchor a large fraction
+  of total power at the lowest non-DC bin and then drop
+  sharply, consistent with sequences dominated by a
+  long-period oscillation (low-frequency drift around the
+  mean). `vscode-XXX` is the *only* source with **positive**
+  decrease (+0.082), meaning its per-row tokens PSD does
+  NOT decrease away from bin 1 — mass piles higher up the
+  band, consistent with a sequence whose row-to-row variance
+  carries more weight than its slow drift. `openclaw`
+  sits near zero (−0.030), meaning its PSD holds up roughly
+  flat past bin 1.
+
+  Tests: 3348 -> 3360 (+12; default-defaults pin,
+  low-frequency tone -> negative decrease, high-frequency
+  tone -> positive decrease, hand-chosen PSD sign check,
+  constant-series and below-min-rows drop-bucket pins,
+  invalid-arg throws, top-cap, sort=source lex, determinism,
+  source-filter).
+
 ## 0.6.159 — 2026-04-28
 
 ### Added
