@@ -2,6 +2,104 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.190 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-neg-1-mean`** —
+  per-source **Lehmer mean of order -1** (a.k.a. **L_-1**,
+  the sub-harmonic Lehmer mean) of the per-row
+  `total_tokens` distribution.
+
+  For each source, divide the sum of reciprocals by the
+  sum of inverse squares:
+
+      L_-1 = ( sum_{i=1..n} x_i^{-1} ) / ( sum_{i=1..n} x_i^{-2} )
+
+  Equivalently, L_-1 is the `x_i^{-2}`-self-weighted
+  arithmetic mean of `x_i`: each row weights itself by
+  its own *inverse square*, so
+  `L_-1 = sum(1/x) / sum(1/x^2) = E_w[x]` with weights
+  `w_i = (1/x_i^2) / sum(1/x_i^2)`.
+
+  This is the natural one-step-LEFT extension of v0.6.189's
+  L_3 lens. By Lehmer monotonicity, `L_-1 <= L_0 = HM` for
+  any strictly positive sample, with equality iff every row
+  is equal. So L_-1 completes the **symmetric integer
+  Lehmer-mean ladder** around the arithmetic mean (L_1):
+
+      L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3
+       new      L_0    -    L_1    -   L_2    L_3
+
+  L_-1 mirrors L_3 across AM: just as L_3 (size-square-
+  weighted) is dominated by the *largest* rows, L_-1
+  (inverse-square-weighted) is dominated by the *smallest*
+  rows — even more aggressively than HM. A single tiny
+  bottleneck row of value `m` pushes L_-1 toward `m` itself
+  faster than HM does. Concretely on `[1, 1000, 1000, 1000]`:
+  AM = 750.25, HM ~ 3.988,
+  L_-1 = 1.003 / 1.000003 ~ 1.003 — L_-1 sits within 0.3 %
+  of the bottleneck row's value, vs HM at ~299 % and AM at
+  ~75025 %.
+
+  L_-1 is **scale-equivariant** (rescaling every row by `c`
+  rescales L_-1 by `c`) but **NOT translation-equivariant**
+  — same break from the L-estimator suite (mean, median,
+  midhinge, trimean, mid-range, trim-mean-25 are all
+  translation-equivariant) as harmonic-mean, quadratic-
+  mean, contraharmonic-mean, and lehmer-3-mean.
+
+  Distinct from `source-row-token-lehmer-3-mean` (the
+  v0.6.189 sibling): L_3 sits on the *opposite* side of
+  AM, dominated by the largest rows. Together L_-1 and
+  L_3 bracket the widest span of the integer Lehmer ladder
+  shipped to date, giving a per-source location pair
+  whose gap quantifies the multiplicative spread of the
+  positive part of the series.
+
+  Two free byproducts are reported in every row:
+
+  - `negOneHmGap = HM - L_-1` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the series is constant. The
+    magnitude is the **inverse-square-weighting
+    amplification** below HM: how much further the
+    smallest rows pull the location when each row's
+    weight is its own `x^{-2}` rather than its own
+    `x^{-1}`.
+  - `negOneAmGap = mean - L_-1` — always `>= 0`. The
+    cumulative pull from the equal-weight average all
+    the way down to the inverse-square-weighted location;
+    strictly larger than the mean-minus-HM gap for any
+    non-constant positive series.
+
+  A source containing **any** zero row is undefined for
+  L_-1 (reciprocal diverges) and is reported as
+  `droppedZeroBearingSources` rather than producing a
+  spurious infinity. Stricter than the L_3 lens (which
+  tolerates zero rows as long as not every row is zero).
+
+  **Live smoke** (`source-row-token-lehmer-neg-1-mean
+  --min-rows 4 --sort hm-gap-desc`, full queue, 1,820
+  rows across 6 sources):
+
+      source       rows  mean          hm         lehmer-neg-1-mean  hm-l-1       mean-l-1
+      opencode     394   10453227.15  1257285.42  182579.39          +1074706.03  +10270647.76
+      openclaw     500    3887054.69  1583297.67  565581.13          +1017716.54   +3321473.55
+      codex         64   12650385.31   788948.06   96061.84           +692886.21  +12554323.47
+      claude-code  299   11512995.95   305188.99   20645.32           +284543.67  +11492350.63
+      hermes       230    797226.51    215762.05   64292.20           +151469.85    +732934.31
+      vscode-XXX   333      5662.84       708.17      89.54              +618.63      +5573.30
+
+  Lehmer monotonicity holds in every row (L_-1 <= HM <=
+  AM): `negOneHmGap` and `negOneAmGap` are both strictly
+  positive across all 6 sources, confirming the ladder
+  pin against real data. The widest hm-l-1 gap is
+  `opencode` (~1.07M tokens) — its smallest rows pull
+  L_-1 ~7x below HM. The smallest hm-l-1 gap is
+  `vscode-XXX` (~619 tokens) — a tight, low-mass
+  distribution where the inverse-square reweighting has
+  the smallest absolute effect.
+
 ## 0.6.189 — 2026-04-28
 
 ### Added
