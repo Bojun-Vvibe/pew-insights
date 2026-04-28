@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.195 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-6-mean`** —
+  per-source **Lehmer mean of order 6** (a.k.a. **L_6**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of sixth powers by the
+  sum of fifth powers:
+
+      L_6 = ( sum_{i=1..n} x_i^6 ) / ( sum_{i=1..n} x_i^5 )
+
+  Equivalently, L_6 is the `x_i^5`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *fifth
+  power*.
+
+  This is the natural one-step-RIGHT extension of v0.6.194's
+  L_5 lens. By Lehmer monotonicity, `L_5 <= L_6` for any
+  non-negative sample with at least one strictly positive
+  row, with equality iff every positive row is equal. So
+  L_6 extends the integer Lehmer-mean ladder shipped to
+  date one further step right of L_5:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6
+                                    L_0                       L_2   L_3   L_4   L_5   new
+
+  L_6 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as harmonic-mean / quadratic-
+  mean / contraharmonic-mean / lehmer-3-mean / lehmer-4-mean
+  / lehmer-5-mean / the negative Lehmer rungs.
+
+  Three free byproducts are reported in every row:
+
+  - `l6L5Gap = L_6 - L_5` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-fifth-power
+    weighting amplification** above L_5: how much further
+    the largest rows pull the location when each row's
+    weight is its own `x^5` rather than its own `x^4`.
+  - `l6L4Gap = L_6 - L_4` — always `>= 0`. Strictly
+    larger than v0.6.194's `l5L4Gap` for any non-constant
+    positive series.
+  - `l6AmGap = L_6 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-fifth-power-weighted location.
+
+  Identity on a constant positive series: if every kept row
+  equals `c > 0`, then `L_6 = L_5 = L_4 = mean = c` and all
+  three gaps collapse to zero (pinned in tests, including a
+  closed-form property test that L_6 equals the
+  `sum(x*x^5) / sum(x^5)` self-weighted arithmetic mean).
+
+  Single-bottleneck-row sensitivity: on `[1, 1, 1, 1, 1000]`
+  (AM = 200.8, L_4 ~ 999.99996, L_5 ~ 999.9999996), L_6
+  ~ 999.999999996 — within ~4e-10 % of the bottleneck row's
+  value, vs L_5's ~4e-8 %. A property test pins that on a
+  long-tailed `(n-1) tiny + 1 huge` series, L_6 sits at
+  least 2x closer to the bottleneck than L_5.
+
+  Sort keys: `lehmer-6-mean-desc` (default) | `lehmer-6-
+  mean-asc` | `mean-desc` | `l5-gap-desc` | `l4-gap-desc`
+  | `am-gap-desc` | `rows` | `source`. The standard
+  `--since` / `--until` / `--source` / `--min-rows` /
+  `--min-lehmer-6-mean` cohort selectors all behave as in
+  the rest of the row-token Lehmer family.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (1,841 rows, 6 sources; vscode-copilot redacted to
+  vscode-XXX in the output below):
+
+  ```
+  pew-insights source-row-token-lehmer-6-mean
+  sources: 6 (shown 6)    rows: 1,841    sort: lehmer-6-mean-desc
+
+  source          rows  mean         lehmer-4-mean  lehmer-5-mean  lehmer-6-mean  l6-l5        l6-l4         l6-mean
+  --------------  ----  -----------  -------------  -------------  -------------  -----------  ------------  ------------
+  claude-code     299   11512995.95  65497172.30    74987768.13    83284537.01    +8296768.88  +17787364.71  +71771541.06
+  opencode        401   10416057.53  49504226.05    53981670.76    56423759.81    +2442089.05  +6919533.75   +46007702.27
+  codex           64    12650385.31  44948811.14    49193365.10    52005666.14    +2812301.04  +7056855.00   +39355280.83
+  openclaw        507   3856297.80   30562620.83    35856896.43    38459539.19    +2602642.76  +7896918.36   +34603241.39
+  hermes          237   789656.29    3496706.63     4144377.93     4679996.34     +535618.41   +1183289.71   +3890340.06
+  vscode-XXX      333   5662.84      147776.06      157230.80      161923.95      +4693.15     +14147.89     +156261.11
+  ```
+
+  Reading the live numbers: every row has `l6L5Gap > 0` —
+  Lehmer monotonicity holds across all 6 observed sources,
+  as theory predicts. The `claude-code` series shows the
+  largest absolute pull (`l6-mean = +71.8M tokens` of
+  separation between AM and L_6), reflecting a genuinely
+  heavy-tailed per-row distribution dominated by a few very
+  large rows. The `vscode-XXX` series, by contrast, has
+  `l6-mean ~ +156k tokens` despite its tiny AM of ~5.7k —
+  the L_6/AM ratio is ~28x, indicating an extremely peaky
+  distribution with one or a few rows orders of magnitude
+  above the rest.
+
 ## 0.6.194 — 2026-04-29
 
 ### Added
