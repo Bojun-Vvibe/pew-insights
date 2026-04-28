@@ -118,6 +118,7 @@ import {
   renderSourceRowTokenQuadraticMean,
   renderSourceRowTokenContraharmonicMean,
   renderSourceRowTokenLehmer3Mean,
+  renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -330,6 +331,7 @@ import { buildSourceRowTokenHarmonicMean } from './sourcerowtokenharmonicmean.js
 import { buildSourceRowTokenQuadraticMean } from './sourcerowtokenquadraticmean.js';
 import { buildSourceRowTokenContraharmonicMean } from './sourcerowtokencontraharmonicmean.js';
 import { buildSourceRowTokenLehmer3Mean } from './sourcerowtokenlehmer3mean.js';
+import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15936,6 +15938,117 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenLehmer3Mean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-lehmer-neg-1-mean')
+  .description(
+    "Per-source Lehmer mean of order -1 (L_-1) of per-row total_tokens. L_-1 = sum(x^-1) / sum(x^-2). Extends v0.6.189's Lehmer ladder one step LEFT of HM, completing the symmetric integer Lehmer ladder around AM: L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 (Lehmer monotonicity). Equivalently, the x^-2-self-weighted arithmetic mean — each row weights itself by its own INVERSE square. Scale-equivariant, NOT translation-equivariant. Dominated by the SMALLEST rows even more aggressively than HM: a single tiny row pulls L_-1 toward that row's value faster than HM does. Distinct from every existing lens: L-estimators (mid-range / midhinge / trimean / trim-mean-25) are translation- AND scale-equivariant; mad reports a SPREAD; coefficient-of-quartile-deviation / bowley-skewness / iqr-ratio measure SHAPE; coefficient-of-variation / burstiness-coefficient / skewness / kurtosis / gini are MOMENT- or distribution-shape statistics; crest-factor is a dimensionless ratio; harmonic-mean (L_0) weights by 1/x, this lens (L_-1) weights by 1/x^2; lehmer-3-mean (L_3) sits on the OPPOSITE side of AM, dominated by the largest rows. negOneHmGap = HM - L_-1 and negOneAmGap = mean - L_-1 are reported as free signals: ALWAYS >= 0, with magnitude growing as the multiplicative spread of the series grows. Requires every row of every kept source to be strictly positive — sources containing any zero row are surfaced as droppedZeroBearingSources.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-lehmer-neg-1-mean <f>',
+    'drop sources whose Lehmer L_-1 mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lehmer-neg-1-mean-desc' (default) | 'lehmer-neg-1-mean-asc' | 'mean-desc' | 'hm-gap-desc' (negOneHmGap desc) | 'am-gap-desc' (negOneAmGap desc) | 'rows' | 'source'",
+    'lehmer-neg-1-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minLehmerNeg1Mean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLehmerNegOneMean = Number.parseFloat(opts.minLehmerNeg1Mean);
+        if (!Number.isFinite(minLehmerNegOneMean) || minLehmerNegOneMean < 0) {
+          throw new Error(
+            `--min-lehmer-neg-1-mean must be a finite, non-negative number (got ${opts.minLehmerNeg1Mean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(
+              `--top must be a positive integer (got ${opts.top})`,
+            );
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lehmer-neg-1-mean-desc',
+          'lehmer-neg-1-mean-asc',
+          'mean-desc',
+          'hm-gap-desc',
+          'am-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLehmerNegOneMean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minLehmerNegOneMean,
+          top,
+          sort: opts.sort as
+            | 'lehmer-neg-1-mean-desc'
+            | 'lehmer-neg-1-mean-asc'
+            | 'mean-desc'
+            | 'hm-gap-desc'
+            | 'am-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenLehmerNegOneMean(report) + '\n',
           );
         }
       } catch (e) {
