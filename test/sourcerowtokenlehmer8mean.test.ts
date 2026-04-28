@@ -770,3 +770,72 @@ test('refinement: L_8 = max iff all positive rows equal max', () => {
     );
   }
 });
+
+// ---------- refinement: L_8 - L_7 closed-form gap identity ----------
+//
+// The defining algebra of L_8 yields a sharp closed form for the gap
+// L_8 - L_7 in terms of the seventh-power-weighted deviation around L_7:
+//
+//     L_8 - L_7
+//       = sum(x^8) / sum(x^7) - L_7
+//       = sum(x^7 * (x - L_7)) / sum(x^7)
+//
+// i.e. l8L7Gap == sum(x^7 * (x - L_7)) / sum(x^7). This is a much
+// sharper invariant than "l8L7Gap >= 0" — it nails down the exact
+// magnitude of the gap from independently-computed scalar
+// accumulators, and would catch any off-by-one in the power exponents
+// that the round-trip identity test (which only sees sum7 vs sum8)
+// would not. Pinning this also gives a free regression sentinel for
+// any future refactor that tries to share state between the L_7 and
+// L_8 builders.
+import { test as testGap } from 'node:test';
+import { strict as assertGap } from 'node:assert';
+testGap(
+  'refinement: l8L7Gap == sum(x^7 * (x - L_7)) / sum(x^7) closed-form gap identity',
+  () => {
+    const r = (() => {
+      let s = 0xc0de1234;
+      return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0x100000000;
+      };
+    })();
+    for (let trial = 0; trial < 50; trial += 1) {
+      const n = 2 + Math.floor(r() * 30);
+      const xs: number[] = [];
+      for (let i = 0; i < n; i += 1) xs.push(Math.floor(r() * 1500));
+      if (xs.every((x) => x === 0)) continue;
+      let s7 = 0;
+      for (const x of xs) {
+        const x2 = x * x;
+        const x3 = x2 * x;
+        const x6 = x3 * x3;
+        s7 += x6 * x;
+      }
+      if (s7 === 0) continue;
+      const rep = buildSourceRowTokenLehmer8Mean(mkSeries(`g${trial}`, xs), {
+        generatedAt: GEN,
+      });
+      if (rep.sources.length === 0) continue;
+      const row = rep.sources[0]!;
+      const L7 = row.lehmer7Mean;
+      // closed-form gap RHS: sum(x^7 * (x - L_7)) / sum(x^7)
+      let gapNum = 0;
+      for (const x of xs) {
+        const x2 = x * x;
+        const x3 = x2 * x;
+        const x6 = x3 * x3;
+        const x7 = x6 * x;
+        gapNum += x7 * (x - L7);
+      }
+      const gapClosedForm = gapNum / s7;
+      // builder-reported gap
+      const gapReported = row.l8L7Gap;
+      const tol = 1e-7 * Math.max(1, row.lehmer8Mean);
+      assertGap.ok(
+        Math.abs(gapReported - gapClosedForm) < tol,
+        `l8L7Gap should equal sum(x^7 * (x - L_7)) / sum(x^7); got reported=${gapReported}, closed-form=${gapClosedForm}, xs=${JSON.stringify(xs)}`,
+      );
+    }
+  },
+);
