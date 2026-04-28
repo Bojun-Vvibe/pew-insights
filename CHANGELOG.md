@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.188 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-contraharmonic-mean`** —
+  per-source **contraharmonic mean** (a.k.a. **Lehmer
+  mean of order 2**) of the per-row `total_tokens`
+  distribution.
+
+  For each source, divide the sum of squares by the plain
+  sum:
+
+      CHM = ( sum_{i=1..n} x_i^2 ) / ( sum_{i=1..n} x_i )
+
+  Equivalently, CHM is the `x_i`-self-weighted arithmetic
+  mean of `x_i` itself: each row weights itself by its own
+  value, so `CHM = sum(x*x) / sum(x) = E_w[x]` with weights
+  `w_i = x_i / sum(x)`.
+
+  This is the natural one-step-right extension of v0.6.187's
+  Pythagorean sandwich. By Cauchy-Schwarz,
+  `(sum x_i)^2 <= n * sum x_i^2`, which yields both
+  `AM <= CHM` and `QM <= CHM`. So CHM completes the
+  **extended Pythagorean sandwich**:
+
+      HM <= GM <= AM <= QM <= CHM
+
+  CHM is the rightmost classical Pythagorean-style mean
+  and is a strictly larger upper bound on central tendency
+  than QM. Together with v0.6.186's
+  `source-row-token-harmonic-mean` (HM, GM, AM) and
+  v0.6.187's `source-row-token-quadratic-mean` (QM), this
+  lens completes the entire L_0 -> L_1 -> L_2 Lehmer-mean
+  family in the source-row-token report suite.
+
+  CHM is **scale-equivariant** (rescaling every row by `c`
+  rescales CHM by `c`) but **NOT translation-equivariant**
+  — same break from the L-estimator suite (mean, median,
+  midhinge, trimean, mid-range, trim-mean-25 are all
+  translation-equivariant) as harmonic-mean and
+  quadratic-mean. CHM is dominated by the **largest** rows
+  even more aggressively than QM: a single bottleneck row
+  of value `M` pushes CHM toward `M` itself, while QM only
+  goes as `M / sqrt(n)`. Concretely on `[1, 1, 1, 1, 1000]`:
+  AM = 200.8, QM ~ 447.4, CHM = 1_000_004 / 1004 ~ 996.0
+  — CHM sits within 0.4 % of the bottleneck row's value
+  and >2x above QM.
+
+  Distinct from `source-row-token-crest-factor`:
+  crest-factor is the dimensionless ratio `max / RMS`;
+  CHM is the size-weighted location itself in token units.
+
+  Two free byproducts are reported in every row:
+
+  - `chmAmGap = CHM - mean` — always `>= 0` by
+    Cauchy-Schwarz, `0` iff the positive part of the
+    series is constant. The magnitude is the
+    **size-weighting amplification** of the equal-weight
+    arithmetic mean.
+  - `chmQmGap = CHM - QM` — always `>= 0` by
+    Cauchy-Schwarz, `0` iff the positive part of the
+    series is constant. The magnitude is the
+    **above-RMS slack**: even after squaring amplifies
+    large-row contributions, QM still under-estimates the
+    size-biased location by exactly this much.
+
+  An all-zero source (sum(x) = 0) has an undefined
+  Lehmer L_2 (denominator vanishes) and is reported as
+  `droppedAllZeroSources` rather than producing a
+  spurious 0/0.
+
+  **Live smoke** (`source-row-token-contraharmonic-mean
+  --min-rows 4 --sort qm-gap-desc`, full queue, 1,811 rows
+  across 6 sources):
+
+      source        rows  mean          qm            contraharmonic-mean   chm-mean       chm-qm
+      ------------  ----  ------------  ------------  --------------------  -------------  -------------
+      claude-code   299   11,512,995.95  21,035,469.59   38,434,042.96      +26,921,047.01  +17,398,573.37
+      codex          64   12,650,385.31  19,056,652.36   28,707,109.72      +16,056,724.41   +9,650,457.36
+      opencode      391   10,469,919.95  16,241,811.10   25,195,648.98      +14,725,729.02   +8,953,837.87
+      openclaw      497    3,901,860.21   6,145,750.38    9,680,061.73       +5,778,201.52   +3,534,311.36
+      hermes        227      803,092.63   1,219,787.41    1,852,689.56       +1,049,596.93     +632,902.15
+      vscode-XXX    333        5,662.84      15,971.36       45,045.25          +39,382.40      +29,073.89
+
+  Every `chmAmGap` and `chmQmGap` is positive as expected
+  by Cauchy-Schwarz. The full extended sandwich
+  `AM <= QM <= CHM` holds in every row of the live
+  workspace queue. The `chm-qm` gap dominates the
+  `qm-am` gap on `claude-code` by ~83 % (17.4 M vs 9.5 M),
+  evidence that the size-biased Lehmer L_2 lens picks up
+  far more upper-tail mass than the squared-weighted
+  RMS does on this source.
+
+  Sort keys: `contraharmonic-mean-desc` (default) |
+  `contraharmonic-mean-asc` | `mean-desc` |
+  `gap-desc` (chmAmGap desc) | `qm-gap-desc` (chmQmGap
+  desc) | `rows` | `source`.
+
+  Tested with **57** unit tests covering option
+  validation, arithmetic correctness vs reference on 50
+  random samples + closed-form pins, scale- /
+  translation-equivariance, the full extended Pythagorean
+  sandwich `HM <= GM <= AM <= QM <= CHM` cross-lens
+  verification, all 7 sort orders, all filters, top cap,
+  determinism / pure-builder behavior, and bound
+  `mean <= CHM <= max` randomized.
+
 ## 0.6.187 — 2026-04-28
 
 ### Added
