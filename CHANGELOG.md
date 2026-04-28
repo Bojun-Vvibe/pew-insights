@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.168 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-spread` refinement:
+  - New `--min-ts <x>` and `--max-ts <x>` filter flags
+    (both in `[0, 0.5]`, the natural range of normalized
+    temporal spread). Sources with `ts < min-ts` surface
+    under the new `droppedBelowMinTs` counter; sources
+    with `ts > max-ts` surface under `droppedAboveMaxTs`.
+    Filters apply *before* sort and *before* `--top` cap,
+    so the sort window matches the operator's stated ts
+    band and `--top N` returns the top N within the band.
+  - Both bounds may be combined to carve a ts band (e.g.,
+    `--min-ts 0.28 --max-ts 0.32` for "show me only
+    sources whose temporal-spread sits within ±0.02 of
+    the uniform-amplitude reference value
+    `1/sqrt(12) ~ 0.289`"). When both are set,
+    `min-ts <= max-ts` is enforced.
+  - **Hardened invariant pin**: a new test recomputes
+    the amplitude-weighted variance of the row index
+    around `tcIndex` from scratch for every emitted row
+    and asserts `tsIndex == sqrt(variance)` within
+    `1e-7`, *plus* `ts * (N - 1) == tsIndex` by
+    construction. This pins the definition of `ts`, not
+    just its `[0, 0.5]` range.
+  - **Sort-tiebreak determinism** is pinned across all
+    six sort modes (`ts-desc`, `ts-asc`, `ts-index-desc`,
+    `ts-index-asc`, `rows`, `source`): when multiple
+    sources share an identical `ts`/`tsIndex` (true
+    ties), the output order is *always* `source`
+    ascending. Downstream callers can safely diff
+    snapshot output.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--min-ts 0.28 --max-ts 0.32` (sources: 6, kept: 2,
+  rows: 1,754; 3 dropped below min-ts, 1 dropped above
+  max-ts; one source name redacted to `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tsIndex  ts
+      ------------ ----  --------  -------  -------  ------
+      opencode     372   3.939e+9  176.22   116.64   0.3144
+      vscode-XXX   333   1.886e+6  217.71   101.24   0.3050
+
+  Operator reading: applying `--min-ts 0.28 --max-ts 0.32`
+  cleanly isolates the **near-uniform-spread cohort** —
+  the two sources whose normalized temporal-spread sits
+  within ±0.02 of the reference value `1/sqrt(12) ~ 0.289`
+  for a uniform-amplitude series. Of the six sources in
+  the queue, `opencode` (ts=0.3144) and `vscode-XXX`
+  (ts=0.3050) land in this narrow band; everyone else is
+  excluded. Below the band: `claude-code` (ts=0.2435),
+  `openclaw` (ts=0.2677), and `hermes` (ts=0.2778) —
+  these three are *narrower than uniform*, meaning their
+  per-row token mass is more temporally concentrated than
+  a flat envelope would be (i.e., they have peaks). Above
+  the band: `codex` alone (ts=0.3430) — its 64-row history
+  is the widest-spread of the cohort, edging slightly
+  above uniform-flat. Pairing `(tc, ts)` from 0.6.167:
+  `vscode-XXX` is back-loaded *and* near-uniform-spread
+  (energy late but not concentrated); `opencode` is
+  near-balanced *and* near-uniform-spread (energy
+  middle-ish, smoothly distributed); `claude-code` is
+  back-loaded *and* narrow (energy late *and*
+  concentrated — a sharp recent burst). The band filter
+  surfaces this 2D structure that no single sort axis
+  can.
+
 ## 0.6.167 — 2026-04-28
 
 ### Added
