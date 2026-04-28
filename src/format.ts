@@ -11477,6 +11477,10 @@ import type {
   SourceRowTokenLehmer10MeanReport,
   SourceRowTokenLehmer10MeanRow,
 } from './sourcerowtokenlehmer10mean.js';
+import type {
+  SourceRowTokenLehmer11MeanReport,
+  SourceRowTokenLehmer11MeanRow,
+} from './sourcerowtokenlehmer11mean.js';
 
 import type {
   SourceRowTokenLehmerNegOneMeanReport,
@@ -12341,6 +12345,77 @@ export function renderSourceRowTokenLehmer10Mean(
       (s.l10L9Gap >= 0 ? '+' : '') + s.l10L9Gap.toFixed(2),
       (s.l10L8Gap >= 0 ? '+' : '') + s.l10L8Gap.toFixed(2),
       (s.l10AmGap >= 0 ? '+' : '') + s.l10AmGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenLehmer11Mean(
+  r: SourceRowTokenLehmer11MeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-lehmer-11-mean'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-lehmer-11-mean: ${formatNumber(r.minLehmer11Mean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAllZeroSources)} all-zero sources (sum(x^10)=0), ${formatNumber(r.droppedBelowMinLehmer11Mean)} below min-lehmer-11-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Lehmer mean of order 11 of per-row total_tokens: L_11 = sum(x^11) / sum(x^10). Extends the Lehmer ladder one step right of L_10. Equivalently, the x^10-self-weighted arithmetic mean: each row weights itself by its own tenth power. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more than L_10. l11L10Gap = L_11 - L_10, l11L9Gap = L_11 - L_9, l11AmGap = L_11 - mean are reported as free signals: all >= 0, all 0 iff the positive part of the series is constant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Lehmer-11 mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'lehmer-9-mean',
+    'lehmer-10-mean',
+    'lehmer-11-mean',
+    'l11-l10',
+    'l11-l9',
+    'l11-mean',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenLehmer11MeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.lehmer9Mean.toFixed(2),
+      s.lehmer10Mean.toFixed(2),
+      s.lehmer11Mean.toFixed(2),
+      (s.l11L10Gap >= 0 ? '+' : '') + s.l11L10Gap.toFixed(2),
+      (s.l11L9Gap >= 0 ? '+' : '') + s.l11L9Gap.toFixed(2),
+      (s.l11AmGap >= 0 ? '+' : '') + s.l11AmGap.toFixed(2),
     ],
   );
   lines.push(renderTableLocal(headers, rows));
