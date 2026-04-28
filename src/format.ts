@@ -11457,6 +11457,86 @@ import type {
   SourceRowTokenLehmerNegTwoMeanRow,
 } from './sourcerowtokenlehmernegtwomean.js';
 
+import type {
+  SourceRowTokenLehmerNegThreeMeanReport,
+  SourceRowTokenLehmerNegThreeMeanRow,
+} from './sourcerowtokenlehmernegthreemean.js';
+
+export function renderSourceRowTokenLehmerNegThreeMean(
+  r: SourceRowTokenLehmerNegThreeMeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-lehmer-neg-3-mean'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-lehmer-neg-3-mean: ${formatNumber(r.minLehmerNegThreeMean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroBearingSources)} zero-bearing sources (any row=0), ${formatNumber(r.droppedBelowMinLehmerNegThreeMean)} below min-lehmer-neg-3-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Lehmer mean of order -3 of per-row total_tokens: L_-3 = sum(x^-3) / sum(x^-4). Extends the Lehmer ladder one step LEFT of L_-2: L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3. Equivalently, the x^-4-self-weighted arithmetic mean: each row weights itself by its own INVERSE fourth power. Scale-equivariant, NOT translation-equivariant. Dominated by the SMALLEST rows even more aggressively than L_-2. negThreeNegTwoGap = L_-2 - L_-3, negThreeHmGap = HM - L_-3, negThreeAmGap = mean - L_-3 are reported as free signals: all >= 0, all 0 iff the series is constant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(
+      chalk.yellow('  no source rows after filters. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Lehmer-neg-3 mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'hm',
+    'l-2',
+    'lehmer-neg-3-mean',
+    'l-2-l-3',
+    'hm-l-3',
+    'mean-l-3',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenLehmerNegThreeMeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.harmonicMean.toFixed(2),
+      s.lehmerNegTwoMean.toFixed(2),
+      s.lehmerNegThreeMean.toFixed(2),
+      (s.negThreeNegTwoGap >= 0 ? '+' : '') + s.negThreeNegTwoGap.toFixed(2),
+      (s.negThreeHmGap >= 0 ? '+' : '') + s.negThreeHmGap.toFixed(2),
+      (s.negThreeAmGap >= 0 ? '+' : '') + s.negThreeAmGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderSourceRowTokenLehmerNegTwoMean(
   r: SourceRowTokenLehmerNegTwoMeanReport,
 ): string {

@@ -120,6 +120,7 @@ import {
   renderSourceRowTokenLehmer3Mean,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
+  renderSourceRowTokenLehmerNegThreeMean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -334,6 +335,7 @@ import { buildSourceRowTokenContraharmonicMean } from './sourcerowtokencontrahar
 import { buildSourceRowTokenLehmer3Mean } from './sourcerowtokenlehmer3mean.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
+import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -16164,6 +16166,120 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenLehmerNegTwoMean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-lehmer-neg-3-mean')
+  .description(
+    "Per-source Lehmer mean of order -3 (L_-3) of per-row total_tokens. L_-3 = sum(x^-3) / sum(x^-4). Extends v0.6.191's Lehmer ladder one step LEFT of L_-2: L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 (Lehmer monotonicity). Equivalently, the x^-4-self-weighted arithmetic mean — each row weights itself by its own INVERSE fourth power. Scale-equivariant, NOT translation-equivariant. Dominated by the SMALLEST rows even more aggressively than L_-2. negThreeNegTwoGap = L_-2 - L_-3, negThreeHmGap = HM - L_-3, negThreeAmGap = mean - L_-3 are reported as free signals: ALWAYS >= 0. Requires every row of every kept source to be strictly positive — sources containing any zero row are surfaced as droppedZeroBearingSources.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-lehmer-neg-3-mean <f>',
+    'drop sources whose Lehmer L_-3 mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lehmer-neg-3-mean-desc' (default) | 'lehmer-neg-3-mean-asc' | 'mean-desc' | 'neg-two-gap-desc' | 'hm-gap-desc' | 'am-gap-desc' | 'rows' | 'source'",
+    'lehmer-neg-3-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minLehmerNeg3Mean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLehmerNegThreeMean = Number.parseFloat(opts.minLehmerNeg3Mean);
+        if (!Number.isFinite(minLehmerNegThreeMean) || minLehmerNegThreeMean < 0) {
+          throw new Error(
+            `--min-lehmer-neg-3-mean must be a finite, non-negative number (got ${opts.minLehmerNeg3Mean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(
+              `--top must be a positive integer (got ${opts.top})`,
+            );
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lehmer-neg-3-mean-desc',
+          'lehmer-neg-3-mean-asc',
+          'mean-desc',
+          'neg-two-gap-desc',
+          'hm-gap-desc',
+          'am-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLehmerNegThreeMean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minLehmerNegThreeMean,
+          top,
+          sort: opts.sort as
+            | 'lehmer-neg-3-mean-desc'
+            | 'lehmer-neg-3-mean-asc'
+            | 'mean-desc'
+            | 'neg-two-gap-desc'
+            | 'hm-gap-desc'
+            | 'am-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenLehmerNegThreeMean(report) + '\n',
           );
         }
       } catch (e) {
