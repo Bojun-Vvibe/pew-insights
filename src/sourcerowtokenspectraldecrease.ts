@@ -177,6 +177,27 @@ export interface SourceRowTokenSpectralDecreaseOptions {
    */
   top?: number | null;
   /**
+   * Optional lower bound on reported `decrease`. Sources whose
+   * value is strictly below this threshold are suppressed and
+   * counted under `droppedBelowMinDecrease`. Useful to surface
+   * only sources whose PSD does not fall too steeply away from
+   * bin 1 — e.g. `--min-decrease -0.5` excludes the most
+   * strongly-low-frequency-anchored sources.
+   */
+  minDecrease?: number | null;
+  /**
+   * Optional upper bound on reported `decrease`. Symmetric
+   * counterpart. Surfaces in `droppedAboveMaxDecrease`. Useful
+   * to surface only sources whose PSD genuinely decreases away
+   * from bin 1 — e.g. `--max-decrease 0` excludes any source
+   * whose mass piles higher up the band.
+   *
+   * If both are set and `minDecrease > maxDecrease`, the
+   * constructor throws — operator error, not a silent empty
+   * report.
+   */
+  maxDecrease?: number | null;
+  /**
    * Sort key for `sources[]`:
    *   - 'decrease-asc' (default): most-negative decrease first
    *                               (PSD drops most steeply away
@@ -218,6 +239,8 @@ export interface SourceRowTokenSpectralDecreaseReport {
   source: string | null;
   minRows: number;
   top: number | null;
+  minDecrease: number | null;
+  maxDecrease: number | null;
   sort: SourceRowTokenSpectralDecreaseSort;
   totalSources: number;
   totalRowsKept: number;
@@ -228,6 +251,8 @@ export interface SourceRowTokenSpectralDecreaseReport {
   droppedBelowMinRows: number;
   droppedConstantSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinDecrease: number;
+  droppedAboveMaxDecrease: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenSpectralDecreaseRow[];
 }
@@ -255,6 +280,31 @@ export function buildSourceRowTokenSpectralDecrease(
     if (!Number.isInteger(top) || top < 1) {
       throw new Error(`top must be a positive integer (got ${opts.top})`);
     }
+  }
+  const minDecrease = opts.minDecrease ?? null;
+  if (minDecrease !== null) {
+    if (!Number.isFinite(minDecrease)) {
+      throw new Error(
+        `minDecrease must be a finite number (got ${opts.minDecrease})`,
+      );
+    }
+  }
+  const maxDecrease = opts.maxDecrease ?? null;
+  if (maxDecrease !== null) {
+    if (!Number.isFinite(maxDecrease)) {
+      throw new Error(
+        `maxDecrease must be a finite number (got ${opts.maxDecrease})`,
+      );
+    }
+  }
+  if (
+    minDecrease !== null &&
+    maxDecrease !== null &&
+    minDecrease > maxDecrease
+  ) {
+    throw new Error(
+      `minDecrease (${minDecrease}) must be <= maxDecrease (${maxDecrease})`,
+    );
   }
   const sort = opts.sort ?? 'decrease-asc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
@@ -434,10 +484,28 @@ export function buildSourceRowTokenSpectralDecrease(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let droppedBelowMinDecrease = 0;
+  let droppedAboveMaxDecrease = 0;
+  let postRows = allRows;
+  if (minDecrease !== null || maxDecrease !== null) {
+    const kept: SourceRowTokenSpectralDecreaseRow[] = [];
+    for (const row of postRows) {
+      if (minDecrease !== null && row.decrease < minDecrease) {
+        droppedBelowMinDecrease += 1;
+        continue;
+      }
+      if (maxDecrease !== null && row.decrease > maxDecrease) {
+        droppedAboveMaxDecrease += 1;
+        continue;
+      }
+      kept.push(row);
+    }
+    postRows = kept;
+  }
+  let finalSources = postRows;
+  if (top !== null && postRows.length > top) {
+    droppedBelowTopCap = postRows.length - top;
+    finalSources = postRows.slice(0, top);
   }
 
   return {
@@ -447,6 +515,8 @@ export function buildSourceRowTokenSpectralDecrease(
     source: sourceFilter,
     minRows,
     top,
+    minDecrease,
+    maxDecrease,
     sort,
     totalSources,
     totalRowsKept,
@@ -457,6 +527,8 @@ export function buildSourceRowTokenSpectralDecrease(
     droppedBelowMinRows,
     droppedConstantSeries,
     droppedDegenerate,
+    droppedBelowMinDecrease,
+    droppedAboveMaxDecrease,
     droppedBelowTopCap,
     sources: finalSources,
   };

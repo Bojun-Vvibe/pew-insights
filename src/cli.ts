@@ -13903,6 +13903,14 @@ program
     'cap the per-source table to the top N rows after sort; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
+    '--min-decrease <v>',
+    'suppress sources whose decrease is strictly below this threshold; surfaces them under droppedBelowMinDecrease. Operator-friendly: --min-decrease 0 isolates sources whose PSD does NOT genuinely decrease away from bin 1 (mass holds up flat or rises higher up the band).',
+  )
+  .option(
+    '--max-decrease <v>',
+    'suppress sources whose decrease is strictly above this threshold; surfaces them under droppedAboveMaxDecrease. Operator-friendly: --max-decrease 0 isolates sources whose PSD genuinely decreases away from bin 1 (low-frequency-dominant sequences).',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'decrease-asc' (default; PSD drops most steeply away from bin 1 first) | 'decrease-desc' | 'abs-decrease-desc' | 'rows' | 'source'",
     'decrease-asc',
@@ -13916,6 +13924,8 @@ program
         source?: string;
         minRows: string;
         top?: string;
+        minDecrease?: string;
+        maxDecrease?: string;
         sort: string;
         json?: boolean;
       },
@@ -13938,6 +13948,26 @@ program
           }
           top = t;
         }
+        let minDecrease: number | null = null;
+        if (opts.minDecrease != null) {
+          const v = Number.parseFloat(opts.minDecrease);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--min-decrease must be a finite number (got ${opts.minDecrease})`,
+            );
+          }
+          minDecrease = v;
+        }
+        let maxDecrease: number | null = null;
+        if (opts.maxDecrease != null) {
+          const v = Number.parseFloat(opts.maxDecrease);
+          if (!Number.isFinite(v)) {
+            throw new Error(
+              `--max-decrease must be a finite number (got ${opts.maxDecrease})`,
+            );
+          }
+          maxDecrease = v;
+        }
         const validSorts = [
           'decrease-asc',
           'decrease-desc',
@@ -13957,6 +13987,8 @@ program
           source: opts.source ?? null,
           minRows,
           top,
+          minDecrease,
+          maxDecrease,
           sort: opts.sort as
             | 'decrease-asc'
             | 'decrease-desc'

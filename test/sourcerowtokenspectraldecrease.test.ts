@@ -49,6 +49,8 @@ test('spectral-decrease: empty input -> empty report with defaults', () => {
   assert.equal(r.sources.length, 0);
   assert.equal(r.minRows, 8);
   assert.equal(r.top, null);
+  assert.equal(r.minDecrease, null);
+  assert.equal(r.maxDecrease, null);
   assert.equal(r.sort, 'decrease-asc');
   assert.equal(r.generatedAt, GEN);
 });
@@ -243,4 +245,99 @@ test('spectral-decrease: source filter restricts to one source', () => {
   assert.equal(r.sources.length, 1);
   assert.equal(r.sources[0]!.source, 's1');
   assert.equal(r.droppedSourceFilter, 16);
+});
+
+test('spectral-decrease: --min-decrease and --max-decrease filters surface in dropped buckets', () => {
+  // Build 4 sources with varying tones to get a spread of decrease values.
+  const all: QueueLine[] = [];
+  for (let s = 0; s < 4; s++) {
+    const tone = s * 4 + 2; // bins 2, 6, 10, 14 — all in [1, K-1] for K=16
+    for (let t = 0; t < 32; t++) {
+      const hh = Math.floor(t / 60) % 24;
+      const mm = t % 60;
+      all.push(
+        ql(
+          `2026-04-25T${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}:00Z`,
+          `src${s}`,
+          100000 + 100 * Math.sin((2 * Math.PI * tone * t) / 32),
+        ),
+      );
+    }
+  }
+  // First read the unfiltered values to anchor expectations.
+  const baseline = buildSourceRowTokenSpectralDecrease(all, {
+    generatedAt: GEN,
+    sort: 'source',
+  });
+  assert.ok(baseline.sources.length >= 2);
+
+  // --max-decrease 0: keeps only sources whose decrease <= 0
+  // (filter is strict-`>`: rows with decrease > 0 are dropped).
+  const negOnly = buildSourceRowTokenSpectralDecrease(all, {
+    generatedAt: GEN,
+    maxDecrease: 0,
+  });
+  for (const row of negOnly.sources) {
+    assert.ok(
+      row.decrease <= 0,
+      `--max-decrease 0 must keep only decrease <= 0, got ${row.decrease}`,
+    );
+  }
+  assert.equal(
+    negOnly.sources.length + negOnly.droppedAboveMaxDecrease,
+    baseline.sources.length,
+  );
+  assert.equal(
+    negOnly.droppedAboveMaxDecrease,
+    baseline.sources.filter((s) => s.decrease > 0).length,
+  );
+
+  // --min-decrease 0: keeps only sources whose decrease >= 0
+  // (filter is strict-`<`: rows with decrease < 0 are dropped).
+  const posOnly = buildSourceRowTokenSpectralDecrease(all, {
+    generatedAt: GEN,
+    minDecrease: 0,
+  });
+  for (const row of posOnly.sources) {
+    assert.ok(
+      row.decrease >= 0,
+      `--min-decrease 0 must keep only decrease >= 0, got ${row.decrease}`,
+    );
+  }
+  assert.equal(
+    posOnly.sources.length + posOnly.droppedBelowMinDecrease,
+    baseline.sources.length,
+  );
+  assert.equal(
+    posOnly.droppedBelowMinDecrease,
+    baseline.sources.filter((s) => s.decrease < 0).length,
+  );
+});
+
+test('spectral-decrease: minDecrease > maxDecrease -> throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralDecrease([], {
+        minDecrease: 0.5,
+        maxDecrease: -0.5,
+      }),
+    /minDecrease.*<=.*maxDecrease/,
+  );
+});
+
+test('spectral-decrease: non-finite minDecrease/maxDecrease -> throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralDecrease([], {
+        minDecrease: Number.NaN,
+      }),
+    /minDecrease must be a finite number/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenSpectralDecrease([], {
+        maxDecrease: Number.POSITIVE_INFINITY,
+      }),
+    /maxDecrease must be a finite number/,
+  );
 });

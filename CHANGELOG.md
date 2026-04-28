@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.161 — 2026-04-28
+
+### Added
+
+- `source-row-token-spectral-decrease` gains a symmetric
+  `--min-decrease` / `--max-decrease` filter pair on the
+  reported `decrease` column (sign-bearing, dimensionless).
+  Sources whose `decrease` falls outside the requested range
+  surface in their own dropped buckets —
+  `droppedBelowMinDecrease` and `droppedAboveMaxDecrease` —
+  so the operator can read which gate a source fell through.
+
+  **Why this filter axis specifically.** `decrease` is the
+  operator-friendly axis for the question "does this source's
+  per-row token PSD genuinely decrease away from bin 1, or
+  does it hold up / rise higher up the band?".
+  `--max-decrease 0` isolates the strongly-low-frequency-
+  anchored subset (PSDs whose mass anchors at bin 1 and
+  drops monotonically). `--min-decrease 0` isolates the
+  no-anchor / high-pass subset (PSDs whose mass piles higher
+  up the band). The cross-source comparison is meaningful
+  because `decrease` is dimensionless and sign-bearing.
+
+  Filter semantics are strict (`<` / `>`); a source whose
+  `decrease == 0` exactly is kept by both. If both bounds
+  are set and `minDecrease > maxDecrease`, the constructor
+  throws — operator error, not a silent empty report.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--max-decrease 0` (5 sources kept, 1 above max — the
+  only source with positive decrease, redacted to
+  `vscode-XXX`):
+
+      source       rows  bins  totPower   P[1]       tailPower  decrease
+      -----------  ----  ----  ---------  ---------  ---------  ----------
+      codex        64    32    4.162e+17  1.156e+17  3.006e+17  -1.266e+0
+      claude-code  299   149   1.385e+19  2.771e+18  1.108e+19  -1.164e+0
+      hermes       204   102   1.867e+16  2.554e+15  1.611e+16  -7.615e-1
+      opencode     369   184   1.109e+19  8.272e+17  1.027e+19  -2.562e-1
+      openclaw     474   237   2.603e+18  7.401e+16  2.529e+18  -3.047e-2
+
+  Tests: 3360 -> 3363 (+3; min/max-decrease filter
+  semantics + drop-bucket counts, min > max throws,
+  non-finite throws).
+
 ## 0.6.160 — 2026-04-28
 
 ### Added
