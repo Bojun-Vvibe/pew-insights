@@ -2,6 +2,146 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.185 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-trim-mean-25`** — per-source
+  **25 % symmetrically trimmed mean** of the per-row
+  `total_tokens` distribution.
+
+  For each source, sort the per-row `total_tokens` ascending,
+  compute `k = floor(0.25 * n)`, drop the bottom `k` and top
+  `k` order statistics, and take the arithmetic mean of the
+  central `n - 2k`:
+
+      TM = mean( x_(k+1), x_(k+2), ..., x_(n-k) )
+
+  This is the canonical **interquartile mean** (alpha = 0.25
+  -> 50 % of the data survives, the central 50 %). It is a
+  **symmetric L-estimator** with **25 % breakdown** — sitting
+  squarely between the arithmetic mean (0 % breakdown, all
+  rows weighted 1/n) and the median (50 % breakdown, central
+  order statistic only).
+
+  Trim-mean-25 completes the **L-estimator robustness
+  spectrum** alongside the existing lenses, now spanning the
+  full range from "trust only the extremes" to "trust only
+  the center":
+
+  - `source-row-token-mid-range` (v0.6.184): **0 % breakdown**,
+    weights only `min` and `max`, each weight 1/2;
+  - `source-row-token-trim-mean-25` (this one): **25 %
+    breakdown**, discards the bottom 25 % and top 25 %, weights
+    each surviving central row equally at `1/(n - 2k)`;
+  - `source-row-token-midhinge` (v0.6.183): **25 %
+    breakdown**, weights only `q1` and `q3`, each weight 1/2;
+  - `source-row-token-trimean` (v0.6.182): **25 %
+    breakdown**, weights `q1`, `median`, `q3` as 1/4, 1/2,
+    1/4;
+  - the median (used internally everywhere): **50 %
+    breakdown**, weight 1 on the central order statistic.
+
+  Trim-mean-25 is **translation- and scale-equivariant**,
+  **lies in `[min, max]`**, **identity on a constant series**
+  (TM = c), **always finite for n >= 4**, and **insensitive
+  to the trimmed tails**: any perturbation of the bottom `k`
+  or top `k` order statistics — including replacing them with
+  arbitrarily extreme values — leaves TM **exactly
+  unchanged**, so long as the perturbed rows stay within
+  their respective tails after re-sorting.
+
+  The signed gap `tmMeanGap = trim_mean - mean` is reported
+  as a free byproduct: **negative** means the raw mean is
+  being pulled **up** by an upper tail that the trimmed mean
+  filters out (the standard "single huge token row" signal —
+  the diagnostic signature of a per-source token blowout
+  that disappears once the tails are discarded), **positive**
+  means a lower tail is dragging the raw mean down, **zero**
+  on a tail-symmetric distribution. The arithmetic `mean`
+  (over all `n` kept rows) is also surfaced as the natural
+  reference and obvious sanity check on TM. The per-tail
+  trim count `k = floor(0.25 * n)` is reported in the table
+  so operators can read off exactly how many extreme rows
+  per side were excluded.
+
+  Trim-mean-25 is **genuinely orthogonal** to every existing
+  `source-row-token-*` lens:
+
+  - `source-row-token-mid-range` listens to **only** the two
+    tails (0 % breakdown); trim-mean-25 **discards** both
+    tails (25 % breakdown). They are opposites on the
+    L-estimator robustness spectrum: a single huge row moves
+    mid-range by ~ half its excess and leaves trim-mean-25
+    unchanged.
+  - `source-row-token-midhinge` weights **zero** central rows
+    (just q1 and q3); trim-mean-25 weights **all** central
+    rows equally. Midhinge is a tail-of-the-central-half
+    summary; trim-mean-25 is a body-of-the-central-half
+    summary, so it is sensitive to the *shape* of the central
+    50 % (a bimodal central mass shifts trim-mean-25 toward
+    the modes; it leaves midhinge unchanged so long as q1
+    and q3 are unchanged).
+  - `source-row-token-trimean` blends three specific
+    quantiles (q1, median, q3); trim-mean-25 averages the
+    entire interquartile body. Trimean cares about three
+    points; trim-mean-25 cares about the whole central 50 %.
+  - `source-row-token-mad` reports a *spread*; trim-mean-25
+    is a center.
+  - `source-row-token-coefficient-of-quartile-deviation`,
+    `source-row-token-bowley-skewness`,
+    `source-row-token-iqr-ratio` measure *shape* from
+    `q1`/`q3`; trim-mean-25 measures *location* in token
+    units from the body.
+  - `source-row-token-coefficient-of-variation`,
+    `source-row-token-burstiness-coefficient`,
+    `source-row-token-skewness`, `source-row-token-kurtosis`,
+    `source-row-token-gini` are *moment*- or distribution-
+    shape statistics; trim-mean-25 is a robust L-estimator
+    of location.
+  - `source-output-tokens-per-row-percentiles` exposes the
+    raw `P50/P75/P90/P99` of `output_tokens` (different
+    field) without combining them into a body summary.
+
+  Options: `--since`, `--until`, `--source`, `--min-rows`
+  (>=4, default 4 — need k = floor(0.25 n) >= 1 to actually
+  trim), `--min-trim-mean` (>=0, default 0), `--top`,
+  `--sort` (`trim-mean-desc` (default), `trim-mean-asc`,
+  `mean-desc`, `gap-desc` (mean furthest from body first),
+  `rows`, `source`), `--json`. Tiebreak: `source` asc.
+
+  **Live smoke** against `~/.config/pew/queue.jsonl`
+  (1,798 rows, 6 sources, all kept; sort `trim-mean-desc`):
+
+  ```
+  source          rows  k/tail  mean         trim-mean   tm-mean
+  --------------  ----  ------  -----------  ----------  -----------
+  codex           64    16      12650385.31  8410490.78  -4239894.53
+  opencode        387   96      10497847.74  7630610.19  -2867237.54
+  claude-code     299   74      11512995.95  4521626.30  -6991369.64
+  openclaw        493   123     3922542.38   2694230.10  -1228312.28
+  hermes          222   55      810244.98    488176.37   -322068.61
+  vscode-XXX      333   83      5662.84      2493.26     -3169.59
+  ```
+
+  Every source has `tmMeanGap < 0` — the raw mean is being
+  pulled up by an upper tail in every case, and trimming the
+  top 25 % of rows materially lowers the typical-body
+  estimate. The largest *relative* compression is on
+  `claude-code` (mean 11.5M -> trim-mean 4.5M, a 2.5x
+  reduction): a quarter of the rows are heavy enough to
+  inflate the raw mean to nearly 3x the body. `codex` and
+  `opencode` show smaller compression ratios (~1.5x and
+  ~1.4x), meaning their upper-quartile rows are heavy but
+  not as disproportionate. `vscode-XXX` shows a large
+  *relative* gap (mean 5662 -> trim-mean 2493, 2.3x) but on
+  tiny absolute magnitude, consistent with that source's
+  generally low token-per-row footprint. The `k/tail` column
+  documents exactly how many extreme rows per side were
+  excluded — the largest source `openclaw` discards 123 from
+  each tail (246 of 493 rows), leaving the central 247 to
+  vote.
+
 ## 0.6.184 — 2026-04-28
 
 ### Added
