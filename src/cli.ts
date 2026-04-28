@@ -119,6 +119,7 @@ import {
   renderSourceRowTokenContraharmonicMean,
   renderSourceRowTokenLehmer3Mean,
   renderSourceRowTokenLehmer4Mean,
+  renderSourceRowTokenLehmer5Mean,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -335,6 +336,7 @@ import { buildSourceRowTokenQuadraticMean } from './sourcerowtokenquadraticmean.
 import { buildSourceRowTokenContraharmonicMean } from './sourcerowtokencontraharmonicmean.js';
 import { buildSourceRowTokenLehmer3Mean } from './sourcerowtokenlehmer3mean.js';
 import { buildSourceRowTokenLehmer4Mean } from './sourcerowtokenlehmer4mean.js';
+import { buildSourceRowTokenLehmer5Mean } from './sourcerowtokenlehmer5mean.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -16055,6 +16057,117 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenLehmer4Mean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-lehmer-5-mean')
+  .description(
+    "Per-source Lehmer mean of order 5 (L_5) of per-row total_tokens. L_5 = sum(x^5) / sum(x^4). Extends v0.6.193's Lehmer ladder one step further to the right of L_4: HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 (Lehmer monotonicity). Equivalently, the x^4-self-weighted arithmetic mean — each row weights itself by its own FOURTH POWER. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more aggressively than L_4. l5L4Gap = L_5 - L_4, l5L3Gap = L_5 - L_3, l5AmGap = L_5 - mean are reported as free signals: ALL >= 0.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-lehmer-5-mean <f>',
+    'drop sources whose Lehmer-5 mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lehmer-5-mean-desc' (default) | 'lehmer-5-mean-asc' | 'mean-desc' | 'l4-gap-desc' (l5L4Gap desc) | 'l3-gap-desc' (l5L3Gap desc) | 'am-gap-desc' (l5AmGap desc) | 'rows' | 'source'",
+    'lehmer-5-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minLehmer5Mean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLehmer5Mean = Number.parseFloat(opts.minLehmer5Mean);
+        if (!Number.isFinite(minLehmer5Mean) || minLehmer5Mean < 0) {
+          throw new Error(
+            `--min-lehmer-5-mean must be a finite, non-negative number (got ${opts.minLehmer5Mean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lehmer-5-mean-desc',
+          'lehmer-5-mean-asc',
+          'mean-desc',
+          'l4-gap-desc',
+          'l3-gap-desc',
+          'am-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLehmer5Mean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minLehmer5Mean,
+          top,
+          sort: opts.sort as
+            | 'lehmer-5-mean-desc'
+            | 'lehmer-5-mean-asc'
+            | 'mean-desc'
+            | 'l4-gap-desc'
+            | 'l3-gap-desc'
+            | 'am-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenLehmer5Mean(report) + '\n',
           );
         }
       } catch (e) {
