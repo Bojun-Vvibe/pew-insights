@@ -219,6 +219,24 @@ export interface SourceRowTokenTemporalKurtosisOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenTemporalKurtosisSort;
+  /**
+   * Optional inclusive lower bound on `ts4`. Sources with
+   * ts4 < minTs4 surface under `droppedBelowMinTs4`. Must
+   * be a finite real `>= 1` (the Cauchy-Schwarz lower
+   * bound for ts4). Useful for "show me only the peaked
+   * cohort" (e.g. `--min-ts4 3` for mesokurtic-or-better).
+   * Default null.
+   */
+  minTs4?: number | null;
+  /**
+   * Optional inclusive upper bound on `ts4`. Sources with
+   * ts4 > maxTs4 surface under `droppedAboveMaxTs4`. Must
+   * be a finite real `>= 1` and `>= minTs4` when both are
+   * set. Useful for "show me only the flat / bimodal
+   * cohort" (e.g. `--max-ts4 1.8` for sub-uniform).
+   * Default null.
+   */
+  maxTs4?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -244,6 +262,8 @@ export interface SourceRowTokenTemporalKurtosisReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenTemporalKurtosisSort;
+  minTs4: number | null;
+  maxTs4: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -254,6 +274,8 @@ export interface SourceRowTokenTemporalKurtosisReport {
   droppedZeroSeries: number;
   droppedZeroVariance: number;
   droppedDegenerate: number;
+  droppedBelowMinTs4: number;
+  droppedAboveMaxTs4: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTemporalKurtosisRow[];
 }
@@ -286,6 +308,32 @@ export function buildSourceRowTokenTemporalKurtosis(
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
+  }
+
+  const minTs4 = opts.minTs4 ?? null;
+  if (minTs4 !== null) {
+    if (!Number.isFinite(minTs4)) {
+      throw new Error(`minTs4 must be a finite real (got ${opts.minTs4})`);
+    }
+    if (minTs4 < 1) {
+      throw new Error(
+        `minTs4 must be >= 1 (Cauchy-Schwarz lower bound for ts4); got ${opts.minTs4}`,
+      );
+    }
+  }
+  const maxTs4 = opts.maxTs4 ?? null;
+  if (maxTs4 !== null) {
+    if (!Number.isFinite(maxTs4)) {
+      throw new Error(`maxTs4 must be a finite real (got ${opts.maxTs4})`);
+    }
+    if (maxTs4 < 1) {
+      throw new Error(
+        `maxTs4 must be >= 1 (Cauchy-Schwarz lower bound for ts4); got ${opts.maxTs4}`,
+      );
+    }
+  }
+  if (minTs4 !== null && maxTs4 !== null && minTs4 > maxTs4) {
+    throw new Error(`minTs4 (${minTs4}) must be <= maxTs4 (${maxTs4})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -434,11 +482,31 @@ export function buildSourceRowTokenTemporalKurtosis(
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   });
 
+  // Apply min/max-ts4 filters BEFORE top cap so the sort
+  // window matches the operator's stated ts4 band.
+  let droppedBelowMinTs4 = 0;
+  let droppedAboveMaxTs4 = 0;
+  let filteredRows = allRows;
+  if (minTs4 !== null || maxTs4 !== null) {
+    filteredRows = [];
+    for (const row of allRows) {
+      if (minTs4 !== null && row.ts4 < minTs4) {
+        droppedBelowMinTs4 += 1;
+        continue;
+      }
+      if (maxTs4 !== null && row.ts4 > maxTs4) {
+        droppedAboveMaxTs4 += 1;
+        continue;
+      }
+      filteredRows.push(row);
+    }
+  }
+
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = filteredRows;
+  if (top !== null && filteredRows.length > top) {
+    droppedBelowTopCap = filteredRows.length - top;
+    finalSources = filteredRows.slice(0, top);
   }
 
   return {
@@ -449,6 +517,8 @@ export function buildSourceRowTokenTemporalKurtosis(
     minRows,
     top,
     sort,
+    minTs4,
+    maxTs4,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -459,6 +529,8 @@ export function buildSourceRowTokenTemporalKurtosis(
     droppedZeroSeries,
     droppedZeroVariance,
     droppedDegenerate,
+    droppedBelowMinTs4,
+    droppedAboveMaxTs4,
     droppedBelowTopCap,
     sources: finalSources,
   };

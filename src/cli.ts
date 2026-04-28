@@ -14497,6 +14497,14 @@ program
     "sort key: 'ts4-desc' (default; most peaked / impulsive first) | 'ts4-asc' (most flat / bimodal first) | 'rows' | 'source'",
     'ts4-desc',
   )
+  .option(
+    '--min-ts4 <x>',
+    'inclusive lower bound on ts4 (finite real >= 1, the Cauchy-Schwarz lower bound for ts4); sources with ts4 < x surface as droppedBelowMinTs4. e.g. --min-ts4 3 isolates the mesokurtic-or-better cohort.',
+  )
+  .option(
+    '--max-ts4 <x>',
+    'inclusive upper bound on ts4 (finite real >= 1); sources with ts4 > x surface as droppedAboveMaxTs4. e.g. --max-ts4 1.8 isolates the sub-uniform / bimodal cohort.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -14507,6 +14515,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minTs4?: string;
+        maxTs4?: string;
         json?: boolean;
       },
       cmd,
@@ -14534,6 +14544,22 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        let minTs4: number | null = null;
+        if (opts.minTs4 != null) {
+          const x = Number.parseFloat(opts.minTs4);
+          if (!Number.isFinite(x)) {
+            throw new Error(`--min-ts4 must be a finite real (got ${opts.minTs4})`);
+          }
+          minTs4 = x;
+        }
+        let maxTs4: number | null = null;
+        if (opts.maxTs4 != null) {
+          const x = Number.parseFloat(opts.maxTs4);
+          if (!Number.isFinite(x)) {
+            throw new Error(`--max-ts4 must be a finite real (got ${opts.maxTs4})`);
+          }
+          maxTs4 = x;
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenTemporalKurtosis(queue, {
           since: opts.since ?? null,
@@ -14542,6 +14568,8 @@ program
           minRows,
           top,
           sort: opts.sort as 'ts4-desc' | 'ts4-asc' | 'rows' | 'source',
+          minTs4,
+          maxTs4,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

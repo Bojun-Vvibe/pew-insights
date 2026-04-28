@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.172 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-kurtosis` refinement:
+  - New `--min-ts4 <x>` and `--max-ts4 <x>` filter flags.
+    Both bounds must be finite reals `>= 1` (the
+    Cauchy-Schwarz lower bound for ts4 — the symmetric
+    two-point bimodal envelope at row 0 and row N-1
+    achieves exactly 1, and no envelope can go lower).
+    Sources with `ts4 < min-ts4` surface under the new
+    `droppedBelowMinTs4` counter; sources with
+    `ts4 > max-ts4` surface under `droppedAboveMaxTs4`.
+    Filters apply *before* top-cap so the sort window
+    matches the operator's stated `ts4` band and
+    `--top N` returns the top N within the band.
+  - Operator-relevant ergonomic bands:
+      - `--min-ts4 3` isolates the **mesokurtic-or-
+        better cohort** (Gaussian-like or sharper —
+        sources whose envelope concentrates around tc
+        with thin tails).
+      - `--max-ts4 1.8` isolates the **sub-uniform /
+        bimodal cohort** (sources whose envelope is
+        flatter than uniform, biased toward the row-
+        history extremes).
+      - `--min-ts4 1.5 --max-ts4 2.5` isolates the
+        **near-uniform cohort** (broadly distributed
+        envelopes with no sharp central peak and no
+        strong bimodality).
+    When both bounds are set, `min-ts4 <= max-ts4` is
+    enforced. Equal bounds (`--min-ts4 X --max-ts4 X`)
+    is not an error and produces a single-point band.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--max-ts4 1.8` (sources: 6, kept: 3, rows: 1,763;
+  3 dropped above max-ts4):
+
+      source       rows  totalAmp  tcIndex  tsIndex  ts4
+      -----------  ----  --------  -------  -------  ------
+      codex        64    8.096e+8  38.71    21.61    1.7180
+      vscode-XXX   333   1.886e+6  217.71   101.24   1.6890
+      opencode     375   3.969e+9  177.69   117.42   1.4325
+
+  Operator reading: `--max-ts4 1.8` cleanly carves out
+  the **sub-uniform half** of the cohort. All three
+  retained sources have ts4 below the discrete-uniform
+  reference (1.8), meaning their amplitude envelopes
+  are *more bimodal than a flat distribution* across
+  their respective row histories. `opencode`
+  (ts4 = 1.43) is the most pronounced two-sided
+  envelope of the entire cohort: 4.0 GT of amplitude
+  spread across 375 rows with mass biased toward both
+  the early and late row regions and the least
+  concentration around `tcIndex = 177.69`. `codex`
+  (ts4 = 1.72) and the `vscode-XXX` source
+  (ts4 = 1.69) are each just barely below uniform —
+  near-flat envelopes with a hint of bimodality. The
+  three excluded sources (`claude-code`, `hermes`,
+  `openclaw`; all ts4 >= 1.93) form the complementary
+  near-or-above-uniform cohort. Combined with
+  `--min-ts4 3` for the mesokurtic-or-better dual band
+  (which on the current queue would isolate
+  `claude-code` alone at ts4 = 3.39), this filter pair
+  lets operators partition the population on time-
+  domain envelope *shape* — a 1D slice that no single
+  sort axis can produce, since both `ts4-desc` and
+  `ts4-asc` always return all sources, just reordered.
+  The pair also composes cleanly with the (tc, ts,
+  ts3) triplet from 0.6.167 / 0.6.168 / 0.6.169 plus
+  the ts4 lens from 0.6.171 to give operators the
+  full Peeters 2004 §6.1 quartet of time-domain
+  moments with band-isolation on every axis.
+
 ## 0.6.171 — 2026-04-28
 
 ### Added

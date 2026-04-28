@@ -513,3 +513,135 @@ test('temporal-kurtosis: tcIndex within [0, N-1] for all emitted rows', () => {
     assert.ok(row.tcIndex >= 0 && row.tcIndex <= row.rowsKept - 1);
   }
 });
+
+// ---- --min-ts4 / --max-ts4 band filters (0.6.172) ----
+
+test('temporal-kurtosis: --min-ts4 filter drops flat / bimodal sources, surfaces in droppedBelowMinTs4', () => {
+  const bimodal = new Array(15).fill(0);
+  bimodal[0] = 100; bimodal[14] = 100;          // ts4 ~ 1
+  const uniform = new Array(15).fill(50);       // ts4 ~ 1.78
+  const spike = new Array(15).fill(1);
+  spike[7] = 5000;                               // ts4 large
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [...series(bimodal, 'bi'), ...series(uniform, 'uni'), ...series(spike, 'spk')],
+    { generatedAt: GEN, minTs4: 1.8 },
+  );
+  // bimodal and uniform drop; spike keeps
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'spk');
+  assert.equal(r.droppedBelowMinTs4, 2);
+  assert.equal(r.droppedAboveMaxTs4, 0);
+  assert.equal(r.minTs4, 1.8);
+});
+
+test('temporal-kurtosis: --max-ts4 filter drops peaked sources, surfaces in droppedAboveMaxTs4', () => {
+  const bimodal = new Array(15).fill(0);
+  bimodal[0] = 100; bimodal[14] = 100;
+  const spike = new Array(15).fill(1);
+  spike[7] = 5000;
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [...series(bimodal, 'bi'), ...series(spike, 'spk')],
+    { generatedAt: GEN, maxTs4: 1.5 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'bi');
+  assert.equal(r.droppedAboveMaxTs4, 1);
+  assert.equal(r.droppedBelowMinTs4, 0);
+  assert.equal(r.maxTs4, 1.5);
+});
+
+test('temporal-kurtosis: --min-ts4 and --max-ts4 together carve a near-uniform band', () => {
+  const bimodal = new Array(15).fill(0);
+  bimodal[0] = 100; bimodal[14] = 100;
+  const uniform = new Array(15).fill(50);
+  const spike = new Array(15).fill(1);
+  spike[7] = 5000;
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [...series(bimodal, 'bi'), ...series(uniform, 'uni'), ...series(spike, 'spk')],
+    { generatedAt: GEN, minTs4: 1.5, maxTs4: 2.5 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'uni');
+  assert.equal(r.droppedBelowMinTs4, 1);
+  assert.equal(r.droppedAboveMaxTs4, 1);
+});
+
+test('temporal-kurtosis: invalid --min-ts4 / --max-ts4 throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenTemporalKurtosis([], { generatedAt: GEN, minTs4: NaN }),
+    /minTs4 must be a finite real/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalKurtosis([], { generatedAt: GEN, maxTs4: Infinity }),
+    /maxTs4 must be a finite real/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalKurtosis([], { generatedAt: GEN, minTs4: 0.5 }),
+    /minTs4 must be >= 1/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalKurtosis([], { generatedAt: GEN, maxTs4: 0.99 }),
+    /maxTs4 must be >= 1/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalKurtosis([], { generatedAt: GEN, minTs4: 3, maxTs4: 2 }),
+    /minTs4 .* must be <= maxTs4/,
+  );
+});
+
+test('temporal-kurtosis: ts4-band filter applies BEFORE top cap (top counts post-band sources)', () => {
+  const sources: QueueLine[] = [];
+  // Three flat (uniform) sources
+  for (const name of ['u1', 'u2', 'u3']) {
+    sources.push(...series(new Array(15).fill(50), name));
+  }
+  // Three peaked sources
+  for (const name of ['p1', 'p2', 'p3']) {
+    const v = new Array(15).fill(1);
+    v[7] = 5000;
+    sources.push(...series(v, name));
+  }
+  const r = buildSourceRowTokenTemporalKurtosis(sources, {
+    generatedAt: GEN, minTs4: 3, top: 2, sort: 'source',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinTs4, 3);
+  assert.equal(r.droppedBelowTopCap, 1);
+  for (const s of r.sources) {
+    assert.ok(s.source.startsWith('p'), `expected peaked only, got ${s.source}`);
+  }
+});
+
+test('temporal-kurtosis: report fields echo minTs4/maxTs4 and they default to null', () => {
+  const r1 = buildSourceRowTokenTemporalKurtosis([], { generatedAt: GEN });
+  assert.equal(r1.minTs4, null);
+  assert.equal(r1.maxTs4, null);
+  const r2 = buildSourceRowTokenTemporalKurtosis(
+    series(new Array(10).fill(50), 's'),
+    { generatedAt: GEN, minTs4: 1, maxTs4: 5 },
+  );
+  assert.equal(r2.minTs4, 1);
+  assert.equal(r2.maxTs4, 5);
+});
+
+test('temporal-kurtosis: --min-ts4 == --max-ts4 produces a single-point band (equal bound is permitted)', () => {
+  const v = new Array(15).fill(50);
+  const r = buildSourceRowTokenTemporalKurtosis(series(v, 's'), {
+    generatedAt: GEN, minTs4: 1.78, maxTs4: 1.78,
+  });
+  // Equal bounds is not an error; either kept or filtered, both fine.
+  assert.ok(r.droppedBelowMinTs4 + r.droppedAboveMaxTs4 + r.sources.length >= 1);
+});
+
+test('temporal-kurtosis: --min-ts4 == 1 (lower bound) is the most permissive ts4 filter and keeps all', () => {
+  // ts4 >= 1 always, so --min-ts4 1 should keep every emitted source.
+  const v1 = new Array(10).fill(0);
+  v1[0] = 100; v1[9] = 100;                      // ts4 ~ 1
+  const v2 = new Array(10).fill(50);             // ts4 > 1
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [...series(v1, 'a'), ...series(v2, 'b')],
+    { generatedAt: GEN, minTs4: 1 },
+  );
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedBelowMinTs4, 0);
+});
