@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.192 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-neg-3-mean`** —
+  per-source **Lehmer mean of order -3** (a.k.a. **L_-3**,
+  the sub-sub-sub-harmonic Lehmer mean) of the per-row
+  `total_tokens` distribution.
+
+  For each source, divide the sum of inverse cubes by the
+  sum of inverse fourth powers:
+
+      L_-3 = ( sum_{i=1..n} x_i^{-3} ) / ( sum_{i=1..n} x_i^{-4} )
+
+  Equivalently, L_-3 is the `x_i^{-4}`-self-weighted
+  arithmetic mean of `x_i`: each row weights itself by its
+  own *inverse fourth power*.
+
+  This is the natural one-step-LEFT extension of v0.6.191's
+  L_-2 lens. By Lehmer monotonicity, `L_-3 <= L_-2` for any
+  strictly positive sample, with equality iff every row is
+  equal. So L_-3 extends the integer Lehmer-mean ladder
+  shipped to date one further step left:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3
+       new    v0.6.191       L_0    -    L_1    -   L_2    L_3
+
+  L_-3 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as harmonic-mean / quadratic-
+  mean / contraharmonic-mean / lehmer-3-mean / lehmer-
+  neg-1-mean / lehmer-neg-2-mean.
+
+  Three free byproducts are reported in every row:
+
+  - `negThreeNegTwoGap = L_-2 - L_-3` — always `>= 0` by
+    Lehmer monotonicity, `0` iff the series is constant.
+    Magnitude is the **inverse-fourth-power weighting
+    amplification** below L_-2: how much further the
+    smallest rows pull the location when each row's weight
+    is its own `x^{-4}` rather than its own `x^{-3}`.
+  - `negThreeHmGap = HM - L_-3` — always `>= 0`. Strictly
+    larger than v0.6.191's `negTwoHmGap` for any
+    non-constant positive series.
+  - `negThreeAmGap = mean - L_-3` — always `>= 0`. The
+    cumulative pull from the equal-weight average all
+    the way down to the inverse-fourth-power-weighted
+    location.
+
+  A source containing **any** zero row is undefined for
+  L_-3 (reciprocal diverges) and is reported as
+  `droppedZeroBearingSources`.
+
+  **Live smoke** (`source-row-token-lehmer-neg-3-mean
+  --min-rows 4 --sort hm-gap-desc`, full queue, 1,831
+  rows across 6 sources):
+
+      source       rows  mean          hm          l-2         lehmer-neg-3-mean  l-2-l-3     hm-l-3        mean-l-3
+      openclaw     504    3865960.69  1570708.43   207742.51   127208.82          +80533.69   +1443499.61   +3738751.87
+      opencode     398   10400844.44  1240548.52    84572.23    61266.28          +23305.95   +1179282.24  +10339578.16
+      codex         64   12650385.31   788948.06    61100.93    53734.05           +7366.88    +735214.00  +12596651.26
+      claude-code  299   11512995.95   305188.99     8777.97     6635.10           +2142.87    +298553.89  +11506360.85
+      hermes       233    793223.08    218203.50    30824.29    21636.02           +9188.27    +196567.48    +771587.06
+      vscode-XXX   333      5662.84       708.17       32.05       23.49              +8.55       +684.68       +5639.35
+
+  Lehmer monotonicity holds in every row
+  (L_-3 <= L_-2 <= HM <= mean): all three gaps
+  (`negThreeNegTwoGap`, `negThreeHmGap`, `negThreeAmGap`) are
+  strictly positive across all 6 sources, confirming the
+  ladder pin against real data. The widest hm-l-3 gap is
+  `openclaw` (~1.44M tokens) — its smallest rows pull L_-3
+  ~12x below HM. The smallest hm-l-3 gap is `vscode-XXX`
+  (~685 tokens) — a tight, low-mass distribution where the
+  inverse-fourth-power reweighting still produces a clear
+  pull but in absolute token units the pull stays small.
+
+  Cross-source spread of L_-3 spans ~5,415x (openclaw
+  127k vs vscode-XXX 23) — slightly tighter than the L_-2
+  spread because the deeper inverse-power weighting pushes
+  every source closer to its own `min`. Property test
+  (200 trials) confirms full ladder
+  `L_-3 <= L_-2 <= L_-1 <= HM <= AM <= QM <= CHM <= L_3`.
+
 ## 0.6.191 — 2026-04-28
 
 ### Added
