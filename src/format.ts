@@ -11443,6 +11443,78 @@ export function renderSourceRowTokenContraharmonicMean(
 }
 
 import type {
+  SourceRowTokenLehmer3MeanReport,
+  SourceRowTokenLehmer3MeanRow,
+} from './sourcerowtokenlehmer3mean.js';
+
+export function renderSourceRowTokenLehmer3Mean(
+  r: SourceRowTokenLehmer3MeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-lehmer-3-mean'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-lehmer-3-mean: ${formatNumber(r.minLehmer3Mean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAllZeroSources)} all-zero sources (sum(x^2)=0), ${formatNumber(r.droppedBelowMinLehmer3Mean)} below min-lehmer-3-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Lehmer mean of order 3 of per-row total_tokens: L_3 = sum(x^3) / sum(x^2). Extends the Pythagorean+CHM sandwich one step right: HM <= GM <= AM <= QM <= CHM <= L_3 (Lehmer monotonicity). Equivalently, the x^2-self-weighted arithmetic mean: each row weights itself by its own square. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more than CHM. l3ChmGap = L_3 - CHM and l3AmGap = L_3 - mean are reported as free signals: both >= 0, both 0 iff the positive part of the series is constant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Lehmer-3 mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'chm',
+    'lehmer-3-mean',
+    'l3-chm',
+    'l3-mean',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenLehmer3MeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.contraharmonicMean.toFixed(2),
+      s.lehmer3Mean.toFixed(2),
+      (s.l3ChmGap >= 0 ? '+' : '') + s.l3ChmGap.toFixed(2),
+      (s.l3AmGap >= 0 ? '+' : '') + s.l3AmGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenTrimMean25Report,
   SourceRowTokenTrimMean25Row,
 } from './sourcerowtokentrimmean25.js';

@@ -117,6 +117,7 @@ import {
   renderSourceRowTokenHarmonicMean,
   renderSourceRowTokenQuadraticMean,
   renderSourceRowTokenContraharmonicMean,
+  renderSourceRowTokenLehmer3Mean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -328,6 +329,7 @@ import { buildSourceRowTokenTrimMean25 } from './sourcerowtokentrimmean25.js';
 import { buildSourceRowTokenHarmonicMean } from './sourcerowtokenharmonicmean.js';
 import { buildSourceRowTokenQuadraticMean } from './sourcerowtokenquadraticmean.js';
 import { buildSourceRowTokenContraharmonicMean } from './sourcerowtokencontraharmonicmean.js';
+import { buildSourceRowTokenLehmer3Mean } from './sourcerowtokenlehmer3mean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15825,6 +15827,115 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenContraharmonicMean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-lehmer-3-mean')
+  .description(
+    "Per-source Lehmer mean of order 3 (L_3) of per-row total_tokens. L_3 = sum(x^3) / sum(x^2). Extends v0.6.188's Pythagorean+CHM sandwich one step further to the right: HM <= GM <= AM <= QM <= CHM <= L_3 (Lehmer monotonicity). Equivalently, the x^2-self-weighted arithmetic mean — each row weights itself by its own SQUARE. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more aggressively than CHM: a single bottleneck row pushes L_3 toward that row's value faster than CHM does. Distinct from every existing lens: L-estimators (mid-range / midhinge / trimean / trim-mean-25) are translation- AND scale-equivariant; mad reports a SPREAD; coefficient-of-quartile-deviation / bowley-skewness / iqr-ratio measure SHAPE; coefficient-of-variation / burstiness-coefficient / skewness / kurtosis / gini are MOMENT- or distribution-shape statistics; crest-factor is a dimensionless ratio; contraharmonic-mean (L_2) weights by x, this lens (L_3) weights by x^2. l3ChmGap = L_3 - CHM and l3AmGap = L_3 - mean are reported as free signals: ALWAYS >= 0, with magnitude growing as the multiplicative spread of the positive part of the series grows.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-lehmer-3-mean <f>',
+    'drop sources whose Lehmer-3 mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'lehmer-3-mean-desc' (default) | 'lehmer-3-mean-asc' | 'mean-desc' | 'chm-gap-desc' (l3ChmGap desc) | 'am-gap-desc' (l3AmGap desc) | 'rows' | 'source'",
+    'lehmer-3-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minLehmer3Mean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minLehmer3Mean = Number.parseFloat(opts.minLehmer3Mean);
+        if (!Number.isFinite(minLehmer3Mean) || minLehmer3Mean < 0) {
+          throw new Error(
+            `--min-lehmer-3-mean must be a finite, non-negative number (got ${opts.minLehmer3Mean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'lehmer-3-mean-desc',
+          'lehmer-3-mean-asc',
+          'mean-desc',
+          'chm-gap-desc',
+          'am-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenLehmer3Mean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minLehmer3Mean,
+          top,
+          sort: opts.sort as
+            | 'lehmer-3-mean-desc'
+            | 'lehmer-3-mean-asc'
+            | 'mean-desc'
+            | 'chm-gap-desc'
+            | 'am-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenLehmer3Mean(report) + '\n',
           );
         }
       } catch (e) {
