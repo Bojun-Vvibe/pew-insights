@@ -11371,6 +11371,78 @@ export function renderSourceRowTokenQuadraticMean(
 }
 
 import type {
+  SourceRowTokenContraharmonicMeanReport,
+  SourceRowTokenContraharmonicMeanRow,
+} from './sourcerowtokencontraharmonicmean.js';
+
+export function renderSourceRowTokenContraharmonicMean(
+  r: SourceRowTokenContraharmonicMeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-contraharmonic-mean'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-contraharmonic-mean: ${formatNumber(r.minContraharmonicMean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAllZeroSources)} all-zero sources (sum(x)=0), ${formatNumber(r.droppedBelowMinContraharmonicMean)} below min-contraharmonic-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source contraharmonic mean (Lehmer L_2) of per-row total_tokens: CHM = sum(x^2) / sum(x). Extends the Pythagorean sandwich one step right: HM <= GM <= AM <= QM <= CHM. Equivalently, the x-self-weighted arithmetic mean: each row weights itself by its own value. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more than QM. chmAmGap = CHM - mean and chmQmGap = CHM - QM are reported as free signals: both >= 0 by Cauchy-Schwarz, both 0 iff the positive part of the series is constant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token contraharmonic mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'qm',
+    'contraharmonic-mean',
+    'chm-mean',
+    'chm-qm',
+  ];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenContraharmonicMeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.quadraticMean.toFixed(2),
+      s.contraharmonicMean.toFixed(2),
+      (s.chmAmGap >= 0 ? '+' : '') + s.chmAmGap.toFixed(2),
+      (s.chmQmGap >= 0 ? '+' : '') + s.chmQmGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenTrimMean25Report,
   SourceRowTokenTrimMean25Row,
 } from './sourcerowtokentrimmean25.js';

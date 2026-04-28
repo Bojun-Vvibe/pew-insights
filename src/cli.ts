@@ -116,6 +116,7 @@ import {
   renderSourceRowTokenTrimMean25,
   renderSourceRowTokenHarmonicMean,
   renderSourceRowTokenQuadraticMean,
+  renderSourceRowTokenContraharmonicMean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -326,6 +327,7 @@ import { buildSourceRowTokenMidRange } from './sourcerowtokenmidrange.js';
 import { buildSourceRowTokenTrimMean25 } from './sourcerowtokentrimmean25.js';
 import { buildSourceRowTokenHarmonicMean } from './sourcerowtokenharmonicmean.js';
 import { buildSourceRowTokenQuadraticMean } from './sourcerowtokenquadraticmean.js';
+import { buildSourceRowTokenContraharmonicMean } from './sourcerowtokencontraharmonicmean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15710,6 +15712,120 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenQuadraticMean(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-contraharmonic-mean')
+  .description(
+    "Per-source contraharmonic mean (Lehmer L_2) of per-row total_tokens. CHM = sum(x^2) / sum(x). Extends v0.6.187's Pythagorean sandwich one step further to the right: HM <= GM <= AM <= QM <= CHM (Cauchy-Schwarz). Equivalently, the x-self-weighted arithmetic mean — each row weights itself by its own value. Scale-equivariant, NOT translation-equivariant. Dominated by the LARGEST rows even more aggressively than QM: a single bottleneck row pushes CHM toward that row's value, while QM only goes as M/sqrt(n). Distinct from every existing lens: source-row-token-mid-range / midhinge / trimean / trim-mean-25 are L-estimators (translation- AND scale-equivariant); source-row-token-mad reports a SPREAD; source-row-token-coefficient-of-quartile-deviation, source-row-token-bowley-skewness, source-row-token-iqr-ratio measure SHAPE; source-row-token-coefficient-of-variation, source-row-token-burstiness-coefficient, source-row-token-skewness, source-row-token-kurtosis, source-row-token-gini are MOMENT- or distribution-shape statistics. Distinct from source-row-token-crest-factor: crest-factor is a dimensionless ratio max/RMS; CHM is the size-weighted location itself in token units. chmAmGap = CHM - mean and chmQmGap = CHM - QM are reported as free signals: ALWAYS >= 0 by Cauchy-Schwarz, with magnitude growing as the multiplicative spread of the positive part of the series grows.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (default 1)',
+    '1',
+  )
+  .option(
+    '--min-contraharmonic-mean <f>',
+    'drop sources whose contraharmonic mean is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'contraharmonic-mean-desc' (default) | 'contraharmonic-mean-asc' | 'mean-desc' | 'gap-desc' (chmAmGap desc) | 'qm-gap-desc' (chmQmGap desc) | 'rows' | 'source'",
+    'contraharmonic-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minContraharmonicMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minContraharmonicMean = Number.parseFloat(
+          opts.minContraharmonicMean,
+        );
+        if (
+          !Number.isFinite(minContraharmonicMean) ||
+          minContraharmonicMean < 0
+        ) {
+          throw new Error(
+            `--min-contraharmonic-mean must be a finite, non-negative number (got ${opts.minContraharmonicMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'contraharmonic-mean-desc',
+          'contraharmonic-mean-asc',
+          'mean-desc',
+          'gap-desc',
+          'qm-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenContraharmonicMean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minContraharmonicMean,
+          top,
+          sort: opts.sort as
+            | 'contraharmonic-mean-desc'
+            | 'contraharmonic-mean-asc'
+            | 'mean-desc'
+            | 'gap-desc'
+            | 'qm-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenContraharmonicMean(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
