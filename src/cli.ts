@@ -129,6 +129,7 @@ import {
   renderSourceRowTokenLehmer12Mean,
   renderSourceRowTokenWinsorizedMean10,
   renderSourceRowTokenWinsorizedMean20,
+  renderSourceRowTokenTrimMean10,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -355,6 +356,7 @@ import { buildSourceRowTokenLehmer11Mean } from './sourcerowtokenlehmer11mean.js
 import { buildSourceRowTokenLehmer12Mean } from './sourcerowtokenlehmer12mean.js';
 import { buildSourceRowTokenWinsorizedMean10 } from './sourcerowtokenwinsorizedmean10.js';
 import { buildSourceRowTokenWinsorizedMean20 } from './sourcerowtokenwinsorizedmean20.js';
+import { buildSourceRowTokenTrimMean10 } from './sourcerowtokentrimmean10.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -7643,6 +7645,111 @@ program
           process.stdout.write(
             renderSourceRowTokenWinsorizedMean20(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-trim-mean-10')
+  .description(
+    "Per-source 10 % symmetrically trimmed mean of per-row total_tokens. Sort the rows, DROP the bottom k = floor(0.10 n) and top k order statistics entirely, then take the arithmetic mean of the central n - 2k surviving rows. Symmetric L-estimator with 10 % breakdown. Mechanically distinct from source-row-token-winsorized-mean-10 (same alpha = 0.10 but CLIPS tails to boundary values vs DROPS them; WM-10 denominator is n, TM-10 denominator is n - 2k). Mechanically distinct from source-row-token-trim-mean-25 (same DROP mechanism but different alpha; TM-25 drops 25 % of each tail and is strictly more robust). Translation- and scale-equivariant. source-row-token-mid-range = (min+max)/2 listens to ONLY the two tails (0 % breakdown); TM-10 discards the bottom and top 10 % entirely. source-row-token-midhinge / trimean weight only quantiles; TM-10 averages every row in the central 80 % so it is sensitive to body shape. source-row-token-mad reports a SPREAD; CQD/Bowley/IQR-ratio measure SHAPE; CV/burstiness/skewness/kurtosis/gini are MOMENT- or distribution-shape statistics. Distinct from harmonic / quadratic / contraharmonic / Lehmer-k means: those are POWER-weighted, non-linear, NOT translation-equivariant; TM-10 is a linear L-estimator. tmMeanGap = trim_mean - mean is reported as a free signal: negative means the raw mean is being pulled UP by an upper tail that the trimmed mean filters out; positive means a lower tail is dragging the raw mean down. Free byproducts loBoundary = x_(k+1), hiBoundary = x_(n-k), and trimmedPerTail = k expose where the trim cut falls.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 10 (need k = floor(0.10 n) >= 1 to actually trim — at n < 10, k = 0 and the trimmed mean degenerates to the arithmetic mean) (default 10)',
+    '10',
+  )
+  .option(
+    '--min-trim-mean <f>',
+    'drop sources whose trim-mean is strictly below f; cohort selector for "this source actually carries non-trivial body-location token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'trim-mean-desc' (default) | 'trim-mean-asc' | 'mean-desc' | 'gap-desc' (|tmMeanGap| desc) | 'rows' | 'source'",
+    'trim-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minTrimMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 10) {
+          throw new Error(
+            `--min-rows must be an integer >= 10 (got ${opts.minRows})`,
+          );
+        }
+        const minTrimMean = Number.parseFloat(opts.minTrimMean);
+        if (!Number.isFinite(minTrimMean) || minTrimMean < 0) {
+          throw new Error(
+            `--min-trim-mean must be a finite, non-negative number (got ${opts.minTrimMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'trim-mean-desc',
+          'trim-mean-asc',
+          'mean-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTrimMean10(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minTrimMean,
+          top,
+          sort: opts.sort as
+            | 'trim-mean-desc'
+            | 'trim-mean-asc'
+            | 'mean-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenTrimMean10(report) + '\n');
         }
       } catch (e) {
         die(e);
