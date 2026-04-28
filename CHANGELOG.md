@@ -2,6 +2,106 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.169 — 2026-04-28
+
+### Added
+
+- New subcommand `source-row-token-temporal-skewness`:
+  per-source **Peeters 2004 temporal skewness** (the
+  standardized 3rd central moment of the time-row index
+  around the temporal centroid) of the per-row
+  `total_tokens` series. For a non-negative-amplitude
+  series `a[n]`, `n = 0..N-1`,
+
+      tc_index = sum_n n * a[n] / sum a[n]
+      ts_index = sqrt( sum_n (n - tc_index)^2 * a[n] / sum a[n] )
+      m3       = sum_n (n - tc_index)^3 * a[n] / sum a[n]
+      ts3      = m3 / ts_index^3                  (unitless)
+
+  `ts3 > 0` = **front-loaded** (early peak with a long
+  trailing tail); `ts3 < 0` = **back-loaded** (long quiet
+  build-up with a late peak); `ts3 ~ 0` = **symmetric
+  envelope**. The lens is the *time-domain dual of
+  spectral-skewness* (3rd freq-domain moment) and the
+  *sign-aware completion of temporal-spread* (which is
+  the sign-blind 2nd moment): two sources can share
+  identical `tc` and identical `ts` and still differ in
+  `ts3`.
+
+  **Genuine orthogonality** — `ts3` is *not* recoverable
+  from any combination of existing lenses:
+    - vs. `temporal-centroid` (1st moment): centroid asks
+      *where*, skewness asks *which side leans*.
+    - vs. `temporal-spread` (sign-blind 2nd moment):
+      same `(tc, ts)` can yield opposite-sign `ts3`.
+    - vs. amplitude-shape `skewness`: that lens is
+      order-invariant (permuting rows preserves it).
+      Temporal-skewness is order-sensitive: mirroring
+      the rows flips the sign of `ts3`. Test
+      `temporal-skewness: orthogonal to amplitude-shape
+      skewness` pins this.
+    - vs. all `spectral-*` lenses: frequency-domain.
+    - vs. fractal / Hjorth lenses: position-invariant
+      in time; `ts3` is not.
+
+  Sort modes: `ts3-desc` (default; most front-loaded
+  first), `ts3-asc` (most back-loaded first),
+  `abs-ts3-desc` (most asymmetric in either direction
+  first), `abs-ts3-asc` (most symmetric first), `rows`,
+  `source`. All ties break on `source` asc.
+
+  Edge cases handled:
+    - Single-row spike (mass at exactly one row,
+      `ts_index = 0`, `ts3` undefined): surfaces under
+      the dedicated `droppedZeroVariance` counter — kept
+      *separate* from `droppedZeroSeries` (all-zero
+      amplitude) so operators can tell "no mass at all"
+      apart from "mass at exactly one row".
+    - `minRows >= 3` enforced (a 2-row series can never
+      be skewed; the 3rd moment is not meaningfully
+      defined).
+
+  Citation: Peeters, G. (2004), "A large set of audio
+  features for sound description (similarity and
+  classification) in the CUIDADO project", IRCAM
+  Tech. Rep., §6.1.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (sources:
+  6, rows: 1,757; 0 dropped; one source name redacted to
+  `vscode-XXX`):
+
+      source       rows  totalAmp  tcIndex  tsIndex  ts3
+      ----------- ----  --------  -------  -------  -------
+      hermes       209   1.725e+8  83.22    58.07     0.6094
+      openclaw     479   1.922e+9  193.13   127.81    0.3134
+      opencode     373   3.951e+9  176.80   116.95    0.1197
+      vscode-XXX   333   1.886e+6  217.71   101.24   -0.2873
+      codex         64   8.096e+8  38.71    21.61    -0.5396
+      claude-code  299   3.442e+9  214.28   72.56    -1.1773
+
+  Operator reading: `ts3-desc` cleanly partitions the
+  cohort into a **front-loaded half** (`hermes`,
+  `openclaw`, `opencode`; ts3 > 0) and a **back-loaded
+  half** (`vscode-XXX`, `codex`, `claude-code`; ts3 < 0).
+  `hermes` (ts3 = +0.6094) is the most front-loaded:
+  early-history burst with a long thin tail dragging
+  toward the present. `claude-code` (ts3 = -1.1773) is
+  the most back-loaded: a long quiet stretch followed
+  by a sharp recent surge — and importantly, this is
+  the *largest-magnitude* asymmetry in the cohort.
+  Cross-checking against the (tc, ts) pair from 0.6.167
+  / 0.6.168: `claude-code` had the *highest* tc
+  (back-loaded centroid) *and* the *narrowest* spread
+  (sharply concentrated mass), and now also the *most
+  negative* ts3 (heavily one-sided toward the late
+  peak) — a fully-consistent "explosive recent burst"
+  signature that no individual moment alone surfaces.
+  Conversely `opencode` (ts3 = +0.1197) is the most
+  symmetric source, consistent with its near-uniform
+  spread (ts ~ 0.3144) — the 1st, 2nd, and 3rd time-
+  domain moments together describe an envelope that is
+  centered, wide, and balanced.
+
 ## 0.6.168 — 2026-04-28
 
 ### Added
