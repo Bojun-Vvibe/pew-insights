@@ -10223,6 +10223,10 @@ import type {
   SourceRowTokenTemporalSkewnessReport,
   SourceRowTokenTemporalSkewnessRow,
 } from './sourcerowtokentemporalskewness.js';
+import type {
+  SourceRowTokenTemporalKurtosisReport,
+  SourceRowTokenTemporalKurtosisRow,
+} from './sourcerowtokentemporalkurtosis.js';
 
 export function renderSourceRowTokenSpectralEntropy(
   r: SourceRowTokenSpectralEntropyReport,
@@ -10677,6 +10681,64 @@ export function renderSourceRowTokenTemporalSkewness(
       s.tcIndex.toFixed(2),
       s.tsIndex.toFixed(2),
       s.ts3.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenTemporalKurtosis(
+  r: SourceRowTokenTemporalKurtosisReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-temporal-kurtosis'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedZeroSeries)} zero-series, ${formatNumber(r.droppedZeroVariance)} zero-variance (single-row spike), ${formatNumber(r.droppedDegenerate)} degenerate (non-finite), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Peeters 2004 temporal kurtosis: standardized 4th central moment of the time-row index around the temporal centroid of the per-row total_tokens series. ts4 = (sum_n (n - tc_index)^4 * a[n] / sum a[n]) / ts_index^4. Bounded below by 1 (symmetric two-point bimodal). ~1.8 = uniform; ~3 = Gaussian-like (mesokurtic); >> 3 = sharply peaked / impulsive burst. Order-sensitive on rows; not time-shift invariant. Genuinely orthogonal to temporal-centroid (1st vs 4th time-domain moment), to temporal-spread (sign-blind 2nd moment vs shape descriptor that divides spread out), to temporal-skewness (sign-aware odd vs sign-blind even moment; mirroring flips ts3 but leaves ts4 unchanged), to amplitude-shape kurtosis (order-invariant — permuting rows leaves it unchanged), to all spectral-* lenses (frequency-domain), and to fractal/scaling/Hjorth lenses (position-invariant in time). Peeters, G. (2004), CUIDADO IRCAM Tech. Rep., §6.1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token temporal kurtosis (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'totalAmp', 'tcIndex', 'tsIndex', 'ts4'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenTemporalKurtosisRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.totalAmp.toExponential(3),
+      s.tcIndex.toFixed(2),
+      s.tsIndex.toFixed(2),
+      s.ts4.toFixed(4),
     ],
   );
   lines.push(renderTableLocal(headers, rows));

@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.171 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-kurtosis`: per-source
+  Peeters 2004 **temporal kurtosis** (4th standardized
+  time-domain moment) of the per-row `total_tokens`
+  series. Headline: **for each source, how peaked vs.
+  flat is the amplitude envelope around its temporal
+  centroid along its row history?**
+
+  For non-negative `a[n] = total_tokens[n]`, n = 0..N-1,
+  with N >= minRows and at least one nonzero a[n]:
+
+      tc_index = sum_n n * a[n] / sum a[n]
+      ts_index = sqrt(sum_n (n - tc_index)^2 * a[n] / sum a[n])
+      m4       = sum_n (n - tc_index)^4 * a[n] / sum a[n]
+      ts4      = m4 / ts_index^4              (unitless, >= 1)
+
+  Reference values: `ts4 = 1` (lower bound; symmetric
+  two-point bimodal at row 0 and row N-1), `ts4 ~ 1.8`
+  (uniform envelope; discrete uniform on [0, N-1]
+  converges to 9/5 in the continuous limit), `ts4 ~ 3`
+  (Gaussian-like / mesokurtic), `ts4 >> 3` (sharply
+  peaked / impulsive single-burst envelope).
+
+  Time-domain dual of `source-row-token-spectral-kurtosis`
+  (4th freq-domain moment); completes the Peeters 2004
+  §6.1 quartet (centroid + spread + skewness + kurtosis)
+  in the time-row-index domain.
+
+  Genuinely orthogonal to every existing lens:
+  - vs. **temporal-centroid** (1st time-domain moment):
+    centroid asks *where* the mass sits; kurtosis asks
+    *how peaked* around that position.
+  - vs. **temporal-spread** (2nd time-domain moment):
+    spread is *how wide*; kurtosis is *what shape* once
+    standardized by width. ts4 is invariant to uniform
+    amplitude rescaling — it picks up only the shape.
+  - vs. **temporal-skewness** (3rd time-domain moment):
+    sign-aware odd vs sign-blind even moment. Mirroring
+    rows flips ts3 but leaves ts4 unchanged.
+  - vs. **amplitude-shape kurtosis**: that lens is the
+    standardized 4th moment of `{a[n]}` as a multiset,
+    *order-invariant* under any permutation. ts4 is
+    order-sensitive — it depends on the row index. Two
+    sources with identical amplitude histograms but
+    different time orderings (e.g., one bimodal in time
+    vs. one unimodal in time) will have identical
+    amplitude-kurtosis but different ts4.
+  - vs. **all spectral-\*** lenses: frequency-domain;
+    none describe time-domain peakedness.
+  - vs. **fractal/scaling/Hjorth**: position-invariant
+    in time / amplitude-scale-invariant; describe self-
+    similarity, not envelope shape around tc.
+
+  CLI:
+      pew-insights source-row-token-temporal-kurtosis \
+        [--since ISO] [--until ISO] [--source ID] \
+        [--min-rows N] [--top N] \
+        [--sort ts4-desc|ts4-asc|rows|source] [--json]
+
+  Defaults: `--min-rows 8` (>=4 enforced; need at least
+  4 rows for a 4th central moment to be meaningfully
+  defined), `--sort ts4-desc` (most peaked first).
+
+  Drops surface as `droppedBelowMinRows`,
+  `droppedZeroSeries` (all-zero series),
+  `droppedZeroVariance` (single-row spike — separate
+  bucket from zero-series, since a single-row spike
+  has nonzero amplitude but undefined kurtosis),
+  `droppedDegenerate` (non-finite computed quantity),
+  `droppedBelowTopCap`, plus the standard validity
+  buckets (`droppedInvalidHourStart`,
+  `droppedInvalidTokens`, `droppedNegativeTokens`,
+  `droppedSourceFilter`).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (sources: 6, kept: 6, rows: 1,763; sort ts4-desc):
+
+      source         rows  totalAmp  tcIndex  tsIndex  ts4
+      -------------  ----  --------  -------  -------  ------
+      claude-code    299   3.442e+9  214.28   72.56    3.3919
+      hermes         211   1.731e+8  83.63    58.41    2.2554
+      openclaw       481   1.923e+9  193.26   127.92   1.9347
+      codex          64    8.096e+8  38.71    21.61    1.7180
+      vscode-XXX     333   1.886e+6  217.71   101.24   1.6890
+      opencode       375   3.964e+9  177.46   117.30   1.4319
+
+  Operator reading: `claude-code` is the only source
+  with **mesokurtic-or-better** ts4 (3.39, slightly
+  more peaked than Gaussian) — its 3.4 GT of total
+  amplitude is concentrated in a relatively narrow
+  burst around row 214 of 298 (tcIndex ~ 0.72 of the
+  way through its row history), with tsIndex 72.6
+  rows. `hermes` (ts4 = 2.26) sits between uniform
+  (1.8) and Gaussian (3.0) — moderately concentrated
+  but with heavier tails than a Gaussian envelope
+  would predict. `openclaw` (ts4 = 1.93) is *just
+  above uniform* — its 1.9 GT of mass is spread
+  almost flatly across its 481 rows (tsIndex 127.9 ~
+  half the row span). `codex` (ts4 = 1.72) and the
+  `vscode-XXX` source (ts4 = 1.69) both sit *below*
+  the uniform reference of 1.8, indicating
+  **slightly bimodal** envelopes — mass is biased
+  toward the extremes of their respective row
+  histories more than a flat envelope would be.
+  `opencode` (ts4 = 1.43) is the most *flat / two-
+  sided* of the cohort, well below uniform: of all
+  six sources, its 4.0 GT of amplitude is the most
+  evenly split between early and late row regions
+  with the least concentration around its tc. This
+  axis is **genuinely independent** of the
+  (tc, ts, ts3) triplet from 0.6.167 / 0.6.168 /
+  0.6.169: two sources can share identical centroid,
+  spread, and skewness yet differ in ts4 because the
+  4th moment captures *peakedness vs. flatness* of
+  the envelope, a shape axis the first three
+  moments leave free.
+
 ## 0.6.170 — 2026-04-28
 
 ### Added
