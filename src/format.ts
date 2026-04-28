@@ -11245,6 +11245,68 @@ export function renderSourceRowTokenMidRange(
 }
 
 import type {
+  SourceRowTokenHarmonicMeanReport,
+  SourceRowTokenHarmonicMeanRow,
+} from './sourcerowtokenharmonicmean.js';
+
+export function renderSourceRowTokenHarmonicMean(
+  r: SourceRowTokenHarmonicMeanReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-harmonic-mean'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-harmonic-mean: ${formatNumber(r.minHarmonicMean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedZeroTokens)} zero total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinHarmonicMean)} below min-harmonic-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source harmonic mean of per-row total_tokens: HM = n / sum(1/x_i). Pythagorean lower bound — by AM-GM-HM, HM <= GM <= AM with equality iff constant. Scale-equivariant, NOT translation-equivariant. Dominated by the smallest rows: a single tiny row pulls HM toward zero hard. hmAmGap = HM - mean is reported as a free signal: always <= 0, with magnitude growing as the multiplicative spread of the series grows.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token harmonic mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = ['source', 'rows', 'mean', 'harmonic-mean', 'hm-mean'];
+  const rows: string[][] = r.sources.map(
+    (s: SourceRowTokenHarmonicMeanRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.harmonicMean.toFixed(2),
+      (s.hmAmGap >= 0 ? '+' : '') + s.hmAmGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+import type {
   SourceRowTokenTrimMean25Report,
   SourceRowTokenTrimMean25Row,
 } from './sourcerowtokentrimmean25.js';

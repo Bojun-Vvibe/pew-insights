@@ -114,6 +114,7 @@ import {
   renderSourceRowTokenMidhinge,
   renderSourceRowTokenMidRange,
   renderSourceRowTokenTrimMean25,
+  renderSourceRowTokenHarmonicMean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -322,6 +323,7 @@ import { buildSourceRowTokenTrimean } from './sourcerowtokentrimean.js';
 import { buildSourceRowTokenMidhinge } from './sourcerowtokenmidhinge.js';
 import { buildSourceRowTokenMidRange } from './sourcerowtokenmidrange.js';
 import { buildSourceRowTokenTrimMean25 } from './sourcerowtokentrimmean25.js';
+import { buildSourceRowTokenHarmonicMean } from './sourcerowtokenharmonicmean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15496,6 +15498,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenTrimMean25(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-harmonic-mean')
+  .description(
+    "Per-source harmonic mean of per-row total_tokens. HM = n / sum(1/x_i). The Pythagorean lower bound — by AM-GM-HM, HM <= GM <= AM with equality iff the series is constant. Scale-equivariant but NOT translation-equivariant — the qualitative break from every existing source-row-token-* location lens (mean, median, midhinge, trimean, mid-range, trim-mean-25 are all translation-equivariant; HM is not). Dominated by the SMALLEST rows: a single tiny row pulls HM toward zero hard, the opposite of the arithmetic mean which is dominated by the LARGEST rows. Distinct from every existing lens: source-row-token-mid-range / midhinge / trimean / trim-mean-25 are L-estimators (linear combinations of order statistics), translation- AND scale-equivariant; HM is non-linear in every row's value. source-row-token-mad reports a SPREAD; source-row-token-coefficient-of-quartile-deviation, source-row-token-bowley-skewness, source-row-token-iqr-ratio measure SHAPE from q1/q3; source-row-token-coefficient-of-variation, source-row-token-burstiness-coefficient, source-row-token-skewness, source-row-token-kurtosis, source-row-token-gini are MOMENT- or distribution-shape statistics; source-output-tokens-per-row-percentiles exposes raw P50/P75/P90/P99 of output_tokens (different field). hmAmGap = HM - mean is reported as a free signal: ALWAYS <= 0 by AM-GM-HM, with magnitude growing as the multiplicative spread of the series grows. Free byproduct mean (arithmetic mean of all kept rows) is also reported as the natural reference and the AM-GM-HM upper bound on HM.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n strictly positive kept rows; must be an integer >= 1 (HM is well-defined for any single strictly positive row) (default 1)',
+    '1',
+  )
+  .option(
+    '--min-harmonic-mean <f>',
+    'drop sources whose harmonic mean is strictly below f; cohort selector for "this source actually carries non-trivial small-row-weighted token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'harmonic-mean-desc' (default) | 'harmonic-mean-asc' | 'mean-desc' | 'gap-desc' (|hmAmGap| desc — multiplicative spread first) | 'rows' | 'source'",
+    'harmonic-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minHarmonicMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minHarmonicMean = Number.parseFloat(opts.minHarmonicMean);
+        if (!Number.isFinite(minHarmonicMean) || minHarmonicMean < 0) {
+          throw new Error(
+            `--min-harmonic-mean must be a finite, non-negative number (got ${opts.minHarmonicMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'harmonic-mean-desc',
+          'harmonic-mean-asc',
+          'mean-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenHarmonicMean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minHarmonicMean,
+          top,
+          sort: opts.sort as
+            | 'harmonic-mean-desc'
+            | 'harmonic-mean-asc'
+            | 'mean-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenHarmonicMean(report) + '\n');
         }
       } catch (e) {
         die(e);
