@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.178 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-flatness` invariant
+  hardening: four new randomized property tests pinning
+  the defining mathematical invariants of the lens, all
+  as cross-lens orthogonality predicates against
+  existing lenses in the suite.
+
+  1. **Order invariance under random permutations**: for
+     any non-negative envelope, tf is unchanged under
+     any permutation of the row order. This is the
+     defining orthogonality predicate against ALL
+     temporal-* moment lenses (centroid / spread /
+     skewness / kurtosis), which are amplitude-weighted
+     moments of the row INDEX and are order-sensitive.
+     The new test runs 8 random trials, each with a
+     distinct envelope and a Fisher-Yates-shuffled copy,
+     and asserts:
+       - `|tf_orig - tf_perm| < 1e-12`
+       - `|GM_orig - GM_perm| < 1e-9`
+       - `|AM_orig - AM_perm| < 1e-9`
+
+  2. **Amplitude-scale invariance** (`a[n] -> c * a[n]`
+     for any `c > 0`): for any positive scaling of the
+     amplitude sequence, tf is unchanged. Both G and A
+     scale by exactly c, leaving the ratio identical.
+     The new test runs 8 random trials, each with a
+     random positive scale c sampled from
+     `[0.001, 1000]`, and asserts:
+       - `|tf_orig - tf_scaled| < 1e-9`
+       - `AM_scaled / AM_orig == c` (exact)
+       - `GM_scaled / GM_orig == c` (exact)
+     This pins the orthogonality vs amplitude-magnitude
+     lenses (raw token totals, mean, max, totalAmp
+     itself): tf picks up *only* the multiset shape,
+     never its overall scale.
+
+  3. **Sharp AM-GM equality condition**: tf == 1 iff
+     all positive a[n] are equal. We pin both
+     directions:
+       - forward: 4 constant trials at random magnitudes
+         and random N values, each asserting tf within
+         `1e-12` of 1;
+       - backward: 4 non-constant positive trials, each
+         asserting tf strictly < 1.
+     This pins the defining AM-GM upper bound from
+     real analysis (Cauchy 1821).
+
+  4. **Constant-series sample-size invariance**: for any
+     constant series of value `c` at any sample size N,
+     tf == 1, AM == c, GM == c. Pinned for
+     N in {4, 8, 16, 50, 100} with c = 42.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  unchanged from 0.6.177 (these are pure invariant
+  pins; no behavior change for operators); test count
+  3557 -> 3561 (+4).
+
+  SHA list (this push range, c603b63..HEAD):
+    c603b63  feat: dist-flat-asc/-desc sort modes (0.6.177)
+    HEAD     feat: invariant hardening (0.6.178)
+
 ## 0.6.177 — 2026-04-28
 
 ### Added

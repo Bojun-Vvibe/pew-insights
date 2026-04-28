@@ -640,3 +640,139 @@ test('temporal-flatness: dist-flat-asc / dist-flat-desc are exact reverses on di
     desc.sources.map((s) => s.source).reverse(),
   );
 });
+
+// ---- Cross-lens orthogonality invariant pins (0.6.178) ----
+
+test('temporal-flatness: invariant pin — order-invariance under random permutations (orthogonality vs temporal-moment lenses)', () => {
+  // The defining cross-lens orthogonality predicate against ALL temporal-*
+  // moment lenses (centroid/spread/skewness/kurtosis): tf depends only on
+  // the multiset of amplitudes, NOT on row order. The temporal-moment lenses
+  // are amplitude-weighted moments of the row INDEX and are order-sensitive;
+  // tf is index-blind.
+  let s = 271828;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (let trial = 0; trial < 8; trial++) {
+    const N = 8 + Math.floor(rand() * 30);
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.floor(rand() * 1000) + 1);
+    // Fisher-Yates shuffle
+    const shuffled = [...v];
+    for (let i = N - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+    }
+    const r = buildSourceRowTokenTemporalFlatness(
+      [...series(v, `o${trial}`), ...series(shuffled, `p${trial}`)],
+      { generatedAt: GEN, minRows: 4 },
+    );
+    const orig = r.sources.find((x) => x.source === `o${trial}`)!;
+    const perm = r.sources.find((x) => x.source === `p${trial}`)!;
+    assert.ok(
+      Math.abs(orig.tf - perm.tf) < 1e-12,
+      `trial ${trial}: order-invariance broken — orig=${orig.tf} permuted=${perm.tf}`,
+    );
+    // GM and AM individually must also be permutation-invariant.
+    assert.ok(
+      Math.abs(orig.geometricMean - perm.geometricMean) < 1e-9,
+      `trial ${trial}: GM not permutation-invariant`,
+    );
+    assert.ok(
+      Math.abs(orig.arithmeticMean - perm.arithmeticMean) < 1e-9,
+      `trial ${trial}: AM not permutation-invariant`,
+    );
+  }
+});
+
+test('temporal-flatness: invariant pin — randomized AM-GM scale invariance: a[n] -> c*a[n] for c > 0 leaves tf unchanged (orthogonality vs amplitude-magnitude lenses)', () => {
+  // Critical orthogonality predicate vs amplitude-magnitude lenses (raw
+  // token totals, mean, max, totalAmp itself): tf measures only the *shape*
+  // of the multiset, not its overall scale. Both G and A scale by c, and
+  // the ratio G/A divides scale out exactly.
+  let s = 161803;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (let trial = 0; trial < 8; trial++) {
+    const N = 8 + Math.floor(rand() * 25);
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.floor(rand() * 500) + 1);
+    const c = 0.001 + rand() * 1000;
+    const scaled = v.map((x) => x * c);
+    const r = buildSourceRowTokenTemporalFlatness(
+      [...series(v, `o${trial}`), ...series(scaled, `s${trial}`)],
+      { generatedAt: GEN, minRows: 4 },
+    );
+    const orig = r.sources.find((x) => x.source === `o${trial}`)!;
+    const scl = r.sources.find((x) => x.source === `s${trial}`)!;
+    if (!orig || !scl) continue;
+    assert.ok(
+      Math.abs(orig.tf - scl.tf) < 1e-9,
+      `trial ${trial}: scale invariance broken (c=${c}) — orig=${orig.tf} scaled=${scl.tf}`,
+    );
+    // The scale itself: AM and GM both scale by exactly c.
+    assert.ok(
+      Math.abs(scl.arithmeticMean / orig.arithmeticMean - c) < 1e-6 * c,
+      `trial ${trial}: AM did not scale by c`,
+    );
+    assert.ok(
+      Math.abs(scl.geometricMean / orig.geometricMean - c) < 1e-6 * c,
+      `trial ${trial}: GM did not scale by c`,
+    );
+  }
+});
+
+test('temporal-flatness: invariant pin — equality condition: tf == 1 iff all positive a[n] are equal (sharp AM-GM equality)', () => {
+  // AM-GM equality holds iff all values are equal. We pin both directions:
+  //   forward:  constant series -> tf == 1
+  //   backward: any non-constant positive series -> tf < 1 strictly
+  let s = 1234567;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+
+  // 4 constant trials at random magnitudes
+  for (let k = 0; k < 4; k++) {
+    const c = Math.floor(rand() * 1000) + 1;
+    const N = 8 + Math.floor(rand() * 20);
+    const r = buildSourceRowTokenTemporalFlatness(
+      series(new Array(N).fill(c), `c${k}`),
+      { generatedAt: GEN, minRows: 4 },
+    );
+    assert.ok(
+      Math.abs(r.sources[0]!.tf - 1) < 1e-12,
+      `constant trial ${k} (val=${c}, N=${N}): expected tf ~= 1, got ${r.sources[0]!.tf}`,
+    );
+  }
+
+  // 4 non-constant positive trials -> must be strictly < 1
+  for (let k = 0; k < 4; k++) {
+    const N = 8 + Math.floor(rand() * 20);
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.floor(rand() * 1000) + 1);
+    // Force at least two distinct values
+    if (v.every((x) => x === v[0])) v[0] = v[0]! + 1;
+    const r = buildSourceRowTokenTemporalFlatness(
+      series(v, `nc${k}`),
+      { generatedAt: GEN, minRows: 4 },
+    );
+    assert.ok(
+      r.sources[0]!.tf < 1,
+      `non-constant trial ${k}: expected tf < 1 strictly, got ${r.sources[0]!.tf}`,
+    );
+  }
+});
+
+test('temporal-flatness: invariant pin — combining a constant series with itself (concatenated copies) leaves tf == 1', () => {
+  // Operationally: the multiset {c, c, c, ..., c} (k copies of value c)
+  // satisfies AM = GM = c for any k >= 1, so tf == 1 regardless of how
+  // many copies are concatenated. Pins that the AM-GM equality holds at
+  // any sample size.
+  for (const N of [4, 8, 16, 50, 100]) {
+    const r = buildSourceRowTokenTemporalFlatness(
+      series(new Array(N).fill(42), `n${N}`),
+      { generatedAt: GEN, minRows: 4 },
+    );
+    assert.ok(
+      Math.abs(r.sources[0]!.tf - 1) < 1e-12,
+      `N=${N}: expected tf ~= 1 for any-size constant series, got ${r.sources[0]!.tf}`,
+    );
+    assert.ok(Math.abs(r.sources[0]!.arithmeticMean - 42) < 1e-9);
+    assert.ok(Math.abs(r.sources[0]!.geometricMean - 42) < 1e-9);
+  }
+});
