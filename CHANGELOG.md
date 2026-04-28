@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.174 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-kurtosis` invariant
+  hardening: two new randomized property tests
+  pinning the two defining mathematical invariants
+  of the lens, both as cross-lens orthogonality
+  predicates against existing lenses in the suite.
+
+  1. **Reflection invariance** (n -> N-1-n): for any
+     non-negative envelope, ts4 is unchanged under
+     reflection of the row index, while ts3 (the 3rd
+     moment) flips sign. This is the *defining*
+     even-moment property that makes ts4 sign-blind
+     and ts3 sign-aware. The new test runs 8 random
+     trials, each with a distinct asymmetric envelope,
+     and asserts:
+       - `|ts4_forward - ts4_reflected| < 1e-9`
+       - `tc_forward + tc_reflected ~= N - 1`
+       - `|ts_forward - ts_reflected| < 1e-9`
+     This pins the orthogonality between ts4 and ts3
+     in the most direct way possible: the very
+     transformation that flips ts3's sign leaves ts4
+     bit-identical.
+
+  2. **Amplitude-scale invariance** (a[n] -> c * a[n]
+     for any c > 0): for any positive scaling of the
+     amplitude sequence, ts4 is unchanged. Both the
+     numerator m4 and the denominator ts^4 scale by
+     c^4 / c^4, leaving the ratio identical. The new
+     test runs 8 random trials, each with a random
+     positive scale c sampled from [0.001, 1000], and
+     asserts `|ts4_orig - ts4_scaled| < 1e-3` (small
+     tolerance for integer-rounding at large c). This
+     pins the orthogonality vs amplitude-magnitude
+     lenses (raw token totals, mean, max, totalAmp
+     itself): ts4 picks up *only* the envelope shape,
+     never its overall scale. Shape and scale are
+     independent axes.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  unchanged from 0.6.173 (these are pure invariant
+  pins; no behavior change for operators); test count
+  3516 -> 3518.
+
 ## 0.6.173 — 2026-04-28
 
 ### Added

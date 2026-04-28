@@ -713,3 +713,67 @@ test('temporal-kurtosis: invalid sort still rejected (covers new modes)', () => 
     buildSourceRowTokenTemporalKurtosis([], { sort: s });
   }
 });
+
+// ---- Cross-lens orthogonality invariants (0.6.174) ----
+
+test('temporal-kurtosis: invariant pin — ts4 is invariant under reflection (n -> N-1-n) for symmetric envelopes around tc, AND for any envelope (even-moment property)', () => {
+  // Build an arbitrary asymmetric envelope. Reflect it. ts4 must match.
+  // This is the *defining* even-moment invariance: under index reflection
+  // n -> N-1-n, tc maps to N-1-tc, and (n - tc) maps to -(n_reflected -
+  // tc_reflected). Even powers of (n - tc) collapse the sign, so m4 is
+  // unchanged under reflection. ts3 (3rd moment) flips sign; ts4 does not.
+  let s = 99991;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (let trial = 0; trial < 8; trial++) {
+    const N = 8 + Math.floor(rand() * 30);
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.floor(rand() * 1000) + 1);
+    const reflected = [...v].reverse();
+    const r = buildSourceRowTokenTemporalKurtosis(
+      [...series(v, `f${trial}`), ...series(reflected, `r${trial}`)],
+      { generatedAt: GEN, minRows: 4 },
+    );
+    const fwd = r.sources.find((x) => x.source === `f${trial}`)!;
+    const rev = r.sources.find((x) => x.source === `r${trial}`)!;
+    assert.ok(
+      Math.abs(fwd.ts4 - rev.ts4) < 1e-9,
+      `trial ${trial}: reflection invariance broken: fwd=${fwd.ts4} rev=${rev.ts4}`,
+    );
+    // tc and ts also have predictable behavior under reflection:
+    // tc_reflected = (N - 1) - tc_forward; ts is unchanged.
+    assert.ok(
+      Math.abs((N - 1) - fwd.tcIndex - rev.tcIndex) < 1e-9,
+      `trial ${trial}: tc reflection identity broken`,
+    );
+    assert.ok(
+      Math.abs(fwd.tsIndex - rev.tsIndex) < 1e-9,
+      `trial ${trial}: ts reflection identity broken`,
+    );
+  }
+});
+
+test('temporal-kurtosis: invariant pin — ts4 is invariant under uniform amplitude rescaling (a[n] -> c * a[n] for c > 0)', () => {
+  // Critical orthogonality predicate vs amplitude-magnitude lenses: ts4
+  // measures only the *shape* of the envelope, not its overall scale.
+  let s = 424242;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (let trial = 0; trial < 8; trial++) {
+    const N = 8 + Math.floor(rand() * 25);
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.floor(rand() * 500) + 1);
+    const c = 0.001 + rand() * 1000; // any positive scale
+    const scaled = v.map((x) => Math.round(x * c));
+    const r = buildSourceRowTokenTemporalKurtosis(
+      [...series(v, `o${trial}`), ...series(scaled, `s${trial}`)],
+      { generatedAt: GEN, minRows: 4 },
+    );
+    const orig = r.sources.find((x) => x.source === `o${trial}`)!;
+    const scl = r.sources.find((x) => x.source === `s${trial}`)!;
+    if (!orig || !scl) continue; // skip degenerate trials
+    // Allow small tolerance for rounding to integer at large c
+    assert.ok(
+      Math.abs(orig.ts4 - scl.ts4) < 1e-3,
+      `trial ${trial}: amplitude-scale invariance broken (c=${c}): orig=${orig.ts4} scaled=${scl.ts4}`,
+    );
+  }
+});
