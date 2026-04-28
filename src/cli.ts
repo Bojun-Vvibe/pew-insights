@@ -14494,7 +14494,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'ts4-desc' (default; most peaked / impulsive first) | 'ts4-asc' (most flat / bimodal first) | 'rows' | 'source'",
+    "sort key: 'ts4-desc' (default; most peaked / impulsive first) | 'ts4-asc' (most flat / bimodal first) | 'dist-uniform-asc' (closest to uniform reference 9/5 first; most envelope-shape-neutral) | 'dist-uniform-desc' (farthest from uniform reference first; most extreme shape — peaked OR bimodal) | 'rows' | 'source'",
     'ts4-desc',
   )
   .option(
@@ -14538,7 +14538,7 @@ program
           }
           top = t;
         }
-        const validSorts = ['ts4-desc', 'ts4-asc', 'rows', 'source'];
+        const validSorts = ['ts4-desc', 'ts4-asc', 'dist-uniform-asc', 'dist-uniform-desc', 'rows', 'source'];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
@@ -14567,7 +14567,7 @@ program
           source: opts.source ?? null,
           minRows,
           top,
-          sort: opts.sort as 'ts4-desc' | 'ts4-asc' | 'rows' | 'source',
+          sort: opts.sort as 'ts4-desc' | 'ts4-asc' | 'dist-uniform-asc' | 'dist-uniform-desc' | 'rows' | 'source',
           minTs4,
           maxTs4,
         });

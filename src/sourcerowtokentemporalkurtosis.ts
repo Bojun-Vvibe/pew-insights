@@ -189,6 +189,8 @@ import type { QueueLine } from './types.js';
 export type SourceRowTokenTemporalKurtosisSort =
   | 'ts4-desc'
   | 'ts4-asc'
+  | 'dist-uniform-asc'
+  | 'dist-uniform-desc'
   | 'rows'
   | 'source';
 
@@ -283,9 +285,21 @@ export interface SourceRowTokenTemporalKurtosisReport {
 const VALID_SORTS = [
   'ts4-desc',
   'ts4-asc',
+  'dist-uniform-asc',
+  'dist-uniform-desc',
   'rows',
   'source',
 ] as const;
+
+/**
+ * Reference value for the discrete-uniform envelope's
+ * temporal kurtosis. The continuous uniform on [0, 1]
+ * has kurtosis exactly 9/5 = 1.8 (Pearson convention,
+ * not excess); the discrete uniform on {0, ..., N-1}
+ * converges to this in the large-N limit. We pin it as
+ * the reference for the `dist-uniform-*` sort modes.
+ */
+const UNIFORM_TS4 = 9 / 5;
 
 export function buildSourceRowTokenTemporalKurtosis(
   queue: QueueLine[],
@@ -473,6 +487,10 @@ export function buildSourceRowTokenTemporalKurtosis(
       primary = b.ts4 - a.ts4;
     } else if (sort === 'ts4-asc') {
       primary = a.ts4 - b.ts4;
+    } else if (sort === 'dist-uniform-asc') {
+      primary = Math.abs(a.ts4 - UNIFORM_TS4) - Math.abs(b.ts4 - UNIFORM_TS4);
+    } else if (sort === 'dist-uniform-desc') {
+      primary = Math.abs(b.ts4 - UNIFORM_TS4) - Math.abs(a.ts4 - UNIFORM_TS4);
     } else if (sort === 'rows') {
       primary = b.rowsKept - a.rowsKept;
     } else {

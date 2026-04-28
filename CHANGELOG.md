@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.173 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-kurtosis` refinement:
+  - Two new sort modes: `dist-uniform-asc` and
+    `dist-uniform-desc`. Both sort by `|ts4 - 9/5|`
+    (the discrete-uniform reference value pinned as a
+    module-level constant `UNIFORM_TS4`):
+      - `dist-uniform-asc`: closest to uniform first.
+        Surfaces the most **envelope-shape-neutral**
+        sources — those whose amplitude envelope is
+        neither sharply peaked nor strongly bimodal,
+        but sits near the discrete-uniform reference.
+      - `dist-uniform-desc`: farthest from uniform first.
+        Surfaces the most **shape-extreme** sources in
+        either direction — combines peaked (ts4 large)
+        and bimodal (ts4 ~ 1) into a single
+        "interesting envelope" axis. Note this is
+        genuinely *different* from `ts4-desc`, which
+        only surfaces peaked sources and pushes
+        bimodal ones to the bottom.
+
+  Tiebreak across both new modes is `source` asc, same
+  as the rest of the suite.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--sort dist-uniform-asc` (sources: 6, kept: 6,
+  rows: 1,763):
+
+      source       rows  totalAmp  tcIndex  tsIndex  ts4
+      -----------  ----  --------  -------  -------  ------
+      codex        64    8.096e+8  38.71    21.61    1.7180
+      vscode-XXX   333   1.886e+6  217.71   101.24   1.6890
+      openclaw     481   1.923e+9  193.33   127.98   1.9360
+      opencode     375   3.969e+9  177.69   117.42   1.4325
+      hermes       211   1.731e+8  83.63    58.41    2.2554
+      claude-code  299   3.442e+9  214.28   72.56    3.3919
+
+  Operator reading: `dist-uniform-asc` immediately
+  reveals that `codex` (|ts4 - 1.8| = 0.082) and the
+  `vscode-XXX` source (|ts4 - 1.8| = 0.111) sit closest
+  to the discrete-uniform reference of any source in
+  the cohort — their amplitude envelopes are the most
+  flat / shape-neutral. `openclaw` (|ts4 - 1.8| = 0.136)
+  is third closest, only barely above uniform. The
+  ordering then flips: `opencode` (|ts4 - 1.8| = 0.367)
+  is farther *below* uniform (most bimodal), `hermes`
+  (|ts4 - 1.8| = 0.455) is farther above (heavier
+  central concentration), and `claude-code`
+  (|ts4 - 1.8| = 1.592) is the most shape-extreme of
+  the cohort — its envelope is dramatically more
+  peaked than uniform. This sort axis is **genuinely
+  orthogonal to `ts4-desc` / `ts4-asc`**: the latter
+  two answer "which direction along the peakedness
+  axis?", while `dist-uniform-*` answers "how far
+  from envelope-shape neutrality, in either
+  direction?". Two sources at ts4 = 1.0 (extreme
+  bimodal) and ts4 = 2.6 (moderately peaked) tie
+  exactly under `dist-uniform-*` (both at distance
+  0.8), but sit at opposite ends of `ts4-desc`. The
+  pair `(ts4, dist-uniform)` together gives operators
+  both the *direction* and the *magnitude* of envelope-
+  shape deviation from the uniform reference.
+
 ## 0.6.172 — 2026-04-28
 
 ### Added

@@ -645,3 +645,71 @@ test('temporal-kurtosis: --min-ts4 == 1 (lower bound) is the most permissive ts4
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedBelowMinTs4, 0);
 });
+
+// ---- dist-uniform sort modes (0.6.173) ----
+
+test('temporal-kurtosis: sort dist-uniform-asc puts envelope-shape-neutral source first', () => {
+  // Three sources: peaked (ts4 large), uniform-ish (ts4 ~ 1.8), bimodal (ts4 ~ 1)
+  const peaked = new Array(15).fill(1);
+  peaked[7] = 5000;
+  const uniform = new Array(15).fill(50);
+  const bimodal = new Array(15).fill(0);
+  bimodal[0] = 100; bimodal[14] = 100;
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [
+      ...series(peaked, 'pk'),
+      ...series(uniform, 'un'),
+      ...series(bimodal, 'bi'),
+    ],
+    { generatedAt: GEN, sort: 'dist-uniform-asc' },
+  );
+  // 'un' is closest to 1.8; should sort first.
+  assert.equal(r.sources[0]!.source, 'un');
+});
+
+test('temporal-kurtosis: sort dist-uniform-desc puts most extreme envelope (peaked OR bimodal) first', () => {
+  const peaked = new Array(15).fill(1);
+  peaked[7] = 5000;
+  const uniform = new Array(15).fill(50);
+  const bimodal = new Array(15).fill(0);
+  bimodal[0] = 100; bimodal[14] = 100;
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [
+      ...series(peaked, 'pk'),
+      ...series(uniform, 'un'),
+      ...series(bimodal, 'bi'),
+    ],
+    { generatedAt: GEN, sort: 'dist-uniform-desc' },
+  );
+  // 'un' should be last (closest to 1.8); peaked first (ts4 ~ 12+, dist ~10) over bimodal (ts4 ~ 1, dist ~ 0.8)
+  assert.equal(r.sources[2]!.source, 'un');
+  assert.equal(r.sources[0]!.source, 'pk');
+});
+
+test('temporal-kurtosis: dist-uniform sort modes — symmetric envelopes equidistant from 1.8 tiebreak by source asc', () => {
+  // Construct two envelopes whose ts4 sit symmetrically around 1.8.
+  // Easier path: two identical envelopes with different source names tie everywhere
+  // -> tiebreak source asc.
+  const v = new Array(15).fill(50);
+  const r = buildSourceRowTokenTemporalKurtosis(
+    [...series(v, 'zz'), ...series(v, 'aa'), ...series(v, 'mm')],
+    { generatedAt: GEN, sort: 'dist-uniform-asc' },
+  );
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['aa', 'mm', 'zz'],
+  );
+});
+
+test('temporal-kurtosis: invalid sort still rejected (covers new modes)', () => {
+  assert.throws(
+    () => buildSourceRowTokenTemporalKurtosis([], { sort: 'dist-uniform-bogus' as any }),
+    /sort must be one of/,
+  );
+  // Confirm all six valid sort modes are accepted (no throw).
+  for (const s of [
+    'ts4-desc', 'ts4-asc', 'dist-uniform-asc', 'dist-uniform-desc', 'rows', 'source',
+  ] as const) {
+    buildSourceRowTokenTemporalKurtosis([], { sort: s });
+  }
+});
