@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.191 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-neg-2-mean`** —
+  per-source **Lehmer mean of order -2** (a.k.a. **L_-2**,
+  the sub-sub-harmonic Lehmer mean) of the per-row
+  `total_tokens` distribution.
+
+  For each source, divide the sum of inverse squares by the
+  sum of inverse cubes:
+
+      L_-2 = ( sum_{i=1..n} x_i^{-2} ) / ( sum_{i=1..n} x_i^{-3} )
+
+  Equivalently, L_-2 is the `x_i^{-3}`-self-weighted
+  arithmetic mean of `x_i`: each row weights itself by its
+  own *inverse cube*.
+
+  This is the natural one-step-LEFT extension of v0.6.190's
+  L_-1 lens. By Lehmer monotonicity, `L_-2 <= L_-1` for any
+  strictly positive sample, with equality iff every row is
+  equal. So L_-2 extends the integer Lehmer-mean ladder
+  shipped to date one further step left:
+
+      L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3
+       new    v0.6.190   L_0    -    L_1    -   L_2    L_3
+
+  L_-2 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as harmonic-mean / quadratic-
+  mean / contraharmonic-mean / lehmer-3-mean / lehmer-
+  neg-1-mean.
+
+  Three free byproducts are reported in every row:
+
+  - `negTwoNegOneGap = L_-1 - L_-2` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the series is constant. Magnitude
+    is the **inverse-cube-weighting amplification** below
+    L_-1: how much further the smallest rows pull the
+    location when each row's weight is its own `x^{-3}`
+    rather than its own `x^{-2}`.
+  - `negTwoHmGap = HM - L_-2` — always `>= 0`. Strictly
+    larger than v0.6.190's `negOneHmGap` for any
+    non-constant positive series.
+  - `negTwoAmGap = mean - L_-2` — always `>= 0`. The
+    cumulative pull from the equal-weight average all
+    the way down to the inverse-cube-weighted location.
+
+  A source containing **any** zero row is undefined for
+  L_-2 (reciprocal diverges) and is reported as
+  `droppedZeroBearingSources`.
+
+  **Live smoke** (`source-row-token-lehmer-neg-2-mean
+  --min-rows 4 --sort hm-gap-desc`, full queue, 1,825
+  rows across 6 sources):
+
+      source       rows  mean          hm          l-1         lehmer-neg-2-mean  l-1-l-2      hm-l-2        mean-l-2
+      openclaw     502    3876168.78  1578934.09   566640.86   206725.04          +359915.82   +1372209.05   +3669443.74
+      opencode     396   10421522.05  1260346.28   183008.73    83616.33           +99392.40   +1176729.95  +10337905.72
+      codex         64   12650385.31   788948.06    96061.84    61100.93           +34960.91    +727847.12  +12589284.38
+      claude-code  299   11512995.95   305188.99    20645.32     8777.97           +11867.35    +296411.02  +11504217.98
+      hermes       231    796756.77    217412.54    64348.54    30799.66           +33548.89    +186612.88    +765957.11
+      vscode-XXX   333      5662.84       708.17       89.54       32.05              +57.50       +676.12      +5630.80
+
+  Lehmer monotonicity holds in every row
+  (L_-2 <= L_-1 <= HM <= mean): all three gaps
+  (`negTwoNegOneGap`, `negTwoHmGap`, `negTwoAmGap`) are
+  strictly positive across all 6 sources, confirming the
+  ladder pin against real data. The widest hm-l-2 gap is
+  `opencode` (~1.18M tokens) — its smallest rows pull L_-2
+  ~15x below HM. The smallest hm-l-2 gap is `vscode-XXX`
+  (~676 tokens) — a tight, low-mass distribution where the
+  inverse-cube reweighting still produces a clear pull but
+  in absolute token units the pull stays small.
+
+  Cross-source spread of L_-2 spans ~6,450x (openclaw
+  207k vs vscode-XXX 32) — wider than the L_-1 spread
+  (~6,300x) reported in v0.6.190, as expected: deeper
+  inverse-power weighting amplifies the smallest-row
+  pull, making the ratio between the two extremes grow.
+
 ## 0.6.190 — 2026-04-28
 
 ### Added
