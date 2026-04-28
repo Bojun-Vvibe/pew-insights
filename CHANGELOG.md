@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.197 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-8-mean`** —
+  per-source **Lehmer mean of order 8** (a.k.a. **L_8**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of eighth powers by the
+  sum of seventh powers:
+
+      L_8 = ( sum_{i=1..n} x_i^8 ) / ( sum_{i=1..n} x_i^7 )
+
+  Equivalently, L_8 is the `x_i^7`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *seventh
+  power*. This is the natural one-step-RIGHT extension of
+  v0.6.196's L_7 lens. By Lehmer monotonicity, `L_7 <= L_8`
+  for any non-negative sample with at least one strictly
+  positive row, with equality iff every positive row is
+  equal. So L_8 extends the integer Lehmer-mean ladder
+  shipped to date one further step right of L_7:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7 <= L_8
+
+  L_8 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as the rest of the Lehmer
+  family at orders other than 1.
+
+  Three free byproducts are reported in every row:
+
+  - `l8L7Gap = L_8 - L_7` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-seventh-power
+    weighting amplification** above L_7: how much further
+    the largest rows pull the location when each row's
+    weight is its own `x^7` rather than its own `x^6`.
+  - `l8L6Gap = L_8 - L_6` — always `>= 0`. Strictly
+    larger than v0.6.196's `l7L6Gap` for any non-constant
+    positive series.
+  - `l8AmGap = L_8 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-seventh-power-weighted location.
+
+### Live smoke
+
+Ran against `~/.config/pew/queue.jsonl` on 2026-04-28
+(`vscode-copilot` redacted to `vscode-XXX`):
+
+```
+pew-insights source-row-token-lehmer-8-mean
+sources: 6 (shown 6)    rows: 1,849    sort: lehmer-8-mean-desc
+dropped: 0 across all gates
+
+per-source row-token Lehmer-8 mean
+source        rows  mean         l6           l7           l8           l8-l7       l8-l6         l8-mean
+------------  ----  -----------  -----------  -----------  -----------  ----------  ------------  ------------
+claude-code   299   11512995.95  83284537.01  90021322.41  95086154.02  +5064831.62 +11801617.02  +83573158.08
+opencode      404   10414314.48  56418692.80  58068859.38  59343299.91  +1274440.54 +2924607.12   +48928985.44
+codex         64    12650385.31  52005666.14  53900819.55  55199228.84  +1298409.29 +3193562.70   +42548843.53
+openclaw      510   3845873.25   38459511.20  39962261.56  40978107.44  +1015845.87 +2518596.24   +37132234.19
+hermes        239   788077.43    4679917.36   5084797.18   5368276.84   +283479.66  +688359.49    +4580199.42
+vscode-XXX    333   5662.84      161923.95    164846.27    166889.44    +2043.17    +4965.49      +161226.60
+```
+
+Note `l8L7Gap >= 0` everywhere as required by Lehmer
+monotonicity, and the gap is largest on `claude-code`
+where the heavy-tailed bursts pull the size-seventh-power-
+weighted center sharply above L_7.
+
 ## 0.6.196 — 2026-04-29
 
 ### Added
