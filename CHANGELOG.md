@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.189 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-3-mean`** —
+  per-source **Lehmer mean of order 3** (a.k.a. **L_3**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of cubes by the sum of
+  squares:
+
+      L_3 = ( sum_{i=1..n} x_i^3 ) / ( sum_{i=1..n} x_i^2 )
+
+  Equivalently, L_3 is the `x_i^2`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own
+  *square*, so `L_3 = sum(x*x*x) / sum(x*x) = E_w[x]` with
+  weights `w_i = x_i^2 / sum(x_i^2)`.
+
+  This is the natural one-step-right extension of v0.6.188's
+  contraharmonic mean (CHM = L_2). By Lehmer monotonicity,
+  `L_2 <= L_3` for any non-negative sample, with equality
+  iff every positive row is equal. So L_3 completes the
+  **integer-order Lehmer-mean ladder**:
+
+      HM <= GM <= AM <= QM <= CHM <= L_3
+       L_0    -    L_1    -   L_2     L_3
+
+  Together with v0.6.186's `source-row-token-harmonic-mean`
+  (HM = L_0), the implicit AM (L_1) reported in every lens,
+  and v0.6.188's `source-row-token-contraharmonic-mean`
+  (CHM = L_2), this lens completes the L_0 -> L_1 -> L_2 ->
+  L_3 Lehmer-family ladder for the source-row-token report
+  suite.
+
+  L_3 is **scale-equivariant** (rescaling every row by `c`
+  rescales L_3 by `c`) but **NOT translation-equivariant**
+  — same break from the L-estimator suite (mean, median,
+  midhinge, trimean, mid-range, trim-mean-25 are all
+  translation-equivariant) as harmonic-mean, quadratic-
+  mean, and contraharmonic-mean. L_3 is dominated by the
+  **largest** rows even more aggressively than CHM:
+  a single bottleneck row of value `M` pushes L_3 toward
+  `M` itself even faster than CHM does. Concretely on
+  `[1, 1, 1, 1, 1000]`: AM = 200.8, CHM ~ 996.0,
+  L_3 = 1_000_000_004 / 1_000_004 ~ 999.996 — L_3 sits
+  within 0.0004 % of the bottleneck row, vs CHM's 0.4 %.
+
+  Distinct from `source-row-token-crest-factor`:
+  crest-factor is the dimensionless ratio `max / RMS`;
+  L_3 is the size-square-weighted location itself in
+  token units.
+
+  Two free byproducts are reported in every row:
+
+  - `l3ChmGap = L_3 - CHM` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. The magnitude is the **size-square-
+    weighting amplification** above CHM: how much further
+    the largest rows pull the location when each row's
+    weight is its own square rather than its own value.
+  - `l3AmGap = L_3 - mean` — always `>= 0`. The
+    cumulative pull from the equal-weight average all the
+    way to the size-square-weighted location; strictly
+    larger than CHM's `chmAmGap` for any non-constant
+    positive series.
+
+  An all-zero source (sum(x^2) = 0) has an undefined
+  Lehmer L_3 (denominator vanishes) and is reported as
+  `droppedAllZeroSources` rather than producing a
+  spurious 0/0.
+
+  **Live smoke** (`source-row-token-lehmer-3-mean
+  --min-rows 4 --sort chm-gap-desc`, full queue, 1,817
+  rows across 6 sources):
+
+      source        rows  mean         chm          lehmer-3-mean  l3-chm         l3-mean
+      ------------  ----  -----------  -----------  -------------  -------------  -------------
+      claude-code   299   11512995.95  38434042.96  54516204.52    +16082161.56   +43003208.57
+      opencode      393   10436712.15  25160772.11  40327103.19    +15166331.08   +29890391.05
+      openclaw      499   3892169.57   9668329.01   20575181.23    +10906852.23   +16683011.66
+      codex         64    12650385.31  28707109.72  38508868.27    +9801758.55    +25858482.96
+      hermes        229   798416.48    1848477.89   2763904.13     +915426.24     +1965487.65
+      vscode-XXX    333   5662.84      45045.25     119764.03      +74718.78      +114101.18
+
+  Lehmer monotonicity holds across every source: every
+  `l3-chm` gap is strictly positive (no source has a
+  perfectly-constant positive series). The two heaviest
+  sources (`claude-code` and `opencode`) carry the largest
+  absolute `l3-chm` gaps (16.1M and 15.2M tokens), and
+  `claude-code`'s L_3 sits ~4.7x above its arithmetic
+  mean — the natural one-step-further-right reading
+  beyond CHM's already-aggressive size-weighting.
+
 ## 0.6.188 — 2026-04-28
 
 ### Added
