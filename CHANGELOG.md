@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.187 — 2026-04-28
+
+### Added
+
+- New subcommand **`source-row-token-quadratic-mean`** —
+  per-source **quadratic mean** (a.k.a. **root-mean-square**,
+  RMS) of the per-row `total_tokens` distribution.
+
+  For each source, square every row's `total_tokens`,
+  average those squares, and take the positive square
+  root:
+
+      QM = sqrt( ( sum_{i=1..n} x_i^2 ) / n )
+
+  This is the **Pythagorean upper bound**: by the QM-AM
+  inequality, for any non-negative sample, `AM <= QM`,
+  with equality iff every row is equal. Together with
+  v0.6.186's `source-row-token-harmonic-mean` (which
+  reports HM, GM, and AM in a single row), this lens
+  completes the full **Pythagorean sandwich**:
+
+      HM <= GM <= AM <= QM
+
+  QM is the rightmost (largest) of the four classical
+  Pythagorean means and lies strictly above the
+  arithmetic mean unless the series is constant. The
+  v0.6.186 → v0.6.187 pair now exposes both the lower
+  bound (HM, the small-row-weighted central tendency)
+  and the upper bound (QM, the large-row-weighted
+  central tendency) of the entire Pythagorean spectrum.
+
+  QM is the **opposite end** of the Pythagorean
+  spectrum from HM: where HM is dominated by the
+  smallest rows (a single tiny row pulls HM toward
+  zero), QM is dominated by the **largest** rows even
+  more aggressively than the arithmetic mean — squaring
+  amplifies the large-row contribution by an extra
+  factor of roughly `sqrt(n)` for the bottleneck row.
+  Concretely on `[1, 1, 1, 1, 1000]`: AM ~200.8, QM
+  ~447.4 — QM sits >2x above AM because the single huge
+  row's `1_000_000` squared contribution dominates the
+  inner average.
+
+  QM is **scale-equivariant** (rescaling every row by
+  `c` rescales QM by `c`) but **NOT translation-
+  equivariant** — same qualitative break from the
+  L-estimator suite (mean, median, midhinge, trimean,
+  mid-range, trim-mean-25 are all translation-
+  equivariant) as harmonic-mean. Distinct from
+  `source-row-token-crest-factor`: crest-factor is the
+  dimensionless ratio `max / RMS` that *uses* RMS as a
+  denominator; QM is the RMS itself in token units as a
+  standalone location signal.
+
+  The signed gap `qmAmGap = QM - mean` is reported as a
+  free byproduct and is **always >= 0** by QM-AM, with
+  `0` iff the series is constant; the magnitude of the
+  gap is a model-free measure of the **multiplicative
+  spread** of the distribution (it grows monotonically
+  as the distribution becomes more spread-out in the
+  multiplicative sense).
+
+  **Live smoke** (`source-row-token-quadratic-mean
+  --min-rows 4`, full queue, 1,805 rows across 6
+  sources, sort `quadratic-mean-desc`):
+
+      source        rows   mean          quadratic-mean   qm-mean
+      ------------  -----  ------------  ---------------  --------------
+      claude-code   299    11,512,995.95   21,035,469.59   +9,522,473.64
+      codex          64    12,650,385.31   19,056,652.36   +6,406,267.05
+      opencode      389    10,491,929.94   16,276,235.09   +5,784,305.16
+      openclaw      495     3,911,826.12    6,157,460.40   +2,245,634.28
+      hermes        225       806,349.70    1,224,500.01     +418,150.31
+      vscode-XXX    333         5,662.84       15,971.36      +10,308.51
+
+  Every `qmAmGap` is positive as expected. The ordering
+  by QM differs from the ordering by HM (v0.6.186):
+  `claude-code` overtakes `codex` and `opencode` because
+  its heavy upper tail dominates a squared-weighted
+  average — it has a small population of very large
+  rows that lift QM hard while leaving HM anchored near
+  the typical-small-row bottleneck. Cross-checking
+  against v0.6.186's HM ordering (`openclaw > opencode
+  > codex > claude-code > hermes > vscode-XXX`), the
+  reordering at the top of the table is the model-free
+  signal "claude-code's distribution is the most heavily
+  upper-tailed". For every source, `mean <= QM` (the
+  QM-AM inequality holds in row-by-row), and combined
+  with v0.6.186 the full Pythagorean sandwich `HM <= GM
+  <= AM <= QM` holds in every row of the live data.
+
 ## 0.6.186 — 2026-04-28
 
 ### Added
