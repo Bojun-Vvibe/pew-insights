@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.176 — 2026-04-28
+
+### Added
+
+- `source-row-token-temporal-flatness` band filters:
+  `--min-tf <x>` and `--max-tf <x>` (inclusive bounds on
+  the headline `tf = G(a)/A(a)` ratio). Both must be
+  finite reals in `(0, 1]` (the AM-GM range for tf).
+  When both are set, `minTf <= maxTf` is required.
+
+  - `--min-tf 0.5` isolates the **flat-envelope cohort**
+    (sources whose per-row token totals are within at
+    most a 2x multiplicative gap between geometric and
+    arithmetic mean — i.e., per-row sizes are fairly
+    uniform).
+  - `--max-tf 0.4` isolates the **spiky cohort** (sources
+    with heavy multiplicative concentration of mass in a
+    small subset of rows).
+  - Combine the two to carve a mid-band, e.g.
+    `--min-tf 0.3 --max-tf 0.6` for the moderately
+    concentrated cohort.
+
+  Filtered-out sources surface under
+  `droppedBelowMinTf` / `droppedAboveMaxTf` rather than
+  being silently omitted, matching the precedent set by
+  the ts3/ts4 band-filter follow-ups (0.6.169 / 0.6.171).
+  The band filter is applied **before** the `--top` cap
+  so the visible window matches the operator's stated
+  band exactly.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` with
+  `--max-tf 0.5` (sources: 6, kept: 4, rows: 1,766;
+  drops 2 above-max-tf):
+
+      source       rows  totalAmp  arithMean  geomMean  tf
+      -----------  ----  --------  ---------  --------  ---------
+      opencode     376   3.979e+9  1.058e+7   4.767e+6  4.5048e-1
+      codex        64    8.096e+8  1.265e+7   4.783e+6  3.7807e-1
+      vscode-XXX   333   1.886e+6  5.663e+3   2.070e+3  3.6556e-1
+      claude-code  299   3.442e+9  1.151e+7   2.827e+6  2.4552e-1
+
+  Operator reading: the spiky-cohort cut at `--max-tf
+  0.5` cleanly excludes `openclaw` (tf = 0.644) and
+  `hermes` (tf = 0.528) and surfaces the four sources
+  whose per-row token totals show ~2x or larger
+  geometric-vs-arithmetic gap. `claude-code` is the
+  most concentrated of the cohort (tf = 0.246 — its
+  geometric mean is barely a quarter of its arithmetic
+  mean), and the `vscode-XXX` source is the most
+  concentrated *relative* to its tiny absolute totals
+  (sub-2k geometric mean per row). The four cohort
+  members are not interchangeable: `opencode` has the
+  largest absolute per-row totals (1e+7 arith) while
+  `vscode-XXX` has the smallest (5.6e+3 arith) — tf is
+  scale-blind and ranks them on multiplicative
+  concentration alone.
+
+  Test count 3545 -> 3552 (+7).
+
 ## 0.6.175 — 2026-04-28
 
 ### Added

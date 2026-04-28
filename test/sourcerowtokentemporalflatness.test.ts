@@ -454,3 +454,117 @@ test('temporal-flatness: GM <= AM always (AM-GM inequality core invariant)', () 
     );
   }
 });
+
+// ---- --min-tf / --max-tf band filters (0.6.176) ----
+
+test('temporal-flatness: --min-tf filter drops spiky sources, surfaces in droppedBelowMinTf', () => {
+  const flat = new Array(15).fill(50);                       // tf == 1
+  const mild = new Array(15).fill(1); mild[7] = 50;          // tf well below 0.9
+  const spike = new Array(15).fill(1); spike[7] = 5000;      // tf << 1
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(flat, 'flat'), ...series(mild, 'mild'), ...series(spike, 'spk')],
+    { generatedAt: GEN, minTf: 0.9 },
+  );
+  // mild and spike drop; flat keeps
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'flat');
+  assert.equal(r.droppedBelowMinTf, 2);
+  assert.equal(r.droppedAboveMaxTf, 0);
+  assert.equal(r.minTf, 0.9);
+});
+
+test('temporal-flatness: --max-tf filter drops flat sources, surfaces in droppedAboveMaxTf', () => {
+  const flat = new Array(15).fill(50);
+  const spike = new Array(15).fill(1); spike[7] = 5000;
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(flat, 'flat'), ...series(spike, 'spk')],
+    { generatedAt: GEN, maxTf: 0.5 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'spk');
+  assert.equal(r.droppedAboveMaxTf, 1);
+  assert.equal(r.droppedBelowMinTf, 0);
+  assert.equal(r.maxTf, 0.5);
+});
+
+test('temporal-flatness: --min-tf and --max-tf together carve a mid-band', () => {
+  const flat = new Array(15).fill(50);                       // tf == 1
+  const mild = new Array(15).fill(50); mild[7] = 200;        // tf ~ 0.85 ish
+  const spike = new Array(15).fill(1); spike[7] = 5000;      // tf << 0.5
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(flat, 'flat'), ...series(mild, 'mild'), ...series(spike, 'spk')],
+    { generatedAt: GEN, minTf: 0.5, maxTf: 0.95 },
+  );
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.source, 'mild');
+  assert.equal(r.droppedAboveMaxTf, 1);
+  assert.equal(r.droppedBelowMinTf, 1);
+});
+
+test('temporal-flatness: invalid --min-tf / --max-tf throws', () => {
+  assert.throws(
+    () => buildSourceRowTokenTemporalFlatness([], { generatedAt: GEN, minTf: NaN }),
+    /minTf must be a finite real/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalFlatness([], { generatedAt: GEN, maxTf: Infinity }),
+    /maxTf must be a finite real/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalFlatness([], { generatedAt: GEN, minTf: 0 }),
+    /minTf must be in \(0, 1\]/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalFlatness([], { generatedAt: GEN, maxTf: 1.5 }),
+    /maxTf must be in \(0, 1\]/,
+  );
+  assert.throws(
+    () => buildSourceRowTokenTemporalFlatness([], { generatedAt: GEN, minTf: 0.8, maxTf: 0.4 }),
+    /minTf .* must be <= maxTf/,
+  );
+});
+
+test('temporal-flatness: tf-band filter applies BEFORE top cap (top counts post-band sources)', () => {
+  const sources: QueueLine[] = [];
+  // Three flat sources
+  for (const name of ['f1', 'f2', 'f3']) {
+    sources.push(...series(new Array(15).fill(50), name));
+  }
+  // Three spiky sources
+  for (const name of ['s1', 's2', 's3']) {
+    const v = new Array(15).fill(1); v[7] = 5000;
+    sources.push(...series(v, name));
+  }
+  const r = buildSourceRowTokenTemporalFlatness(sources, {
+    generatedAt: GEN, maxTf: 0.5, top: 2, sort: 'source',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxTf, 3);
+  assert.equal(r.droppedBelowTopCap, 1);
+  for (const s of r.sources) {
+    assert.ok(s.source.startsWith('s'), `expected spiky only, got ${s.source}`);
+  }
+});
+
+test('temporal-flatness: report fields echo minTf/maxTf and they default to null', () => {
+  const r1 = buildSourceRowTokenTemporalFlatness([], { generatedAt: GEN });
+  assert.equal(r1.minTf, null);
+  assert.equal(r1.maxTf, null);
+  const r2 = buildSourceRowTokenTemporalFlatness(
+    series(new Array(10).fill(50), 's'),
+    { generatedAt: GEN, minTf: 0.1, maxTf: 1 },
+  );
+  assert.equal(r2.minTf, 0.1);
+  assert.equal(r2.maxTf, 1);
+});
+
+test('temporal-flatness: --max-tf == 1 (upper bound) keeps all valid emitted sources', () => {
+  const v1 = new Array(10).fill(50);                 // tf == 1
+  const v2 = new Array(10).fill(1); v2[5] = 100;     // tf < 1
+  const r = buildSourceRowTokenTemporalFlatness(
+    [...series(v1, 'a'), ...series(v2, 'b')],
+    { generatedAt: GEN, maxTf: 1 },
+  );
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.droppedAboveMaxTf, 0);
+});

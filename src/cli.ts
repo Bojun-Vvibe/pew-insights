@@ -14608,6 +14608,14 @@ program
     "sort key: 'tf-desc' (default; flattest envelope first) | 'tf-asc' (spikiest / most concentrated first) | 'rows' | 'source'",
     'tf-desc',
   )
+  .option(
+    '--min-tf <x>',
+    'inclusive lower bound on tf (finite real in (0, 1]); sources with tf < x surface as droppedBelowMinTf. e.g. --min-tf 0.5 isolates the flat-envelope cohort.',
+  )
+  .option(
+    '--max-tf <x>',
+    'inclusive upper bound on tf (finite real in (0, 1]); sources with tf > x surface as droppedAboveMaxTf. e.g. --max-tf 0.4 isolates the spiky cohort.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -14618,6 +14626,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minTf?: string;
+        maxTf?: string;
         json?: boolean;
       },
       cmd,
@@ -14645,6 +14655,22 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        let minTf: number | null = null;
+        if (opts.minTf != null) {
+          const x = Number.parseFloat(opts.minTf);
+          if (!Number.isFinite(x)) {
+            throw new Error(`--min-tf must be a finite real (got ${opts.minTf})`);
+          }
+          minTf = x;
+        }
+        let maxTf: number | null = null;
+        if (opts.maxTf != null) {
+          const x = Number.parseFloat(opts.maxTf);
+          if (!Number.isFinite(x)) {
+            throw new Error(`--max-tf must be a finite real (got ${opts.maxTf})`);
+          }
+          maxTf = x;
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenTemporalFlatness(queue, {
           since: opts.since ?? null,
@@ -14653,6 +14679,8 @@ program
           minRows,
           top,
           sort: opts.sort as 'tf-desc' | 'tf-asc' | 'rows' | 'source',
+          minTf,
+          maxTf,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

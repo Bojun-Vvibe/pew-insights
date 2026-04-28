@@ -177,6 +177,24 @@ export interface SourceRowTokenTemporalFlatnessOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenTemporalFlatnessSort;
+  /**
+   * Optional inclusive lower bound on `tf`. Sources with
+   * tf < minTf surface under `droppedBelowMinTf`. Must be
+   * a finite real in (0, 1] (the AM-GM range for tf).
+   * Useful for "show me only the flat-envelope cohort"
+   * (e.g. `--min-tf 0.5` for tf-at-or-above 0.5).
+   * Default null.
+   */
+  minTf?: number | null;
+  /**
+   * Optional inclusive upper bound on `tf`. Sources with
+   * tf > maxTf surface under `droppedAboveMaxTf`. Must be
+   * a finite real in (0, 1] and `>= minTf` when both are
+   * set. Useful for "show me only the spiky cohort"
+   * (e.g. `--max-tf 0.4`).
+   * Default null.
+   */
+  maxTf?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -202,6 +220,8 @@ export interface SourceRowTokenTemporalFlatnessReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenTemporalFlatnessSort;
+  minTf: number | null;
+  maxTf: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -211,6 +231,8 @@ export interface SourceRowTokenTemporalFlatnessReport {
   droppedBelowMinRows: number;
   droppedZeroSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinTf: number;
+  droppedAboveMaxTf: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTemporalFlatnessRow[];
 }
@@ -239,6 +261,32 @@ export function buildSourceRowTokenTemporalFlatness(
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
+  }
+
+  const minTf = opts.minTf ?? null;
+  if (minTf !== null) {
+    if (!Number.isFinite(minTf)) {
+      throw new Error(`minTf must be a finite real (got ${opts.minTf})`);
+    }
+    if (minTf <= 0 || minTf > 1) {
+      throw new Error(
+        `minTf must be in (0, 1] (the AM-GM range for tf); got ${opts.minTf}`,
+      );
+    }
+  }
+  const maxTf = opts.maxTf ?? null;
+  if (maxTf !== null) {
+    if (!Number.isFinite(maxTf)) {
+      throw new Error(`maxTf must be a finite real (got ${opts.maxTf})`);
+    }
+    if (maxTf <= 0 || maxTf > 1) {
+      throw new Error(
+        `maxTf must be in (0, 1] (the AM-GM range for tf); got ${opts.maxTf}`,
+      );
+    }
+  }
+  if (minTf !== null && maxTf !== null && minTf > maxTf) {
+    throw new Error(`minTf (${minTf}) must be <= maxTf (${maxTf})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -369,9 +417,30 @@ export function buildSourceRowTokenTemporalFlatness(
 
   let droppedBelowTopCap = 0;
   let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+
+  // Apply min/max-tf filters BEFORE top cap so the sort
+  // window matches the operator's stated tf band.
+  let droppedBelowMinTf = 0;
+  let droppedAboveMaxTf = 0;
+  let filteredRows = allRows;
+  if (minTf !== null || maxTf !== null) {
+    filteredRows = [];
+    for (const row of allRows) {
+      if (minTf !== null && row.tf < minTf) {
+        droppedBelowMinTf += 1;
+        continue;
+      }
+      if (maxTf !== null && row.tf > maxTf) {
+        droppedAboveMaxTf += 1;
+        continue;
+      }
+      filteredRows.push(row);
+    }
+  }
+  finalSources = filteredRows;
+  if (top !== null && filteredRows.length > top) {
+    droppedBelowTopCap = filteredRows.length - top;
+    finalSources = filteredRows.slice(0, top);
   }
 
   return {
@@ -382,6 +451,8 @@ export function buildSourceRowTokenTemporalFlatness(
     minRows,
     top,
     sort,
+    minTf,
+    maxTf,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -391,6 +462,8 @@ export function buildSourceRowTokenTemporalFlatness(
     droppedBelowMinRows,
     droppedZeroSeries,
     droppedDegenerate,
+    droppedBelowMinTf,
+    droppedAboveMaxTf,
     droppedBelowTopCap,
     sources: finalSources,
   };
