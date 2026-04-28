@@ -115,6 +115,7 @@ import {
   renderSourceRowTokenMidRange,
   renderSourceRowTokenTrimMean25,
   renderSourceRowTokenHarmonicMean,
+  renderSourceRowTokenQuadraticMean,
   renderSourceRowTokenBurstinessCoefficient,
   renderSourceRowTokenRunsTest,
   renderSourceRowTokenTurningPointCount,
@@ -324,6 +325,7 @@ import { buildSourceRowTokenMidhinge } from './sourcerowtokenmidhinge.js';
 import { buildSourceRowTokenMidRange } from './sourcerowtokenmidrange.js';
 import { buildSourceRowTokenTrimMean25 } from './sourcerowtokentrimmean25.js';
 import { buildSourceRowTokenHarmonicMean } from './sourcerowtokenharmonicmean.js';
+import { buildSourceRowTokenQuadraticMean } from './sourcerowtokenquadraticmean.js';
 import { buildSourceRowTokenBurstinessCoefficient } from './sourcerowtokenburstinesscoefficient.js';
 import { buildSourceRowTokenRunsTest } from './sourcerowtokenrunstest.js';
 import { buildSourceRowTokenTurningPointCount } from './sourcerowtokenturningpointcount.js';
@@ -15603,6 +15605,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenHarmonicMean(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-quadratic-mean')
+  .description(
+    "Per-source quadratic mean (RMS) of per-row total_tokens. QM = sqrt(mean(x^2)). The Pythagorean UPPER bound — by QM-AM, AM <= QM with equality iff the series is constant. Together with v0.6.186's source-row-token-harmonic-mean (HM, GM, AM) completes the full Pythagorean sandwich HM <= GM <= AM <= QM. Scale-equivariant but NOT translation-equivariant — same break from L-estimator suite as harmonic-mean but in the OPPOSITE direction (HM moves less than c on shift; QM moves more than c on shift). Dominated by the LARGEST rows even more aggressively than the arithmetic mean: squaring amplifies large-row contribution by an extra factor of ~sqrt(n) for the bottleneck row. Distinct from every existing lens: source-row-token-mid-range / midhinge / trimean / trim-mean-25 are L-estimators (linear combinations of order statistics), translation- AND scale-equivariant; QM is non-linear in every row's value. source-row-token-mad reports a SPREAD; source-row-token-coefficient-of-quartile-deviation, source-row-token-bowley-skewness, source-row-token-iqr-ratio measure SHAPE from q1/q3; source-row-token-coefficient-of-variation, source-row-token-burstiness-coefficient, source-row-token-skewness, source-row-token-kurtosis, source-row-token-gini are MOMENT- or distribution-shape statistics. Distinct from source-row-token-crest-factor: crest-factor is the dimensionless ratio max/RMS that USES RMS as a denominator; QM is the RMS itself in token units as a standalone location signal. qmAmGap = QM - mean is reported as a free signal: ALWAYS >= 0 by QM-AM, with magnitude growing as the multiplicative spread of the series grows.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n non-negative kept rows; must be an integer >= 1 (QM is well-defined for any single non-negative row) (default 1)',
+    '1',
+  )
+  .option(
+    '--min-quadratic-mean <f>',
+    'drop sources whose quadratic mean is strictly below f; cohort selector for "this source actually carries non-trivial squared-weighted token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'quadratic-mean-desc' (default) | 'quadratic-mean-asc' | 'mean-desc' | 'gap-desc' (qmAmGap desc — multiplicative spread first) | 'rows' | 'source'",
+    'quadratic-mean-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minQuadraticMean: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 1) {
+          throw new Error(
+            `--min-rows must be an integer >= 1 (got ${opts.minRows})`,
+          );
+        }
+        const minQuadraticMean = Number.parseFloat(opts.minQuadraticMean);
+        if (!Number.isFinite(minQuadraticMean) || minQuadraticMean < 0) {
+          throw new Error(
+            `--min-quadratic-mean must be a finite, non-negative number (got ${opts.minQuadraticMean})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'quadratic-mean-desc',
+          'quadratic-mean-asc',
+          'mean-desc',
+          'gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenQuadraticMean(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minQuadraticMean,
+          top,
+          sort: opts.sort as
+            | 'quadratic-mean-desc'
+            | 'quadratic-mean-asc'
+            | 'mean-desc'
+            | 'gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenQuadraticMean(report) + '\n');
         }
       } catch (e) {
         die(e);
