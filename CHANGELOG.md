@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.198 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-9-mean`** —
+  per-source **Lehmer mean of order 9** (a.k.a. **L_9**)
+  of the per-row `total_tokens` distribution.
+
+  For each source, divide the sum of ninth powers by the
+  sum of eighth powers:
+
+      L_9 = ( sum_{i=1..n} x_i^9 ) / ( sum_{i=1..n} x_i^8 )
+
+  Equivalently, L_9 is the `x_i^8`-self-weighted arithmetic
+  mean of `x_i`: each row weights itself by its own *eighth
+  power*. This is the natural one-step-RIGHT extension of
+  v0.6.197's L_8 lens. By Lehmer monotonicity, `L_8 <= L_9`
+  for any non-negative sample with at least one strictly
+  positive row, with equality iff every positive row is
+  equal. So L_9 extends the integer Lehmer-mean ladder
+  shipped to date one further step right of L_8:
+
+      L_-3 <= L_-2 <= L_-1 <= HM <= GM <= AM <= QM <= CHM <= L_3 <= L_4 <= L_5 <= L_6 <= L_7 <= L_8 <= L_9
+
+  L_9 is **scale-equivariant** but **NOT translation-
+  equivariant**, same break as the rest of the Lehmer
+  family at orders other than 1.
+
+  Three free byproducts are reported in every row:
+
+  - `l9L8Gap = L_9 - L_8` — always `>= 0` by Lehmer
+    monotonicity, `0` iff the positive part of the series
+    is constant. Magnitude is the **size-eighth-power
+    weighting amplification** above L_8: how much further
+    the largest rows pull the location when each row's
+    weight is its own `x^8` rather than its own `x^7`.
+  - `l9L7Gap = L_9 - L_7` — always `>= 0`. Strictly
+    larger than v0.6.197's `l8L7Gap` for any non-constant
+    positive series.
+  - `l9AmGap = L_9 - mean` — always `>= 0`. The cumulative
+    pull from the equal-weight average all the way up to
+    the size-eighth-power-weighted location.
+
+### Live smoke
+
+Ran against `~/.config/pew/queue.jsonl` on 2026-04-29
+(`vscode-copilot` redacted to `vscode-XXX`):
+
+```
+pew-insights source-row-token-lehmer-9-mean
+sources: 6 (shown 6)    rows: 1,850    sort: lehmer-9-mean-desc
+dropped: 0 across all gates
+
+per-source row-token Lehmer-9 mean
+source        rows  mean         l7           l8           l9           l9-l8        l9-l7         l9-mean
+------------  ----  -----------  -----------  -----------  -----------  -----------  ------------  ------------
+claude-code   299   11512995.95  90021322.41  95086154.02  98698474.09  +3612320.06  +8677151.68   +87185478.14
+opencode      404   10433941.01  58068821.80  59343294.04  60401354.66  +1058060.62  +2332532.87   +49967413.65
+codex          64   12650385.31  53900819.55  55199228.84  56099697.33   +900468.49  +2198877.78   +43449312.02
+openclaw      510    3849618.73  39962260.71  40978107.38  41733155.46   +755048.08  +1770894.74   +37883536.73
+hermes        240     785371.66   5084797.18   5368276.84   5557073.83   +188796.99    +472276.65    +4771702.17
+vscode-XXX    333       5662.84    164846.27    166889.44    168411.88     +1522.44      +3565.61     +162749.03
+```
+
+  Per-source row-by-row monotonicity `L_7 <= L_8 <= L_9`
+  holds across all 6 sources (1,850 rows total, 0 drops).
+  Largest `l9L8Gap` is on `claude-code` at +3,612,320 tokens
+  — the source with the heaviest tail in the eighth-power
+  weighting.
+
+### Tests
+
+- Test count grew from 4,444 → 4,484 (+40). New file
+  `test/sourcerowtokenlehmer9mean.test.ts` (39 cases) pins:
+  shape / option validation, identity on constant positive
+  series, identity on single positive row, zero-row
+  no-op, all-zero source dropped, cross-check vs L_8/L_7/L_6
+  builders, Lehmer monotonicity (`L_7 <= L_8 <= L_9`),
+  scale-equivariance, order-invariance, the
+  `x^8`-self-weighted closed-form identity, the round-trip
+  identity `L_9 * sum(x^8) == sum(x^9)`, the equality case
+  `L_9 = max iff all positive rows == max`, the
+  bottleneck-domination property (`L_9` strictly closer to
+  M than `L_8` on heavy-tailed series, with a >= 2x ratio
+  margin), and the bottleneck-tracking-error refinement
+  (`dist_9 / dist_8 <= 0.10` on `M/c >= 50` series).
+
 ## 0.6.197 — 2026-04-29
 
 ### Added
