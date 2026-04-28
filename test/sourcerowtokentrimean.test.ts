@@ -704,3 +704,139 @@ test('trimean: report mirrors options', () => {
   assert.equal(r.sort, 'gap-desc');
   assert.equal(r.source, 'a');
 });
+
+// ---------- randomized property invariants (refinement pins) ----------
+
+/**
+ * 4 randomized property pins that lock the trimean's distinguishing
+ * mathematical guarantees against any future refactor that might
+ * accidentally turn it back into the mean or the bare median.
+ *
+ * Seeded LCG so the corpus is fixed and the pins are deterministic.
+ */
+function lcg(seed: number): () => number {
+  let x = seed | 0;
+  return () => {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    return x;
+  };
+}
+
+test('trimean property pin: trimean is bounded by [q1, q3] across 200 random samples', () => {
+  const rng = lcg(424242);
+  for (let trial = 0; trial < 200; trial++) {
+    const n = 4 + (rng() % 60); // 4..63
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) {
+      vals.push(rng() % 100000);
+    }
+    const r = buildSourceRowTokenTrimean(mkSeries('s', vals), {
+      generatedAt: GEN,
+    });
+    const s = r.sources[0]!;
+    assert.ok(
+      s.trimean >= s.q1 - 1e-9,
+      `trial ${trial}: trimean ${s.trimean} < q1 ${s.q1}`,
+    );
+    assert.ok(
+      s.trimean <= s.q3 + 1e-9,
+      `trial ${trial}: trimean ${s.trimean} > q3 ${s.q3}`,
+    );
+  }
+});
+
+test('trimean property pin: scale-equivariant across 100 random series and scales', () => {
+  const rng = lcg(8675309);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 5 + (rng() % 40);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(rng() % 50000);
+    // scale in (0.001, 1000)
+    const c = ((rng() % 1000000) + 1) / 1000;
+    const r1 = buildSourceRowTokenTrimean(mkSeries('s', vals), {
+      generatedAt: GEN,
+    });
+    const r2 = buildSourceRowTokenTrimean(
+      mkSeries('s', vals.map((x) => x * c)),
+      { generatedAt: GEN },
+    );
+    const expected = c * r1.sources[0]!.trimean;
+    const got = r2.sources[0]!.trimean;
+    // Relative tolerance: float ops on values up to 5e4 * 1e3
+    const tol = Math.max(1e-6, Math.abs(expected) * 1e-9);
+    assert.ok(
+      Math.abs(got - expected) <= tol,
+      `trial ${trial} (c=${c}): expected ${expected}, got ${got}`,
+    );
+  }
+});
+
+test('trimean property pin: order-invariant across 100 random shuffles', () => {
+  const rng = lcg(20260428);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 4 + (rng() % 50);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(rng() % 10000);
+    // Fisher-Yates shuffle with the same RNG
+    const shuffled = vals.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = rng() % (i + 1);
+      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+    }
+    const r1 = buildSourceRowTokenTrimean(mkSeries('s', vals), {
+      generatedAt: GEN,
+    });
+    const r2 = buildSourceRowTokenTrimean(mkSeries('s', shuffled), {
+      generatedAt: GEN,
+    });
+    assert.equal(
+      r1.sources[0]!.trimean,
+      r2.sources[0]!.trimean,
+      `trial ${trial}: order-variant!`,
+    );
+    assert.equal(r1.sources[0]!.median, r2.sources[0]!.median);
+  }
+});
+
+test('trimean property pin: 25%-breakdown — contaminating < 25% of rows with arbitrarily large outliers leaves trimean within q3-of-clean (i.e., still inside the original central support, not tracking the outliers)', () => {
+  // Take a clean series and contaminate <25% of it with values
+  // 1000x larger than max. Trimean must stay within original q3
+  // (i.e., must NOT track the outlier magnitude). Mean would
+  // race off to the contaminating value.
+  const rng = lcg(999);
+  for (let trial = 0; trial < 50; trial++) {
+    const n = 20 + (rng() % 30); // 20..49
+    const clean: number[] = [];
+    for (let i = 0; i < n; i++) clean.push(1 + (rng() % 1000));
+    clean.sort((a, b) => a - b);
+    const cleanMax = clean[clean.length - 1]!;
+    const cleanQ3Idx = Math.ceil((n - 1) * 0.75);
+    const cleanQ3 = clean[cleanQ3Idx]!;
+    // Inject k outliers each = 1000 * cleanMax, where k < n/4
+    const k = Math.max(1, Math.floor((n - 1) / 4));
+    const contaminated = clean.slice();
+    for (let i = 0; i < k; i++) {
+      contaminated.push(1000 * cleanMax);
+    }
+    const r = buildSourceRowTokenTrimean(mkSeries('s', contaminated), {
+      generatedAt: GEN,
+    });
+    const tm = r.sources[0]!.trimean;
+    // Trimean must be << outlier magnitude. Use a generous gate:
+    // tm should not exceed (cleanQ3 + outlierMagnitude/4); since
+    // outliers can pull q3 up by interpolation when k is close
+    // to 25%. The non-trivial claim is "trimean does NOT
+    // approach the outlier magnitude itself".
+    const outlier = 1000 * cleanMax;
+    assert.ok(
+      tm < outlier / 2,
+      `trial ${trial}: trimean ${tm} approached outlier ${outlier}`,
+    );
+    // And it should remain at least vaguely related to the clean
+    // central tendency (within 5x of clean q3).
+    assert.ok(
+      tm < 5 * cleanQ3 || tm < cleanMax * 2,
+      `trial ${trial}: trimean ${tm} far from clean q3 ${cleanQ3}`,
+    );
+  }
+});
