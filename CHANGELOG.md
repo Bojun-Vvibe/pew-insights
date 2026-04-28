@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.201 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-lehmer-12-mean`** — per-source
+  Lehmer mean of order 12 (`L_12 = sum(x^12) / sum(x^11)`) of per-row
+  `total_tokens`. One step right of v0.6.200's L_11 in the Lehmer-
+  monotonicity ladder: `HM <= GM <= AM <= QM <= CHM <= L_3 <= ... <=
+  L_10 <= L_11 <= L_12`. Equivalently, the `x^11`-self-weighted
+  arithmetic mean: each row weights itself by its own *eleventh
+  power*. Scale-equivariant, NOT translation-equivariant.
+
+  Reports three free byproducts, all `>= 0` by Lehmer monotonicity,
+  all `0` iff the positive part of the series is constant:
+  `l12L11Gap = L_12 - L_11`, `l12L10Gap = L_12 - L_10`,
+  `l12AmGap = L_12 - mean`.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (vscode-copilot redacted to `vscode-XXX`):
+
+  ```
+  pew-insights source-row-token-lehmer-12-mean
+  sources: 6 (shown 6)    rows: 1,865    dropped: 0 across all gates
+
+  source        rows  mean         L_10            L_11            L_12            l12-l11      l12-l10      l12-mean
+  ------------  ----  -----------  --------------  --------------  --------------  -----------  -----------  ------------
+  claude-code   299   11512995.95  101210243.15    102949485.21    104164933.80    +1215448.59  +2954690.66  +92651937.86
+  opencode      409   10432846.23  61313924.83     62118480.08     62837169.92     +718689.84   +1523245.09  +52404323.69
+  codex         64    12650385.31  56729928.13     57174624.55     57491042.03     +316417.48   +761113.90   +44840656.71
+  openclaw      515   3830707.68   42322981.70     42796073.11     43181312.69     +385239.59   +858330.99   +39350605.01
+  hermes        245   780468.73    5679355.26      5757559.13      5807414.89      +49855.76    +128059.63   +5026946.16
+  vscode-XXX    333   5662.84      169589.13       170520.29       171267.48       +747.20      +1678.36     +165604.64
+  ```
+
+  Per-source row-by-row monotonicity `L_10 <= L_11 <= L_12` holds
+  end-to-end across all 6 sources, with the largest `l12L11Gap`
+  on `claude-code` at +1,215,448.59 tokens (the heaviest-tail
+  source, as in prior rungs).
+
+### Tests
+
+- Test count grew from 4568 → 4610 (+42). New per-builder file
+  `test/sourcerowtokenlehmer12mean.test.ts` mirrors the L_11 suite:
+  shape/option validation, identity on constant + single positive
+  series, reference identity vs `sum(x^12)/sum(x^11)`, hard-coded
+  `[1,2,3,4,5]` numeric check (`L_12 = 261453379 / 53201625`),
+  cross-builder `L_10`/`L_11` consistency, scale-equivariance,
+  order-invariance, Lehmer monotonicity `L_12 >= L_11 >= L_10 >= AM`,
+  closed-form self-weighted-mean identity, round-trip identity
+  `L_12 * sum(x^11) == sum(x^12)`, closed-form gap identity
+  `l12L11Gap == sum(x^11 * (x - L_11)) / sum(x^11)`, max-saturation
+  equality case, and end-to-end ladder
+  `L_9 <= L_10 <= L_11 <= L_12`.
+
 ## 0.6.200 — 2026-04-29
 
 ### Added
