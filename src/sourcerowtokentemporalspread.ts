@@ -172,6 +172,20 @@ export interface SourceRowTokenTemporalSpreadOptions {
    * Final tiebreak in all cases: source key asc.
    */
   sort?: SourceRowTokenTemporalSpreadSort;
+  /**
+   * Optional inclusive lower bound on `ts`. Sources with
+   * ts < minTs surface under `droppedBelowMinTs`. Must be
+   * in [0, 0.5]. Useful for "show me only widely-spread
+   * sources" (filter out impulse-like). Default null.
+   */
+  minTs?: number | null;
+  /**
+   * Optional inclusive upper bound on `ts`. Sources with
+   * ts > maxTs surface under `droppedAboveMaxTs`. Must be
+   * in [0, 0.5] and >= minTs when both are set. Useful for
+   * "show me only tightly-clustered sources". Default null.
+   */
+  maxTs?: number | null;
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -197,6 +211,8 @@ export interface SourceRowTokenTemporalSpreadReport {
   minRows: number;
   top: number | null;
   sort: SourceRowTokenTemporalSpreadSort;
+  minTs: number | null;
+  maxTs: number | null;
   totalSources: number;
   totalRowsKept: number;
   droppedInvalidHourStart: number;
@@ -206,6 +222,8 @@ export interface SourceRowTokenTemporalSpreadReport {
   droppedBelowMinRows: number;
   droppedZeroSeries: number;
   droppedDegenerate: number;
+  droppedBelowMinTs: number;
+  droppedAboveMaxTs: number;
   droppedBelowTopCap: number;
   sources: SourceRowTokenTemporalSpreadRow[];
 }
@@ -240,6 +258,22 @@ export function buildSourceRowTokenTemporalSpread(
     throw new Error(
       `sort must be one of ${VALID_SORTS.join('|')} (got ${opts.sort})`,
     );
+  }
+
+  const minTs = opts.minTs ?? null;
+  if (minTs !== null) {
+    if (!Number.isFinite(minTs) || minTs < 0 || minTs > 0.5) {
+      throw new Error(`minTs must be in [0, 0.5] (got ${opts.minTs})`);
+    }
+  }
+  const maxTs = opts.maxTs ?? null;
+  if (maxTs !== null) {
+    if (!Number.isFinite(maxTs) || maxTs < 0 || maxTs > 0.5) {
+      throw new Error(`maxTs must be in [0, 0.5] (got ${opts.maxTs})`);
+    }
+  }
+  if (minTs !== null && maxTs !== null && minTs > maxTs) {
+    throw new Error(`minTs (${minTs}) must be <= maxTs (${maxTs})`);
   }
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -368,7 +402,28 @@ export function buildSourceRowTokenTemporalSpread(
     });
   }
 
-  allRows.sort((a, b) => {
+  // Apply min/max-ts filters (post-compute). These filter
+  // BEFORE sort and BEFORE top-cap so the sort window matches
+  // the operator's stated ts band.
+  let droppedBelowMinTs = 0;
+  let droppedAboveMaxTs = 0;
+  let filteredRows = allRows;
+  if (minTs !== null || maxTs !== null) {
+    filteredRows = [];
+    for (const row of allRows) {
+      if (minTs !== null && row.ts < minTs) {
+        droppedBelowMinTs += 1;
+        continue;
+      }
+      if (maxTs !== null && row.ts > maxTs) {
+        droppedAboveMaxTs += 1;
+        continue;
+      }
+      filteredRows.push(row);
+    }
+  }
+
+  filteredRows.sort((a, b) => {
     let primary = 0;
     if (sort === 'ts-desc') {
       primary = b.ts - a.ts;
@@ -388,10 +443,10 @@ export function buildSourceRowTokenTemporalSpread(
   });
 
   let droppedBelowTopCap = 0;
-  let finalSources = allRows;
-  if (top !== null && allRows.length > top) {
-    droppedBelowTopCap = allRows.length - top;
-    finalSources = allRows.slice(0, top);
+  let finalSources = filteredRows;
+  if (top !== null && filteredRows.length > top) {
+    droppedBelowTopCap = filteredRows.length - top;
+    finalSources = filteredRows.slice(0, top);
   }
 
   return {
@@ -402,6 +457,8 @@ export function buildSourceRowTokenTemporalSpread(
     minRows,
     top,
     sort,
+    minTs,
+    maxTs,
     totalSources,
     totalRowsKept,
     droppedInvalidHourStart,
@@ -411,6 +468,8 @@ export function buildSourceRowTokenTemporalSpread(
     droppedBelowMinRows,
     droppedZeroSeries,
     droppedDegenerate,
+    droppedBelowMinTs,
+    droppedAboveMaxTs,
     droppedBelowTopCap,
     sources: finalSources,
   };

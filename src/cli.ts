@@ -14249,6 +14249,14 @@ program
     "sort key: 'ts-desc' (default; widest temporal footprint first) | 'ts-asc' (narrowest first) | 'ts-index-desc' | 'ts-index-asc' (raw row-index units rather than normalized fraction) | 'rows' | 'source'",
     'ts-desc',
   )
+  .option(
+    '--min-ts <x>',
+    'inclusive lower bound on ts (in [0, 0.5]); sources with ts < x surface as droppedBelowMinTs',
+  )
+  .option(
+    '--max-ts <x>',
+    'inclusive upper bound on ts (in [0, 0.5]); sources with ts > x surface as droppedAboveMaxTs',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -14259,6 +14267,8 @@ program
         minRows: string;
         top?: string;
         sort: string;
+        minTs?: string;
+        maxTs?: string;
         json?: boolean;
       },
       cmd,
@@ -14293,6 +14303,22 @@ program
             `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
           );
         }
+        let minTs: number | null = null;
+        if (opts.minTs != null) {
+          const x = Number.parseFloat(opts.minTs);
+          if (!Number.isFinite(x) || x < 0 || x > 0.5) {
+            throw new Error(`--min-ts must be in [0, 0.5] (got ${opts.minTs})`);
+          }
+          minTs = x;
+        }
+        let maxTs: number | null = null;
+        if (opts.maxTs != null) {
+          const x = Number.parseFloat(opts.maxTs);
+          if (!Number.isFinite(x) || x < 0 || x > 0.5) {
+            throw new Error(`--max-ts must be in [0, 0.5] (got ${opts.maxTs})`);
+          }
+          maxTs = x;
+        }
         const queue = await readQueue(paths);
         const report = buildSourceRowTokenTemporalSpread(queue, {
           since: opts.since ?? null,
@@ -14307,6 +14333,8 @@ program
             | 'ts-index-asc'
             | 'rows'
             | 'source',
+          minTs,
+          maxTs,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
