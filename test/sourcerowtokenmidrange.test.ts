@@ -522,3 +522,183 @@ test('mid-range: multiple sources, full readout sane', () => {
   assert.equal(vsx.range, 0);
   assert.equal(vsx.mrMedianGap, 0);
 });
+
+// ---------- randomized property invariant pins ----------
+
+function lcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+test('mid-range property: MR is exactly (min + max) / 2 on randomized series', () => {
+  const rand = lcg(0xC0FFEE);
+  for (let trial = 0; trial < 200; trial++) {
+    const n = 2 + Math.floor(rand() * 50);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 1_000_000));
+    const r = buildSourceRowTokenMidRange(mkSeries('p', vals), {
+      generatedAt: GEN,
+    });
+    const row = r.sources[0]!;
+    const expectedMin = Math.min(...vals);
+    const expectedMax = Math.max(...vals);
+    assert.equal(row.min, expectedMin);
+    assert.equal(row.max, expectedMax);
+    assert.equal(row.midRange, (expectedMin + expectedMax) / 2);
+    assert.equal(row.range, expectedMax - expectedMin);
+  }
+});
+
+test('mid-range property: MR is permutation-invariant on randomized series', () => {
+  const rand = lcg(0xBEEF42);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 2 + Math.floor(rand() * 30);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 1_000));
+    // Fisher–Yates shuffle copy
+    const shuffled = vals.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+    }
+    const a = buildSourceRowTokenMidRange(mkSeries('p', vals), {
+      generatedAt: GEN,
+    });
+    const b = buildSourceRowTokenMidRange(mkSeries('p', shuffled), {
+      generatedAt: GEN,
+    });
+    assert.equal(a.sources[0]!.midRange, b.sources[0]!.midRange);
+    assert.equal(a.sources[0]!.median, b.sources[0]!.median);
+    assert.equal(a.sources[0]!.range, b.sources[0]!.range);
+    assert.equal(a.sources[0]!.mrMedianGap, b.sources[0]!.mrMedianGap);
+  }
+});
+
+test('mid-range property: |mrMedianGap| <= range/2 on randomized series', () => {
+  const rand = lcg(0xDEADBE);
+  for (let trial = 0; trial < 200; trial++) {
+    const n = 2 + Math.floor(rand() * 80);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 10_000_000));
+    const r = buildSourceRowTokenMidRange(mkSeries('p', vals), {
+      generatedAt: GEN,
+    });
+    const row = r.sources[0]!;
+    assert.ok(Math.abs(row.mrMedianGap) <= row.range / 2 + 1e-9);
+  }
+});
+
+test('mid-range property: MR in [min, max] on randomized series', () => {
+  const rand = lcg(0xABCDEF);
+  for (let trial = 0; trial < 200; trial++) {
+    const n = 2 + Math.floor(rand() * 40);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 5_000_000));
+    const r = buildSourceRowTokenMidRange(mkSeries('p', vals), {
+      generatedAt: GEN,
+    });
+    const row = r.sources[0]!;
+    assert.ok(row.midRange >= row.min);
+    assert.ok(row.midRange <= row.max);
+  }
+});
+
+test('mid-range property: translation-equivariance holds for random shifts', () => {
+  const rand = lcg(0x123456);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 2 + Math.floor(rand() * 30);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 1_000_000));
+    const c = Math.floor(rand() * 1_000_000);
+    const a = buildSourceRowTokenMidRange(mkSeries('p', vals), {
+      generatedAt: GEN,
+    });
+    const b = buildSourceRowTokenMidRange(
+      mkSeries('p', vals.map((v) => v + c)),
+      { generatedAt: GEN },
+    );
+    assert.equal(b.sources[0]!.midRange, a.sources[0]!.midRange + c);
+    assert.equal(b.sources[0]!.median, a.sources[0]!.median + c);
+    assert.equal(b.sources[0]!.range, a.sources[0]!.range);
+    assert.equal(b.sources[0]!.mrMedianGap, a.sources[0]!.mrMedianGap);
+  }
+});
+
+test('mid-range property: scale-equivariance holds for random positive rescales', () => {
+  const rand = lcg(0x654321);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 2 + Math.floor(rand() * 30);
+    const vals: number[] = [];
+    for (let i = 0; i < n; i++) vals.push(Math.floor(rand() * 1_000));
+    const k = 1 + Math.floor(rand() * 20);
+    const a = buildSourceRowTokenMidRange(mkSeries('p', vals), {
+      generatedAt: GEN,
+    });
+    const b = buildSourceRowTokenMidRange(
+      mkSeries('p', vals.map((v) => v * k)),
+      { generatedAt: GEN },
+    );
+    assert.ok(
+      Math.abs(b.sources[0]!.midRange - a.sources[0]!.midRange * k) < 1e-6,
+    );
+    assert.ok(Math.abs(b.sources[0]!.range - a.sources[0]!.range * k) < 1e-6);
+    assert.ok(
+      Math.abs(b.sources[0]!.mrMedianGap - a.sources[0]!.mrMedianGap * k) <
+        1e-6,
+    );
+  }
+});
+
+test('mid-range property: monotone series 1..n -> MR == (n+1)/2 == median exactly', () => {
+  for (const n of [2, 3, 5, 7, 10, 100, 999]) {
+    const vals: number[] = [];
+    for (let i = 1; i <= n; i++) vals.push(i);
+    const r = buildSourceRowTokenMidRange(mkSeries('mono', vals), {
+      generatedAt: GEN,
+    });
+    const row = r.sources[0]!;
+    assert.equal(row.min, 1);
+    assert.equal(row.max, n);
+    assert.equal(row.midRange, (1 + n) / 2);
+    // arithmetic-progression median == arithmetic mean == (1+n)/2
+    assert.ok(Math.abs(row.median - (1 + n) / 2) < 1e-9);
+    assert.ok(Math.abs(row.mrMedianGap) < 1e-9);
+  }
+});
+
+test('mid-range property: range == 0 iff all rows equal', () => {
+  // all-equal case
+  for (const c of [0, 1, 42, 1_000_000]) {
+    const r1 = buildSourceRowTokenMidRange(
+      mkSeries('eq', [c, c, c, c, c]),
+      { generatedAt: GEN },
+    );
+    assert.equal(r1.sources[0]!.range, 0);
+  }
+  // any-different case must have range > 0
+  const r2 = buildSourceRowTokenMidRange(mkSeries('neq', [1, 2]), {
+    generatedAt: GEN,
+  });
+  assert.ok(r2.sources[0]!.range > 0);
+});
+
+test('mid-range property: extreme outlier dominates MR (0%-breakdown)', () => {
+  // Baseline: 100 rows of 1.
+  const baseline: number[] = [];
+  for (let i = 0; i < 100; i++) baseline.push(1);
+  const r1 = buildSourceRowTokenMidRange(mkSeries('b', baseline), {
+    generatedAt: GEN,
+  });
+  // Same series + ONE huge outlier: MR jumps to (1 + 10^9)/2.
+  const withTail = baseline.concat([1_000_000_000]);
+  const r2 = buildSourceRowTokenMidRange(mkSeries('b', withTail), {
+    generatedAt: GEN,
+  });
+  assert.equal(r1.sources[0]!.midRange, 1);
+  assert.equal(r2.sources[0]!.midRange, (1 + 1_000_000_000) / 2);
+  // gap is enormous — confirms 0%-breakdown (single point dominates)
+  assert.ok(r2.sources[0]!.mrMedianGap > 4.99e8);
+});
