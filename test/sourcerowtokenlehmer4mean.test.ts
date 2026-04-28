@@ -503,3 +503,41 @@ test('property: scale-equivariance L_4(c*x) = c * L_4(x)', () => {
     );
   }
 });
+
+// ---------- self-cube-weighted-mean closed-form property ----------
+//
+// L_4 is, by construction, the arithmetic mean of x_i weighted
+// by w_i = x_i^3 / sum(x_j^3). This identity is the conceptual
+// heart of the lens — it says "each row's contribution to the
+// reported center is proportional to its own cube". Pin it
+// explicitly so a future refactor that, e.g., divides by
+// sum(x^2) instead of sum(x^3) (collapsing L_4 to L_3) trips
+// this test, not just the numeric reference tests above.
+test('property: L_4 equals the x^3-self-weighted arithmetic mean (closed form)', () => {
+  const r = rng(31415);
+  for (let trial = 0; trial < 40; trial += 1) {
+    const n = 2 + Math.floor(r() * 25);
+    const xs: number[] = [];
+    for (let i = 0; i < n; i += 1) xs.push(Math.floor(r() * 1000));
+    if (xs.every((x) => x === 0)) continue;
+    // Closed-form weighted mean with weights w_i = x_i^3.
+    let wsum = 0;
+    let wxsum = 0;
+    for (const x of xs) {
+      const w = x * x * x;
+      wsum += w;
+      wxsum += w * x;
+    }
+    if (wsum === 0) continue;
+    const closedForm = wxsum / wsum;
+    const rep = buildSourceRowTokenLehmer4Mean(mkSeries(`t${trial}`, xs), {
+      generatedAt: GEN,
+    });
+    if (rep.sources.length === 0) continue;
+    const got = rep.sources[0]!.lehmer4Mean;
+    assert.ok(
+      Math.abs(got - closedForm) < 1e-9 * Math.max(1, closedForm),
+      `L_4 should equal sum(x^4)/sum(x^3) = sum(x*x^3)/sum(x^3) — got ${got} vs closed-form ${closedForm} on xs=${JSON.stringify(xs)}`,
+    );
+  }
+});
