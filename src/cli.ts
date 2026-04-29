@@ -9368,7 +9368,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'gap-desc' (pbVsTheilSenGap desc) | 'gap-magnitude-desc' (|pbVsTheilSenGap| desc) | 'shift-ratio-desc' (shiftIndex/N desc) | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'gap-desc' (pbVsTheilSenGap desc) | 'gap-magnitude-desc' (|pbVsTheilSenGap| desc) | 'shift-ratio-desc' (shiftIndex/N desc) | 'naive-gap-magnitude-desc' (|pbVsNaiveGap| desc) | 'sign-flipped-first' (signFlippedFromNaive=true first) | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9423,6 +9423,8 @@ program
           'gap-desc',
           'gap-magnitude-desc',
           'shift-ratio-desc',
+          'naive-gap-magnitude-desc',
+          'sign-flipped-first',
           'rows',
           'source',
         ];
@@ -9447,6 +9449,8 @@ program
             | 'gap-desc'
             | 'gap-magnitude-desc'
             | 'shift-ratio-desc'
+            | 'naive-gap-magnitude-desc'
+            | 'sign-flipped-first'
             | 'rows'
             | 'source',
         });

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## 0.6.218 — 2026-04-29
 
+### Changed
+
+- `source-row-token-passing-bablok-slope` — surface
+  `pbVsNaiveGap = slope - naiveSlope` and a derived
+  `signFlippedFromNaive: boolean` flag on every per-source row, plus
+  two new sort keys `naive-gap-magnitude-desc` and
+  `sign-flipped-first`. The flip flag is the most actionable cohort
+  selector for downstream analysts: it is exactly the set of sources
+  where a robust trend reading disagrees with the
+  endpoint-only reading about the *direction* of the trend (not just
+  its magnitude). Live smoke against the local pew queue surfaces
+  two flippers — `claude-code` and `hermes` — both of whose
+  `naiveSlope` is negative (endpoints down) but whose PB
+  shifted-median slope is positive (bulk pair-cloud rising). The
+  other four sources (codex, opencode, openclaw, vscode-redacted)
+  agree on the upward direction and just disagree on magnitude.
+
 ### Added
 
 - `pew-insights source-row-token-passing-bablok-slope` —

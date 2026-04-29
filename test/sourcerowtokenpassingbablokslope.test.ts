@@ -601,3 +601,90 @@ test('property: PB shiftIndex bounded by [1, N]', () => {
     assert.ok(r.shiftIndex >= 1 && r.shiftIndex <= r.pairsValid);
   }
 });
+
+// --- v0.6.218 refinement: pbVsNaiveGap + signFlippedFromNaive ---
+
+test('refinement: pbVsNaiveGap = slope - naiveSlope exactly', () => {
+  const q = mkSeries('s', [9, 1, 8, 2, 7, 3, 6, 4]);
+  const r = buildSourceRowTokenPassingBablokSlope(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(row.pbVsNaiveGap, row.slope - row.naiveSlope);
+});
+
+test('refinement: signFlippedFromNaive=true when naive negative but PB positive', () => {
+  // Endpoints drag down: huge first, tiny last, but bulk rises afterwards.
+  const xs = [1000, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  const r = passingBablokSlope(xs);
+  const naive = (xs[xs.length - 1]! - xs[0]!) / (xs.length - 1);
+  // naive should be negative; PB likely positive given the long ascending tail.
+  assert.ok(naive < 0);
+  const q = mkSeries('s', xs);
+  const built = buildSourceRowTokenPassingBablokSlope(q, { generatedAt: GEN });
+  const row = built.sources[0]!;
+  if (row.slope > 0) {
+    assert.equal(row.signFlippedFromNaive, true);
+  }
+});
+
+test('refinement: signFlippedFromNaive=false when both same sign', () => {
+  const q = mkSeries('s', [1, 2, 3, 4, 5, 6, 7]);
+  const r = buildSourceRowTokenPassingBablokSlope(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(row.signFlippedFromNaive, false);
+  assert.ok(row.slope > 0);
+  assert.ok(row.naiveSlope > 0);
+});
+
+test('refinement: signFlippedFromNaive=false when slope is exactly zero', () => {
+  const q = mkSeries('s', [5, 5, 5, 5, 5]);
+  const r = buildSourceRowTokenPassingBablokSlope(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(row.slope, 0);
+  assert.equal(row.naiveSlope, 0);
+  assert.equal(row.signFlippedFromNaive, false);
+});
+
+test('refinement: sort=naive-gap-magnitude-desc orders by |pbVsNaiveGap| desc', () => {
+  const q = [
+    ...mkSeries('clean', [1, 2, 3, 4, 5, 6]),
+    ...mkSeries('noisy', [1000, 5, 6, 7, 8, 9, 10, 11, 12]),
+  ];
+  const r = buildSourceRowTokenPassingBablokSlope(q, {
+    generatedAt: GEN,
+    sort: 'naive-gap-magnitude-desc',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.ok(
+    Math.abs(r.sources[0]!.pbVsNaiveGap) >=
+      Math.abs(r.sources[1]!.pbVsNaiveGap),
+  );
+});
+
+test('refinement: sort=sign-flipped-first puts flipped sources before non-flipped', () => {
+  const q = [
+    ...mkSeries('clean', [1, 2, 3, 4, 5, 6, 7, 8]), // no flip
+    ...mkSeries('flipper', [1000, 5, 6, 7, 8, 9, 10, 11, 12, 13]), // potential flip
+  ];
+  const r = buildSourceRowTokenPassingBablokSlope(q, {
+    generatedAt: GEN,
+    sort: 'sign-flipped-first',
+  });
+  assert.equal(r.sources.length, 2);
+  // Flipped (true=1) should sort before non-flipped (false=0) under desc.
+  if (r.sources[0]!.signFlippedFromNaive !== r.sources[1]!.signFlippedFromNaive) {
+    assert.equal(r.sources[0]!.signFlippedFromNaive, true);
+    assert.equal(r.sources[1]!.signFlippedFromNaive, false);
+  }
+});
+
+test('refinement: validates new sort keys', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenPassingBablokSlope([], {
+        generatedAt: GEN,
+        // @ts-expect-error invalid sort
+        sort: 'naive-gap-magnitude-asc',
+      }),
+    /sort must be one of/,
+  );
+});

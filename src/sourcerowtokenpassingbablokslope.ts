@@ -182,6 +182,8 @@ export interface SourceRowTokenPassingBablokSlopeOptions {
     | 'gap-desc'
     | 'gap-magnitude-desc'
     | 'shift-ratio-desc'
+    | 'naive-gap-magnitude-desc'
+    | 'sign-flipped-first'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -230,6 +232,21 @@ export interface SourceRowTokenPassingBablokSlopeRow {
   shiftRatio: number;
   /** `slope - theilSenSlope`, the literal PB correction in tokens / row. */
   pbVsTheilSenGap: number;
+  /**
+   * `slope - naiveSlope`, the gap between PB's robust shifted-median
+   * estimate and the non-robust endpoint-only reference
+   * `(lastX - firstX) / (n - 1)`. Sign and magnitude both meaningful.
+   * A large absolute gap means the endpoints are highly unrepresentative
+   * of the bulk pair cloud. Same units as slope (tokens / row).
+   */
+  pbVsNaiveGap: number;
+  /**
+   * True iff `sign(slope) != sign(naiveSlope)` AND neither is exactly
+   * zero. Direct flag for "PB disagrees with the endpoint-only reading
+   * about the trend direction" — the most actionable cohort for
+   * downstream analysts.
+   */
+  signFlippedFromNaive: boolean;
 }
 
 export interface SourceRowTokenPassingBablokSlopeReport {
@@ -248,6 +265,8 @@ export interface SourceRowTokenPassingBablokSlopeReport {
     | 'gap-desc'
     | 'gap-magnitude-desc'
     | 'shift-ratio-desc'
+    | 'naive-gap-magnitude-desc'
+    | 'sign-flipped-first'
     | 'rows'
     | 'source';
   totalSources: number;
@@ -273,6 +292,8 @@ const VALID_SORTS = [
   'gap-desc',
   'gap-magnitude-desc',
   'shift-ratio-desc',
+  'naive-gap-magnitude-desc',
+  'sign-flipped-first',
   'rows',
   'source',
 ] as const;
@@ -549,6 +570,11 @@ export function buildSourceRowTokenPassingBablokSlope(
       shiftIndex: pb.shiftIndex,
       shiftRatio,
       pbVsTheilSenGap: slope - pb.theilSenSlope,
+      pbVsNaiveGap: slope - naiveSlope,
+      signFlippedFromNaive:
+        slope !== 0 &&
+        naiveSlope !== 0 &&
+        Math.sign(slope) !== Math.sign(naiveSlope),
     });
   }
 
@@ -573,6 +599,11 @@ export function buildSourceRowTokenPassingBablokSlope(
       primary = Math.abs(q.pbVsTheilSenGap) - Math.abs(p.pbVsTheilSenGap);
     else if (sort === 'shift-ratio-desc')
       primary = q.shiftRatio - p.shiftRatio;
+    else if (sort === 'naive-gap-magnitude-desc')
+      primary = Math.abs(q.pbVsNaiveGap) - Math.abs(p.pbVsNaiveGap);
+    else if (sort === 'sign-flipped-first')
+      primary =
+        (q.signFlippedFromNaive ? 1 : 0) - (p.signFlippedFromNaive ? 1 : 0);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
     else primary = p.source < q.source ? -1 : p.source > q.source ? 1 : 0;
     if (primary !== 0) return primary;

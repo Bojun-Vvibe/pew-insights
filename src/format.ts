@@ -13857,6 +13857,8 @@ export function renderSourceRowTokenPassingBablokSlope(
     'shiftIdx',
     'shiftRatio',
     'pbGap',
+    'naiveGap',
+    'flip?',
   ];
   const rowsPB: string[][] = r.sources.map(
     (s: SourceRowTokenPassingBablokSlopeRow) => [
@@ -13876,6 +13878,8 @@ export function renderSourceRowTokenPassingBablokSlope(
       formatNumber(s.shiftIndex),
       s.shiftRatio.toFixed(3),
       (s.pbVsTheilSenGap >= 0 ? '+' : '') + s.pbVsTheilSenGap.toFixed(4),
+      (s.pbVsNaiveGap >= 0 ? '+' : '') + s.pbVsNaiveGap.toFixed(4),
+      s.signFlippedFromNaive ? 'yes' : 'no',
     ],
   );
   lines.push(renderTableLocal(headers, rowsPB));
