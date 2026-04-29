@@ -134,6 +134,7 @@ import {
   renderSourceRowTokenTrimMean30,
   renderSourceRowTokenHodgesLehmann,
   renderSourceRowTokenBroadenedMedian,
+  renderSourceRowTokenMEstimatorHuber,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -365,6 +366,7 @@ import { buildSourceRowTokenTrimMean20 } from './sourcerowtokentrimmean20.js';
 import { buildSourceRowTokenTrimMean30 } from './sourcerowtokentrimmean30.js';
 import { buildSourceRowTokenHodgesLehmann } from './sourcerowtokenhodgeslehmann.js';
 import { buildSourceRowTokenBroadenedMedian } from './sourcerowtokenbroadenedmedian.js';
+import { buildSourceRowTokenMEstimatorHuber } from './sourcerowtokenmestimatorhuber.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8186,6 +8188,128 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenBroadenedMedian(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-m-estimator-huber')
+  .description(
+    "Per-source Huber M-estimator of location of per-row total_tokens. Solves sum_i psi_c((x_i - mu)/s) = 0 by IRLS with mu_0 = median, s = MAD/0.6745, psi_c(z) = z if |z|<=c else c*sign(z), c = 1.345 (canonical: ~95% asymptotic relative efficiency at the normal). FIRST M-ESTIMATOR in the suite — data-adaptive weights w_i = psi_c(z_i)/z_i depend on the residual itself. Mechanically distinct from L-estimators (mean / TM / WM / median / midhinge / trimean / IQM / HD broadened median: weights depend only on rank), distinct from power means (Lehmer / harmonic / contraharmonic / quadratic: fixed nonlinear transform), distinct from R-estimators (Hodges-Lehmann: ranks of pairwise Walsh averages). Bounded influence: any single observation's pull on mu is capped at c*s. Translation- and scale-equivariant. Reports clippedRows (rows with |z|>c at converged mu), iterations (IRLS step count), huberMeanGap = huber - mean, huberMedianGap = huber - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need n >= 4 for MAD scale to be meaningful) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-huber <f>',
+    'drop sources whose Huber M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--c-tuning <f>',
+    'Huber tuning constant c. Larger c -> closer to mean (less robust); smaller c -> closer to median (more robust). Must be a finite positive number. (default 1.345 = canonical 95% ARE at normal)',
+    '1.345',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'huber-desc' (default) | 'huber-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|huberMeanGap| desc) | 'median-gap-desc' (|huberMedianGap| desc) | 'rows' | 'source'",
+    'huber-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minHuber: string;
+        cTuning: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minHuber = Number.parseFloat(opts.minHuber);
+        if (!Number.isFinite(minHuber) || minHuber < 0) {
+          throw new Error(
+            `--min-huber must be a finite, non-negative number (got ${opts.minHuber})`,
+          );
+        }
+        const c = Number.parseFloat(opts.cTuning);
+        if (!Number.isFinite(c) || !(c > 0)) {
+          throw new Error(
+            `--c-tuning must be a finite positive number (got ${opts.cTuning})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'huber-desc',
+          'huber-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorHuber(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minHuber,
+          c,
+          top,
+          sort: opts.sort as
+            | 'huber-desc'
+            | 'huber-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMEstimatorHuber(report) + '\n');
         }
       } catch (e) {
         die(e);

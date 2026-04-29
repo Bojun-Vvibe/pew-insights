@@ -12097,6 +12097,10 @@ import type {
   SourceRowTokenBroadenedMedianReport,
   SourceRowTokenBroadenedMedianRow,
 } from './sourcerowtokenbroadenedmedian.js';
+import type {
+  SourceRowTokenMEstimatorHuberReport,
+  SourceRowTokenMEstimatorHuberRow,
+} from './sourcerowtokenmestimatorhuber.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13013,6 +13017,81 @@ export function renderSourceRowTokenWinsorizedMean20(
     ],
   );
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenMEstimatorHuber(
+  r: SourceRowTokenMEstimatorHuberReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-m-estimator-huber'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-huber: ${formatNumber(r.minHuber)}    c: ${r.c}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinHuber)} below min-huber, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Huber M-estimator of location of per-row total_tokens. Solves sum_i psi_c((x_i - mu)/s) = 0 via IRLS with mu_0 = median, s = MAD/0.6745, psi_c(z) = z if |z|<=c else c*sign(z), c = ${r.c} (canonical 1.345 -> ~95% ARE at the normal). DATA-ADAPTIVE WEIGHTS — first M-estimator in the suite. Distinct from L-estimators (mean / TM / WM / median / midhinge / trimean / IQM / HD-broadened-median: weights depend only on rank), distinct from power means (Lehmer / HM / CHM / QM: fixed nonlinear transform), distinct from R-estimators (Hodges-Lehmann: ranks of pairwise Walsh averages). Bounded influence: any single row's pull on mu is capped at c*s. Translation- and scale-equivariant. clippedRows counts rows with |z|>c at the converged mu. iterations is the IRLS step count. huberMeanGap = huber - mean, huberMedianGap = huber - median.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Huber M-estimator (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'huber',
+    'mad',
+    'scale',
+    'iter',
+    'clipped',
+    'huber-mean',
+    'huber-median',
+  ];
+  const rowsHuber: string[][] = r.sources.map(
+    (s: SourceRowTokenMEstimatorHuberRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.huber.toFixed(2),
+      s.mad.toFixed(2),
+      s.scale.toFixed(2),
+      String(s.iterations),
+      formatNumber(s.clippedRows),
+      (s.huberMeanGap >= 0 ? '+' : '') + s.huberMeanGap.toFixed(2),
+      (s.huberMedianGap >= 0 ? '+' : '') + s.huberMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsHuber));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
