@@ -129,6 +129,8 @@ export interface SourceRowTokenJackknifeSlopeCiOptions {
     | 'ci-width-asc'
     | 'jack-se-desc'
     | 'bias-magnitude-desc'
+    | 'bias-to-slope-ratio-desc'
+    | 'bias-flipped-first'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -166,6 +168,26 @@ export interface SourceRowTokenJackknifeSlopeCiRow {
   /** `ciUpper - ciLower = 2 * z * jackSe`. */
   ciWidth: number;
   /**
+   * `|bias| / |slope|` — relative magnitude of the
+   * Quenouille-Tukey bias compared to the point slope. Useful for
+   * spotting **high-leverage** sources where the bias correction is
+   * the same order of magnitude as the slope itself (a value >= 1
+   * means the bias correction either flips the sign or zeroes out
+   * the slope). NaN when `|slope| == 0` and `|bias| == 0`; +Infinity
+   * when `|slope| == 0` and `|bias| > 0`. (Refinement field,
+   * v0.6.221 follow-up.)
+   */
+  biasToSlopeRatio: number;
+  /**
+   * True iff the bias-corrected slope has the **opposite sign** from
+   * the point slope (i.e. `Math.sign(slope) != Math.sign(biasCorrected)`,
+   * with both non-zero). The textbook signature of a high-leverage
+   * series whose full-data Deming fit is being dragged by a few
+   * extreme rows: leave-one-out averaging shifts the corrected slope
+   * across zero. (Refinement field, v0.6.221 follow-up.)
+   */
+  biasCorrectedFlippedSign: boolean;
+  /**
    * True iff `ciLower <= 0 && ciUpper >= 0` — the slope is **not**
    * statistically distinguishable from zero at the requested
    * confidence under the jackknife normal-approximation CI.
@@ -193,6 +215,8 @@ export interface SourceRowTokenJackknifeSlopeCiReport {
     | 'ci-width-asc'
     | 'jack-se-desc'
     | 'bias-magnitude-desc'
+    | 'bias-to-slope-ratio-desc'
+    | 'bias-flipped-first'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -218,6 +242,8 @@ const VALID_SORTS = [
   'ci-width-asc',
   'jack-se-desc',
   'bias-magnitude-desc',
+  'bias-to-slope-ratio-desc',
+  'bias-flipped-first',
   'ci-contains-zero-first',
   'rows',
   'source',
@@ -477,6 +503,18 @@ export function buildSourceRowTokenJackknifeSlopeCi(
     const ciUpper = biasCorrected + half;
     const ciWidth = ciUpper - ciLower;
     const ciContainsZero = ciLower <= 0 && ciUpper >= 0;
+    const absSlope = Math.abs(pointSlope);
+    const absBias = Math.abs(bias);
+    let biasToSlopeRatio: number;
+    if (absSlope === 0) {
+      biasToSlopeRatio = absBias === 0 ? Number.NaN : Number.POSITIVE_INFINITY;
+    } else {
+      biasToSlopeRatio = absBias / absSlope;
+    }
+    const biasCorrectedFlippedSign =
+      pointSlope !== 0 &&
+      biasCorrected !== 0 &&
+      Math.sign(pointSlope) !== Math.sign(biasCorrected);
 
     allRows.push({
       source,
@@ -489,6 +527,8 @@ export function buildSourceRowTokenJackknifeSlopeCi(
       ciLower,
       ciUpper,
       ciWidth,
+      biasToSlopeRatio,
+      biasCorrectedFlippedSign,
       ciContainsZero,
     });
   }
@@ -514,6 +554,23 @@ export function buildSourceRowTokenJackknifeSlopeCi(
     else if (sort === 'jack-se-desc') primary = q.jackSe - p.jackSe;
     else if (sort === 'bias-magnitude-desc')
       primary = Math.abs(q.bias) - Math.abs(p.bias);
+    else if (sort === 'bias-to-slope-ratio-desc') {
+      // NaN-safe descending: NaN sorts to bottom, +Inf to top.
+      const pv = Number.isFinite(p.biasToSlopeRatio)
+        ? p.biasToSlopeRatio
+        : p.biasToSlopeRatio === Number.POSITIVE_INFINITY
+          ? Number.MAX_VALUE
+          : -1;
+      const qv = Number.isFinite(q.biasToSlopeRatio)
+        ? q.biasToSlopeRatio
+        : q.biasToSlopeRatio === Number.POSITIVE_INFINITY
+          ? Number.MAX_VALUE
+          : -1;
+      primary = qv - pv;
+    } else if (sort === 'bias-flipped-first')
+      primary =
+        (q.biasCorrectedFlippedSign ? 1 : 0) -
+        (p.biasCorrectedFlippedSign ? 1 : 0);
     else if (sort === 'ci-contains-zero-first')
       primary = (q.ciContainsZero ? 1 : 0) - (p.ciContainsZero ? 1 : 0);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;

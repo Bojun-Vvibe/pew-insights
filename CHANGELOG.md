@@ -184,6 +184,47 @@ filters, 6 sources, default `lambda = 1`, `confidence = 0.95`,
   surfacing that `codex` and `opencode` have biases on the order
   of (or larger than) their own point slopes.
 
+### Refinement (v0.6.221 follow-up, surfaced by live-smoke)
+
+- New per-row diagnostic **`biasToSlopeRatio = |bias| / |slope|`**:
+  the Quenouille-Tukey bias scaled by the magnitude of the point
+  slope. A ratio `>= 1` is the textbook signature of a
+  **high-leverage source** where the bias correction is at least
+  as large as the slope itself — the bias-corrected slope either
+  flips sign or zeroes out. NaN when both are zero; +Infinity when
+  `|slope| == 0` and `|bias| > 0`.
+- New per-row diagnostic **`biasCorrectedFlippedSign: boolean`**:
+  true iff `Math.sign(slope) != Math.sign(biasCorrected)` (with
+  both non-zero) — a direct flag for the leverage-induced sign
+  flip.
+- Two new sort keys: **`bias-to-slope-ratio-desc`** (NaN-safe:
+  NaN sorts to bottom, +Infinity to top) and
+  **`bias-flipped-first`** (puts sign-flipped rows first).
+
+Live-smoke against the same 1,955-row queue (`vscode-copilot`
+redacted to `vscode-redacted`) confirms the v0.6.221 follow-up
+diagnostics surface the leverage pattern in one column:
+
+    source           rows   slope                bias                  bias/slope   flip?
+    codex             64    +2,225,990.4792      +2,543,850.8551       1.1428       yes
+    opencode         439    -1,141,559.4756      -1,630,944.9298       1.4287       yes
+    claude-code      299      +412,420.1539        +412,238.0358       0.9996       no
+    openclaw         545       -88,079.8553         -87,477.3755       0.9932       no
+    hermes           275       -32,715.3540         -33,070.4635       1.0109       yes
+    vscode-redacted  333          +761.5738            +742.9491       0.9755       no
+
+  Three sources (`codex`, `opencode`, `hermes`) cross the 1.0
+  ratio threshold and flag `flip = yes` — their full-data Deming
+  slope is being dragged sufficiently far from the leave-one-out
+  centroid that the Quenouille-Tukey bias correction sends the
+  bias-corrected slope across zero. Three (`claude-code`,
+  `openclaw`, `vscode-redacted`) sit just below 1.0 (0.97-1.00) —
+  the bias is large in absolute terms but the leave-one-out
+  averaging still leaves the slope on the same side of zero.
+  Without the `bias/slope` column you'd have to compute this by
+  eye from the `bias` and `slope` columns; with it, the
+  high-leverage cohort jumps out immediately.
+
 ## 0.6.220 — 2026-04-29
 
 ### Added

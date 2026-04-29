@@ -14122,6 +14122,8 @@ export function renderSourceRowTokenJackknifeSlopeCi(
     'jackSe',
     'bias',
     'biasCorrected',
+    'bias/slope',
+    'flip?',
     'ciLower',
     'ciUpper',
     'ciWidth',
@@ -14136,6 +14138,12 @@ export function renderSourceRowTokenJackknifeSlopeCi(
       s.jackSe.toFixed(4),
       (s.bias >= 0 ? '+' : '') + s.bias.toFixed(4),
       (s.biasCorrected >= 0 ? '+' : '') + s.biasCorrected.toFixed(4),
+      Number.isNaN(s.biasToSlopeRatio)
+        ? 'n/a'
+        : !Number.isFinite(s.biasToSlopeRatio)
+          ? 'inf'
+          : s.biasToSlopeRatio.toFixed(4),
+      s.biasCorrectedFlippedSign ? 'yes' : 'no',
       (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
       (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
       s.ciWidth.toFixed(4),

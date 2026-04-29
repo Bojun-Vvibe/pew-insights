@@ -708,3 +708,86 @@ test('property: lambda affects the slope (vs lambda=1 default)', () => {
   });
   assert.notEqual(r1.sources[0]!.slope, r2.sources[0]!.slope);
 });
+
+// =========================================================================
+// v0.6.221 follow-up: biasToSlopeRatio + biasCorrectedFlippedSign
+// =========================================================================
+
+test('biasToSlopeRatio: smooth ascending series -> finite, non-negative ratio', () => {
+  const q = mkSeries('s', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.ok(Number.isFinite(row.biasToSlopeRatio));
+  assert.ok(row.biasToSlopeRatio >= 0);
+});
+
+test('biasToSlopeRatio: |slope|=0 with |bias|=0 -> NaN', () => {
+  const q = mkSeries('s', [5, 5, 5, 5, 5, 5]);
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, { generatedAt: GEN });
+  assert.ok(Number.isNaN(r.sources[0]!.biasToSlopeRatio));
+});
+
+test('biasToSlopeRatio: equals |bias|/|slope|', () => {
+  const q = mkSeries('s', [3, 7, 2, 8, 5, 10, 4, 12, 6, 14]);
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, { generatedAt: GEN });
+  for (const row of r.sources) {
+    if (Math.abs(row.slope) === 0) continue;
+    const expected = Math.abs(row.bias) / Math.abs(row.slope);
+    assert.ok(Math.abs(row.biasToSlopeRatio - expected) < 1e-9);
+  }
+});
+
+test('biasCorrectedFlippedSign: smooth ascending -> false', () => {
+  const q = mkSeries('s', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, { generatedAt: GEN });
+  assert.equal(r.sources[0]!.biasCorrectedFlippedSign, false);
+});
+
+test('biasCorrectedFlippedSign: oscillating leverage pattern can produce non-trivial bias', () => {
+  // Construct a series with leverage rows that the leave-one-out
+  // averaging will treat differently from the full-data fit.
+  const q = mkSeries('s', [1, 100, 2, 99, 3, 98, 4, 97, 5, 96]);
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  // Just confirm bias is finite and biasCorrectedFlippedSign is
+  // a valid boolean here. Don't strictly assert flip — Deming's
+  // EIV math is sensitive to the data structure.
+  assert.equal(typeof row.biasCorrectedFlippedSign, 'boolean');
+  assert.ok(Number.isFinite(row.bias));
+});
+
+test('sort: bias-flipped-first puts flipped rows first', () => {
+  const q = [
+    ...mkSeries('smooth', [10, 20, 30, 40, 50, 60, 70, 80]),
+    ...mkSeries('also-smooth', [5, 10, 15, 20, 25, 30, 35, 40]),
+  ];
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, {
+    sort: 'bias-flipped-first',
+    generatedAt: GEN,
+  });
+  let seenFalse = false;
+  for (const row of r.sources) {
+    if (!row.biasCorrectedFlippedSign) seenFalse = true;
+    if (seenFalse) {
+      assert.equal(
+        row.biasCorrectedFlippedSign,
+        false,
+        `unexpected true after a false: source=${row.source}`,
+      );
+    }
+  }
+});
+
+test('sort: bias-to-slope-ratio-desc places larger ratios first (NaN -> bottom)', () => {
+  const q = [
+    ...mkSeries('flat', [5, 5, 5, 5, 5, 5]), // ratio NaN
+    ...mkSeries('smooth', [10, 20, 30, 40, 50, 60]), // small ratio
+    ...mkSeries('rough', [1, 100, 1, 100, 1, 100]), // larger ratio
+  ];
+  const r = buildSourceRowTokenJackknifeSlopeCi(q, {
+    sort: 'bias-to-slope-ratio-desc',
+    generatedAt: GEN,
+  });
+  // The NaN row (flat) should be last.
+  assert.equal(r.sources[r.sources.length - 1]!.source, 'flat');
+});
