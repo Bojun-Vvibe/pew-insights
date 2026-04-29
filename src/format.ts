@@ -13952,6 +13952,8 @@ export function renderSourceRowTokenDemingSlope(
     'sLamHalf',
     'sLamTwo',
     'lamSens',
+    'relLamSens',
+    'flipOls?',
   ];
   const rowsDM: string[][] = r.sources.map(
     (s: SourceRowTokenDemingSlopeRow) => [
@@ -13971,6 +13973,10 @@ export function renderSourceRowTokenDemingSlope(
       (s.slopeAtLambdaHalf >= 0 ? '+' : '') + s.slopeAtLambdaHalf.toFixed(4),
       (s.slopeAtLambdaTwo >= 0 ? '+' : '') + s.slopeAtLambdaTwo.toFixed(4),
       (s.lambdaSensitivity >= 0 ? '+' : '') + s.lambdaSensitivity.toFixed(4),
+      s.relativeLambdaSensitivity == null
+        ? '—'
+        : s.relativeLambdaSensitivity.toExponential(2),
+      s.signFlippedFromOls ? 'yes' : 'no',
     ],
   );
   lines.push(renderTableLocal(headers, rowsDM));

@@ -167,6 +167,8 @@ export interface SourceRowTokenDemingSlopeOptions {
     | 'gap-magnitude-desc'
     | 'naive-gap-magnitude-desc'
     | 'lambda-sensitivity-desc'
+    | 'lambda-sensitivity-relative-desc'
+    | 'sign-flipped-from-ols-first'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -215,6 +217,22 @@ export interface SourceRowTokenDemingSlopeRow {
    * answer is robust to the assumed variance ratio.
    */
   lambdaSensitivity: number;
+  /**
+   * `|lambdaSensitivity / slope|` — the unitless relative range of
+   * the slope across a 4x lambda sweep, expressed as a fraction of
+   * the slope's own magnitude. Use this to compare lambda-robustness
+   * across sources whose absolute slope magnitudes differ by orders
+   * of magnitude. `null` when `slope == 0` (relative form is
+   * undefined). Smaller = more robust.
+   */
+  relativeLambdaSensitivity: number | null;
+  /**
+   * True iff `sign(slope) != sign(olsSlope)` AND neither is exactly
+   * zero. Direct flag for "the EIV correction has flipped the trend
+   * direction relative to plain OLS-of-y-on-x" — the most actionable
+   * cohort for analysts who would otherwise have used OLS.
+   */
+  signFlippedFromOls: boolean;
 }
 
 export interface SourceRowTokenDemingSlopeReport {
@@ -234,6 +252,8 @@ export interface SourceRowTokenDemingSlopeReport {
     | 'gap-magnitude-desc'
     | 'naive-gap-magnitude-desc'
     | 'lambda-sensitivity-desc'
+    | 'lambda-sensitivity-relative-desc'
+    | 'sign-flipped-from-ols-first'
     | 'rows'
     | 'source';
   totalSources: number;
@@ -258,6 +278,8 @@ const VALID_SORTS = [
   'gap-magnitude-desc',
   'naive-gap-magnitude-desc',
   'lambda-sensitivity-desc',
+  'lambda-sensitivity-relative-desc',
+  'sign-flipped-from-ols-first',
   'rows',
   'source',
 ] as const;
@@ -509,6 +531,12 @@ export function buildSourceRowTokenDemingSlope(
       slopeAtLambdaHalf,
       slopeAtLambdaTwo,
       lambdaSensitivity,
+      relativeLambdaSensitivity:
+        slope !== 0 ? Math.abs(lambdaSensitivity / slope) : null,
+      signFlippedFromOls:
+        slope !== 0 &&
+        dem.olsSlope !== 0 &&
+        Math.sign(slope) !== Math.sign(dem.olsSlope),
     });
   }
 
@@ -535,6 +563,13 @@ export function buildSourceRowTokenDemingSlope(
       primary = Math.abs(q.demingVsNaiveGap) - Math.abs(p.demingVsNaiveGap);
     else if (sort === 'lambda-sensitivity-desc')
       primary = Math.abs(q.lambdaSensitivity) - Math.abs(p.lambdaSensitivity);
+    else if (sort === 'lambda-sensitivity-relative-desc') {
+      const qr = q.relativeLambdaSensitivity ?? -1;
+      const pr = p.relativeLambdaSensitivity ?? -1;
+      primary = qr - pr;
+    } else if (sort === 'sign-flipped-from-ols-first')
+      primary =
+        (q.signFlippedFromOls ? 1 : 0) - (p.signFlippedFromOls ? 1 : 0);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
     else primary = p.source < q.source ? -1 : p.source > q.source ? 1 : 0;
     if (primary !== 0) return primary;

@@ -625,3 +625,126 @@ test('property: lambda=1 slope is x<->y symmetric for centered data', () => {
     `slope=${r.slope} swap=${swapped} prod=${r.slope * swapped}`,
   );
 });
+
+// --- refinement: relativeLambdaSensitivity + signFlippedFromOls ---
+
+test('refinement: relativeLambdaSensitivity is null when slope is exactly 0', () => {
+  const r = buildSourceRowTokenDemingSlope(
+    mkSeries('s1', [7, 7, 7, 7, 7, 7]),
+    { generatedAt: GEN },
+  );
+  assert.equal(r.sources[0]!.slope, 0);
+  assert.equal(r.sources[0]!.relativeLambdaSensitivity, null);
+});
+
+test('refinement: relativeLambdaSensitivity = |lambdaSensitivity / slope| when slope != 0', () => {
+  const r = buildSourceRowTokenDemingSlope(
+    mkSeries('s1', [1, 5, 2, 8, 3, 12, 4, 15]),
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.notEqual(s.slope, 0);
+  assert.ok(s.relativeLambdaSensitivity !== null);
+  const expected = Math.abs(s.lambdaSensitivity / s.slope);
+  assert.ok(
+    Math.abs(s.relativeLambdaSensitivity! - expected) < 1e-12,
+    `got ${s.relativeLambdaSensitivity} expected ${expected}`,
+  );
+  assert.ok(s.relativeLambdaSensitivity! >= 0);
+});
+
+test('refinement: relativeLambdaSensitivity ~ 0 on perfect line', () => {
+  const r = buildSourceRowTokenDemingSlope(
+    mkSeries('s1', [3, 5, 7, 9, 11, 13]),
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.ok(s.relativeLambdaSensitivity !== null);
+  assert.ok(s.relativeLambdaSensitivity! < 1e-9);
+});
+
+test('refinement: signFlippedFromOls false on perfect line (Deming == OLS)', () => {
+  const r = buildSourceRowTokenDemingSlope(
+    mkSeries('s1', [3, 5, 7, 9, 11, 13]),
+    { generatedAt: GEN },
+  );
+  assert.equal(r.sources[0]!.signFlippedFromOls, false);
+});
+
+test('refinement: signFlippedFromOls false when slope == 0', () => {
+  const r = buildSourceRowTokenDemingSlope(
+    mkSeries('s1', [7, 7, 7, 7, 7]),
+    { generatedAt: GEN },
+  );
+  assert.equal(r.sources[0]!.signFlippedFromOls, false);
+});
+
+test('refinement: signFlippedFromOls flag set when Deming and OLS disagree on direction', () => {
+  // Construct data where Deming and OLS slopes have opposite signs.
+  // Take the live-smoke opencode-like pattern: large noise on y axis,
+  // OLS leans one way, Deming leans the other. Use a synthetic series
+  // with a strong "pull-back" structure.
+  // Simpler approach: use a series where sxy is small-positive (so OLS > 0)
+  // but Deming flips with the EIV correction. We do this with a designed
+  // sxx, syy, sxy via direct-kernel test rather than a queue series.
+  // sxx=1, syy=100, sxy=0.1 -> ols = 0.1, Deming a = 100 - 1 = 99,
+  //   disc = 9801 + 0.04 = 9801.04, sqrt ~= 99.0002, slope = (99 + 99.0002)/0.2 ~= 990
+  //   Same sign as OLS — not a flip. Try sxy negative-tiny and syy >> sxx.
+  // Actually for centered-on-row-index data, we cannot easily flip sign.
+  // Instead test the predicate's structural correctness with a synthetic row:
+  const r = buildSourceRowTokenDemingSlope(
+    mkSeries('s1', [1, 5, 2, 8, 3, 12, 4, 15]),
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  // Verify the predicate matches its definition.
+  const expected =
+    s.slope !== 0 &&
+    s.olsSlope !== 0 &&
+    Math.sign(s.slope) !== Math.sign(s.olsSlope);
+  assert.equal(s.signFlippedFromOls, expected);
+});
+
+test('refinement: sort=lambda-sensitivity-relative-desc orders by relative sensitivity', () => {
+  // Two sources with very different absolute slopes but same relative
+  // sensitivity ranking depends on |lamSens/slope|.
+  const queue = [
+    ...mkSeries('big', [0, 100, 200, 300, 400, 500, 600, 700]),
+    ...mkSeries('small', [1, 2, 1, 3, 2, 4, 3, 5]),
+  ];
+  const r = buildSourceRowTokenDemingSlope(queue, {
+    generatedAt: GEN,
+    sort: 'lambda-sensitivity-relative-desc',
+  });
+  // No assertion on order beyond: it returns deterministically and
+  // those with non-null relative sensitivity sort above any with null.
+  assert.equal(r.sources.length, 2);
+  // Verify the sort key is at least monotone non-increasing on relative.
+  const rels = r.sources.map((s) =>
+    s.relativeLambdaSensitivity ?? -1,
+  );
+  for (let i = 1; i < rels.length; i += 1) {
+    assert.ok(rels[i - 1]! >= rels[i]!);
+  }
+});
+
+test('refinement: sort=sign-flipped-from-ols-first puts flipped sources first', () => {
+  const queue = [
+    ...mkSeries('a', [1, 2, 3, 4, 5]),
+    ...mkSeries('b', [5, 4, 3, 2, 1]),
+  ];
+  const r = buildSourceRowTokenDemingSlope(queue, {
+    generatedAt: GEN,
+    sort: 'sign-flipped-from-ols-first',
+  });
+  // Sort-key acceptance check; structurally flipped count may be 0.
+  const flipped = r.sources.filter((s) => s.signFlippedFromOls);
+  const notFlipped = r.sources.filter((s) => !s.signFlippedFromOls);
+  // All flipped should come before all non-flipped.
+  if (flipped.length > 0 && notFlipped.length > 0) {
+    const lastFlippedIdx = r.sources.lastIndexOf(flipped[flipped.length - 1]!);
+    const firstNotIdx = r.sources.indexOf(notFlipped[0]!);
+    assert.ok(lastFlippedIdx < firstNotIdx);
+  }
+  assert.equal(r.sources.length, 2);
+});

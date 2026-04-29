@@ -9496,7 +9496,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'gap-desc' (demingVsOlsGap desc) | 'gap-magnitude-desc' (|demingVsOlsGap| desc) | 'naive-gap-magnitude-desc' (|demingVsNaiveGap| desc) | 'lambda-sensitivity-desc' (|lambdaSensitivity| desc) | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'gap-desc' (demingVsOlsGap desc) | 'gap-magnitude-desc' (|demingVsOlsGap| desc) | 'naive-gap-magnitude-desc' (|demingVsNaiveGap| desc) | 'lambda-sensitivity-desc' (|lambdaSensitivity| desc) | 'lambda-sensitivity-relative-desc' (|lambdaSensitivity/slope| desc) | 'sign-flipped-from-ols-first' (signFlippedFromOls=true first) | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9552,6 +9552,8 @@ program
           'gap-magnitude-desc',
           'naive-gap-magnitude-desc',
           'lambda-sensitivity-desc',
+          'lambda-sensitivity-relative-desc',
+          'sign-flipped-from-ols-first',
           'rows',
           'source',
         ];
@@ -9577,6 +9579,8 @@ program
             | 'gap-magnitude-desc'
             | 'naive-gap-magnitude-desc'
             | 'lambda-sensitivity-desc'
+            | 'lambda-sensitivity-relative-desc'
+            | 'sign-flipped-from-ols-first'
             | 'rows'
             | 'source',
         });
