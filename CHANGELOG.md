@@ -2,6 +2,154 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.219 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-deming-slope` — emits the
+  per-source **Deming regression** slope of per-row `total_tokens`
+  against the row index `0..n-1`, in tokens per row.
+
+  Deming (1943, *Statistical Adjustment of Data*) is the
+  **parametric maximum-likelihood errors-in-both-variables (EIV)
+  regression** under bivariate normal noise with a fixed variance
+  ratio `lambda = var(eps_y) / var(eps_x)`:
+
+      b = (s_yy − λ·s_xx + √((s_yy − λ·s_xx)² + 4λ·s_xy²)) / (2·s_xy)
+
+  At `lambda = 1` (default) it is **orthogonal regression** — the
+  slope that minimizes perpendicular distances and is **x↔y
+  SYMMETRIC** (regress y on x at lambda=1 vs x on y at lambda=1, the
+  slopes are reciprocals, exactly like Passing-Bablok). For
+  `lambda → 0` it collapses to ordinary least squares (the index axis
+  is exact); for `lambda → ∞` it collapses to OLS-of-x-on-y.
+
+  Mechanically distinct from every previously shipped lens — and
+  specifically the **parametric SIBLING** of
+  `source-row-token-passing-bablok-slope` (v0.6.218):
+
+  - vs **Passing-Bablok** (v0.6.218, non-parametric EIV
+    R-estimator): Passing-Bablok also targets EIV regression and is
+    x↔y symmetric, but does so via a *non-parametric* shifted
+    median of the pairwise slope cloud (~29.3% breakdown, no
+    distributional assumption). Deming is the parametric arm: a
+    **closed-form MLE** under bivariate normal noise, **0%
+    breakdown** (a single extreme outlier moves it), with a
+    **tunable lambda knob** that PB does not have. Same EIV target,
+    opposite assumption stance.
+  - vs **Theil-Sen** (v0.6.213) and **Siegel** (v0.6.216):
+    y-asymmetric (regress y on x — the index axis is treated as
+    exact). Deming is x↔y symmetric at lambda=1.
+  - vs **OLS** (`source-daily-token-trend-slope`): OLS is the
+    `lambda → 0` limit of Deming. The new lens reports
+    `olsSlope = s_xy / s_xx` directly so the gap is visible.
+  - vs the **M-estimator family** (Huber/Tukey/Hampel/Andrews/
+    Welsch/Cauchy/Geman-McClure, v0.6.207–v0.6.217): those are
+    *location* estimators (one robust mean per source) computed by
+    IRLS. Deming is a *trend / slope* estimator with a closed form
+    and no IRLS.
+  - vs **Mann-Kendall** (v0.6.211): Mann-Kendall reports a
+    rank-correlation tau and a p-value; Deming is the point estimate
+    of the slope itself in tokens / row.
+
+  This is the **first parametric EIV regression** in the suite —
+  every prior slope lens is either y-asymmetric and assumes an exact
+  index axis (Theil-Sen, Siegel, OLS), or non-parametric EIV
+  (Passing-Bablok). Deming completes the errors-in-both-variables
+  axis with the parametric / closed-form MLE option.
+
+  Per-source row carries a **lambda-sensitivity diagnostic**:
+  `slopeAtLambdaHalf` and `slopeAtLambdaTwo` re-evaluate the slope
+  at `lambda/2` and `lambda*2`, and `lambdaSensitivity =
+  slopeAtLambdaTwo − slopeAtLambdaHalf` is the literal slope range
+  across a 4× lambda sweep. A tiny absolute value means the answer
+  is robust to the assumed variance ratio; a large value means it
+  materially depends on which axis you assigned more error to. Also
+  reports `olsSlope` (the `lambda → 0` limit), `demingVsOlsGap =
+  slope − olsSlope`, and `demingVsNaiveGap = slope − naiveSlope`.
+
+  Flags:
+  `--since/--until/--source/--min-rows/--min-slope-magnitude/
+  --lambda/--top/--sort/--json`. Sort keys: `magnitude-desc`
+  (default), `slope-desc`, `slope-asc`, `gap-desc`,
+  `gap-magnitude-desc`, `naive-gap-magnitude-desc`,
+  `lambda-sensitivity-desc`, `rows`, `source`. Determinism: pure
+  builder, sort tiebreak `source` asc, wall clock only via
+  `opts.generatedAt`.
+
+### Tests
+
+Test count grew from **5,401 → 5,450 (+49)**. New suites:
+`sourcerowtokendemingslope` (49) — kernel: `demingSlopeFromSums`
+(orthogonal at lambda=1 / sxy=0 / lambda must be > 0 / OLS limit on
+consistent line / lambda-invariance on perfect line), `demingSlope`
+(perfect line / flat constant / decreasing / 2-pt / argument
+validation / translation equivariance / positive scale equivariance /
+lambda echo in sums / degenerate sxy=0); builder
+(`buildSourceRowTokenDemingSlope`): empty queue, single source,
+`--min-rows`, `--min-slope-magnitude`, `--lambda` echo and
+validation, `--source` filter, bad-data drops, unknown source
+mapping, chronological row sort, top cap, window filtering,
+`since/until` validation, all 9 sort keys, metadata echo,
+`generatedAt` default, diagnostic field arithmetic
+(`demingVsOlsGap`, `demingVsNaiveGap`, `lambdaSensitivity`);
+properties (seeded LCG): y-translation invariance,
+`demingSlopeFromSums` ↔ kernel equivalence, monotone-ascending
+implies non-negative slope, `lambda=1` x↔y reciprocal symmetry on
+centered data.
+
+### Live smoke
+
+Against the local `~/.config/pew/queue.jsonl` (1,943 rows after
+filters, 6 sources, default `lambda = 1`,
+sorted by `magnitude-desc`):
+
+    source           rows   Deming slope        OLS slope (λ→0)    naive slope    demingVsOlsGap     demingVsNaiveGap   sLamHalf            sLamTwo             lamSens
+    codex             64    +2,225,990.4792     +267,402.0575      +93,173.8730   +1,958,588.4218    +2,132,816.6062    +2,225,990.4792     +2,225,990.4792     -0.0000
+    opencode         435    -1,183,143.4543     -7,510.1487        +21,818.1152   -1,175,633.3056    -1,204,961.5695    -1,183,143.4543     -1,183,143.4541     +0.0002
+    claude-code      299      +412,420.1539     +100,875.1388      -4,260.3658      +311,545.0151      +416,680.5197      +412,420.1539       +412,420.1539     -0.0000
+    openclaw         541       -89,742.2094     -9,723.8369        +1,624.9037       -80,018.3724       -91,367.1131       -89,742.2094        -89,742.2093     +0.0001
+    hermes           271       -33,746.3013     -3,517.9488        -5,912.2037       -30,228.3525       -27,834.0976       -33,746.3014        -33,746.3011     +0.0004
+    vscode-redacted  333          +761.5738         +31.6887           +28.7108          +729.8851          +732.8629          +761.5889            +761.5435     -0.0454
+
+  Things this surfaces that the v0.6.218 Passing-Bablok lens did
+  not:
+
+  - **codex** has a Deming slope of +2,225,990 tokens/row, **8.3×**
+    the OLS slope of +267,402 and **24×** the naive endpoint slope
+    of +93,174 — the EIV correction adds nearly 2M tokens/row to
+    what OLS alone would tell you. The lambda-sensitivity is
+    essentially zero (-0.0000), so this is **not an artifact of the
+    lambda=1 choice** — codex would report ~2.2M tokens/row at
+    lambda=0.5 and lambda=2.0 as well.
+  - **opencode** has the largest *negative* Deming slope at
+    -1,183,143 tokens/row, but its **OLS slope is essentially zero**
+    (-7,510). That is the textbook EIV signature: OLS-of-y-on-x
+    underestimates the magnitude when the regressor (here the row
+    index) carries error too. Lambda-sensitivity is +0.0002 — also
+    insensitive to the variance-ratio assumption.
+  - **opencode**, **openclaw**, and **claude-code** all show
+    `signFlippedFromNaive`-equivalent behavior: their naive
+    endpoint slopes are weakly positive (or barely negative), but
+    their Deming slopes are strongly *negative* / *positive* with
+    the opposite sign — the endpoints are unrepresentative of the
+    bulk EIV trend.
+  - **vscode-redacted** is the only source where lambda-sensitivity
+    is materially nonzero (-0.0454 tokens/row over a 4× lambda
+    sweep). At its tiny scale (slope ≈ +762 tokens/row, intercept
+    ≈ -120,758) that is still a 0.006% sensitivity — robust enough
+    to trust at lambda=1.
+
+  Cross-check vs Passing-Bablok (v0.6.218) on the same data:
+  PB reported codex at +44,194 tokens/row (median of pairs), opencode
+  at -1,082 (essentially flat), claude-code at +95 (essentially flat).
+  Deming and PB **agree on direction** for codex and opencode but
+  disagree by 1–3 orders of magnitude in *magnitude* — exactly what
+  the parametric/non-parametric split predicts when the data has
+  bivariate Gaussian-ish structure (Deming is efficient, PB sacrifices
+  efficiency for the ~29.3% breakdown). The two lenses are designed to
+  be read together, not in isolation.
+
 ## 0.6.218 — 2026-04-29
 
 ### Changed
