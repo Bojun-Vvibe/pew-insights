@@ -2,6 +2,159 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.220 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-bootstrap-slope-ci` — emits a
+  per-source **non-parametric percentile bootstrap confidence
+  interval** for the v0.6.219 Deming regression slope of per-row
+  `total_tokens` against row index `0..n-1`, in tokens per row.
+
+  This is the **first uncertainty-quantification lens** in the
+  slope suite. Every prior slope lens — Theil-Sen (v0.6.213),
+  Siegel (v0.6.216), Passing-Bablok (v0.6.218), Deming (v0.6.219),
+  the OLS daily-trend slope, the Mann-Kendall trend test
+  (v0.6.211), and every M-estimator location lens
+  (v0.6.207-v0.6.217) — emits a **point estimate** and nothing
+  about its sampling distribution. This lens reports the *spread*
+  of the Deming point estimator across `B` non-parametric
+  resamples, plus a percentile CI and a `ciContainsZero` flag for
+  "the slope is not statistically distinguishable from zero under
+  the bootstrap."
+
+  The procedure (per source, with `B = --bootstraps`, default
+  1000):
+
+  1. Compute the point Deming slope on the full data at the
+     supplied `--lambda` (default 1, orthogonal regression).
+  2. Resample `n` indices with replacement from `0..n-1` `B` times
+     using a **seeded LCG** (Numerical Recipes 32-bit constants,
+     `a = 1664525`, `c = 1013904223`, `m = 2^32`); for each
+     resample, take the corresponding `(idx_k, x_k)` pairs in
+     resample order (relabel positions `0..n-1` as the new x
+     axis), refit Deming.
+  3. Sort the `B` resample slopes ascending; report the point
+     `slope`, `bootMean` (mean of the resample slopes), `bootStd`
+     (sample std, n-1), and the percentile CI:
+     `ciLower = sortedSlopes[(1-confidence)/2]`,
+     `ciUpper = sortedSlopes[(1+confidence)/2]` (linear
+     interpolation between adjacent ranks).
+
+  Mechanically distinct from every previously shipped lens:
+
+  - vs **`source-row-token-deming-slope`** (v0.6.219): same
+    estimator at the heart, but adds the *bootstrap CI* lens —
+    this is the first lens that says "slope is X with a 95% CI of
+    [L, U]" rather than just "slope is X".
+  - vs **Passing-Bablok / Theil-Sen / Siegel / OLS slope lenses**:
+    all point estimators with no uncertainty quantification.
+  - vs **Mann-Kendall** (v0.6.211): MK reports a *p-value* for the
+    monotone-trend null hypothesis (does the rank-tau differ from
+    zero?). This lens reports an **interval estimate** for the
+    slope itself in tokens / row.
+
+  Determinism: pure builder, seeded LCG, sort tiebreak `source`
+  asc, wall clock only via `opts.generatedAt`.
+
+  Refinement (also v0.6.220): per-source rows carry a
+  `ciContainsZero: boolean` and `ciWidth: number` diagnostic, plus
+  a `--alert-zero-in-ci` filter flag that restricts output to only
+  sources whose CI straddles zero (the "slope is not
+  significantly different from zero" cohort), and a new sort key
+  `ci-contains-zero-first` that puts CI-straddling-zero rows at
+  the top.
+
+  Flags:
+  `--since/--until/--source/--min-rows/--bootstraps/--confidence/
+  --lambda/--seed/--alert-zero-in-ci/--top/--sort/--json`. Sort
+  keys: `magnitude-desc` (default), `slope-desc`, `slope-asc`,
+  `ci-width-desc`, `ci-width-asc`, `boot-std-desc`,
+  `ci-contains-zero-first`, `rows`, `source`. Validates:
+  `--bootstraps >= 100`, `--confidence in (0, 1)`, `--lambda > 0`,
+  integer `--seed`.
+
+### Tests
+
+Test count grew from **5,450 -> 5,526 (+76)**. New suite:
+`sourcerowtokenbootstrapslopeci` (76) — kernel: `percentileSorted`
+(empty/single/p<=0/p>=1/median/0.25/linear-interp/integer-index),
+`makeLcg` (determinism / different seeds / [0,1) range / zero seed
+allowed), `bootstrapResample` (length preservation / membership /
+seeded determinism), `bootstrapDemingSlope` (n<2 / all-equal /
+ascending / descending / lambda propagation); builder validation
+(minRows < 4 / bootstraps < 100 / non-integer bootstraps /
+confidence <= 0 / confidence >= 1 / non-finite confidence /
+lambda <= 0 / non-integer seed / bad sort key / top < 1 / invalid
+since / invalid until); builder data flow (empty queue, single
+source, --min-rows, --source filter, bad total_tokens / NaN /
+infinity / negative drops, bad hour_start, "unknown" source
+mapping, since/until window, defaults echoed, generatedAt
+default); bootstrap math (ascending -> CI mostly above zero,
+bootStd non-negative, ciLower <= ciUpper, all-equal -> CI=[0,0]
+and bootStd=0, same seed -> identical results, different seeds
+differ, B=1000 finite); ciContainsZero refinement (noisy near-zero
+data, strong ascending point slope, --alert-zero-in-ci filter,
+ciWidth = ciUpper - ciLower); all 9 sort keys + tiebreak; top cap;
+properties (bootMean within CI, confidence echo, lambda echo,
+alertZeroInCi=false keeps all rows).
+
+### Live smoke
+
+Against the local `~/.config/pew/queue.jsonl` (1,949 rows after
+filters, 6 sources, default `lambda = 1`, `B = 500`,
+`confidence = 0.95`, `seed = 42`, sorted by `magnitude-desc`,
+source name `vscode-copilot` redacted to `vscode-redacted`):
+
+    source           rows   point slope         bootMean             bootStd               ciLower (2.5%)        ciUpper (97.5%)       ciWidth               0inCI?
+    codex             64    +2,225,990.4792     -11,536,657.2670     218,933,002.8654      -88,594,742.3594      +74,910,047.2636      163,504,789.6230      yes
+    opencode         437    -1,139,377.3417      +2,136,928.1725      38,548,252.1015      -33,367,939.1615      +41,104,521.1167       74,472,460.2782      yes
+    claude-code      299      +412,420.1539      +2,428,933.5082      48,559,003.4837      -43,964,898.0119      +63,420,014.4178      107,384,912.4296      yes
+    openclaw         543       -88,808.9998        +382,329.7267       8,376,411.4894       -8,639,503.5156      +10,261,084.9351       18,900,588.4507      yes
+    hermes           273       -33,100.4221        -312,377.3261       7,903,563.6691       -2,656,370.9179       +2,809,665.5838        5,466,036.5017      yes
+    vscode-redacted  333          +761.5738            +354.5434          47,075.4042          -33,662.6571          +34,349.9025           68,012.5596      yes
+
+  Things this surfaces that no prior slope lens did:
+
+  - **Every source on the local queue has a bootstrap CI that
+    straddles zero at 95% confidence** (`ciContainsZero = yes` for
+    all 6). That is the bootstrap's verdict: under the
+    non-parametric resampling distribution of the Deming slope on
+    this data, *not one* of the per-source point slopes — not even
+    `codex` at +2.2M tokens/row — is statistically distinguishable
+    from zero at 95% confidence on `B = 500` resamples. The
+    reported point slopes are real features of the *observed*
+    series, but they are not robust to which rows you drew.
+  - **`codex`** has the largest absolute point slope (+2.2M
+    tokens/row) but a CI of `[-88.6M, +74.9M]` and a `bootStd` of
+    219M — the bootstrap distribution is wildly fat-tailed,
+    consistent with a small `n = 64` series dominated by a few
+    extreme `total_tokens` rows that the EIV (Deming) point fit
+    weights heavily. The `bootMean` of -11.5M (opposite sign of
+    the point slope) is the textbook signature of a high-leverage
+    point pulling the full-data fit.
+  - **`vscode-redacted`** is the cleanest source by CI width
+    (`ciWidth = 68K` vs `163.5M` for `codex`), an
+    `bootStd / |slope|` ratio of ~62 — but its CI of
+    `[-33.7K, +34.3K]` still straddles zero, so even the
+    cleanest-looking source on this data has a bootstrap-rejected
+    null of "the per-row token trend differs from zero."
+  - **`opencode`** and **`claude-code`** show `bootMean` opposite
+    in sign to the point `slope` (point -1.14M / boot +2.14M;
+    point +0.41M / boot +2.43M for claude-code — same sign here
+    but bootMean is 6x the point) — both are high-leverage cases
+    where the resampling distribution is centered far from the
+    full-data point estimate.
+
+  Cross-check vs Deming (v0.6.219) on the same data: the point
+  slopes match to within rounding (modulo a few rows of additional
+  data captured between the two builds — opencode 435 -> 437,
+  openclaw 541 -> 543, hermes 271 -> 273). What the bootstrap CI
+  adds, that no prior lens had, is the verdict that **none of
+  these point slopes survive a 95% bootstrap CI test against
+  zero** on the current dataset — the per-row token trends are
+  observable but not statistically robust under resampling.
+
 ## 0.6.219 — 2026-04-29
 
 ### Added
