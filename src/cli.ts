@@ -399,6 +399,10 @@ import { buildSourceRowTokenBcaBootstrapSlopeCi } from './sourcerowtokenbcaboots
 import { buildSourceRowTokenStudentizedBootstrapSlopeCi } from './sourcerowtokenstudentizedbootstrapslopeci.js';
 import { buildSourceRowTokenAbcBootstrapSlopeCi } from './sourcerowtokenabcbootstrapslopeci.js';
 import { buildSourceRowTokenProfileLikelihoodSlopeCi } from './sourcerowtokenprofilelikelihoodslopeci.js';
+import {
+  buildSourceRowTokenSlopeCiCrossLensAgreement,
+  renderSourceRowTokenSlopeCiCrossLensAgreement,
+} from './sourcerowtokenslopeicrosslensagreement.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -20510,6 +20514,172 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenLehmerNegThreeMean(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-cross-lens-agreement')
+  .description(
+    "Per-source cross-lens agreement diagnostic for the v0.6.219 Deming slope. Consumes the SIX uncertainty-quantification CIs shipped between v0.6.220 and v0.6.225 (percentile bootstrap, jackknife normal, BCa, studentized-t bootstrap, ABC, profile-likelihood) and reports per source: (1) the 15 pairwise lens-vs-lens interval Jaccard similarities; (2) the cross-lens agreement index = mean Jaccard across the 15 pairs (in [0, 1]); (3) the strict consensus interval = intersection of all six lens CIs (NaN endpoints if any pair is disjoint, surfaced as consensusIntervalIsEmpty); (4) the loose union envelope = [min lower, max upper] across the six; (5) lensesAgree = true iff every pair overlaps; (6) the disjoint-pair count out of 15; (7) the slope-point spread (max - min) and sample std across the six lens point slopes. Mechanically distinct from every prior subcommand: this is NOT a new CI estimator, it is a meta-diagnostic that surfaces *disagreement* between the existing six. A source with agreement-index near 1 is one where the choice of CI lens does not matter; a source with agreement-index near 0 is one where downstream conclusions are lens-dependent and the analyst must look harder. Use --alert-disagree to filter to sources whose six lenses fail to all-overlap (consensus interval empty); --alert-zero-in-union to surface sources where the loose envelope still straddles zero.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-disagree',
+    'only emit sources whose six lens CIs fail to all-overlap (consensus interval empty)',
+  )
+  .option(
+    '--alert-zero-in-union',
+    'only emit sources whose loose union envelope contains zero (i.e. at least one lens fails to reject zero)',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'agreement-asc' (default; least-agreeing first) | 'agreement-desc' | 'consensus-width-desc' | 'consensus-width-asc' | 'union-width-desc' | 'union-width-asc' | 'slope-spread-desc' | 'rows' | 'source'",
+    'agreement-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertDisagree?: boolean;
+        alertZeroInUnion?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'agreement-asc',
+          'agreement-desc',
+          'consensus-width-desc',
+          'consensus-width-asc',
+          'union-width-desc',
+          'union-width-asc',
+          'slope-spread-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiCrossLensAgreement(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertDisagree: opts.alertDisagree ?? false,
+          alertZeroInUnion: opts.alertZeroInUnion ?? false,
+          top,
+          sort: opts.sort as
+            | 'agreement-asc'
+            | 'agreement-desc'
+            | 'consensus-width-desc'
+            | 'consensus-width-asc'
+            | 'union-width-desc'
+            | 'union-width-asc'
+            | 'slope-spread-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiCrossLensAgreement(report) + '\n',
           );
         }
       } catch (e) {
