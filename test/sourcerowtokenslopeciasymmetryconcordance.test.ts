@@ -792,3 +792,58 @@ test('render: dominantSign null prints "?"', () => {
   // The dominantSign=null cell should render as "?" surrounded by whitespace
   assert.ok(/\s\?\s/.test(text));
 });
+
+// --- showAsymmetries follow-up render option ---
+
+test('render: showAsymmetries=false omits the per-lens asym line', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiAsymmetryConcordance(queue, {
+    bootstraps: 200,
+    seed: 91,
+  });
+  const text = renderSourceRowTokenSlopeCiAsymmetryConcordance(r, {
+    showAsymmetries: false,
+  });
+  // The per-lens follow-up line is identifiable by the literal
+  // 17-space-indent prefix '                 asym:' which the
+  // header summary string 'unanimous-asym:' cannot match.
+  assert.ok(!text.includes('                 asym:'));
+  assert.ok(!text.includes('bootstrap='));
+});
+
+test('render: showAsymmetries=true appends an asym 6-vector line per source', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiAsymmetryConcordance(queue, {
+    bootstraps: 200,
+    seed: 93,
+  });
+  const text = renderSourceRowTokenSlopeCiAsymmetryConcordance(r, {
+    showAsymmetries: true,
+  });
+  assert.ok(text.includes('                 asym:'));
+  for (const lens of SLOPE_ASYMMETRY_CONCORDANCE_LENS_NAMES) {
+    assert.ok(text.includes(`${lens}=`));
+  }
+});
+
+test('render: showAsymmetries default (omitted) matches showAsymmetries=false', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiAsymmetryConcordance(queue, {
+    bootstraps: 200,
+    seed: 95,
+  });
+  const a = renderSourceRowTokenSlopeCiAsymmetryConcordance(r);
+  const b = renderSourceRowTokenSlopeCiAsymmetryConcordance(r, {
+    showAsymmetries: false,
+  });
+  assert.equal(a, b);
+});
+
+test('render: showAsymmetries with empty report still emits header but no asym lines', () => {
+  const r = buildSourceRowTokenSlopeCiAsymmetryConcordance([]);
+  const text = renderSourceRowTokenSlopeCiAsymmetryConcordance(r, {
+    showAsymmetries: true,
+  });
+  assert.ok(text.includes('(no sources)'));
+  assert.ok(!text.includes('                 asym:'));
+});

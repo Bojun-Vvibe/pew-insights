@@ -21491,6 +21491,10 @@ program
     'concordance-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-asymmetries',
+    'when rendering pretty (non-JSON), print the per-lens 6-vector of asymmetries on a follow-up line under each source row',
+  )
   .action(
     async (
       opts: {
@@ -21507,6 +21511,7 @@ program
         top?: string;
         sort: string;
         json?: boolean;
+        showAsymmetries?: boolean;
       },
       cmd,
     ) => {
@@ -21613,7 +21618,9 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(
-            renderSourceRowTokenSlopeCiAsymmetryConcordance(report) + '\n',
+            renderSourceRowTokenSlopeCiAsymmetryConcordance(report, {
+              showAsymmetries: opts.showAsymmetries ?? false,
+            }) + '\n',
           );
         }
       } catch (e) {

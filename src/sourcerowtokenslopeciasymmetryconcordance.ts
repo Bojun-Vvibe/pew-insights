@@ -629,10 +629,19 @@ function fmtSign(s: -1 | 0 | 1 | null): string {
 
 /**
  * Plain-text renderer. Self-contained, no chalk dependency.
+ *
+ * When `showAsymmetries` is true, each source row is followed by a
+ * second line printing the canonical 6-vector of asymmetries (one
+ * per lens) in fixed order (bootstrap, jackknife, bca,
+ * studentizedT, abc, profileLikelihood) -- useful for spotting
+ * which specific lens swings the dominant sign without having to
+ * re-run with --json.
  */
 export function renderSourceRowTokenSlopeCiAsymmetryConcordance(
   r: SourceRowTokenSlopeCiAsymmetryConcordanceReport,
+  opts: { showAsymmetries?: boolean } = {},
 ): string {
+  const showAsymmetries = opts.showAsymmetries ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-asymmetry-concordance');
   lines.push(
@@ -673,6 +682,14 @@ export function renderSourceRowTokenSlopeCiAsymmetryConcordance(
         (row.unanimousSymmetric ? 'yes' : 'NO').padStart(3),
       ].join('  '),
     );
+    if (showAsymmetries) {
+      const parts: string[] = [];
+      for (let i = 0; i < row.asymmetries.length; i++) {
+        const lens = SLOPE_ASYMMETRY_CONCORDANCE_LENS_NAMES[i]!;
+        parts.push(`${lens}=${fmtNum(row.asymmetries[i]!)}`);
+      }
+      lines.push(`                 asym: ${parts.join('  ')}`);
+    }
   }
   return lines.join('\n');
 }
