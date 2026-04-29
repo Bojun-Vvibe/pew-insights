@@ -143,6 +143,7 @@ import {
   renderSourceRowTokenMEstimatorGemanMcClure,
   renderSourceRowTokenTheilSenSlope,
   renderSourceRowTokenSiegelSlope,
+  renderSourceRowTokenPassingBablokSlope,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -383,6 +384,7 @@ import { buildSourceRowTokenMEstimatorCauchy } from './sourcerowtokenmestimatorc
 import { buildSourceRowTokenMEstimatorGemanMcClure } from './sourcerowtokenmestimatorgemanmcclure.js';
 import { buildSourceRowTokenTheilSenSlope } from './sourcerowtokentheilsenslope.js';
 import { buildSourceRowTokenSiegelSlope } from './sourcerowtokensiegelslope.js';
+import { buildSourceRowTokenPassingBablokSlope } from './sourcerowtokenpassingbablokslope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -9329,6 +9331,129 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenSiegelSlope(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-passing-bablok-slope')
+  .description(
+    "Per-source Passing-Bablok shifted-median slope of per-row total_tokens against row index, in tokens per row. Errors-in-both-variables R-estimator (Passing & Bablok 1983): enumerate all n*(n-1)/2 pairwise slopes, drop any s == -1, let K = #{s < -1}, then pick the slope at sorted 1-based position floor((N+1)/2) + K (lower pick when (N-K) is even). FIRST x<->y SYMMETRIC slope estimator in the suite — PB returns reciprocal slopes when you swap regressor and regressand, while Theil-Sen / Siegel do not. Asymptotic breakdown ~29.3%, same as Theil-Sen. Reports the explicit shift (pairsBelowMinusOne K, shiftIndex, shiftRatio) and pbVsTheilSenGap = slope - theilSenSlope so you can see how far PB has moved from the unshifted reference. Originally for clinical-chemistry method comparison; now the canonical robust regression for errors-in-both-variables data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-slope-magnitude <f>',
+    'drop sources whose |slope| is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--max-pairs <n>',
+    'skip sources whose pair count n*(n-1)/2 exceeds n; bounds the O(n^2) work. Must be a positive integer. (default 5000000 ~ n=3163 rows)',
+    '5000000',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'gap-desc' (pbVsTheilSenGap desc) | 'gap-magnitude-desc' (|pbVsTheilSenGap| desc) | 'shift-ratio-desc' (shiftIndex/N desc) | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minSlopeMagnitude: string;
+        maxPairs: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minSlopeMagnitude = Number.parseFloat(opts.minSlopeMagnitude);
+        if (!Number.isFinite(minSlopeMagnitude) || minSlopeMagnitude < 0) {
+          throw new Error(
+            `--min-slope-magnitude must be a finite, non-negative number (got ${opts.minSlopeMagnitude})`,
+          );
+        }
+        const maxPairs = Number.parseInt(opts.maxPairs, 10);
+        if (!Number.isInteger(maxPairs) || maxPairs < 1) {
+          throw new Error(
+            `--max-pairs must be a positive integer (got ${opts.maxPairs})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'slope-desc',
+          'slope-asc',
+          'magnitude-desc',
+          'gap-desc',
+          'gap-magnitude-desc',
+          'shift-ratio-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenPassingBablokSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minSlopeMagnitude,
+          maxPairs,
+          top,
+          sort: opts.sort as
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'magnitude-desc'
+            | 'gap-desc'
+            | 'gap-magnitude-desc'
+            | 'shift-ratio-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenPassingBablokSlope(report) + '\n');
         }
       } catch (e) {
         die(e);

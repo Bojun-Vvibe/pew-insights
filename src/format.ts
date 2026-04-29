@@ -12133,6 +12133,10 @@ import type {
   SourceRowTokenSiegelSlopeReport,
   SourceRowTokenSiegelSlopeRow,
 } from './sourcerowtokensiegelslope.js';
+import type {
+  SourceRowTokenPassingBablokSlopeReport,
+  SourceRowTokenPassingBablokSlopeRow,
+} from './sourcerowtokenpassingbablokslope.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13788,6 +13792,93 @@ export function renderSourceRowTokenMEstimatorGemanMcClure(
     ],
   );
   lines.push(renderTableLocal(headers, rowsGM));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenPassingBablokSlope(
+  r: SourceRowTokenPassingBablokSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-passing-bablok-slope'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-slope-magnitude: ${formatNumber(r.minSlopeMagnitude)}    max-pairs: ${formatNumber(r.maxPairs)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAbovePairCap)} above pair cap, ${formatNumber(r.droppedBelowMinSlopeMagnitude)} below min-slope-magnitude, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Passing-Bablok shifted-median slope of per-row total_tokens against row index. Errors-in-both-variables R-estimator: enumerate all n*(n-1)/2 pairwise slopes; drop any s == -1; let K = #{s < -1}; pick the slope at sorted 1-based position floor((N+1)/2) + K (lower pick when (N-K) is even). FIRST x<->y SYMMETRIC slope estimator in the suite — Passing-Bablok yields reciprocal slopes when you regress y on x vs x on y, while Theil-Sen / Siegel do not. Asymptotic breakdown ~29.3% (same as Theil-Sen). Reports the explicit shift (pairsBelowMinusOne K, shiftIndex, shiftRatio) and the literal pbVsTheilSenGap = slope - theilSenSlope so you can see how far PB has moved from the unshifted Theil-Sen reference. Originally Passing & Bablok 1983 for clinical-chemistry method comparison; the canonical robust regression for errors-in-both-variables data.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Passing-Bablok shifted-median slope (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'first',
+    'last',
+    'naive',
+    'theilSen',
+    'slope',
+    'intercept',
+    'sign',
+    'N',
+    'K',
+    'shiftIdx',
+    'shiftRatio',
+    'pbGap',
+  ];
+  const rowsPB: string[][] = r.sources.map(
+    (s: SourceRowTokenPassingBablokSlopeRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.firstX.toFixed(2),
+      s.lastX.toFixed(2),
+      (s.naiveSlope >= 0 ? '+' : '') + s.naiveSlope.toFixed(4),
+      (s.theilSenSlope >= 0 ? '+' : '') + s.theilSenSlope.toFixed(4),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      s.intercept.toFixed(2),
+      s.slopeSign,
+      formatNumber(s.pairsValid),
+      formatNumber(s.pairsBelowMinusOne),
+      formatNumber(s.shiftIndex),
+      s.shiftRatio.toFixed(3),
+      (s.pbVsTheilSenGap >= 0 ? '+' : '') + s.pbVsTheilSenGap.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsPB));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
