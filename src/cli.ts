@@ -133,6 +133,7 @@ import {
   renderSourceRowTokenTrimMean20,
   renderSourceRowTokenTrimMean30,
   renderSourceRowTokenHodgesLehmann,
+  renderSourceRowTokenBroadenedMedian,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -363,6 +364,7 @@ import { buildSourceRowTokenTrimMean10 } from './sourcerowtokentrimmean10.js';
 import { buildSourceRowTokenTrimMean20 } from './sourcerowtokentrimmean20.js';
 import { buildSourceRowTokenTrimMean30 } from './sourcerowtokentrimmean30.js';
 import { buildSourceRowTokenHodgesLehmann } from './sourcerowtokenhodgeslehmann.js';
+import { buildSourceRowTokenBroadenedMedian } from './sourcerowtokenbroadenedmedian.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8075,6 +8077,115 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenHodgesLehmann(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-broadened-median')
+  .description(
+    "Per-source Harrell-Davis broadened median of per-row total_tokens. Weighted L-estimator HD = sum w_i * x_(i) where w_i = I_{i/n}(a,b) - I_{(i-1)/n}(a,b) and a = b = (n+1)/2 (Beta-CDF differences). SMOOTH L-estimator: every shipped median-family lens (median / midhinge / trimean / IQM / TM-{10,20,25,30} / WM-{10,20}) places 0/1 or uniform-on-a-subset weights on the order statistics; HD places a smooth Beta-derived bell with strictly positive weight on every order statistic. Same target as the population median (unlike Hodges-Lehmann which targets the center of symmetry of (X+X')/2). Lower finite-sample variance than the raw median; breakdown 0.5. Reports centerWeight (weight on the central order statistic), weightSpread (max(w_i) - min(w_i)), hdMeanGap = HD - mean, hdMedianGap = HD - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need n >= 4 for Beta(a,b) smoothing with a=b=(n+1)/2 to be meaningfully distinct from the raw median) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-broadened-median <f>',
+    'drop sources whose Harrell-Davis broadened median is strictly below f; cohort selector for "this source actually carries non-trivial body-location token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'hd-desc' (default) | 'hd-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|hdMeanGap| desc) | 'median-gap-desc' (|hdMedianGap| desc) | 'rows' | 'source'",
+    'hd-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minBroadenedMedian: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minBroadenedMedian = Number.parseFloat(opts.minBroadenedMedian);
+        if (!Number.isFinite(minBroadenedMedian) || minBroadenedMedian < 0) {
+          throw new Error(
+            `--min-broadened-median must be a finite, non-negative number (got ${opts.minBroadenedMedian})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'hd-desc',
+          'hd-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenBroadenedMedian(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minBroadenedMedian,
+          top,
+          sort: opts.sort as
+            | 'hd-desc'
+            | 'hd-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenBroadenedMedian(report) + '\n');
         }
       } catch (e) {
         die(e);

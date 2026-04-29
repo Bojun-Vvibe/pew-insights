@@ -12093,6 +12093,10 @@ import type {
   SourceRowTokenHodgesLehmannReport,
   SourceRowTokenHodgesLehmannRow,
 } from './sourcerowtokenhodgeslehmann.js';
+import type {
+  SourceRowTokenBroadenedMedianReport,
+  SourceRowTokenBroadenedMedianRow,
+} from './sourcerowtokenbroadenedmedian.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -12431,6 +12435,77 @@ export function renderSourceRowTokenHodgesLehmann(
     ],
   );
   lines.push(renderTableLocal(headers, rowsHL));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenBroadenedMedian(
+  r: SourceRowTokenBroadenedMedianReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-broadened-median'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-broadened-median: ${formatNumber(r.minBroadenedMedian)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinBroadenedMedian)} below min-broadened-median, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Harrell-Davis broadened median of per-row total_tokens: weighted L-estimator HD = sum w_i * x_(i) with w_i = I_{i/n}(a,b) - I_{(i-1)/n}(a,b) and a = b = (n+1)/2. SMOOTH L-estimator — every shipped median-family lens (median / midhinge / trimean / IQM / TM / WM) puts 0/1 or uniform-on-a-subset weights on order statistics; HD puts a smooth Beta-derived bell. Same target as the population median (unlike HL which targets center-of-symmetry of (X+X')/2). Lower finite-sample variance than the raw median; breakdown 0.5. centerWeight is the weight on the central order statistic; weightSpread = max(w_i) - min(w_i). hdMeanGap and hdMedianGap expose how smoothing shifts the location estimate.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Harrell-Davis broadened median (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'hd',
+    'centerW',
+    'wSpread',
+    'hd-mean',
+    'hd-median',
+  ];
+  const rowsHD: string[][] = r.sources.map(
+    (s: SourceRowTokenBroadenedMedianRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.broadenedMedian.toFixed(2),
+      s.centerWeight.toFixed(4),
+      s.weightSpread.toFixed(4),
+      (s.hdMeanGap >= 0 ? '+' : '') + s.hdMeanGap.toFixed(2),
+      (s.hdMedianGap >= 0 ? '+' : '') + s.hdMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsHD));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
