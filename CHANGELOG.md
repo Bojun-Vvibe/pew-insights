@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.209 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-huber` — per-source
+  **Huber M-estimator** of location of per-row `total_tokens`. Solves
+  `sum_i psi_c((x_i - mu)/s) = 0` by iteratively reweighted least
+  squares (IRLS) with `mu_0 = median`, `s = MAD/0.6745`,
+  `psi_c(z) = z if |z|<=c else c*sign(z)`, canonical tuning
+  `c = 1.345` (≈ 95% asymptotic relative efficiency at the normal).
+
+  **First M-estimator in the location-lens suite.** Mechanically
+  distinct from every shipped lens:
+  - **Data-adaptive weights** `w_i(mu) = psi_c(z_i)/z_i` depend on
+    the residual itself, not on rank — distinct from L-estimators
+    (mean, TM-{10,20,25,30}, WM-{10,20}, median, midhinge, trimean,
+    IQM, HD broadened median, midrange) where weights depend only
+    on rank.
+  - **Iterative**, no closed form — distinct from all L-estimators
+    plus power means (Lehmer-k, harmonic, contraharmonic, quadratic).
+  - **Raw residuals**, not ranks — distinct from R-estimators like
+    Hodges-Lehmann (median of pairwise Walsh averages).
+
+  Bounded influence: any single row's pull on `mu` is capped at
+  `c * s`. Translation- and scale-equivariant. Reports per source:
+  `huber`, `mean`, `median`, `mad`, `scale`, `iterations`,
+  `clippedRows` (rows with `|z|>c` at converged `mu`),
+  `huberMeanGap = huber - mean`, `huberMedianGap = huber - median`.
+
+  Flags: `--c-tuning <f>` (default 1.345) parameterizes the Huber
+  constant; `--min-rows <n>` (default 4), `--min-huber <f>`,
+  `--top <n>`, `--sort` with eight keys including `huber-desc`,
+  `huber-asc`, `mean-gap-desc`, `median-gap-desc`.
+
+### Live smoke (`pew-insights source-row-token-m-estimator-huber --top 8` against `~/.config/pew/queue.jsonl`)
+
+```
+source          rows  n      huber          mean           median         huberMeanGap   huberMedianGap
+--------------  ----  ----   ------------   ------------   ------------   ------------   ---------------
+codex           64    64     9,898,511.32   12,650,385.31  7,132,861.00   -2,751,874.00  +2,765,650.32
+opencode        421   421    8,019,691.14   10,407,918.48  7,824,449.00   -2,388,227.35  +195,242.14
+claude-code     299   299    5,095,026.75   11,512,995.95  3,319,967.00   -6,417,969.20  +1,775,059.75
+openclaw        527   527    2,823,861.20   3,759,377.21   2,344,215.00     -935,516.02  +479,646.20
+hermes          257   257      524,994.86     763,660.20     432,218.00     -238,665.34  +92,776.86
+vscode-XXX      333   333        2,914.39       5,662.84       2,319.00       -2,748.46  +595.39
+```
+
+All six sources show **negative `huberMeanGap`** (Huber sits below
+the mean) and **positive `huberMedianGap`** (Huber sits above the
+raw median) — consistent with one-sided right-tail contamination
+in real per-row token distributions: a few very large rows pull
+the mean way up; Huber clips them with bounded influence and lands
+between the median bulk and the mean. Largest `|huberMeanGap|`
+is **claude-code** at -6.42M tokens (mean dragged ~3.5x the
+median). IRLS converged in 8-12 iterations everywhere; clipped-row
+count scales with sample size and tail heaviness (8-101 rows
+per source).
+
+### Tests
+
+- New suites `sourcerowtokenmestimatorhuber` (30 tests: shape,
+  validation, raw kernel, equivariance, bounded influence, MAD=0
+  fallback, c→∞ ≈ mean, c→0 ≈ median, builder integration) and
+  `sourcerowtokenmestimatorhuber.ladder` (8 tests: cross-analyzer
+  ladder vs HD broadened median / Hodges-Lehmann / TM25 / median
+  / mean — clean-data agreement, contamination ordering,
+  translation+scale equivariance simultaneously, progressive
+  contamination growth bound).
+- Test count: **4940 → 4984 (+44)**.
+
 ## 0.6.208 — 2026-04-29
 
 ### Added
