@@ -22856,6 +22856,10 @@ program
     '--show-residuals',
     'when rendering pretty (non-JSON), append a per-source 6-row sub-table showing each lens signedResidual / signedZ / absZ',
   )
+  .option(
+    '--show-summary',
+    'when rendering pretty (non-JSON), append a per-source one-line summary naming the outlier lens, signedZ, direction, and (consensus outside its own CI) flag',
+  )
   .action(
     async (
       opts: {
@@ -22873,6 +22877,7 @@ program
         sort: string;
         json?: boolean;
         showResiduals?: boolean;
+        showSummary?: boolean;
       },
       cmd,
     ) => {
@@ -22973,6 +22978,7 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiLensResidualZ(report, {
               showResiduals: opts.showResiduals ?? false,
+              showSummary: opts.showSummary ?? false,
             }) + '\n',
           );
         }

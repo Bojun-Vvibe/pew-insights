@@ -627,12 +627,22 @@ function fmtNum(x: number, digits = 4): string {
  * abs Z (canonical lens order), useful for full per-lens
  * attribution of which lens is contributing how much to the
  * source's discordance.
+ *
+ * When `showSummary` is true, a compact one-line directional
+ * summary is appended after each source row naming the
+ * `outlierLens`, `outlierDirection`, the signed Z, and an
+ * explicit "(consensus outside its own CI)" flag whenever
+ * `outlierConsensusOutside` is true. Lighter-weight alternative
+ * to `--show-residuals` that surfaces just the headline of which
+ * lens is the worst per-source outlier and whether it crosses
+ * the credibility threshold.
  */
 export function renderSourceRowTokenSlopeCiLensResidualZ(
   r: SourceRowTokenSlopeCiLensResidualZReport,
-  opts: { showResiduals?: boolean } = {},
+  opts: { showResiduals?: boolean; showSummary?: boolean } = {},
 ): string {
   const showResiduals = opts.showResiduals ?? false;
+  const showSummary = opts.showSummary ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-residual-z');
   lines.push(
@@ -669,6 +679,20 @@ export function renderSourceRowTokenSlopeCiLensResidualZ(
         fmtNum(row.lensConcordanceScore).padStart(8),
       ].join('  '),
     );
+    if (showSummary) {
+      const arrow =
+        row.outlierDirection === 'up'
+          ? '^'
+          : row.outlierDirection === 'down'
+            ? 'v'
+            : '=';
+      const flag = row.outlierConsensusOutside
+        ? ' (consensus outside its own CI)'
+        : '';
+      lines.push(
+        `    summary: outlier ${row.outlierLens} signedZ=${fmtNum(row.outlierSigned)} ${arrow} dir=${row.outlierDirection}${flag}`,
+      );
+    }
     if (showResiduals) {
       lines.push('    lens               signedResid  signedZ      absZ');
       for (let i = 0; i < SLOPE_LENS_RESIDUAL_Z_LENS_NAMES.length; i++) {

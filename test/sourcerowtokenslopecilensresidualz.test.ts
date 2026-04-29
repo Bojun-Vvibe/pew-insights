@@ -451,3 +451,57 @@ test('renderer: handles infinite values gracefully', () => {
   const out = renderSourceRowTokenSlopeCiLensResidualZ(r);
   assert.ok(typeof out === 'string');
 });
+
+test('renderer: showSummary appends per-source one-line summary', () => {
+  const queue = ascending('clean', 60, 10, 100);
+  const r = buildSourceRowTokenSlopeCiLensResidualZ(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiLensResidualZ(r, {
+    showSummary: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /summary: outlier /);
+    assert.match(out, /signedZ=/);
+    assert.match(out, /dir=/);
+  }
+});
+
+test('renderer: showSummary flags consensus-outside CI cases', () => {
+  // Build a constructed report by reusing the renderer with a hand-built
+  // row would require crafting types; instead we drive through the builder
+  // and assert the flag string only appears when at least one row has
+  // outlierConsensusOutside == true.
+  const queue = [
+    ...ascending('a', 60, 10, 100),
+    ...ascending('b', 60, 5, 200),
+  ];
+  const r = buildSourceRowTokenSlopeCiLensResidualZ(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiLensResidualZ(r, {
+    showSummary: true,
+  });
+  const anyOutside = r.rows.some((row) => row.outlierConsensusOutside);
+  if (anyOutside) {
+    assert.match(out, /\(consensus outside its own CI\)/);
+  }
+});
+
+test('renderer: showSummary and showResiduals compose without error', () => {
+  const queue = ascending('clean', 60, 10, 100);
+  const r = buildSourceRowTokenSlopeCiLensResidualZ(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiLensResidualZ(r, {
+    showSummary: true,
+    showResiduals: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /summary: outlier /);
+    assert.match(out, /signedResid/);
+  }
+});
