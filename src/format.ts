@@ -12105,6 +12105,10 @@ import type {
   SourceRowTokenMEstimatorTukeyReport,
   SourceRowTokenMEstimatorTukeyRow,
 } from './sourcerowtokenmestimatortukey.js';
+import type {
+  SourceRowTokenMEstimatorHampelReport,
+  SourceRowTokenMEstimatorHampelRow,
+} from './sourcerowtokenmestimatorhampel.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13171,6 +13175,87 @@ export function renderSourceRowTokenMEstimatorTukey(
     ],
   );
   lines.push(renderTableLocal(headers, rowsTukey));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenMEstimatorHampel(
+  r: SourceRowTokenMEstimatorHampelReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-m-estimator-hampel'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-hampel: ${formatNumber(r.minHampel)}    a: ${r.a}    b: ${r.b}    c: ${r.c}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinHampel)} below min-hampel, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hampel three-part redescending M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 via IRLS with mu_0 = median, s = MAD/0.6745, and the piecewise-linear influence function psi(z) = z if |z|<=a; a*sign(z) if a<|z|<=b; a*sign(z)*(c-|z|)/(c-b) if b<|z|<=c; 0 if |z|>c. Canonical knots (a,b,c) = (${r.a}, ${r.b}, ${r.c}) -> ~95% ARE at the normal. FIRST PIECEWISE-LINEAR REDESCENDER and FIRST THREE-PART M-estimator in the suite. Distinct from Huber (monotone, no rejection), distinct from Tukey biweight (smooth single-knob redescender). Reports the four-bucket residual partition: coreRows (|z|<=a, full weight), plateauRows (a<|z|<=b, psi plateau at a), descendingRows (b<|z|<=c, linear descent), rejectedRows (|z|>c, weight = 0). hampelMeanGap = hampel - mean, hampelMedianGap = hampel - median.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Hampel three-part M-estimator (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'hampel',
+    'mad',
+    'scale',
+    'iter',
+    'core',
+    'plateau',
+    'descend',
+    'rejected',
+    'hampel-mean',
+    'hampel-median',
+  ];
+  const rowsHampel: string[][] = r.sources.map(
+    (s: SourceRowTokenMEstimatorHampelRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.hampel.toFixed(2),
+      s.mad.toFixed(2),
+      s.scale.toFixed(2),
+      String(s.iterations),
+      formatNumber(s.coreRows),
+      formatNumber(s.plateauRows),
+      formatNumber(s.descendingRows),
+      formatNumber(s.rejectedRows),
+      (s.hampelMeanGap >= 0 ? '+' : '') + s.hampelMeanGap.toFixed(2),
+      (s.hampelMedianGap >= 0 ? '+' : '') + s.hampelMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsHampel));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

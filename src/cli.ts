@@ -136,6 +136,7 @@ import {
   renderSourceRowTokenBroadenedMedian,
   renderSourceRowTokenMEstimatorHuber,
   renderSourceRowTokenMEstimatorTukey,
+  renderSourceRowTokenMEstimatorHampel,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -369,6 +370,7 @@ import { buildSourceRowTokenHodgesLehmann } from './sourcerowtokenhodgeslehmann.
 import { buildSourceRowTokenBroadenedMedian } from './sourcerowtokenbroadenedmedian.js';
 import { buildSourceRowTokenMEstimatorHuber } from './sourcerowtokenmestimatorhuber.js';
 import { buildSourceRowTokenMEstimatorTukey } from './sourcerowtokenmestimatortukey.js';
+import { buildSourceRowTokenMEstimatorHampel } from './sourcerowtokenmestimatorhampel.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8434,6 +8436,153 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMEstimatorTukey(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-m-estimator-hampel')
+  .description(
+    "Per-source Hampel three-part redescending M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 by IRLS with mu_0 = median, s = MAD/0.6745, and the piecewise-linear influence function psi(z) = z if |z|<=a; a*sign(z) if a<|z|<=b; a*sign(z)*(c-|z|)/(c-b) if b<|z|<=c; 0 if |z|>c. Canonical knots (a,b,c) = (1.7, 3.4, 8.5) -> ~95% asymptotic relative efficiency at the normal. FIRST PIECEWISE-LINEAR REDESCENDER and FIRST THREE-PART M-estimator in the suite. Mechanically distinct from Huber (monotone psi: clips to +-c forever, never zeroes out), distinct from Tukey biweight (smooth degree-4 single-knob redescender: tangent to zero at +-c, no inner plateau), distinct from L-estimators (rank-only weights), R-estimators (Hodges-Lehmann), and power means (Lehmer / harmonic / contraharmonic / quadratic). Translation- and scale-equivariant. Reports the FOUR-BUCKET residual partition: coreRows (|z|<=a, full weight 1), plateauRows (a<|z|<=b, psi plateau at a), descendingRows (b<|z|<=c, linear descent), rejectedRows (|z|>c, weight = 0). hampelMeanGap = hampel - mean, hampelMedianGap = hampel - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-hampel <f>',
+    'drop sources whose Hampel M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--knot-a <f>',
+    'Hampel inner knot a (in MAD units). Must satisfy 0 < a < b < c. (default 1.7 = canonical)',
+    '1.7',
+  )
+  .option(
+    '--knot-b <f>',
+    'Hampel middle knot b (in MAD units). Must satisfy 0 < a < b < c. (default 3.4 = canonical)',
+    '3.4',
+  )
+  .option(
+    '--knot-c <f>',
+    'Hampel outer knot c (in MAD units). Rows with |z| > c are fully rejected. Must satisfy 0 < a < b < c. (default 8.5 = canonical)',
+    '8.5',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'hampel-desc' (default) | 'hampel-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|hampelMeanGap| desc) | 'median-gap-desc' (|hampelMedianGap| desc) | 'rejected-desc' (rejectedRows desc) | 'rows' | 'source'",
+    'hampel-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minHampel: string;
+        knotA: string;
+        knotB: string;
+        knotC: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minHampel = Number.parseFloat(opts.minHampel);
+        if (!Number.isFinite(minHampel) || minHampel < 0) {
+          throw new Error(
+            `--min-hampel must be a finite, non-negative number (got ${opts.minHampel})`,
+          );
+        }
+        const a = Number.parseFloat(opts.knotA);
+        const b = Number.parseFloat(opts.knotB);
+        const c = Number.parseFloat(opts.knotC);
+        if (
+          !Number.isFinite(a) ||
+          !Number.isFinite(b) ||
+          !Number.isFinite(c) ||
+          !(a > 0) ||
+          !(b > a) ||
+          !(c > b)
+        ) {
+          throw new Error(
+            `Hampel knots must satisfy 0 < a < b < c (got a=${opts.knotA}, b=${opts.knotB}, c=${opts.knotC})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'hampel-desc',
+          'hampel-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'rejected-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorHampel(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minHampel,
+          a,
+          b,
+          c,
+          top,
+          sort: opts.sort as
+            | 'hampel-desc'
+            | 'hampel-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'rejected-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMEstimatorHampel(report) + '\n');
         }
       } catch (e) {
         die(e);
