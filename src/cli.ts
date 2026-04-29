@@ -427,6 +427,10 @@ import {
   buildSourceRowTokenSlopeCiContainmentNestedness,
   renderSourceRowTokenSlopeCiContainmentNestedness,
 } from './sourcerowtokenslopecicontainmentnestedness.js';
+import {
+  buildSourceRowTokenSlopeCiRankCorrelation,
+  renderSourceRowTokenSlopeCiRankCorrelation,
+} from './sourcerowtokenslopecirankcorrelation.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -21817,6 +21821,186 @@ program
             renderSourceRowTokenSlopeCiContainmentNestedness(report, {
               showPairs: opts.showPairs ?? false,
               showProfile: opts.showProfile ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-rank-correlation')
+  .description(
+    "Cross-source RANK-CORRELATION diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL SEVEN prior cross-lens diagnostics (v0.6.227 jaccard, v0.6.228 sign, v0.6.229 width, v0.6.230 overlap-graph, v0.6.231 midpoint, v0.6.232 asymmetry, v0.6.233 pair-inclusion) because it is the ONLY one that is CROSS-SOURCE: it asks whether the lenses agree on the RANK ORDER of source slopes across the population. The other seven are per-source and never compare source A to source B. For each of the C(6,2)=15 lens pairs we report Spearman's rho (with mid-rank tie handling), Kendall's tau-b (with the standard tie-corrected denominator), the full pair-count breakdown (concordant / discordant / tiedX / tiedY / tiedBoth), `flips` (== discordant, the headline 'how many decisions would flip'), `flipFraction`, `agreement = (spearman + kendall)/2`, and `topKOverlap` (size of top-K intersection over K). Report-level: meanSpearman/medianSpearman, meanKendall/medianKendall, minAgreementPair / maxAgreementPair, plus a per-source consensusRanks table (average rank across the six lenses, ascending). --alert-weak <f> filters to lens pairs whose `agreement` is strictly less than f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--top-k <n>',
+    'top-K cardinality for the topKOverlap metric; clamped to n (default 5)',
+    '5',
+  )
+  .option(
+    '--alert-weak <f>',
+    'only emit lens pairs whose agreement is strictly less than f (in [-1, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'agreement-desc' (default) | 'agreement-asc' | 'spearman-desc' | 'spearman-asc' | 'kendall-desc' | 'kendall-asc' | 'flips-desc' | 'flips-asc' | 'flip-fraction-desc' | 'top-k-overlap-desc' | 'top-k-overlap-asc' | 'pair'",
+    'agreement-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-consensus',
+    'when rendering pretty (non-JSON), print the per-source consensus-rank table (average rank across the six lenses, ascending)',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        topK: string;
+        alertWeak?: string;
+        sort: string;
+        json?: boolean;
+        showConsensus?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        const topK = Number.parseInt(opts.topK, 10);
+        if (!Number.isInteger(topK) || topK < 1) {
+          throw new Error(`--top-k must be a positive integer (got ${opts.topK})`);
+        }
+        let alertWeak: number | null = null;
+        if (opts.alertWeak != null) {
+          const a = Number.parseFloat(opts.alertWeak);
+          if (!Number.isFinite(a) || a < -1 || a > 1) {
+            throw new Error(
+              `--alert-weak must be a finite number in [-1, 1] (got ${opts.alertWeak})`,
+            );
+          }
+          alertWeak = a;
+        }
+        const validSorts = [
+          'agreement-desc',
+          'agreement-asc',
+          'spearman-desc',
+          'spearman-asc',
+          'kendall-desc',
+          'kendall-asc',
+          'flips-desc',
+          'flips-asc',
+          'flip-fraction-desc',
+          'top-k-overlap-desc',
+          'top-k-overlap-asc',
+          'pair',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiRankCorrelation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          topK,
+          alertWeak,
+          sort: opts.sort as
+            | 'agreement-desc'
+            | 'agreement-asc'
+            | 'spearman-desc'
+            | 'spearman-asc'
+            | 'kendall-desc'
+            | 'kendall-asc'
+            | 'flips-desc'
+            | 'flips-asc'
+            | 'flip-fraction-desc'
+            | 'top-k-overlap-desc'
+            | 'top-k-overlap-asc'
+            | 'pair',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiRankCorrelation(report, {
+              showConsensus: opts.showConsensus ?? false,
             }) + '\n',
           );
         }
