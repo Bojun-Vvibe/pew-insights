@@ -151,6 +151,7 @@ export interface SourceRowTokenSlopeCiAdversarialWeightingEnvelopeOptions {
   bootstraps?: number;
   seed?: number;
   alertManipulable?: number | null;
+  alertAsymmetric?: number | null;
   top?: number | null;
   sort?:
     | 'robustness-desc'
@@ -195,6 +196,7 @@ export interface SourceRowTokenSlopeCiAdversarialWeightingEnvelopeReport {
   bootstraps: number;
   seed: number;
   alertManipulable: number | null;
+  alertAsymmetric: number | null;
   top: number | null;
   sort: NonNullable<
     SourceRowTokenSlopeCiAdversarialWeightingEnvelopeOptions['sort']
@@ -203,6 +205,7 @@ export interface SourceRowTokenSlopeCiAdversarialWeightingEnvelopeReport {
   sourcesWithAllLenses: number;
   droppedMissingLens: number;
   droppedAboveAlert: number;
+  droppedBelowAsymmetric: number;
   meanEnvelopeRobustness: number;
   medianEnvelopeRobustness: number;
   meanManipulability: number;
@@ -394,6 +397,18 @@ export function buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
       );
     }
   }
+  const alertAsymmetric = opts.alertAsymmetric ?? null;
+  if (alertAsymmetric !== null) {
+    if (
+      !Number.isFinite(alertAsymmetric) ||
+      alertAsymmetric < 0 ||
+      alertAsymmetric > 1
+    ) {
+      throw new Error(
+        `alertAsymmetric must be a finite number in [0, 1] (got ${opts.alertAsymmetric})`,
+      );
+    }
+  }
   const top = opts.top ?? null;
   if (top !== null) {
     if (!Number.isInteger(top) || top < 1) {
@@ -562,6 +577,7 @@ export function buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
   }
 
   let droppedAboveAlert = 0;
+  let droppedBelowAsymmetric = 0;
   let filtered = rows;
   if (alertManipulable !== null) {
     const before = filtered.length;
@@ -569,6 +585,20 @@ export function buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
       (r) => r.envelopeRobustnessScore < alertManipulable,
     );
     droppedAboveAlert = before - filtered.length;
+  }
+  if (alertAsymmetric !== null) {
+    // Keep only sources whose |asymmetryIndex| >= alertAsymmetric
+    // (i.e. the strongly directionally-biased envelopes). This is
+    // independent of the manipulability filter: a source can be highly
+    // manipulable yet symmetric (drop in by --alert-manipulable, kept
+    // out by --alert-asymmetric), or strongly asymmetric yet
+    // low-magnitude (kept by --alert-asymmetric, dropped by
+    // --alert-manipulable).
+    const before = filtered.length;
+    filtered = filtered.filter(
+      (r) => Math.abs(r.asymmetryIndex) >= alertAsymmetric,
+    );
+    droppedBelowAsymmetric = before - filtered.length;
   }
 
   const sortFns: Record<
@@ -623,12 +653,14 @@ export function buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
     bootstraps,
     seed,
     alertManipulable,
+    alertAsymmetric,
     top,
     sort,
     totalSources: sharedSources.length + droppedMissingLens,
     sourcesWithAllLenses: sharedSources.length,
     droppedMissingLens,
     droppedAboveAlert,
+    droppedBelowAsymmetric,
     meanEnvelopeRobustness,
     medianEnvelopeRobustness,
     meanManipulability,
@@ -663,10 +695,10 @@ export function renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
     'pew-insights source-row-token-slope-ci-adversarial-weighting-envelope',
   );
   lines.push(
-    `as of: ${r.generatedAt}    sources: ${r.totalSources} (with all lenses ${r.sourcesWithAllLenses})    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    bootstraps: ${r.bootstraps}    seed: ${r.seed}    alert-manipulable: ${r.alertManipulable ?? '-'}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
+    `as of: ${r.generatedAt}    sources: ${r.totalSources} (with all lenses ${r.sourcesWithAllLenses})    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    bootstraps: ${r.bootstraps}    seed: ${r.seed}    alert-manipulable: ${r.alertManipulable ?? '-'}    alert-asymmetric: ${r.alertAsymmetric ?? '-'}    top: ${r.top ?? '-'}    sort: ${r.sort}`,
   );
   lines.push(
-    `dropped: ${r.droppedMissingLens} missing-from-some-lens, ${r.droppedAboveAlert} above-alert-threshold; meanEnvelopeRobustness: ${fmtNum(r.meanEnvelopeRobustness)}; medianEnvelopeRobustness: ${fmtNum(r.medianEnvelopeRobustness)}; meanManipulability: ${fmtNum(r.meanManipulability)}; globalExtremeUpLens: ${r.globalExtremeUpLens ?? '-'}; globalExtremeDownLens: ${r.globalExtremeDownLens ?? '-'}; globalAsymmetryDirection: ${r.globalAsymmetryDirection ?? '-'}`,
+    `dropped: ${r.droppedMissingLens} missing-from-some-lens, ${r.droppedAboveAlert} above-alert-threshold, ${r.droppedBelowAsymmetric} below-asymmetric-threshold; meanEnvelopeRobustness: ${fmtNum(r.meanEnvelopeRobustness)}; medianEnvelopeRobustness: ${fmtNum(r.medianEnvelopeRobustness)}; meanManipulability: ${fmtNum(r.meanManipulability)}; globalExtremeUpLens: ${r.globalExtremeUpLens ?? '-'}; globalExtremeDownLens: ${r.globalExtremeDownLens ?? '-'}; globalAsymmetryDirection: ${r.globalAsymmetryDirection ?? '-'}`,
   );
   lines.push('');
   if (r.rows.length === 0) {

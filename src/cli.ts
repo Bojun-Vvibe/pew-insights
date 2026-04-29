@@ -22646,6 +22646,10 @@ program
     '--alert-manipulable <f>',
     'only emit sources whose envelopeRobustnessScore is strictly less than f (in (0, 1])',
   )
+  .option(
+    '--alert-asymmetric <f>',
+    'only emit sources whose |asymmetryIndex| is >= f (in [0, 1]); independent of --alert-manipulable',
+  )
   .option('--top <n>', 'cap output to the top n sources after sorting')
   .option(
     '--sort <key>',
@@ -22669,6 +22673,7 @@ program
         bootstraps: string;
         seed: string;
         alertManipulable?: string;
+        alertAsymmetric?: string;
         top?: string;
         sort: string;
         json?: boolean;
@@ -22721,6 +22726,16 @@ program
           }
           alertManipulable = a;
         }
+        let alertAsymmetric: number | null = null;
+        if (opts.alertAsymmetric != null) {
+          const a = Number.parseFloat(opts.alertAsymmetric);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-asymmetric must be a finite number in [0, 1] (got ${opts.alertAsymmetric})`,
+            );
+          }
+          alertAsymmetric = a;
+        }
         let top: number | null = null;
         if (opts.top != null) {
           const t = Number.parseInt(opts.top, 10);
@@ -22757,6 +22772,7 @@ program
             bootstraps,
             seed,
             alertManipulable,
+            alertAsymmetric,
             top,
             sort: opts.sort as
               | 'robustness-desc'

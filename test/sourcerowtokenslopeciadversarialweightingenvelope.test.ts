@@ -449,12 +449,14 @@ test('render: empty rows -> "(no sources)"', () => {
     bootstraps: 1000,
     seed: 42,
     alertManipulable: null,
+    alertAsymmetric: null,
     top: null,
     sort: 'robustness-desc',
     totalSources: 0,
     sourcesWithAllLenses: 0,
     droppedMissingLens: 0,
     droppedAboveAlert: 0,
+    droppedBelowAsymmetric: 0,
     meanEnvelopeRobustness: 0,
     medianEnvelopeRobustness: 0,
     meanManipulability: 0,
@@ -503,12 +505,14 @@ test('render: degenerate manipulability=Infinity prints "inf"', () => {
     bootstraps: 1000,
     seed: 42,
     alertManipulable: null,
+    alertAsymmetric: null,
     top: null,
     sort: 'robustness-desc',
     totalSources: 1,
     sourcesWithAllLenses: 1,
     droppedMissingLens: 0,
     droppedAboveAlert: 0,
+    droppedBelowAsymmetric: 0,
     meanEnvelopeRobustness: 0,
     medianEnvelopeRobustness: 0,
     meanManipulability: 0,
@@ -538,4 +542,72 @@ test('render: degenerate manipulability=Infinity prints "inf"', () => {
     ],
   });
   assert.ok(out.includes('inf'));
+});
+
+// --- alertAsymmetric refinement ---
+
+test('build: alertAsymmetric guard rejects out-of-range values', () => {
+  assert.throws(() =>
+    buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope([], {
+      alertAsymmetric: -0.1,
+    }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope([], {
+      alertAsymmetric: 1.5,
+    }),
+  );
+});
+
+test('build: alertAsymmetric=0 is allowed (keep all)', () => {
+  const queue = ascending('s1', 30, 5);
+  const r = buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(queue, {
+    bootstraps: 200,
+    seed: 42,
+    alertAsymmetric: 0,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  // |asymmetryIndex| >= 0 is always true -> all kept
+  assert.equal(r.droppedBelowAsymmetric, 0);
+});
+
+test('build: alertAsymmetric=1 drops everything except perfectly skewed envelopes', () => {
+  const queue = [...ascending('s1', 30, 5), ...ascending('s2', 30, 7)];
+  const r = buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(queue, {
+    bootstraps: 200,
+    seed: 42,
+    alertAsymmetric: 1,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  // Real-data |asymmetryIndex| should be < 1 -> all dropped
+  assert.equal(r.rows.length, 0);
+});
+
+test('build: alertAsymmetric and alertManipulable compose (independent filters)', () => {
+  const queue = [...ascending('s1', 30, 5), ...ascending('s2', 30, 7)];
+  // First filter by manipulability (drop strongly-aligned), then by asymmetry.
+  const r = buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(queue, {
+    bootstraps: 200,
+    seed: 42,
+    alertManipulable: 1,
+    alertAsymmetric: 0,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  // alertManipulable=1 keeps everything below 1 (i.e. everything except
+  // perfectly robust); alertAsymmetric=0 keeps everything. So same as
+  // alertManipulable=1 alone.
+  assert.equal(r.droppedBelowAsymmetric, 0);
+});
+
+test('render: header line surfaces the new alertAsymmetric and droppedBelowAsymmetric counters', () => {
+  const queue = ascending('s1', 30, 5);
+  const r = buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(queue, {
+    bootstraps: 200,
+    seed: 42,
+    alertAsymmetric: 0.1,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  const out = renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope(r);
+  assert.ok(out.includes('alert-asymmetric: 0.1'));
+  assert.ok(out.includes('below-asymmetric-threshold'));
 });
