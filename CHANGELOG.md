@@ -2,6 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.240 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-residual-z` —
+  per-source PER-LENS STUDENTIZED-RESIDUAL diagnostic for the
+  v0.6.219 Deming-slope uncertainty-quantification suite.
+  Consumes the SAME six per-source slope CIs as v0.6.227–v0.6.239
+  (percentile bootstrap, jackknife normal, BCa, studentized-t,
+  ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TWELVE prior cross-lens
+  diagnostics on a fundamental axis** — every prior axis (jaccard,
+  sign, width, overlap-graph, midpoint-dispersion, asymmetry,
+  pair-inclusion, rank-correlation, coverage-volume, LOO,
+  precision-pull, adversarial-weighting-envelope) collapses the
+  per-lens information into a single SOURCE-LEVEL scalar that
+  aggregates over the six lenses. NONE surface a per-LENS
+  diagnostic that names the specific outlier lens for THIS
+  source, normalized by that lens's OWN stated precision.
+
+  v0.6.238 precision-pull comes closest but identifies the
+  dominant (most-precise) lens, not the most-DISCREPANT one.
+  v0.6.239 adversarial envelope identifies extreme-up /
+  extreme-down lenses by midpoint only, ignoring lens precision
+  entirely. This 13th axis is the only PER-LENS-PER-SOURCE
+  studentized-residual axis in the suite — the only one that
+  asks "for THIS source, which lens reports a midpoint that is
+  furthest, in units of its OWN stated half-width, from what
+  the other lenses collectively report?"
+
+  For each source we compute on the 6 CI midpoints
+  `mid_k = (lo_k + hi_k) / 2` and 6 half-widths
+  `s_k = (hi_k - lo_k) / 2`:
+
+    - `equalMid` — arithmetic mean of mid_1..mid_6;
+    - `lensResidual_k` = `mid_k - equalMid` (signed deviation);
+    - `lensResidualZ_k` = `lensResidual_k / s_k` when `s_k > 0`,
+      else 0 by convention. A "z-score"-style studentized
+      residual: how many CI half-widths of lens k does its own
+      midpoint sit away from the equal-weight consensus. Values
+      with absolute value >= 1 mean consensus lies OUTSIDE this
+      lens's own CI on the relevant side. Sign tells direction
+      (positive = this lens reports a HIGHER slope than
+      consensus);
+    - `lensResidualAbsZ_k` = `|lensResidualZ_k|`;
+    - `outlierLens` — lens k\* maximizing `lensResidualAbsZ_k`
+      (canonical-order tie-break);
+    - `outlierAbsZ` — `lensResidualAbsZ_{k\*}` (per-source
+      headline studentized residual);
+    - `outlierSigned` — `lensResidualZ_{k\*}` (with sign);
+    - `outlierDirection` ∈ {`up`, `down`, `neutral`};
+    - `outlierConsensusOutside` — `outlierAbsZ >= 1` boolean.
+      The crisp "this lens disagrees with consensus by more than
+      its own stated uncertainty" diagnostic;
+    - `meanAbsZ` — arithmetic mean of `lensResidualAbsZ_1..6`
+      (overall per-source residual magnitude across ALL six
+      lenses, not just the worst);
+    - `nResidualOutside` — count of lenses with
+      `lensResidualAbsZ_k >= 1`. Integer in [0, 6];
+    - `signAgreement` ∈ {`all-up`, `all-down`, `mixed`,
+      `all-zero`} — summary of the six residual signs. By
+      construction of the equal-weight mean, residuals sum to 0,
+      so `all-up` / `all-down` only occur as near-degeneracies
+      with at least one zero residual; `all-zero` is the every-
+      lens-agrees branch. `mixed` is the typical case;
+    - `lensConcordanceScore` = `1 / (1 + meanAbsZ)` in (0, 1] —
+      DEFAULT SORT KEY. 1.0 = every lens midpoint sits exactly
+      at consensus (no per-lens disagreement); near 0 = the
+      average lens midpoint is many half-widths away from
+      consensus.
+
+  Per-report aggregates: `meanLensConcordance`,
+  `medianLensConcordance`, `meanOutlierAbsZ`, `globalOutlierLens`
+  (mode of `outlierLens` across sources, canonical-order
+  tie-break), `globalOutlierDirection` (mode of
+  `outlierDirection`, ties broken `up` > `down` > `neutral`),
+  `nSourcesWithConsensusOutside` (count of sources where
+  `outlierConsensusOutside` is true).
+
+  Edge cases:
+    - Source dropped from any of the six lenses → not reported
+      (counted in `droppedMissingLens`).
+    - All six widths == 0 → every Z = 0 by convention;
+      `lensConcordanceScore = 1`; `outlierAbsZ = 0`;
+      `signAgreement = 'all-zero'`.
+    - All six midpoints identical → every residual is exactly
+      0; `lensConcordanceScore = 1`; `signAgreement = 'all-zero'`.
+
+  CLI options: `--alert-discordant <f>` filters to sources whose
+  `lensConcordanceScore` is strictly less than f; `--alert-outside`
+  filters to sources where `outlierConsensusOutside` is true
+  (independent of `--alert-discordant`; both compose).
+
+  Why a 13th axis: large `outlierAbsZ` with
+  `outlierConsensusOutside == true` is the diagnostic signature
+  that one specific lens is meaningfully discrepant — its own CI
+  doesn't even contain what the other lenses collectively
+  report — and worth flagging in any cross-lens reporting. No
+  prior axis names that lens.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (2021 lines, 6
+  sources, --bootstraps 200 --seed 7 --top 8):
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-residual-z
+  as of: 2026-04-29T22:52:24.612Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 200    seed: 7    alert-discordant: -    alert-outside: false    top: -    sort: concordance-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanLensConcordance: 0.0829; medianLensConcordance: 0.0322; meanOutlierAbsZ: 7604.7743; globalOutlierLens: abc; globalOutlierDirection: down; nSourcesWithConsensusOutside: 6
+
+  source           rows  equalMid    outlierLens        outAbsZ   outSigned  dir   outside  meanAbsZ  nOut  signAgr     concord
+  ---------------  ----  ----------  -----------------  --------  ---------  ----  -------  --------  ----  ----------  --------
+  opencode          461  -4137961.6021  abc                  7.6365     7.6365  up    yes        2.0584     2  mixed         0.3270
+  vscode-copilot    333   4571.0884  abc                 16.4912   -16.4912  down  yes        9.2804     4  mixed         0.0973
+  hermes            297  189374.2692  profileLikelihood   30.4258   -30.4258  down  yes       18.1366     4  mixed         0.0523
+  openclaw          567  -2408134.7865  profileLikelihood  176.7075   176.7075  up    yes       81.3390     4  mixed         0.0121
+  claude-code       299  11438989.7332  profileLikelihood  185.5991  -185.5991  down  yes      118.3403     4  mixed         0.0084
+  codex              64  8585350.4752  abc                45211.7857  -45211.7857  down  yes      7537.6312     4  mixed         0.0001
+  ```
+
+  All 6 sources have `outlierConsensusOutside == true` —
+  every one has at least one lens whose own CI excludes the
+  equal-weight consensus. `profileLikelihood` is the modal
+  outlier lens (3 of 6 sources), `abc` second (3 of 6 with
+  canonical tie-break). The per-lens residual axis surfaces
+  this asymmetry in a way no prior cross-lens axis does.
+
 ## 0.6.239 — 2026-04-30
 
 ### Added
