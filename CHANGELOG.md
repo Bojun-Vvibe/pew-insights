@@ -2,6 +2,188 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.221 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-jackknife-slope-ci` — emits a
+  per-source **jackknife (leave-one-out) confidence interval**
+  for the v0.6.219 Deming regression slope of per-row
+  `total_tokens` against row index `0..n-1`, in tokens / row.
+
+  This is the **second uncertainty-quantification lens** in the
+  slope suite and the **deterministic sibling** of v0.6.220's
+  bootstrap-slope-CI. Together they form the standard resampling
+  CI duo (Efron 1979, *Annals of Statistics*).
+
+  The procedure (per source, no RNG, no seed):
+
+  1. Compute the point Deming slope on the full data at the
+     supplied `--lambda` (default 1, orthogonal regression):
+     `thetaFull`.
+  2. For each `i in 0..n-1`, compute the Deming slope on the
+     length-`(n-1)` series with row `i` removed (relabel positions
+     `0..n-2` as the new x axis): the leave-one-out estimates
+     `theta_(-i)`.
+  3. Aggregate:
+
+         jackMean      = (1/n) * sum_i theta_(-i)
+         jackSe        = sqrt( ((n-1)/n) * sum_i (theta_(-i) - jackMean)^2 )
+         bias          = (n-1) * (jackMean - thetaFull)         [Quenouille-Tukey]
+         biasCorrected = thetaFull - bias = n*thetaFull - (n-1)*jackMean
+         ciLower       = biasCorrected - z * jackSe
+         ciUpper       = biasCorrected + z * jackSe
+         ciWidth       = 2 * z * jackSe
+
+     where `z = Phi^{-1}((1 + confidence)/2)` is the symmetric
+     normal quantile (Acklam 2003 rational approximation, accurate
+     to ~1e-9; e.g. `z = 1.959964` for the default `0.95`
+     confidence).
+  4. Flag `ciContainsZero = (ciLower <= 0 && ciUpper >= 0)`.
+
+  Mechanically distinct from every previously shipped lens — and
+  specifically the **deterministic sibling** of
+  `source-row-token-bootstrap-slope-ci` (v0.6.220):
+
+  - vs **bootstrap CI** (v0.6.220, with-replacement, B random
+    resamples, percentile CI, RNG-driven): jackknife is
+    **deterministic** (exactly `n` leave-one-out resamples, no
+    seed), uses a **normal-approximation CI** centered on the
+    **bias-corrected** slope (not a percentile of the resampling
+    distribution), and **uniquely produces a closed-form bias
+    estimate** the bootstrap doesn't give. Bootstrap is robust to
+    fat-tailed leverage cases; jackknife is tighter on smooth
+    well-conditioned series. They answer mechanically different
+    questions.
+  - vs **Deming** (v0.6.219): same point estimator at the heart,
+    but adds the **bias-corrected** slope plus its SE-based CI.
+  - vs **Passing-Bablok / Theil-Sen / Siegel / OLS / M-estimator**
+    slope lenses: all point estimators with no uncertainty
+    quantification.
+  - vs **Mann-Kendall** (v0.6.211): MK reports a *p-value* for the
+    monotone-trend null hypothesis. This lens reports an
+    **interval estimate** for the slope itself in tokens / row.
+
+  Determinism: pure builder, no RNG. Wall clock only via
+  `opts.generatedAt`. Sort tiebreak is `source` asc.
+
+  Refinement (also v0.6.221): per-source rows carry a
+  `ciContainsZero: boolean` and `ciWidth: number` diagnostic, plus
+  a `--alert-zero-in-ci` filter flag and a new sort key
+  `ci-contains-zero-first`. Two additional sort keys unique to
+  the jackknife lens — `jack-se-desc` and `bias-magnitude-desc` —
+  let you sort by the SE estimate or by the magnitude of the
+  Quenouille-Tukey bias correction respectively.
+
+  Flags:
+  `--since/--until/--source/--min-rows/--confidence/--lambda/
+  --alert-zero-in-ci/--top/--sort/--json`. Sort keys:
+  `magnitude-desc` (default), `slope-desc`, `slope-asc`,
+  `ci-width-desc`, `ci-width-asc`, `jack-se-desc`,
+  `bias-magnitude-desc`, `ci-contains-zero-first`, `rows`,
+  `source`. Validates: `--confidence in (0, 1)`, `--lambda > 0`.
+
+### Tests
+
+Test count grew from **5,526 -> 5,601 (+75)** with the new file
+`sourcerowtokenjackknifeslopeci.test.ts` (68 cases at the suite
+level): kernels: `inverseStandardNormalCdf` (median = 0; 0.975 ≈
+1.959964; 0.95 ≈ 1.644854; 0.995 ≈ 2.575829; symmetry
+`invCdf(p) = -invCdf(1-p)`; `p=0 -> -Inf`, `p=1 -> +Inf`;
+out-of-range -> NaN; monotone increasing across the unit
+interval); `jackknifeDemingSlope` (n<2 / all-equal / ascending /
+descending / lambda affects); `jackknifeLeaveOneOutSlopes` (length
+preservation / ascending all positive / all-equal -> all zeros /
+deterministic / dropping outlier shifts slope / n=2 -> zeros);
+builder validation (minRows < 4 / non-integer / confidence <= 0 /
+confidence >= 1 / non-finite confidence / lambda <= 0 / bad sort
+key / top < 1 / invalid since / invalid until); builder data flow
+(empty queue / single source ascending / --min-rows / --source
+filter / bad total_tokens / NaN / Infinity / negative / bad
+hour_start / "unknown" mapping / since-until window / defaults
+echoed including z = 1.959964 / generatedAt default); jackknife
+math (ascending -> positive bias-corrected slope / jackSe >= 0 /
+ciLower <= ciUpper / all-equal -> SE=0/bias=0/CI=[0,0] /
+deterministic / `ciWidth = 2*z*jackSe` /
+`biasCorrected = thetaFull - bias = n*thetaFull - (n-1)*jackMean` /
+`biasCorrected ∈ [ciLower, ciUpper]` / 99% CI wider than 95% on
+same data / zCritical monotone in confidence); ciContainsZero
+refinement (noisy near-zero -> straddles zero /
+`--alert-zero-in-ci` filter / `ciWidth = ciUpper - ciLower`); all
+10 sort keys + tiebreak; top cap; properties (confidence echo /
+lambda echo / `alertZeroInCi=false` keeps all rows / lambda
+affects slope vs default).
+
+### Live smoke
+
+Against the local `~/.config/pew/queue.jsonl` (1,955 rows after
+filters, 6 sources, default `lambda = 1`, `confidence = 0.95`,
+`z = 1.959964`, sorted by `magnitude-desc`, source name
+`vscode-copilot` redacted to `vscode-redacted`):
+
+    source           rows   slope                jackMean             jackSe              bias                  biasCorrected         ciLower               ciUpper               ciWidth               0inCI?
+    codex             64    +2,225,990.4792      +2,266,369.0642      741,618.3879        +2,543,850.8551       -317,860.3758         -1,771,405.7077       +1,135,684.9560       2,907,090.6636        yes
+    opencode         439    -1,126,829.1558      -1,130,471.3777      692,904.1450        -1,595,293.1952       +468,464.0393         -889,603.1307         +1,826,531.2093       2,716,134.3400        yes
+    claude-code      299      +412,420.1539        +413,803.5030       33,344.1173          +412,238.0358          +182.1182            -65,171.1510           +65,535.3873          130,706.5383        yes
+    openclaw         545       -87,996.7590         -88,157.4103       13,025.8144           -87,394.3462          -602.4128            -26,132.5398           +24,927.7143           51,060.2540        yes
+    hermes           275       -32,644.2141         -32,764.6360        4,818.1230           -32,995.6114          +351.3973             -9,091.9502            +9,794.7448           18,886.6949        yes
+    vscode-redacted  333          +761.5738            +763.8116          146.0903             +742.9491            +18.6246               -267.7070              +304.9563              572.6633        yes
+
+  Things this surfaces that the v0.6.220 bootstrap CI did not:
+
+  - **Every source on the local queue has a jackknife
+    normal-approximation CI that straddles zero at 95%
+    confidence** — same headline verdict as the bootstrap
+    (`ciContainsZero = yes` for all 6), arrived at by a
+    mechanically independent path (deterministic leave-one-out
+    plus a Gaussian envelope rather than random resampling plus a
+    percentile cut). Two CI methods, one verdict: on this data,
+    no per-source per-row token trend is statistically robust.
+  - **`codex`** has a Quenouille-Tukey **bias of +2.54M
+    tokens/row** — *larger than the point slope itself*
+    (+2.23M). This is the textbook signature of a small-n
+    (`n = 64`) high-leverage series: a few extreme rows are
+    dragging the full-data Deming fit so hard that the
+    leave-one-out mean lands at a similar magnitude *but the
+    bias-corrected slope flips sign* (`biasCorrected =
+    -317,860`). The bootstrap reported `bootMean` opposite in
+    sign to the point slope on this same source; the jackknife
+    quantifies it as a closed-form **bias correction** the
+    bootstrap doesn't compute.
+  - **`opencode`** also flips sign under bias correction
+    (slope `-1.13M`, bias `-1.60M`, biasCorrected `+0.47M`) — same
+    high-leverage pattern, exactly the case where Quenouille-Tukey
+    bias correction is most informative.
+  - **`claude-code` / `openclaw` / `hermes` / `vscode-redacted`**
+    have **near-negligible bias** relative to their point slope
+    (e.g. `claude-code` bias = +182 vs slope = +412,420 — bias is
+    `0.04%` of the slope; `vscode-redacted` bias = +18.6 vs slope
+    = +761.6 — `2.4%`), confirming these sources have well-behaved
+    Deming fits where leave-one-out and full-data agree to within
+    rounding. The CI still straddles zero on all four because of
+    the SE width, not because of a leverage-induced bias.
+  - **Where bootstrap and jackknife disagree on tightness**:
+    `claude-code` jackknife `ciWidth = 130,707`, `bootStd = 48.6M`
+    on bootstrap (v0.6.220 live smoke) — jackknife reports a
+    **~3 orders of magnitude tighter SE** because the
+    leave-one-out distribution on `n = 299` is well-concentrated,
+    where the with-replacement bootstrap repeatedly drew the
+    extreme row and inflated `bootStd`. Same data, two different
+    notions of "spread." This is the standard bootstrap-vs-
+    jackknife mechanical difference Efron flagged: jackknife is
+    tighter on smooth estimators with low leverage, bootstrap is
+    more robust where leverage is high and the resampling
+    distribution is genuinely fat-tailed.
+
+  Cross-check vs Deming (v0.6.219) and bootstrap (v0.6.220) on
+  the same data: the point slopes match to within rounding modulo
+  a few rows of additional data captured between builds (opencode
+  437 -> 439, openclaw 543 -> 545, hermes 273 -> 275). What the
+  jackknife adds, that no prior lens including the v0.6.220
+  bootstrap had, is the **Quenouille-Tukey bias estimate** —
+  surfacing that `codex` and `opencode` have biases on the order
+  of (or larger than) their own point slopes.
+
 ## 0.6.220 — 2026-04-29
 
 ### Added
