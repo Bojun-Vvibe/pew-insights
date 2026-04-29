@@ -12122,6 +12122,10 @@ import type {
   SourceRowTokenMEstimatorCauchyRow,
 } from './sourcerowtokenmestimatorcauchy.js';
 import type {
+  SourceRowTokenMEstimatorGemanMcClureReport,
+  SourceRowTokenMEstimatorGemanMcClureRow,
+} from './sourcerowtokenmestimatorgemanmcclure.js';
+import type {
   SourceRowTokenTheilSenSlopeReport,
   SourceRowTokenTheilSenSlopeRow,
 } from './sourcerowtokentheilsenslope.js';
@@ -13693,6 +13697,93 @@ export function renderSourceRowTokenSiegelSlope(
     ],
   );
   lines.push(renderTableLocal(headers, rowsTS));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenMEstimatorGemanMcClure(
+  r: SourceRowTokenMEstimatorGemanMcClureReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-m-estimator-geman-mcclure'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-geman: ${formatNumber(r.minGeman)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinGeman)} below min-geman, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Geman-McClure REDESCENDING M-estimator of location of per-row total_tokens. PARAMETER-FREE: rho_GM(z) = z^2/(1+z^2), psi_GM(z) = 2z/(1+z^2)^2, weight w(z) = 2/(1+z^2)^2 -- no tuning constant. IRLS with mu_0 = median, s = MAD/0.6745. First REDESCENDER WITH POLYNOMIAL (~1/z^4) tail decay in the suite, sitting between Cauchy's monotone 1/z^2 (v0.6.215) and Tukey's compact-support hard cutoff (v0.6.208). w(0) = 2 peak; half-peak knee at |z| = sqrt(sqrt(2)-1) ~ 0.6436. Reports a three-bucket residual partition keyed on WEIGHT MAGNITUDE: coreRows (w >= 1, |z| <= 0.6436), tailRows (0.05 <= w < 1, 0.6436 < |z| <= ~2.299), farTailRows (w < 0.05, |z| > 2.299; very small but strictly positive -- Geman-McClure never assigns w = 0 to a finite z). gemanMeanGap = geman - mean, gemanMedianGap = geman - median, gemanMedianRatio = geman / median.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Geman-McClure parameter-free redescending M-estimator (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'geman',
+    'mad',
+    'scale',
+    'iter',
+    'conv',
+    'core',
+    'tail',
+    'far-tail',
+    'geman-mean',
+    'geman-median',
+    'g/med',
+  ];
+  const rowsGM: string[][] = r.sources.map(
+    (s: SourceRowTokenMEstimatorGemanMcClureRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.geman.toFixed(2),
+      s.mad.toFixed(2),
+      s.scale.toFixed(2),
+      String(s.iterations),
+      s.converged,
+      formatNumber(s.coreRows),
+      formatNumber(s.tailRows),
+      formatNumber(s.farTailRows),
+      (s.gemanMeanGap >= 0 ? '+' : '') + s.gemanMeanGap.toFixed(2),
+      (s.gemanMedianGap >= 0 ? '+' : '') + s.gemanMedianGap.toFixed(2),
+      Number.isFinite(s.gemanMedianRatio)
+        ? s.gemanMedianRatio.toFixed(3)
+        : 'NaN',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsGM));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

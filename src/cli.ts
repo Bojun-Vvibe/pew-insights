@@ -140,6 +140,7 @@ import {
   renderSourceRowTokenMEstimatorAndrews,
   renderSourceRowTokenMEstimatorWelsch,
   renderSourceRowTokenMEstimatorCauchy,
+  renderSourceRowTokenMEstimatorGemanMcClure,
   renderSourceRowTokenTheilSenSlope,
   renderSourceRowTokenSiegelSlope,
   renderSourceRowTokenLehmerNegOneMean,
@@ -379,6 +380,7 @@ import { buildSourceRowTokenMEstimatorHampel } from './sourcerowtokenmestimatorh
 import { buildSourceRowTokenMEstimatorAndrews } from './sourcerowtokenmestimatorandrews.js';
 import { buildSourceRowTokenMEstimatorWelsch } from './sourcerowtokenmestimatorwelsch.js';
 import { buildSourceRowTokenMEstimatorCauchy } from './sourcerowtokenmestimatorcauchy.js';
+import { buildSourceRowTokenMEstimatorGemanMcClure } from './sourcerowtokenmestimatorgemanmcclure.js';
 import { buildSourceRowTokenTheilSenSlope } from './sourcerowtokentheilsenslope.js';
 import { buildSourceRowTokenSiegelSlope } from './sourcerowtokensiegelslope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
@@ -8965,6 +8967,119 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMEstimatorCauchy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-m-estimator-geman-mcclure')
+  .description(
+    "Per-source Geman-McClure REDESCENDING M-estimator of location of per-row total_tokens. PARAMETER-FREE: rho_GM(z) = z^2/(1+z^2), psi_GM(z) = 2z/(1+z^2)^2, weight w(z) = 2/(1+z^2)^2 — no tuning constant required. IRLS with mu_0 = median, s = MAD/0.6745. First REDESCENDER WITH POLYNOMIAL (~1/z^4) TAIL DECAY in the suite, sitting between Cauchy (v0.6.215, monotone, 1/z^2 tail) and Tukey biweight (v0.6.208, redescender, COMPACT support). Distinct from Welsch (v0.6.213, redescender with EXPONENTIAL exp(-(z/c)^2) tail) — Geman-McClure tail is polynomial, not exponential. Reports a three-bucket residual partition keyed on WEIGHT MAGNITUDE (peak weight w(0) = 2): coreRows (w >= 1, |z| <= 0.6436 — the half-peak knee), tailRows (0.05 <= w < 1, 0.6436 < |z| <= ~2.299), farTailRows (w < 0.05, |z| > 2.299; very small but strictly positive — Geman-McClure never assigns w = 0 to a finite z). gemanMeanGap = geman - mean, gemanMedianGap = geman - median, gemanMedianRatio = geman / median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-geman <f>',
+    'drop sources whose Geman-McClure M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'geman-desc' (default) | 'geman-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|gemanMeanGap| desc) | 'median-gap-desc' (|gemanMedianGap| desc) | 'far-tail-desc' (farTailRows desc) | 'rows' | 'source'",
+    'geman-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minGeman: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minGeman = Number.parseFloat(opts.minGeman);
+        if (!Number.isFinite(minGeman) || minGeman < 0) {
+          throw new Error(
+            `--min-geman must be a finite, non-negative number (got ${opts.minGeman})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'geman-desc',
+          'geman-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'far-tail-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorGemanMcClure(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minGeman,
+          top,
+          sort: opts.sort as
+            | 'geman-desc'
+            | 'geman-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'far-tail-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenMEstimatorGemanMcClure(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
