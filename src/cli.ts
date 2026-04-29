@@ -22491,6 +22491,10 @@ program
     '--show-summary',
     'when rendering pretty (non-JSON), append a per-source one-line summary naming the tail lens, direction, divergenceRatio, and (breakdown) flag',
   )
+  .option(
+    '--show-breakdown-aggregate',
+    'when rendering pretty (non-JSON), append a single one-line aggregate summary AFTER the table reporting the breakdown fraction, globalTailLens, globalSkewDirection, and nInfiniteRatio',
+  )
   .action(
     async (
       opts: {
@@ -22508,6 +22512,7 @@ program
         sort: string;
         json?: boolean;
         showSummary?: boolean;
+        showBreakdownAggregate?: boolean;
       },
       cmd,
     ) => {
@@ -22608,6 +22613,7 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiMadVsMaeDivergence(report, {
               showSummary: opts.showSummary ?? false,
+              showBreakdownAggregate: opts.showBreakdownAggregate ?? false,
             }) + '\n',
           );
         }

@@ -627,12 +627,19 @@ function fmtNum(x: number, digits = 4): string {
  * "(breakdown)" flag whenever `breakdownFlag` is true. Lighter-
  * weight alternative for surfacing just the tail-lens identity
  * and whether scale divergence crosses the 1.5 threshold.
+ *
+ * When `showBreakdownAggregate` is true, a single "[breakdown
+ * aggregate]" line is appended AFTER the table summarizing the
+ * fraction of sources that crossed the 1.5 threshold and the
+ * dominant tail lens / skew direction. Quick at-a-glance one-
+ * liner that doesn't require scanning the per-row table.
  */
 export function renderSourceRowTokenSlopeCiMadVsMaeDivergence(
   r: SourceRowTokenSlopeCiMadVsMaeDivergenceReport,
-  opts: { showSummary?: boolean } = {},
+  opts: { showSummary?: boolean; showBreakdownAggregate?: boolean } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
+  const showBreakdownAggregate = opts.showBreakdownAggregate ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-mad-vs-mae-divergence');
   lines.push(
@@ -682,6 +689,12 @@ export function renderSourceRowTokenSlopeCiMadVsMaeDivergence(
         `    summary: tail ${row.tailLens} ${arrow} dir=${row.tailDirection} divRatio=${fmtNum(row.divergenceRatio)}${flag}`,
       );
     }
+  }
+  if (showBreakdownAggregate && r.rows.length > 0) {
+    const frac = r.nBreakdown / r.rows.length;
+    lines.push(
+      `[breakdown aggregate] ${r.nBreakdown}/${r.rows.length} sources crossed divRatio>1.5 (${fmtNum(frac, 4)}); globalTailLens=${r.globalTailLens ?? '-'}; globalSkewDirection=${r.globalSkewDirection ?? '-'}; nInfiniteRatio=${r.nInfiniteRatio}`,
+    );
   }
   return lines.join('\n');
 }

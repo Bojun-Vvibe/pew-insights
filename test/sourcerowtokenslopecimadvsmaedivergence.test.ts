@@ -599,6 +599,51 @@ test('render: showSummary=false omits summary lines', () => {
   assert.equal(/summary: tail/.test(out), false);
 });
 
+test('render: showBreakdownAggregate=true appends aggregate line when rows present', () => {
+  const queue = ascending('s1', 60);
+  const r = buildSourceRowTokenSlopeCiMadVsMaeDivergence(queue, {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiMadVsMaeDivergence(r, {
+    showBreakdownAggregate: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /\[breakdown aggregate\]/);
+    assert.match(out, /sources crossed divRatio>1\.5/);
+  }
+});
+
+test('render: showBreakdownAggregate omitted on empty report', () => {
+  const r = buildSourceRowTokenSlopeCiMadVsMaeDivergence([], {
+    bootstraps: 100,
+    seed: 1,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiMadVsMaeDivergence(r, {
+    showBreakdownAggregate: true,
+  });
+  assert.equal(/\[breakdown aggregate\]/.test(out), false);
+});
+
+test('render: showBreakdownAggregate composes with showSummary', () => {
+  const queue = ascending('s1', 60);
+  const r = buildSourceRowTokenSlopeCiMadVsMaeDivergence(queue, {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiMadVsMaeDivergence(r, {
+    showSummary: true,
+    showBreakdownAggregate: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /summary: tail/);
+    assert.match(out, /\[breakdown aggregate\]/);
+  }
+});
+
 test('render: formats Infinity divergenceRatio as "inf"', () => {
   // Construct directly via helper to verify renderer string.
   const out = madVsMaeDivergence([10, 10, 10, 10, 10, 11]);
