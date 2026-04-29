@@ -2,6 +2,118 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.229 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-width-concordance` —
+  WIDTH-concordance / precision-agreement diagnostic across the
+  SIX uncertainty-quantification CIs shipped between v0.6.220 and
+  v0.6.225 (percentile bootstrap, jackknife normal, BCa,
+  studentized-t bootstrap, ABC, profile-likelihood). **Mechanically
+  distinct from BOTH prior cross-lens diagnostics:**
+
+    - v0.6.227 measures *interval-geometry agreement* — Jaccard /
+      overlap of `[ciLower, ciUpper]`. Two lenses can share Jaccard
+      1.0 yet have very different absolute widths if both intervals
+      collapse around the same point.
+    - v0.6.228 measures *directional agreement* — fraction of
+      lenses whose point slope, CI midpoint, and CI exclusion-of-
+      zero point the canonical way. A fully sign-unanimous source
+      can still have one lens claim a 0.001-wide CI and another
+      claim a 1.0-wide CI.
+
+  This command measures *precision agreement* — do the six lenses
+  AGREE on HOW WIDE the CI is? It quantifies the magnitude
+  disagreement that the prior two diagnostics deliberately ignore.
+
+  Per source it reports:
+    - per-lens absolute `width = ciUpper - ciLower`, relative
+      `relWidth = width / max(|midpoint|, 1e-12)`, and a 1-indexed
+      `widthRank` (1 = narrowest, 6 = widest);
+    - `widthMin`, `widthMax`, `widthMedian`, `widthMean` over the
+      6 lens widths;
+    - `widthRange = widthMax - widthMin` — absolute precision
+      spread;
+    - `widthRatio = widthMax / widthMin` — multiplicative
+      precision spread; `Infinity` if any lens has 0 width
+      (deterministic kernel collapse on a perfectly-linear
+      population), `NaN` if all six widths are 0;
+    - `widthCv` — population coefficient of variation
+      `stdev / mean` of the 6 widths (population stdev because
+      all 6 lenses are observed, not sampled);
+    - `widthGini` — population Gini coefficient of the 6-vector
+      of widths, in `[0, 5/6]`; 0 == perfect width agreement,
+      `5/6 ≈ 0.833` is the supremum (only one lens carries all
+      the width mass);
+    - `narrowestLens` / `widestLens` — names of the lens at
+      `widthRank == 1` and `widthRank == 6`; ties resolve by the
+      canonical lens order (`SLOPE_WIDTH_LENS_NAMES`);
+    - `tightConsensus` — boolean true iff `widthRatio <= 2` and
+      all six widths are finite; a heuristic "lenses agree within
+      a factor of two on precision" check;
+    - `widthVsBootstrapMaxRatio` — `widthMax / widthBootstrap`,
+      measuring how much wider the widest lens is than the
+      canonical bootstrap lens; finite >= 1, or `Infinity` if the
+      bootstrap width is 0.
+
+  Sort keys: `width-ratio-desc` (default; widest precision spread
+  first), `width-ratio-asc`, `width-cv-desc/asc`,
+  `width-gini-desc/asc`, `width-range-desc/asc`,
+  `width-vs-bootstrap-desc/asc`, `width-max-desc`, `rows`,
+  `source`. Filters: `--alert-disagreement` (only sources whose
+  `widthRatio > 3`), `--alert-superwide` (only sources whose
+  `widthVsBootstrapMaxRatio > 10`). Standard `--top N` cap with
+  `droppedBelowTopCap` accounting.
+
+  Non-finite values (`NaN` / `Infinity`) are pushed to the bottom
+  for descending sorts and to the top for ascending sorts so they
+  do not silently dominate or get hidden.
+
+  The bootstrap lens (v0.6.220) is taken as the canonical
+  reference for `widthVsBootstrapMaxRatio` for the same reason
+  v0.6.228 uses it as the canonical sign — it is the lens shipped
+  first and the one whose interval is constructed without
+  analytic approximation.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, --since 14d)
+
+```
+pew-insights source-row-token-slope-ci-width-concordance
+as of: 2026-04-29T16:21:22.266Z    sources: 6 (with all lenses 6, shown 6)    rows: 1982    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-disagreement: no    alert-superwide: no    top: -    sort: width-ratio-desc
+dropped: 0 missing-from-some-lens, 0 not-disagreement (alert), 0 not-superwide (alert), 0 below top cap; disagreement: 6; superwide: 0; tight-consensus: 0
+
+source           rows  widthMin    widthMax    widthRange  widthRatio  widthCv  widthGini  vsBoot   narrow            widest            tight
+---------------  ----  ----------  ----------  ----------  ----------  -------  ---------  -------  ----------------  ----------------  -----
+codex              64     4.11e+2     1.84e+8     1.84e+8  447565.737   1.3634     0.6473     1.00  abc               bootstrap            NO
+claude-code       299     1.19e+5     2.08e+8     2.08e+8    1750.694   1.5622     0.7296     2.27  profileLikelihood  bca                  NO
+openclaw          554     2.88e+4     3.27e+7     3.26e+7    1134.534   1.4692     0.7042     1.65  profileLikelihood  bca                  NO
+hermes            284     1.63e+4     4.71e+6     4.69e+6     289.525   1.3980     0.6601     1.00  profileLikelihood  bootstrap            NO
+vscode-redacted   333     4.62e+2     9.11e+4     9.06e+4     197.279   1.3913     0.6671     1.18  abc               bca                  NO
+opencode          448     1.12e+6     6.87e+7     6.76e+7      61.467   1.2351     0.5977     1.00  abc               bootstrap            NO
+```
+
+Headline: ALL 6 sources land in the `disagreement` bucket
+(`widthRatio > 3`); zero land in `tight-consensus`. Across this
+window the six lens kernels disagree on precision by anywhere from
+a factor of ~61× (opencode) to ~447,566× (codex), making the
+widthRatio diagnostic a genuinely sharper instrument than v0.6.227
+Jaccard overlap or v0.6.228 sign-bin tallies. The widest lens is
+either `bca` (claude-code, openclaw, vscode-redacted) or
+`bootstrap` itself (codex, hermes, opencode); the narrowest is
+either `profileLikelihood` (analytic profile inversion delivers
+the tightest envelope when the likelihood surface is well-behaved)
+or `abc` (small population means the ABC accept/reject step yields
+a near-degenerate posterior). `widthVsBootstrapMaxRatio` stays
+≤ 2.27 across all six sources, so the bootstrap lens is itself
+within a factor of ~2 of the widest envelope on every source —
+the disagreement is driven by `profileLikelihood` and `abc`
+collapsing at the *narrow* end, not by any lens blowing up at the
+wide end. No source triggers `--alert-superwide` (none has any
+lens > 10× the bootstrap envelope), confirming that the precision
+disagreement is one-sided: lenses can be too tight relative to
+bootstrap, but never wildly too loose.
+
 ## 0.6.228 — 2026-04-29
 
 ### Added
