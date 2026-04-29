@@ -259,3 +259,62 @@ test('ladder: huberMeanGap and huberMedianGap signs cohere with contamination di
     `lower-contam huberMeanGap ${row2.huberMeanGap} should be > 0`,
   );
 });
+
+test('ladder: c-tuning monotonicity — larger c moves Huber toward the mean', () => {
+  // On a contaminated sample, increasing the Huber tuning constant c
+  // monotonically reduces the distance from Huber to the mean (and
+  // increases the distance from Huber to the median). At c = 1.345
+  // (default), Huber sits closer to the median; at c = 1000+, Huber
+  // ~= mean.
+  const xs = [10, 11, 12, 13, 14, 15, 16, 17, 18, 1000];
+  const m = getMean(xs);
+  const med = getRawMedian(xs);
+  const cs = [0.5, 1.0, 1.345, 2.0, 5.0, 50.0, 1e9];
+  const huberAtC = cs.map((c) => {
+    const r = buildSourceRowTokenMEstimatorHuber(mkSeries('s', xs), {
+      c,
+      generatedAt: GEN,
+    });
+    return r.sources[0]!.huber;
+  });
+  // |huber - mean| should be monotonically non-increasing as c grows.
+  for (let i = 1; i < huberAtC.length; i += 1) {
+    const dPrev = Math.abs(huberAtC[i - 1]! - m);
+    const dCur = Math.abs(huberAtC[i]! - m);
+    assert.ok(
+      dCur <= dPrev + 1e-6,
+      `at c=${cs[i]} dist-to-mean ${dCur} should be <= prev ${dPrev} (at c=${cs[i - 1]})`,
+    );
+  }
+  // At a very large c (no row clipped), Huber should equal the mean.
+  assert.ok(
+    Math.abs(huberAtC[huberAtC.length - 1]! - m) < 1e-6,
+    `at c=${cs[cs.length - 1]} huber ${huberAtC[huberAtC.length - 1]} should be ~= mean ${m}`,
+  );
+  // At the smallest c, Huber should be much closer to the median.
+  const distToMedAtMinC = Math.abs(huberAtC[0]! - med);
+  const distToMeanAtMinC = Math.abs(huberAtC[0]! - m);
+  assert.ok(
+    distToMedAtMinC < distToMeanAtMinC,
+    `at c=${cs[0]} huber ${huberAtC[0]} should be closer to median ${med} than mean ${m}`,
+  );
+});
+
+test('ladder: at default c=1.345, Huber lies between TM25 and the mean on contaminated data', () => {
+  // Mechanical sandwich: TM25 trims the top/bottom 25% (so the
+  // outlier is fully discarded), the mean is fully exposed to the
+  // outlier, and Huber-1.345 downweights it without removing it.
+  // Therefore: TM25 <= Huber <= mean for upper one-sided contamination.
+  const xs = [10, 11, 12, 13, 14, 15, 16, 17, 18, 1000];
+  const tm25 = getTM25(xs);
+  const hub = getHuber(xs);
+  const m = getMean(xs);
+  assert.ok(
+    tm25 <= hub + 1e-6,
+    `TM25 ${tm25} should be <= huber ${hub} for upper contamination`,
+  );
+  assert.ok(
+    hub <= m + 1e-6,
+    `huber ${hub} should be <= mean ${m} for upper contamination`,
+  );
+});
