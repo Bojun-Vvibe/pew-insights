@@ -2,6 +2,122 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.237 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-leave-one-lens-out` —
+  per-source LEAVE-ONE-LENS-OUT (LOO) influence diagnostic for the
+  v0.6.219 Deming-slope uncertainty-quantification suite. Consumes
+  the SAME six per-source CIs as v0.6.227–v0.6.235 (percentile
+  bootstrap, jackknife normal, BCa, studentized-t, ABC,
+  profile-likelihood).
+
+  **Mechanically distinct from ALL NINE prior cross-lens
+  diagnostics on a fundamental axis** — every prior axis describes
+  the JOINT geometry of the six CIs as a STATIC configuration
+  (signs, widths, overlaps, ranks, midpoints, asymmetries, IoUs):
+
+    - v0.6.227 jaccard (sign-set), v0.6.228 sign-concordance,
+      v0.6.229 width-concordance, v0.6.230 overlap-graph (1-bit
+      pair),  v0.6.231 midpoint-dispersion (center-spread only),
+      v0.6.232 asymmetry (single-CI shape), v0.6.233
+      pair-inclusion (5-category labels), v0.6.234 rank-correlation
+      (cross-source ordinal), v0.6.235 coverage-volume (continuous
+      pair IoU) — none of them answer "if we deleted lens k, how
+      much would the consensus midpoint move and how much would
+      the consensus width change?"
+
+  The 10th axis is therefore the SENSITIVITY axis: a classical
+  jackknife-of-lenses applied to the 6-lens consensus. For each
+  source we compute on the 6 CI midpoints `mid_k = (lo_k + hi_k)
+  / 2` and 6 widths `w_k = hi_k - lo_k`:
+
+    - `fullMid` / `fullWidth` — mean of all 6 mids / widths;
+    - `fullMidStd` — sample std (n-1) of mids;
+    - 6 `loo` rows (one per removed lens k):
+        - `looMid` = mean of the OTHER FIVE midpoints,
+        - `looWidth` = mean of the OTHER FIVE widths,
+        - `midShift` = `|looMid - fullMid|`,
+        - `signedMidShift` = `looMid - fullMid` (positive =
+          removing k pulls consensus UP, i.e. k was dragging it
+          down),
+        - `widthShift` = `looWidth - fullWidth`,
+        - `widthRatio` = `looWidth / fullWidth` (1 = no effect,
+          > 1 = k was tighter than average, < 1 = k was wider),
+        - `midShiftStd` = `midShift / fullWidth` (unitless,
+          comparable across sources).
+    - Per-source aggregates: `mostInfluentialLens` (largest
+      midShiftStd), `leastInfluentialLens`, `tightestLens`
+      (largest widthRatio), `widestLens`, `maxMidShiftStd`,
+      `meanMidShiftStd`, `widthRatioRange`, `looStabilityScore = 1
+      / (1 + maxMidShiftStd)` in (0, 1] — default sort key,
+      1.0 = removing any single lens leaves the consensus midpoint
+      exactly where it was.
+    - Report-level: `meanLooStability` / `medianLooStability`,
+      `globalMostInfluentialLens` / `globalLeastInfluentialLens`
+      (mode across sources).
+
+  Edge cases: `fullWidth == 0` → `midShiftStd = 0` and
+  `widthRatio = 1` by convention (NOT NaN); all six midpoints
+  identical → every `midShift = 0` and `looStabilityScore = 1`.
+
+  Why a 10th axis: the prior 9 say WHAT the six CIs jointly look
+  like; this axis says WHICH lens is actually carrying the
+  consensus. A configuration that scores well on width-concordance
+  and IoU-coverage can still be entirely driven by ONE
+  hyper-precise lens — and if that lens is wrong, the consensus
+  is wrong. LOO sensitivity is the only axis that pulls each
+  lens out one at a time and quantifies its individual
+  contribution to the consensus center and spread.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (2006 rows, 6
+  sources, default settings except `--bootstraps 500`):
+
+  ```
+  pew-insights source-row-token-slope-ci-leave-one-lens-out
+  as of: 2026-04-29T20:59:38.885Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 500    seed: 42    alert-unstable: -    top: -    sort: stability-desc
+  dropped: 0 missing-from-some-lens, 0 above-alert-threshold; meanLooStability: 0.9149; medianLooStability: 0.9268; globalMostInfluentialLens: bca; globalLeastInfluentialLens: bootstrap
+
+  source           rows  fullMid     fullWidth   fullMidStd  maxMSS    meanMSS   wrRange   stability  mostInf            leastInf           tightest           widest
+  ---------------  ----  ----------  ----------  ----------  --------  --------  --------  ---------  -----------------  -----------------  -----------------  -----------------
+  codex              64  -4185676.5294  55124537.5794  10024664.5509    0.0693    0.0263    0.5932     0.9352  bca                bootstrap          abc                bootstrap
+  hermes            293  219383.1251  1653209.5953  384996.3669    0.0730    0.0393    0.6084     0.9319  bca                jackknife          profileLikelihood  bca
+  opencode          457  -2608006.0680  21093611.4275  4188873.9711    0.0738    0.0283    0.5297     0.9313  bca                studentizedT       abc                bca
+  openclaw          563  -829905.9684  6490703.3614  1409826.9024    0.0843    0.0314    0.5967     0.9222  bca                bootstrap          profileLikelihood  bootstrap
+  vscode-copilot    333   4452.4524  31013.7735   8769.6206    0.1152    0.0384    0.6394     0.8967  bca                bootstrap          abc                bca
+  claude-code       299  8295986.0349  41575464.8671  15400881.3436    0.1466    0.0512    0.6804     0.8721  bca                bootstrap          profileLikelihood  bca
+  ```
+
+  Headline findings on the local queue:
+  - `bca` is the `mostInfluentialLens` for ALL SIX sources —
+    removing it shifts the consensus midpoint more than removing
+    any other lens. Symmetrically, `bca` is the `widestLens` for
+    4 of 6 sources (removing it SHRINKS the consensus width the
+    most), meaning the BCa CI is consistently both far from the
+    other five lenses on the center axis AND much wider than
+    them on the spread axis. That's the diagnostic signature of
+    a lens whose acceleration / bias-correction is overshooting
+    on the local queue's small per-source sample sizes.
+  - `bootstrap` (percentile) is the `leastInfluentialLens` for 4
+    of 6 sources — removing it barely moves the consensus,
+    because its midpoint and width sit close to the
+    jackknife/studentizedT/abc/profileLikelihood cluster.
+  - `looStabilityScore` ranges from 0.8721 (claude-code, most
+    lens-sensitive) to 0.9352 (codex, most lens-stable). Even
+    the worst case is > 0.85, so no source's consensus is
+    catastrophically dependent on a single lens — but `bca` is
+    everywhere the dominant contributor.
+
+  Wired into the CLI with the standard window / lens parameters
+  (`--since`, `--until`, `--source`, `--min-rows`, `--confidence`,
+  `--lambda`, `--bootstraps`, `--seed`), plus `--alert-unstable
+  <f>` (filter to sources whose stability is strictly less than
+  f, in (0, 1]), `--top <n>`, `--sort`, `--json`, and
+  `--show-loo` (expand the per-source 6-row LOO sub-table).
+
+  Tests: 6500 total (was 6456, +44).
+
 ## 0.6.236 — 2026-04-30
 
 ### Added — refinement to v0.6.235 ci-coverage-volume
