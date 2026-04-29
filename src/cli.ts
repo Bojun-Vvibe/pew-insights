@@ -415,6 +415,10 @@ import {
   buildSourceRowTokenSlopeCiOverlapGraph,
   renderSourceRowTokenSlopeCiOverlapGraph,
 } from './sourcerowtokenslopecioverlapgraph.js';
+import {
+  buildSourceRowTokenSlopeCiMidpointDispersion,
+  renderSourceRowTokenSlopeCiMidpointDispersion,
+} from './sourcerowtokenslopecimidpointdispersion.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -21232,6 +21236,190 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSlopeCiOverlapGraph(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-midpoint-dispersion')
+  .description(
+    "Per-source CENTRAL-TENDENCY disagreement diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from v0.6.227 (Jaccard), v0.6.228 (sign), v0.6.229 (width), and v0.6.230 (overlap-graph topology) -- those four diagnostics report agreement, direction, precision, and topology respectively but ignore WHERE each lens places its CI center. This module summarises the spread of the six CI midpoints per source: midpoints vector, mean/median, population std, IQR, MAD, range, CV, and the diagnostic ratio midRangeOverWidthMean = midRange / mean(CI width). When midRangeOverWidthMean >= 1 the lenses disagree on the slope LOCATION by more than a single CI of uncertainty (--alert-dispersed); when <= 0.25 they cluster surprisingly tightly (--alert-tight). Per source we also report argMinLens, argMaxLens, and the lens furthest from the median midpoint (outlierLens / outlierGap).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-dispersed',
+    'only emit sources whose midRangeOverWidthMean >= 1 (location disagreement exceeds a typical CI width)',
+  )
+  .option(
+    '--alert-tight',
+    'only emit sources whose midRangeOverWidthMean <= 0.25 (location agreement at least 4x tighter than typical CI width)',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'range-over-width-desc' (default) | 'range-over-width-asc' | 'std-desc' | 'std-asc' | 'iqr-desc' | 'iqr-asc' | 'mad-desc' | 'mad-asc' | 'range-desc' | 'range-asc' | 'cv-desc' | 'cv-asc' | 'outlier-gap-desc' | 'outlier-gap-asc' | 'mean-desc' | 'mean-asc' | 'rows' | 'source'",
+    'range-over-width-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertDispersed?: boolean;
+        alertTight?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'std-desc',
+          'std-asc',
+          'iqr-desc',
+          'iqr-asc',
+          'mad-desc',
+          'mad-asc',
+          'range-desc',
+          'range-asc',
+          'cv-desc',
+          'cv-asc',
+          'range-over-width-desc',
+          'range-over-width-asc',
+          'outlier-gap-desc',
+          'outlier-gap-asc',
+          'mean-desc',
+          'mean-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertDispersed: opts.alertDispersed ?? false,
+          alertTight: opts.alertTight ?? false,
+          top,
+          sort: opts.sort as
+            | 'std-desc'
+            | 'std-asc'
+            | 'iqr-desc'
+            | 'iqr-asc'
+            | 'mad-desc'
+            | 'mad-asc'
+            | 'range-desc'
+            | 'range-asc'
+            | 'cv-desc'
+            | 'cv-asc'
+            | 'range-over-width-desc'
+            | 'range-over-width-asc'
+            | 'outlier-gap-desc'
+            | 'outlier-gap-asc'
+            | 'mean-desc'
+            | 'mean-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiMidpointDispersion(report) + '\n',
           );
         }
       } catch (e) {
