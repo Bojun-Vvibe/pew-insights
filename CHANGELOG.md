@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.206 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-trim-mean-30`** — per-source
+  **30 % symmetrically trimmed mean** of per-row `total_tokens`.
+  Sort the rows ascending, **drop** the bottom `k = floor(0.30 n)`
+  and top `k` order statistics entirely, then take the
+  arithmetic mean of the central `n - 2k` surviving rows.
+  Symmetric L-estimator with 30 % breakdown.
+
+  **Mechanically distinct from every shipped trim-mean lens**:
+  same DROP mechanism as TM-10 / TM-20 / TM-25 but a strictly
+  larger `k` for any `n` once `floor(0.30 n) > floor(0.25 n)`
+  (first true gap at `n = 20`: `floor(6) = 6` vs
+  `floor(5) = 5`). TM-30 retains only the central 40 % on the
+  asymptote (vs TM-25's central 50 %, TM-20's central 60 %,
+  TM-10's central 80 %), so it is **strictly more robust to
+  outliers than every shipped trim-mean and strictly less
+  robust than the median** (50 % breakdown).
+
+  **Mechanically distinct from every winsorized-mean lens**:
+  WM lenses CLIP the trimmed tails to boundary values
+  (`x_(k+1)` and `x_(n-k)`) and keep `n` rows in the
+  denominator; TM-30 DROPS them entirely and keeps only
+  `n - 2k` rows in the denominator. Even at the same `k`,
+  the two are not generally equal whenever the central body
+  mean differs from the boundary midpoint.
+
+  Free byproducts: `loBoundary = x_(k+1)`, `hiBoundary = x_(n-k)`,
+  `trimmedPerTail = k`, `mean` (raw arithmetic mean of all
+  `n`), and signed `tmMeanGap = trim_mean - mean` exposing
+  tail asymmetry direction (negative = upper tail pulled raw
+  mean up; positive = lower tail dragged it down).
+
+  CLI options: `--since`, `--until`, `--source`, `--min-rows`
+  (default 4 — at `n = 4`, `k = floor(0.30·4) = 1`, central
+  window has 2 rows), `--min-trim-mean` (cohort gate), `--top`,
+  `--sort` (`trim-mean-desc` (default) / `trim-mean-asc` /
+  `mean-desc` / `gap-desc` / `rows` / `source`), `--json`.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (6 sources,
+  1,889 rows, all `tmMeanGap < 0` — every source has an
+  upper tail that the 30 %-trimmed mean filters out, with
+  `claude-code` showing the largest gap of -7.47 M tokens
+  between raw and 30 %-trimmed location):
+
+  ```
+  pew-insights source-row-token-trim-mean-30
+  sources: 6 (shown 6)    rows: 1,889    min-rows: 4    sort: trim-mean-desc
+
+  source          rows  k/tail  lo          hi           mean         trim-mean   tm-mean
+  --------------  ----  ------  ----------  -----------  -----------  ----------  -----------
+  codex           64    19      2537404.00  16276409.00  12650385.31  8071747.69  -4578637.62
+  opencode        417   125     4156447.00  11040281.00  10392288.20  7831842.74  -2560445.45
+  claude-code     299   89      1083031.00  9650212.00   11512995.95  4047165.93  -7465830.02
+  openclaw        523   156     1408919.00  4122423.00   3781259.94   2485003.00  -1296256.94
+  hermes          253   75      243643.00   771521.00    770106.02    446635.99   -323470.03
+  vscode-XXX      333   99      1088.00     4427.00      5662.84      2401.27     -3261.58
+  ```
+
+  Test count: 4,779 → 4,816 (+37 new).
+
 ## 0.6.205 — 2026-04-29
 
 ### Added
