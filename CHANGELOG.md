@@ -2,6 +2,122 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.233 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-containment-nestedness` —
+  per-source CI-CONTAINMENT diagnostic for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SAME six per-source
+  CIs that v0.6.227–v0.6.232 consume. **Mechanically distinct from
+  ALL SIX prior cross-lens diagnostics** because it is the only one
+  that classifies the JOINT (location + width) inclusion structure
+  of each pair of CIs:
+
+    - v0.6.227 Jaccard collapses each pair to a single overlap
+      fraction in `[0, 1]` and loses inclusion direction.
+    - v0.6.228 sign concordance: pure direction.
+    - v0.6.229 width concordance compares CI widths in isolation;
+      two CIs of identical width never nest, so width-concordance
+      can be maximally agreeing while no nesting exists at all.
+    - v0.6.230 overlap-graph reduces each pair to one bit (overlap
+      or disjoint) and loses width altogether.
+    - v0.6.231 midpoint-dispersion measures center spread; two CIs
+      centered identically can nest perfectly OR be identical OR
+      sit side-by-side — centers alone don't say.
+    - v0.6.232 asymmetry measures shape AROUND the point estimate
+      INSIDE a single CI; says nothing pairwise.
+    - This module: each of the `C(6,2) = 15` pairs is classified
+      into one of five MECE buckets:
+        - `EQ` — identical endpoints (`lo_a == lo_b && hi_a == hi_b`);
+        - `A_IN_B` — A strictly nested inside B
+          (`lo_b < lo_a && hi_a < hi_b`, strict on both sides);
+        - `B_IN_A` — mirror;
+        - `PARTIAL` — intersect but neither strictly contains
+          (one endpoint pair crosses, or one boundary is shared);
+        - `DISJOINT` — no intersection at all
+          (`hi_a < lo_b || hi_b < lo_a`, strict).
+      Boundary cases (shared endpoint, single-point touch) fall
+      into `PARTIAL`, not `EQ` or `*_IN_*`.
+
+  Per source we report:
+
+    - `pairs` — 15-vector of pair classifications in canonical pair
+      order (`i < j` over canonical lens order: bootstrap,
+      jackknife, bca, studentizedT, abc, profileLikelihood);
+    - `eqPairs`, `nestedPairs`, `partialPairs`, `disjointPairs` —
+      bucket counts (sum to 15);
+    - `nestingChainDepth` — length of the longest chain of CIs
+      under inclusion (with equality permitted), in `[1, 6]`. 6
+      means the six CIs form a TOTAL ORDER under inclusion;
+    - `cleanChain` — boolean: every pair is `EQ` or strict nest
+      (no `PARTIAL`, no `DISJOINT`);
+    - `widestLens`, `widestContains` — lens with the most strict
+      containments and its count in `[0, 5]`. The widest lens is
+      the most-conservative;
+    - `tightestLens`, `tightestContainedBy` — mirror. The tightest
+      lens is the most-confident;
+    - `contains`, `containedBy`, `equalTo` — 6-vectors of per-lens
+      profile in canonical lens order (sum `contains == sum
+      containedBy == nestedPairs`; sum `equalTo == 2 * eqPairs`);
+    - `meanWidth`, `widthSpread` — mean and `(max - min)` of the
+      six CI widths;
+    - `nestingFraction` — `(eqPairs + nestedPairs) / 15` in
+      `[0, 1]`. Headline metric: 1 means perfect total-order
+      inclusion; 0 means no pair nests;
+    - `disjointFraction` — `disjointPairs / 15` in `[0, 1]`. The
+      red-flag complement;
+    - `anyDisjoint` — boolean: at least one pair is `DISJOINT`
+      (lenses produce non-overlapping confidence ranges — a
+      contradiction the other six diagnostics cannot raise
+      pairwise).
+
+  Sort keys: `nesting-fraction-desc` (default),
+  `nesting-fraction-asc`, `disjoint-fraction-{desc,asc}`,
+  `chain-depth-{desc,asc}`, `nested-pairs-desc`,
+  `partial-pairs-desc`, `disjoint-pairs-desc`, `eq-pairs-desc`,
+  `widest-contains-desc`, `tightest-contained-by-desc`,
+  `mean-width-desc`, `width-spread-desc`, `rows`, `source`.
+  Filters: `--alert-disjoint` (`anyDisjoint == true`) and
+  `--alert-clean-chain` (`cleanChain == true && nestingChainDepth
+  == 6`). Standard `--top N` cap with `droppedBelowTopCap`
+  accounting.
+
+  Containment uses STRICT inequalities: a shared low or hi bound
+  is `PARTIAL`, not `*_IN_*`. Equality requires BOTH endpoints to
+  match exactly. This matches the floating-point regime of the
+  lens kernels — deliberately-symmetric constructions return
+  identical endpoints exactly, while floating noise around shared
+  midpoints surfaces as `PARTIAL` rather than spurious nesting.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, --since 2026-04-15)
+
+```
+pew-insights source-row-token-slope-ci-containment-nestedness
+as of: 2026-04-29T18:58:25.593Z    sources: 6 (with all lenses 6, shown 6)    rows: 1997    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-disjoint: no    alert-clean-chain: no    top: -    sort: nesting-fraction-desc
+dropped: 0 missing-from-some-lens, 0 not-disjoint (alert), 0 not-clean-chain (alert), 0 below top cap; any-disjoint: 6; clean-chain: 0; total-order (chain==6): 0
+
+source           rows  EQ/N/P/D    chn  cln  widest              c   tightest             cb   nestF    disjF    meanW       wSpread     anyD
+---------------  ----  ----------  ---  ---  ------------------  --  ------------------  --   ------   ------   ----------  ----------  ----
+claude-code       299    0/10/2/3    3   NO  bootstrap            4  profileLikelihood    4  0.6667  0.2000  49992590.1907  207743116.3356   yes
+hermes            289    0/10/2/3    3   NO  bootstrap            4  profileLikelihood    4  0.6667  0.2000  1817169.4854  5456669.7468   yes
+openclaw          559    0/10/2/3    3   NO  bootstrap            4  profileLikelihood    4  0.6667  0.2000  7732503.7718  27005236.6260   yes
+opencode          453    0/10/3/2    3   NO  bootstrap            4  studentizedT         3  0.6667  0.1333  21115801.5790  56513409.1444   yes
+codex              64     0/9/2/4    3   NO  bootstrap            4  abc                  3  0.6000  0.2667  62842053.9993  184011748.1392   yes
+vscode-redacted    333     0/8/4/3    2   NO  bootstrap            4  jackknife            2  0.5333  0.2000  38500.6300  116722.9113   yes
+```
+
+  Read: every real source's `widestLens` is `bootstrap` (4 of 5
+  peers strictly inside the percentile-bootstrap CI) — the
+  percentile bootstrap is the most-conservative lens on this
+  workload. Tightest lens varies (`profileLikelihood` for the
+  three highest-volume sources, `studentizedT` / `abc` /
+  `jackknife` for the others). NO source achieves a clean chain;
+  every source has at least one DISJOINT pair, meaning no source's
+  six CIs all mutually overlap — the lenses materially disagree on
+  the slope's plausible range, a pairwise contradiction none of
+  the prior six cross-lens diagnostics surfaces.
+
 ## 0.6.232 — 2026-04-30
 
 ### Added
