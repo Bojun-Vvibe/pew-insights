@@ -411,6 +411,10 @@ import {
   buildSourceRowTokenSlopeCiWidthConcordance,
   renderSourceRowTokenSlopeCiWidthConcordance,
 } from './sourcerowtokenslopeciwidthconcordance.js';
+import {
+  buildSourceRowTokenSlopeCiOverlapGraph,
+  renderSourceRowTokenSlopeCiOverlapGraph,
+} from './sourcerowtokenslopecioverlapgraph.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -21042,6 +21046,186 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSlopeCiWidthConcordance(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-overlap-graph')
+  .description(
+    "Per-source slope-CI overlap-graph TOPOLOGY diagnostic across the SIX uncertainty-quantification CIs shipped between v0.6.220 and v0.6.225 (percentile bootstrap, jackknife normal, BCa, studentized-t bootstrap, ABC, profile-likelihood). Mechanically distinct from ALL THREE prior cross-lens diagnostics (v0.6.227 Jaccard / v0.6.228 sign / v0.6.229 width). For each source it builds the symmetric undirected graph G with V = {6 lenses} and E = {(i, j) : CI_i overlaps CI_j (closed-interval intersection nonempty)}, then reports edgeCount (0..15), density = edgeCount/15, componentCount (1..6), largestComponentSize, singletonCount and singletonLenses (lenses overlapping no other lens), maxCliqueSize (largest pairwise-mutually-overlapping pocket; 1..6), componentSizes (sorted desc, sums to 6), bridgeCount (edges whose removal increases componentCount), triangleCount (3-cliques; 0..20), transitivity (3*tri/triplets, in [0,1]), consensusBackbone (componentCount==1 AND maxCliqueSize>=4), and fragmented (componentCount>=3). Per source we also emit the 6x6 boolean adjacency matrix and the up-to-15 edge list. Use --alert-fragmented to filter to sources whose graph splits into 2+ disjoint islands; --alert-isolated to filter to sources with at least one singleton lens.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-fragmented',
+    'only emit sources whose overlap graph has componentCount >= 2 (lens island detected)',
+  )
+  .option(
+    '--alert-isolated',
+    'only emit sources whose overlap graph has at least one singleton lens (a lens overlapping NO other lens)',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'density-asc' (default; least connected first) | 'density-desc' | 'components-desc' | 'components-asc' | 'singletons-desc' | 'singletons-asc' | 'max-clique-desc' | 'max-clique-asc' | 'triangles-desc' | 'triangles-asc' | 'transitivity-desc' | 'transitivity-asc' | 'bridges-desc' | 'bridges-asc' | 'rows' | 'source'",
+    'density-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertFragmented?: boolean;
+        alertIsolated?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'density-asc',
+          'density-desc',
+          'components-desc',
+          'components-asc',
+          'singletons-desc',
+          'singletons-asc',
+          'max-clique-desc',
+          'max-clique-asc',
+          'triangles-desc',
+          'triangles-asc',
+          'transitivity-desc',
+          'transitivity-asc',
+          'bridges-desc',
+          'bridges-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiOverlapGraph(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertFragmented: opts.alertFragmented ?? false,
+          alertIsolated: opts.alertIsolated ?? false,
+          top,
+          sort: opts.sort as
+            | 'density-asc'
+            | 'density-desc'
+            | 'components-desc'
+            | 'components-asc'
+            | 'singletons-desc'
+            | 'singletons-asc'
+            | 'max-clique-desc'
+            | 'max-clique-asc'
+            | 'triangles-desc'
+            | 'triangles-asc'
+            | 'transitivity-desc'
+            | 'transitivity-asc'
+            | 'bridges-desc'
+            | 'bridges-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiOverlapGraph(report) + '\n',
           );
         }
       } catch (e) {
