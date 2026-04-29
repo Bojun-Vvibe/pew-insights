@@ -12089,6 +12089,10 @@ import type {
   SourceRowTokenTrimMean30Report,
   SourceRowTokenTrimMean30Row,
 } from './sourcerowtokentrimmean30.js';
+import type {
+  SourceRowTokenHodgesLehmannReport,
+  SourceRowTokenHodgesLehmannRow,
+} from './sourcerowtokenhodgeslehmann.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -12358,6 +12362,75 @@ export function renderSourceRowTokenTrimMean30(
     ],
   );
   lines.push(renderTableLocal(headers, rows30));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenHodgesLehmann(
+  r: SourceRowTokenHodgesLehmannReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-hodges-lehmann'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-hodges-lehmann: ${formatNumber(r.minHodgesLehmann)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinHodgesLehmann)} below min-hodges-lehmann, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hodges-Lehmann pseudo-median of per-row total_tokens: median of all n*(n+1)/2 Walsh averages (x_i + x_j)/2, i <= j. NOT an L-estimator — every shipped row-token location lens is a linear combination of order statistics; HL is an R-estimator / U-statistic derived from the Wilcoxon signed-rank test. Asymptotic relative efficiency 3/pi ~ 0.955 at the normal model. Breakdown ~ 0.293, between TM-25 and TM-30. hlMeanGap = HL - mean and hlMedianGap = HL - median expose tail asymmetry as seen by the symmetrized distribution (X+X')/2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Hodges-Lehmann pseudo-median (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'walsh',
+    'mean',
+    'median',
+    'hl',
+    'hl-mean',
+    'hl-median',
+  ];
+  const rowsHL: string[][] = r.sources.map(
+    (s: SourceRowTokenHodgesLehmannRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.walshCount),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.hodgesLehmann.toFixed(2),
+      (s.hlMeanGap >= 0 ? '+' : '') + s.hlMeanGap.toFixed(2),
+      (s.hlMedianGap >= 0 ? '+' : '') + s.hlMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsHL));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

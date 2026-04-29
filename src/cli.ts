@@ -132,6 +132,7 @@ import {
   renderSourceRowTokenTrimMean10,
   renderSourceRowTokenTrimMean20,
   renderSourceRowTokenTrimMean30,
+  renderSourceRowTokenHodgesLehmann,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -361,6 +362,7 @@ import { buildSourceRowTokenWinsorizedMean20 } from './sourcerowtokenwinsorizedm
 import { buildSourceRowTokenTrimMean10 } from './sourcerowtokentrimmean10.js';
 import { buildSourceRowTokenTrimMean20 } from './sourcerowtokentrimmean20.js';
 import { buildSourceRowTokenTrimMean30 } from './sourcerowtokentrimmean30.js';
+import { buildSourceRowTokenHodgesLehmann } from './sourcerowtokenhodgeslehmann.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -7964,6 +7966,115 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenTrimMean30(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-hodges-lehmann')
+  .description(
+    "Per-source Hodges-Lehmann pseudo-median of per-row total_tokens. Form the multiset W of all n*(n+1)/2 Walsh averages (x_i + x_j)/2 for i <= j, then take HL = median(W). NOT an L-estimator: every shipped per-source row-token location lens (mean / mid-range / trim-mean-{10,20,25,30} / winsorized-mean-{10,20} / median / midhinge / trimean / IQM) is a fixed linear combination of order statistics. HL is an R-estimator / U-statistic — the canonical Wilcoxon-signed-rank-derived location estimator. Asymptotic relative efficiency at the normal model is 3/pi ~ 0.955 (vs median's 2/pi ~ 0.637). Breakdown point ~ 1 - 1/sqrt(2) ~ 0.293, between trim-mean-25 and trim-mean-30. For asymmetric distributions HL estimates the center of symmetry of the symmetrized distribution (X+X')/2, generally between the population mean and median. hlMeanGap = HL - mean and hlMedianGap = HL - median are reported as free signals.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (need n >= 4 for a meaningful Walsh-average multiset of size n*(n+1)/2 = 10) (default 4)',
+    '4',
+  )
+  .option(
+    '--min-hodges-lehmann <f>',
+    'drop sources whose Hodges-Lehmann pseudo-median is strictly below f; cohort selector for "this source actually carries non-trivial body-location token magnitude". f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'hl-desc' (default) | 'hl-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|hlMeanGap| desc) | 'median-gap-desc' (|hlMedianGap| desc) | 'rows' | 'source'",
+    'hl-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minHodgesLehmann: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minHodgesLehmann = Number.parseFloat(opts.minHodgesLehmann);
+        if (!Number.isFinite(minHodgesLehmann) || minHodgesLehmann < 0) {
+          throw new Error(
+            `--min-hodges-lehmann must be a finite, non-negative number (got ${opts.minHodgesLehmann})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'hl-desc',
+          'hl-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenHodgesLehmann(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minHodgesLehmann,
+          top,
+          sort: opts.sort as
+            | 'hl-desc'
+            | 'hl-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenHodgesLehmann(report) + '\n');
         }
       } catch (e) {
         die(e);
