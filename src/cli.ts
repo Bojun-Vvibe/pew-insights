@@ -451,6 +451,10 @@ import {
   buildSourceRowTokenSlopeCiLensResidualZ,
   renderSourceRowTokenSlopeCiLensResidualZ,
 } from './sourcerowtokenslopecilensresidualz.js';
+import {
+  buildSourceRowTokenSlopeCiMadVsMaeDivergence,
+  renderSourceRowTokenSlopeCiMadVsMaeDivergence,
+} from './sourcerowtokenslopecimadvsmaedivergence.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22436,9 +22440,9 @@ program
   );
 
 program
-  .command('source-row-token-slope-ci-precision-pull')
+  .command('source-row-token-slope-ci-mad-vs-mae-divergence')
   .description(
-    "Per-source PRECISION-WEIGHTED vs EQUAL-WEIGHTED consensus shift diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL TEN prior cross-lens diagnostics (v0.6.227-235, v0.6.237 LOO) on a fundamental axis: every prior axis treats the six lenses as exchangeable equal-weight contributors. This is the ONLY axis that asks 'where does consensus go if we re-weight each lens by its PRECISION (1/width), as in inverse-variance pooling, instead of treating them all equally?' For each source, on the 6 CI midpoints and widths, we compute equalMid (arithmetic mean of midpoints), precisionMid (inverse-width-weighted mean of midpoints), signedPull = precisionMid - equalMid, pull = |signedPull|, pullStd = pull / equalWidth (unitless), pullDirection in {up, down, neutral}, weightShares (length 6, sums to 1), weightGini (concentration of precision in [0, 5/6]), dominantLens (largest weightShare), dominantWeightShare, mostPrecisionPullingLens (lens whose midpoint is furthest from equalMid AMONG above-average-precision lenses), and precisionAlignmentScore = 1 / (1 + pullStd) in (0, 1] (default sort key; 1 = precision re-weighting doesn't move consensus, near-0 = precise lenses sharply pull consensus away from equal-weight center). Report-level: meanPrecisionAlignment / medianPrecisionAlignment, meanWeightGini, globalDominantLens (mode across sources), globalPullDirection. --alert-misaligned <f> filters to sources whose precisionAlignmentScore is strictly less than f.",
+    "Per-source ROBUST-vs-NON-ROBUST SCALE DIVERGENCE diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL THIRTEEN prior cross-lens diagnostics (v0.6.227-240) on a fundamental axis: it is the ONLY one that COMPARES TWO scale estimates of the same midpoints (mean-absolute-error vs Gaussian-consistent-scaled-MAD) to detect the signature of a single tail observation among the six lens midpoints. For each source, on the 6 CI midpoints, we compute equalMid, medianMid, mae=mean(|mid_k-equalMid|) (non-robust scale), mad=median(|mid_k-medianMid|), madScaled=1.4826*mad (Gaussian-consistent), divergence=mae-madScaled, divergenceRatio=mae/madScaled (Inf when madScaled=0 and mae>0; 1 when both 0), tailLens (max |mid-medianMid|, canonical-order tie-break), tailDeviation, tailDirection in {up,down,neutral}, breakdownFlag (=divergenceRatio>1.5), meanMedianGap, skewDirection in {right,left,symmetric}, robustnessScore=1/(1+|divergence|/(mae+madScaled+eps)) in (0,1] (default sort key; 1 = MAE and scaled-MAD agree exactly). Report-level: meanRobustnessScore/medianRobustnessScore, meanDivergenceRatio (finite only), nBreakdown, nInfiniteRatio, globalTailLens, globalSkewDirection. --alert-divergent <f> filters to sources with robustnessScore strictly less than f. --alert-breakdown filters to sources with breakdownFlag true.",
   )
   .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
   .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
@@ -22469,396 +22473,23 @@ program
     '42',
   )
   .option(
-    '--alert-misaligned <f>',
-    'only emit sources whose precisionAlignmentScore is strictly less than f (in (0, 1])',
+    '--alert-divergent <f>',
+    'only emit sources whose robustnessScore is strictly less than f (in (0, 1])',
+  )
+  .option(
+    '--alert-breakdown',
+    'only emit sources with breakdownFlag true (divergenceRatio > 1.5); independent of --alert-divergent',
   )
   .option('--top <n>', 'cap output to the top n sources after sorting')
   .option(
     '--sort <key>',
-    "sort key: 'alignment-desc' (default) | 'alignment-asc' | 'pull-std-desc' | 'pull-std-asc' | 'weight-gini-desc' | 'weight-gini-asc' | 'rows' | 'source'",
-    'alignment-desc',
-  )
-  .option('--json', 'emit JSON instead of a pretty report')
-  .option(
-    '--show-weights',
-    'when rendering pretty (non-JSON), append a per-source 6-row sub-table showing each lens weightShare',
-  )
-  .option(
-    '--show-pull-summary',
-    'when rendering pretty (non-JSON), append a compact one-line directional summary per source naming the dominantLens, the up/down/neutral pull direction, the raw signedPull, and the dominantWeightShare',
-  )
-  .action(
-    async (
-      opts: {
-        since?: string;
-        until?: string;
-        source?: string;
-        minRows: string;
-        confidence: string;
-        lambda: string;
-        bootstraps: string;
-        seed: string;
-        alertMisaligned?: string;
-        top?: string;
-        sort: string;
-        json?: boolean;
-        showWeights?: boolean;
-        showPullSummary?: boolean;
-      },
-      cmd,
-    ) => {
-      try {
-        const common = cmd.optsWithGlobals() as CommonOpts;
-        const paths = resolvePewPaths(common.pewHome);
-        const minRows = Number.parseInt(opts.minRows, 10);
-        if (!Number.isInteger(minRows) || minRows < 4) {
-          throw new Error(
-            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
-          );
-        }
-        const confidence = Number.parseFloat(opts.confidence);
-        if (
-          !Number.isFinite(confidence) ||
-          confidence <= 0 ||
-          confidence >= 1
-        ) {
-          throw new Error(
-            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
-          );
-        }
-        const lambda = Number.parseFloat(opts.lambda);
-        if (!Number.isFinite(lambda) || lambda <= 0) {
-          throw new Error(
-            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
-          );
-        }
-        const bootstraps = Number.parseInt(opts.bootstraps, 10);
-        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
-          throw new Error(
-            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
-          );
-        }
-        const seed = Number.parseInt(opts.seed, 10);
-        if (!Number.isInteger(seed)) {
-          throw new Error(`--seed must be an integer (got ${opts.seed})`);
-        }
-        let alertMisaligned: number | null = null;
-        if (opts.alertMisaligned != null) {
-          const a = Number.parseFloat(opts.alertMisaligned);
-          if (!Number.isFinite(a) || a <= 0 || a > 1) {
-            throw new Error(
-              `--alert-misaligned must be a finite number in (0, 1] (got ${opts.alertMisaligned})`,
-            );
-          }
-          alertMisaligned = a;
-        }
-        let top: number | null = null;
-        if (opts.top != null) {
-          const t = Number.parseInt(opts.top, 10);
-          if (!Number.isInteger(t) || t < 1) {
-            throw new Error(`--top must be a positive integer (got ${opts.top})`);
-          }
-          top = t;
-        }
-        const validSorts = [
-          'alignment-desc',
-          'alignment-asc',
-          'pull-std-desc',
-          'pull-std-asc',
-          'weight-gini-desc',
-          'weight-gini-asc',
-          'rows',
-          'source',
-        ];
-        if (!validSorts.includes(opts.sort)) {
-          throw new Error(
-            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
-          );
-        }
-        const queue = await readQueue(paths);
-        const report = buildSourceRowTokenSlopeCiPrecisionPull(queue, {
-          since: opts.since ?? null,
-          until: opts.until ?? null,
-          source: opts.source ?? null,
-          minRows,
-          confidence,
-          lambda,
-          bootstraps,
-          seed,
-          alertMisaligned,
-          top,
-          sort: opts.sort as
-            | 'alignment-desc'
-            | 'alignment-asc'
-            | 'pull-std-desc'
-            | 'pull-std-asc'
-            | 'weight-gini-desc'
-            | 'weight-gini-asc'
-            | 'rows'
-            | 'source',
-        });
-        if (opts.json || common.json) {
-          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-        } else {
-          process.stdout.write(
-            renderSourceRowTokenSlopeCiPrecisionPull(report, {
-              showWeights: opts.showWeights ?? false,
-              showPullSummary: opts.showPullSummary ?? false,
-            }) + '\n',
-          );
-        }
-      } catch (e) {
-        die(e);
-      }
-    },
-  );
-
-program
-  .command('source-row-token-slope-ci-adversarial-weighting-envelope')
-  .description(
-    "Per-source ADVERSARIAL CONVEX-WEIGHTING envelope diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL ELEVEN prior cross-lens diagnostics (v0.6.227-235, v0.6.237 LOO, v0.6.238 precision-pull) on a fundamental axis: it is the ONLY one that asks 'what is the FULL ATTAINABLE RANGE of the consensus midpoint over the entire weight simplex?' Equal-weighting is one interior point; precision-pooling is another interior point; LOO probes six specific weightings. The envelope considers ALL convex weightings: the attained midpoint set is exactly [min(mids), max(mids)]. For each source, on the 6 CI midpoints and widths, we compute equalMid, equalWidth, envelopeLow=min(mids), envelopeHigh=max(mids), envelopeRange=high-low (max possible shift), equalRelativePosition in [0,1] (where equalMid sits in envelope; 0.5=centered), worstCaseUpShift=high-equalMid, worstCaseDownShift=equalMid-low, manipulability=envelopeRange/equalWidth (unitless), asymmetryIndex in [-1,1] (positive=more upward room than down), asymmetryDirection in {up,down,neutral}, extremeUpLens (lens at envelopeHigh), extremeDownLens, extremesDistinct, and envelopeRobustnessScore=1/(1+manipulability) in (0,1] (default sort key; 1=consensus invariant under any re-weighting). Report-level: meanEnvelopeRobustness/medianEnvelopeRobustness, meanManipulability, globalExtremeUpLens, globalExtremeDownLens, globalAsymmetryDirection. --alert-manipulable <f> filters to sources with envelopeRobustnessScore strictly less than f.",
-  )
-  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
-  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
-  .option('--source <id>', 'restrict to a single source id')
-  .option(
-    '--min-rows <n>',
-    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
-    '4',
-  )
-  .option(
-    '--confidence <f>',
-    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
-    '0.95',
-  )
-  .option(
-    '--lambda <f>',
-    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
-    '1',
-  )
-  .option(
-    '--bootstraps <n>',
-    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
-    '1000',
-  )
-  .option(
-    '--seed <n>',
-    'LCG seed shared by the three resample-based lenses (default 42)',
-    '42',
-  )
-  .option(
-    '--alert-manipulable <f>',
-    'only emit sources whose envelopeRobustnessScore is strictly less than f (in (0, 1])',
-  )
-  .option(
-    '--alert-asymmetric <f>',
-    'only emit sources whose |asymmetryIndex| is >= f (in [0, 1]); independent of --alert-manipulable',
-  )
-  .option('--top <n>', 'cap output to the top n sources after sorting')
-  .option(
-    '--sort <key>',
-    "sort key: 'robustness-desc' (default) | 'robustness-asc' | 'manipulability-desc' | 'manipulability-asc' | 'envelope-range-desc' | 'envelope-range-asc' | 'rows' | 'source'",
+    "sort key: 'robustness-desc' (default) | 'robustness-asc' | 'divergence-ratio-desc' | 'divergence-ratio-asc' | 'tail-deviation-desc' | 'tail-deviation-asc' | 'rows' | 'source'",
     'robustness-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
   .option(
-    '--show-extremes',
-    'when rendering pretty (non-JSON), append a per-source one-line summary naming the extremeUpLens, extremeDownLens, the worst-case up/down shifts, and the asymmetry direction',
-  )
-  .action(
-    async (
-      opts: {
-        since?: string;
-        until?: string;
-        source?: string;
-        minRows: string;
-        confidence: string;
-        lambda: string;
-        bootstraps: string;
-        seed: string;
-        alertManipulable?: string;
-        alertAsymmetric?: string;
-        top?: string;
-        sort: string;
-        json?: boolean;
-        showExtremes?: boolean;
-      },
-      cmd,
-    ) => {
-      try {
-        const common = cmd.optsWithGlobals() as CommonOpts;
-        const paths = resolvePewPaths(common.pewHome);
-        const minRows = Number.parseInt(opts.minRows, 10);
-        if (!Number.isInteger(minRows) || minRows < 4) {
-          throw new Error(
-            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
-          );
-        }
-        const confidence = Number.parseFloat(opts.confidence);
-        if (
-          !Number.isFinite(confidence) ||
-          confidence <= 0 ||
-          confidence >= 1
-        ) {
-          throw new Error(
-            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
-          );
-        }
-        const lambda = Number.parseFloat(opts.lambda);
-        if (!Number.isFinite(lambda) || lambda <= 0) {
-          throw new Error(
-            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
-          );
-        }
-        const bootstraps = Number.parseInt(opts.bootstraps, 10);
-        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
-          throw new Error(
-            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
-          );
-        }
-        const seed = Number.parseInt(opts.seed, 10);
-        if (!Number.isInteger(seed)) {
-          throw new Error(`--seed must be an integer (got ${opts.seed})`);
-        }
-        let alertManipulable: number | null = null;
-        if (opts.alertManipulable != null) {
-          const a = Number.parseFloat(opts.alertManipulable);
-          if (!Number.isFinite(a) || a <= 0 || a > 1) {
-            throw new Error(
-              `--alert-manipulable must be a finite number in (0, 1] (got ${opts.alertManipulable})`,
-            );
-          }
-          alertManipulable = a;
-        }
-        let alertAsymmetric: number | null = null;
-        if (opts.alertAsymmetric != null) {
-          const a = Number.parseFloat(opts.alertAsymmetric);
-          if (!Number.isFinite(a) || a < 0 || a > 1) {
-            throw new Error(
-              `--alert-asymmetric must be a finite number in [0, 1] (got ${opts.alertAsymmetric})`,
-            );
-          }
-          alertAsymmetric = a;
-        }
-        let top: number | null = null;
-        if (opts.top != null) {
-          const t = Number.parseInt(opts.top, 10);
-          if (!Number.isInteger(t) || t < 1) {
-            throw new Error(`--top must be a positive integer (got ${opts.top})`);
-          }
-          top = t;
-        }
-        const validSorts = [
-          'robustness-desc',
-          'robustness-asc',
-          'manipulability-desc',
-          'manipulability-asc',
-          'envelope-range-desc',
-          'envelope-range-asc',
-          'rows',
-          'source',
-        ];
-        if (!validSorts.includes(opts.sort)) {
-          throw new Error(
-            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
-          );
-        }
-        const queue = await readQueue(paths);
-        const report = buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
-          queue,
-          {
-            since: opts.since ?? null,
-            until: opts.until ?? null,
-            source: opts.source ?? null,
-            minRows,
-            confidence,
-            lambda,
-            bootstraps,
-            seed,
-            alertManipulable,
-            alertAsymmetric,
-            top,
-            sort: opts.sort as
-              | 'robustness-desc'
-              | 'robustness-asc'
-              | 'manipulability-desc'
-              | 'manipulability-asc'
-              | 'envelope-range-desc'
-              | 'envelope-range-asc'
-              | 'rows'
-              | 'source',
-          },
-        );
-        if (opts.json || common.json) {
-          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-        } else {
-          process.stdout.write(
-            renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope(report, {
-              showExtremes: opts.showExtremes ?? false,
-            }) + '\n',
-          );
-        }
-      } catch (e) {
-        die(e);
-      }
-    },
-  );
-
-program
-  .command('source-row-token-slope-ci-lens-residual-z')
-  .description(
-    "Per-source PER-LENS STUDENTIZED-RESIDUAL diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL TWELVE prior cross-lens diagnostics (v0.6.227-235, v0.6.237 LOO, v0.6.238 precision-pull, v0.6.239 adversarial envelope) on a fundamental axis: it is the ONLY one that reports a PER-LENS-PER-SOURCE residual identifying the specific outlier lens, normalized by that lens's OWN half-width. For each source, on the 6 CI midpoints and widths, we compute equalMid, lensResidual_k = mid_k - equalMid (signed), lensResidualZ_k = lensResidual_k / (width_k/2) (studentized residual; 0 by convention when width_k==0), outlierLens (max abs Z, canonical-order tie-break), outlierAbsZ, outlierSigned, outlierDirection in {up,down,neutral}, outlierConsensusOutside (= outlierAbsZ >= 1: this lens's own CI does NOT contain consensus), meanAbsZ (per-source overall residual magnitude), nResidualOutside (count of lenses with absZ>=1), signAgreement in {all-up, all-down, mixed, all-zero}, and lensConcordanceScore = 1/(1 + meanAbsZ) in (0,1] (default sort key; 1 = every lens at consensus). Report-level: meanLensConcordance/medianLensConcordance, meanOutlierAbsZ, globalOutlierLens, globalOutlierDirection, nSourcesWithConsensusOutside. --alert-discordant <f> filters to sources with lensConcordanceScore strictly less than f. --alert-outside filters to sources where the outlier lens's own CI does not contain consensus.",
-  )
-  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
-  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
-  .option('--source <id>', 'restrict to a single source id')
-  .option(
-    '--min-rows <n>',
-    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
-    '4',
-  )
-  .option(
-    '--confidence <f>',
-    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
-    '0.95',
-  )
-  .option(
-    '--lambda <f>',
-    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
-    '1',
-  )
-  .option(
-    '--bootstraps <n>',
-    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
-    '1000',
-  )
-  .option(
-    '--seed <n>',
-    'LCG seed shared by the three resample-based lenses (default 42)',
-    '42',
-  )
-  .option(
-    '--alert-discordant <f>',
-    'only emit sources whose lensConcordanceScore is strictly less than f (in (0, 1])',
-  )
-  .option(
-    '--alert-outside',
-    'only emit sources where outlierConsensusOutside is true (outlier lens CI does not contain consensus); independent of --alert-discordant',
-  )
-  .option('--top <n>', 'cap output to the top n sources after sorting')
-  .option(
-    '--sort <key>',
-    "sort key: 'concordance-desc' (default) | 'concordance-asc' | 'outlier-abs-z-desc' | 'outlier-abs-z-asc' | 'mean-abs-z-desc' | 'mean-abs-z-asc' | 'rows' | 'source'",
-    'concordance-desc',
-  )
-  .option('--json', 'emit JSON instead of a pretty report')
-  .option(
-    '--show-residuals',
-    'when rendering pretty (non-JSON), append a per-source 6-row sub-table showing each lens signedResidual / signedZ / absZ',
-  )
-  .option(
     '--show-summary',
-    'when rendering pretty (non-JSON), append a per-source one-line summary naming the outlier lens, signedZ, direction, and (consensus outside its own CI) flag',
+    'when rendering pretty (non-JSON), append a per-source one-line summary naming the tail lens, direction, divergenceRatio, and (breakdown) flag',
   )
   .action(
     async (
@@ -22871,12 +22502,11 @@ program
         lambda: string;
         bootstraps: string;
         seed: string;
-        alertDiscordant?: string;
-        alertOutside?: boolean;
+        alertDivergent?: string;
+        alertBreakdown?: boolean;
         top?: string;
         sort: string;
         json?: boolean;
-        showResiduals?: boolean;
         showSummary?: boolean;
       },
       cmd,
@@ -22916,15 +22546,15 @@ program
         if (!Number.isInteger(seed)) {
           throw new Error(`--seed must be an integer (got ${opts.seed})`);
         }
-        let alertDiscordant: number | null = null;
-        if (opts.alertDiscordant != null) {
-          const a = Number.parseFloat(opts.alertDiscordant);
+        let alertDivergent: number | null = null;
+        if (opts.alertDivergent != null) {
+          const a = Number.parseFloat(opts.alertDivergent);
           if (!Number.isFinite(a) || a <= 0 || a > 1) {
             throw new Error(
-              `--alert-discordant must be a finite number in (0, 1] (got ${opts.alertDiscordant})`,
+              `--alert-divergent must be a finite number in (0, 1] (got ${opts.alertDivergent})`,
             );
           }
-          alertDiscordant = a;
+          alertDivergent = a;
         }
         let top: number | null = null;
         if (opts.top != null) {
@@ -22935,12 +22565,12 @@ program
           top = t;
         }
         const validSorts = [
-          'concordance-desc',
-          'concordance-asc',
-          'outlier-abs-z-desc',
-          'outlier-abs-z-asc',
-          'mean-abs-z-desc',
-          'mean-abs-z-asc',
+          'robustness-desc',
+          'robustness-asc',
+          'divergence-ratio-desc',
+          'divergence-ratio-asc',
+          'tail-deviation-desc',
+          'tail-deviation-asc',
           'rows',
           'source',
         ];
@@ -22950,7 +22580,7 @@ program
           );
         }
         const queue = await readQueue(paths);
-        const report = buildSourceRowTokenSlopeCiLensResidualZ(queue, {
+        const report = buildSourceRowTokenSlopeCiMadVsMaeDivergence(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
           source: opts.source ?? null,
@@ -22959,16 +22589,16 @@ program
           lambda,
           bootstraps,
           seed,
-          alertDiscordant,
-          alertOutside: opts.alertOutside ?? false,
+          alertDivergent,
+          alertBreakdown: opts.alertBreakdown ?? false,
           top,
           sort: opts.sort as
-            | 'concordance-desc'
-            | 'concordance-asc'
-            | 'outlier-abs-z-desc'
-            | 'outlier-abs-z-asc'
-            | 'mean-abs-z-desc'
-            | 'mean-abs-z-asc'
+            | 'robustness-desc'
+            | 'robustness-asc'
+            | 'divergence-ratio-desc'
+            | 'divergence-ratio-asc'
+            | 'tail-deviation-desc'
+            | 'tail-deviation-asc'
             | 'rows'
             | 'source',
         });
@@ -22976,8 +22606,7 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(
-            renderSourceRowTokenSlopeCiLensResidualZ(report, {
-              showResiduals: opts.showResiduals ?? false,
+            renderSourceRowTokenSlopeCiMadVsMaeDivergence(report, {
               showSummary: opts.showSummary ?? false,
             }) + '\n',
           );
