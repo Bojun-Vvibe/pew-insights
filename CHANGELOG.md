@@ -2,6 +2,254 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.222 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-bca-bootstrap-slope-ci` — emits
+  a per-source **BCa (bias-corrected and accelerated) bootstrap
+  confidence interval** for the v0.6.219 Deming regression slope
+  of per-row `total_tokens` against row index `0..n-1`, in
+  tokens / row.
+
+  This is the **third uncertainty-quantification lens** in the
+  slope suite and the second-order accurate sibling of v0.6.220's
+  percentile bootstrap (Efron 1987, *JASA* 82:171-185). Where
+  v0.6.220 picks the raw `(0.025, 0.975)` percentiles of the
+  Deming bootstrap distribution, BCa picks **shifted and
+  stretched percentiles** that depend on a bias correction `z0`
+  (from the bootstrap distribution itself) and an acceleration
+  `a` (from the jackknife replicates). The interval recovers the
+  percentile interval iff `z0 == 0 && a == 0`; otherwise it is
+  off-center, off-width, and provably second-order accurate where
+  percentile is only first-order accurate.
+
+  The procedure (per source):
+
+  1. Compute the point Deming slope on the full data at the
+     supplied `--lambda` (default 1, orthogonal regression):
+     `thetaHat`.
+  2. Run `B = --bootstraps` non-parametric resamples (resample
+     `n` indices with replacement from `0..n-1`, take the
+     corresponding values in resample order, relabel positions
+     `0..n-1` as the new x axis, re-fit Deming) under a seeded
+     LCG (Numerical Recipes `a=1664525, c=1013904223, m=2^32`).
+     Sort ascending: `theta*_(1) <= ... <= theta*_(B)`.
+  3. **Bias correction `z0`**:
+
+         p  = ( #{theta*_b < thetaHat} + 0.5 * #{theta*_b == thetaHat} ) / B
+         z0 = Phi^{-1}(p)        (clamped at p in [1/(2B), 1 - 1/(2B)])
+
+     Ties split half-and-half (Efron's tie convention). If
+     `thetaHat` is the median of the bootstrap distribution,
+     `z0 = 0`.
+  4. **Acceleration `a`**: from the `n` jackknife replicates
+     `theta_(-i)` (computed via the v0.6.221 leave-one-out
+     pipeline),
+
+         jackMean = (1/n) * sum_i theta_(-i)
+         dev_i    = jackMean - theta_(-i)
+         a        = sum_i dev_i^3 / ( 6 * (sum_i dev_i^2)^{3/2} )
+
+     With a perfectly symmetric jackknife distribution `a = 0`;
+     a heavy-tailed leverage source pushes `|a|` away from zero.
+     Degenerate (constant jackknife) -> `a = 0`.
+  5. **BCa percentiles**: with
+     `z_lo = Phi^{-1}((1 - confidence)/2)` and
+     `z_hi = Phi^{-1}((1 + confidence)/2)`,
+
+         alpha1 = Phi( z0 + (z0 + z_lo) / (1 - a*(z0 + z_lo)) )
+         alpha2 = Phi( z0 + (z0 + z_hi) / (1 - a*(z0 + z_hi)) )
+
+     Each clamped to `[0, 1]`. Then
+     `ciLower = quantile(theta*_b, alpha1)`,
+     `ciUpper = quantile(theta*_b, alpha2)` via the same
+     linear-interpolation percentile as the v0.6.220 lens.
+  6. Flag `ciContainsZero = (ciLower <= 0 && ciUpper >= 0)`.
+
+  Mechanically distinct from every previously shipped lens — and
+  specifically the **second-order accurate sibling** of
+  `source-row-token-bootstrap-slope-ci` (v0.6.220) and the
+  **percentile-flavored cousin** of
+  `source-row-token-jackknife-slope-ci` (v0.6.221):
+
+  - vs **percentile bootstrap CI** (v0.6.220, percentile picks
+    fixed at `(1-conf)/2` and `(1+conf)/2`): same `B` Deming
+    bootstrap resamples, but BCa picks **different** percentiles
+    of the *same sorted bootstrap distribution* — shifted by
+    `z0` and stretched by `a`. The `bcaPercentileShift =
+    |alphaLower - (1-conf)/2| + |alphaUpper - (1+conf)/2|`
+    diagnostic measures how far BCa moved from the percentile
+    picks on the same data.
+  - vs **jackknife normal CI** (v0.6.221, normal-approximation
+    `biasCorrected +/- z * jackSe`): both use jackknife
+    replicates, but here the jackknife enters **only** through
+    the acceleration `a` — the CI endpoints are bootstrap
+    percentiles, not a normal envelope around a bias-corrected
+    point.
+  - vs **Deming** (v0.6.219): same point estimator at the heart;
+    BCa adds the second-order accurate interval Efron showed
+    correctly captures the `O(1/n)` correction terms percentile
+    misses.
+  - vs **Mann-Kendall** (v0.6.211): MK reports a *p-value* for
+    the monotone-trend null hypothesis. This lens reports a
+    second-order accurate interval estimate for the slope itself.
+
+  Determinism: bootstrap is driven by a **seeded LCG** (default
+  `--seed 42`); jackknife is purely deterministic. Pure builder.
+  Wall clock only via `opts.generatedAt`. Sort tiebreak is
+  `source` asc.
+
+  Refinement (also v0.6.222): per-source rows carry
+  `bcaShift = median(theta*) - thetaHat` (positive => the
+  bootstrap distribution sits above the point estimate; jointly
+  informs whether `z0` was meaningful) and the scalar
+  `bcaPercentileShift` (sum of absolute deviations of the BCa
+  percentile picks from the percentile-bootstrap nominals); plus
+  an `--alert-bca-shift-min <f>` filter that surfaces only
+  sources where BCa meaningfully disagreed with the percentile
+  bootstrap, and a `bca-shift-desc` sort key that sorts by the
+  same diagnostic.
+
+  Flags:
+  `--since/--until/--source/--min-rows/--bootstraps/--confidence/
+  --lambda/--seed/--alert-zero-in-ci/--alert-bca-shift-min/
+  --top/--sort/--json`. Sort keys: `magnitude-desc` (default),
+  `slope-desc`, `slope-asc`, `ci-width-desc`, `ci-width-asc`,
+  `z0-magnitude-desc`, `acceleration-magnitude-desc`,
+  `bca-shift-desc`, `ci-contains-zero-first`, `rows`, `source`.
+  Validates: `--bootstraps >= 100`, `--confidence in (0, 1)`,
+  `--lambda > 0`, `--seed integer`,
+  `--alert-bca-shift-min in [0, 2]`.
+
+### Tests
+
+Test count grew from **5,608 -> 5,693 (+85)** with the new file
+`sourcerowtokenbcabootstrapslopeci.test.ts` (85 cases at the
+suite level): kernels: `standardNormalCdf` (`Phi(0) = 0.5`,
+`Phi(1.959964) ~ 0.975`, `Phi(-1.959964) ~ 0.025`,
+symmetry `Phi(z) + Phi(-z) = 1`, monotone non-decreasing,
+clamps to `[0, 1]`, `+/-Infinity -> 1/0`); `bcaBiasFraction`
+(empty -> 0.5; thetaHat above all -> 1; below all -> 0; ties
+split half-and-half; thetaHat = median -> 0.5);
+`bcaBiasCorrection` (median -> z0 ~ 0; thetaHat above all ->
+clamped large positive; thetaHat below all -> clamped large
+negative; empty -> 0; monotone increasing in thetaHat);
+`bcaAcceleration` (empty -> 0; constant jackknife -> 0;
+symmetric jackknife -> ~0; right-skewed -> a < 0; always
+finite); `bcaAdjustedPercentiles` (`z0=0, a=0` reproduces
+percentile interval at 0.95 and 0.99; `z0 > 0` shifts both
+percentiles up; `z0 < 0` shifts down; `a > 0` widens upper tail;
+results clamped to `[0, 1]`); builder validation (minRows < 4 /
+non-integer / bootstraps < 100 / non-integer bootstraps /
+confidence <= 0 / confidence >= 1 / non-finite / lambda <= 0 /
+non-integer seed / alertBcaShiftMin < 0 / > 2 / bad sort key /
+top < 1 / invalid since / invalid until); builder data flow
+(empty queue / defaults echoed including bootstraps=1000,
+confidence=0.95, seed=42, lambda=1, alertBcaShiftMin=0 /
+ascending series / --min-rows / --source / bad total_tokens /
+NaN / Infinity / negative / bad hour_start / "unknown" mapping /
+since-until window); BCa math (ascending -> positive bias-
+corrected slope; all-equal -> ciLower=ciUpper=0,
+ciWidth=0, ciContainsZero=true; deterministic at same seed;
+different seeds -> different CIs on noisy data; ciLower <=
+ciUpper; 99% CI >= 95% width on same data; ciWidth = ciUpper -
+ciLower exactly; alphaLower <= alphaUpper; alphas in `[0, 1]`;
+`bcaPercentileShift = sum of |alpha - nominal|` exactly;
+bcaShift finite; symmetric large series -> alphas stay near
+nominal); alert filters (`--alert-zero-in-ci` keeps only
+straddlers; `--alert-bca-shift-min=0` keeps all;
+`--alert-bca-shift-min=1.9` drops all); all 11 sort keys +
+tiebreak (source asc / rows desc / ci-width-desc / ci-width-asc /
+z0-magnitude-desc / acceleration-magnitude-desc /
+bca-shift-desc / ci-contains-zero-first puts straddlers first /
+slope-desc / slope-asc); top cap; properties (confidence echo /
+lambda echo / lambda affects slope vs default / generatedAt
+default).
+
+### Live smoke
+
+Against the local `~/.config/pew/queue.jsonl` (1,958 rows after
+filters, 6 sources, default `--bootstraps 1000`,
+`--confidence 0.95`, `--lambda 1`, `--seed 42`, sorted by
+`magnitude-desc`, source name `vscode-copilot` redacted to
+`vscode-redacted`):
+
+    source           rows   slope                z0       accel    alphaLo  alphaHi  ciLower               ciUpper                ciWidth                bcaShift              pctShift  0inCI?
+    codex             64    +2,225,990.4792      -0.0100  +0.0131  0.0268   0.9768   -73,926,994.2718      +110,065,238.2090      183,992,232.4809       +306,930.3099         0.0035    yes
+    opencode         440    -1,142,525.9354      -0.1231  +0.0219  0.0172   0.9633   -52,465,059.3167      +20,636,576.2664       73,101,635.5831        +1,866,912.9982       0.0195    yes
+    claude-code      299      +412,420.1539      +0.0401  +0.0451  0.0421   0.9874   -26,990,737.3081      +180,871,110.1730      207,861,847.4810       -1,945,126.0699       0.0295    yes
+    openclaw         546       -87,599.6392      -0.0125  -0.0649  0.0115   0.9570   -21,009,815.6092       +6,698,634.1242       27,708,449.7333         +358,043.0808        0.0316    yes
+    hermes           276       -32,738.8312      -0.0627  -0.0323  0.0130   0.9577    -4,348,042.0569       +1,401,285.7424        5,749,327.7993         +114,300.9382        0.0293    yes
+    vscode-redacted  333          +761.5738      +0.1080  +0.0574  0.0587   0.9929        -20,438.7402         +174,444.1693          194,882.9094            -2,129.3916       0.0516    yes
+
+  Things this surfaces that the v0.6.220 percentile bootstrap CI
+  and the v0.6.221 jackknife normal CI did not:
+
+  - **Every source on the local queue still has a CI that
+    straddles zero at 95% confidence** — same headline verdict as
+    the percentile bootstrap and the jackknife normal CI
+    (`ciContainsZero = yes` for all 6), now arrived at by a
+    *third* mechanically independent path (BCa-shifted bootstrap
+    percentiles). Three CI methods, one verdict: on this data,
+    no per-source per-row token trend is statistically robust.
+  - **The BCa shift is small but non-trivial** for every source.
+    `vscode-redacted` has the **largest `pctShift = 0.0516`** —
+    BCa moved the lower percentile pick from `0.0250` up to
+    `0.0587` and the upper from `0.9750` up to `0.9929`. Both
+    `z0 = +0.108` and `a = +0.057` are positive on this source,
+    so BCa **shifted the entire interval upward** by the
+    Phi-transformed `z0` and stretched the upper tail by `a`.
+    This is the textbook BCa correction signature on a positively
+    biased, right-skewed bootstrap distribution.
+  - **Acceleration `a` flips sign across the source matrix.**
+    Three sources have `a > 0` (codex, opencode, claude-code,
+    vscode-redacted) — meaning the standard error of the Deming
+    estimator grows with the true parameter (positive
+    skewness in the jackknife distribution). Two have `a < 0`
+    (openclaw, hermes) — SE shrinks with parameter, negative
+    jackknife skewness. **`openclaw` has the largest |a| = 0.065**
+    in the negative direction; this is exactly the diagnostic
+    that the v0.6.220 percentile bootstrap can't compute and the
+    v0.6.221 jackknife normal CI doesn't expose.
+  - **`opencode` has the most-negative `z0 = -0.1231`** — meaning
+    only `~45%` of the bootstrap distribution sits below the
+    point estimate, so the median bootstrap slope is *above* the
+    point estimate (confirmed: `bcaShift = +1,866,913` is the
+    largest positive shift in the table). BCa corrects for this
+    by **shifting both percentile picks downward**, narrowing
+    the v0.6.220 percentile interval on the upper end. This is
+    where BCa most visibly disagrees with the percentile bootstrap
+    on this data.
+  - **`codex` has the smallest `pctShift = 0.0035`** despite its
+    huge slope magnitude (+2.23M tokens/row, n=64). With `z0` and
+    `a` both near zero, BCa essentially reproduces the
+    percentile-bootstrap interval here — a "BCa converges to
+    percentile when the bootstrap is symmetric and unbiased"
+    sanity check on real data.
+  - **The BCa CI widths are all in the same order of magnitude
+    as the v0.6.220 percentile bootstrap CIs** for the same
+    sources at the same seed — by construction, since BCa is
+    picking shifted percentiles of the *same* sorted bootstrap
+    distribution. This is mechanically different from the
+    v0.6.221 jackknife normal CI, which uses a Gaussian envelope
+    around a bias-corrected point and produced **~3 orders of
+    magnitude tighter widths** on the high-leverage `claude-code`
+    source. The takeaway: jackknife normal-CI is tighter when
+    leave-one-out is well-concentrated; bootstrap-percentile and
+    BCa are robust when the resampling distribution is
+    genuinely fat-tailed; BCa is the "best of both" when you
+    want bootstrap robustness *and* second-order coverage
+    correction.
+
+  Cross-check vs Deming (v0.6.219), bootstrap (v0.6.220), and
+  jackknife (v0.6.221) on the same data: the point slopes match
+  to within rounding, the `0inCI?` verdict matches across all
+  three CI methods, and the BCa picks degenerate to the
+  percentile picks within `0.05` (i.e. `pctShift < 0.06` for
+  every source) — confirming the BCa correction is a
+  second-order refinement, not a different point estimator.
+
 ## 0.6.221 — 2026-04-29
 
 ### Added
