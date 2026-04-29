@@ -135,6 +135,10 @@ export interface SourceRowTokenSlopeCiMidpointDispersionOptions {
     | 'outlier-gap-asc'
     | 'mean-desc'
     | 'mean-asc'
+    | 'skew-std-desc'
+    | 'skew-std-asc'
+    | 'skew-sign-desc'
+    | 'skew-sign-asc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -167,6 +171,21 @@ export interface SourceRowTokenSlopeCiMidpointDispersionRow {
   outlierLens: SlopeMidpointDispersionLensName | null;
   /** `|outlierMidpoint - midMedian|`. 0 iff all midpoints are equal. */
   outlierGap: number;
+  /**
+   * Sign of `midMean - midMedian` rendered as -1, 0, or +1. Cheap
+   * 1-byte indicator of whether the midpoint distribution skews
+   * left (mean < median, -1), is symmetric (0), or skews right
+   * (mean > median, +1). Useful as a stable group-by key alongside
+   * the continuous `midRangeOverWidthMean` headline.
+   */
+  midSkewSign: -1 | 0 | 1;
+  /**
+   * `(midMean - midMedian) / midStd`, the standardised non-parametric
+   * skew indicator (a.k.a. Pearson's second skewness coefficient
+   * divided by std rather than 3). In [-1, 1] for any unimodal
+   * distribution; we don't clip. NaN-safe: returns 0 when `midStd == 0`.
+   */
+  midSkewStd: number;
   dispersed: boolean;
   tightlyClustered: boolean;
 }
@@ -216,6 +235,10 @@ const VALID_SORTS = [
   'outlier-gap-asc',
   'mean-desc',
   'mean-asc',
+  'skew-std-desc',
+  'skew-std-asc',
+  'skew-sign-desc',
+  'skew-sign-asc',
   'rows',
   'source',
 ] as const;
@@ -458,6 +481,10 @@ export function buildSourceRowTokenSlopeCiMidpointDispersion(
     }
     const dispersed = midRangeOverWidthMean >= 1;
     const tightlyClustered = midRangeOverWidthMean <= 0.25;
+    const meanMinusMed = mean - med;
+    const midSkewSign: -1 | 0 | 1 =
+      meanMinusMed > 0 ? 1 : meanMinusMed < 0 ? -1 : 0;
+    const midSkewStd = std === 0 ? 0 : meanMinusMed / std;
 
     rows.push({
       source: s,
@@ -478,6 +505,8 @@ export function buildSourceRowTokenSlopeCiMidpointDispersion(
       argMaxLens: SLOPE_MIDPOINT_DISPERSION_LENS_NAMES[argMaxIdx]!,
       outlierLens,
       outlierGap,
+      midSkewSign,
+      midSkewStd,
       dispersed,
       tightlyClustered,
     });
@@ -525,6 +554,10 @@ export function buildSourceRowTokenSlopeCiMidpointDispersion(
     'outlier-gap-asc': (a, b) => a.outlierGap - b.outlierGap,
     'mean-desc': (a, b) => b.midMean - a.midMean,
     'mean-asc': (a, b) => a.midMean - b.midMean,
+    'skew-std-desc': (a, b) => b.midSkewStd - a.midSkewStd,
+    'skew-std-asc': (a, b) => a.midSkewStd - b.midSkewStd,
+    'skew-sign-desc': (a, b) => b.midSkewSign - a.midSkewSign,
+    'skew-sign-asc': (a, b) => a.midSkewSign - b.midSkewSign,
     rows: (a, b) => b.rowsKept - a.rowsKept,
     source: (a, b) => a.source.localeCompare(b.source),
   };
@@ -594,10 +627,10 @@ export function renderSourceRowTokenSlopeCiMidpointDispersion(
     return lines.join('\n');
   }
   lines.push(
-    'source           rows  midMean   midMed    midStd    midIqr    midMad    midRange  meanWidth  range/W   cv        outlierLens         gap       disp  tight',
+    'source           rows  midMean   midMed    midStd    midIqr    midMad    midRange  meanWidth  range/W   cv        skewStd   skSg  outlierLens         gap       disp  tight',
   );
   lines.push(
-    '---------------  ----  --------  --------  --------  --------  --------  --------  ---------  --------  --------  ------------------  --------  ----  -----',
+    '---------------  ----  --------  --------  --------  --------  --------  --------  ---------  --------  --------  --------  ----  ------------------  --------  ----  -----',
   );
   for (const row of r.sources) {
     lines.push(
@@ -613,6 +646,8 @@ export function renderSourceRowTokenSlopeCiMidpointDispersion(
         fmtNum(row.meanWidth).padStart(9),
         fmtNum(row.midRangeOverWidthMean).padStart(8),
         fmtNum(row.midCv).padStart(8),
+        fmtNum(row.midSkewStd).padStart(8),
+        (row.midSkewSign > 0 ? '+1' : row.midSkewSign < 0 ? '-1' : ' 0').padStart(4),
         (row.outlierLens ?? '-').padEnd(18),
         fmtNum(row.outlierGap).padStart(8),
         (row.dispersed ? 'yes' : 'NO').padStart(4),

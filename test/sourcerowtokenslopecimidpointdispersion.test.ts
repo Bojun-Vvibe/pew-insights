@@ -662,3 +662,106 @@ test('render: dispersed column shows yes/NO', () => {
   // Either yes or NO must appear in output
   assert.ok(/\byes\b|\bNO\b/.test(out));
 });
+
+// --- refinement: midSkewSign / midSkewStd / new sort keys ---
+
+test('refine: midSkewSign is one of -1, 0, +1', () => {
+  const queue = [
+    ...ascending('a', 30),
+    ...ascending('b', 25),
+    ...ascending('c', 20),
+  ];
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  for (const row of r.sources) {
+    assert.ok([-1, 0, 1].includes(row.midSkewSign));
+  }
+});
+
+test('refine: midSkewSign matches sign(midMean - midMedian)', () => {
+  const queue = [
+    ...ascending('a', 30),
+    ...ascending('b', 25),
+  ];
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  for (const row of r.sources) {
+    const diff = row.midMean - row.midMedian;
+    const expected = diff > 0 ? 1 : diff < 0 ? -1 : 0;
+    assert.equal(row.midSkewSign, expected);
+  }
+});
+
+test('refine: midSkewStd is finite for non-degenerate inputs', () => {
+  const queue = ascending('skew', 30);
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  for (const row of r.sources) {
+    assert.ok(Number.isFinite(row.midSkewStd));
+  }
+});
+
+test('refine: midSkewStd sign matches midSkewSign', () => {
+  const queue = [
+    ...ascending('a', 30),
+    ...ascending('b', 25),
+  ];
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  for (const row of r.sources) {
+    if (row.midSkewSign === 1) assert.ok(row.midSkewStd > 0);
+    if (row.midSkewSign === -1) assert.ok(row.midSkewStd < 0);
+    if (row.midSkewSign === 0) assert.equal(row.midSkewStd, 0);
+  }
+});
+
+test('refine: sort skew-std-desc orders by midSkewStd desc', () => {
+  const queue = [
+    ...ascending('a', 30),
+    ...ascending('b', 25),
+    ...ascending('c', 20),
+  ];
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+    sort: 'skew-std-desc',
+  });
+  for (let i = 0; i + 1 < r.sources.length; i++) {
+    assert.ok(r.sources[i]!.midSkewStd >= r.sources[i + 1]!.midSkewStd);
+  }
+});
+
+test('refine: sort skew-sign-desc orders by midSkewSign desc', () => {
+  const queue = [
+    ...ascending('a', 30),
+    ...ascending('b', 25),
+    ...ascending('c', 20),
+  ];
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+    sort: 'skew-sign-desc',
+  });
+  for (let i = 0; i + 1 < r.sources.length; i++) {
+    assert.ok(r.sources[i]!.midSkewSign >= r.sources[i + 1]!.midSkewSign);
+  }
+});
+
+test('refine: render includes skewStd and skSg columns', () => {
+  const queue = ascending('renderme2', 30);
+  const r = buildSourceRowTokenSlopeCiMidpointDispersion(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiMidpointDispersion(r);
+  assert.match(out, /skewStd/);
+  assert.match(out, /skSg/);
+});

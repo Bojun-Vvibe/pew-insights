@@ -21374,6 +21374,10 @@ program
           'outlier-gap-asc',
           'mean-desc',
           'mean-asc',
+          'skew-std-desc',
+          'skew-std-asc',
+          'skew-sign-desc',
+          'skew-sign-asc',
           'rows',
           'source',
         ];
@@ -21412,6 +21416,10 @@ program
             | 'outlier-gap-asc'
             | 'mean-desc'
             | 'mean-asc'
+            | 'skew-std-desc'
+            | 'skew-std-asc'
+            | 'skew-sign-desc'
+            | 'skew-sign-asc'
             | 'rows'
             | 'source',
         });
