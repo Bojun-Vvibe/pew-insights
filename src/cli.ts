@@ -135,6 +135,7 @@ import {
   renderSourceRowTokenHodgesLehmann,
   renderSourceRowTokenBroadenedMedian,
   renderSourceRowTokenMEstimatorHuber,
+  renderSourceRowTokenMEstimatorTukey,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -367,6 +368,7 @@ import { buildSourceRowTokenTrimMean30 } from './sourcerowtokentrimmean30.js';
 import { buildSourceRowTokenHodgesLehmann } from './sourcerowtokenhodgeslehmann.js';
 import { buildSourceRowTokenBroadenedMedian } from './sourcerowtokenbroadenedmedian.js';
 import { buildSourceRowTokenMEstimatorHuber } from './sourcerowtokenmestimatorhuber.js';
+import { buildSourceRowTokenMEstimatorTukey } from './sourcerowtokenmestimatortukey.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8318,7 +8320,128 @@ program
   );
 
 program
-  .command('source-single-day-mass-concentration')
+  .command('source-row-token-m-estimator-tukey')
+  .description(
+    "Per-source Tukey biweight (bisquare) M-estimator of location of per-row total_tokens. Solves sum_i psi_c((x_i - mu)/s) = 0 by IRLS with mu_0 = median, s = MAD/0.6745, psi_c(z) = z*(1-(z/c)^2)^2 if |z|<=c else 0, c = 4.685 (canonical: ~95% asymptotic relative efficiency at the normal). FIRST REDESCENDING M-ESTIMATOR in the suite -- rows with |z|>c contribute exactly 0 (fully rejected, not merely clipped). Mechanically distinct from Huber (monotone psi: bounded but nonzero tail influence at +-c*s), distinct from L-estimators (mean / TM / WM / median / midhinge / trimean / IQM / HD broadened median: rank-only weights), distinct from R-estimators (Hodges-Lehmann), distinct from power means (Lehmer / harmonic / contraharmonic / quadratic). Translation- and scale-equivariant. Reports rejectedRows (rows with |z|>c at converged mu, weight = 0), iterations (IRLS step count), tukeyMeanGap = tukey - mean, tukeyMedianGap = tukey - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-tukey <f>',
+    'drop sources whose Tukey M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--c-tuning <f>',
+    'Tukey biweight tuning constant c. Larger c -> closer to mean (less robust); smaller c -> more aggressive rejection. Must be a finite positive number. (default 4.685 = canonical 95% ARE at normal)',
+    '4.685',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'tukey-desc' (default) | 'tukey-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|tukeyMeanGap| desc) | 'median-gap-desc' (|tukeyMedianGap| desc) | 'rows' | 'source'",
+    'tukey-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minTukey: string;
+        cTuning: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minTukey = Number.parseFloat(opts.minTukey);
+        if (!Number.isFinite(minTukey) || minTukey < 0) {
+          throw new Error(
+            `--min-tukey must be a finite, non-negative number (got ${opts.minTukey})`,
+          );
+        }
+        const c = Number.parseFloat(opts.cTuning);
+        if (!Number.isFinite(c) || !(c > 0)) {
+          throw new Error(
+            `--c-tuning must be a finite positive number (got ${opts.cTuning})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'tukey-desc',
+          'tukey-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorTukey(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minTukey,
+          c,
+          top,
+          sort: opts.sort as
+            | 'tukey-desc'
+            | 'tukey-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMEstimatorTukey(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
   .description(
     "Per-source share of total token mass on the source's single biggest UTC day, plus top-2/top-3 cumulative shares and a per-day Herfindahl-Hirschman index. Detects sources whose history is dominated by a single date — orthogonal to daily-token-gini (global), source-day-of-week-token-mass-share (DOW modular), source-active-day-streak (run length), and source-token-mass-hour-centroid (location).",
   )

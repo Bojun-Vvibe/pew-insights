@@ -12101,6 +12101,10 @@ import type {
   SourceRowTokenMEstimatorHuberReport,
   SourceRowTokenMEstimatorHuberRow,
 } from './sourcerowtokenmestimatorhuber.js';
+import type {
+  SourceRowTokenMEstimatorTukeyReport,
+  SourceRowTokenMEstimatorTukeyRow,
+} from './sourcerowtokenmestimatortukey.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13092,6 +13096,81 @@ export function renderSourceRowTokenMEstimatorHuber(
     ],
   );
   lines.push(renderTableLocal(headers, rowsHuber));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenMEstimatorTukey(
+  r: SourceRowTokenMEstimatorTukeyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-m-estimator-tukey'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-tukey: ${formatNumber(r.minTukey)}    c: ${r.c}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinTukey)} below min-tukey, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Tukey biweight (bisquare) M-estimator of location of per-row total_tokens. Solves sum_i psi_c((x_i - mu)/s) = 0 via IRLS with mu_0 = median, s = MAD/0.6745, psi_c(z) = z*(1-(z/c)^2)^2 if |z|<=c else 0, c = ${r.c} (canonical 4.685 -> ~95% ARE at the normal). REDESCENDING M-estimator: rows with |z|>c contribute exactly 0 -- fully rejected, not merely clipped. Distinct from Huber (monotone, bounded but nonzero tail influence), distinct from L-estimators (rank-only weights), R-estimators (ranks of pairwise Walsh averages), and power means (fixed nonlinear transform). Translation- and scale-equivariant. rejectedRows counts rows with |z|>c at converged mu (weight = 0). tukeyMeanGap = tukey - mean, tukeyMedianGap = tukey - median.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Tukey biweight M-estimator (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'tukey',
+    'mad',
+    'scale',
+    'iter',
+    'rejected',
+    'tukey-mean',
+    'tukey-median',
+  ];
+  const rowsTukey: string[][] = r.sources.map(
+    (s: SourceRowTokenMEstimatorTukeyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.tukey.toFixed(2),
+      s.mad.toFixed(2),
+      s.scale.toFixed(2),
+      String(s.iterations),
+      formatNumber(s.rejectedRows),
+      (s.tukeyMeanGap >= 0 ? '+' : '') + s.tukeyMeanGap.toFixed(2),
+      (s.tukeyMedianGap >= 0 ? '+' : '') + s.tukeyMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTukey));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
