@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.234 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-rank-correlation` —
+  CROSS-SOURCE rank-correlation diagnostic for the v0.6.219
+  Deming-slope uncertainty-quantification suite. Consumes the SAME
+  six per-source CIs that v0.6.227–v0.6.233 consume (percentile
+  bootstrap, jackknife normal, BCa, studentized-t, ABC,
+  profile-likelihood) but feeds them through a CROSS-SOURCE rank
+  comparison rather than a per-source pair classification.
+
+  **Mechanically distinct from ALL SEVEN prior cross-lens
+  diagnostics on a fundamental axis** — every prior diagnostic is
+  PER-SOURCE (one row per source, six CIs of that source in
+  isolation, never compares source A to source B). This module is
+  CROSS-SOURCE: it asks whether the lenses agree on the RANK ORDER
+  of source slopes across the population.
+
+    - v0.6.227 jaccard, v0.6.228 sign, v0.6.229 width, v0.6.230
+      overlap-graph, v0.6.231 midpoint-dispersion, v0.6.232
+      asymmetry-shape, v0.6.233 pair-inclusion: every one of these
+      classifies a single source's six CIs internally and never
+      crosses the source boundary.
+    - This module: per lens pair `(A, B)`, take the slope-by-source
+      vectors `slope_A[1..n]` and `slope_B[1..n]` and compute the
+      ordinal agreement between them. Two lenses can have radically
+      different per-source CIs (failing every prior diagnostic) yet
+      still rank sources monotonically the same way — meaning their
+      downstream "which source is fastest-growing" decision agrees.
+      Conversely, two lenses can have tightly nested CIs (passing
+      every prior diagnostic) yet still flip the rank order of two
+      adjacent sources — a subtle disagreement no per-source
+      diagnostic can surface.
+
+  The 8th axis is therefore the ORDINAL / RANK axis, distinct from
+  the prior 7 cardinal / set / shape / location axes.
+
+  Per lens-pair we report:
+
+    - `lensA`, `lensB` — canonical lens names (with `i < j` over
+      canonical lens order: `bootstrap`, `jackknife`, `bca`,
+      `studentizedT`, `abc`, `profileLikelihood`);
+    - `n` — number of sources both lenses observed (after
+      intersection across ALL six lenses; identical for every pair
+      within one report);
+    - `spearman` — Spearman's rho in `[-1, 1]`, computed as the
+      Pearson correlation of the rank-transformed slope vectors
+      with mid-rank tie handling;
+    - `kendallTauB` — Kendall's tau-b in `[-1, 1]`, the
+      tie-corrected variant `(C - D) / sqrt((P - Tx)(P - Ty))`
+      where `P = n*(n-1)/2`, `C` = concordant pairs, `D` =
+      discordant pairs, `Tx`/`Ty` = ties on x / y respectively;
+    - `concordant`, `discordant`, `tiedX`, `tiedY`, `tiedBoth` —
+      raw Kendall pair counts (sum to `n*(n-1)/2`);
+    - `flips` — count of source pairs where lens A and B strictly
+      disagree on rank order (`== discordant`); the headline "how
+      many decisions would flip" metric;
+    - `flipFraction` — `flips / (n*(n-1)/2)` in `[0, 1]`;
+    - `agreement` — `(spearman + kendallTauB) / 2` in `[-1, 1]`,
+      the single-number summary used as the default sort key;
+    - `topKOverlap` — `|topK_A ∩ topK_B| / topK` (default top-K =
+      `min(5, n)`) in `[0, 1]`. Isolates head-of-distribution
+      disagreement from the tail.
+
+  Report-level fields: `meanSpearman`, `medianSpearman`,
+  `meanKendall`, `medianKendall`, `minAgreementPair` /
+  `maxAgreementPair` (worst / best pair by `agreement`), and
+  `consensusRanks` — average-rank consensus across all six lenses,
+  per source, sorted ascending (rank 1 = largest slope by
+  consensus).
+
+  Edge cases:
+
+    - `n < 2` sources: every metric is 0 (zero-info, NOT NaN) and
+      the report still emits all 15 pair rows so downstream tooling
+      sees a stable shape.
+    - All values tied on one or both sides: Spearman / Kendall
+      denominator is zero; we emit 0 (NOT NaN) for both, consistent
+      with "no information" rather than "missing".
+
+  Sort keys: `agreement-desc` (default), `agreement-asc`,
+  `spearman-{desc,asc}`, `kendall-{desc,asc}`,
+  `flips-{desc,asc}`, `flip-fraction-desc`,
+  `top-k-overlap-{desc,asc}`, `pair`.
+
+  Flags: `--alert-weak <f>` filters to pairs whose `agreement` is
+  strictly less than `f` (in `[-1, 1]`) — surfaces lens pairs that
+  materially disagree on rank order. `--show-consensus` (in pretty
+  mode) prints the per-source consensus-rank table.
+
+  ### Live smoke against `~/.config/pew/queue.jsonl` (2003 rows, 6 sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-rank-correlation
+  pew-insights source-row-token-slope-ci-rank-correlation
+  as of: 2026-04-29T19:38:39.516Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    top-k: 5    alert-weak: -    sort: agreement-desc
+  dropped: 0 missing-from-some-lens, 0 above-alert-threshold; meanSpearman: 1.0000; medianSpearman: 1.0000; meanKendall: 1.0000; medianKendall: 1.0000
+  min-agreement: bootstrap~jackknife = 1.0000    max-agreement: bootstrap~jackknife = 1.0000
+
+  lensA               lensB               n     spearman   kendall    C    D    Tx   Ty   Tb   flips  flipF    agree    topKO
+  ------------------  ------------------  ----  --------   --------   ---  ---  ---  ---  ---  -----  ------   ------   ------
+  bootstrap           jackknife              6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bootstrap           bca                    6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bootstrap           studentizedT           6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bootstrap           abc                    6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bootstrap           profileLikelihood      6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  jackknife           bca                    6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  jackknife           studentizedT           6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  jackknife           abc                    6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  jackknife           profileLikelihood      6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bca                 studentizedT           6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bca                 abc                    6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  bca                 profileLikelihood      6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  studentizedT        abc                    6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  studentizedT        profileLikelihood      6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  abc                 profileLikelihood      6    1.0000    1.0000   15    0    0    0    0      0  0.0000  1.0000  1.0000
+  ```
+
+  Live result on real local data: all 6 sources are present in all
+  six lenses; every one of the 15 lens pairs achieves perfect
+  Spearman = 1.0 AND Kendall = 1.0 — meaning all six
+  uncertainty-quantification methods agree on the rank order of the
+  6 sources by slope, with zero flips out of the
+  `C(6,2) = 15` source-pair decisions per lens pair. Top-K overlap
+  is 1.0 for every pair: the head of the distribution is also
+  unanimous. This is the strongest possible cross-source ordinal
+  agreement and is the expected baseline for stable production
+  data — `--alert-weak 1.0` would correctly surface zero pairs.
+
 ## 0.6.233 — 2026-04-30
 
 ### Added
