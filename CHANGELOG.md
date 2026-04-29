@@ -2,6 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.217 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-geman-mcclure` —
+  per-source **Geman-McClure REDESCENDING M-estimator** of
+  per-row `total_tokens`. **PARAMETER-FREE** — no tuning constant
+  required (the canonical Geman-McClure rho is the single
+  unparameterized form). IRLS with `mu_0 = median`, `s = MAD/0.6745`:
+
+  ```
+  rho_GM(z) = z^2 / (1 + z^2)
+  psi_GM(z) = 2 z / (1 + z^2)^2
+  w(z)      = 2 / (1 + z^2)^2     (peak w(0) = 2)
+  mu_{k+1}  = sum_i w(z_i) x_i  /  sum_i w(z_i)
+  ```
+
+  This is the **first PARAMETER-FREE M-estimator** in the suite
+  and the **first redescender with POLYNOMIAL (~1/z^4) tail
+  decay**. It sits structurally between two existing lenses:
+
+  - vs **Cauchy** (v0.6.215, monotone, `1/z^2` tail, `c = 2.3849`):
+    Cauchy *never* redescends — psi rises monotonically toward
+    `c^2/z` and never falls below a peak. Geman-McClure
+    **redescends** through a peak at `|z| = 1/sqrt(3) ~ 0.577`
+    and then falls like `1/z^4` — one polynomial order faster
+    than Cauchy.
+  - vs **Welsch** (v0.6.213, redescender, exponential
+    `exp(-(z/c)^2)` tail, `c = 2.9846`): both redescend with
+    infinite support, but Welsch decay is **exponential** while
+    Geman-McClure decay is **polynomial** — qualitatively heavier
+    weight on moderate outliers but lighter on extreme outliers.
+  - vs **Tukey biweight** (v0.6.208, redescender, COMPACT support,
+    `c = 4.685`): Tukey hard-rejects past `|z| > c`. Geman-McClure
+    never reaches exactly zero — extreme outliers retain a tiny
+    but strictly positive `2/z^4` weight.
+  - vs **Huber** (v0.6.207, monotone clipped at `+- c`):
+    completely different psi shape (Huber: bounded constant tail;
+    GM: redescends to zero).
+  - vs **Hampel / Andrews** (piecewise-linear / sinusoidal
+    redescenders): Geman-McClure has **no corners, no plateau,
+    no oscillation, no compact support** — a single smooth peak
+    and polynomial tail. Originally proposed by Geman & McClure
+    (1987) for robust image reconstruction; widely used in
+    computer vision (bundle adjustment, optical flow) precisely
+    because it has no threshold to tune.
+
+  Reports a **three-bucket weight-magnitude partition**:
+  - `coreRows` (`w >= 1`, i.e. `|z| <= 0.6436` — the half-peak knee)
+  - `tailRows` (`0.05 <= w < 1`, i.e. `0.6436 < |z| <= ~2.299`)
+  - `farTailRows` (`w < 0.05`, i.e. `|z| > 2.299`; very small but
+    strictly positive — Geman-McClure never assigns `w = 0` to a
+    finite `z`)
+
+  with `coreRows + tailRows + farTailRows = n`. Plus
+  `gemanMeanGap`, `gemanMedianGap`, and a unitless
+  `gemanMedianRatio = geman / median` diagnostic (values near
+  `1.0` indicate the IRLS center agrees with the classical
+  median; values away from `1.0` show how far the polynomial
+  redescender pulled the center off the median).
+
+  Flags: `--since`, `--until`, `--source`, `--min-rows` (>= 4),
+  `--min-geman`, `--top`, `--sort` (`geman-desc` default,
+  `geman-asc`, `mean-desc`, `median-desc`, `mean-gap-desc`,
+  `median-gap-desc`, `far-tail-desc`, `rows`, `source`),
+  `--json`.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, 6 sources, 1 937 rows)
+
+Source name `vscode-copilot` redacted to `vscode-redacted` per
+the operator's name-scrub rule; numbers and other source names
+are verbatim.
+
+```
+pew-insights source-row-token-m-estimator-geman-mcclure
+sources: 6 (shown 6)    rows: 1,937    sort: geman-desc
+
+source           rows  mean         median      geman       mad         scale       iter  conv       core  tail  far-tail  geman-mean    geman-median  g/med
+---------------  ----  -----------  ----------  ----------  ----------  ----------  ----  ---------  ----  ----  --------  ------------  ------------  -----
+opencode         433   10,390,494   8,078,254   7,255,137   4,645,765   6,887,821   47    converged  211   183   39        -3,135,357    -823,117      0.898
+codex            64    12,650,385   7,132,861   4,022,513   6,506,096   9,645,952   29    converged  36    19    9         -8,627,872    -3,110,347    0.564
+claude-code      299   11,512,995   3,319,967   1,734,009   3,103,438   4,601,164   25    converged  167   51    81        -9,778,986    -1,585,957    0.522
+openclaw         539   3,708,330    2,297,288   1,714,754   1,322,725   1,961,075   35    converged  310   141   88        -1,993,575      -582,533    0.746
+hermes           269   749,886      432,218     322,975     257,952     382,440     33    converged  157   57    55        -426,911        -109,242    0.747
+vscode-redacted  333   5,662        2,319       1,526       1,736       2,573       32    converged  202   78    53        -4,136            -792      0.658
+```
+
+Findings:
+- All 6 sources converge in **<= 47 IRLS iterations** with no
+  numeric edge cases (`zero-weight` never triggered, `max-iter`
+  never hit). Polynomial-redescender IRLS is well-behaved on
+  real per-source token distributions.
+- **opencode** has the highest Geman-McClure center
+  (**7.26 M tokens/row**) and the closest agreement with the
+  classical median (`g/med = 0.898`) — its bulk is symmetric
+  enough that the redescender barely moves off the median.
+- **claude-code** shows the **largest gap from mean to GM**:
+  the mean is **6.6×** the GM estimate (-9.78 M `geman-mean`).
+  The GM estimate at 1.73 M sits **52 %** of the median (3.32 M),
+  i.e. half the rows in the bottom-half of the median lie inside
+  the half-peak core and dominate the IRLS-weighted center.
+  81 of 299 rows (27 %) land in the far tail — claude-code has
+  the heaviest tail of any source.
+- **codex** also collapses sharply: mean 12.65 M, median 7.13 M,
+  GM only 4.02 M (`g/med = 0.564`). 9 of 64 rows (14 %) are far
+  tail — small sample, high tail mass.
+- **openclaw** and **hermes** sit at `g/med ~ 0.75` — the GM
+  redescender pulls the center down toward the lower-tokens
+  bulk, but less aggressively than for claude-code/codex.
+- **vscode-redacted** is tiny in absolute scale (median 2,319
+  tokens/row) but shows the same redescender pattern with
+  `g/med = 0.658` — distribution shape is independent of scale,
+  exactly as predicted by the scale-equivariance property.
+- The `g/med` ratio sweeps **0.522 -> 0.898** across sources —
+  the diagnostic surfaces a **factor-of-1.7×** spread in how
+  symmetrically each source's per-row token distribution is
+  shaped around its median, which Cauchy/Welsch/Tukey would
+  ALL report as different numbers but only Geman-McClure
+  surfaces with this exact polynomial tail-decay sensitivity.
+
+### Tests
+
+- Test count grew from **5,317 -> 5,343** (+26). New suite:
+  `sourcerowtokenmestimatorgemanmcclure` (26 unit tests covering
+  the pure weight kernel, IRLS estimator equivariance,
+  bucket-count invariants, edge cases (n=0, n=1, all-tied,
+  MAD=0), end-to-end builder, all CLI gates, sort keys, top
+  cap, source filter, and outlier resistance).
+
 ## 0.6.216 — 2026-04-29
 
 ### Added
