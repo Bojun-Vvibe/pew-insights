@@ -2,6 +2,165 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.239 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-adversarial-weighting-envelope` —
+  per-source ADVERSARIAL CONVEX-WEIGHTING envelope diagnostic for
+  the v0.6.219 Deming-slope uncertainty-quantification suite.
+  Consumes the SAME six per-source slope CIs as v0.6.227–v0.6.238
+  (percentile bootstrap, jackknife normal, BCa, studentized-t, ABC,
+  profile-likelihood).
+
+  **Mechanically distinct from ALL ELEVEN prior cross-lens
+  diagnostics on a fundamental axis** — every prior axis pins down
+  ONE specific weighting (or at most six, in the LOO case) and
+  reports a single-point statistic of the consensus midpoint:
+
+    - v0.6.227 jaccard, v0.6.228 sign, v0.6.229 width, v0.6.230
+      overlap-graph, v0.6.231 midpoint-dispersion, v0.6.232
+      asymmetry, v0.6.233 pair-inclusion, v0.6.234
+      rank-correlation, v0.6.235 coverage-volume — describe the
+      JOINT geometry of the six CIs as a static EQUAL-WEIGHT
+      configuration.
+    - v0.6.237 leave-one-lens-out — explores at most SIX specific
+      weightings (drop one lens at full weight). It does not cover
+      the simplex; it never considers shifting weight smoothly,
+      dropping two lenses, etc.
+    - v0.6.238 precision-pull — considers exactly ONE specific
+      weighting (inverse-width / precision pooling) and reports
+      how far that single re-weighted midpoint sits from the
+      equal-weight midpoint.
+
+  None of them answers the dual question: "what is the FULL
+  ATTAINABLE RANGE of the consensus midpoint over the entire
+  weight simplex — i.e. across all convex combinations of the six
+  lenses?"
+
+  The 12th axis is therefore the ENVELOPE axis: a worst-case /
+  best-case manipulability bound on the cross-lens consensus. By
+  the standard convex-hull-of-reals fact, the set of midpoints
+  attainable as `sum_k w_k * mid_k` over all `w` in the simplex
+  (`w_k >= 0`, `sum w_k = 1`) is exactly the closed interval
+  `[min_k(mid_k), max_k(mid_k)]`. Equal-weighting and
+  precision-pooling are both interior points of this interval;
+  LOO is a six-point sample of it. The envelope captures the FULL
+  manipulability of the consensus midpoint.
+
+  For each source we compute on the 6 CI midpoints
+  `mid_k = (lo_k + hi_k) / 2` and 6 widths `w_k = hi_k - lo_k`:
+
+    - `equalMid` — arithmetic mean of mid_1..mid_6;
+    - `equalWidth` — arithmetic mean of w_1..w_6;
+    - `envelopeLow` = `min_k(mid_k)`;
+    - `envelopeHigh` = `max_k(mid_k)`;
+    - `envelopeRange` = `envelopeHigh - envelopeLow` (>= 0); the
+      maximum possible shift in the consensus midpoint achievable
+      by ANY convex re-weighting of the six lenses;
+    - `equalRelativePosition` ∈ [0, 1] = `(equalMid - envelopeLow)
+      / envelopeRange` when `envelopeRange > 0`, else 0.5 by
+      convention. 0.5 = equal-weight consensus sits perfectly
+      centered in the envelope; near 0 = equal-weight is already
+      at the low extreme (most lenses agree on the low end, only
+      one is high); near 1 = the opposite;
+    - `worstCaseUpShift` = `envelopeHigh - equalMid` (>= 0);
+      maximum UPWARD shift achievable by adversarial weighting;
+    - `worstCaseDownShift` = `equalMid - envelopeLow` (>= 0);
+    - `manipulability` = `envelopeRange / equalWidth` (unitless,
+      comparable across sources; same normalization choice as
+      v0.6.237 `midShiftStd` / v0.6.238 `pullStd`). 0 when
+      `envelopeRange == 0`; large when the cross-lens midpoint
+      spread is bigger than a typical CI width;
+    - `asymmetryIndex` ∈ [-1, 1] = `(worstCaseUpShift -
+      worstCaseDownShift) / envelopeRange` when `envelopeRange >
+      0`, else 0. Positive = the envelope extends further UP from
+      equal-weight than down (an adversary trying to push the
+      slope up has more room than one trying to push it down).
+      Note: this is INDEPENDENT of v0.6.232 asymmetry, which
+      describes per-lens lo/hi asymmetry of CIs, NOT per-source
+      manipulability of the cross-lens midpoint envelope;
+    - `asymmetryDirection` ∈ {`up`, `down`, `neutral`};
+    - `extremeUpLens` — lens whose midpoint equals `envelopeHigh`
+      (canonical-order tie-break);
+    - `extremeDownLens` — lens whose midpoint equals
+      `envelopeLow`;
+    - `extremesDistinct` — `extremeUpLens !== extremeDownLens`
+      iff some midpoints differ;
+    - `envelopeRobustnessScore` = `1 / (1 + manipulability)` in
+      (0, 1] — DEFAULT SORT KEY. 1.0 = consensus is invariant
+      under any convex re-weighting (all six midpoints
+      identical); near 0 = consensus is wildly manipulable
+      through choice of weighting.
+
+  Per-report aggregates: `meanEnvelopeRobustness`,
+  `medianEnvelopeRobustness`, `meanManipulability` (mean over
+  finite manipulabilities), `globalExtremeUpLens` (mode across
+  sources, canonical-order tie-break), `globalExtremeDownLens`
+  (analog), `globalAsymmetryDirection` (mode across sources,
+  ties broken `up` > `down` > `neutral`).
+
+  Edge cases: all six midpoints identical → `envelopeRange = 0`,
+  `manipulability = 0`, `envelopeRobustnessScore = 1`,
+  `equalRelativePosition = 0.5` by convention; `equalWidth = 0`
+  with `envelopeRange > 0` → `manipulability = +Infinity`,
+  `envelopeRobustnessScore = 0` (degenerate input where all six
+  lenses report point CIs but disagree on the slope itself).
+
+  Why a 12th axis: every prior axis collapses the lens-weighting
+  question to a single point (equal-weight in 9 of them, six
+  specific drops in LOO, one inverse-variance weighting in
+  precision-pull). NONE bound the FULL space of weightings. A
+  large `manipulability` is the diagnostic signature that an
+  analyst with discretion over which lens to weight more heavily
+  could legitimately report a substantially different consensus
+  slope — including potentially one with the opposite sign — and
+  no static equal-weight or precision-weight statistic detects
+  this. This is the only axis that quantifies the worst-case
+  reporting flexibility a method-shopping analyst would have.
+
+  Tests: 6542 → 6575 (+33) all green.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (default
+  settings except `--bootstraps 500`; one source name redacted):
+
+  ```
+  pew-insights source-row-token-slope-ci-adversarial-weighting-envelope
+  as of: 2026-04-29T22:25:44.283Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 500    seed: 42    alert-manipulable: -    top: -    sort: robustness-desc
+  dropped: 0 missing-from-some-lens, 0 above-alert-threshold; meanEnvelopeRobustness: 0.5869; medianEnvelopeRobustness: 0.6000; meanManipulability: 0.7801; globalExtremeUpLens: bootstrap; globalExtremeDownLens: jackknife; globalAsymmetryDirection: up
+
+  source           rows  envLow         envHigh        envRange       equalRelPos  manip     asymIdx   dir   robust    extremeUpLens      extremeDownLens
+  ---------------  ----  -------------  -------------  -------------  -----------  --------  --------  ----  --------  -----------------  -----------------
+  hermes            296    -32775.5083    861517.5018    894293.0102       0.3354    0.3803    0.3293  up      0.7245  bootstrap          studentizedT
+  opencode          460  -3365825.3111   8841841.6824  12207666.9935       0.3500    0.4678    0.3001  up      0.6813  bootstrap          profileLikelihood
+  codex              64  -23279101.0105   3168677.5760  26447778.5865       0.7219    0.4798   -0.4439  down    0.6758  studentizedT       bca
+  vscode-redacted   333        18.6246     29868.0448     29849.4202       0.2463    0.9076    0.5073  up      0.5242  bca                jackknife
+  claude-code       299       182.1182  38777733.4613  38777551.3431       0.2139    0.9327    0.5721  up      0.5174  bca                jackknife
+  openclaw          566  -13209800.1910      -623.5089  13209176.6820       0.8153    1.5126   -0.6306  down    0.3980  jackknife          bca
+  ```
+
+  Headline findings on the local queue:
+  - `openclaw` is the most manipulable source: `manipulability`
+    1.51 (envelope range is 1.5x a typical CI width), `robust`
+    only 0.40, with `asymmetryIndex` -0.63 — an adversary pushing
+    the slope DOWN has substantially more room than one pushing
+    it UP, and `equalRelativePosition` 0.82 confirms equal-weight
+    consensus already sits near the upper end of the envelope.
+    `jackknife` carries the high extreme; `bca` the low extreme.
+  - `claude-code` and `vscode-redacted` both have `bca` at the
+    HIGH extreme and `jackknife` at the LOW extreme: a recurring
+    cross-source signature that precision-driven re-weighting
+    toward `bca` (typically the tightest on these sources) would
+    pull consensus systematically UP.
+  - `hermes` is the most robust source on the local queue:
+    `manipulability` 0.38, `robust` 0.72 — even worst-case
+    re-weighting moves the slope by less than half a typical
+    CI width.
+  - `globalAsymmetryDirection: up` (4 of 6 sources) shows that
+    on this queue the cross-lens midpoint envelope is
+    systematically tilted upward from the equal-weight
+    consensus.
+
 ## 0.6.238 — 2026-04-30
 
 ### Added
