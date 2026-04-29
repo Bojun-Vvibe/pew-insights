@@ -2,6 +2,109 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.215 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-cauchy` — per-source
+  **Cauchy / Lorentzian M-estimator of location** of per-row
+  `total_tokens`. Solves the implicit M-equation
+
+  ```
+  sum_i  psi_C( (x_i - mu) / s )  =  0
+  psi_C(z)  =  z / ( 1 + (z/c)^2 )
+  rho_C(z)  =  (c^2 / 2) * ln( 1 + (z/c)^2 )
+  ```
+
+  by IRLS with `mu_0 = median`, `s = MAD / 0.6745`, weight
+  `w(z) = 1 / (1 + (z/c)^2)`, and canonical tuning constant
+  `c = 2.3849` (≈95 % asymptotic relative efficiency at the
+  normal). Translation- and scale-equivariant; breakdown 0.5 under
+  the MAD scale.
+
+  **Rounds out the M-estimator coverage**: Cauchy is the **only
+  monotone M-estimator with vanishing tail influence** in the
+  suite — sitting in the gap between Huber's monotone-bounded
+  family and the redescender family
+  (Tukey/Hampel/Andrews/Welsch). The mechanical distinctions:
+
+  | Lens (version) | Class | Support | Tail psi behavior |
+  |---|---|---|---|
+  | Huber (v0.6.209, c=1.345) | monotone | infinite | clips to constant `±c` |
+  | Tukey (v0.6.210, c=4.685) | redescender | **compact** | exactly 0 past `±c` |
+  | Hampel (v0.6.211, knots 1.7/3.4/8.5) | redescender | **compact** | piecewise-linear, 0 past 8.5 |
+  | Andrews (v0.6.212, A=1.339) | redescender | **compact** | sine wave, 0 past `±Aπ` |
+  | Welsch (v0.6.213, c=2.9846) | redescender | infinite | Gaussian decay → 0 |
+  | **Cauchy (v0.6.215, c=2.3849)** | **monotone** | **infinite** | **decays like c²/z, never 0** |
+
+  Cauchy psi never increases past a peak (monotone) and never
+  reaches exactly zero (infinite support, heavy-tailed decay).
+  Equivalently, the Cauchy weight `w(z) = 1 / (1 + (z/c)^2)` is
+  the un-normalized standard Cauchy / Lorentzian density at `z/c`
+  — making this the **first M-estimator derived from a
+  heavy-tailed location-scale density** in the suite (rho is the
+  negative log density of the Cauchy distribution).
+
+  Reports a unique three-bucket residual partition keyed on
+  **weight magnitude** (no compact-support cutoff to bucket on):
+
+  - `coreRows` — `w ≥ 0.5`, equivalent to `|z| ≤ c` (the
+    half-power knee of the Lorentzian)
+  - `tailRows` — `0.05 ≤ w < 0.5`, equivalent to
+    `c < |z| ≤ c·√19 ≈ 4.36 c`
+  - `farTailRows` — `w < 0.05`, equivalent to `|z| > 4.36 c`
+    (very small but **strictly positive** weight — Cauchy never
+    assigns `w = 0` to a finite `z`)
+
+  with `coreRows + tailRows + farTailRows = n`. Per-source
+  byproducts: `mean`, `median`, `mad`, `scale = MAD/0.6745`,
+  `iterations`, `converged ∈ {converged, max-iter, zero-weight}`,
+  `cauchyMeanGap = cauchy − mean`, `cauchyMedianGap = cauchy −
+  median`. Sort keys: `cauchy-desc` (default), `cauchy-asc`,
+  `mean-desc`, `median-desc`, `mean-gap-desc`, `median-gap-desc`,
+  `far-tail-desc`, `rows`, `source`.
+
+  Edge cases: `MAD = 0` falls back to `s = max(1, 1e-12 · range)`
+  (forces non-tied rows to very large `|z|`, then Cauchy weight
+  `~ c²/z² ≈ 0` and IRLS collapses onto the tied bulk); all-tied
+  → `mu = the common value at iter 1`; `n = 1` → trivially
+  `mu = x_1`. The `zero-weight` termination is reachable
+  defensively but **mathematically impossible** for Cauchy at
+  finite `z` (denominator `1 + (z/c)²` is always `≥ 1`), unlike
+  Welsch where Gaussian-fast decay can underflow.
+
+### Live smoke (v0.6.215)
+
+Run against the real local `~/.config/pew/queue.jsonl` (no
+filters):
+
+```
+$ pew-insights source-row-token-m-estimator-cauchy
+sources: 6 (shown 6)    rows: 1,925    min-rows: 4    min-cauchy: 0    tuning: 2.3849
+dropped: 0 bad hour_start, 0 bad total_tokens, 0 negative total_tokens, 0 by source filter, 0 below min-rows, 0 below min-cauchy, 0 below top cap
+
+source           rows  mean         median      cauchy      mad         scale       iter  conv       core  tail  far-tail  cauchy-mean   cauchy-median
+codex            64    12650385.31  7132861.00  9634840.85  6506096.00  9645952.36  17    converged  57    7     0         -3015544.46   +2501979.85
+opencode         429   10405853.48  7958860.00  7926913.20  4653113.00  6898715.66  12    converged  393   36    0         -2478940.28   -31946.80
+claude-code      299   11512995.95  3319967.00  4331249.77  3103438.00  4601164.06  16    converged  232   53    14        -7181746.18   +1011282.77
+openclaw         535   3728319.36   2310411.00  2702181.74  1333458.00  1976987.79  16    converged  475   53    7         -1026137.63   +391770.74
+hermes           265   754720.61    432134.00   496311.43   264124.00   391590.83   16    converged  217   47    1         -258409.18    +64177.43
+vscode-redacted  333   5662.84      2319.00     2717.65     1736.00     2573.80     15    converged  289   37    7         -2945.20      +398.65
+```
+
+Read: every source has `cauchyMeanGap < 0` (Cauchy pulls below the
+mean — confirms the mean is dragged up by heavy upper tails on
+all six sources) and `cauchyMedianGap` is small for the symmetric
+ones (`opencode`: −31,946 on a median of 7.96M is a 0.4 %
+deviation from median; the asymmetric distributions like `codex`
+sit between mean and median). Every source converged in
+`≤17 IRLS iterations`. `claude-code` lands 14 rows in `farTailRows`
+(`w < 0.05`) — the largest far-tail count in the cohort, but
+none of those rows is rejected (Cauchy weight is strictly
+positive). `codex` and `opencode` have zero `farTailRows` —
+their tails decay smoothly enough that no row drops below
+`w = 0.05`. Total 1,925 rows across 6 sources, 0 rows dropped.
+
 ## 0.6.214 — 2026-04-29
 
 ### Added
