@@ -14411,6 +14411,7 @@ export function renderSourceRowTokenAbcBootstrapSlopeCi(
     'ciUpper',
     'ciWidth',
     'dotDisp',
+    'dotC2',
     'degDot',
     '0inCI?',
   ];
@@ -14429,6 +14430,7 @@ export function renderSourceRowTokenAbcBootstrapSlopeCi(
       (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
       s.ciWidth.toFixed(4),
       Number.isFinite(s.dotDispersion) ? s.dotDispersion.toFixed(4) : 'n/a',
+      s.dotConcentrationTop2.toFixed(4),
       formatNumber(s.degenerateDotCount),
       s.ciContainsZero ? 'yes' : 'no',
     ],

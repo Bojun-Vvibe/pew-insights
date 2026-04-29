@@ -10329,7 +10329,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'acceleration-magnitude-desc' | 'bias-magnitude-desc' | 'sigma-hat-desc' | 'dot-dispersion-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'acceleration-magnitude-desc' | 'bias-magnitude-desc' | 'sigma-hat-desc' | 'dot-dispersion-desc' | 'dot-concentration-top2-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -10411,6 +10411,7 @@ program
           'bias-magnitude-desc',
           'sigma-hat-desc',
           'dot-dispersion-desc',
+          'dot-concentration-top2-desc',
           'ci-contains-zero-first',
           'rows',
           'source',
@@ -10442,6 +10443,7 @@ program
             | 'bias-magnitude-desc'
             | 'sigma-hat-desc'
             | 'dot-dispersion-desc'
+            | 'dot-concentration-top2-desc'
             | 'ci-contains-zero-first'
             | 'rows'
             | 'source',

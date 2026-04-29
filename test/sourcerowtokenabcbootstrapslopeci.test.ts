@@ -347,3 +347,47 @@ test('build: dotDispersion >= 1 for non-degenerate influence', () => {
   // max/mean is by definition >= 1 for non-empty positive vector.
   assert.ok(row.dotDispersion >= 1 - 1e-12);
 });
+
+// Refinement (v0.6.224 follow-up): dotConcentrationTop2 + sort key.
+
+test('build: dotConcentrationTop2 in [2/n, 1] on noisy series', () => {
+  const ys = [3, 11, 2, 17, 5, 8, 14, 1, 9, 12, 4, 19, 6, 13];
+  const q = mkSeries('S', ys);
+  const r = buildSourceRowTokenAbcBootstrapSlopeCi(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  const lower = 2 / row.rowsKept;
+  assert.ok(
+    row.dotConcentrationTop2 >= lower - 1e-9,
+    `got ${row.dotConcentrationTop2}, lower ${lower}`,
+  );
+  assert.ok(
+    row.dotConcentrationTop2 <= 1 + 1e-9,
+    `got ${row.dotConcentrationTop2}`,
+  );
+});
+
+test('build: dotConcentrationTop2 == 0 on constant series (no influence)', () => {
+  const q = mkSeries('K', [7, 7, 7, 7, 7, 7]);
+  const r = buildSourceRowTokenAbcBootstrapSlopeCi(q, { generatedAt: GEN });
+  assert.equal(r.sources[0]!.dotConcentrationTop2, 0);
+});
+
+test('build: sort=dot-concentration-top2-desc returns descending', () => {
+  const q = [
+    ...mkSeries('A', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+    ...mkSeries(
+      'B',
+      // Pathological: one huge spike in the middle of an otherwise
+      // small-variation series — drives concentration high.
+      [1, 1, 1, 1, 999, 1, 1, 1, 1, 1],
+    ),
+  ];
+  const r = buildSourceRowTokenAbcBootstrapSlopeCi(q, {
+    sort: 'dot-concentration-top2-desc',
+    generatedAt: GEN,
+  });
+  assert.ok(
+    r.sources[0]!.dotConcentrationTop2 >= r.sources[1]!.dotConcentrationTop2,
+    `${r.sources[0]!.source}=${r.sources[0]!.dotConcentrationTop2} vs ${r.sources[1]!.source}=${r.sources[1]!.dotConcentrationTop2}`,
+  );
+});

@@ -230,6 +230,7 @@ export interface SourceRowTokenAbcBootstrapSlopeCiOptions {
     | 'bias-magnitude-desc'
     | 'sigma-hat-desc'
     | 'dot-dispersion-desc'
+    | 'dot-concentration-top2-desc'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -275,6 +276,16 @@ export interface SourceRowTokenAbcBootstrapSlopeCiRow {
    * series).
    */
   degenerateDotCount: number;
+  /**
+   * Share of `sum |T_dot|` contributed by the **top-2 most-
+   * influential rows** (refinement field, v0.6.224 follow-up). In
+   * `[2/n, 1]`. `2/n` => influence is perfectly uniform across all
+   * rows; `1` => the entire slope sensitivity sits on just two
+   * rows. Complements `dotDispersion` (a single-row max ratio) by
+   * answering "is the slope dominated by ONE row, or by a small
+   * cluster?". Returns 0 if `sum |T_dot| == 0` or `n < 2`.
+   */
+  dotConcentrationTop2: number;
 }
 
 export interface SourceRowTokenAbcBootstrapSlopeCiReport {
@@ -299,6 +310,7 @@ export interface SourceRowTokenAbcBootstrapSlopeCiReport {
     | 'bias-magnitude-desc'
     | 'sigma-hat-desc'
     | 'dot-dispersion-desc'
+    | 'dot-concentration-top2-desc'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -327,6 +339,7 @@ const VALID_SORTS = [
   'bias-magnitude-desc',
   'sigma-hat-desc',
   'dot-dispersion-desc',
+  'dot-concentration-top2-desc',
   'ci-contains-zero-first',
   'rows',
   'source',
@@ -688,6 +701,23 @@ export function buildSourceRowTokenAbcBootstrapSlopeCi(
     const meanAbs = absSum / n;
     const dotDispersion = meanAbs === 0 ? 0 : absMax / meanAbs;
 
+    // Refinement (v0.6.224 follow-up): top-2 |T_dot| concentration share.
+    let dotConcentrationTop2 = 0;
+    if (absSum > 0 && n >= 2) {
+      let top1 = 0;
+      let top2 = 0;
+      for (let i = 0; i < n; i += 1) {
+        const v = Math.abs(tDot[i]!);
+        if (v > top1) {
+          top2 = top1;
+          top1 = v;
+        } else if (v > top2) {
+          top2 = v;
+        }
+      }
+      dotConcentrationTop2 = (top1 + top2) / absSum;
+    }
+
     allRows.push({
       source,
       rowsKept: n,
@@ -704,6 +734,7 @@ export function buildSourceRowTokenAbcBootstrapSlopeCi(
       ciContainsZero,
       dotDispersion,
       degenerateDotCount: degenerate,
+      dotConcentrationTop2,
     });
   }
 
@@ -737,6 +768,8 @@ export function buildSourceRowTokenAbcBootstrapSlopeCi(
     else if (sort === 'sigma-hat-desc') primary = q.sigmaHat - p.sigmaHat;
     else if (sort === 'dot-dispersion-desc')
       primary = q.dotDispersion - p.dotDispersion;
+    else if (sort === 'dot-concentration-top2-desc')
+      primary = q.dotConcentrationTop2 - p.dotConcentrationTop2;
     else if (sort === 'ci-contains-zero-first')
       primary = (q.ciContainsZero ? 1 : 0) - (p.ciContainsZero ? 1 : 0);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
