@@ -261,3 +261,91 @@ test('ladder: empty/single-source coexists across all builders', () => {
     assert.ok(v >= 9 && v <= 16);
   }
 });
+
+// ---------- v0.6.210 refinement: head-to-head Tukey-vs-Huber dominance ----------
+
+test('refinement: tukey <= huber under one-sided upper contamination (replicates live-smoke finding)', () => {
+  // Replicates the headline finding from the v0.6.210 live-smoke
+  // run: under right-tail-heavy real data, Tukey lands strictly
+  // below Huber on every source. Test against a battery of
+  // synthetic right-tail-heavy bulks of varying size and shape.
+  const rng = lcg(2026);
+  const cases: number[][] = [];
+  for (let trial = 0; trial < 12; trial += 1) {
+    const nBulk = 20 + Math.floor(rng() * 40);
+    const bulk = Array.from({ length: nBulk }, () =>
+      // log-normal-ish bulk
+      Math.exp(5 + 1.5 * (rng() - 0.5)),
+    );
+    const nTail = 1 + Math.floor(rng() * 5);
+    const tail = Array.from({ length: nTail }, (_, i) =>
+      Math.exp(12 + 2 * rng()) * (i + 1),
+    );
+    cases.push([...bulk, ...tail]);
+  }
+  let dominanceCount = 0;
+  for (const xs of cases) {
+    const t = tukeyOf(xs);
+    const h = huberOf(xs);
+    if (t <= h + 1e-6) dominanceCount += 1;
+  }
+  // On right-tail-contaminated data, Tukey should be <= Huber on
+  // an overwhelming majority of cases (the redescent fully
+  // discards heavy upper tails while Huber still gets bumped).
+  assert.ok(
+    dominanceCount >= cases.length - 1,
+    `expected Tukey <= Huber on >= ${cases.length - 1}/${cases.length} cases, got ${dominanceCount}`,
+  );
+});
+
+test('refinement: tukey median-gap is on average tighter than huber median-gap on right-tail data', () => {
+  const rng = lcg(7777);
+  let tukeyTighterCount = 0;
+  const N = 10;
+  for (let trial = 0; trial < N; trial += 1) {
+    const bulk = Array.from({ length: 50 }, () =>
+      Math.exp(6 + 1.0 * (rng() - 0.5)),
+    );
+    const polluted = [
+      ...bulk,
+      Math.exp(13),
+      Math.exp(14),
+      Math.exp(15),
+    ];
+    const med = medianOf(polluted);
+    const t = tukeyOf(polluted);
+    const h = huberOf(polluted);
+    if (Math.abs(t - med) <= Math.abs(h - med)) tukeyTighterCount += 1;
+  }
+  assert.ok(
+    tukeyTighterCount >= Math.ceil(N * 0.7),
+    `expected Tukey-tighter on >=70% of trials, got ${tukeyTighterCount}/${N}`,
+  );
+});
+
+test('refinement: rejection-count vs clipped-count separation is well-defined', () => {
+  // The mechanical distinction: Huber CLIPS (bounded but nonzero
+  // weight); Tukey REJECTS (exactly zero weight). Both diagnostics
+  // should be reported, both should scale up with contamination,
+  // and on the same data Tukey-rejected count should not exceed
+  // total sample size (sanity).
+  const bulk = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+  const polluted = [...bulk, 1e9, 2e9, 3e9, 4e9];
+  const tReport = buildSourceRowTokenMEstimatorTukey(
+    mkSeries('s', polluted),
+    { generatedAt: GEN },
+  );
+  const hReport = buildSourceRowTokenMEstimatorHuber(
+    mkSeries('s', polluted),
+    { generatedAt: GEN },
+  );
+  assert.equal(tReport.sources[0]!.rejectedRows, 4);
+  // Huber's clippedRows must include AT LEAST as many rows as Tukey
+  // rejects (every Tukey-rejected row has |z|>c_huber too, since
+  // c_huber=1.345 << c_tukey=4.685... wait, c_huber is smaller, so
+  // Huber clips MORE rows than Tukey rejects).
+  assert.ok(
+    hReport.sources[0]!.clippedRows >= tReport.sources[0]!.rejectedRows,
+    `huber clipped ${hReport.sources[0]!.clippedRows} should be >= tukey rejected ${tReport.sources[0]!.rejectedRows}`,
+  );
+});
