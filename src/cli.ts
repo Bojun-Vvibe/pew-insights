@@ -431,6 +431,10 @@ import {
   buildSourceRowTokenSlopeCiRankCorrelation,
   renderSourceRowTokenSlopeCiRankCorrelation,
 } from './sourcerowtokenslopecirankcorrelation.js';
+import {
+  buildSourceRowTokenSlopeCiCoverageVolume,
+  renderSourceRowTokenSlopeCiCoverageVolume,
+} from './sourcerowtokenslopecicoveragevolume.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22001,6 +22005,225 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiRankCorrelation(report, {
               showConsensus: opts.showConsensus ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-coverage-volume')
+  .description(
+    "Per-source CI-COVERAGE-VOLUME diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL EIGHT prior cross-lens diagnostics (v0.6.227 jaccard sign-set, v0.6.228 sign, v0.6.229 width, v0.6.230 overlap-graph 0/1, v0.6.231 midpoint, v0.6.232 asymmetry, v0.6.233 pair-inclusion 5-bucket, v0.6.234 cross-source rank-correlation) because it is the ONLY one that measures CONTINUOUS Lebesgue interval intersection-over-union per pair. v0.6.227 jaccard reduces overlap to a sign-SET intersection over union; v0.6.230 overlap-graph collapses each pair to a single 0/1 bit; v0.6.233 collapses to one of five categorical labels; none of them surface gradations in HOW MUCH two CI intervals actually share by length. For each of the C(6,2)=15 lens pairs (per source) we compute `iou` = |A INTERSECT B| / |A UNION B| (outer-hull union convention so 1-iou is a proper distance), raw `overlap` length, raw `union` length, and `containmentRatio` = |A INTERSECT B| / min(|A|, |B|) (distinguishes tightly-nested from side-by-side overlap). Per source: meanIou / medianIou / minIou / maxIou / iouSpread, meanContainment / minContainment / maxContainment, weakPairs (`iou < weak-iou-threshold`, default 0.5), strongPairs (`iou >= strong-iou-threshold`, default 0.9), disjointPairs (`overlap == 0`), meanWidth, and `coherenceScore = meanIou * (1 - disjointPairs/15)` (default sort key, in [0, 1], rewards both high mean overlap volume AND no outright disjoint pairs). Report-level: weak-mean-iou / strong-mean-iou / any-disjoint counts, plus global meanCoherenceScore. --alert-weak-mean <f> filters to sources whose meanIou is strictly less than f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--weak-iou <f>',
+    "iou strictly below this counts as a 'weak' pair (in [0, 1], default 0.5)",
+    '0.5',
+  )
+  .option(
+    '--strong-iou <f>',
+    "iou >= this counts as a 'strong' pair (in [0, 1], must be >= --weak-iou, default 0.9)",
+    '0.9',
+  )
+  .option(
+    '--alert-weak-mean <f>',
+    'only emit sources whose meanIou is strictly less than f (in [0, 1])',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'coherence-desc' (default) | 'coherence-asc' | 'mean-iou-desc' | 'mean-iou-asc' | 'median-iou-desc' | 'min-iou-desc' | 'min-iou-asc' | 'max-iou-desc' | 'iou-spread-desc' | 'iou-spread-asc' | 'weak-pairs-desc' | 'strong-pairs-desc' | 'disjoint-pairs-desc' | 'mean-containment-desc' | 'rows' | 'source'",
+    'coherence-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-pairs',
+    'when rendering pretty (non-JSON), append a per-source line listing the 15-vector of per-pair iou values',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        weakIou: string;
+        strongIou: string;
+        alertWeakMean?: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showPairs?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        const weakIou = Number.parseFloat(opts.weakIou);
+        if (!Number.isFinite(weakIou) || weakIou < 0 || weakIou > 1) {
+          throw new Error(
+            `--weak-iou must be a finite number in [0, 1] (got ${opts.weakIou})`,
+          );
+        }
+        const strongIou = Number.parseFloat(opts.strongIou);
+        if (!Number.isFinite(strongIou) || strongIou < 0 || strongIou > 1) {
+          throw new Error(
+            `--strong-iou must be a finite number in [0, 1] (got ${opts.strongIou})`,
+          );
+        }
+        if (strongIou < weakIou) {
+          throw new Error(
+            `--strong-iou (${strongIou}) must be >= --weak-iou (${weakIou})`,
+          );
+        }
+        let alertWeakMean: number | null = null;
+        if (opts.alertWeakMean != null) {
+          const a = Number.parseFloat(opts.alertWeakMean);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-weak-mean must be a finite number in [0, 1] (got ${opts.alertWeakMean})`,
+            );
+          }
+          alertWeakMean = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'coherence-desc',
+          'coherence-asc',
+          'mean-iou-desc',
+          'mean-iou-asc',
+          'median-iou-desc',
+          'min-iou-desc',
+          'min-iou-asc',
+          'max-iou-desc',
+          'iou-spread-desc',
+          'iou-spread-asc',
+          'weak-pairs-desc',
+          'strong-pairs-desc',
+          'disjoint-pairs-desc',
+          'mean-containment-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          weakIouThreshold: weakIou,
+          strongIouThreshold: strongIou,
+          alertWeakMean,
+          top,
+          sort: opts.sort as
+            | 'coherence-desc'
+            | 'coherence-asc'
+            | 'mean-iou-desc'
+            | 'mean-iou-asc'
+            | 'median-iou-desc'
+            | 'min-iou-desc'
+            | 'min-iou-asc'
+            | 'max-iou-desc'
+            | 'iou-spread-desc'
+            | 'iou-spread-asc'
+            | 'weak-pairs-desc'
+            | 'strong-pairs-desc'
+            | 'disjoint-pairs-desc'
+            | 'mean-containment-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiCoverageVolume(report, {
+              showPairs: opts.showPairs ?? false,
             }) + '\n',
           );
         }
