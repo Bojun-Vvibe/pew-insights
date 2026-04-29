@@ -536,3 +536,42 @@ test('welsch-specific: half-weight cutoff matches design (weight = 0.5 at |z| = 
   assert.ok(welschWeight(halfPoint, C) >= 0.5 - 1e-12);
   assert.ok(welschWeight(halfPoint + 1e-9, C) < 0.5);
 });
+
+// ---------- IRLS termination diagnostic (refinement v0.6.213+1) ----------
+
+test('converged: happy path on well-behaved data reports "converged"', () => {
+  const r = welschMEstimator([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+  assert.equal(r.converged, 'converged');
+});
+
+test('converged: n=1 trivially "converged"', () => {
+  const r = welschMEstimator([42]);
+  assert.equal(r.converged, 'converged');
+});
+
+test('converged: n=0 trivially "converged"', () => {
+  const r = welschMEstimator([]);
+  assert.equal(r.converged, 'converged');
+});
+
+test('converged: log-normal data converges within max iter', () => {
+  const rng = lcg(707);
+  for (let trial = 0; trial < 5; trial += 1) {
+    const xs = Array.from({ length: 50 }, () => Math.exp(7 + 2 * (rng() - 0.5)));
+    const r = welschMEstimator(xs);
+    assert.equal(
+      r.converged,
+      'converged',
+      `trial ${trial} did not converge: ${r.converged}`,
+    );
+  }
+});
+
+test('builder: surfaces converged field per source', () => {
+  const r = buildSourceRowTokenMEstimatorWelsch(
+    mkSeries('s', [10, 11, 12, 13, 14, 15, 16, 17]),
+    { generatedAt: GEN },
+  );
+  assert.ok(['converged', 'max-iter', 'zero-weight'].includes(r.sources[0]!.converged));
+  assert.equal(r.sources[0]!.converged, 'converged');
+});

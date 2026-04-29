@@ -193,7 +193,12 @@ export interface SourceRowTokenMEstimatorWelschRow {
   welsch: number;
   /** Number of IRLS iterations performed. */
   iterations: number;
-  /** Rows with weight >= 0.5 at converged mu (high-confidence inliers). */
+  /**
+   * Termination reason for the IRLS loop ('converged' on the
+   * happy path; 'max-iter' or 'zero-weight' indicates a numerical
+   * edge case worth surfacing per source).
+   */
+  converged: 'converged' | 'max-iter' | 'zero-weight';
   coreRows: number;
   /** Rows with 0.01 <= weight < 0.5 at converged mu (down-weighted). */
   descendingRows: number;
@@ -291,9 +296,9 @@ export function welschWeight(z: number, tuning: number): number {
  * Compute the Welsch (Leclerc) Gaussian-kernel M-estimator of
  * location via IRLS.
  *
- * Returns `{ mu, iterations, scale, mad, coreRows, descendingRows,
- * negligibleRows }`. Pure function; suitable for unit testing in
- * isolation.
+ * Returns `{ mu, iterations, converged, scale, mad, coreRows,
+ * descendingRows, negligibleRows }`. Pure function; suitable for
+ * unit testing in isolation.
  */
 export function welschMEstimator(
   xs: number[],
@@ -301,6 +306,7 @@ export function welschMEstimator(
 ): {
   mu: number;
   iterations: number;
+  converged: 'converged' | 'max-iter' | 'zero-weight';
   scale: number;
   mad: number;
   coreRows: number;
@@ -312,6 +318,7 @@ export function welschMEstimator(
     return {
       mu: NaN,
       iterations: 0,
+      converged: 'converged',
       scale: 0,
       mad: 0,
       coreRows: 0,
@@ -323,6 +330,7 @@ export function welschMEstimator(
     return {
       mu: xs[0]!,
       iterations: 0,
+      converged: 'converged',
       scale: 0,
       mad: 0,
       coreRows: 1,
@@ -347,6 +355,7 @@ export function welschMEstimator(
 
   let mu = med;
   let iterations = 0;
+  let converged: 'converged' | 'max-iter' | 'zero-weight' = 'max-iter';
   for (let iter = 1; iter <= IRLS_MAX_ITER; iter += 1) {
     let wsum = 0;
     let wxsum = 0;
@@ -358,12 +367,14 @@ export function welschMEstimator(
     }
     if (!(wsum > 0)) {
       iterations = iter;
+      converged = 'zero-weight';
       break;
     }
     const muNext = wxsum / wsum;
     iterations = iter;
     if (Math.abs(muNext - mu) <= IRLS_EPS * Math.max(1, s)) {
       mu = muNext;
+      converged = 'converged';
       break;
     }
     mu = muNext;
@@ -384,6 +395,7 @@ export function welschMEstimator(
   return {
     mu,
     iterations,
+    converged,
     scale: s,
     mad,
     coreRows,
@@ -504,6 +516,7 @@ export function buildSourceRowTokenMEstimatorWelsch(
     const {
       mu,
       iterations,
+      converged,
       scale,
       mad,
       coreRows,
@@ -520,6 +533,7 @@ export function buildSourceRowTokenMEstimatorWelsch(
       scale,
       welsch: mu,
       iterations,
+      converged,
       coreRows,
       descendingRows,
       negligibleRows,
