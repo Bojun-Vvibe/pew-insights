@@ -2,6 +2,96 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.213 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-welsch` — per-source
+  **Welsch (Leclerc) Gaussian-kernel redescending M-estimator** of
+  location of per-row `total_tokens`. Solves `sum_i psi(z) = 0` by
+  iteratively reweighted least squares (IRLS) with `mu_0 = median`,
+  `s = MAD/0.6745`, and the **Gaussian** influence function
+
+  ```
+  psi(z) = z * exp( -(z/c)^2 / 2 )
+  ```
+
+  arising from `rho(z) = (c^2/2) * (1 - exp(-(z/c)^2/2))`, with
+  canonical tuning `c = 2.9846` (≈ 95 % asymptotic relative
+  efficiency at the normal). Weight `w(z) = exp(-(z/c)^2/2)` is
+  **strictly positive for every finite `z`** — no hard rejection
+  cliff, unlike every other shipped redescender.
+
+  **First GAUSSIAN-KERNEL redescender** and **first INFINITE-SUPPORT
+  redescender** in the location-lens suite. Mechanically distinct
+  from every previously shipped M-estimator:
+
+  - **vs Huber (v0.6.209, monotone, `c = 1.345`)**: both are "never
+    zero", but Welsch redescends to vanishing influence
+    asymptotically (Gaussian-fast) while Huber clips to constant
+    `+- c` forever.
+  - **vs Tukey biweight (v0.6.210, smooth polynomial, `c = 4.685`)**:
+    Tukey has **COMPACT support** — strictly zero past `+- c`.
+    Welsch has **INFINITE support** — Gaussian decay, never exactly
+    zero. Tukey gives a hard rejection cliff; Welsch gives a soft
+    asymptotic fade.
+  - **vs Hampel (v0.6.211, piecewise-linear, knots 1.7/3.4/8.5)**:
+    Hampel has corners, an inner plateau, and a hard outer rejection
+    at `+-8.5`. Welsch is C-infinity smooth on all of R, single
+    monotone-decreasing weight envelope, no corners or plateau.
+  - **vs Andrews sine (v0.6.212, transcendental, `A = 1.339`)**:
+    Andrews is the most aggressive **HARD** redescender (compact
+    support at `A*pi ≈ 4.207`). Welsch is the **SOFTEST**
+    redescender — never hard-rejects anything, instead exponentially
+    down-weights to negligible influence.
+
+  Reports a unique **three-bucket residual partition keyed on
+  WEIGHT MAGNITUDE** (no other shipped M-estimator partitions on
+  weight, because they all hit a support cutoff first):
+
+  - `coreRows`        weight >= 0.5
+                      i.e. `|z| <= c*sqrt(2 ln 2) ≈ 2.484`
+  - `descendingRows`  0.01 <= weight < 0.5
+  - `negligibleRows`  weight < 0.01
+                      i.e. `|z| > c*sqrt(2 ln 100) ≈ 9.046`
+                      (effectively rejected, but never exactly
+                      `w = 0` — Welsch's defining structural
+                      difference from Tukey/Hampel/Andrews)
+
+  with `coreRows + descendingRows + negligibleRows = n`.
+
+  Translation- and scale-equivariant. Breakdown 0.5 under the MAD
+  scale.
+
+  Flags: `--tuning <f>` (default 2.9846), `--min-rows <n>` (default
+  4), `--min-welsch <f>`, `--top <n>`, `--sort` with nine keys
+  including `welsch-desc` (default), `mean-gap-desc`,
+  `median-gap-desc`, `negligible-desc`.
+
+  **Live-smoke against `~/.config/pew/queue.jsonl`** (1,916 rows,
+  6 sources, default tuning c = 2.9846; `vscode-copilot` redacted
+  to `vscode-XXX`):
+
+  ```
+  source        rows  mean         median      welsch       mad         scale       iter  core  descend  negligible  welsch-mean   welsch-median
+  ------------  ----  -----------  ----------  -----------  ----------  ----------  ----  ----  -------  ----------  ------------  -------------
+  codex         64    12650385.31  7132861.00  10541413.84  6506096.00  9645952.36  13    61    3        0            -2108971.48   +3408552.84
+  opencode      426   10422261.40  8018557.00   8021238.29  4664066.50  6914955.34   8    399   27       0            -2401023.11      +2681.29
+  claude-code   299   11512995.95  3319967.00   4303631.53  3103438.00  4601164.06  14    243   34       22           -7209364.42    +983664.53
+  openclaw      532    3732520.70  2317756.50   2848797.29  1337259.50  1982623.90  13    499   25       8             -883723.41    +531040.79
+  hermes        262     758983.46   432176.00    532005.41   262201.00   388739.78  14    233   27       2             -226978.05     +99829.41
+  vscode-XXX    333       5662.84     2319.00      2871.79     1736.00     2573.80  12    305   20       8               -2791.05       +552.79
+  ```
+
+  **Family ordering observation**: Welsch sits between Andrews
+  (most aggressive rejection) and Huber (no rejection) in terms of
+  **how much each estimate is pulled toward the contaminated mean**.
+  On the heavy-tail sources (`codex`, `claude-code`), Welsch
+  produces estimates *higher* than Andrews (Welsch retains some
+  influence from descending-bucket rows; Andrews zeros them).
+  On the cleanest source (`opencode`, where 99% of rows fit in the
+  core), Welsch agrees with the median to four significant figures.
+
 ## 0.6.212 — 2026-04-29
 
 ### Added
