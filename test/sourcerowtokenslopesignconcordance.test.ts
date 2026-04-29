@@ -493,3 +493,86 @@ test('render: shows allPt yes/NO column reflecting lensesAllAgreePoint', () => {
   assert.equal(r.sources[0]!.lensesAllAgreePoint, true);
   assert.match(out, /yes/);
 });
+
+// --- v0.6.228 refinement: directionalConfidenceScore + sort key ---
+
+test('build: directionalConfidenceScore == pointSignConcordance * sigDirectionalConcordance', () => {
+  const queue = mkSeries('s', Array.from({ length: 25 }, (_, i) => 100 + i * 35));
+  const r = buildSourceRowTokenSlopeSignConcordance(queue, {
+    bootstraps: 200,
+  });
+  for (const row of r.sources) {
+    const expected = row.pointSignConcordance * row.sigDirectionalConcordance;
+    assert.ok(
+      Math.abs(row.directionalConfidenceScore - expected) < 1e-12,
+      `expected ${expected}, got ${row.directionalConfidenceScore}`,
+    );
+  }
+});
+
+test('build: directionalConfidenceScore stays in [0, 1]', () => {
+  const queue = mkSeries('s', Array.from({ length: 30 }, (_, i) => 100 + i * 50));
+  const r = buildSourceRowTokenSlopeSignConcordance(queue, {
+    bootstraps: 200,
+  });
+  for (const row of r.sources) {
+    assert.ok(
+      row.directionalConfidenceScore >= 0 && row.directionalConfidenceScore <= 1,
+    );
+  }
+});
+
+test('build: directional-confidence-desc sort puts highest score first', () => {
+  const queues: QueueLine[] = [];
+  // Strong signal source (large slope, tight)
+  queues.push(...mkSeries('strong', Array.from({ length: 40 }, (_, i) => 100 + i * 200)));
+  // Weak signal (noisy near-flat)
+  queues.push(
+    ...mkSeries(
+      'weak',
+      Array.from({ length: 40 }, (_, i) =>
+        100 + i + (i % 7 === 0 ? 50 : 0) - (i % 5 === 0 ? 60 : 0),
+      ),
+    ),
+  );
+  const r = buildSourceRowTokenSlopeSignConcordance(queues, {
+    bootstraps: 250,
+    sort: 'directional-confidence-desc',
+  });
+  // First row's directionalConfidenceScore must be >= last row's
+  assert.ok(
+    r.sources[0]!.directionalConfidenceScore >=
+      r.sources[r.sources.length - 1]!.directionalConfidenceScore,
+  );
+});
+
+test('build: directional-confidence-asc is the reverse ordering of -desc on the same input', () => {
+  const queues: QueueLine[] = [];
+  queues.push(...mkSeries('a', Array.from({ length: 22 }, (_, i) => 100 + i * 80)));
+  queues.push(...mkSeries('b', Array.from({ length: 22 }, (_, i) => 100 + i * 30)));
+  queues.push(...mkSeries('c', Array.from({ length: 22 }, (_, i) => 100 + i * 5)));
+  const desc = buildSourceRowTokenSlopeSignConcordance(queues, {
+    bootstraps: 250,
+    sort: 'directional-confidence-desc',
+  });
+  const asc = buildSourceRowTokenSlopeSignConcordance(queues, {
+    bootstraps: 250,
+    sort: 'directional-confidence-asc',
+  });
+  const descScores = desc.sources.map((s) => s.directionalConfidenceScore);
+  const ascScores = asc.sources.map((s) => s.directionalConfidenceScore);
+  // Both should be sorted, in opposite directions.
+  for (let i = 1; i < descScores.length; i += 1) {
+    assert.ok(descScores[i - 1]! >= descScores[i]!);
+    assert.ok(ascScores[i - 1]! <= ascScores[i]!);
+  }
+});
+
+test('render: dirConf column appears in non-empty output', () => {
+  const queue = mkSeries('s', Array.from({ length: 18 }, (_, i) => 100 + i * 20));
+  const r = buildSourceRowTokenSlopeSignConcordance(queue, {
+    bootstraps: 200,
+  });
+  const out = renderSourceRowTokenSlopeSignConcordance(r);
+  assert.match(out, /dirConf/);
+});

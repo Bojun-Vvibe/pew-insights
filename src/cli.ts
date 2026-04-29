@@ -20818,6 +20818,8 @@ program
           'sig-concordance-desc',
           'sign-dispersion-desc',
           'sign-dispersion-asc',
+          'directional-confidence-asc',
+          'directional-confidence-desc',
           'rows',
           'source',
         ];
@@ -20848,6 +20850,8 @@ program
             | 'sig-concordance-desc'
             | 'sign-dispersion-desc'
             | 'sign-dispersion-asc'
+            | 'directional-confidence-asc'
+            | 'directional-confidence-desc'
             | 'rows'
             | 'source',
         });

@@ -119,6 +119,8 @@ export interface SourceRowTokenSlopeSignConcordanceOptions {
     | 'sig-concordance-desc'
     | 'sign-dispersion-desc'
     | 'sign-dispersion-asc'
+    | 'directional-confidence-asc'
+    | 'directional-confidence-desc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -156,6 +158,17 @@ export interface SourceRowTokenSlopeSignConcordanceRow {
   pointSignCounts: { plus: number; minus: number; zero: number };
   /** Normalised Shannon entropy of the 3-bin point-sign histogram, in [0, 1]. */
   signDispersion: number;
+  /**
+   * Composite directional-confidence score in [0, 1], defined as
+   * `pointSignConcordance * sigDirectionalConcordance`. Reaches 1
+   * iff every lens's point slope AND every lens's CI agree on the
+   * canonical direction; collapses to 0 if either factor is 0.
+   * Distinct from both inputs: a source can score
+   * `pointSignConcordance == 1` (unanimous direction) and still
+   * land at `directionalConfidenceScore == 0` if no lens's CI
+   * excludes zero on the canonical side.
+   */
+  directionalConfidenceScore: number;
 }
 
 export interface SourceRowTokenSlopeSignConcordanceReport {
@@ -195,6 +208,8 @@ const VALID_SORTS = [
   'sig-concordance-desc',
   'sign-dispersion-desc',
   'sign-dispersion-asc',
+  'directional-confidence-asc',
+  'directional-confidence-desc',
   'rows',
   'source',
 ] as const;
@@ -468,6 +483,7 @@ export function buildSourceRowTokenSlopeSignConcordance(
       dominantDirection,
       pointSignCounts: { plus, minus, zero },
       signDispersion,
+      directionalConfidenceScore: pointSignConcordance * sigDirectionalConcordance,
     });
   }
 
@@ -506,6 +522,10 @@ export function buildSourceRowTokenSlopeSignConcordance(
       b.sigDirectionalConcordance - a.sigDirectionalConcordance,
     'sign-dispersion-desc': (a, b) => b.signDispersion - a.signDispersion,
     'sign-dispersion-asc': (a, b) => a.signDispersion - b.signDispersion,
+    'directional-confidence-asc': (a, b) =>
+      a.directionalConfidenceScore - b.directionalConfidenceScore,
+    'directional-confidence-desc': (a, b) =>
+      b.directionalConfidenceScore - a.directionalConfidenceScore,
     rows: (a, b) => b.rowsKept - a.rowsKept,
     source: (a, b) => a.source.localeCompare(b.source),
   };
@@ -572,10 +592,10 @@ export function renderSourceRowTokenSlopeSignConcordance(
     return lines.join('\n');
   }
   lines.push(
-    'source           rows  canonSign  ptConcord  midConcord  sigConcord  +/-/0    domDir  signDisp  allPt  allSig',
+    'source           rows  canonSign  ptConcord  midConcord  sigConcord  dirConf  +/-/0    domDir  signDisp  allPt  allSig',
   );
   lines.push(
-    '---------------  ----  ---------  ---------  ----------  ----------  -------  ------  --------  -----  ------',
+    '---------------  ----  ---------  ---------  ----------  ----------  -------  -------  ------  --------  -----  ------',
   );
   for (const row of r.sources) {
     const counts = `${row.pointSignCounts.plus}/${row.pointSignCounts.minus}/${row.pointSignCounts.zero}`;
@@ -587,6 +607,7 @@ export function renderSourceRowTokenSlopeSignConcordance(
         row.pointSignConcordance.toFixed(4).padStart(9),
         row.midpointSignConcordance.toFixed(4).padStart(10),
         row.sigDirectionalConcordance.toFixed(4).padStart(10),
+        row.directionalConfidenceScore.toFixed(4).padStart(7),
         counts.padStart(7),
         row.dominantDirection.padStart(6),
         row.signDispersion.toFixed(4).padStart(8),
