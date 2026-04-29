@@ -12145,6 +12145,10 @@ import type {
   SourceRowTokenBootstrapSlopeCiReport,
   SourceRowTokenBootstrapSlopeCiRow,
 } from './sourcerowtokenbootstrapslopeci.js';
+import type {
+  SourceRowTokenJackknifeSlopeCiReport,
+  SourceRowTokenJackknifeSlopeCiRow,
+} from './sourcerowtokenjackknifeslopeci.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -14055,6 +14059,83 @@ export function renderSourceRowTokenBootstrapSlopeCi(
       s.bootStd.toFixed(4),
       (s.bootSkewMeanMinusMedian >= 0 ? '+' : '') +
         s.bootSkewMeanMinusMedian.toFixed(4),
+      (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
+      (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
+      s.ciWidth.toFixed(4),
+      s.ciContainsZero ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTbl));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenJackknifeSlopeCi(
+  r: SourceRowTokenJackknifeSlopeCiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-jackknife-slope-ci'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    confidence: ${r.confidence}    z: ${r.zCritical.toFixed(6)}    lambda: ${r.lambda}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert mode), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source jackknife (leave-one-out) CI for the Deming slope of per-row total_tokens against row index. Sibling to the v0.6.220 bootstrap CI lens. Deterministic resampling: drop one row at a time, refit Deming on the remaining n-1, derive jackknife SE = sqrt(((n-1)/n) * sum (theta_(-i) - jackMean)^2), Quenouille-Tukey bias = (n-1) * (jackMean - thetaFull), bias-corrected slope = thetaFull - bias, normal-approximation CI = biasCorrected +/- z * jackSe. Uniquely produces a bias estimate the bootstrap doesn't. ciContainsZero flags sources whose CI straddles zero.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token jackknife slope CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'slope',
+    'jackMean',
+    'jackSe',
+    'bias',
+    'biasCorrected',
+    'ciLower',
+    'ciUpper',
+    'ciWidth',
+    '0inCI?',
+  ];
+  const rowsTbl: string[][] = r.sources.map(
+    (s: SourceRowTokenJackknifeSlopeCiRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      (s.jackMean >= 0 ? '+' : '') + s.jackMean.toFixed(4),
+      s.jackSe.toFixed(4),
+      (s.bias >= 0 ? '+' : '') + s.bias.toFixed(4),
+      (s.biasCorrected >= 0 ? '+' : '') + s.biasCorrected.toFixed(4),
       (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
       (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
       s.ciWidth.toFixed(4),

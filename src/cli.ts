@@ -146,6 +146,7 @@ import {
   renderSourceRowTokenPassingBablokSlope,
   renderSourceRowTokenDemingSlope,
   renderSourceRowTokenBootstrapSlopeCi,
+  renderSourceRowTokenJackknifeSlopeCi,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -389,6 +390,7 @@ import { buildSourceRowTokenSiegelSlope } from './sourcerowtokensiegelslope.js';
 import { buildSourceRowTokenPassingBablokSlope } from './sourcerowtokenpassingbablokslope.js';
 import { buildSourceRowTokenDemingSlope } from './sourcerowtokendemingslope.js';
 import { buildSourceRowTokenBootstrapSlopeCi } from './sourcerowtokenbootstrapslopeci.js';
+import { buildSourceRowTokenJackknifeSlopeCi } from './sourcerowtokenjackknifeslopeci.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -9754,6 +9756,145 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenBootstrapSlopeCi(report) + '\n',
+          );
+        }
+      } catch (e) {
+         die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-jackknife-slope-ci')
+  .description(
+    "Per-source jackknife (leave-one-out) confidence interval for the Deming regression slope of per-row total_tokens against row index. Sibling to the v0.6.220 bootstrap-slope-CI lens, mechanically distinct: deterministic leave-one-out resampling (no RNG, no seed) instead of with-replacement bootstrap, classical jackknife SE = sqrt(((n-1)/n)*sum (theta_(-i) - jackMean)^2), Quenouille-Tukey bias = (n-1)*(jackMean - thetaFull), bias-corrected slope = thetaFull - bias, and a NORMAL-APPROXIMATION CI = biasCorrected +/- z*jackSe (vs the bootstrap's percentile CI). Uniquely produces a bias estimate the bootstrap doesn't. Use --alert-zero-in-ci to filter to only sources whose CI straddles zero.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio var(eps_y)/var(eps_x) for inner Deming fit; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--alert-zero-in-ci',
+    'only emit sources whose CI strictly contains zero (i.e. slope not significantly different from zero under the jackknife normal-approximation CI)',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'jack-se-desc' | 'bias-magnitude-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        alertZeroInCi?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'magnitude-desc',
+          'slope-desc',
+          'slope-asc',
+          'ci-width-desc',
+          'ci-width-asc',
+          'jack-se-desc',
+          'bias-magnitude-desc',
+          'ci-contains-zero-first',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenJackknifeSlopeCi(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          alertZeroInCi: opts.alertZeroInCi ?? false,
+          top,
+          sort: opts.sort as
+            | 'magnitude-desc'
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'ci-width-desc'
+            | 'ci-width-asc'
+            | 'jack-se-desc'
+            | 'bias-magnitude-desc'
+            | 'ci-contains-zero-first'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenJackknifeSlopeCi(report) + '\n',
           );
         }
       } catch (e) {
