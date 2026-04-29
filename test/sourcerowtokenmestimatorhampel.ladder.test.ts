@@ -341,3 +341,74 @@ test('hampel iterations bounded; converges on every source', () => {
     assert.ok(Number.isFinite(row.hampel));
   }
 });
+
+// ---------- pinned: family ordering observed in v0.6.211 live-smoke ----------
+
+test('pinned: under heavy contamination Hampel sits between Huber and Tukey', () => {
+  // Reproduces the 4-of-6-sources finding from the v0.6.211 live-smoke
+  // CHANGELOG: heavy-right-tail data -> Tukey < Hampel < Huber when
+  // the tail is dense enough that Hampel's descent region engages
+  // multiple rows AND Hampel's outer-knot c=8.5 lets some near-tail
+  // rows survive that Tukey's c=4.685 fully rejects.
+  const rng = lcg(2026);
+  let bracketed = 0;
+  let trials = 0;
+  for (let trial = 0; trial < 12; trial += 1) {
+    // 30 small, 5 large-but-not-cosmic outliers (the regime where
+    // Hampel sits in the middle, not at either extreme).
+    const bulk = Array.from({ length: 30 }, () => 100 + rng() * 50);
+    const outliers = Array.from({ length: 5 }, (_, i) => 5e3 + i * 3e3);
+    const xs = [...bulk, ...outliers];
+    const hampel = getHampel(xs);
+    const tukey = getTukey(xs);
+    const huber = getHuber(xs);
+    if (tukey - 1e-6 <= hampel && hampel <= huber + 1e-6) bracketed += 1;
+    trials += 1;
+  }
+  // Expect the Hampel-between ordering on the strong majority of
+  // trials in this regime.
+  assert.ok(
+    bracketed >= Math.ceil(trials * 0.75),
+    `Hampel between Tukey and Huber on only ${bracketed}/${trials} trials`,
+  );
+});
+
+test('pinned: hampel canonical c (8.5) rejects no more rows than tukey canonical c (4.685)', () => {
+  // Hampel's outer rejection threshold (c=8.5 MAD units) is much
+  // wider than Tukey's (c=4.685 MAD units), so on any data
+  // Hampel-rejected <= Tukey-rejected. This was true on every
+  // source in the v0.6.211 live-smoke.
+  const rng = lcg(311);
+  for (let trial = 0; trial < 6; trial += 1) {
+    const bulk = Array.from({ length: 40 }, () => 100 + rng() * 50);
+    const tail = Array.from({ length: 8 }, () => 1e3 + rng() * 1e6);
+    const xs = [...bulk, ...tail];
+    const hampelRow = buildSourceRowTokenMEstimatorHampel(mkSeries('s', xs), {
+      generatedAt: GEN,
+    }).sources[0]!;
+    const tukeyRow = buildSourceRowTokenMEstimatorTukey(mkSeries('s', xs), {
+      generatedAt: GEN,
+    }).sources[0]!;
+    assert.ok(
+      hampelRow.rejectedRows <= tukeyRow.rejectedRows,
+      `trial ${trial}: hampel-rej ${hampelRow.rejectedRows} > tukey-rej ${tukeyRow.rejectedRows}`,
+    );
+  }
+});
+
+test('pinned: descend bucket is non-empty when contamination crosses Tukey c but not Hampel c', () => {
+  // The signature of three-part vs single-knob redescent: rows in
+  // (b, c] MAD units (i.e. between 3.4 and 8.5 MAD from mu) are
+  // down-weighted but not zeroed by Hampel, while Tukey zeroes
+  // anything beyond ~4.685 MAD. In this regime the descend bucket
+  // should be populated.
+  const xs = [
+    100, 100, 101, 101, 102, 102, 103, 103, 104, 104,
+    // residuals at roughly 5-7 MAD from the bulk median (~102),
+    // MAD ~ 1.5, so residuals in [7.5, 10.5]:
+    112, 113, 114,
+  ];
+  const row = getHampelRow(xs);
+  // At least one row should land in the descending bucket.
+  assert.ok(row.descendingRows >= 1, `descendingRows ${row.descendingRows}`);
+});
