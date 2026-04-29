@@ -139,6 +139,7 @@ import {
   renderSourceRowTokenMEstimatorHampel,
   renderSourceRowTokenMEstimatorAndrews,
   renderSourceRowTokenMEstimatorWelsch,
+  renderSourceRowTokenMEstimatorCauchy,
   renderSourceRowTokenTheilSenSlope,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
@@ -376,6 +377,7 @@ import { buildSourceRowTokenMEstimatorTukey } from './sourcerowtokenmestimatortu
 import { buildSourceRowTokenMEstimatorHampel } from './sourcerowtokenmestimatorhampel.js';
 import { buildSourceRowTokenMEstimatorAndrews } from './sourcerowtokenmestimatorandrews.js';
 import { buildSourceRowTokenMEstimatorWelsch } from './sourcerowtokenmestimatorwelsch.js';
+import { buildSourceRowTokenMEstimatorCauchy } from './sourcerowtokenmestimatorcauchy.js';
 import { buildSourceRowTokenTheilSenSlope } from './sourcerowtokentheilsenslope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
@@ -8837,6 +8839,130 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMEstimatorWelsch(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-m-estimator-cauchy')
+  .description(
+    "Per-source Cauchy (Lorentzian) M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 by IRLS with mu_0 = median, s = MAD/0.6745, and the CAUCHY influence function psi(z) = z / (1 + (z/c)^2). Canonical tuning c = 2.3849 -> ~95% asymptotic relative efficiency at the normal. ROUNDS OUT M-ESTIMATOR COVERAGE: the only MONOTONE M-estimator with VANISHING TAIL INFLUENCE in the suite. Mechanically distinct from Huber (monotone but psi clips to constant +/- c forever -- bounded but constant nonzero tail), Tukey biweight (smooth polynomial with COMPACT support), Hampel (piecewise-linear three-part with hard outer cutoff), Andrews sine (sinusoidal with COMPACT support), and Welsch (Gaussian-kernel REDESCENDER with infinite support). Cauchy psi is monotone and infinite-support, with tail influence decaying like c^2/z (never increases past a peak, never reaches zero, never reaches a constant plateau). Reports a three-bucket residual partition keyed on WEIGHT MAGNITUDE: coreRows (w >= 0.5, |z| <= c -- the half-power knee), tailRows (0.05 <= w < 0.5, c < |z| <= c*sqrt(19) ~ 4.36c), farTailRows (w < 0.05, |z| > c*sqrt(19); very small but strictly positive -- Cauchy never assigns w = 0 to a finite z). cauchyMeanGap = cauchy - mean, cauchyMedianGap = cauchy - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-cauchy <f>',
+    'drop sources whose Cauchy M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--tuning <f>',
+    'Cauchy/Lorentzian tuning constant c (in MAD units). Weight = 1 / (1 + (z/c)^2); never exactly zero for finite z. Must be > 0. (default 2.3849 = canonical, ~95% ARE at the normal)',
+    '2.3849',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'cauchy-desc' (default) | 'cauchy-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|cauchyMeanGap| desc) | 'median-gap-desc' (|cauchyMedianGap| desc) | 'far-tail-desc' (farTailRows desc) | 'rows' | 'source'",
+    'cauchy-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minCauchy: string;
+        tuning: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minCauchy = Number.parseFloat(opts.minCauchy);
+        if (!Number.isFinite(minCauchy) || minCauchy < 0) {
+          throw new Error(
+            `--min-cauchy must be a finite, non-negative number (got ${opts.minCauchy})`,
+          );
+        }
+        const tuning = Number.parseFloat(opts.tuning);
+        if (!Number.isFinite(tuning) || !(tuning > 0)) {
+          throw new Error(
+            `--tuning must be a positive finite number (got ${opts.tuning})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'cauchy-desc',
+          'cauchy-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'far-tail-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorCauchy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minCauchy,
+          tuning,
+          top,
+          sort: opts.sort as
+            | 'cauchy-desc'
+            | 'cauchy-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'far-tail-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMEstimatorCauchy(report) + '\n');
         }
       } catch (e) {
         die(e);

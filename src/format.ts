@@ -12118,6 +12118,10 @@ import type {
   SourceRowTokenMEstimatorWelschRow,
 } from './sourcerowtokenmestimatorwelsch.js';
 import type {
+  SourceRowTokenMEstimatorCauchyReport,
+  SourceRowTokenMEstimatorCauchyRow,
+} from './sourcerowtokenmestimatorcauchy.js';
+import type {
   SourceRowTokenTheilSenSlopeReport,
   SourceRowTokenTheilSenSlopeRow,
 } from './sourcerowtokentheilsenslope.js';
@@ -13428,6 +13432,87 @@ export function renderSourceRowTokenMEstimatorWelsch(
     ],
   );
   lines.push(renderTableLocal(headers, rowsWelsch));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenMEstimatorCauchy(
+  r: SourceRowTokenMEstimatorCauchyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-m-estimator-cauchy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-cauchy: ${formatNumber(r.minCauchy)}    tuning: ${r.tuning}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinCauchy)} below min-cauchy, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Cauchy/Lorentzian MONOTONE M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 via IRLS with mu_0 = median, s = MAD/0.6745, and the CAUCHY influence function psi(z) = z / (1 + (z/c)^2). Canonical tuning c = ${r.tuning} -> ~95% ARE at the normal. ROUNDS OUT M-ESTIMATOR COVERAGE: the only MONOTONE M-estimator with VANISHING TAIL INFLUENCE in the suite -- distinct from Huber (monotone but psi clips to constant +/- c forever -- bounded but constant nonzero tail), Tukey/Hampel/Andrews (REDESCENDERS with COMPACT support), and Welsch (REDESCENDER with infinite Gaussian-decay support). Cauchy psi is monotone and infinite-support, with tail influence decaying like c^2/z. Reports a three-bucket residual partition keyed on WEIGHT MAGNITUDE: coreRows (w >= 0.5, |z| <= c -- the half-power knee), tailRows (0.05 <= w < 0.5, c < |z| <= c*sqrt(19) ~ 4.36c), farTailRows (w < 0.05, |z| > c*sqrt(19); very small but strictly positive -- Cauchy never assigns w = 0 to a finite z). cauchyMeanGap = cauchy - mean, cauchyMedianGap = cauchy - median.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Cauchy/Lorentzian monotone M-estimator (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'cauchy',
+    'mad',
+    'scale',
+    'iter',
+    'conv',
+    'core',
+    'tail',
+    'far-tail',
+    'cauchy-mean',
+    'cauchy-median',
+  ];
+  const rowsCauchy: string[][] = r.sources.map(
+    (s: SourceRowTokenMEstimatorCauchyRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.cauchy.toFixed(2),
+      s.mad.toFixed(2),
+      s.scale.toFixed(2),
+      String(s.iterations),
+      s.converged,
+      formatNumber(s.coreRows),
+      formatNumber(s.tailRows),
+      formatNumber(s.farTailRows),
+      (s.cauchyMeanGap >= 0 ? '+' : '') + s.cauchyMeanGap.toFixed(2),
+      (s.cauchyMedianGap >= 0 ? '+' : '') + s.cauchyMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsCauchy));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
