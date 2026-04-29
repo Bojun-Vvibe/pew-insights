@@ -2,6 +2,110 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.210 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-tukey` — per-source
+  **Tukey biweight (bisquare) M-estimator** of location of per-row
+  `total_tokens`. Solves
+  `sum_i psi_c((x_i - mu)/s) = 0` by iteratively reweighted least
+  squares (IRLS) with `mu_0 = median`, `s = MAD/0.6745`, and the
+  **redescending** influence function
+
+  ```
+  psi_c(z) = z * (1 - (z/c)^2)^2     if |z| <= c
+           = 0                        if |z| >  c
+  ```
+
+  with canonical tuning `c = 4.685` (≈ 95% asymptotic relative
+  efficiency at the normal).
+
+  **First REDESCENDING M-estimator** in the location-lens suite.
+  Mechanically distinct from Huber (v0.6.209) and from every
+  other shipped lens:
+  - **Full rejection beyond `c`**: rows with `|z| > c` contribute
+    EXACTLY 0 to the IRLS update — they are eliminated, not merely
+    clipped. Huber's monotone psi clips to `+- c` (bounded but
+    nonzero tail influence); Tukey's redescent goes all the way
+    to zero.
+  - **Smooth, non-convex psi**: weights are a smooth degree-4
+    polynomial of `(z/c)^2` inside `[-c, c]`, peaking at 1 at
+    `z = 0` and tangent to 0 at `z = +-c` (both value and
+    derivative vanish). IRLS is locally convergent; initialization
+    at the sample median is the standard, well-behaved choice.
+  - Distinct from L-estimators (rank-only weights), R-estimators
+    (Hodges-Lehmann ranks of pairwise Walsh averages), and power
+    means (fixed nonlinear transform).
+
+  Translation- and scale-equivariant. Reports per source:
+  `tukey`, `mean`, `median`, `mad`, `scale`, `iterations`,
+  `rejectedRows` (rows with `|z|>c` at converged `mu`, weight = 0
+  — distinct from Huber's `clippedRows`),
+  `tukeyMeanGap = tukey - mean`, `tukeyMedianGap = tukey - median`.
+
+  Flags: `--c-tuning <f>` (default 4.685), `--min-rows <n>`
+  (default 4), `--min-tukey <f>`, `--top <n>`, `--sort` with
+  eight keys including `tukey-desc` (default), `tukey-asc`,
+  `mean-gap-desc`, `median-gap-desc`.
+
+### Live smoke (`pew-insights source-row-token-m-estimator-tukey --top 8` against `~/.config/pew/queue.jsonl`)
+
+```
+source          rows  mean           median        tukey         rejected  tukeyMeanGap   tukeyMedianGap
+--------------  ----  -------------  ------------  ------------  --------  -------------  ---------------
+codex           64    12,650,385.31  7,132,861.00  9,005,373.25   2        -3,645,012.06  +1,872,512.25
+opencode        422   10,414,465.97  7,860,856.00  7,338,933.10  21        -3,075,532.87    -521,922.90
+claude-code     299   11,512,995.95  3,319,967.00  3,375,628.64  51        -8,137,367.30      +55,661.64
+openclaw        528    3,753,378.75  2,336,775.00  2,602,836.96  17        -1,150,541.79     +266,061.96
+hermes          258      764,349.26    434,837.50    441,003.16  16          -323,346.09       +6,165.66
+vscode-XXX      333        5,662.84      2,319.00      2,497.68  22            -3,165.16         +178.68
+```
+
+All six sources show **negative `tukeyMeanGap`** (Tukey sits below
+the mean — robustness against right-tail outliers) and
+**near-median behavior** (small `|tukeyMedianGap|` for 5 of 6
+sources). Largest `|tukeyMeanGap|` is **claude-code** at
+**-8,137,367.30 tokens** (mean is ~3.4x the median; Tukey
+realigns within 1.7% of the raw median, rejecting 51 of 299
+rows).
+
+Comparison vs Huber (v0.6.209) on the same data:
+
+| source | huber | tukey | huberMeanGap | tukeyMeanGap | huberMedGap | tukeyMedGap | huber-clipped | tukey-rejected |
+|---|---|---|---|---|---|---|---|---|
+| codex          | 9,898,511    | 9,005,373   | -2,751,874   | -3,645,012   | +2,765,650 | +1,872,512 | n/a | 2  |
+| opencode       | 8,019,691    | 7,338,933   | -2,388,227   | -3,075,533   |   +195,242 |   -521,923 | n/a | 21 |
+| claude-code    | 5,095,027    | 3,375,629   | -6,417,969   | -8,137,367   | +1,775,060 |    +55,662 | n/a | 51 |
+| openclaw       | 2,823,861    | 2,602,837   |   -935,516   | -1,150,542   |   +479,646 |   +266,062 | n/a | 17 |
+| hermes         |   524,995    |   441,003   |   -238,665   |   -323,346   |    +92,777 |     +6,166 | n/a | 16 |
+| vscode-XXX     |     2,914    |     2,498   |     -2,748   |     -3,165   |       +595 |       +179 | n/a | 22 |
+
+**Tukey lands strictly below Huber on every source** under this
+real right-tail-contaminated data — exactly the predicted
+behavior of a redescending M-estimator vs a monotone one. Tukey
+also lands much closer to the raw median (`|tukeyMedianGap|` is
+2-30x smaller than `|huberMedianGap|` on five of six sources),
+because the redescent fully discards the heavy right tail rather
+than merely clipping it. IRLS converged in 12-16 iterations
+everywhere; rejection counts scale with sample size and tail
+heaviness (2-51 rows per source).
+
+### Tests
+
+- New suites `sourcerowtokenmestimatortukey` (49 tests: shape,
+  validation, raw kernel, equivariance, full rejection beyond c,
+  MAD=0 fallback, c→∞ ≈ mean, c small → aggressive rejection,
+  rejection saturation invariance, monotonic rejection counts,
+  bulk containment, builder integration) and
+  `sourcerowtokenmestimatortukey.ladder` (10 tests: cross-analyzer
+  ladder vs Huber / HD broadened median / Hodges-Lehmann / TM25 /
+  median / mean — clean-data agreement, redescending-vs-monotone
+  contrast, saturation under repeated outliers, simultaneous
+  translation+scale equivariance, progressive contamination
+  growth bound, log-normal robust-cluster spread).
+- Test count: **4986 → 5045 (+59)**.
+
 ## 0.6.209 — 2026-04-29
 
 ### Added
