@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.227 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-cross-lens-agreement` —
+  the **first cross-lens diagnostic** for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SIX independent
+  CI lenses shipped between v0.6.220 and v0.6.225 (percentile
+  bootstrap, jackknife normal, BCa, studentized-t bootstrap, ABC,
+  profile-likelihood) and reports per source:
+
+  - the **15 pairwise lens-vs-lens interval Jaccard similarities**
+    (one per unordered pair of the six lenses);
+  - the **cross-lens agreement index** = mean Jaccard across the
+    15 pairs, in [0, 1];
+  - the **strict consensus interval** = intersection of all six
+    lens CIs (NaN endpoints if any pair is disjoint, surfaced as
+    `consensusIntervalIsEmpty`);
+  - the **loose union envelope** = `[min lower, max upper]` across
+    the six;
+  - `lensesAgree` = true iff every pair overlaps (= the strict
+    consensus is non-empty);
+  - the **disjoint-pair count** out of 15;
+  - the slope-point spread (max - min) and sample std across the
+    six lens point slopes (typically near zero — the six lenses
+    share the same Deming MLE point estimate; the *interesting*
+    cross-lens variability lives in the CI envelopes).
+
+  This is **NOT a new CI estimator**. It is a meta-diagnostic
+  that surfaces *disagreement* between the existing six. A source
+  with `agreementIndex` near 1 is one where the choice of CI lens
+  does not matter; a source with `agreementIndex` near 0 (or
+  `consensusIntervalIsEmpty = true`) is one where downstream
+  conclusions are lens-dependent and the analyst must look harder
+  before quoting any single CI.
+
+  Mechanically distinct from every prior subcommand in the suite
+  because it is a **consumer**, not a producer, of CI output.
+
+  Knobs: `--confidence`, `--lambda`, `--bootstraps`, `--seed`
+  (forwarded identically to all six underlying lenses for an
+  apples-to-apples comparison); `--alert-disagree` (filter to
+  sources whose six lenses fail to all-overlap); `--alert-zero-in-union`
+  (filter to sources whose loose envelope still straddles zero);
+  `--top`; `--sort` over `agreement-asc` (default; least-agreeing
+  first) | `agreement-desc` | `consensus-width-desc` |
+  `consensus-width-asc` | `union-width-desc` | `union-width-asc` |
+  `slope-spread-desc` | `rows` | `source`.
+
+  ### Live-smoke
+
+  Real run on the local `~/.config/pew/queue.jsonl` (1,973 rows
+  across 6 sources; the in-editor source name has been redacted
+  to `vscode-redacted` below; default sort `agreement-asc`):
+
+  ```
+  source           rows  agreeIdx  djPairs  consensusW    unionW        slopeSpread   agree?
+  ---------------  ----  --------  -------  ------------  ------------  ------------  ------
+  opencode          445  0.118323        2         EMPTY  112608535.3768        0.0000      NO
+  codex              64  0.118526        4         EMPTY  187126107.5383        0.0000      NO
+  vscode-redacted   333  0.162075        3         EMPTY      138943.1319        0.0000      NO
+  openclaw          551  0.179484        3         EMPTY   37249750.8062        0.0000      NO
+  claude-code       299  0.196870        3         EMPTY  222244023.0274        0.0000      NO
+  hermes            281  0.216962        3         EMPTY    6718333.4154        0.0000      NO
+  ```
+
+  Highlights:
+
+  - **All six sources have an empty strict consensus interval** —
+    on this corpus the six lenses *always* disagree somewhere. The
+    `consensusW` column is `EMPTY` everywhere; `lensesAgree` is `NO`
+    everywhere. This is a strong empirical statement that the
+    practical CI for the Deming slope on this dataset depends
+    materially on which of the six lenses you pick.
+  - **`opencode` (445 rows)** has the **lowest cross-lens
+    agreement index (0.118)** and only **2 disjoint pairs** out
+    of 15. Together these mean: most pairs of lenses do overlap,
+    but their overlap is small relative to the union — the lenses
+    span very different intervals while sharing thin slivers.
+  - **`codex` (64 rows)** has the **highest disjoint-pair count
+    (4 of 15)**: with only 64 rows, the asymptotic-flavored lenses
+    (jackknife normal, profile-likelihood) and the resampling
+    lenses produce intervals that simply do not overlap on four
+    pair combinations.
+  - **`hermes` (281 rows)** is the closest the corpus comes to
+    cross-lens agreement (`agreementIndex = 0.217`); even there,
+    the six lenses still fail to all-overlap. Useful as a
+    practical worked example: the cross-lens-agreement diagnostic
+    is **never** a free pass — it is a triage signal that points
+    at sources where the choice of CI matters most (top of the
+    `agreement-asc` sort).
+  - **`slopeSpread = 0.0000` everywhere** is a *correct* signal,
+    not a bug: all six lenses centre on the same Deming MLE point
+    estimate; the diagnostic value of this subcommand lives
+    entirely in the CI-envelope columns (`agreeIdx`, `djPairs`,
+    `consensusW`, `unionW`).
+
 ## 0.6.226 — 2026-04-29
 
 ### Added
