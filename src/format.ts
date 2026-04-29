@@ -12085,6 +12085,10 @@ import type {
   SourceRowTokenTrimMean20Report,
   SourceRowTokenTrimMean20Row,
 } from './sourcerowtokentrimmean20.js';
+import type {
+  SourceRowTokenTrimMean30Report,
+  SourceRowTokenTrimMean30Row,
+} from './sourcerowtokentrimmean30.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -12285,6 +12289,75 @@ export function renderSourceRowTokenTrimMean20(
     ],
   );
   lines.push(renderTableLocal(headers, rows20));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenTrimMean30(
+  r: SourceRowTokenTrimMean30Report,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-trim-mean-30'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-trim-mean: ${formatNumber(r.minTrimMean)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinTrimMean)} below min-trim-mean, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source 30 % symmetrically trimmed mean of per-row total_tokens: drop the bottom k = floor(0.30 n) and top k order statistics, then mean the central n - 2k. Symmetric L-estimator with 30 % breakdown — strictly more robust than every shipped trim-mean lens (TM-10/TM-20/TM-25), strictly less than the median (50 %). Translation- and scale-equivariant. tmMeanGap = trim_mean - mean is reported as a free signal: negative means the raw mean is being pulled up by an upper tail that the trimmed mean filters out; positive means a lower tail is dragging it down.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token 30 %-trimmed mean (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'k/tail',
+    'lo',
+    'hi',
+    'mean',
+    'trim-mean',
+    'tm-mean',
+  ];
+  const rows30: string[][] = r.sources.map(
+    (s: SourceRowTokenTrimMean30Row) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      formatNumber(s.trimmedPerTail),
+      s.loBoundary.toFixed(2),
+      s.hiBoundary.toFixed(2),
+      s.mean.toFixed(2),
+      s.trimMean.toFixed(2),
+      (s.tmMeanGap >= 0 ? '+' : '') + s.tmMeanGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rows30));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
