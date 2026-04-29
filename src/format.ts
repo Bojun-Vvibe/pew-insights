@@ -13493,6 +13493,7 @@ export function renderSourceRowTokenMEstimatorCauchy(
     'far-tail',
     'cauchy-mean',
     'cauchy-median',
+    'c/med',
   ];
   const rowsCauchy: string[][] = r.sources.map(
     (s: SourceRowTokenMEstimatorCauchyRow) => [
@@ -13510,6 +13511,9 @@ export function renderSourceRowTokenMEstimatorCauchy(
       formatNumber(s.farTailRows),
       (s.cauchyMeanGap >= 0 ? '+' : '') + s.cauchyMeanGap.toFixed(2),
       (s.cauchyMedianGap >= 0 ? '+' : '') + s.cauchyMedianGap.toFixed(2),
+      Number.isFinite(s.cauchyMedianRatio)
+        ? s.cauchyMedianRatio.toFixed(3)
+        : 'NaN',
     ],
   );
   lines.push(renderTableLocal(headers, rowsCauchy));

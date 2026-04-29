@@ -211,6 +211,19 @@ export interface SourceRowTokenMEstimatorCauchyRow {
   cauchyMeanGap: number;
   /** Signed gap cauchy - median. */
   cauchyMedianGap: number;
+  /**
+   * Cauchy estimate as a ratio of the sample median:
+   * `cauchy / median` when `median > 0`; `1` when both `cauchy` and
+   * `median` are exactly zero (degenerate all-zero case); `NaN`
+   * when `median = 0` but `cauchy != 0` (cannot form a ratio).
+   * Always within `[0, +inf)` on non-negative input. A unitless
+   * dimensionless diagnostic comparing the robust M-estimate to
+   * the classical median; values near `1.0` mean Cauchy and median
+   * agree closely (symmetric central bulk), values away from `1.0`
+   * indicate the IRLS-weighted center has been pulled off the
+   * median by the asymmetric tail.
+   */
+  cauchyMedianRatio: number;
 }
 
 export interface SourceRowTokenMEstimatorCauchyReport {
@@ -544,6 +557,12 @@ export function buildSourceRowTokenMEstimatorCauchy(
       farTailRows,
       cauchyMeanGap: mu - meanv,
       cauchyMedianGap: mu - medianv,
+      cauchyMedianRatio:
+        medianv > 0
+          ? mu / medianv
+          : medianv === 0 && mu === 0
+            ? 1
+            : NaN,
     });
   }
 

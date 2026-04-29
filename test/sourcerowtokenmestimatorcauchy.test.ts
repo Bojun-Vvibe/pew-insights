@@ -381,3 +381,24 @@ test('builder: echoed options round-trip', () => {
   assert.equal(r.windowEnd, '2026-05-01T00:00:00.000Z');
   assert.equal(r.generatedAt, GEN);
 });
+
+test('builder: cauchyMedianRatio = cauchy / median when median > 0', () => {
+  const q = mkSeries('s1', [10, 12, 14, 16, 18, 20]);
+  const r = buildSourceRowTokenMEstimatorCauchy(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.ok(row.median > 0);
+  assert.ok(
+    Math.abs(row.cauchyMedianRatio - row.cauchy / row.median) < 1e-12,
+  );
+  // For symmetric data the ratio should sit very close to 1.
+  assert.ok(Math.abs(row.cauchyMedianRatio - 1) < 0.05);
+});
+
+test('builder: cauchyMedianRatio = 1 when median = 0 and cauchy = 0 (all-zero edge case)', () => {
+  const q = mkSeries('s1', [0, 0, 0, 0, 0]);
+  const r = buildSourceRowTokenMEstimatorCauchy(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(row.median, 0);
+  assert.equal(row.cauchy, 0);
+  assert.equal(row.cauchyMedianRatio, 1);
+});
