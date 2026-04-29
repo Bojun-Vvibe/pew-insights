@@ -2,6 +2,107 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.214 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-theil-sen-slope` — per-source
+  **Theil-Sen median pairwise slope** of per-row `total_tokens`
+  against row index, in tokens per row. R-estimator: enumerate the
+  `C(n,2)` pairwise slopes
+
+  ```
+  s_{ij} = (x_j - x_i) / (j - i)   for i < j
+  slope     = median(s_{ij})
+  intercept = median_i ( x_i - slope * i )
+  ```
+
+  Asymptotic breakdown ~29.3 % — robust to roughly 3 in 10 outlier
+  rows (the famous Theil-Sen breakdown). Translation- and
+  scale-equivariant in `x`.
+
+  **First ROBUST PAIRWISE-SLOPE TREND lens**, **first PER-ROW (not
+  per-day) trend slope**, and the **non-parametric POINT ESTIMATOR
+  sibling** to `source-row-token-mann-kendall-trend` (which gives
+  the rank-correlation test and a p-value, but **not** the slope
+  magnitude in tokens-per-row). Mechanically distinct from every
+  previously shipped lens:
+
+  - **vs `source-daily-token-trend-slope` (OLS, breakdown 0 %)**:
+    that lens fits ordinary least squares on **daily aggregates**
+    and minimizes squared residuals, so a single anomalously big
+    day can swing the slope by an arbitrary amount. Theil-Sen here
+    works on the **raw per-row stream** (no daily aggregation; the
+    natural unit of the queue) and takes the **median of pairwise
+    slopes**.
+  - **vs the M-estimator family (Huber/Tukey/Hampel/Andrews/Welsch
+    — v0.6.209-v0.6.213)**: those are **location** estimators
+    (one robust mean per source) computed by IRLS on residuals
+    from a single center. Theil-Sen is a **trend / slope**
+    estimator computed by enumerating `C(n,2)` pairwise slopes and
+    taking their median. No IRLS, no residual loop, no tuning
+    constant, no scale parameter.
+  - **vs `source-row-token-mann-kendall-trend`**: Mann-Kendall is
+    the **test** (rank-correlation tau + p-value); Theil-Sen is
+    the **point estimator** of the slope itself. Shipping both
+    gives a complete non-parametric trend picture.
+
+  Reports a unique **three-bucket PAIR partition** keyed on the
+  **sign** of each pairwise slope:
+
+  - `pairsPositive`  pairs with `s > 0`
+  - `pairsNegative`  pairs with `s < 0`
+  - `pairsZero`      pairs with `s == 0`
+
+  with `pairsPositive + pairsNegative + pairsZero = n*(n-1)/2`
+  and `(pairsPositive - pairsNegative)` exactly equal to the
+  sign-resolved Mann-Kendall `S` statistic — making this lens a
+  mechanically faithful sibling to the Mann-Kendall lens.
+
+  Free byproducts: `mean`, `median`, `firstX`, `lastX`,
+  `naiveSlope = (lastX - firstX)/(n-1)` (non-robust endpoint
+  reference for comparison), `slopeMagnitude = |slope|`,
+  `slopeSign in {'up','down','flat'}`, and `intercept` from the
+  median-residual formula.
+
+  CLI flags: `--since`, `--until`, `--source`, `--min-rows`
+  (absolute floor 4), `--min-slope-magnitude` (cohort selector),
+  `--max-pairs` (default 5_000_000 ~ n=3162; guards O(n^2)
+  memory), `--top`, `--sort` (`magnitude-desc` default,
+  `slope-desc`, `slope-asc`, `positive-desc`, `negative-desc`,
+  `rows`, `source`), `--json`.
+
+  Live-smoke against real `~/.config/pew/queue.jsonl`
+  (1,919 rows, 6 sources):
+
+  ```
+  source            rows  mean         median      first       last         naive        slope         sign  +pairs  -pairs  0pairs
+  ----------------  ----  -----------  ----------  ----------  -----------  -----------  ------------  ----  ------  ------  ------
+  codex             64    12650385.31  7132861.00  2695764.00  8565718.00   +93173.8730  +123739.4516  up    1,184   832     0
+  claude-code       299   11512995.95  3319967.00  1470723.00   201134.00    -4260.3658   +31445.1270  up    27,793  16,758  0
+  opencode          427   10428028.63  8078254.00    96926.00  12884867.00  +30018.6408   +14597.1786  up    53,941  37,010  0
+  openclaw          533    3726644.61  2310411.00   721224.00    600569.00    -226.7951    -5297.7660  down  51,286  90,492  0
+  hermes            263     758778.88   432218.00  2061198.00    705178.00   -5175.6489     -586.2500  down  16,254  18,199  0
+  vscode-redacted   333       5662.84     2319.00      458.00      9990.00      +28.7108      +1.9634  up    29,290  25,977  11
+  ```
+
+  Notes from the live data: `claude-code` shows the cleanest
+  divergence between the two estimators — its **naive endpoint
+  slope is -4,260 tokens/row** (last row was much smaller than
+  first), but the **Theil-Sen slope is +31,445 tokens/row**
+  (strongly positive). The endpoint slope was being dragged
+  negative by an outlier final row; Theil-Sen, which downweights
+  individual rows, sees the dominant upward trend across the
+  middle of the series. Similarly `codex` shows a +93k naive vs
+  +124k Theil-Sen, both up but with the robust estimate stronger.
+  `openclaw` is the only source where the robust slope is more
+  negative than naive, and is the only source where pairsNegative
+  meaningfully exceeds pairsPositive (90,492 vs 51,286) —
+  consistent with a sustained downward drift across its 533 rows.
+  `vscode-redacted` is the only source with any tied pairs (11
+  zero-slope pairs out of 55,278), reflecting the heavy presence
+  of identical small `total_tokens` values in its row stream.
+
 ## 0.6.213 — 2026-04-29
 
 ### Added
