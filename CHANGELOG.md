@@ -75,7 +75,38 @@ All notable changes to this project will be documented in this file.
   `median-gap-desc` (`|hlMedianGap|` desc) / `rows` /
   `source`), `--json`.
 
-  Test count: 4,823 → 4,867 (+44 new).
+  Test count: 4,823 → 4,877 (+54 new — 44 unit + property tests
+  in `sourcerowtokenhodgeslehmann.test.ts`, plus 10 cross-analyzer
+  ladder tests in `sourcerowtokenhodgeslehmann.ladder.test.ts`
+  exercising HL vs median agreement on symmetric distributions,
+  HL vs TM-30 agreement at low contamination and divergence at
+  high contamination, and HL's sensitivity to spacing changes
+  in trimmed tails that TM-30 ignores by construction).
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (6 sources,
+  1,892 rows, all `hlMeanGap < 0` and all `hlMedianGap > 0` —
+  HL sits **between** the raw mean and the sample median for
+  every source, exactly as expected for a finite-sample
+  R-estimator on right-skewed token-count distributions.
+  `claude-code` shows the largest `|hlMeanGap|` of -5.11 M
+  tokens, confirming it has the heaviest right tail; the
+  largest `hlMedianGap` of +3.08 M tokens shows that HL is
+  pulled noticeably above the L-estimator median by the
+  Walsh-average symmetrization):
+
+  ```
+  pew-insights source-row-token-hodges-lehmann
+  sources: 6 (shown 6)    rows: 1,892    min-rows: 4    sort: hl-desc
+
+  source          rows  walsh    mean         median      hl           hl-mean      hl-median
+  --------------  ----  -------  -----------  ----------  -----------  -----------  -----------
+  codex           64    2,080    12650385.31  7132861.00  10128945.25  -2521440.06  +2996084.25
+  opencode        418   87,571   10393428.11  7820944.50  8002699.50   -2390728.61  +181755.00
+  claude-code     299   44,850   11512995.95  3319967.00  6401286.75   -5111709.20  +3081319.75
+  openclaw        524   137,550  3775457.44   2348988.50  2919957.25   -855500.19   +570968.75
+  hermes          254   32,385   769363.98    434837.50   550197.00    -219166.98   +115359.50
+  vscode-XXX      333   55,611   5662.84      2319.00     2983.00      -2679.84     +664.00
+  ```
 
 ## 0.6.206 — 2026-04-29
 
