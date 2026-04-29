@@ -150,6 +150,7 @@ import {
   renderSourceRowTokenBcaBootstrapSlopeCi,
   renderSourceRowTokenStudentizedBootstrapSlopeCi,
   renderSourceRowTokenAbcBootstrapSlopeCi,
+  renderSourceRowTokenProfileLikelihoodSlopeCi,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -397,6 +398,7 @@ import { buildSourceRowTokenJackknifeSlopeCi } from './sourcerowtokenjackknifesl
 import { buildSourceRowTokenBcaBootstrapSlopeCi } from './sourcerowtokenbcabootstrapslopeci.js';
 import { buildSourceRowTokenStudentizedBootstrapSlopeCi } from './sourcerowtokenstudentizedbootstrapslopeci.js';
 import { buildSourceRowTokenAbcBootstrapSlopeCi } from './sourcerowtokenabcbootstrapslopeci.js';
+import { buildSourceRowTokenProfileLikelihoodSlopeCi } from './sourcerowtokenprofilelikelihoodslopeci.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -10453,6 +10455,179 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenAbcBootstrapSlopeCi(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-profile-likelihood-slope-ci')
+  .description(
+    "Per-source profile-likelihood confidence interval for the v0.6.219 Deming regression slope of per-row total_tokens against row index. Sixth uncertainty-quantification lens, mechanically distinct from every prior lens (v0.6.220 percentile bootstrap CI, v0.6.221 jackknife normal CI, v0.6.222 BCa bootstrap CI, v0.6.223 studentized-t bootstrap CI, v0.6.224 ABC CI): inverts the Wilks log-likelihood ratio statistic W(beta) = 2n*log(R(beta)/R(thetaHat)) at the chi2_{1, 1-alpha} = z_{1-alpha/2}^2 threshold. Uses NO Monte-Carlo bootstrap, NO jackknife, NO asymptotic SE -- finds the two roots of W against the chi-square level curve by bracket-doubling + bisection. Reports point slope, profile RSS at MLE, ciLower/ciUpper/ciWidth, signed ciAsymmetry (which the symmetric jackknife/studentized-t CIs cannot capture), wilksAtZero (the LR statistic for the null slope=0), rejectZero (LR test verdict at the requested confidence -- direct LR-based 'no trend' test, distinct from any CI-straddles-zero check), and bracketDoublingsLower/Upper/bracketSaturated diagnostics. Use --alert-zero-in-ci to filter to sources whose CI straddles zero, --alert-reject-zero to surface only sources where the LR test rejects H0: slope=0.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio var(eps_y)/var(eps_x) for the Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bisection-iterations <n>',
+    'bisection rounds per CI endpoint after bracket expansion; integer >= 1 (default 60)',
+    '60',
+  )
+  .option(
+    '--max-bracket-doublings <n>',
+    'hard cap on bracket-doubling rounds when expanding outward to find a sign change of W(beta) - chi2Threshold; integer >= 1 (default 64). If hit, the corresponding CI endpoint is conservative and the source surfaces in bracketSaturatedCount.',
+    '64',
+  )
+  .option(
+    '--alert-zero-in-ci',
+    'only emit sources whose CI strictly contains zero (i.e. slope not significantly different from zero under the profile-likelihood CI)',
+  )
+  .option(
+    '--alert-reject-zero',
+    'only emit sources where the Wilks LR test rejects H0: slope = 0 at the requested confidence (wilksAtZero > chi2Threshold)',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'ci-asymmetry-magnitude-desc' | 'wilks-at-zero-desc' | 'ci-contains-zero-first' | 'reject-zero-first' | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bisectionIterations: string;
+        maxBracketDoublings: string;
+        alertZeroInCi?: boolean;
+        alertRejectZero?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bisectionIterations = Number.parseInt(opts.bisectionIterations, 10);
+        if (!Number.isInteger(bisectionIterations) || bisectionIterations < 1) {
+          throw new Error(
+            `--bisection-iterations must be a positive integer (got ${opts.bisectionIterations})`,
+          );
+        }
+        const maxBracketDoublings = Number.parseInt(opts.maxBracketDoublings, 10);
+        if (!Number.isInteger(maxBracketDoublings) || maxBracketDoublings < 1) {
+          throw new Error(
+            `--max-bracket-doublings must be a positive integer (got ${opts.maxBracketDoublings})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'magnitude-desc',
+          'slope-desc',
+          'slope-asc',
+          'ci-width-desc',
+          'ci-width-asc',
+          'ci-asymmetry-magnitude-desc',
+          'wilks-at-zero-desc',
+          'ci-contains-zero-first',
+          'reject-zero-first',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenProfileLikelihoodSlopeCi(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bisectionIterations,
+          maxBracketDoublings,
+          alertZeroInCi: opts.alertZeroInCi ?? false,
+          alertRejectZero: opts.alertRejectZero ?? false,
+          top,
+          sort: opts.sort as
+            | 'magnitude-desc'
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'ci-width-desc'
+            | 'ci-width-asc'
+            | 'ci-asymmetry-magnitude-desc'
+            | 'wilks-at-zero-desc'
+            | 'ci-contains-zero-first'
+            | 'reject-zero-first'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenProfileLikelihoodSlopeCi(report) + '\n',
           );
         }
       } catch (e) {

@@ -12161,6 +12161,10 @@ import type {
   SourceRowTokenAbcBootstrapSlopeCiReport,
   SourceRowTokenAbcBootstrapSlopeCiRow,
 } from './sourcerowtokenabcbootstrapslopeci.js';
+import type {
+  SourceRowTokenProfileLikelihoodSlopeCiReport,
+  SourceRowTokenProfileLikelihoodSlopeCiRow,
+} from './sourcerowtokenprofilelikelihoodslopeci.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -14433,6 +14437,95 @@ export function renderSourceRowTokenAbcBootstrapSlopeCi(
       s.dotConcentrationTop2.toFixed(4),
       formatNumber(s.degenerateDotCount),
       s.ciContainsZero ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTbl));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenProfileLikelihoodSlopeCi(
+  r: SourceRowTokenProfileLikelihoodSlopeCiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights source-row-token-profile-likelihood-slope-ci',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    confidence: ${r.confidence}    chi2-threshold: ${r.chi2Threshold.toFixed(6)}    lambda: ${r.lambda}    bisection-iters: ${r.bisectionIterations}    max-bracket-doublings: ${r.maxBracketDoublings}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    alert-reject-zero: ${r.alertRejectZero ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert), ${formatNumber(r.droppedNotRejectZero)} LR fails to reject zero (alert), ${formatNumber(r.droppedBelowTopCap)} below top cap; bracket-saturated: ${formatNumber(r.bracketSaturatedCount)}`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source profile-likelihood CI for the v0.6.219 Deming regression slope, by inverting the Wilks LR statistic W(beta) = 2n*log(R(beta)/R(thetaHat)) at the chi2_{1, 1-alpha} threshold. Sixth UQ lens; the only one that uses no resampling and no asymptotic SE -- it bisects the two crossings of W against the chi-square level curve. Reports point slope, profile RSS at MLE, ciLower/ciUpper/ciWidth, signed ciAsymmetry (the symmetric jackknife/studentized-t CIs cannot capture this), wilksAtZero (the LR statistic for the null slope=0), rejectZero (LR test verdict at the requested confidence), and the bracket-doubling counts that surfaced. Saturated rows have one or both endpoints capped at maxBracketDoublings and the corresponding side is a conservative lower bound on the true endpoint.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token profile-likelihood slope CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'slope',
+    'rssMle',
+    'ciLower',
+    'ciUpper',
+    'ciWidth',
+    'asymm',
+    '0inCI?',
+    'wilks0',
+    'rej0?',
+    'brkLo',
+    'brkHi',
+    'sat?',
+  ];
+  const rowsTbl: string[][] = r.sources.map(
+    (s: SourceRowTokenProfileLikelihoodSlopeCiRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      Number.isFinite(s.rssAtMle) ? s.rssAtMle.toFixed(2) : 'inf',
+      (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
+      (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
+      s.ciWidth.toFixed(4),
+      (s.ciAsymmetry >= 0 ? '+' : '') + s.ciAsymmetry.toFixed(4),
+      s.ciContainsZero ? 'yes' : 'no',
+      Number.isFinite(s.wilksAtZero)
+        ? s.wilksAtZero.toFixed(2)
+        : s.wilksAtZero === Number.POSITIVE_INFINITY
+          ? 'inf'
+          : 'nan',
+      s.rejectZero ? 'yes' : 'no',
+      String(s.bracketDoublingsLower),
+      String(s.bracketDoublingsUpper),
+      s.bracketSaturated ? 'yes' : 'no',
     ],
   );
   lines.push(renderTableLocal(headers, rowsTbl));
