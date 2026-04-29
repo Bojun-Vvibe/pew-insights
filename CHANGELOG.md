@@ -2,6 +2,116 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.232 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-asymmetry-concordance` —
+  per-source CI-SHAPE diagnostic for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SAME six per-source
+  CIs that v0.6.227–v0.6.231 consume. **Mechanically distinct from
+  ALL FIVE prior cross-lens diagnostics** because it is the only
+  one that touches CI shape around the point estimate, rather
+  than the CI as an interval:
+
+    - v0.6.227 set-overlap (Jaccard): how much do the CI intervals
+      overlap as sets? Loses both location and shape.
+    - v0.6.228 sign concordance: do the lenses agree on the SIGN
+      of the slope? Pure direction.
+    - v0.6.229 width concordance: do the lenses agree on CI WIDTH?
+      Pure precision.
+    - v0.6.230 overlap-graph: TOPOLOGY of the overlap relation.
+      Reports IF lenses overlap, not how the CI is shaped.
+    - v0.6.231 midpoint-dispersion: spread of the CI CENTERS.
+      Pure location.
+    - This module: SHAPE — for each lens compute
+      `asym_i = (ciUpper_i - slope_i) - (slope_i - ciLower_i)
+              = ciUpper_i + ciLower_i - 2 * slope_i`.
+      Sign(asym_i) tells you which side of the point estimate is
+      WIDER. Two CIs with identical midpoint, width, and peer
+      overlap can still have OPPOSITE asymmetry signs — the right
+      tail is fat for one lens, the left tail is fat for the
+      other — and no other module surfaces that.
+
+  Per source we report:
+
+    - `asymmetries` — 6-vector of `asym_i` in canonical lens order
+      (bootstrap, jackknife, bca, studentizedT, abc,
+      profileLikelihood);
+    - `signs` — 6-vector of `{-1, 0, +1}`;
+    - `pluses`, `zeros`, `minuses` — bucket counts (sum to 6);
+    - `dominantSign` — strict-majority sign in `{-1, 0, +1}`, or
+      `null` when no bucket exceeds 3 of 6 (ties / pluralities);
+    - `concordance` — `max(pluses, zeros, minuses) / 6` in
+      `[1/6, 1]`. 1.0 means all six lenses agree on which side is
+      wider; 1/6 is maximally split (rare with only 6);
+    - `concordanceMinusBaseline` — `concordance − 1/3`; positive
+      means more agreement than uniform-random over `{-1, 0, +1}`;
+    - `dissenters` — list of lens names whose sign disagrees with
+      the dominant sign. Empty when concordance == 1.0 OR when
+      there's no dominant sign (tie);
+    - `meanAsym` — signed mean asymmetry (positive ⇒ right-skewed
+      CI on average across the six lenses);
+    - `meanAbsAsym` — mean absolute asymmetry;
+    - `meanWidth` — mean CI width;
+    - `meanAbsAsymOverWidth` — `meanAbsAsym / meanWidth` in
+      `[0, 1]`. The headline diagnostic: 0 == perfectly symmetric
+      on every lens; 1 == every lens has the point estimate at one
+      of the CI endpoints (extreme asymmetry);
+    - `argMaxAbsLens`, `argMaxAbsValue` — name + signed asymmetry
+      of the lens with the largest `|asym_i|`;
+    - `unanimousAsymmetric` — boolean: all 6 signs are non-zero
+      AND identical;
+    - `unanimousSymmetric` — boolean: all 6 asymmetries are
+      EXACTLY zero;
+    - `mixed` — boolean: the 6 signs include BOTH +1 and -1 (the
+      lenses disagree on which side of the point estimate is
+      wider — a red flag).
+
+  Sort keys: `concordance-desc` (default), `concordance-asc`,
+  `mean-abs-asym-{desc,asc}`, `mean-abs-over-width-{desc,asc}`,
+  `mean-asym-{desc,asc}`, `arg-max-abs-{desc,asc}`,
+  `pluses-desc`, `minuses-desc`, `zeros-desc`,
+  `dominant-sign-{desc,asc}`, `rows`, `source`. Filters:
+  `--alert-mixed` (sign vector contains both + and −) and
+  `--alert-unanimous` (`unanimousAsymmetric == true`). Standard
+  `--top N` cap with `droppedBelowTopCap` accounting.
+
+  Sign computation uses an exact-zero comparator: each lens
+  kernel already controls its own numerical regime, and a
+  deliberately-symmetric construction returns zero exactly.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, --since 2026-04-15)
+
+```
+pew-insights source-row-token-slope-ci-asymmetry-concordance
+as of: 2026-04-29T18:11:09.741Z    sources: 6 (with all lenses 6, shown 6)    rows: 1994    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-mixed: no    alert-unanimous: no    top: -    sort: concordance-desc
+dropped: 0 missing-from-some-lens, 0 not-mixed (alert), 0 not-unanimous (alert), 0 below top cap; mixed: 6; unanimous-asym: 0; unanimous-sym: 0
+
+source           rows  +/0/-  dom  conc    cMinB    meanAsym      meanAbs      mWidth      mAbs/W   argMaxLens          argMaxVal     mix  unA  uS
+---------------  ----  -----  ---  ------  -------  ------------  -----------  ----------  -------  ------------------  ------------  ---  ---  ---
+claude-code       299  5/0/1    +  0.8333   0.5000  26717574.3290  26992399.6862  49992590.1907   0.5399  bca                 153055532.5570  yes   NO   NO
+codex              64  4/0/2    +  0.6667   0.3333  8292448.6576  11944899.8129  62842053.9993   0.1901  bca                 31686262.9787  yes   NO   NO
+hermes            288  2/0/4    -  0.6667   0.3333   132169.9535  140734.4495  1473472.1817   0.0955  bootstrap            756963.0796  yes   NO   NO
+openclaw          558  2/0/4    -  0.6667   0.3333  -553761.4083  1595931.1912  7775782.5400   0.2052  bca                 -6424919.4754  yes   NO   NO
+opencode          452  2/0/4    -  0.6667   0.3333  -3541234.8170  5898826.8679  24253797.3537   0.2432  bca                 -18627285.6543  yes   NO   NO
+vscode-redacted    333  4/0/2    +  0.6667   0.3333     4328.9235    7665.4237  36328.2384   0.2110  bca                   35319.0260  yes   NO   NO
+```
+
+Reading the result: ALL 6 sources are `mixed` — every single source
+has at least one lens claiming the CI's right tail is wider AND at
+least one lens claiming the left tail is wider. None reach
+`unanimousAsymmetric`, but `claude-code` gets close at 5/0/1 with
+concordance 0.83 (the right tail is wider per 5 of 6 lenses).
+Crosswise: `bca` is the argmax-asymmetry lens 5 of 6 times — the
+same finding v0.6.231 surfaced for midpoint outlier — confirming
+that on this dataset bias-correction is responsible for the bulk
+of CI-shape divergence, not just CI-center divergence. The
+`meanAbsAsymOverWidth` headline ranges from 0.0955 (`hermes`,
+near-symmetric) to 0.5399 (`claude-code`, where typical
+|asymmetry| is more than half the typical CI width — a CI shape
+that is meaningfully skewed by the underlying score function).
+
 ## 0.6.231 — 2026-04-30
 
 ### Added
