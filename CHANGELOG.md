@@ -2,6 +2,81 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.207 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-hodges-lehmann`** — per-source
+  **Hodges-Lehmann pseudo-median** of per-row `total_tokens`.
+  Form the multiset `W = { (x_i + x_j) / 2 : 1 <= i <= j <= n }`
+  of all `n*(n+1)/2` **Walsh averages** (pairwise means including
+  self-pairs), then take `HL = median(W)`.
+
+  **Mechanically distinct from every shipped row-token location lens.**
+  Every previously shipped per-source row-token location lens
+  (mean / mid-range / trim-mean-{10,20,25,30} /
+  winsorized-mean-{10,20} / median / midhinge / trimean / IQM /
+  Lehmer-{-3..-1, 3..12}) is either an **L-estimator** (a fixed
+  linear combination of the order statistics with deterministic
+  coefficients depending only on `n`) or a **power mean**.
+  The Hodges-Lehmann estimator is **NOT an L-estimator and NOT
+  a power mean** — it is the canonical **R-estimator /
+  U-statistic** location estimator, derived from the Wilcoxon
+  signed-rank test: it is the value that, if subtracted from the
+  sample, makes the signed-rank statistic vanish.
+
+  Concretely: an L-estimator only sees each `x_i` as a single
+  point in the sorted ranking; re-arranging two interior values
+  within adjacent ranks leaves every L-estimator unchanged.
+  HL sees the full multiset of `n*(n+1)/2` pairwise sums and is
+  sensitive to interior spacing — moving `x_i` even without
+  crossing any other point changes `n` Walsh averages, which
+  can shift the median of `W`.
+
+  Asymptotic relative efficiency at the normal model is
+  `3/pi ~= 0.955` (strictly higher than the median's
+  `2/pi ~= 0.637` and only marginally below the mean's `1.0`).
+  Breakdown point is `1 - 1/sqrt(2) ~= 0.293`, between
+  trim-mean-25 (25 %) and trim-mean-30 (30 %) and far above
+  any shipped winsorized lens.
+
+  For symmetric distributions HL agrees with the population
+  median in expectation; for asymmetric distributions HL
+  estimates the center of symmetry of the symmetrized
+  distribution `(X + X')/2`, which is generally between the
+  population mean and the population median. This makes HL a
+  **mechanically distinct location target** from every shipped
+  median-family lens (median / midhinge / trimean / IQM), all
+  of which estimate the population median directly.
+
+  Algorithm: exact `O(n^2)` Walsh-average enumeration. For the
+  queue sizes seen in this repo (largest source ~500 rows ->
+  ~125,250 Walsh averages, ~1 ms to median) the exact
+  enumeration is fast and **exact**; we deliberately do not
+  use the `O(n log^2 n)` Monahan algorithm — exactness is more
+  valuable than the asymptotic speedup at our scale, and the
+  simpler code is auditable.
+
+  Free byproducts: `mean` (raw arithmetic mean of all `n`),
+  `median` (ordinary sample median of `x`), `walshCount`
+  (`n*(n+1)/2`), `walshMin = x_(1)`, `walshMax = x_(n)`,
+  signed `hlMeanGap = HL - mean` (exposes tail asymmetry as
+  seen by the symmetrized distribution `(X + X')/2`), and
+  signed `hlMedianGap = HL - median` (exposes how far HL is
+  shifted from the L-estimator median by the
+  pairwise-symmetrization).
+
+  CLI options: `--since`, `--until`, `--source`, `--min-rows`
+  (default 4 — at `n = 4` the Walsh-average multiset has
+  `4*5/2 = 10` elements and the pseudo-median is a meaningful
+  R-estimator), `--min-hodges-lehmann` (cohort gate), `--top`,
+  `--sort` (`hl-desc` (default) / `hl-asc` / `mean-desc` /
+  `median-desc` / `mean-gap-desc` (`|hlMeanGap|` desc) /
+  `median-gap-desc` (`|hlMedianGap|` desc) / `rows` /
+  `source`), `--json`.
+
+  Test count: 4,823 → 4,867 (+44 new).
+
 ## 0.6.206 — 2026-04-29
 
 ### Added
