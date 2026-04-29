@@ -2,6 +2,142 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.230 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-overlap-graph` —
+  graph-topology diagnostic for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SAME six per-source
+  CIs that v0.6.227 (Jaccard / cross-lens agreement), v0.6.228
+  (sign concordance), and v0.6.229 (width concordance) consume.
+  **Mechanically distinct from ALL THREE prior cross-lens
+  diagnostics** because it reports the topology of the overlap
+  relation, not a scalar reduction of it:
+
+    - v0.6.227 reduces the 15 pairwise Jaccards to a single mean —
+      it loses topology. Two sources with the same agreementIndex
+      can have completely different graphs (3 disjoint pairs vs.
+      a star + 2 isolates).
+    - v0.6.228 is direction-only.
+    - v0.6.229 is magnitude-only (CI widths, ignoring whether
+      the intervals overlap each other at all).
+    - This module measures *which lenses agree with which,
+      structurally* — connectivity, clustering, isolation.
+
+  For each source it builds the symmetric undirected graph G with
+  V = {6 lenses} and E = {(i, j) : closed CI of lens i intersects
+  closed CI of lens j}. Two intervals that touch at a single point
+  count as overlapping. Per source it reports:
+
+    - `edgeCount` — number of pairwise overlaps in [0, 15];
+    - `density` — `edgeCount / 15`, in [0, 1];
+    - `componentCount` — number of connected components, in [1, 6];
+    - `largestComponentSize` — biggest component, in [1, 6];
+    - `singletonCount` and `singletonLenses` — count and names of
+      lenses overlapping NO other lens (canonical-order names);
+    - `maxCliqueSize` — largest pairwise-mutually-overlapping
+      pocket, in [1, 6]; brute-force enumeration over `2^6 = 64`
+      vertex subsets;
+    - `componentSizes` — sorted-desc vector summing to 6;
+    - `bridgeCount` — edges whose removal increases componentCount
+      (an "irreplaceable" overlap link);
+    - `triangleCount` — number of 3-cliques, in [0, 20];
+    - `transitivity` — global clustering coefficient =
+      `3 * triangleCount / triplet-count`, in [0, 1] when defined;
+    - `consensusBackbone` — boolean true iff `componentCount == 1
+      && maxCliqueSize >= 4` (one connected blob with a 4+
+      consensus pocket);
+    - `fragmented` — boolean true iff `componentCount >= 3`;
+    - the full 6×6 boolean `adjacency` matrix and the up-to-15
+      `edges` list for callers wanting to render the graph.
+
+  Sort keys: `density-asc` (default; least-connected first),
+  `density-desc`, `components-desc/asc`, `singletons-desc/asc`,
+  `max-clique-desc/asc`, `triangles-desc/asc`,
+  `transitivity-desc/asc`, `bridges-desc/asc`, `rows`, `source`.
+  Filters: `--alert-fragmented` (componentCount >= 2),
+  `--alert-isolated` (singletonCount > 0). Standard `--top N`
+  cap with `droppedBelowTopCap` accounting.
+
+  The bootstrap lens (v0.6.220) is not given special treatment in
+  this diagnostic — the overlap relation is symmetric and lens-
+  agnostic. (Prior diagnostics treat bootstrap as canonical
+  reference; this one reports pure graph structure.)
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, --since 14d)
+
+```
+pew-insights source-row-token-slope-ci-overlap-graph
+as of: 2026-04-29T16:47:19.335Z    sources: 6 (with all lenses 6, shown 6)    rows: 1985    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-fragmented: no    alert-isolated: no    top: -    sort: density-asc
+dropped: 0 missing-from-some-lens, 0 not-fragmented (alert), 0 not-isolated (alert), 0 below top cap; fragmented: 0; isolated: 0; full-consensus: 0
+
+source           rows  edges/15  density  comps  largest  singles  maxClq  tri  trans   bridges  compSizes      backbone  fragm  singletonLenses
+---------------  ----  --------  -------  -----  -------  -------  ------  ---  ------  -------  -------------  --------  -----  --------------------
+codex              64     11/15   0.7333      1        6        0       4    8  0.7500        0  6                   yes     NO  -
+claude-code       299     12/15   0.8000      1        6        0       5   11  0.8462        0  6                   yes     NO  -
+hermes            285     12/15   0.8000      1        6        0       5   11  0.8462        0  6                   yes     NO  -
+openclaw          555     12/15   0.8000      1        6        0       5   11  0.8462        0  6                   yes     NO  -
+vscode-redacted   333     12/15   0.8000      1        6        0       5   11  0.8462        0  6                   yes     NO  -
+opencode          449     13/15   0.8667      1        6        0       5   13  0.8667        0  6                   yes     NO  -
+```
+
+Headline: ALL 6 sources land in `consensusBackbone == yes` —
+each source's overlap graph is fully connected (componentCount =
+1, no singletons, no bridges) AND contains a 4-or-5-clique
+consensus pocket. This is the strongest possible signal for
+"the 6 uncertainty-quantification lenses agree on the slope's
+location, even when they wildly disagree on its precision".
+Compare against v0.6.229: zero sources hit `tightConsensus` —
+every source had a width spread of at least 61× across the 6
+lenses. So the 6 lenses can disagree on CI width by ~5 orders of
+magnitude (codex, ~447,566×) yet still produce intervals that
+all mutually overlap on the number line. That is the precise
+v0.6.230-only finding: width disagreement does NOT imply location
+disagreement. The v0.6.227 Jaccard mean would smear this signal
+across the 15 pair averages; v0.6.230 is sharper because it
+asks the topological question "is the overlap relation
+*connected*?" — which here answers "yes, every source, every
+time", with codex's 4-clique vs. opencode's 5-clique giving
+a per-source ranking of how *thickly* connected the consensus is.
+Density ranges from 0.73 (codex; 11 of 15 pair-overlaps) to 0.87
+(opencode; 13 of 15) — the missing 2 / 4 edges are exactly the
+abc-vs-bca and abc-vs-bootstrap pairs where v0.6.229 found the
+narrowest abc envelope sitting *inside* the gap between the wider
+bca / bootstrap envelopes' centers, just narrowly missing.
+Zero sources triggered `--alert-fragmented` or `--alert-isolated`
+on this 14-day window.
+
+### Tests
+
+- Test count grew from 5973 → 6040 (+67 in the new
+  `sourcerowtokenslopecioverlapgraph` suite). Coverage spans
+  `intervalsOverlap` pure helper (overlapping, disjoint, touching
+  endpoint, nested, identical, swapped endpoints, NaN, Infinity,
+  degenerate point intervals), `connectedComponents` (single
+  vertex, 6 isolated vertices, complete K6, two-triangle disjoint),
+  `maxCliqueSize` (empty graph, K6, single K3 in K6, star
+  K1,5, K4 inside sparse), `triangleCount` (empty, K6 = 20,
+  single K3), `tripletCount` (K6 = 60, empty, star K1,5 = 10),
+  `bridgeCount` (path of 6 = 5 bridges, K6 = 0, K3 + 3 isolated =
+  0), full option validation (minRows, confidence, lambda,
+  bootstraps, seed, top, sort), empty-queue + option carry-through,
+  ascending series produces all 6 lenses present and 6×6
+  symmetric adjacency with diag=true, `edgeCount == edges.length`,
+  `density == edgeCount / 15`, edgeCount in [0, 15], componentCount
+  in [1, 6], largestComponentSize in [1, 6], componentSizes sums
+  to 6 and is sorted descending, maxCliqueSize in [1, 6],
+  transitivity in [0, 1], triangleCount in [0, 20], bridgeCount
+  <= edgeCount, singletonCount matches size-1 component count,
+  singletonLenses canonical-order, edges canonical-order
+  uniqueness, `consensusBackbone` implication, `fragmented` iff
+  `componentCount >= 3`, deterministic-given-same-seed,
+  `--source` filter, `--top` cap with `droppedBelowTopCap`,
+  `--alert-fragmented` / `--alert-isolated` filters, sort=source
+  alphabetic, sort=rows descending, transitivity = 3*tri/triplets
+  identity, pre-filter aggregate counts consistency, renderer
+  header + columns + yes/NO flags + alert-flag echo.
+
 ## 0.6.229 — 2026-04-30
 
 ### Added
