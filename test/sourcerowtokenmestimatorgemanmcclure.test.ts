@@ -276,3 +276,55 @@ test('builder: outlier detection — heavy outlier yields farTailRows >= 1', () 
   // Geman estimate should be very close to 100, not pulled by 99999.
   assert.ok(Math.abs(r.sources[0]!.geman - 100) < 5);
 });
+
+// ---------- refinement: coreShare / farTailShare diagnostics ----------
+
+test('builder: coreShare = coreRows / rowsKept (in [0,1])', () => {
+  const q = mkSeries('s', [10, 11, 12, 13, 14, 15, 100, 200]);
+  const r = buildSourceRowTokenMEstimatorGemanMcClure(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.ok(row.coreShare >= 0 && row.coreShare <= 1);
+  assert.ok(
+    Math.abs(row.coreShare - row.coreRows / row.rowsKept) < 1e-12,
+    `coreShare ${row.coreShare} should equal coreRows/rowsKept`,
+  );
+});
+
+test('builder: coreShare + tailShare(implicit) + farTailShare = 1', () => {
+  const q = mkSeries('s', [10, 11, 12, 13, 14, 15, 100, 200]);
+  const r = buildSourceRowTokenMEstimatorGemanMcClure(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  const tailShare = row.rowsKept > 0 ? (row.rowsKept - row.coreRows - row.farTailRows) / row.rowsKept : 0;
+  assert.ok(
+    Math.abs(row.coreShare + tailShare + row.farTailShare - 1) < 1e-12,
+  );
+});
+
+test("builder: 'core-share-desc' sort orders by coreShare descending", () => {
+  // Source A: tight bulk -> high core share.
+  // Source B: wide spread + outlier -> low core share, high far-tail share.
+  const q = [
+    ...mkSeries('a', [50, 50, 50, 50, 50, 50, 51]),
+    ...mkSeries('b', [10, 20, 50, 100, 200, 500, 5000]),
+  ];
+  const r = buildSourceRowTokenMEstimatorGemanMcClure(q, {
+    generatedAt: GEN,
+    sort: 'core-share-desc',
+  });
+  assert.equal(r.sources[0]!.source, 'a');
+  assert.ok(r.sources[0]!.coreShare > r.sources[1]!.coreShare);
+});
+
+test("builder: 'far-tail-share-desc' sort orders by farTailShare descending", () => {
+  const q = [
+    ...mkSeries('a', [50, 50, 50, 50, 50, 50, 51]),
+    ...mkSeries('b', [10, 20, 50, 100, 200, 500, 5000]),
+  ];
+  const r = buildSourceRowTokenMEstimatorGemanMcClure(q, {
+    generatedAt: GEN,
+    sort: 'far-tail-share-desc',
+  });
+  // 'b' has at least as much far-tail share as 'a'; with strict outlier
+  // should be strictly greater.
+  assert.ok(r.sources[0]!.farTailShare >= r.sources[1]!.farTailShare);
+});

@@ -151,6 +151,8 @@ export interface SourceRowTokenMEstimatorGemanMcClureOptions {
     | 'mean-gap-desc'
     | 'median-gap-desc'
     | 'far-tail-desc'
+    | 'core-share-desc'
+    | 'far-tail-share-desc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -191,6 +193,28 @@ export interface SourceRowTokenMEstimatorGemanMcClureRow {
    * mean the IRLS center agrees with the classical median.
    */
   gemanMedianRatio: number;
+  /**
+   * Share of rows landing in the high-weight core bucket
+   * (`w >= 1`, i.e. `|z| <= 0.6436`). Equals `coreRows / rowsKept`;
+   * always in `[0, 1]`. A high value (e.g. >= 0.7) means most
+   * rows sit near the IRLS center — the source's per-row token
+   * distribution is tightly concentrated at the half-peak knee
+   * and the redescender barely down-weighted anyone. A low value
+   * (e.g. <= 0.3) means the source's distribution is dispersed
+   * relative to its own MAD scale and most of the IRLS effort
+   * went into down-weighting tails. Directly comparable across
+   * sources because it is normalized by `rowsKept`.
+   */
+  coreShare: number;
+  /**
+   * Share of rows landing in the far-tail bucket (`w < 0.05`,
+   * i.e. `|z| > 2.299`). Equals `farTailRows / rowsKept`; always
+   * in `[0, 1]`. The fraction of rows that the polynomial
+   * redescender effectively rejected (down-weighted to less than
+   * 5% of peak weight). Cross-source comparable. Sums with
+   * `coreShare + tailShare = 1`.
+   */
+  farTailShare: number;
 }
 
 export interface SourceRowTokenMEstimatorGemanMcClureReport {
@@ -209,6 +233,8 @@ export interface SourceRowTokenMEstimatorGemanMcClureReport {
     | 'mean-gap-desc'
     | 'median-gap-desc'
     | 'far-tail-desc'
+    | 'core-share-desc'
+    | 'far-tail-share-desc'
     | 'rows'
     | 'source';
   totalSources: number;
@@ -241,6 +267,8 @@ const VALID_SORTS = [
   'mean-gap-desc',
   'median-gap-desc',
   'far-tail-desc',
+  'core-share-desc',
+  'far-tail-share-desc',
   'rows',
   'source',
 ] as const;
@@ -509,6 +537,8 @@ export function buildSourceRowTokenMEstimatorGemanMcClure(
       gemanMedianGap: mu - medianv,
       gemanMedianRatio:
         medianv > 0 ? mu / medianv : medianv === 0 && mu === 0 ? 1 : NaN,
+      coreShare: n > 0 ? coreRows / n : 0,
+      farTailShare: n > 0 ? farTailRows / n : 0,
     });
   }
 
@@ -534,6 +564,10 @@ export function buildSourceRowTokenMEstimatorGemanMcClure(
       primary = Math.abs(q.gemanMedianGap) - Math.abs(p.gemanMedianGap);
     else if (sort === 'far-tail-desc')
       primary = q.farTailRows - p.farTailRows;
+    else if (sort === 'core-share-desc')
+      primary = q.coreShare - p.coreShare;
+    else if (sort === 'far-tail-share-desc')
+      primary = q.farTailShare - p.farTailShare;
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
     else primary = p.source < q.source ? -1 : p.source > q.source ? 1 : 0;
     if (primary !== 0) return primary;

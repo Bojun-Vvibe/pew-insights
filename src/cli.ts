@@ -8998,7 +8998,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'geman-desc' (default) | 'geman-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|gemanMeanGap| desc) | 'median-gap-desc' (|gemanMedianGap| desc) | 'far-tail-desc' (farTailRows desc) | 'rows' | 'source'",
+    "sort key: 'geman-desc' (default) | 'geman-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|gemanMeanGap| desc) | 'median-gap-desc' (|gemanMedianGap| desc) | 'far-tail-desc' (farTailRows desc) | 'core-share-desc' (coreRows/rowsKept desc) | 'far-tail-share-desc' (farTailRows/rowsKept desc) | 'rows' | 'source'",
     'geman-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9047,6 +9047,8 @@ program
           'mean-gap-desc',
           'median-gap-desc',
           'far-tail-desc',
+          'core-share-desc',
+          'far-tail-share-desc',
           'rows',
           'source',
         ];
@@ -9071,6 +9073,8 @@ program
             | 'mean-gap-desc'
             | 'median-gap-desc'
             | 'far-tail-desc'
+            | 'core-share-desc'
+            | 'far-tail-share-desc'
             | 'rows'
             | 'source',
         });

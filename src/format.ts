@@ -13758,6 +13758,8 @@ export function renderSourceRowTokenMEstimatorGemanMcClure(
     'core',
     'tail',
     'far-tail',
+    'core%',
+    'far%',
     'geman-mean',
     'geman-median',
     'g/med',
@@ -13776,6 +13778,8 @@ export function renderSourceRowTokenMEstimatorGemanMcClure(
       formatNumber(s.coreRows),
       formatNumber(s.tailRows),
       formatNumber(s.farTailRows),
+      (s.coreShare * 100).toFixed(1),
+      (s.farTailShare * 100).toFixed(1),
       (s.gemanMeanGap >= 0 ? '+' : '') + s.gemanMeanGap.toFixed(2),
       (s.gemanMedianGap >= 0 ? '+' : '') + s.gemanMedianGap.toFixed(2),
       Number.isFinite(s.gemanMedianRatio)
