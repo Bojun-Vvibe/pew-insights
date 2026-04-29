@@ -443,6 +443,10 @@ import {
   buildSourceRowTokenSlopeCiPrecisionPull,
   renderSourceRowTokenSlopeCiPrecisionPull,
 } from './sourcerowtokenslopeciprecisionpull.js';
+import {
+  buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope,
+  renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope,
+} from './sourcerowtokenslopeciadversarialweightingenvelope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22596,6 +22600,181 @@ program
             renderSourceRowTokenSlopeCiPrecisionPull(report, {
               showWeights: opts.showWeights ?? false,
               showPullSummary: opts.showPullSummary ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-adversarial-weighting-envelope')
+  .description(
+    "Per-source ADVERSARIAL CONVEX-WEIGHTING envelope diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL ELEVEN prior cross-lens diagnostics (v0.6.227-235, v0.6.237 LOO, v0.6.238 precision-pull) on a fundamental axis: it is the ONLY one that asks 'what is the FULL ATTAINABLE RANGE of the consensus midpoint over the entire weight simplex?' Equal-weighting is one interior point; precision-pooling is another interior point; LOO probes six specific weightings. The envelope considers ALL convex weightings: the attained midpoint set is exactly [min(mids), max(mids)]. For each source, on the 6 CI midpoints and widths, we compute equalMid, equalWidth, envelopeLow=min(mids), envelopeHigh=max(mids), envelopeRange=high-low (max possible shift), equalRelativePosition in [0,1] (where equalMid sits in envelope; 0.5=centered), worstCaseUpShift=high-equalMid, worstCaseDownShift=equalMid-low, manipulability=envelopeRange/equalWidth (unitless), asymmetryIndex in [-1,1] (positive=more upward room than down), asymmetryDirection in {up,down,neutral}, extremeUpLens (lens at envelopeHigh), extremeDownLens, extremesDistinct, and envelopeRobustnessScore=1/(1+manipulability) in (0,1] (default sort key; 1=consensus invariant under any re-weighting). Report-level: meanEnvelopeRobustness/medianEnvelopeRobustness, meanManipulability, globalExtremeUpLens, globalExtremeDownLens, globalAsymmetryDirection. --alert-manipulable <f> filters to sources with envelopeRobustnessScore strictly less than f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-manipulable <f>',
+    'only emit sources whose envelopeRobustnessScore is strictly less than f (in (0, 1])',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'robustness-desc' (default) | 'robustness-asc' | 'manipulability-desc' | 'manipulability-asc' | 'envelope-range-desc' | 'envelope-range-asc' | 'rows' | 'source'",
+    'robustness-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-extremes',
+    'when rendering pretty (non-JSON), append a per-source one-line summary naming the extremeUpLens, extremeDownLens, the worst-case up/down shifts, and the asymmetry direction',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertManipulable?: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showExtremes?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertManipulable: number | null = null;
+        if (opts.alertManipulable != null) {
+          const a = Number.parseFloat(opts.alertManipulable);
+          if (!Number.isFinite(a) || a <= 0 || a > 1) {
+            throw new Error(
+              `--alert-manipulable must be a finite number in (0, 1] (got ${opts.alertManipulable})`,
+            );
+          }
+          alertManipulable = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'robustness-desc',
+          'robustness-asc',
+          'manipulability-desc',
+          'manipulability-asc',
+          'envelope-range-desc',
+          'envelope-range-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope(
+          queue,
+          {
+            since: opts.since ?? null,
+            until: opts.until ?? null,
+            source: opts.source ?? null,
+            minRows,
+            confidence,
+            lambda,
+            bootstraps,
+            seed,
+            alertManipulable,
+            top,
+            sort: opts.sort as
+              | 'robustness-desc'
+              | 'robustness-asc'
+              | 'manipulability-desc'
+              | 'manipulability-asc'
+              | 'envelope-range-desc'
+              | 'envelope-range-asc'
+              | 'rows'
+              | 'source',
+          },
+        );
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope(report, {
+              showExtremes: opts.showExtremes ?? false,
             }) + '\n',
           );
         }
