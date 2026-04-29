@@ -139,6 +139,7 @@ import {
   renderSourceRowTokenMEstimatorHampel,
   renderSourceRowTokenMEstimatorAndrews,
   renderSourceRowTokenMEstimatorWelsch,
+  renderSourceRowTokenTheilSenSlope,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -375,6 +376,7 @@ import { buildSourceRowTokenMEstimatorTukey } from './sourcerowtokenmestimatortu
 import { buildSourceRowTokenMEstimatorHampel } from './sourcerowtokenmestimatorhampel.js';
 import { buildSourceRowTokenMEstimatorAndrews } from './sourcerowtokenmestimatorandrews.js';
 import { buildSourceRowTokenMEstimatorWelsch } from './sourcerowtokenmestimatorwelsch.js';
+import { buildSourceRowTokenTheilSenSlope } from './sourcerowtokentheilsenslope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8841,6 +8843,127 @@ program
       }
     },
   );
+
+program
+  .command('source-row-token-theil-sen-slope')
+  .description(
+    "Per-source Theil-Sen median pairwise slope of per-row total_tokens against row index, in tokens per row. R-estimator: enumerate C(n,2) pairwise slopes (x_j - x_i)/(j - i) for i < j and take their median; intercept = median_i(x_i - slope*i). Asymptotic breakdown ~29.3 percent — robust to ~3 in 10 outlier rows. FIRST ROBUST PAIRWISE-SLOPE TREND lens, FIRST PER-ROW (not per-day) trend slope, and the non-parametric POINT ESTIMATOR sibling to source-row-token-mann-kendall-trend (which gives the test, not the magnitude). Distinct from the OLS source-daily-token-trend-slope (least squares on daily aggregates, breakdown 0%) and from every M-estimator location lens (those find a robust center, not a slope). Reports a unique three-bucket pair partition keyed on the SIGN of each pairwise slope: pairsPositive (s > 0), pairsNegative (s < 0), pairsZero (s == 0); pairsPositive + pairsNegative + pairsZero = n*(n-1)/2 and (pairsPositive - pairsNegative) is exactly the sign-resolved Mann-Kendall S statistic. naiveSlope = (lastX - firstX)/(n-1) is the non-robust endpoint reference.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-slope-magnitude <f>',
+    'drop sources whose |slope| is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--max-pairs <n>',
+    'skip sources whose pair count n*(n-1)/2 exceeds n; bounds the O(n^2) memory of the pairwise enumeration. Must be a positive integer. (default 5000000 ~ n=3162 rows)',
+    '5000000',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'positive-desc' (pairsPositive desc) | 'negative-desc' (pairsNegative desc) | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minSlopeMagnitude: string;
+        maxPairs: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minSlopeMagnitude = Number.parseFloat(opts.minSlopeMagnitude);
+        if (!Number.isFinite(minSlopeMagnitude) || minSlopeMagnitude < 0) {
+          throw new Error(
+            `--min-slope-magnitude must be a finite, non-negative number (got ${opts.minSlopeMagnitude})`,
+          );
+        }
+        const maxPairs = Number.parseInt(opts.maxPairs, 10);
+        if (!Number.isInteger(maxPairs) || maxPairs < 1) {
+          throw new Error(
+            `--max-pairs must be a positive integer (got ${opts.maxPairs})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'slope-desc',
+          'slope-asc',
+          'magnitude-desc',
+          'positive-desc',
+          'negative-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenTheilSenSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minSlopeMagnitude,
+          maxPairs,
+          top,
+          sort: opts.sort as
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'magnitude-desc'
+            | 'positive-desc'
+            | 'negative-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenTheilSenSlope(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
 
 program
   .description(

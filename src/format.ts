@@ -12117,6 +12117,10 @@ import type {
   SourceRowTokenMEstimatorWelschReport,
   SourceRowTokenMEstimatorWelschRow,
 } from './sourcerowtokenmestimatorwelsch.js';
+import type {
+  SourceRowTokenTheilSenSlopeReport,
+  SourceRowTokenTheilSenSlopeRow,
+} from './sourcerowtokentheilsenslope.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13424,6 +13428,87 @@ export function renderSourceRowTokenMEstimatorWelsch(
     ],
   );
   lines.push(renderTableLocal(headers, rowsWelsch));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenTheilSenSlope(
+  r: SourceRowTokenTheilSenSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-theil-sen-slope'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-slope-magnitude: ${formatNumber(r.minSlopeMagnitude)}    max-pairs: ${formatNumber(r.maxPairs)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAbovePairCap)} above pair cap, ${formatNumber(r.droppedBelowMinSlopeMagnitude)} below min-slope-magnitude, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Theil-Sen median pairwise slope of per-row total_tokens against row index. R-estimator: enumerate C(n,2) slopes (x_j - x_i)/(j - i) for i < j and take their median; intercept = median_i(x_i - slope*i). Asymptotic breakdown ~29.3% — robust to ~3 in 10 outlier rows. FIRST ROBUST PAIRWISE-SLOPE TREND lens, FIRST PER-ROW (not per-day) trend slope, and the non-parametric POINT ESTIMATOR sibling to source-row-token-mann-kendall-trend (which gives the test, not the magnitude). Distinct from the OLS source-daily-token-trend-slope (least squares on daily aggregates, breakdown 0%) and from every M-estimator location lens (those find a robust center, not a slope). Reports a unique three-bucket pair partition keyed on the SIGN of each pairwise slope: pairsPositive (s > 0), pairsNegative (s < 0), pairsZero (s == 0); pairsPositive + pairsNegative + pairsZero = n*(n-1)/2 and (pairsPositive - pairsNegative) is exactly the sign-resolved Mann-Kendall S statistic.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Theil-Sen median pairwise slope (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'first',
+    'last',
+    'naive',
+    'slope',
+    'intercept',
+    'sign',
+    '+pairs',
+    '-pairs',
+    '0pairs',
+    'pairs',
+  ];
+  const rowsTS: string[][] = r.sources.map(
+    (s: SourceRowTokenTheilSenSlopeRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.firstX.toFixed(2),
+      s.lastX.toFixed(2),
+      (s.naiveSlope >= 0 ? '+' : '') + s.naiveSlope.toFixed(4),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      s.intercept.toFixed(2),
+      s.slopeSign,
+      formatNumber(s.pairsPositive),
+      formatNumber(s.pairsNegative),
+      formatNumber(s.pairsZero),
+      formatNumber(s.pairsTotal),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTS));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
