@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.231 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-midpoint-dispersion` —
+  per-source CENTRAL-TENDENCY disagreement diagnostic for the
+  v0.6.219 Deming-slope uncertainty-quantification suite. Consumes
+  the SAME six per-source CIs that v0.6.227 (Jaccard), v0.6.228
+  (sign), v0.6.229 (width), and v0.6.230 (overlap-graph topology)
+  consume. **Mechanically distinct from ALL FOUR prior cross-lens
+  diagnostics** because it reports the spread of CI *centers*, not
+  agreement / direction / precision / topology of the CI intervals
+  themselves:
+
+    - v0.6.227 Jaccard / agreementIndex: scalar mean of 15 pairwise
+      overlap ratios. Loses topology AND loses location.
+    - v0.6.228 sign concordance: directional only. Two lenses with
+      midpoints at +0.001 and +1000 are perfectly concordant.
+    - v0.6.229 width concordance: precision only. Ignores where
+      the CIs are centered.
+    - v0.6.230 overlap-graph: topology of the overlap relation.
+      Reports IF lenses overlap, not WHERE they sit.
+    - This module: WHERE — measures the spread of midpoints. Two
+      sources with density 1.0 + identical width + identical sign
+      can still place their CI centers across very different
+      ranges; this diagnostic surfaces that.
+
+  For each source it computes the 6-vector of `(ciLower + ciUpper)
+  / 2` per lens (canonical order: bootstrap, jackknife, bca,
+  studentizedT, abc, profileLikelihood) and reports:
+
+    - `midpoints` — the raw 6-vector;
+    - `midMean`, `midMedian`, `midMin`, `midMax`, `midRange` —
+      central + order summaries;
+    - `midStd` — population std (denominator n, not n−1; the six
+      lenses are the full population);
+    - `midIqr` — Q3 − Q1 with linear interpolation between
+      closest ranks (matches numpy's default `linear`);
+    - `midMad` — median absolute deviation from the median;
+    - `midCv` — coefficient of variation = `midStd / |midMean|`,
+      with `Infinity` when `midMean == 0 && midStd > 0`;
+    - `meanWidth` — mean of the six CI widths;
+    - `midRangeOverWidthMean` — `midRange / meanWidth`, in [0, ∞).
+      The headline diagnostic: < 1 means the family of midpoints
+      is tighter than a typical CI's width (good calibration); ≥ 1
+      means the lenses disagree on slope LOCATION by more than a
+      single CI of uncertainty (red flag);
+    - `argMinLens`, `argMaxLens` — names of the lenses with the
+      smallest and largest midpoint;
+    - `outlierLens`, `outlierGap` — the lens furthest from the
+      median midpoint and its `|midpoint − midMedian|`;
+    - `dispersed` — boolean true iff `midRangeOverWidthMean >= 1`;
+    - `tightlyClustered` — boolean true iff
+      `midRangeOverWidthMean <= 0.25` (location agreement at
+      least 4× tighter than typical CI width).
+
+  Sort keys: `range-over-width-desc` (default; biggest location
+  disagreement first), `range-over-width-asc`, `std-{desc,asc}`,
+  `iqr-{desc,asc}`, `mad-{desc,asc}`, `range-{desc,asc}`,
+  `cv-{desc,asc}`, `outlier-gap-{desc,asc}`, `mean-{desc,asc}`,
+  `rows`, `source`. Filters: `--alert-dispersed`
+  (midRangeOverWidthMean ≥ 1), `--alert-tight` (≤ 0.25).
+  Standard `--top N` cap with `droppedBelowTopCap` accounting.
+
+  The bootstrap lens is not given special treatment — all six
+  lenses contribute equally to the dispersion summaries.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, --since 2026-04-15)
+
+```
+pew-insights source-row-token-slope-ci-midpoint-dispersion
+as of: 2026-04-29T17:44:48.868Z    sources: 6 (with all lenses 6, shown 6)    rows: 1991    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-dispersed: no    alert-tight: no    top: -    sort: range-over-width-desc
+dropped: 0 missing-from-some-lens, 0 not-dispersed (alert), 0 not-tight (alert), 0 below top cap; dispersed: 2; tightly-clustered: 0
+
+source           rows  midMean   midMed    midStd    midIqr    midMad    midRange  meanWidth  range/W   cv        outlierLens         gap       disp  tight
+---------------  ----  --------  --------  --------  --------  --------  --------  ---------  --------  --------  ------------------  --------  ----  -----
+claude-code       299  13771207.3184  427013.2069  28289937.5503  2995984.0926  216524.4406  76940004.3143  49992590.1907    1.5390    2.0543  bca                 76513173.2256   yes     NO
+openclaw          557  -1824595.9771  -88486.6434  3286929.9983  1150169.7401  44926.4165  9063139.3745  8340294.8665    1.0867    1.8015  bca                 8975271.1671   yes     NO
+hermes            287  -102463.7790  -32951.0208  477189.5394  25934.7474  17192.8042  1608262.7718  2230184.3370    0.7211    4.6572  bca                 1028730.4262    NO     NO
+vscode-redacted    333  4644.3009  937.5569  7323.4981  2837.6190  546.6739  20682.9445  31878.1127    0.6488    1.5769  bca                 19764.0123    NO     NO
+opencode          451  328761.0044  610241.1800  2641319.7429  4056016.9022  2670555.6710  7394040.3284  18254917.1803    0.4050    8.0342  profileLikelihood   4097284.3448    NO     NO
+codex              64  6372214.8081  3122826.1720  7376334.3276  11576012.3103  3636174.0592  18777957.3672  62842053.9993    0.2988    1.1576  bca                 14946295.7966    NO     NO
+```
+
+Reading the result: 2 of 6 sources (`claude-code`, `openclaw`) have
+`midRangeOverWidthMean ≥ 1` — their six lenses disagree on the slope
+midpoint by more than a single CI's width, with `bca` consistently
+the outlier. The remaining 4 sources sit in the moderate-agreement
+band (0.25 < range/W < 1); none are tightly clustered (≤ 0.25).
+Across all 6 sources, `bca` is the outlier lens 5 times (only
+`opencode` has `profileLikelihood` as its midpoint outlier),
+suggesting bias-correction is doing real work on this dataset.
+
 ## 0.6.230 — 2026-04-30
 
 ### Added
