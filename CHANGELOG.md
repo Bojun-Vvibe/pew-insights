@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.216 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-siegel-slope` — per-source
+  **Siegel repeated-medians slope** of per-row `total_tokens`
+  against row index, in tokens per row. R-estimator with
+  **NESTED MEDIANS**:
+
+  ```
+  per anchor i:   m_i  =  median_{j != i}  (x_j - x_i) / (j - i)
+  outer slope:    slope = median_i ( m_i )
+  intercept:      intercept = median_i ( x_i - slope * i )
+  ```
+
+  Asymptotic breakdown **~50 %** — the **MAXIMAL breakdown** for
+  any equivariant slope estimator, vs **Theil-Sen ~29.3 %**
+  (v0.6.214) and **OLS 0 %** (`source-daily-token-trend-slope`).
+
+  This is the **first ~50 %-breakdown slope estimator** in the
+  suite, and the **first NESTED-MEDIAN (median-of-medians)
+  estimator** in the suite. Every prior slope/location lens uses
+  one median pass, one mean pass, or IRLS; Siegel stacks two.
+
+  Mechanically distinct from every prior lens:
+  - vs Theil-Sen (R-estimator, single median over `n*(n-1)/2`
+    pairwise slopes): Siegel takes a per-anchor inner median first,
+    then medians those — an outlier must corrupt the anchor's own
+    inner median before it can touch the outer median, doubling the
+    breakdown from ~29 % to ~50 %.
+  - vs the Huber/Tukey/Hampel/Andrews/Welsch/Cauchy M-estimators
+    (v0.6.207-v0.6.215): those find a robust **center**, not a
+    slope; no IRLS, no tuning constant, no scale parameter here.
+  - vs `source-row-token-mann-kendall-trend`: Mann-Kendall reports
+    *whether* there is a trend (rank correlation + p-value); Siegel
+    reports the **slope magnitude** with the highest possible
+    breakdown.
+
+  Reports a unique **per-anchor median spread** diagnostic
+  (`perAnchorMedianMin / Max / Range`): wide range -> the choice of
+  anchor would have moved a single-anchor estimate substantially
+  (heterogeneous trend); narrow range -> trend is locally
+  consistent. Anchor sign counts (`anchorsPositive / Negative /
+  Zero`) sum to `n`; `pairsTotal = n * (n - 1)` is the ordered
+  slope evaluation count.
+
+  Flags: `--since`, `--until`, `--source`, `--min-rows` (>= 4),
+  `--min-slope-magnitude`, `--max-pairs` (default 5_000_000 ~ n =
+  2236), `--top`, `--sort` (`magnitude-desc` default,
+  `slope-desc`, `slope-asc`, `range-desc`, `positive-desc`,
+  `negative-desc`, `rows`, `source`), `--json`.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, 6 sources, 1 928 rows)
+
+Source name `vscode-copilot` redacted to `vscode-redacted` per the
+operator's name-scrub rule; numbers and other source names are
+verbatim.
+
+```
+pew-insights source-row-token-siegel-slope
+sources: 6 (shown 6)    rows: 1,928    sort: magnitude-desc
+
+source            rows  mean         median      first       last        naive        slope         intercept   sign  mMin          mMax           mRange        +anch  -anch  0anch  pairs
+----------------  ----  -----------  ----------  ----------  ----------  -----------  ------------  ----------  ----  ------------  -------------  ------------  -----  -----  -----  -------
+codex             64    12,650,385   7,132,861   2,695,764   8,565,718   +93,173.87   +105,180.27   2,591,691   up    -872,705.53   +1,651,905.63  2,524,611.15  46     18     0      4,032
+claude-code       299   11,512,996   3,319,967   1,470,723     201,134      -4,260.37    +22,324.89  1,636,118   up     -89,650.73     +664,247.27    753,898.00  241     58     0     89,102
+opencode          430   10,414,154   8,018,557      96,926   4,942,077      +11,294.06    +22,305.49  2,255,706   up    -272,666.22     +137,936.21    410,602.42  344     86     0    184,470
+openclaw          536    3,724,538   2,305,940     721,224     883,626         +303.56     -6,369.11  4,294,402   down  -159,332.03      +59,351.10    218,683.14   87    449     0    286,760
+hermes            266      753,798     432,176   2,061,198     189,746      -7,062.08         +20.37    428,337   up     -41,384.45      +19,631.28     61,015.73  134    132     0     70,490
+vscode-redacted   333        5,663       2,319         458       9,990          +28.71          +0.62      2,247   up        -194.45         +982.22      1,176.68  171    162     0    110,556
+```
+
+Findings:
+- All 6 sources keep enough rows (>= 4) and sit well under the
+  pair cap (`pairsTotal` max is 286,760 << 5,000,000).
+- **codex** has the steepest robust upward trend at **+105,180
+  tokens/row**, with the widest per-anchor spread (range 2.5 M).
+  The naive endpoint slope (+93,174) is in the same ballpark but
+  the per-anchor min (-872,706) shows several anchors disagree
+  — codex's trend is real but anchor-sensitive.
+- **opencode** trends up at +22,305 tokens/row over 430 rows
+  despite a noisy naive slope; 344 of 430 anchors (80 %) see a
+  positive inner median.
+- **openclaw** is the only source that trends **down** under
+  Siegel (-6,369 tokens/row), with 449 of 536 anchors (84 %)
+  reporting a negative inner median — a strong consensus that
+  Theil-Sen alone would have flagged less crisply.
+- **hermes** is essentially flat (+20 tokens/row) with anchors
+  split nearly 50/50 (134 + / 132 -) — exactly the signature of
+  noise around zero trend, even though the naive endpoint slope
+  reads -7,062.
+- **vscode-redacted** trends up by less than 1 token/row;
+  per-anchor range of ~1,177 confirms the slope is small relative
+  to local fluctuation.
+
+### Tests
+
+- Test count grew from **5,279 -> 5,313** (+34). New suites:
+  `sourcerowtokensiegelslope` (29 unit tests covering pure inner
+  function, end-to-end builder, all CLI gates, equivariance,
+  outlier robustness, heterogeneous-trend per-anchor spread) and
+  `sourcerowtokensiegelslope.property` (5 seeded property tests
+  over 50-100 trials each: translation invariance, positive-scale
+  equivariance, anchor sign-partition closure, slope-within-range
+  invariant, ~50 % breakdown invariant).
+
 ## 0.6.215 — 2026-04-29
 
 ### Added
