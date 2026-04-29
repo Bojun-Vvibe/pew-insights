@@ -403,6 +403,10 @@ import {
   buildSourceRowTokenSlopeCiCrossLensAgreement,
   renderSourceRowTokenSlopeCiCrossLensAgreement,
 } from './sourcerowtokenslopeicrosslensagreement.js';
+import {
+  buildSourceRowTokenSlopeSignConcordance,
+  renderSourceRowTokenSlopeSignConcordance,
+} from './sourcerowtokenslopesignconcordance.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -20684,6 +20688,174 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSlopeCiCrossLensAgreement(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-sign-concordance')
+  .description(
+    "Per-source slope-sign concordance diagnostic across the SIX uncertainty-quantification CIs shipped between v0.6.220 and v0.6.225 (percentile bootstrap, jackknife normal, BCa, studentized-t bootstrap, ABC, profile-likelihood). Mechanically distinct from v0.6.227 (cross-lens agreement): v0.6.227 measures interval-geometry agreement (Jaccard / overlap of [ciLower, ciUpper]); this command measures DIRECTIONAL agreement -- the fraction of lenses whose point slope, CI midpoint, and CI exclusion-of-zero point the same way as the canonical bootstrap-lens point slope. Per source it reports: (1) per-lens point slope, CI midpoint, point-sign, midpoint-sign, and sigDirection (+ / - / 0 according to whether the whole CI lies above zero, below zero, or brackets zero); (2) pointSignConcordance = fraction of 6 lens point slopes whose sign matches the canonical sign; (3) midpointSignConcordance = same on CI midpoints; (4) sigDirectionalConcordance = fraction of lenses whose CI strictly excludes zero AND points the canonical way; (5) lensesAllAgreePoint / lensesAllAgreeMidpoint / lensesAllSignificant / lensesAllSignificantSameDirection booleans; (6) dominantDirection = strict majority point-sign across the 6 lenses (ties resolve to '0'); (7) signDispersion = normalised Shannon entropy of the 3-bin (+/-/0) point-sign histogram, in [0, 1] (0 = unanimous, 1 = perfectly even split). Two sources can be Jaccard-tied yet split on direction; this lens makes that distinction explicit. Use --alert-sign-split to filter to sources whose 6 lens point signs are NOT unanimous; --alert-any-insignificant to surface sources where at least one lens CI brackets zero.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-sign-split',
+    'only emit sources whose 6 lens point signs are NOT unanimous',
+  )
+  .option(
+    '--alert-any-insignificant',
+    'only emit sources where at least one lens CI brackets zero',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'point-concordance-asc' (default; least-concordant first) | 'point-concordance-desc' | 'midpoint-concordance-asc' | 'midpoint-concordance-desc' | 'sig-concordance-asc' | 'sig-concordance-desc' | 'sign-dispersion-desc' | 'sign-dispersion-asc' | 'rows' | 'source'",
+    'point-concordance-asc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertSignSplit?: boolean;
+        alertAnyInsignificant?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'point-concordance-asc',
+          'point-concordance-desc',
+          'midpoint-concordance-asc',
+          'midpoint-concordance-desc',
+          'sig-concordance-asc',
+          'sig-concordance-desc',
+          'sign-dispersion-desc',
+          'sign-dispersion-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeSignConcordance(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertSignSplit: opts.alertSignSplit ?? false,
+          alertAnyInsignificant: opts.alertAnyInsignificant ?? false,
+          top,
+          sort: opts.sort as
+            | 'point-concordance-asc'
+            | 'point-concordance-desc'
+            | 'midpoint-concordance-asc'
+            | 'midpoint-concordance-desc'
+            | 'sig-concordance-asc'
+            | 'sig-concordance-desc'
+            | 'sign-dispersion-desc'
+            | 'sign-dispersion-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeSignConcordance(report) + '\n',
           );
         }
       } catch (e) {
