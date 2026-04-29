@@ -2,6 +2,137 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.241 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-mad-vs-mae-divergence` —
+  per-source ROBUST-vs-NON-ROBUST SCALE DIVERGENCE diagnostic for
+  the v0.6.219 Deming-slope uncertainty-quantification suite.
+  Consumes the SAME six per-source slope CIs as v0.6.227–v0.6.240
+  (percentile bootstrap, jackknife normal, BCa, studentized-t,
+  ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL THIRTEEN prior cross-lens
+  diagnostics on a fundamental axis** — every prior axis is
+  itself a SCALE estimate (midpoint dispersion = SD of midpoints,
+  width concordance, coverage volume, range, etc.) or a
+  single-lens label (LOO, precision-pull, adversarial extreme,
+  residual-Z outlier). NONE of them COMPARE TWO scale estimates
+  of the same midpoints to detect the signature of a single
+  tail observation.
+
+  This 14th axis pairs the non-robust mean-absolute-error (MAE)
+  around the equal-weight mean against the breakdown-resistant
+  Gaussian-consistent scaled median-absolute-deviation
+  (`1.4826 * MAD`) around the median, and surfaces the gap as
+  the diagnostic signal.
+
+  For each source we compute on the 6 CI midpoints
+  `mid_k = (lo_k + hi_k) / 2`:
+
+    - `equalMid` — arithmetic mean of mid_1..mid_6;
+    - `medianMid` — median of mid_1..mid_6;
+    - `mae` — `mean(|mid_k - equalMid|)` (non-robust scale; one
+      extreme midpoint inflates it linearly);
+    - `mad` — `median(|mid_k - medianMid|)` (Hampel's median
+      absolute deviation around the median; 50% breakdown);
+    - `madScaled` — `1.4826 * mad` (Gaussian-consistent scale
+      estimate; lets MAE and MAD live on the same scale for
+      direct subtraction);
+    - `divergence` — `mae - madScaled` (signed; positive ⇔ MAE
+      inflated above robust scale by tail observation);
+    - `divergenceRatio` — `mae / madScaled` (`Infinity` when
+      `madScaled == 0` and `mae > 0`; `1` by convention when
+      both are 0);
+    - `tailLens` — lens k\* maximizing `|mid_k - medianMid|`
+      (canonical-order tie-break) — the lens whose midpoint
+      sits furthest from the robust median anchor;
+    - `tailDeviation` — `|mid_{k\*} - medianMid|`;
+    - `tailDirection` ∈ {`up`, `down`, `neutral`};
+    - `breakdownFlag` — `divergenceRatio > 1.5` (the crisp
+      "non-robust scale is materially bigger than robust scale;
+      a single tail observation is responsible" diagnostic; the
+      1.5 threshold is the standard rule-of-thumb upper edge for
+      an "approximately Gaussian" MAE/MAD ratio — under iid
+      normality MAE/MADscaled has expectation ≈ √(2/π) ≈ 0.798,
+      so anything above 1.5 is a strong scale-divergence signal);
+    - `meanMedianGap` — `equalMid - medianMid` (signed skew);
+    - `skewDirection` ∈ {`right`, `left`, `symmetric`};
+    - `robustnessScore` — `1 / (1 + |divergence| / (mae +
+      madScaled + 1e-12))` in (0, 1] — DEFAULT SORT KEY.
+      1.0 = MAE and scaled-MAD agree exactly (no tail-driven
+      inflation); near 0 = the two scales disagree by their
+      entire combined magnitude.
+
+  Per-report aggregates: `meanRobustnessScore`,
+  `medianRobustnessScore`, `meanDivergenceRatio` (finite-only
+  arithmetic mean — Infinity ratios skipped),
+  `nBreakdown` (count of sources with `breakdownFlag == true`),
+  `nInfiniteRatio` (count of sources with `madScaled == 0 &&
+  mae > 0`), `globalTailLens` (mode of `tailLens` across
+  sources, canonical-order tie-break), `globalSkewDirection`
+  (mode of `skewDirection`, ties broken
+  `right` > `left` > `symmetric`).
+
+  Edge cases:
+    - Source dropped from any of the six lenses → not reported
+      (counted in `droppedMissingLens`).
+    - All six midpoints identical → `mae == 0`, `mad == 0`,
+      `madScaled == 0`, `divergence == 0`, `divergenceRatio == 1`
+      by convention, `breakdownFlag == false`,
+      `robustnessScore == 1`, `skewDirection == 'symmetric'`,
+      `tailDirection == 'neutral'`, `tailDeviation == 0`,
+      `tailLens == 'bootstrap'` (canonical tie-break).
+    - `madScaled == 0` && `mae > 0` (most lenses agree but one
+      or two outliers create a non-zero MAE) → `divergenceRatio`
+      is `Infinity`, `breakdownFlag == true`, source counted in
+      `nInfiniteRatio` and skipped from `meanDivergenceRatio`.
+
+  CLI options: `--alert-divergent <f>` filters to sources whose
+  `robustnessScore` is strictly less than f; `--alert-breakdown`
+  filters to sources where `breakdownFlag` is true (independent
+  of `--alert-divergent`; both compose).
+
+  Why a 14th axis: v0.6.231 midpoint-dispersion reports a single
+  (non-robust) standard-deviation-style scale; v0.6.240
+  lens-residual-z normalizes by per-lens widths, not by a robust
+  source-level scale. This 14th axis is the only one that asks
+  "is the dispersion of the six midpoints driven by ALL of them,
+  or by ONE tail observation that the median cleans away?" A
+  large `divergenceRatio` with `breakdownFlag == true` is the
+  diagnostic signature that one specific lens midpoint is an
+  outlier in the source-level distribution of midpoints —
+  orthogonal to the per-lens-CI question that residual-z asks.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (2021 lines, 6
+  sources, --bootstraps 200 --seed 7 --top 8):
+
+  ```
+  pew-insights source-row-token-slope-ci-mad-vs-mae-divergence
+  as of: 2026-04-29T23:33:34.767Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 200    seed: 7    alert-divergent: -    alert-breakdown: false    top: -    sort: robustness-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanRobustnessScore: 0.5737; medianRobustnessScore: 0.5225; meanDivergenceRatio: 35.2600; nBreakdown: 6; nInfiniteRatio: 0; globalTailLens: bca; globalSkewDirection: right
+
+  source           rows  equalMid    medianMid   mae       madScaled  divRatio  tailLens           tailDev   tailDir  brk  skew       robust
+  ---------------  ----  ----------  ----------  --------  ---------  --------  -----------------  --------  -------  ---  ---------  --------
+  opencode          463  -1368959.3912  -991425.6607  5975057.4796  3293590.2930    1.8141  bca                14708520.5926  down     yes  left         0.7756
+  codex              64  8585350.4752  1728817.8646  12408762.9134  2659327.8013    4.6661  bca                44082821.3508  up       yes  right        0.6072
+  vscode-copilot    333   9357.7586    895.5386  11619.3970   748.2025   15.5297  bootstrap          28546.8577  up       yes  right        0.5322
+  hermes            298  -686424.0778  -31702.3604  956055.6260  24297.2947   39.3482  bca                3522888.5954  down     yes  left         0.5127
+  claude-code       299  11438989.7332  423529.0195  16353263.0674  315853.4794   51.7748  bca                60075249.9158  up       yes  right        0.5097
+  openclaw          569  -4027830.9544  -83933.1301  6235931.6229  63355.8459   98.4271  bca                22651692.6930  down     yes  left         0.5051
+  ```
+
+  Reading the smoke: every one of the 6 sources crosses the 1.5
+  breakdown threshold (`nBreakdown: 6`), with `bca` the global
+  tail lens (5 of 6 sources) and right-skew the dominant
+  asymmetry. `openclaw` shows the most extreme MAE/MAD divergence
+  (`divRatio = 98.43`) — the BCa midpoint sits ≈22.65M units below
+  the median anchor while the other five lenses cluster within a
+  much narrower band. Composes naturally with `--alert-breakdown`
+  and `--show-summary` for surfacing the tail-lens identity in
+  any cross-lens slope-CI report.
+
 ## 0.6.240 — 2026-04-30
 
 ### Added
