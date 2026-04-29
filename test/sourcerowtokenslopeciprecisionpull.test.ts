@@ -415,3 +415,30 @@ test('render: showWeights appends 6-row sub-table', () => {
     assert.ok(out.includes(lens));
   }
 });
+
+test('render: showPullSummary appends a one-line directional summary per source', () => {
+  const queue = ascending('s1', 30, 5);
+  const r = buildSourceRowTokenSlopeCiPrecisionPull(queue, {
+    bootstraps: 200,
+    seed: 42,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  const out = renderSourceRowTokenSlopeCiPrecisionPull(r, {
+    showPullSummary: true,
+  });
+  assert.ok(out.includes('summary: dominant'));
+  assert.ok(out.includes('signedPull='));
+  // arrow appears
+  assert.ok(out.includes('^') || out.includes('v') || out.includes('='));
+});
+
+test('render: showPullSummary off by default', () => {
+  const queue = ascending('s1', 30, 5);
+  const r = buildSourceRowTokenSlopeCiPrecisionPull(queue, {
+    bootstraps: 200,
+    seed: 42,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  const out = renderSourceRowTokenSlopeCiPrecisionPull(r);
+  assert.ok(!out.includes('summary: dominant'));
+});

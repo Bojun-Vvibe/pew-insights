@@ -663,12 +663,20 @@ function fmtNum(x: number, digits = 4): string {
  * When `showWeights` is true, a per-source 6-row sub-table is
  * appended showing weightShare for each lens (canonical order),
  * useful for full attribution of the precision pool.
+ *
+ * When `showPullSummary` is true, a compact one-line directional
+ * summary is appended after each source row naming the
+ * `dominantLens`, the `pullDirection` (`up`/`down`/`neutral`),
+ * the raw `signedPull` value, and the `dominantWeightShare`.
+ * Lighter-weight alternative to `--show-weights` that surfaces
+ * just the headline of who is pulling consensus and which way.
  */
 export function renderSourceRowTokenSlopeCiPrecisionPull(
   r: SourceRowTokenSlopeCiPrecisionPullReport,
-  opts: { showWeights?: boolean } = {},
+  opts: { showWeights?: boolean; showPullSummary?: boolean } = {},
 ): string {
   const showWeights = opts.showWeights ?? false;
+  const showPullSummary = opts.showPullSummary ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-precision-pull');
   lines.push(
@@ -705,6 +713,17 @@ export function renderSourceRowTokenSlopeCiPrecisionPull(
         row.mostPrecisionPullingLens.padEnd(17),
       ].join('  '),
     );
+    if (showPullSummary) {
+      const arrow =
+        row.pullDirection === 'up'
+          ? '^'
+          : row.pullDirection === 'down'
+            ? 'v'
+            : '=';
+      lines.push(
+        `    summary: dominant ${row.dominantLens} (share=${fmtNum(row.dominantWeightShare)}) pulls consensus ${row.pullDirection} ${arrow} (signedPull=${fmtNum(row.signedPull)})`,
+      );
+    }
     if (showWeights) {
       lines.push(
         '    lens               weightShare',

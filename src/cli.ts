@@ -22475,6 +22475,10 @@ program
     '--show-weights',
     'when rendering pretty (non-JSON), append a per-source 6-row sub-table showing each lens weightShare',
   )
+  .option(
+    '--show-pull-summary',
+    'when rendering pretty (non-JSON), append a compact one-line directional summary per source naming the dominantLens, the up/down/neutral pull direction, the raw signedPull, and the dominantWeightShare',
+  )
   .action(
     async (
       opts: {
@@ -22491,6 +22495,7 @@ program
         sort: string;
         json?: boolean;
         showWeights?: boolean;
+        showPullSummary?: boolean;
       },
       cmd,
     ) => {
@@ -22590,6 +22595,7 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiPrecisionPull(report, {
               showWeights: opts.showWeights ?? false,
+              showPullSummary: opts.showPullSummary ?? false,
             }) + '\n',
           );
         }
