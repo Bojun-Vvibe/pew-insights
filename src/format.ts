@@ -13489,6 +13489,7 @@ export function renderSourceRowTokenTheilSenSlope(
     '-pairs',
     '0pairs',
     'pairs',
+    'MK-S',
   ];
   const rowsTS: string[][] = r.sources.map(
     (s: SourceRowTokenTheilSenSlopeRow) => [
@@ -13506,6 +13507,7 @@ export function renderSourceRowTokenTheilSenSlope(
       formatNumber(s.pairsNegative),
       formatNumber(s.pairsZero),
       formatNumber(s.pairsTotal),
+      (s.mannKendallS >= 0 ? '+' : '') + formatNumber(s.mannKendallS),
     ],
   );
   lines.push(renderTableLocal(headers, rowsTS));

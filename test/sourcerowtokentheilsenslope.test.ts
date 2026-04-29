@@ -337,3 +337,28 @@ test('builder: report carries echoed options and counters', () => {
   assert.equal(r.top, 10);
   assert.equal(r.generatedAt, GEN);
 });
+
+test('builder: mannKendallS == pairsPositive - pairsNegative for every row', () => {
+  const queue: QueueLine[] = [
+    ...mkSeries('a', [1, 2, 3, 4, 5, 6]), // monotone up: S = +15
+    ...mkSeries('b', [6, 5, 4, 3, 2, 1]), // monotone down: S = -15
+    ...mkSeries('c', [4, 4, 4, 4, 4]), // flat: S = 0
+  ];
+  const r = buildSourceRowTokenTheilSenSlope(queue, { generatedAt: GEN });
+  for (const row of r.sources) {
+    assert.equal(row.mannKendallS, row.pairsPositive - row.pairsNegative);
+  }
+  const a = r.sources.find((s) => s.source === 'a')!;
+  const b = r.sources.find((s) => s.source === 'b')!;
+  const c = r.sources.find((s) => s.source === 'c')!;
+  assert.equal(a.mannKendallS, 15);
+  assert.equal(b.mannKendallS, -15);
+  assert.equal(c.mannKendallS, 0);
+});
+
+test('builder: |mannKendallS| <= pairsTotal always', () => {
+  const queue: QueueLine[] = mkSeries('s', [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]);
+  const r = buildSourceRowTokenTheilSenSlope(queue, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.ok(Math.abs(row.mannKendallS) <= row.pairsTotal);
+});

@@ -182,6 +182,16 @@ export interface SourceRowTokenTheilSenSlopeRow {
   pairsZero: number;
   /** Total pair count `n*(n-1)/2`. */
   pairsTotal: number;
+  /**
+   * Sign-resolved Mann-Kendall S statistic:
+   * `S = pairsPositive - pairsNegative`. Positive S indicates a
+   * net upward concordance between row index and `total_tokens`;
+   * negative S indicates downward; zero indicates a perfect tie.
+   * This is exactly the Mann-Kendall S a paired test would compute,
+   * derivable from the existing pair counts but surfaced here so
+   * downstream callers don't have to recompute the subtraction.
+   */
+  mannKendallS: number;
 }
 
 export interface SourceRowTokenTheilSenSlopeReport {
@@ -451,6 +461,7 @@ export function buildSourceRowTokenTheilSenSlope(
       pairsNegative,
       pairsZero,
       pairsTotal,
+      mannKendallS: pairsPositive - pairsNegative,
     });
   }
 
