@@ -12157,6 +12157,10 @@ import type {
   SourceRowTokenStudentizedBootstrapSlopeCiReport,
   SourceRowTokenStudentizedBootstrapSlopeCiRow,
 } from './sourcerowtokenstudentizedbootstrapslopeci.js';
+import type {
+  SourceRowTokenAbcBootstrapSlopeCiReport,
+  SourceRowTokenAbcBootstrapSlopeCiRow,
+} from './sourcerowtokenabcbootstrapslopeci.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -14339,6 +14343,93 @@ export function renderSourceRowTokenStudentizedBootstrapSlopeCi(
           ? 'pWide'
           : 'agree',
       formatNumber(s.degenerateSeReplicates),
+      s.ciContainsZero ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTbl));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenAbcBootstrapSlopeCi(
+  r: SourceRowTokenAbcBootstrapSlopeCiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-abc-bootstrap-slope-ci'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    abc-eps: ${r.abcEps}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    alert-dot-dispersion-min: ${r.alertDotDispersionMin}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert mode), ${formatNumber(r.droppedBelowDotDispersion)} below dot-dispersion threshold, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ABC (approximate bootstrap confidence) interval for the Deming slope of per-row total_tokens against row index. Fifth uncertainty-quantification lens. Fully analytic — no Monte-Carlo bootstrap. Computes directional derivatives T_dot_i = dT/dw_i of the slope at the equal-weight point via 2n+1 weighted Deming refits, then forms acceleration a, bias b, and sigmaHat per Diciccio-Efron 1992 (Statistical Science 7:189-228). ABC is the analytic B->infinity limit of BCa (v0.6.222), but mechanically distinct: BCa picks endpoints from sorted Monte-Carlo replicates; ABC evaluates the Deming slope at TWO analytically-perturbed weight vectors. Reports accelerationAbc, biasAbc, sigmaHat, cqAbc (curvature; diagnostic), wLower/wUpper (transformed quantile picks), ciLower/ciUpper, ciWidth, ciContainsZero, dotDispersion = max|T_dot| / mean|T_dot| (single-row-influence indicator), and degenerateDotCount.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(
+      chalk.yellow('  no source rows after filters. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token ABC slope CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'slope',
+    'accel',
+    'bias',
+    'sigma',
+    'cq',
+    'wLo',
+    'wHi',
+    'ciLower',
+    'ciUpper',
+    'ciWidth',
+    'dotDisp',
+    'degDot',
+    '0inCI?',
+  ];
+  const rowsTbl: string[][] = r.sources.map(
+    (s: SourceRowTokenAbcBootstrapSlopeCiRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      (s.accelerationAbc >= 0 ? '+' : '') + s.accelerationAbc.toFixed(4),
+      (s.biasAbc >= 0 ? '+' : '') + s.biasAbc.toFixed(4),
+      s.sigmaHat.toFixed(4),
+      (s.cqAbc >= 0 ? '+' : '') + s.cqAbc.toFixed(4),
+      (s.wLower >= 0 ? '+' : '') + s.wLower.toFixed(4),
+      (s.wUpper >= 0 ? '+' : '') + s.wUpper.toFixed(4),
+      (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
+      (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
+      s.ciWidth.toFixed(4),
+      Number.isFinite(s.dotDispersion) ? s.dotDispersion.toFixed(4) : 'n/a',
+      formatNumber(s.degenerateDotCount),
       s.ciContainsZero ? 'yes' : 'no',
     ],
   );

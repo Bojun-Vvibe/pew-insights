@@ -149,6 +149,7 @@ import {
   renderSourceRowTokenJackknifeSlopeCi,
   renderSourceRowTokenBcaBootstrapSlopeCi,
   renderSourceRowTokenStudentizedBootstrapSlopeCi,
+  renderSourceRowTokenAbcBootstrapSlopeCi,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -395,6 +396,7 @@ import { buildSourceRowTokenBootstrapSlopeCi } from './sourcerowtokenbootstrapsl
 import { buildSourceRowTokenJackknifeSlopeCi } from './sourcerowtokenjackknifeslopeci.js';
 import { buildSourceRowTokenBcaBootstrapSlopeCi } from './sourcerowtokenbcabootstrapslopeci.js';
 import { buildSourceRowTokenStudentizedBootstrapSlopeCi } from './sourcerowtokenstudentizedbootstrapslopeci.js';
+import { buildSourceRowTokenAbcBootstrapSlopeCi } from './sourcerowtokenabcbootstrapslopeci.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -10275,6 +10277,180 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenBcaBootstrapSlopeCi(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-abc-bootstrap-slope-ci')
+  .description(
+    "Per-source ABC (approximate bootstrap confidence) interval for the Deming regression slope of per-row total_tokens against row index. Fifth uncertainty-quantification lens, mechanically distinct from v0.6.220 (percentile bootstrap CI), v0.6.221 (jackknife normal CI), v0.6.222 (BCa bootstrap CI), and v0.6.223 (studentized bootstrap CI). Fully analytic — no Monte-Carlo bootstrap. Computes directional derivatives T_dot_i = dT/dw_i of the Deming slope at the equal-weight point w = (1,...,1) via 2n+1 weighted Deming refits with symmetric finite differences, then forms acceleration a = (1/6) * sum T_dot^3 / (sum T_dot^2)^{3/2} and bias b = (1/(2n^2)) * sum T_ddot per Diciccio-Efron 1992 (Statistical Science 7:189-228). ABC is the analytic B->infinity limit of BCa, but mechanically different: BCa picks endpoints from sorted Monte-Carlo replicates; ABC evaluates the Deming slope at TWO analytically-perturbed weight vectors w_i* = 1 + lam_a * T_dot_i. Reports accelerationAbc, biasAbc, sigmaHat = sqrt(sum T_dot^2)/n (delta-method SE), cqAbc (curvature; diagnostic), wLower/wUpper (transformed quantile picks), ciLower/ciUpper, ciWidth, ciContainsZero, dotDispersion = max|T_dot| / mean|T_dot| (single-row-influence indicator), and degenerateDotCount. Use --alert-zero-in-ci to filter to only sources whose CI straddles zero, and --alert-dot-dispersion-min to surface only sources whose slope is dominated by a single influential row.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio var(eps_y)/var(eps_x) for inner Deming fit; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--abc-eps <f>',
+    'symmetric finite-difference step size for the directional derivatives T_dot_i and T_ddot_i; finite in (0, 0.5] (default 0.01)',
+    '0.01',
+  )
+  .option(
+    '--alert-zero-in-ci',
+    'only emit sources whose CI strictly contains zero (i.e. slope not significantly different from zero under the ABC CI)',
+  )
+  .option(
+    '--alert-dot-dispersion-min <f>',
+    'only emit sources whose dotDispersion = max|T_dot| / mean|T_dot| is at least this threshold; non-negative, default 0 (keep all). Surfaces sources whose slope is driven by a single influential row.',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'acceleration-magnitude-desc' | 'bias-magnitude-desc' | 'sigma-hat-desc' | 'dot-dispersion-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        abcEps: string;
+        alertZeroInCi?: boolean;
+        alertDotDispersionMin: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const abcEps = Number.parseFloat(opts.abcEps);
+        if (!Number.isFinite(abcEps) || abcEps <= 0 || abcEps > 0.5) {
+          throw new Error(
+            `--abc-eps must be a finite number in (0, 0.5] (got ${opts.abcEps})`,
+          );
+        }
+        const alertDotDispersionMin = Number.parseFloat(
+          opts.alertDotDispersionMin,
+        );
+        if (
+          !Number.isFinite(alertDotDispersionMin) ||
+          alertDotDispersionMin < 0
+        ) {
+          throw new Error(
+            `--alert-dot-dispersion-min must be a finite, non-negative number (got ${opts.alertDotDispersionMin})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'magnitude-desc',
+          'slope-desc',
+          'slope-asc',
+          'ci-width-desc',
+          'ci-width-asc',
+          'acceleration-magnitude-desc',
+          'bias-magnitude-desc',
+          'sigma-hat-desc',
+          'dot-dispersion-desc',
+          'ci-contains-zero-first',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenAbcBootstrapSlopeCi(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          abcEps,
+          alertZeroInCi: opts.alertZeroInCi ?? false,
+          alertDotDispersionMin,
+          top,
+          sort: opts.sort as
+            | 'magnitude-desc'
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'ci-width-desc'
+            | 'ci-width-asc'
+            | 'acceleration-magnitude-desc'
+            | 'bias-magnitude-desc'
+            | 'sigma-hat-desc'
+            | 'dot-dispersion-desc'
+            | 'ci-contains-zero-first'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenAbcBootstrapSlopeCi(report) + '\n',
           );
         }
       } catch (e) {
