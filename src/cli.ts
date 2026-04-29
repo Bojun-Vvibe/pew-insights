@@ -20643,6 +20643,8 @@ program
           'union-width-desc',
           'union-width-asc',
           'slope-spread-desc',
+          'loosest-pair-jaccard-asc',
+          'tightest-pair-jaccard-desc',
           'rows',
           'source',
         ];
@@ -20672,6 +20674,8 @@ program
             | 'union-width-desc'
             | 'union-width-asc'
             | 'slope-spread-desc'
+            | 'loosest-pair-jaccard-asc'
+            | 'tightest-pair-jaccard-desc'
             | 'rows'
             | 'source',
         });

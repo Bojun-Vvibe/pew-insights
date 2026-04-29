@@ -86,6 +86,8 @@ export interface SourceRowTokenSlopeCiCrossLensAgreementOptions {
     | 'union-width-desc'
     | 'union-width-asc'
     | 'slope-spread-desc'
+    | 'loosest-pair-jaccard-asc'
+    | 'tightest-pair-jaccard-desc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -136,6 +138,22 @@ export interface SourceRowTokenSlopeCiCrossLensAgreementRow {
   slopeSpread: number;
   /** Sample std (n-1) of the six point slopes. */
   slopeStd: number;
+  /**
+   * The pair of lenses with the **highest** Jaccard similarity for
+   * this source. When `lensesAgree = true`, this is the pair that
+   * is *most* in agreement; useful for triaging which two lenses
+   * one could quote interchangeably without conclusion change.
+   * `null` only in degenerate (no-pairs) configurations.
+   * (Refinement field, v0.6.227 follow-up.)
+   */
+  tightestPair: { a: LensName; b: LensName; jaccard: number } | null;
+  /**
+   * The pair of lenses with the **lowest** Jaccard similarity for
+   * this source. The pair that drives the disagreement signal —
+   * if you flip from `a` to `b` your CI will look most different.
+   * (Refinement field, v0.6.227 follow-up.)
+   */
+  loosestPair: { a: LensName; b: LensName; jaccard: number } | null;
 }
 
 export interface SourceRowTokenSlopeCiCrossLensAgreementReport {
@@ -159,6 +177,8 @@ export interface SourceRowTokenSlopeCiCrossLensAgreementReport {
     | 'union-width-desc'
     | 'union-width-asc'
     | 'slope-spread-desc'
+    | 'loosest-pair-jaccard-asc'
+    | 'tightest-pair-jaccard-desc'
     | 'rows'
     | 'source';
   totalSources: number;
@@ -184,6 +204,8 @@ const VALID_SORTS = [
   'union-width-desc',
   'union-width-asc',
   'slope-spread-desc',
+  'loosest-pair-jaccard-asc',
+  'tightest-pair-jaccard-desc',
   'rows',
   'source',
 ] as const;
@@ -480,6 +502,17 @@ export function buildSourceRowTokenSlopeCiCrossLensAgreement(
     const slopeMin = Math.min(...slopeArr);
     const slopeMax = Math.max(...slopeArr);
 
+    let tightestPair: { a: LensName; b: LensName; jaccard: number } | null = null;
+    let loosestPair: { a: LensName; b: LensName; jaccard: number } | null = null;
+    for (const p of pairs) {
+      if (tightestPair === null || p.jaccard > tightestPair.jaccard) {
+        tightestPair = { a: p.a, b: p.b, jaccard: p.jaccard };
+      }
+      if (loosestPair === null || p.jaccard < loosestPair.jaccard) {
+        loosestPair = { a: p.a, b: p.b, jaccard: p.jaccard };
+      }
+    }
+
     rows.push({
       source: s,
       rowsKept,
@@ -501,6 +534,8 @@ export function buildSourceRowTokenSlopeCiCrossLensAgreement(
       disjointPairCount,
       slopeSpread: slopeMax - slopeMin,
       slopeStd: sampleStd(slopeArr),
+      tightestPair,
+      loosestPair,
     });
   }
 
@@ -531,6 +566,12 @@ export function buildSourceRowTokenSlopeCiCrossLensAgreement(
     'union-width-desc': (a, b) => b.unionWidth - a.unionWidth,
     'union-width-asc': (a, b) => a.unionWidth - b.unionWidth,
     'slope-spread-desc': (a, b) => b.slopeSpread - a.slopeSpread,
+    'loosest-pair-jaccard-asc': (a, b) =>
+      (a.loosestPair?.jaccard ?? -Infinity) -
+      (b.loosestPair?.jaccard ?? -Infinity),
+    'tightest-pair-jaccard-desc': (a, b) =>
+      (b.tightestPair?.jaccard ?? -Infinity) -
+      (a.tightestPair?.jaccard ?? -Infinity),
     rows: (a, b) => b.rowsKept - a.rowsKept,
     source: (a, b) => a.source.localeCompare(b.source),
   };
@@ -598,12 +639,15 @@ export function renderSourceRowTokenSlopeCiCrossLensAgreement(
     return lines.join('\n');
   }
   lines.push(
-    'source           rows  agreeIdx  djPairs  consensusW    unionW        slopeSpread   agree?',
+    'source           rows  agreeIdx  djPairs  consensusW    unionW        slopeSpread   agree?  loosestPair (jaccard)',
   );
   lines.push(
-    '---------------  ----  --------  -------  ------------  ------------  ------------  ------',
+    '---------------  ----  --------  -------  ------------  ------------  ------------  ------  ---------------------',
   );
   for (const row of r.sources) {
+    const lp = row.loosestPair
+      ? `${row.loosestPair.a}↔${row.loosestPair.b} (${row.loosestPair.jaccard.toFixed(4)})`
+      : '-';
     lines.push(
       [
         row.source.padEnd(15),
@@ -614,6 +658,7 @@ export function renderSourceRowTokenSlopeCiCrossLensAgreement(
         row.unionWidth.toFixed(4).padStart(12),
         row.slopeSpread.toFixed(4).padStart(12),
         (row.lensesAgree ? 'yes' : 'NO').padStart(6),
+        lp,
       ].join('  '),
     );
   }
