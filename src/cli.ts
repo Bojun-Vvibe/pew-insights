@@ -144,6 +144,7 @@ import {
   renderSourceRowTokenTheilSenSlope,
   renderSourceRowTokenSiegelSlope,
   renderSourceRowTokenPassingBablokSlope,
+  renderSourceRowTokenDemingSlope,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -385,6 +386,7 @@ import { buildSourceRowTokenMEstimatorGemanMcClure } from './sourcerowtokenmesti
 import { buildSourceRowTokenTheilSenSlope } from './sourcerowtokentheilsenslope.js';
 import { buildSourceRowTokenSiegelSlope } from './sourcerowtokensiegelslope.js';
 import { buildSourceRowTokenPassingBablokSlope } from './sourcerowtokenpassingbablokslope.js';
+import { buildSourceRowTokenDemingSlope } from './sourcerowtokendemingslope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -9458,6 +9460,130 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenPassingBablokSlope(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-deming-slope')
+  .description(
+    "Per-source Deming regression slope of per-row total_tokens against row index, in tokens per row. Parametric maximum-likelihood errors-in-both-variables (EIV) regression under bivariate normal noise with variance ratio lambda = var(eps_y)/var(eps_x). Closed form: b = (s_yy - lambda*s_xx + sqrt((s_yy - lambda*s_xx)^2 + 4*lambda*s_xy^2)) / (2*s_xy). Lambda = 1 (default) gives orthogonal regression — x<->y SYMMETRIC. Lambda -> 0 collapses to OLS (the index axis is exact); lambda -> infinity to OLS-of-x-on-y. Parametric SIBLING of source-row-token-passing-bablok-slope (v0.6.218, non-parametric EIV R-estimator): same EIV target, opposite assumption stance — Deming is closed-form MLE, 0% breakdown, with a tunable lambda; PB is shifted-median, ~29.3% breakdown, no distribution. Reports olsSlope (lambda->0 limit), demingVsOlsGap, demingVsNaiveGap, and a lambda-sensitivity diagnostic — slope re-evaluated at lambda/2 and lambda*2 — so you can see how much the answer depends on the assumed variance ratio. Originally Deming (1943).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-slope-magnitude <f>',
+    'drop sources whose |slope| is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio var(eps_y)/var(eps_x); must be a finite, strictly positive number. lambda=1 is orthogonal regression (x<->y symmetric); lambda->0 is OLS. (default 1)',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'gap-desc' (demingVsOlsGap desc) | 'gap-magnitude-desc' (|demingVsOlsGap| desc) | 'naive-gap-magnitude-desc' (|demingVsNaiveGap| desc) | 'lambda-sensitivity-desc' (|lambdaSensitivity| desc) | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minSlopeMagnitude: string;
+        lambda: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minSlopeMagnitude = Number.parseFloat(opts.minSlopeMagnitude);
+        if (!Number.isFinite(minSlopeMagnitude) || minSlopeMagnitude < 0) {
+          throw new Error(
+            `--min-slope-magnitude must be a finite, non-negative number (got ${opts.minSlopeMagnitude})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'slope-desc',
+          'slope-asc',
+          'magnitude-desc',
+          'gap-desc',
+          'gap-magnitude-desc',
+          'naive-gap-magnitude-desc',
+          'lambda-sensitivity-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenDemingSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minSlopeMagnitude,
+          lambda,
+          top,
+          sort: opts.sort as
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'magnitude-desc'
+            | 'gap-desc'
+            | 'gap-magnitude-desc'
+            | 'naive-gap-magnitude-desc'
+            | 'lambda-sensitivity-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenDemingSlope(report) + '\n');
         }
       } catch (e) {
         die(e);

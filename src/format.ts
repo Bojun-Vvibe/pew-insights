@@ -12137,6 +12137,10 @@ import type {
   SourceRowTokenPassingBablokSlopeReport,
   SourceRowTokenPassingBablokSlopeRow,
 } from './sourcerowtokenpassingbablokslope.js';
+import type {
+  SourceRowTokenDemingSlopeReport,
+  SourceRowTokenDemingSlopeRow,
+} from './sourcerowtokendemingslope.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13883,6 +13887,93 @@ export function renderSourceRowTokenPassingBablokSlope(
     ],
   );
   lines.push(renderTableLocal(headers, rowsPB));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenDemingSlope(
+  r: SourceRowTokenDemingSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-deming-slope'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-slope-magnitude: ${formatNumber(r.minSlopeMagnitude)}    lambda: ${r.lambda}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinSlopeMagnitude)} below min-slope-magnitude, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Deming regression slope of per-row total_tokens against row index. Parametric MLE errors-in-both-variables (EIV) regression under bivariate normal noise with variance ratio lambda = var(eps_y)/var(eps_x). Closed form: b = (s_yy - lambda*s_xx + sqrt((s_yy - lambda*s_xx)^2 + 4*lambda*s_xy^2)) / (2*s_xy). Lambda = 1 (default) gives orthogonal regression — x<->y SYMMETRIC. Lambda -> 0 collapses to OLS (the index axis is exact); lambda -> infinity to OLS-of-x-on-y. Parametric SIBLING of source-row-token-passing-bablok-slope (v0.6.218, non-parametric EIV R-estimator): same EIV target, opposite assumption stance — Deming is closed-form MLE, 0% breakdown, with a tunable lambda; PB is shifted-median, ~29.3% breakdown, no distribution. Reports olsSlope (lambda->0 limit), demingVsOlsGap, demingVsNaiveGap, and a lambda-sensitivity diagnostic — slope re-evaluated at lambda/2 and lambda*2 — so you can see how much the answer depends on the assumed variance ratio. Originally Deming (1943).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Deming slope (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'first',
+    'last',
+    'naive',
+    'ols',
+    'slope',
+    'intercept',
+    'sign',
+    'demGap',
+    'naiveGap',
+    'sLamHalf',
+    'sLamTwo',
+    'lamSens',
+  ];
+  const rowsDM: string[][] = r.sources.map(
+    (s: SourceRowTokenDemingSlopeRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.firstX.toFixed(2),
+      s.lastX.toFixed(2),
+      (s.naiveSlope >= 0 ? '+' : '') + s.naiveSlope.toFixed(4),
+      (s.olsSlope >= 0 ? '+' : '') + s.olsSlope.toFixed(4),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      s.intercept.toFixed(2),
+      s.slopeSign,
+      (s.demingVsOlsGap >= 0 ? '+' : '') + s.demingVsOlsGap.toFixed(4),
+      (s.demingVsNaiveGap >= 0 ? '+' : '') + s.demingVsNaiveGap.toFixed(4),
+      (s.slopeAtLambdaHalf >= 0 ? '+' : '') + s.slopeAtLambdaHalf.toFixed(4),
+      (s.slopeAtLambdaTwo >= 0 ? '+' : '') + s.slopeAtLambdaTwo.toFixed(4),
+      (s.lambdaSensitivity >= 0 ? '+' : '') + s.lambdaSensitivity.toFixed(4),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsDM));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
