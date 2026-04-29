@@ -447,6 +447,10 @@ import {
   buildSourceRowTokenSlopeCiAdversarialWeightingEnvelope,
   renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope,
 } from './sourcerowtokenslopeciadversarialweightingenvelope.js';
+import {
+  buildSourceRowTokenSlopeCiLensResidualZ,
+  renderSourceRowTokenSlopeCiLensResidualZ,
+} from './sourcerowtokenslopecilensresidualz.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22791,6 +22795,184 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiAdversarialWeightingEnvelope(report, {
               showExtremes: opts.showExtremes ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-residual-z')
+  .description(
+    "Per-source PER-LENS STUDENTIZED-RESIDUAL diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL TWELVE prior cross-lens diagnostics (v0.6.227-235, v0.6.237 LOO, v0.6.238 precision-pull, v0.6.239 adversarial envelope) on a fundamental axis: it is the ONLY one that reports a PER-LENS-PER-SOURCE residual identifying the specific outlier lens, normalized by that lens's OWN half-width. For each source, on the 6 CI midpoints and widths, we compute equalMid, lensResidual_k = mid_k - equalMid (signed), lensResidualZ_k = lensResidual_k / (width_k/2) (studentized residual; 0 by convention when width_k==0), outlierLens (max abs Z, canonical-order tie-break), outlierAbsZ, outlierSigned, outlierDirection in {up,down,neutral}, outlierConsensusOutside (= outlierAbsZ >= 1: this lens's own CI does NOT contain consensus), meanAbsZ (per-source overall residual magnitude), nResidualOutside (count of lenses with absZ>=1), signAgreement in {all-up, all-down, mixed, all-zero}, and lensConcordanceScore = 1/(1 + meanAbsZ) in (0,1] (default sort key; 1 = every lens at consensus). Report-level: meanLensConcordance/medianLensConcordance, meanOutlierAbsZ, globalOutlierLens, globalOutlierDirection, nSourcesWithConsensusOutside. --alert-discordant <f> filters to sources with lensConcordanceScore strictly less than f. --alert-outside filters to sources where the outlier lens's own CI does not contain consensus.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-discordant <f>',
+    'only emit sources whose lensConcordanceScore is strictly less than f (in (0, 1])',
+  )
+  .option(
+    '--alert-outside',
+    'only emit sources where outlierConsensusOutside is true (outlier lens CI does not contain consensus); independent of --alert-discordant',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'concordance-desc' (default) | 'concordance-asc' | 'outlier-abs-z-desc' | 'outlier-abs-z-asc' | 'mean-abs-z-desc' | 'mean-abs-z-asc' | 'rows' | 'source'",
+    'concordance-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-residuals',
+    'when rendering pretty (non-JSON), append a per-source 6-row sub-table showing each lens signedResidual / signedZ / absZ',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertDiscordant?: string;
+        alertOutside?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showResiduals?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertDiscordant: number | null = null;
+        if (opts.alertDiscordant != null) {
+          const a = Number.parseFloat(opts.alertDiscordant);
+          if (!Number.isFinite(a) || a <= 0 || a > 1) {
+            throw new Error(
+              `--alert-discordant must be a finite number in (0, 1] (got ${opts.alertDiscordant})`,
+            );
+          }
+          alertDiscordant = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'concordance-desc',
+          'concordance-asc',
+          'outlier-abs-z-desc',
+          'outlier-abs-z-asc',
+          'mean-abs-z-desc',
+          'mean-abs-z-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensResidualZ(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertDiscordant,
+          alertOutside: opts.alertOutside ?? false,
+          top,
+          sort: opts.sort as
+            | 'concordance-desc'
+            | 'concordance-asc'
+            | 'outlier-abs-z-desc'
+            | 'outlier-abs-z-asc'
+            | 'mean-abs-z-desc'
+            | 'mean-abs-z-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensResidualZ(report, {
+              showResiduals: opts.showResiduals ?? false,
             }) + '\n',
           );
         }
