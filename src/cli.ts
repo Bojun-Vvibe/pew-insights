@@ -407,6 +407,10 @@ import {
   buildSourceRowTokenSlopeSignConcordance,
   renderSourceRowTokenSlopeSignConcordance,
 } from './sourcerowtokenslopesignconcordance.js';
+import {
+  buildSourceRowTokenSlopeCiWidthConcordance,
+  renderSourceRowTokenSlopeCiWidthConcordance,
+} from './sourcerowtokenslopeciwidthconcordance.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -20860,6 +20864,180 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSlopeSignConcordance(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-width-concordance')
+  .description(
+    "Per-source slope-CI WIDTH concordance / precision-agreement diagnostic across the SIX uncertainty-quantification CIs shipped between v0.6.220 and v0.6.225 (percentile bootstrap, jackknife normal, BCa, studentized-t bootstrap, ABC, profile-likelihood). Mechanically distinct from BOTH v0.6.227 (cross-lens agreement; Jaccard / interval geometry) and v0.6.228 (sign concordance; directional agreement). v0.6.227 says 'do the intervals OVERLAP the same region?'; v0.6.228 says 'do they POINT the same way?'; this command says 'do they AGREE on HOW WIDE the interval is?'. Per source it reports per-lens absolute width = ciUpper - ciLower, relative width = width / max(|midpoint|, 1e-12), and a 1-indexed widthRank (1 = narrowest, 6 = widest); plus widthMin / widthMax / widthMedian / widthMean / widthRange / widthRatio (= widthMax / widthMin; Infinity if any lens has 0 width) / widthCv (population coefficient of variation) / widthGini (population Gini of the 6-vector of widths, in [0, 1]); plus narrowestLens / widestLens names and a tightConsensus boolean (widthRatio <= 2 and all finite). Also reports widthVsBootstrapMaxRatio = widthMax / widthBootstrap, measuring how much wider the widest lens is than the canonical bootstrap lens. Use --alert-disagreement to filter to sources with widthRatio > 3 (precision spread > 3x); --alert-superwide to surface sources where some lens reports an interval > 10x wider than the canonical bootstrap lens.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-disagreement',
+    'only emit sources with widthRatio > 3 (precision spread > 3x across the 6 lenses)',
+  )
+  .option(
+    '--alert-superwide',
+    'only emit sources where some lens reports a CI more than 10x wider than the canonical bootstrap lens',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'width-ratio-desc' (default; widest precision spread first) | 'width-ratio-asc' | 'width-cv-desc' | 'width-cv-asc' | 'width-gini-desc' | 'width-gini-asc' | 'width-range-desc' | 'width-range-asc' | 'width-vs-bootstrap-desc' | 'width-vs-bootstrap-asc' | 'width-max-desc' | 'rows' | 'source'",
+    'width-ratio-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertDisagreement?: boolean;
+        alertSuperwide?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'width-ratio-desc',
+          'width-ratio-asc',
+          'width-cv-desc',
+          'width-cv-asc',
+          'width-gini-desc',
+          'width-gini-asc',
+          'width-range-desc',
+          'width-range-asc',
+          'width-vs-bootstrap-desc',
+          'width-vs-bootstrap-asc',
+          'width-max-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiWidthConcordance(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertDisagreement: opts.alertDisagreement ?? false,
+          alertSuperwide: opts.alertSuperwide ?? false,
+          top,
+          sort: opts.sort as
+            | 'width-ratio-desc'
+            | 'width-ratio-asc'
+            | 'width-cv-desc'
+            | 'width-cv-asc'
+            | 'width-gini-desc'
+            | 'width-gini-asc'
+            | 'width-range-desc'
+            | 'width-range-asc'
+            | 'width-vs-bootstrap-desc'
+            | 'width-vs-bootstrap-asc'
+            | 'width-max-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiWidthConcordance(report) + '\n',
           );
         }
       } catch (e) {
