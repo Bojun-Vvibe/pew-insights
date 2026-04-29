@@ -141,6 +141,7 @@ import {
   renderSourceRowTokenMEstimatorWelsch,
   renderSourceRowTokenMEstimatorCauchy,
   renderSourceRowTokenTheilSenSlope,
+  renderSourceRowTokenSiegelSlope,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -379,6 +380,7 @@ import { buildSourceRowTokenMEstimatorAndrews } from './sourcerowtokenmestimator
 import { buildSourceRowTokenMEstimatorWelsch } from './sourcerowtokenmestimatorwelsch.js';
 import { buildSourceRowTokenMEstimatorCauchy } from './sourcerowtokenmestimatorcauchy.js';
 import { buildSourceRowTokenTheilSenSlope } from './sourcerowtokentheilsenslope.js';
+import { buildSourceRowTokenSiegelSlope } from './sourcerowtokensiegelslope.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -9082,7 +9084,130 @@ program
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
-          process.stdout.write(renderSourceRowTokenTheilSenSlope(report) + '\n');
+           process.stdout.write(renderSourceRowTokenTheilSenSlope(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-siegel-slope')
+  .description(
+    "Per-source Siegel REPEATED-MEDIANS slope of per-row total_tokens against row index, in tokens per row. R-estimator with NESTED MEDIANS: per anchor i compute m_i = median_{j != i} (x_j - x_i)/(j - i); then slope = median_i(m_i); intercept = median_i(x_i - slope*i). Asymptotic breakdown ~50% — the MAXIMAL breakdown for any equivariant slope estimator, vs Theil-Sen ~29.3%. FIRST ~50% BREAKDOWN slope estimator and FIRST NESTED-MEDIAN estimator in the suite. Distinct from the OLS source-daily-token-trend-slope (least squares, breakdown 0%) and from every M-estimator location lens (those find a robust center, not a slope). Reports per-anchor median spread (perAnchorMedianMin/Max/Range): wide range -> trend is heterogeneous across anchors; narrow range -> trend is locally consistent. Anchor counts (anchorsPositive/Negative/Zero) sum to n. naiveSlope = (lastX - firstX)/(n-1) is the non-robust endpoint reference.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-slope-magnitude <f>',
+    'drop sources whose |slope| is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--max-pairs <n>',
+    'skip sources whose ordered slope count n*(n-1) exceeds n; bounds the O(n^2) work. Must be a positive integer. (default 5000000 ~ n=2236 rows)',
+    '5000000',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'range-desc' (perAnchorMedianRange desc) | 'positive-desc' (anchorsPositive desc) | 'negative-desc' (anchorsNegative desc) | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minSlopeMagnitude: string;
+        maxPairs: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minSlopeMagnitude = Number.parseFloat(opts.minSlopeMagnitude);
+        if (!Number.isFinite(minSlopeMagnitude) || minSlopeMagnitude < 0) {
+          throw new Error(
+            `--min-slope-magnitude must be a finite, non-negative number (got ${opts.minSlopeMagnitude})`,
+          );
+        }
+        const maxPairs = Number.parseInt(opts.maxPairs, 10);
+        if (!Number.isInteger(maxPairs) || maxPairs < 1) {
+          throw new Error(
+            `--max-pairs must be a positive integer (got ${opts.maxPairs})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'slope-desc',
+          'slope-asc',
+          'magnitude-desc',
+          'range-desc',
+          'positive-desc',
+          'negative-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSiegelSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minSlopeMagnitude,
+          maxPairs,
+          top,
+          sort: opts.sort as
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'magnitude-desc'
+            | 'range-desc'
+            | 'positive-desc'
+            | 'negative-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenSiegelSlope(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -12125,6 +12125,10 @@ import type {
   SourceRowTokenTheilSenSlopeReport,
   SourceRowTokenTheilSenSlopeRow,
 } from './sourcerowtokentheilsenslope.js';
+import type {
+  SourceRowTokenSiegelSlopeReport,
+  SourceRowTokenSiegelSlopeRow,
+} from './sourcerowtokensiegelslope.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13597,6 +13601,93 @@ export function renderSourceRowTokenTheilSenSlope(
       formatNumber(s.pairsZero),
       formatNumber(s.pairsTotal),
       (s.mannKendallS >= 0 ? '+' : '') + formatNumber(s.mannKendallS),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTS));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenSiegelSlope(
+  r: SourceRowTokenSiegelSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-siegel-slope'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-slope-magnitude: ${formatNumber(r.minSlopeMagnitude)}    max-pairs: ${formatNumber(r.maxPairs)}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedAbovePairCap)} above pair cap, ${formatNumber(r.droppedBelowMinSlopeMagnitude)} below min-slope-magnitude, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Siegel REPEATED-MEDIANS slope of per-row total_tokens against row index. R-estimator with NESTED MEDIANS: per anchor i compute m_i = median_{j != i} (x_j - x_i)/(j - i); then slope = median_i(m_i); intercept = median_i(x_i - slope*i). Asymptotic breakdown ~50% — the MAXIMAL breakdown for any equivariant slope estimator, vs Theil-Sen ~29.3%. FIRST ~50% BREAKDOWN slope estimator and FIRST NESTED-MEDIAN estimator in the suite. Distinct from the OLS source-daily-token-trend-slope (least squares on daily aggregates, breakdown 0%) and from every M-estimator location lens (those find a robust center, not a slope). Reports per-anchor median spread (perAnchorMedianMin/Max/Range) — wide range means the choice of anchor would have moved a single-anchor estimate substantially; narrow range means trend is locally consistent. Anchor counts (anchorsPositive/Negative/Zero) sum to n.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Siegel repeated-medians slope (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'first',
+    'last',
+    'naive',
+    'slope',
+    'intercept',
+    'sign',
+    'mMin',
+    'mMax',
+    'mRange',
+    '+anch',
+    '-anch',
+    '0anch',
+    'pairs',
+  ];
+  const rowsTS: string[][] = r.sources.map(
+    (s: SourceRowTokenSiegelSlopeRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.firstX.toFixed(2),
+      s.lastX.toFixed(2),
+      (s.naiveSlope >= 0 ? '+' : '') + s.naiveSlope.toFixed(4),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      s.intercept.toFixed(2),
+      s.slopeSign,
+      (s.perAnchorMedianMin >= 0 ? '+' : '') + s.perAnchorMedianMin.toFixed(4),
+      (s.perAnchorMedianMax >= 0 ? '+' : '') + s.perAnchorMedianMax.toFixed(4),
+      s.perAnchorMedianRange.toFixed(4),
+      formatNumber(s.anchorsPositive),
+      formatNumber(s.anchorsNegative),
+      formatNumber(s.anchorsZero),
+      formatNumber(s.pairsTotal),
     ],
   );
   lines.push(renderTableLocal(headers, rowsTS));
