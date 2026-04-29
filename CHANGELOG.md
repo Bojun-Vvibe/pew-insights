@@ -2,6 +2,192 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.223 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-studentized-bootstrap-slope-ci` —
+  emits a per-source **studentized bootstrap (a.k.a. bootstrap-t)
+  pivotal confidence interval** for the v0.6.219 Deming regression
+  slope of per-row `total_tokens` against row index `0..n-1`, in
+  tokens / row.
+
+  This is the **fourth uncertainty-quantification lens** in the
+  slope suite and the second-order accurate sibling of v0.6.222's
+  BCa interval (Efron & Tibshirani 1993, *An Introduction to the
+  Bootstrap*, Ch. 12.5; Hall 1988, *Annals of Statistics*
+  16:927-953). Mechanically distinct from every existing CI lens:
+
+    - **vs v0.6.220 percentile bootstrap CI** — v0.6.220 ranks the
+      *raw* bootstrap slopes `theta*_b` and picks
+      `[(1-conf)/2, (1+conf)/2]` quantiles. This lens ranks the
+      *studentized statistic*
+      `T*_b = (theta*_b - thetaHat) / SE*_b` instead, and inverts
+      the empirical t-quantiles via the full-data SE. The CI is a
+      pivotal back-transform with a **cross-tail flip** — the
+      *upper* CI endpoint uses the *lower* t-quantile and vice
+      versa. Conceptually different statistic ranked, conceptually
+      different CI assembly.
+    - **vs v0.6.221 jackknife normal CI** — same `seFull` is used,
+      but `+/- z` is replaced by the empirical t-quantiles of the
+      bootstrap-t distribution. This absorbs skew and excess
+      kurtosis of the slope sampling distribution that the
+      symmetric `+/- z` envelope cannot.
+    - **vs v0.6.222 BCa bootstrap CI** — both are second-order
+      accurate. BCa adjusts the *percentile picks* of slope
+      replicates by `z0` and `a`. Bootstrap-t pivots on a
+      *studentized* statistic that explicitly carries inner-
+      resample variance (`SE*_b` per replicate). On small-n
+      skewed sampling distributions they generally disagree.
+
+  The procedure (per source):
+
+  1. Compute the point Deming slope on the full data at the
+     supplied `--lambda` (default 1, orthogonal regression):
+     `thetaHat`.
+  2. Compute the **full-data jackknife SE** (the same quantity
+     v0.6.221 uses):
+
+         SE_full^2 = ((n-1)/n) * sum_i (theta_(-i) - jackMean)^2
+
+     Cost: `O(n)`. Returns 0 if all jackknife replicates coincide
+     (degenerate full-data jackknife).
+  3. Run `B = --bootstraps` non-parametric resamples (resample
+     `n` indices with replacement from `0..n-1`, take the
+     corresponding values in resample order, relabel positions
+     `0..n-1` as the new x axis, re-fit Deming) under a seeded
+     LCG (Numerical Recipes `a=1664525, c=1013904223, m=2^32`).
+  4. For each bootstrap resample compute its **inner jackknife SE**
+     `SE*_b` from `n` leave-one-out fits on the same resample.
+     Cost: `O(n)` per replicate, total `O(B * n)`.
+  5. **Studentized statistic**:
+
+         T*_b = (theta*_b - thetaHat) / SE*_b
+
+     If `SE*_b == 0` for a particular resample (constant series in
+     the resample after collisions), that replicate's `T*_b` is
+     treated as `0` (carries no signal) and counted in
+     `degenerateSeReplicates`.
+  6. Sort the `T*` values ascending and pick the empirical
+     t-quantiles via linear interpolation (same convention as
+     v0.6.220):
+
+         tLo = quantile(T*, (1 - confidence)/2)
+         tHi = quantile(T*, (1 + confidence)/2)
+
+  7. **Pivotal CI** (NOTE the cross-tail flip):
+
+         ciLower = thetaHat - tHi * SE_full
+         ciUpper = thetaHat - tLo * SE_full
+
+     This is the pivotal inversion of `P(tLo <= T* <= tHi) = conf`,
+     correct precisely when `T*` is approximately pivotal (its
+     distribution does not depend on `theta`). When `T*` is
+     symmetric about 0, this reduces to a textbook
+     `thetaHat +/- t * SE_full`; when skewed, the asymmetry is
+     **preserved** (this is the whole point of the bootstrap-t).
+
+  Per-source row carries:
+
+    - `slope`                  Deming point slope on the full data
+    - `seFull`                 the jackknife SE used for the pivot
+    - `tLower`, `tUpper`       the empirical t-quantiles of `T*`
+    - `ciLower`, `ciUpper`     the pivotal-t CI endpoints
+    - `ciWidth`                `ciUpper - ciLower`
+    - `ciContainsZero`         `ciLower <= 0 && ciUpper >= 0`
+    - `degenerateSeReplicates` count of resamples whose inner
+                               jackknife SE collapsed to 0
+    - `tSkewSignal`            `(tHi + tLo) / (tHi - tLo)` clamped
+                               to `[-1, +1]` (or `NaN` if
+                               `tHi == tLo`); symmetric `T*` gives
+                               0, right-skewed (long upper tail)
+                               gives `> 0`, left-skewed gives
+                               `< 0`. This is exactly the
+                               asymmetry the pivot preserves vs
+                               v0.6.221's symmetric `+/- z`.
+
+  Determinism: bootstrap is driven by the same seeded LCG used by
+  v0.6.220 / v0.6.222; jackknife is purely deterministic. Same
+  `--seed` -> identical output.
+
+  Flags: `--since` / `--until` / `--source` / `--min-rows`
+  (default 4) / `--bootstraps` (default 1000, min 100) /
+  `--confidence` (default 0.95) / `--lambda` (default 1) /
+  `--seed` (default 42) / `--alert-zero-in-ci` /
+  `--alert-degenerate-se-min` (non-negative integer, default 0;
+  surfaces only sources whose bootstrap-t was unreliable due to
+  many constant inner resamples) / `--top` /
+  `--sort {magnitude-desc | slope-desc | slope-asc |
+  ci-width-desc | ci-width-asc | se-full-desc |
+  t-skew-magnitude-desc | degenerate-se-desc |
+  ci-contains-zero-first | rows | source}` (default
+  `magnitude-desc`) / `--json`.
+
+  Edge cases:
+
+    - `n < 4` rows skipped via `--min-rows`.
+    - All `x_i` equal -> `SE_full = 0`, every `SE*_b = 0`,
+      `tLower = tUpper = 0`, `ciLower = ciUpper = thetaHat = 0`,
+      `degenerateSeReplicates = B`. CI collapses to a point;
+      `ciContainsZero = true`.
+    - Some resamples degenerate -> their `T*` set to 0, counted
+      in `degenerateSeReplicates`. High counts (`> B/4`) make the
+      pivot unreliable; surface with `--alert-degenerate-se-min`.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (1,964 rows,
+  6 sources, `B = 500`, `seed = 42`, `confidence = 0.95`,
+  `lambda = 1`; `vscode-redacted` is the redacted tool name):
+
+  ```text
+  pew-insights source-row-token-studentized-bootstrap-slope-ci
+  as of: 2026-04-29T13:17:58.749Z    sources: 6 (shown 6)    rows: 1,964    min-rows: 4    bootstraps: 500    confidence: 0.95    lambda: 1    seed: 42    alert-zero-in-ci: no    alert-degenerate-se-min: 0    top: —    sort: magnitude-desc
+  dropped: 0 bad hour_start, 0 bad total_tokens, 0 negative total_tokens, 0 by source filter, 0 below min-rows, 0 CI excludes zero (alert mode), 0 below degenerate-se threshold, 0 below top cap
+
+  per-source row-token bootstrap-t slope CI (sorted by magnitude-desc; ties: source asc)
+  source           rows  slope          seFull       tLo      tHi      ciLower        ciUpper        ciWidth       tSkew    degSE  0inCI?
+  ---------------  ----  -------------  -----------  -------  -------  -------------  -------------  ------------  -------  -----  ------
+  codex            64    +2225990.4792  741618.3879  -3.3105  +0.7682  +1656270.3671  +4681084.7850  3024814.4179  -0.6233  0      no
+  opencode         442   -1120281.7008  691288.4643  -0.4437  +4.2707  -4072558.0430  -813580.1640   3258977.8791  +0.8118  0      no
+  claude-code      299   +412420.1539   33344.1173   -2.4855  +1.5681  +360133.1508   +495296.4797   135163.3289   -0.2263  0      no
+  openclaw         548   -86744.3807    12835.1469   -1.6178  +2.6277  -120470.9619   -65980.1019    54490.8600    +0.2379  0      no
+  hermes           278   -32273.5856    4732.0746    -1.2957  +2.9684  -46320.2058    -26142.2820    20177.9238    +0.3923  0      no
+  vscode-redacted  333   +761.5738      146.0903     -3.5648  +1.2187  +583.5312      +1282.3592     698.8280      -0.4905  0      no
+  ```
+
+  Reading the live-smoke:
+
+    - **`codex`** has the steepest point slope (`+2.23M tokens/row`
+      over only 64 rows), but `tSkew = -0.62` (heavily LEFT-skewed
+      `T*` — the bootstrap-t distribution has a long *lower* tail),
+      so the **pivotal CI is markedly asymmetric upward**:
+      `[+1.66M, +4.68M]`. A symmetric `+/- z * seFull` CI from
+      v0.6.221 would have looked roughly `+/- 1.45M` around the
+      point, missing the upward asymmetry the bootstrap-t
+      preserves.
+    - **`opencode`** is the mirror image (`tSkew = +0.81`, RIGHT-
+      skewed `T*`): point slope `-1.12M`, but the pivotal CI
+      stretches *downward* to `-4.07M`. Both extremes (codex,
+      opencode) confirm the bootstrap-t is doing genuine work
+      v0.6.221's normal envelope cannot.
+    - **`vscode-redacted`** has the smallest `seFull` (146 tokens)
+      and the most negative `tSkew = -0.49`; the pivot widens the
+      interval upward to `[+584, +1282]` around the point estimate
+      `+762`.
+    - **`degSE = 0` everywhere** -> no degenerate inner resamples
+      on real data; the bootstrap-t pivot is fully reliable across
+      all six sources. Future runs that surface `degSE > 0` would
+      flag a source whose data are concentrated enough to produce
+      constant resamples under index-resampling.
+    - All six sources have `ciContainsZero = no` -> every source's
+      slope is significantly different from zero under the
+      bootstrap-t CI at 95%, including the noisy ones; the
+      pivotal-t CI is tight enough to reject `slope = 0` for the
+      whole fleet.
+
+### Changed
+
+- `package.json` version bumped to `0.6.223`.
+
 ## 0.6.222 — 2026-04-29
 
 ### Added
