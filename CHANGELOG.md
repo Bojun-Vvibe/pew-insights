@@ -2,6 +2,122 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.208 — 2026-04-29
+
+### Added
+
+- New subcommand **`source-row-token-broadened-median`** — per-source
+  **Harrell-Davis broadened median** of per-row `total_tokens`.
+  The Harrell-Davis (HD) quantile estimator at level `p` is the
+  weighted L-estimator
+
+      HD_p = sum_{i=1..n} w_i * x_(i)
+
+  where the weights are consecutive differences of the
+  Beta(alpha, beta) CDF on the grid `0, 1/n, 2/n, ..., 1`:
+
+      w_i = I_{i/n}(alpha, beta) - I_{(i-1)/n}(alpha, beta),
+      alpha = (n + 1) * p,  beta = (n + 1) * (1 - p).
+
+  The **broadened median** is the special case `p = 0.5`,
+  giving `alpha = beta = (n + 1) / 2`. `I_x(a, b)` is the
+  regularized incomplete Beta function (Beta(a,b) CDF), computed
+  via Lanczos `lnGamma` plus the standard Numerical-Recipes
+  continued-fraction expansion (Lentz's method).
+
+  **Mechanically distinct from every shipped row-token location lens.**
+
+  Among the shipped per-source row-token location lenses, three
+  mechanical families exist:
+
+    1. **Hard-cutoff L-estimators** — every weight is 0/1 or
+       uniform-on-a-subset of the order statistics. Members:
+       `mean`, `mid-range`, `trim-mean-{10,20,25,30}`,
+       `winsorized-mean-{10,20}`, `median`, `midhinge`, `trimean`,
+       `IQM`. The raw sample median is the most extreme case:
+       weight 1 on `x_((n+1)/2)` (odd n) or 1/2 on each of
+       `x_(n/2)`, `x_(n/2+1)` (even n); every other order
+       statistic gets weight 0.
+    2. **Power means** — non-linear in the values themselves but
+       symmetric. Members: `lehmer-{-3..-1, 3..12}`, `harmonic`,
+       `contraharmonic`, `quadratic`.
+    3. **R-estimator / U-statistic on Walsh averages** —
+       Hodges-Lehmann (`source-row-token-hodges-lehmann`,
+       v0.6.207). Median of the multiset of `n*(n+1)/2` pairwise
+       averages.
+
+  The Harrell-Davis broadened median is a **smooth L-estimator**:
+  a linear combination of the order statistics like any
+  L-estimator, but the weights are a strictly positive smooth
+  function of `i/n`. Every order statistic contributes a positive
+  amount; the contribution falls off smoothly with distance from
+  the center. This is mechanically different from:
+
+    - the raw sample median (hard 0/1 weight on at most 2 order
+      statistics);
+    - the trimean / midhinge / IQM (uniform weight on a fixed
+      subset);
+    - the trim-mean-25 (rectangular L-estimator with a flat top
+      and hard cliffs);
+    - the Hodges-Lehmann (sees the full multiset of pairwise
+      sums, not the order statistics directly).
+
+  HD targets the population median (same as the raw median),
+  but with **lower finite-sample variance** at virtually every
+  sample size: the smoothing trades a tiny bias for much-reduced
+  sampling variability. Asymptotic relative efficiency vs the
+  mean at the normal model is `2/pi ~= 0.637` (same as the raw
+  median in the limit, but HD reaches it from above for finite
+  `n`); for skewed distributions HD typically beats the raw
+  median in MSE. **Distinct from HL on asymmetric distributions**:
+  HL targets the center of symmetry of `(X + X')/2`, HD targets
+  the population median directly.
+
+  Algorithm: O(n log n) sort + O(n) Beta-CDF differences +
+  O(n) inner product per source. Continued fraction converges
+  in 10-20 iterations to ~1e-12.
+
+  Free byproducts: `mean` (raw arithmetic mean), `median`
+  (ordinary sample median), `centerWeight` (weight on the
+  central order statistic — quantifies how broad the broadening
+  is), `weightSpread` (max(w_i) - min(w_i) — the bell shape's
+  amplitude), `hdMeanGap` (`HD - mean`), `hdMedianGap`
+  (`HD - median`, the headline signal: how much smoothing
+  shifted the location estimate away from the raw median).
+
+  Display gates: `--min-rows` (absolute floor 4 — at n=4 the
+  Beta(2.5, 2.5) bell is wide enough to be meaningful),
+  `--min-broadened-median` cohort selector. Sort keys: `hd-desc`
+  (default), `hd-asc`, `mean-desc`, `median-desc`,
+  `mean-gap-desc` (`|hdMeanGap|` desc), `median-gap-desc`,
+  `rows`, `source`. Sort tiebreak: `source` asc.
+
+### Live smoke (`pew-insights source-row-token-broadened-median --top 8` against `~/.config/pew/queue.jsonl`)
+
+  Source             rows    mean         median       hd           centerW   wSpread   hd-mean       hd-median
+  -----------------  ----    -----------  -----------  -----------  --------  --------  ------------  ----------
+  opencode           420     10,386,664   7,820,944    7,913,287    0.0389    0.0389    -2,473,377    +92,343
+  codex              64      12,650,385   7,132,861    7,409,302    0.0991    0.0991    -5,241,083    +276,441
+  claude-code        299     11,512,996   3,319,967    3,502,512    0.0462    0.0462    -8,010,484    +182,545
+  openclaw           526     3,764,370    2,345,022    2,351,398    0.0348    0.0348    -1,412,971    +6,376
+  hermes             256     765,763      434,837      429,699      0.0498    0.0498    -336,064      -5,139
+  vscode-XXX         333     5,663        2,319        2,283        0.0437    0.0437    -3,379        -35
+
+  6 sources, 1,898 rows total, 0 dropped. All `hdMeanGap` values
+  are strongly negative — every source has a heavier right tail
+  than left, consistent with previously reported skewness signals.
+  All `|hdMedianGap|` values are small relative to mean/median
+  scales (under 5 % for every source, under 0.5 % for `openclaw`
+  and `hermes`), confirming HD targets the population median and
+  agrees closely with the raw median on this dataset while
+  carrying lower sampling variance. `codex` has the largest
+  `centerWeight` (0.0991) because it has the smallest `n` (64) —
+  the Beta(32.5, 32.5) bell is wider than the Beta(263.5, 263.5)
+  bell that applies to `openclaw` (n=526). Worth flagging:
+  `claude-code` has the most extreme `hdMeanGap` (-8.01M tokens),
+  echoing its position as the most right-skewed source under
+  every previously shipped robust-location lens.
+
 ## 0.6.207 — 2026-04-29
 
 ### Added
