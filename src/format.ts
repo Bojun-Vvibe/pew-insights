@@ -12141,6 +12141,10 @@ import type {
   SourceRowTokenDemingSlopeReport,
   SourceRowTokenDemingSlopeRow,
 } from './sourcerowtokendemingslope.js';
+import type {
+  SourceRowTokenBootstrapSlopeCiReport,
+  SourceRowTokenBootstrapSlopeCiRow,
+} from './sourcerowtokenbootstrapslopeci.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13980,6 +13984,79 @@ export function renderSourceRowTokenDemingSlope(
     ],
   );
   lines.push(renderTableLocal(headers, rowsDM));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenBootstrapSlopeCi(
+  r: SourceRowTokenBootstrapSlopeCiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-bootstrap-slope-ci'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    bootstraps: ${r.bootstraps}    confidence: ${r.confidence}    lambda: ${r.lambda}    seed: ${r.seed}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert mode), ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source non-parametric bootstrap percentile CI for the Deming slope of per-row total_tokens against row index. First uncertainty-quantification lens in the slope suite. Resamples n indices with replacement B times under a seeded LCG, refits Deming on each, returns the point slope plus bootMean, bootStd, and the percentile CI at the requested confidence. ciContainsZero flags sources whose CI straddles zero — i.e. the slope is not statistically distinguishable from zero under the bootstrap.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token bootstrap slope CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'slope',
+    'bootMean',
+    'bootStd',
+    'ciLower',
+    'ciUpper',
+    'ciWidth',
+    '0inCI?',
+  ];
+  const rowsTbl: string[][] = r.sources.map(
+    (s: SourceRowTokenBootstrapSlopeCiRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      (s.bootMean >= 0 ? '+' : '') + s.bootMean.toFixed(4),
+      s.bootStd.toFixed(4),
+      (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
+      (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
+      s.ciWidth.toFixed(4),
+      s.ciContainsZero ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTbl));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
