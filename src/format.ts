@@ -12153,6 +12153,10 @@ import type {
   SourceRowTokenBcaBootstrapSlopeCiReport,
   SourceRowTokenBcaBootstrapSlopeCiRow,
 } from './sourcerowtokenbcabootstrapslopeci.js';
+import type {
+  SourceRowTokenStudentizedBootstrapSlopeCiReport,
+  SourceRowTokenStudentizedBootstrapSlopeCiRow,
+} from './sourcerowtokenstudentizedbootstrapslopeci.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -14240,6 +14244,91 @@ export function renderSourceRowTokenBcaBootstrapSlopeCi(
         : s.bcaShiftDirection < 0
           ? 'dn'
           : 'mixed',
+      s.ciContainsZero ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTbl));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenStudentizedBootstrapSlopeCi(
+  r: SourceRowTokenStudentizedBootstrapSlopeCiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights source-row-token-studentized-bootstrap-slope-ci',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    bootstraps: ${r.bootstraps}    confidence: ${r.confidence}    lambda: ${r.lambda}    seed: ${r.seed}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    alert-degenerate-se-min: ${r.alertDegenerateSeMin}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert mode), ${formatNumber(r.droppedBelowDegenerateSe)} below degenerate-se threshold, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source bootstrap-t / studentized bootstrap CI for the Deming slope of per-row total_tokens against row index. Fourth uncertainty-quantification lens. Pivots on T*_b = (theta*_b - thetaHat) / SE*_b where SE*_b is the inner jackknife SE of the bootstrap resample, then inverts the empirical t-quantiles against the full-data jackknife SE (Efron-Tibshirani 1993 Ch. 12.5; Hall 1988). Mechanically distinct from v0.6.220 (percentile of slopes), v0.6.221 (jackknife normal +/- z), and v0.6.222 (BCa percentile shift). Reports seFull, tLower/tUpper (empirical t-quantiles), ciLower/ciUpper (pivotal-t with cross-tail flip), ciWidth, ciContainsZero, degenerateSeReplicates (count of resamples with constant inner jackknife SE), and tSkewSignal in [-1,+1] capturing the asymmetry preserved by the pivot.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(
+      chalk.yellow('  no source rows after filters. nothing to chart.'),
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token bootstrap-t slope CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'slope',
+    'seFull',
+    'tLo',
+    'tHi',
+    'ciLower',
+    'ciUpper',
+    'ciWidth',
+    'tSkew',
+    'degSE',
+    '0inCI?',
+  ];
+  const rowsTbl: string[][] = r.sources.map(
+    (s: SourceRowTokenStudentizedBootstrapSlopeCiRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      s.seFull.toFixed(4),
+      (s.tLower >= 0 ? '+' : '') + s.tLower.toFixed(4),
+      (s.tUpper >= 0 ? '+' : '') + s.tUpper.toFixed(4),
+      (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
+      (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
+      s.ciWidth.toFixed(4),
+      Number.isFinite(s.tSkewSignal)
+        ? (s.tSkewSignal >= 0 ? '+' : '') + s.tSkewSignal.toFixed(4)
+        : 'n/a',
+      formatNumber(s.degenerateSeReplicates),
       s.ciContainsZero ? 'yes' : 'no',
     ],
   );

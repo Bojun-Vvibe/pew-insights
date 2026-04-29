@@ -148,6 +148,7 @@ import {
   renderSourceRowTokenBootstrapSlopeCi,
   renderSourceRowTokenJackknifeSlopeCi,
   renderSourceRowTokenBcaBootstrapSlopeCi,
+  renderSourceRowTokenStudentizedBootstrapSlopeCi,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -393,6 +394,7 @@ import { buildSourceRowTokenDemingSlope } from './sourcerowtokendemingslope.js';
 import { buildSourceRowTokenBootstrapSlopeCi } from './sourcerowtokenbootstrapslopeci.js';
 import { buildSourceRowTokenJackknifeSlopeCi } from './sourcerowtokenjackknifeslopeci.js';
 import { buildSourceRowTokenBcaBootstrapSlopeCi } from './sourcerowtokenbcabootstrapslopeci.js';
+import { buildSourceRowTokenStudentizedBootstrapSlopeCi } from './sourcerowtokenstudentizedbootstrapslopeci.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -9761,7 +9763,191 @@ program
           );
         }
       } catch (e) {
-         die(e);
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-studentized-bootstrap-slope-ci')
+  .description(
+    "Per-source studentized bootstrap (bootstrap-t) CI for the Deming regression slope of per-row total_tokens against row index. Fourth uncertainty-quantification lens, mechanically distinct from v0.6.220 (percentile of slopes), v0.6.221 (jackknife normal +/- z), and v0.6.222 (BCa percentile shift). Pivots on T*_b = (theta*_b - thetaHat) / SE*_b where SE*_b is the inner jackknife SE of the b-th resample, then inverts the empirical t-quantiles tLo, tHi against the full-data jackknife SE: ciLower = thetaHat - tHi * seFull, ciUpper = thetaHat - tLo * seFull (NOTE the cross-tail flip — pivotal inversion). Second-order accurate (Hall 1988, Annals of Statistics 16:927-953) like BCa, but mechanically different: BCa adjusts percentile picks of slope replicates; bootstrap-t pivots on a studentized statistic that explicitly carries inner-resample variance. Reports seFull, tLower, tUpper, ciLower, ciUpper, ciWidth, ciContainsZero, degenerateSeReplicates (count of resamples whose inner jackknife SE collapsed to 0), and tSkewSignal in [-1,+1] capturing the asymmetry of T* that the pivot preserves. Use --alert-zero-in-ci to filter to only sources whose CI straddles zero, and --alert-degenerate-se-min to surface only sources where the bootstrap-t was unreliable (many degenerate inner SEs).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--bootstraps <n>',
+    'number of bootstrap resamples; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio var(eps_y)/var(eps_x) for inner Deming fit; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--seed <n>',
+    'integer seed for the LCG bootstrap RNG (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-zero-in-ci',
+    'only emit sources whose CI strictly contains zero (i.e. slope not significantly different from zero under the bootstrap-t CI)',
+  )
+  .option(
+    '--alert-degenerate-se-min <n>',
+    'only emit sources whose degenerateSeReplicates count (bootstrap resamples with constant inner jackknife SE) is at least this threshold; non-negative integer, default 0 (keep all)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'se-full-desc' | 't-skew-magnitude-desc' | 'degenerate-se-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        bootstraps: string;
+        confidence: string;
+        lambda: string;
+        seed: string;
+        alertZeroInCi?: boolean;
+        alertDegenerateSeMin: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        const alertDegenerateSeMin = Number.parseInt(
+          opts.alertDegenerateSeMin,
+          10,
+        );
+        if (
+          !Number.isInteger(alertDegenerateSeMin) ||
+          alertDegenerateSeMin < 0
+        ) {
+          throw new Error(
+            `--alert-degenerate-se-min must be a non-negative integer (got ${opts.alertDegenerateSeMin})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'magnitude-desc',
+          'slope-desc',
+          'slope-asc',
+          'ci-width-desc',
+          'ci-width-asc',
+          'se-full-desc',
+          't-skew-magnitude-desc',
+          'degenerate-se-desc',
+          'ci-contains-zero-first',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenStudentizedBootstrapSlopeCi(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          bootstraps,
+          confidence,
+          lambda,
+          seed,
+          alertZeroInCi: opts.alertZeroInCi ?? false,
+          alertDegenerateSeMin,
+          top,
+          sort: opts.sort as
+            | 'magnitude-desc'
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'ci-width-desc'
+            | 'ci-width-asc'
+            | 'se-full-desc'
+            | 't-skew-magnitude-desc'
+            | 'degenerate-se-desc'
+            | 'ci-contains-zero-first'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenStudentizedBootstrapSlopeCi(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
       }
     },
   );
