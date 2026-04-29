@@ -2,6 +2,188 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.225 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-profile-likelihood-slope-ci` — emits
+  a per-source **profile-likelihood confidence interval** for the
+  v0.6.219 Deming regression slope of per-row `total_tokens` against
+  row index `0..n-1`, in tokens / row.
+
+  This is the **sixth uncertainty-quantification lens** in the slope
+  suite and the only one that produces a CI by **inverting a
+  likelihood ratio test statistic** (Wilks 1938, *Annals of
+  Mathematical Statistics* 9:60-62; Cox & Hinkley 1974,
+  *Theoretical Statistics*, Ch. 9) rather than by resampling or by
+  computing a standard error. Mechanically distinct from every prior
+  CI lens:
+
+    - **vs v0.6.220 percentile bootstrap CI** — that lens runs `B`
+      Monte-Carlo Deming refits with replacement and ranks the raw
+      slope replicates. This lens runs **zero** Monte-Carlo
+      resamples; it evaluates the profile RSS at candidate slopes
+      and bisects two roots of `2n*log(R(beta)/R(thetaHat)) =
+      chi2_{1, 1-alpha}`.
+    - **vs v0.6.221 jackknife normal CI** — jackknife uses
+      leave-one-out replicates and a SYMMETRIC `+/- z*jackSe`
+      envelope. Profile-likelihood uses NO leave-one-out, NO
+      asymptotic SE, and is intrinsically ASYMMETRIC (the two
+      bisection roots of the W(beta) curve are independently
+      located by the curvature of the RSS).
+    - **vs v0.6.222 BCa bootstrap CI** — BCa is bias-corrected and
+      accelerated bootstrap; needs `B` resamples + `n` jackknife
+      replicates for the acceleration. This lens needs neither.
+    - **vs v0.6.223 studentized-t bootstrap CI** — studentized-t
+      runs `B*n` Deming fits (outer bootstrap + inner jackknife
+      per replicate). This lens runs `2*(maxBracketDoublings + 1) +
+      2*bisectionIterations` cheap closed-form RSS evaluations per
+      source — orders of magnitude less work, no RNG.
+    - **vs v0.6.224 ABC CI** — ABC computes analytic directional
+      derivatives `T_dot_i = dT/dw_i` of the slope at the
+      equal-weight point and is the analytic limit of BCa. This
+      lens is unrelated to BCa: it inverts a likelihood ratio
+      statistic, not a bootstrap percentile, and its asymmetry
+      comes from the curvature of the RSS curve at thetaHat, not
+      from acceleration `a`.
+
+  The procedure (per source):
+
+  1. Compute the centered sums of squares and cross-product:
+     `s_xx = sum (t_i - tbar)^2`, `s_yy = sum (x_i - xbar)^2`,
+     `s_xy = sum (t_i - tbar)(x_i - xbar)`.
+  2. The MLE slope is the v0.6.219 Deming closed form,
+     `thetaHat = demingSlopeFromSums(s_xx, s_yy, s_xy, lambda)`.
+  3. The Deming **profile log-likelihood** at any candidate slope
+     `beta`, after concentrating out the intercept `alpha(beta) =
+     xbar - beta*tbar`, reduces to a closed-form profile residual
+     sum of squares:
+
+         R(beta) = (s_yy - 2*beta*s_xy + beta^2*s_xx)
+                   / (1 + lambda * beta^2)
+
+     This is the orthogonal-regression sum of squared
+     perpendicular distances at lambda = 1 and the standard
+     Deming MLE residual sum at any lambda > 0; `R(thetaHat)` is
+     the minimum.
+  4. Wilks' statistic:
+
+         W(beta) = 2 * n * log( R(beta) / R(thetaHat) )
+
+     Wilks shows `W(beta_true) ~ chi2_1` asymptotically. The
+     `1 - alpha` profile-likelihood CI is the set of `beta` where
+     `W(beta) <= chi2_{1, 1-alpha} = z_{1-alpha/2}^2`, i.e. the
+     slope values that the data cannot reject at confidence
+     `c = 1 - alpha`. We solve for the two crossings of the
+     threshold by bisection on each side of `thetaHat`.
+  5. Initial bracket: expand outward from `thetaHat` by doubling
+     steps starting from
+     `step = max(|thetaHat| * 0.5, sqrt(R(thetaHat) / (n * s_xx)))`
+     (the Fisher-information-based local SE) until W exceeds the
+     threshold or `--max-bracket-doublings` (default 64) is
+     reached. Then bisect for `--bisection-iterations` (default
+     60) rounds. The default 60 iterations of bisection deliver
+     `~10^-18` relative precision on the endpoint location.
+
+  Reports per source:
+
+    - `slope`            point Deming MLE in tokens / row.
+    - `rssAtMle`         profile residual sum of squares at thetaHat.
+    - `chi2Threshold`    `z_{(1+c)/2}^2`, the Wilks level curve
+                         (echoed at the report level too).
+    - `ciLower / ciUpper / ciWidth`  the two LR-inversion roots and
+                         their gap.
+    - `ciAsymmetry`      `(ciUpper - thetaHat) - (thetaHat - ciLower)`.
+                         **Signed** asymmetry the symmetric jackknife
+                         and studentized-t CIs cannot capture;
+                         positive = the upper arm of the CI is wider
+                         than the lower arm (right-skewed).
+    - `ciContainsZero`   `ciLower <= 0 && ciUpper >= 0`.
+    - `wilksAtZero`      `2n*log(R(0)/R(thetaHat))`, the LR test
+                         statistic for `H0: slope = 0`. **Direct
+                         likelihood-ratio test of "no trend" — distinct
+                         from any CI-straddles-zero check** (uses the
+                         profile RSS at a single point, not the CI
+                         endpoints).
+    - `rejectZero`       `wilksAtZero > chi2Threshold`.
+    - `bracketDoublingsLower / Upper / bracketSaturated` —
+                         diagnostics for the bracket-expansion phase;
+                         saturated rows have one or both endpoints
+                         capped at the cap and surface in
+                         `bracketSaturatedCount`.
+
+  Flags:
+
+    - `--since / --until` ISO bounds on `hour_start`.
+    - `--source <id>` restrict to one source.
+    - `--min-rows <n>` integer >= 4, default 4.
+    - `--confidence <f>` default 0.95.
+    - `--lambda <f>` Deming variance ratio, finite > 0, default 1.
+    - `--bisection-iterations <n>` default 60.
+    - `--max-bracket-doublings <n>` default 64.
+    - `--alert-zero-in-ci` filter to sources whose CI straddles 0.
+    - `--alert-reject-zero` filter to sources where the LR test
+      rejects `H0: slope = 0`.
+    - `--top <n>` cap output to top N after sort + filters.
+    - `--sort <key>` `magnitude-desc` (default) | `slope-desc` |
+      `slope-asc` | `ci-width-desc` | `ci-width-asc` |
+      `ci-asymmetry-magnitude-desc` | `wilks-at-zero-desc` |
+      `ci-contains-zero-first` | `reject-zero-first` | `rows` |
+      `source`. Tie-break is `source` asc.
+    - `--json` machine output.
+
+  Determinism: pure builder, no RNG. Wall clock only via
+  `opts.generatedAt`. Tested across 27 unit + property tests
+  (closed-form Deming MLE = profile-RSS argmin, Wilks symmetry,
+  bracket-bisect convergence to the chi-square level curve,
+  flat-series collapse to `[0, 0]`, alert filters,
+  translation-invariance, monotonicity in confidence, etc.).
+
+  ### Live-smoke
+
+  Real run on the local `~/.config/pew/queue.jsonl` (1,970 rows
+  across 6 sources; source name `vscode-copilot` redacted to
+  `vscode-redacted` below; truncated; field widths preserved):
+
+  ```
+  pew-insights source-row-token-profile-likelihood-slope-ci
+  sources: 6 (shown 6)    rows: 1,970    min-rows: 4    confidence: 0.95
+  chi2-threshold: 3.841459    lambda: 1    bisection-iters: 60
+  max-bracket-doublings: 64    sort: magnitude-desc
+
+  source           rows  slope          rssMle       ciLower        ciUpper        ciWidth       asymm          0inCI?  wilks0    rej0?  brkLo  brkHi  sat?
+  ---------------  ----  -------------  -----------  -------------  -------------  ------------  -------------  ------  --------  -----  -----  -----  ----
+  codex            64    +2225990.4792  19216.42     +1511823.2244  +4218991.9363  2707168.7119  +1278834.2023  no      3486.75   yes    1      2      no
+  opencode         444   -1129388.9881  7246136.44   -5949987.9695  -623907.5849   5326080.3846  -4315117.5781  no      20294.71  yes    5      1      no
+  claude-code      299   +412420.1539   1682706.56   +361429.8417   +480160.9872   118731.1454   +16750.5210    no      14789.70  yes    1      1      no
+  openclaw         550   -86219.4175    12308572.57  -103424.5778   -73922.1272    29502.4506    -4907.8701     no      22727.21  yes    1      1      no
+  hermes           280   -32385.3434    1640709.87   -42877.7843    -26018.4731    16859.3112    -4125.5706     no      10420.29  yes    1      1      no
+  vscode-redacted  333   +761.5738      2949103.72   +557.9225      +1199.3604     641.4379      +234.1353      no      6749.17   yes    1      2      no
+  ```
+
+  Highlights:
+
+  - **Every source** rejects `H0: slope = 0` at 95% confidence
+    under the LR test (`wilks0` ranges `3.49e3` to `2.27e4`, all
+    >> the `chi2_{1, 0.95} = 3.841` threshold), and **no source's
+    CI straddles zero** — every per-row token trend is
+    statistically distinguishable from flat under the
+    profile-likelihood lens.
+  - **`opencode` shows the largest CI asymmetry** (`-4.3M`,
+    left-skewed) — the upper arm of its negative-slope CI is much
+    tighter than the lower arm. The symmetric v0.6.221 jackknife
+    CI cannot detect this; the profile-likelihood lens does.
+  - **`codex` also shows large positive asymmetry** (`+1.28M`,
+    right-skewed) — the upper arm of its positive-slope CI is
+    much wider than the lower arm. Both `opencode` and `codex`
+    are sources whose RSS curve has high curvature on the
+    near-zero side of their MLE and low curvature on the
+    far-from-zero side, which a symmetric SE-based CI averages
+    away.
+  - **Bracket-doubling rounds stayed at 1 or 2** for almost every
+    endpoint, so the Fisher-information-based initial step was
+    well-tuned; no source saturated the 64-round cap.
+
 ## 0.6.224 — 2026-04-29
 
 ### Added
