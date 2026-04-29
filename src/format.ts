@@ -12113,6 +12113,10 @@ import type {
   SourceRowTokenMEstimatorAndrewsReport,
   SourceRowTokenMEstimatorAndrewsRow,
 } from './sourcerowtokenmestimatorandrews.js';
+import type {
+  SourceRowTokenMEstimatorWelschReport,
+  SourceRowTokenMEstimatorWelschRow,
+} from './sourcerowtokenmestimatorwelsch.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -13339,6 +13343,85 @@ export function renderSourceRowTokenMEstimatorAndrews(
     ],
   );
   lines.push(renderTableLocal(headers, rowsAndrews));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenMEstimatorWelsch(
+  r: SourceRowTokenMEstimatorWelschReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights source-row-token-m-estimator-welsch'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    min-welsch: ${formatNumber(r.minWelsch)}    tuning: ${r.tuning}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedBelowMinWelsch)} below min-welsch, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Welsch (Leclerc) GAUSSIAN-KERNEL redescending M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 via IRLS with mu_0 = median, s = MAD/0.6745, and the GAUSSIAN influence function psi(z) = z * exp(-(z/c)^2/2). Canonical tuning c = ${r.tuning} -> ~95% ARE at the normal. FIRST GAUSSIAN-KERNEL REDESCENDER and FIRST INFINITE-SUPPORT REDESCENDER in the suite: weight w(z) = exp(-(z/c)^2/2) is strictly positive for every finite z (no hard rejection cliff), unlike Tukey/Hampel/Andrews which have compact support. Distinct from Huber (monotone, never redescends), Tukey biweight (smooth polynomial with COMPACT support), Hampel (piecewise-linear three-part with hard outer cutoff), and Andrews sine (transcendental sine with COMPACT support). Reports the three-bucket residual partition keyed on WEIGHT MAGNITUDE (no other shipped M-estimator partitions on weight, since they all hit a support cutoff first): coreRows (w >= 0.5, |z| <= c*sqrt(2 ln 2) ~ 2.484), descendingRows (0.01 <= w < 0.5), negligibleRows (w < 0.01, |z| > c*sqrt(2 ln 100) ~ 9.05; effectively rejected but never exactly w = 0). welschMeanGap = welsch - mean, welschMedianGap = welsch - median.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token Welsch Gaussian-kernel M-estimator (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'mean',
+    'median',
+    'welsch',
+    'mad',
+    'scale',
+    'iter',
+    'core',
+    'descend',
+    'negligible',
+    'welsch-mean',
+    'welsch-median',
+  ];
+  const rowsWelsch: string[][] = r.sources.map(
+    (s: SourceRowTokenMEstimatorWelschRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      s.mean.toFixed(2),
+      s.median.toFixed(2),
+      s.welsch.toFixed(2),
+      s.mad.toFixed(2),
+      s.scale.toFixed(2),
+      String(s.iterations),
+      formatNumber(s.coreRows),
+      formatNumber(s.descendingRows),
+      formatNumber(s.negligibleRows),
+      (s.welschMeanGap >= 0 ? '+' : '') + s.welschMeanGap.toFixed(2),
+      (s.welschMedianGap >= 0 ? '+' : '') + s.welschMedianGap.toFixed(2),
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsWelsch));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

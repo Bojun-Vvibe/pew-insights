@@ -138,6 +138,7 @@ import {
   renderSourceRowTokenMEstimatorTukey,
   renderSourceRowTokenMEstimatorHampel,
   renderSourceRowTokenMEstimatorAndrews,
+  renderSourceRowTokenMEstimatorWelsch,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -373,6 +374,7 @@ import { buildSourceRowTokenMEstimatorHuber } from './sourcerowtokenmestimatorhu
 import { buildSourceRowTokenMEstimatorTukey } from './sourcerowtokenmestimatortukey.js';
 import { buildSourceRowTokenMEstimatorHampel } from './sourcerowtokenmestimatorhampel.js';
 import { buildSourceRowTokenMEstimatorAndrews } from './sourcerowtokenmestimatorandrews.js';
+import { buildSourceRowTokenMEstimatorWelsch } from './sourcerowtokenmestimatorwelsch.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8709,6 +8711,130 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMEstimatorAndrews(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-m-estimator-welsch')
+  .description(
+    "Per-source Welsch (Leclerc) Gaussian-kernel redescending M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 by IRLS with mu_0 = median, s = MAD/0.6745, and the GAUSSIAN influence function psi(z) = z * exp(-(z/c)^2/2). Canonical tuning c = 2.9846 -> ~95% asymptotic relative efficiency at the normal. FIRST GAUSSIAN-KERNEL REDESCENDER and FIRST INFINITE-SUPPORT REDESCENDER in the suite: weight w(z) = exp(-(z/c)^2/2) is strictly positive for every finite z (no hard rejection cliff). Mechanically distinct from Huber (monotone, never redescends), Tukey biweight (smooth degree-3 polynomial with COMPACT support), Hampel (piecewise-linear three-part with hard outer cutoff at 8.5 MAD-units), and Andrews sine (transcendental sine wave with COMPACT support at A*pi). Translation- and scale-equivariant. Reports a THREE-BUCKET residual partition keyed on WEIGHT MAGNITUDE (no other shipped M-estimator partitions on weight, since they all hit a support cutoff first): coreRows (weight >= 0.5, |z| <= c*sqrt(2 ln 2) ~ 2.484), descendingRows (0.01 <= weight < 0.5), negligibleRows (weight < 0.01, |z| > c*sqrt(2 ln 100) ~ 9.05; effectively rejected but never exactly w = 0). welschMeanGap = welsch - mean, welschMedianGap = welsch - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-welsch <f>',
+    'drop sources whose Welsch M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--tuning <f>',
+    'Welsch tuning constant c (in MAD units). Weight = exp(-(z/c)^2/2); never exactly zero. Must be > 0. (default 2.9846 = canonical, ~95% ARE at the normal)',
+    '2.9846',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'welsch-desc' (default) | 'welsch-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|welschMeanGap| desc) | 'median-gap-desc' (|welschMedianGap| desc) | 'negligible-desc' (negligibleRows desc) | 'rows' | 'source'",
+    'welsch-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minWelsch: string;
+        tuning: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minWelsch = Number.parseFloat(opts.minWelsch);
+        if (!Number.isFinite(minWelsch) || minWelsch < 0) {
+          throw new Error(
+            `--min-welsch must be a finite, non-negative number (got ${opts.minWelsch})`,
+          );
+        }
+        const tuning = Number.parseFloat(opts.tuning);
+        if (!Number.isFinite(tuning) || !(tuning > 0)) {
+          throw new Error(
+            `--tuning must be a positive finite number (got ${opts.tuning})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'welsch-desc',
+          'welsch-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'negligible-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorWelsch(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minWelsch,
+          tuning,
+          top,
+          sort: opts.sort as
+            | 'welsch-desc'
+            | 'welsch-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'negligible-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMEstimatorWelsch(report) + '\n');
         }
       } catch (e) {
         die(e);
