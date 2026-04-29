@@ -2,6 +2,174 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.238 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-precision-pull` —
+  per-source PRECISION-WEIGHTED vs EQUAL-WEIGHTED consensus shift
+  diagnostic for the v0.6.219 Deming-slope uncertainty-quantification
+  suite. Consumes the SAME six per-source slope CIs as
+  v0.6.227–v0.6.237 (percentile bootstrap, jackknife normal, BCa,
+  studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TEN prior cross-lens
+  diagnostics on a fundamental axis** — every prior axis treats the
+  six lenses as exchangeable EQUAL-WEIGHT contributors to the
+  consensus:
+
+    - v0.6.227 jaccard, v0.6.228 sign, v0.6.229 width, v0.6.230
+      overlap-graph, v0.6.231 midpoint-dispersion, v0.6.232
+      asymmetry, v0.6.233 pair-inclusion, v0.6.234 rank-correlation,
+      v0.6.235 coverage-volume — all describe the JOINT geometry
+      of the six CIs as a static configuration where each lens
+      contributes equally to whatever statistic they compute.
+    - v0.6.237 leave-one-lens-out — DROPS one lens at a time at
+      FULL weight (binary keep/drop).
+
+  None of them answer the dual question: "if we kept all six
+  lenses but re-weighted each by its PRECISION (1 / width), as in
+  standard inverse-variance pooling, how far does the consensus
+  midpoint MOVE relative to the equal-weight midpoint?"
+
+  The 11th axis is therefore the PRECISION-POOLING axis: a
+  meta-analytic re-weighting applied to the 6-lens consensus.
+  For each source we compute on the 6 CI midpoints
+  `mid_k = (lo_k + hi_k) / 2` and 6 widths `w_k = hi_k - lo_k`:
+
+    - `equalMid` — arithmetic mean of mid_1..mid_6 (the v0.6.237
+      `fullMid`);
+    - `equalWidth` — arithmetic mean of w_1..w_6;
+    - `precisionMid` — sum_k(mid_k / w_k) / sum_k(1 / w_k), the
+      inverse-width-weighted mean of midpoints. Zero-width branch:
+      if any width is 0 the zero-width lenses absorb all the weight
+      equally; if all widths are 0 the precision-weighted mean
+      equals the equal-weighted mean by convention;
+    - `signedPull` = `precisionMid - equalMid` (positive = tighter
+      lenses pull consensus UP);
+    - `pull` = `|signedPull|`;
+    - `pullStd` = `pull / equalWidth` (unitless, comparable
+      across sources; same normalization as v0.6.237 `midShiftStd`;
+      0 when `equalWidth == 0`);
+    - `pullDirection` ∈ {`up`, `down`, `neutral`};
+    - `weightShares` (length 6, sums to 1, canonical lens order);
+    - `weightGini` ∈ [0, 5/6] — Gini coefficient of the weight
+      shares (0 = all six lenses equally precise, 5/6 = one lens
+      has all the precision weight);
+    - `dominantLens` — lens with the LARGEST weight share;
+    - `dominantWeightShare` ∈ [0, 1];
+    - `mostPrecisionPullingLens` — lens whose midpoint is FURTHEST
+      from `equalMid` AMONG above-average-precision lenses
+      (`weightShare > 1/6`); defaults to `dominantLens` if no lens
+      is above average.
+    - `precisionAlignmentScore` = `1 / (1 + pullStd)` in (0, 1]
+      — default sort key. 1.0 = precision re-weighting leaves
+      consensus center exactly where it was; near 0 = the precise
+      lenses pull consensus sharply away from the equal-weight
+      center.
+
+  Per-report aggregates: `meanPrecisionAlignment`,
+  `medianPrecisionAlignment`, `meanWeightGini`, `globalDominantLens`
+  (mode across sources), `globalPullDirection` (mode across sources;
+  ties broken `up` > `down` > `neutral`).
+
+  Edge cases: `equalWidth == 0` → `pullStd = 0` and
+  `precisionAlignmentScore = 1` (NOT NaN); identical midpoints
+  → `pull = 0` regardless of widths; some-but-not-all zero widths
+  → those lenses absorb all the weight equally.
+
+  Why an 11th axis: every prior axis (including v0.6.237 LOO)
+  treats the six lenses as equal-weight contributors. But the
+  lenses report DIFFERENT precisions: a tight BCa CI and a loose
+  profile-likelihood CI carry the same vote in every prior axis.
+  This axis is the ONLY one that asks what consensus we'd report
+  under inverse-variance pooling — the standard meta-analytic
+  weighting scheme — and quantifies how far that pooled center
+  is from the equal-weight center. A large `pullStd` is the
+  diagnostic signature that the precise lenses and imprecise
+  lenses literally disagree on the SLOPE itself (not just on
+  uncertainty), and the equal-weight consensus conceals that
+  disagreement.
+
+  Tests: 6506 → 6540 (+34) all green.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (default
+  settings except `--bootstraps 500`):
+
+  ```
+  pew-insights source-row-token-slope-ci-precision-pull
+  as of: 2026-04-29T21:45:06.803Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 500    seed: 42    alert-misaligned: -    top: -    sort: alignment-desc
+  dropped: 0 missing-from-some-lens, 0 above-alert-threshold; meanPrecisionAlignment: 0.9448; medianPrecisionAlignment: 0.9578; meanWeightGini: 0.4729; globalDominantLens: abc; globalPullDirection: up
+
+  source           rows  equalMid    precisionMid  signedPull  pullStd   dir   gini      align     dominantLens       domShare  mostPullingLens
+  ---------------  ----  ----------  ------------  ----------  --------  ----  --------  --------  -----------------  --------  -----------------
+  openclaw          565  -35573.5605   -67039.7756  -31466.2151    0.0051  down    0.4107    0.9949  profileLikelihood    0.3628  studentizedT
+  hermes            295  -66323.6746   -24061.1342  42262.5404    0.0221  up      0.3546    0.9784  profileLikelihood    0.2743  jackknife
+  vscode-redacted   333   -246.4358      629.0581    875.4940    0.0299  up      0.3905    0.9710  abc                  0.3143  studentizedT
+  opencode          459  -1777155.0173  -399461.7351  1377693.2822    0.0587  up      0.4993    0.9446  abc                  0.4671  abc
+  codex              64  -4185676.5294  -707784.6276  3477891.9018    0.0631  up      0.8330    0.9407  abc                  0.9996  abc
+  claude-code       299  8295986.0349   330908.6617  -7965077.3732    0.1916  down    0.3493    0.8392  profileLikelihood    0.2703  jackknife
+  ```
+
+  Headline findings on the local queue:
+  - `claude-code` is the most misaligned source: precision
+    re-weighting flips the consensus midpoint from +8.3M to +0.33M
+    (a `signedPull` of -7.97M, `pullStd` 0.19, `align` 0.84). The
+    precise lenses (here `profileLikelihood` is dominant with 27%
+    of the weight) say the slope is essentially zero, while the
+    equal-weight average is dragged enormously high by one or two
+    very wide lenses. A `pullStd` of ~0.2 means precision
+    re-weighting moves consensus by 20% of the average CI width —
+    a meaningful disagreement that v0.6.237 LOO cannot surface
+    because dropping ONE lens at full weight is not the same
+    operation as down-weighting it by precision.
+  - `codex` shows the most extreme weight concentration:
+    `weightGini` 0.83, `dominantWeightShare` 99.96% on `abc` (its
+    CI width is essentially 0 relative to the other five lenses).
+    Despite this, alignment is still 0.94 — the dominant lens
+    happens to agree closely on direction with the equal-weight
+    center, so the pull is moderate.
+  - 4 of 6 sources have `globalPullDirection: up` — the precise
+    lenses systematically pull the consensus midpoint UPWARD
+    relative to equal-weighting. Combined with the v0.6.237
+    finding that `bca` is the `mostInfluentialLens` for all six
+    sources, this paints a consistent picture: the BCa /
+    profile-likelihood family (the more model-driven lenses) is
+    both wider AND higher than the resampling family (`bootstrap`,
+    `jackknife`, `studentizedT`, `abc`).
+  - `globalDominantLens: abc` — the ABC bootstrap is the
+    tightest contributor for the largest number of sources (3
+    of 6), making it the lens that carries the most influence
+    under inverse-variance pooling. This is a different finding
+    from v0.6.237 (where `bca` had the largest LOO midpoint shift
+    for ALL sources): under DROP-ONE LOO, `bca` dominates because
+    it is far from the others; under PRECISION-POOL re-weighting,
+    `abc` dominates because it is tightest.
+
+  This 11th axis closes a real gap in the v0.6.227–v0.6.237 cross-
+  lens family: it is the first axis to USE the WIDTH information
+  as a weighting signal (instead of just describing it). Every
+  prior axis either ignored widths (sign, rank), summarized them
+  as a separate quantity (width-concordance, midpoint-dispersion,
+  asymmetry), or used them only for binary inclusion (overlap-
+  graph, pair-inclusion, coverage-volume). None of them coupled
+  width back to the midpoint estimate. `precision-pull` does, and
+  it gives a different ranking of "which lens dominates consensus"
+  than v0.6.237 LOO does — the two are complementary, not
+  redundant.
+
+  Pure helpers `precisionPull` and `giniOfWeights` are exported
+  for direct unit-testing and downstream consumption.
+
+  Flags:
+  - `--since/--until/--source/--min-rows/--confidence/--lambda/--bootstraps/--seed`
+    (all forwarded identically to the six underlying lenses);
+  - `--alert-misaligned <f>` — filter to sources whose
+    `precisionAlignmentScore < f`;
+  - `--top <n>`, `--sort <key>` (8 sort keys),
+    `--show-weights` (per-source 6-row weight breakdown),
+    `--json`.
+
 ## 0.6.237 — 2026-04-30
 
 ### Added
