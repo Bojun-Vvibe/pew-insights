@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.212 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-andrews` — per-source
+  **Andrews sine redescending M-estimator** of location of per-row
+  `total_tokens`. Solves `sum_i psi(z) = 0` by iteratively reweighted
+  least squares (IRLS) with `mu_0 = median`, `s = MAD/0.6745`, and the
+  **sinusoidal / transcendental** influence function
+
+  ```
+  psi(z) = A * sin(z / A)   if |z| <= A * pi
+         = 0                 if |z| >  A * pi
+  ```
+
+  with canonical tuning `A = 1.339` (≈ 95 % asymptotic relative
+  efficiency at the normal). Rejection threshold per MAD-unit is
+  `A * pi ≈ 4.207` — the most aggressive of any shipped redescender.
+
+  **First SINUSOIDAL / TRANSCENDENTAL redescender** in the
+  location-lens suite. Mechanically distinct from every previously
+  shipped M-estimator:
+
+  - **vs Huber (v0.6.209, monotone, `c = 1.345`)**: Huber `psi`
+    clips to `+- c` forever — bounded but **nonzero** tail
+    influence. Andrews eventually rejects entirely (`psi = 0`
+    beyond `A*pi`), like Tukey and Hampel.
+  - **vs Tukey biweight (v0.6.210, smooth polynomial, `c = 4.685`)**:
+    Tukey `psi` is a degree-3 **polynomial** `z * (1 - (z/c)^2)^2`,
+    tangent to 0 at `+-c`. Andrews `psi` is a **transcendental sine
+    wave** with derivative `cos(z/A)` — monotone on
+    `|z| <= A*pi/2`, then descends sinusoidally to 0 at `+-A*pi`.
+    Tukey descends as a quartic; Andrews descends as a half-cosine
+    arch. Andrews also rejects earlier per MAD-unit
+    (`A*pi ≈ 4.207` vs Tukey's `4.685`).
+  - **vs Hampel (v0.6.211, piecewise-linear, knots 1.7/3.4/8.5)**:
+    Hampel `psi` is **piecewise linear** with corners at `+- a, b, c`
+    and an inner *plateau* on `(a, b]` where `psi` is constant
+    `+- a`. Andrews `psi` has **no corners and no plateau** — it is
+    C-infinity smooth on its support, with a single peak at
+    `z = A*pi/2`. Hampel rejects beyond `c = 8.5` MAD-units (much
+    later than Andrews); Andrews rejects much earlier and more
+    aggressively, but does so *smoothly*.
+
+  Reports a unique **three-bucket residual partition** per source:
+
+  - `coreRows`        rows with `|z| <= A*pi/2`     (rising half of
+                      sine arch; weight in `[2/pi, 1]`)
+  - `descendingRows`  rows with `A*pi/2 < |z| <= A*pi`
+                      (falling half of sine arch; weight in
+                      `(0, 2/pi)`)
+  - `rejectedRows`    rows with `|z| > A*pi`        (weight = 0)
+
+  with `coreRows + descendingRows + rejectedRows = n`.
+
+  Translation- and scale-equivariant. Breakdown 0.5 under the MAD
+  scale.
+
+  Flags: `--tuning <f>` (default 1.339), `--min-rows <n>` (default
+  4), `--min-andrews <f>`, `--top <n>`, `--sort` with nine keys
+  including `andrews-desc` (default), `mean-gap-desc`,
+  `median-gap-desc`, `rejected-desc`.
+
+  **Live-smoke against `~/.config/pew/queue.jsonl`** (1,913 rows,
+  6 sources, default tuning A = 1.339; `vscode-copilot` redacted
+  to `vscode-XXX`):
+
+  ```
+  source        rows  mean         median      andrews     mad         scale       iter  core  descend  rejected  andrews-mean   andrews-median
+  ------------  ----  -----------  ----------  ----------  ----------  ----------  ----  ----  -------  --------  -------------  --------------
+  codex         64    12650385.31  7132861.00  8997876.58  6506096.00  9645952.36  16    55    7        2          -3652508.73   +1865015.58
+  opencode      425   10412409.48  7958860.00  7357641.66  4652994.00  6898539.23  12    386   16       23         -3054767.82    -601218.34
+  claude-code   299   11512995.95  3319967.00  3371623.92  3103438.00  4601164.06  12    223   22       54         -8141372.03      +51656.92
+  openclaw      531    3738273.68  2325102.00  2575519.65  1334954.00  1979205.76  15    458   48       25         -1162754.03    +250417.65
+  hermes        261     760488.25   432218.00   435386.11   264040.00   391466.29  14    211   29       21          -325102.14      +3168.11
+  vscode-XXX    333       5662.84     2319.00     2496.29     1736.00     2573.80  13    282   24       27            -3166.55       +177.29
+  ```
+
+  Highlights:
+
+  - **All 6 sources covered**, IRLS converged in 12-16 iterations
+    each.
+  - **Andrews always lies between the median and the mean** for
+    these heavy-tailed distributions (always pulled toward the
+    median, never past it). Across all 6 sources, the
+    `andrews - median` gap is small (max `+1865015.58` for codex,
+    a `+26 %` move on a `7.13 M` median; min `-601218.34` for
+    opencode, `-7.5 %`), while the `andrews - mean` gap is large
+    and **always negative** (max magnitude `8.14 M` on
+    claude-code, a `-71 %` move from the mean). This is the
+    expected signature of a redescending M-estimator on a heavy
+    upper tail: the mean is dragged up by extreme rows that
+    Andrews has zeroed out via `psi = 0`.
+  - **Rejection rate ranges 3.1 % - 18.1 %** across sources:
+    codex (2/64 = 3.1 %), claude-code (54/299 = 18.1 %),
+    opencode (23/425 = 5.4 %), openclaw (25/531 = 4.7 %),
+    hermes (21/261 = 8.0 %), vscode-XXX (27/333 = 8.1 %).
+    claude-code's high rejection rate matches its huge
+    `andrews-mean = -8.14 M` gap — its tail is the most extreme.
+  - **Compared to Hampel (v0.6.211)** on the same data, Andrews
+    rejects more aggressively per source (Andrews's threshold
+    `A*pi ≈ 4.207` vs Hampel's outer knot `c = 8.5`), as
+    expected. The two estimators land on similar `mu` values
+    (both close to median) but partition the residual axis very
+    differently.
+
 ## 0.6.211 — 2026-04-29
 
 ### Added

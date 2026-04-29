@@ -137,6 +137,7 @@ import {
   renderSourceRowTokenMEstimatorHuber,
   renderSourceRowTokenMEstimatorTukey,
   renderSourceRowTokenMEstimatorHampel,
+  renderSourceRowTokenMEstimatorAndrews,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -371,6 +372,7 @@ import { buildSourceRowTokenBroadenedMedian } from './sourcerowtokenbroadenedmed
 import { buildSourceRowTokenMEstimatorHuber } from './sourcerowtokenmestimatorhuber.js';
 import { buildSourceRowTokenMEstimatorTukey } from './sourcerowtokenmestimatortukey.js';
 import { buildSourceRowTokenMEstimatorHampel } from './sourcerowtokenmestimatorhampel.js';
+import { buildSourceRowTokenMEstimatorAndrews } from './sourcerowtokenmestimatorandrews.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -8583,6 +8585,130 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderSourceRowTokenMEstimatorHampel(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-m-estimator-andrews')
+  .description(
+    "Per-source Andrews sine redescending M-estimator of location of per-row total_tokens. Solves sum_i psi(z) = 0 by IRLS with mu_0 = median, s = MAD/0.6745, and the SINUSOIDAL influence function psi(z) = A*sin(z/A) if |z| <= A*pi; 0 if |z| > A*pi. Canonical tuning A = 1.339 -> ~95% asymptotic relative efficiency at the normal. FIRST SINUSOIDAL/TRANSCENDENTAL REDESCENDER in the suite. Mechanically distinct from Huber (monotone psi: clips to +-c forever, never zeroes out), Tukey biweight (smooth degree-3 polynomial redescender), Hampel (piecewise-linear three-part with inner plateau), and from all L-estimators (rank-only weights) and power means (weighted by power of x itself, not residual). Translation- and scale-equivariant. Reports the THREE-BUCKET residual partition: coreRows (|z| <= A*pi/2, rising half of sine arch), descendingRows (A*pi/2 < |z| <= A*pi, falling half of sine arch), rejectedRows (|z| > A*pi, weight = 0). andrewsMeanGap = andrews - mean, andrewsMedianGap = andrews - median.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; must be an integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--min-andrews <f>',
+    'drop sources whose Andrews M-estimate is strictly below f; cohort selector. f must be a finite, non-negative number. (default 0)',
+    '0',
+  )
+  .option(
+    '--tuning <f>',
+    'Andrews tuning constant A (in MAD units). Rows with |z| > A*pi are fully rejected. Must be > 0. (default 1.339 = canonical, ~95% ARE at the normal)',
+    '1.339',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'andrews-desc' (default) | 'andrews-asc' | 'mean-desc' | 'median-desc' | 'mean-gap-desc' (|andrewsMeanGap| desc) | 'median-gap-desc' (|andrewsMedianGap| desc) | 'rejected-desc' (rejectedRows desc) | 'rows' | 'source'",
+    'andrews-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        minAndrews: string;
+        tuning: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const minAndrews = Number.parseFloat(opts.minAndrews);
+        if (!Number.isFinite(minAndrews) || minAndrews < 0) {
+          throw new Error(
+            `--min-andrews must be a finite, non-negative number (got ${opts.minAndrews})`,
+          );
+        }
+        const tuning = Number.parseFloat(opts.tuning);
+        if (!Number.isFinite(tuning) || !(tuning > 0)) {
+          throw new Error(
+            `--tuning must be a positive finite number (got ${opts.tuning})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'andrews-desc',
+          'andrews-asc',
+          'mean-desc',
+          'median-desc',
+          'mean-gap-desc',
+          'median-gap-desc',
+          'rejected-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenMEstimatorAndrews(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          minAndrews,
+          tuning,
+          top,
+          sort: opts.sort as
+            | 'andrews-desc'
+            | 'andrews-asc'
+            | 'mean-desc'
+            | 'median-desc'
+            | 'mean-gap-desc'
+            | 'median-gap-desc'
+            | 'rejected-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderSourceRowTokenMEstimatorAndrews(report) + '\n');
         }
       } catch (e) {
         die(e);
