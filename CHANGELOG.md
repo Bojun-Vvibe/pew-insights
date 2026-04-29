@@ -2,6 +2,128 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.228 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-slope-sign-concordance` — directional
+  agreement diagnostic across the SIX uncertainty-quantification CIs
+  shipped between v0.6.220 and v0.6.225 (percentile bootstrap,
+  jackknife normal, BCa, studentized-t bootstrap, ABC,
+  profile-likelihood). **Mechanically distinct from v0.6.227
+  cross-lens agreement.** v0.6.227 measures *interval-geometry
+  agreement* (Jaccard / overlap of `[ciLower, ciUpper]`). This
+  command measures *directional agreement* — the fraction of lenses
+  whose point slope, CI midpoint, and CI exclusion-of-zero point the
+  same way as the canonical bootstrap-lens point slope. Two sources
+  can be Jaccard-tied (same wide envelope) yet disagree completely
+  on whether the slope is positive or negative; conversely two
+  sources can have nearly-disjoint intervals yet agree unanimously
+  on direction. This lens makes that distinction explicit.
+
+  Per source it reports:
+    - per-lens point slope, CI midpoint, point-sign, midpoint-sign,
+      and `sigDirection` ∈ {'+', '-', '0'} where '+' / '-' mean the
+      whole CI lies strictly on one side of zero and '0' means the
+      CI brackets zero (no significant direction at the chosen
+      confidence level);
+    - `pointSignConcordance` — fraction of the 6 lens point slopes
+      whose sign matches the canonical sign (in [0, 1], denom 6);
+    - `midpointSignConcordance` — same on CI midpoints;
+    - `sigDirectionalConcordance` — fraction of lenses whose CI
+      strictly excludes zero AND points the canonical way (denom 6;
+      lenses that include zero contribute 0, never NaN);
+    - `lensesAllAgreePoint` / `lensesAllAgreeMidpoint` /
+      `lensesAllSignificant` / `lensesAllSignificantSameDirection`
+      booleans;
+    - `dominantDirection` — strict majority point-sign across the
+      6 lenses; ties (3-3 or 2-2-2 or any tie that prevents a
+      strict majority) resolve to '0';
+    - `pointSignCounts` — 3-bin {plus, minus, zero} histogram (sums
+      to 6);
+    - `signDispersion` — normalised Shannon entropy of the 3-bin
+      histogram, in [0, 1] (0 = unanimous, 1 = perfectly even split
+      across {+, -, 0}).
+
+  Sort keys: `point-concordance-asc` (default; least-concordant
+  first), `point-concordance-desc`, `midpoint-concordance-asc/desc`,
+  `sig-concordance-asc/desc`, `sign-dispersion-desc/asc`, `rows`,
+  `source`. Filters: `--alert-sign-split` (only sources whose 6
+  lens point signs are NOT unanimous), `--alert-any-insignificant`
+  (only sources where at least one lens CI brackets zero). Standard
+  `--top N` cap with `droppedBelowTopCap` accounting.
+
+  The point-sign convention treats slope == 0 as the third bin '0'
+  (`Math.sign(0) === 0`). For continuous Deming fits exact zero is
+  measure-zero in the population, but a degenerate input (e.g.
+  constant y) can produce slope === 0 deterministically and the
+  module reports it accurately rather than coercing to '+' / '-'.
+
+  The bootstrap lens (v0.6.220) is taken as the canonical point
+  because it is the lens shipped first and the lens whose "point
+  slope" equals the unmodified Deming MLE on the original
+  (un-resampled) row population. Callers can recover any other
+  lens's directional agreement from the per-lens fields.
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, --since 14d)
+
+```
+pew-insights source-row-token-slope-sign-concordance
+as of: 2026-04-29T15:39:06.949Z    sources: 6 (with all lenses 6, shown 6)    rows: 1979    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-sign-split: no    alert-any-insignificant: no    top: -    sort: point-concordance-asc
+dropped: 0 missing-from-some-lens, 0 sign-unanimous (alert), 0 all-significant (alert), 0 below top cap; sign-split: 0; all-significant: 0
+
+source           rows  canonSign  ptConcord  midConcord  sigConcord  +/-/0    domDir  signDisp  allPt  allSig
+---------------  ----  ---------  ---------  ----------  ----------  -------  ------  --------  -----  ------
+claude-code       299          +     1.0000      1.0000      0.5000    6/0/0       +    0.0000    yes      NO
+codex              64          +     1.0000      0.6667      0.3333    6/0/0       +    0.0000    yes      NO
+hermes            283          -     1.0000      0.8333      0.5000    0/6/0       -    0.0000    yes      NO
+openclaw          553          -     1.0000      1.0000      0.5000    0/6/0       -    0.0000    yes      NO
+opencode          447          -     1.0000      0.6667      0.3333    0/6/0       -    0.0000    yes      NO
+vscode-redacted   333          +     1.0000      1.0000      0.5000    6/0/0       +    0.0000    yes      NO
+```
+
+**Reading.** Across all 6 production sources every lens
+unanimously agrees on the sign of the Deming slope on row-tokens
+(`ptConcord = 1.0000`, `signDisp = 0.0000`, `lensesAllAgreePoint =
+yes` for every row), even though v0.6.227 found that **none** of
+these sources hit strict cross-lens interval consensus
+(`agree?=NO` everywhere). That is exactly the v0.6.228-only
+distinction: every lens disagrees on *how much* the slope is, but
+every lens agrees on *which sign* it is. The midpoint-vs-point
+gap on `codex` and `opencode` (`midConcord = 0.6667` while
+`ptConcord = 1.0000`) shows the two flavours of "center" can
+diverge even when point sign is unanimous: at least one lens'
+CI midpoint sits on the opposite side of zero from its own point
+slope (an asymmetric-CI signature). `sigConcord = 0.5` for the 4
+unanimous sources means exactly half of the 6 CIs strictly
+exclude zero on the dominant side; the other 3 lenses bracket
+zero. `allSig = NO` everywhere reflects the same thing — no
+source has all 6 lenses simultaneously rejecting zero, despite
+unanimous point-sign agreement. Three sources point + and three
+point - (claude-code, codex, vscode-redacted vs hermes, openclaw,
+opencode), so per-source `dominantDirection` carries useful
+sign information that `agreementIndex` from v0.6.227 deliberately
+discards.
+
+### Tests
+
+- Test count grew from 5873 → 5918 (+45 in the new
+  `sourcerowtokenslopesignconcordance` suite). Coverage spans
+  `signBin` / `normalisedSignEntropy` / `dominantSign` pure helpers
+  (unanimous, even split, ties, NaN, Infinity), full option
+  validation (minRows, confidence, lambda, bootstraps, seed, top,
+  sort), empty-queue + option carry-through, monotonic-increasing
+  and monotonic-decreasing series produce unanimous canonical sign
+  and `pointSignConcordance == 1`, per-lens entries cover all 6
+  lenses in canonical order, midpoint == (lo + hi) / 2 invariant,
+  `sigDirection` matches `ciExcludesZero`, `--source` filter,
+  `--top` cap with `droppedBelowTopCap` accounting,
+  `--alert-sign-split` / `--alert-any-insignificant` filters,
+  `signSplitCount`, deterministic-given-same-seed, seed change
+  perturbs bootstrap-family CIs, all concordance fields stay in
+  [0, 1], `sort=source` / `sort=rows` ordering, renderer header +
+  columns + yes/NO flag.
+
 ## 0.6.227 — 2026-04-29
 
 ### Added
