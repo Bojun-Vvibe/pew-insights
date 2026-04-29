@@ -13667,6 +13667,7 @@ export function renderSourceRowTokenSiegelSlope(
     '+anch',
     '-anch',
     '0anch',
+    'agree',
     'pairs',
   ];
   const rowsTS: string[][] = r.sources.map(
@@ -13687,6 +13688,7 @@ export function renderSourceRowTokenSiegelSlope(
       formatNumber(s.anchorsPositive),
       formatNumber(s.anchorsNegative),
       formatNumber(s.anchorsZero),
+      s.anchorAgreement.toFixed(3),
       formatNumber(s.pairsTotal),
     ],
   );

@@ -373,3 +373,47 @@ test('builder: perAnchorMedianRange grows with heterogeneous trend', () => {
     `expected wide per-anchor spread, got ${row.perAnchorMedianRange}`,
   );
 });
+
+test('builder: anchorAgreement is 1.0 for any monotone series', () => {
+  const queue: QueueLine[] = mkSeries('mono', [1, 2, 3, 4, 5, 6, 7, 8]);
+  const r = buildSourceRowTokenSiegelSlope(queue, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  // every anchor's inner median is positive -> anchorsPositive = 8, agreement = 1.
+  assert.equal(row.anchorAgreement, 1);
+  assert.equal(row.anchorsPositive, 8);
+});
+
+test('builder: anchorAgreement is 1.0 for a flat series (all anchors zero)', () => {
+  const queue: QueueLine[] = mkSeries('flat', [9, 9, 9, 9, 9, 9]);
+  const r = buildSourceRowTokenSiegelSlope(queue, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(row.anchorAgreement, 1);
+  assert.equal(row.anchorsZero, 6);
+});
+
+test('builder: anchorAgreement reflects dominant bucket fraction', () => {
+  // Roughly 5 up anchors, 1 down anchor in a noisy increasing series.
+  const queue: QueueLine[] = mkSeries('noisy', [1, 2, 3, 4, 5, 0]);
+  const r = buildSourceRowTokenSiegelSlope(queue, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  const dominant = Math.max(
+    row.anchorsPositive,
+    row.anchorsNegative,
+    row.anchorsZero,
+  );
+  assert.equal(row.anchorAgreement, dominant / row.rowsKept);
+  assert.ok(row.anchorAgreement >= 1 / 3 && row.anchorAgreement <= 1);
+});
+
+test('builder: sort=agreement-desc puts the most-unanimous source first', () => {
+  const queue: QueueLine[] = [
+    ...mkSeries('unanimous', [1, 2, 3, 4, 5, 6]), // agreement 1.0
+    ...mkSeries('split', [10, 1, 10, 1, 10, 1]), // agreement < 1.0
+  ];
+  const r = buildSourceRowTokenSiegelSlope(queue, {
+    sort: 'agreement-desc',
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources[0]!.source, 'unanimous');
+  assert.equal(r.sources[0]!.anchorAgreement, 1);
+});

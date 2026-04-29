@@ -9122,7 +9122,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'range-desc' (perAnchorMedianRange desc) | 'positive-desc' (anchorsPositive desc) | 'negative-desc' (anchorsNegative desc) | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'range-desc' (perAnchorMedianRange desc) | 'agreement-desc' (anchorAgreement desc; how unanimous anchors are about trend direction) | 'positive-desc' (anchorsPositive desc) | 'negative-desc' (anchorsNegative desc) | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9175,6 +9175,7 @@ program
           'slope-asc',
           'magnitude-desc',
           'range-desc',
+          'agreement-desc',
           'positive-desc',
           'negative-desc',
           'rows',
@@ -9199,6 +9200,7 @@ program
             | 'slope-asc'
             | 'magnitude-desc'
             | 'range-desc'
+            | 'agreement-desc'
             | 'positive-desc'
             | 'negative-desc'
             | 'rows'

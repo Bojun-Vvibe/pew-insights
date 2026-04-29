@@ -154,6 +154,7 @@ export interface SourceRowTokenSiegelSlopeOptions {
     | 'slope-asc'
     | 'magnitude-desc'
     | 'range-desc'
+    | 'agreement-desc'
     | 'positive-desc'
     | 'negative-desc'
     | 'rows'
@@ -194,6 +195,18 @@ export interface SourceRowTokenSiegelSlopeRow {
   anchorsNegative: number;
   /** #{i : m_i == 0}. */
   anchorsZero: number;
+  /**
+   * Fraction of anchors that fall in the dominant sign bucket:
+   * `max(anchorsPositive, anchorsNegative, anchorsZero) / rowsKept`.
+   * In `[1/3, 1]`. A value near 1 means the anchors are unanimous
+   * about the trend direction (high confidence in the slope sign);
+   * a value near 1/3 means anchors are split three ways (low
+   * confidence — the slope sign is essentially a coin flip across
+   * anchors). Independent of `slopeMagnitude` — a tiny slope can
+   * still be unanimously signed, and a large slope can still have
+   * dissenting anchors.
+   */
+  anchorAgreement: number;
   /** Total ordered slope count `n*(n-1)`. */
   pairsTotal: number;
 }
@@ -212,6 +225,7 @@ export interface SourceRowTokenSiegelSlopeReport {
     | 'slope-asc'
     | 'magnitude-desc'
     | 'range-desc'
+    | 'agreement-desc'
     | 'positive-desc'
     | 'negative-desc'
     | 'rows'
@@ -237,6 +251,7 @@ const VALID_SORTS = [
   'slope-asc',
   'magnitude-desc',
   'range-desc',
+  'agreement-desc',
   'positive-desc',
   'negative-desc',
   'rows',
@@ -479,6 +494,8 @@ export function buildSourceRowTokenSiegelSlope(
       anchorsPositive: sg.anchorsPositive,
       anchorsNegative: sg.anchorsNegative,
       anchorsZero: sg.anchorsZero,
+      anchorAgreement:
+        Math.max(sg.anchorsPositive, sg.anchorsNegative, sg.anchorsZero) / n,
       pairsTotal: sg.pairsTotal,
     });
   }
@@ -501,6 +518,8 @@ export function buildSourceRowTokenSiegelSlope(
       primary = q.slopeMagnitude - p.slopeMagnitude;
     else if (sort === 'range-desc')
       primary = q.perAnchorMedianRange - p.perAnchorMedianRange;
+    else if (sort === 'agreement-desc')
+      primary = q.anchorAgreement - p.anchorAgreement;
     else if (sort === 'positive-desc')
       primary = q.anchorsPositive - p.anchorsPositive;
     else if (sort === 'negative-desc')
