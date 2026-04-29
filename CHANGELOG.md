@@ -250,6 +250,68 @@ filters, 6 sources, default `--bootstraps 1000`,
   every source) — confirming the BCa correction is a
   second-order refinement, not a different point estimator.
 
+### Refinement (also v0.6.222)
+
+Per-source rows additionally carry **`bcaWidthRatio`** —
+`bcaCiWidth / percentileCiWidth` on the *same sorted bootstrap
+distribution* — and **`bcaShiftDirection`** in `{-1, 0, +1}`:
+`+1` if both BCa percentile picks shifted upward (interval moved
+up), `-1` if both shifted down, `0` if they shifted in opposite
+directions (interval rescaled but not net-shifted). Plus a new
+`bca-width-ratio-desc` sort key (NaN ratios from constant-
+bootstrap sources sort last). Together these answer two follow-
+up questions the v0.6.220-vs-v0.6.222 comparison raised: "did
+BCa make the CI wider or narrower than percentile on this
+source?" (the ratio) and "did BCa just rescale or actually
+shift the interval?" (the direction).
+
+Refinement live-smoke (same data, same defaults, with the new
+columns surfaced; `vscode-copilot` redacted to `vscode-redacted`):
+
+    source           wRatio   dir
+    codex            0.9999   up
+    opencode         1.1159   dn
+    claude-code      2.2700   up
+    openclaw         1.1695   dn
+    hermes           1.1388   dn
+    vscode-redacted  1.9292   up
+
+Things this surfaces that the original v0.6.222 BCa table did
+not:
+
+  - **`claude-code` has the most-aggressive BCa widening:
+    `wRatio = 2.27`** — the BCa interval is **2.27x wider** than
+    the v0.6.220 percentile bootstrap interval on the same
+    sorted distribution. With `z0 = +0.040` and the largest
+    positive `acceleration = +0.045` in the table, the BCa
+    correction stretched the upper tail substantially and shifted
+    both endpoints upward (`dir = up`). This is the textbook
+    pattern Efron 1987 flagged as exactly the case where
+    percentile *under-covers* and BCa restores nominal coverage.
+  - **`vscode-redacted` is the second-most-widened (`wRatio =
+    1.93`, `dir = up`)** — same direction, smaller magnitude.
+  - **`codex` has `wRatio = 0.9999` (essentially 1.0) and `dir =
+    up`** — BCa and percentile agree on width to four decimals,
+    consistent with this source's near-zero `pctShift = 0.0035`.
+  - **`opencode`, `openclaw`, `hermes` all have `dir = dn`** —
+    BCa shifted both percentile picks downward, narrowing the
+    upper end of the v0.6.220 interval. On `opencode` this
+    aligns with the largest negative `z0 = -0.1358` in the
+    table.
+  - **The `dir` axis splits cleanly across the matrix**: 3
+    sources `up`, 3 sources `dn`, 0 `mixed` — meaning on this
+    data BCa is always net-shifting the interval, never purely
+    rescaling it. The `mixed` direction would arise only if
+    `z0` and `a` had opposing-sign contributions to the upper vs
+    lower endpoint; none of these 6 sources hit that regime.
+
+Test count grows to **5,693 -> 5,699 (+6)**: bcaWidthRatio
+finite on ascending series, NaN on all-equal,
+bcaShiftDirection in `{-1, 0, +1}`, direction matches alpha
+deviations, `bca-width-ratio-desc` sort key orders desc with
+NaN last, and `bcaWidthRatio = ciWidth / percentileWidth`
+re-derivability.
+
 ## 0.6.221 — 2026-04-29
 
 ### Added

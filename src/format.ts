@@ -14216,6 +14216,8 @@ export function renderSourceRowTokenBcaBootstrapSlopeCi(
     'ciWidth',
     'bcaShift',
     'pctShift',
+    'wRatio',
+    'dir',
     '0inCI?',
   ];
   const rowsTbl: string[][] = r.sources.map(
@@ -14232,6 +14234,12 @@ export function renderSourceRowTokenBcaBootstrapSlopeCi(
       s.ciWidth.toFixed(4),
       (s.bcaShift >= 0 ? '+' : '') + s.bcaShift.toFixed(4),
       s.bcaPercentileShift.toFixed(4),
+      Number.isFinite(s.bcaWidthRatio) ? s.bcaWidthRatio.toFixed(4) : 'n/a',
+      s.bcaShiftDirection > 0
+        ? 'up'
+        : s.bcaShiftDirection < 0
+          ? 'dn'
+          : 'mixed',
       s.ciContainsZero ? 'yes' : 'no',
     ],
   );

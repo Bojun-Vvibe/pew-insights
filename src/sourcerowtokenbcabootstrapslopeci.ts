@@ -177,6 +177,7 @@ export interface SourceRowTokenBcaBootstrapSlopeCiOptions {
     | 'z0-magnitude-desc'
     | 'acceleration-magnitude-desc'
     | 'bca-shift-desc'
+    | 'bca-width-ratio-desc'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -221,6 +222,29 @@ export interface SourceRowTokenBcaBootstrapSlopeCiRow {
    * disagreed with percentile.
    */
   bcaPercentileShift: number;
+  /**
+   * `bcaCiWidth / percentileCiWidth` on the SAME sorted bootstrap
+   * distribution: the multiplicative factor by which the BCa
+   * adjustment widened or narrowed the v0.6.220-style percentile
+   * interval. `1.0` => BCa and percentile produce the same width
+   * (typically also `bcaPercentileShift ~ 0`); `> 1` => BCa is
+   * wider than percentile (acceleration stretching dominates),
+   * `< 1` => BCa is narrower (typically driven by a one-sided shift
+   * that lands inside the percentile range). NaN if the percentile
+   * width is zero (constant-bootstrap source). (Refinement field,
+   * v0.6.222 follow-up.)
+   */
+  bcaWidthRatio: number;
+  /**
+   * Direction of the BCa shift relative to the percentile pick:
+   * `+1` if both alphaLower and alphaUpper shifted upward (interval
+   * moved up), `-1` if both shifted downward, `0` if they shifted in
+   * opposite directions (the BCa interval is rescaled but not net-
+   * shifted). Useful with `bcaShift` for distinguishing "interval
+   * moved" vs "interval rescaled" corrections. (Refinement field,
+   * v0.6.222 follow-up.)
+   */
+  bcaShiftDirection: number;
 }
 
 export interface SourceRowTokenBcaBootstrapSlopeCiReport {
@@ -245,6 +269,7 @@ export interface SourceRowTokenBcaBootstrapSlopeCiReport {
     | 'z0-magnitude-desc'
     | 'acceleration-magnitude-desc'
     | 'bca-shift-desc'
+    | 'bca-width-ratio-desc'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -273,6 +298,7 @@ const VALID_SORTS = [
   'z0-magnitude-desc',
   'acceleration-magnitude-desc',
   'bca-shift-desc',
+  'bca-width-ratio-desc',
   'ci-contains-zero-first',
   'rows',
   'source',
@@ -574,6 +600,17 @@ export function buildSourceRowTokenBcaBootstrapSlopeCi(
     const bcaPercentileShift =
       Math.abs(alphaLower - percentileNomLo) +
       Math.abs(alphaUpper - percentileNomHi);
+    // Refinement: the v0.6.220-style percentile-bootstrap interval
+    // on the SAME sorted distribution, for direct comparison.
+    const pctCiLower = percentileSorted(sorted, percentileNomLo);
+    const pctCiUpper = percentileSorted(sorted, percentileNomHi);
+    const pctCiWidth = pctCiUpper - pctCiLower;
+    const bcaWidthRatio = pctCiWidth === 0 ? NaN : ciWidth / pctCiWidth;
+    const dLo = alphaLower - percentileNomLo;
+    const dHi = alphaUpper - percentileNomHi;
+    let bcaShiftDirection = 0;
+    if (dLo > 0 && dHi > 0) bcaShiftDirection = 1;
+    else if (dLo < 0 && dHi < 0) bcaShiftDirection = -1;
 
     allRows.push({
       source,
@@ -589,6 +626,8 @@ export function buildSourceRowTokenBcaBootstrapSlopeCi(
       ciContainsZero,
       bcaShift,
       bcaPercentileShift,
+      bcaWidthRatio,
+      bcaShiftDirection,
     });
   }
 
@@ -621,7 +660,12 @@ export function buildSourceRowTokenBcaBootstrapSlopeCi(
       primary = Math.abs(q.acceleration) - Math.abs(p.acceleration);
     else if (sort === 'bca-shift-desc')
       primary = q.bcaPercentileShift - p.bcaPercentileShift;
-    else if (sort === 'ci-contains-zero-first')
+    else if (sort === 'bca-width-ratio-desc') {
+      // NaN ratios sort last.
+      const qv = Number.isFinite(q.bcaWidthRatio) ? q.bcaWidthRatio : -Infinity;
+      const pv = Number.isFinite(p.bcaWidthRatio) ? p.bcaWidthRatio : -Infinity;
+      primary = qv - pv;
+    } else if (sort === 'ci-contains-zero-first')
       primary = (q.ciContainsZero ? 1 : 0) - (p.ciContainsZero ? 1 : 0);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
     else primary = p.source < q.source ? -1 : p.source > q.source ? 1 : 0;

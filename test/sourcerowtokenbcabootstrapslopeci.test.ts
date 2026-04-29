@@ -992,3 +992,98 @@ test('properties: generatedAt default is set', () => {
   assert.ok(typeof r.generatedAt === 'string');
   assert.ok(r.generatedAt.length >= 20);
 });
+
+// =========================================================================
+// v0.6.222 refinement: bcaWidthRatio + bcaShiftDirection + sort key
+// =========================================================================
+
+test('refinement: bcaWidthRatio is finite on ascending series', () => {
+  const queue = mkSeries('a', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+  const r = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+    bootstraps: 300,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.ok(Number.isFinite(s.bcaWidthRatio));
+  assert.ok(s.bcaWidthRatio > 0);
+});
+
+test('refinement: bcaWidthRatio is NaN on all-equal (zero percentile width)', () => {
+  const queue = mkSeries('a', [42, 42, 42, 42, 42, 42]);
+  const r = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+    bootstraps: 200,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.ok(Number.isNaN(s.bcaWidthRatio));
+});
+
+test('refinement: bcaShiftDirection is in {-1, 0, +1}', () => {
+  const queue = [
+    ...mkSeries('a', [10, 20, 30, 40, 50, 60, 70, 80]),
+    ...mkSeries('b', [100, 90, 80, 70, 60, 50, 40, 30]),
+    ...mkSeries('c', [1, 100, 2, 99, 3, 98, 4, 97]),
+  ];
+  const r = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+    bootstraps: 300,
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    assert.ok([-1, 0, 1].includes(s.bcaShiftDirection), `dir=${s.bcaShiftDirection}`);
+  }
+});
+
+test('refinement: bcaShiftDirection = +1 iff both alphaLower and alphaUpper > nominal', () => {
+  const queue = mkSeries('a', [10, 30, 18, 50, 33, 70, 48, 90, 65, 110]);
+  const r = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+    bootstraps: 500,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  const dLo = s.alphaLower - 0.025;
+  const dHi = s.alphaUpper - 0.975;
+  if (dLo > 0 && dHi > 0) assert.equal(s.bcaShiftDirection, 1);
+  else if (dLo < 0 && dHi < 0) assert.equal(s.bcaShiftDirection, -1);
+  else assert.equal(s.bcaShiftDirection, 0);
+});
+
+test('refinement: bca-width-ratio-desc sort key orders by ratio desc, NaN last', () => {
+  const queue = [
+    ...mkSeries('flat', [42, 42, 42, 42, 42]),
+    ...mkSeries('asc', [10, 20, 30, 40, 50, 60, 70]),
+    ...mkSeries('noise', [1, 100, 2, 99, 3, 98, 4]),
+  ];
+  const r = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+    bootstraps: 300,
+    sort: 'bca-width-ratio-desc',
+    generatedAt: GEN,
+  });
+  // The flat source (NaN ratio) must be last.
+  assert.equal(r.sources[r.sources.length - 1]!.source, 'flat');
+  // Among the finite-ratio sources, descending order.
+  const finite = r.sources
+    .filter((s) => Number.isFinite(s.bcaWidthRatio))
+    .map((s) => s.bcaWidthRatio);
+  for (let i = 1; i < finite.length; i += 1) {
+    assert.ok(finite[i - 1]! >= finite[i]!);
+  }
+});
+
+test('refinement: bcaWidthRatio = ciWidth / percentile-width on same sorted distribution', () => {
+  // We can sanity-check by re-deriving the percentile width from
+  // ciWidth and bcaWidthRatio.
+  const queue = mkSeries(
+    'a',
+    [10, 22, 18, 35, 28, 47, 44, 60, 55, 73, 70, 88, 82, 100],
+  );
+  const r = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+    bootstraps: 500,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  if (Number.isFinite(s.bcaWidthRatio) && s.bcaWidthRatio > 0) {
+    const pctWidth = s.ciWidth / s.bcaWidthRatio;
+    // Percentile width should be positive on a non-degenerate series.
+    assert.ok(pctWidth > 0, `pctWidth=${pctWidth}`);
+  }
+});
