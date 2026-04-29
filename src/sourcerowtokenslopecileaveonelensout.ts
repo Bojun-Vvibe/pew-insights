@@ -160,6 +160,21 @@ export interface SourceRowTokenSlopeCiLeaveOneLensOutRow {
   fullMidStd: number;
   loo: SlopeLooRow[];
   mostInfluentialLens: SlopeLooLensName;
+  /**
+   * `signedMidShift` of the LOO row whose `midShift` defines
+   * `maxMidShiftStd`. Positive = removing the most-influential
+   * lens pulls the consensus midpoint UP (so that lens was
+   * dragging the consensus down on the slope axis); negative =
+   * the opposite. (Refinement field.)
+   */
+  mostInfluentialSignedShift: number;
+  /**
+   * Direction label derived from `mostInfluentialSignedShift`:
+   * `'up'` if > 0 (removing the dominant lens raises the
+   * consensus), `'down'` if < 0, `'neutral'` if exactly 0
+   * (degenerate case, identical midpoints). (Refinement field.)
+   */
+  mostInfluentialDirection: 'up' | 'down' | 'neutral';
   leastInfluentialLens: SlopeLooLensName;
   tightestLens: SlopeLooLensName;
   widestLens: SlopeLooLensName;
@@ -241,6 +256,8 @@ export function leaveOneLensOut(
   fullMidStd: number;
   loo: SlopeLooRow[];
   mostInfluentialLens: SlopeLooLensName;
+  mostInfluentialSignedShift: number;
+  mostInfluentialDirection: 'up' | 'down' | 'neutral';
   leastInfluentialLens: SlopeLooLensName;
   tightestLens: SlopeLooLensName;
   widestLens: SlopeLooLensName;
@@ -319,12 +336,20 @@ export function leaveOneLensOut(
   const widthRatioRange = maxWR - minWR;
   const looStabilityScore = 1 / (1 + maxMSS);
 
+  const mostInfluentialSignedShift = loo[mostIdx]!.signedMidShift;
+  let mostInfluentialDirection: 'up' | 'down' | 'neutral';
+  if (mostInfluentialSignedShift > 0) mostInfluentialDirection = 'up';
+  else if (mostInfluentialSignedShift < 0) mostInfluentialDirection = 'down';
+  else mostInfluentialDirection = 'neutral';
+
   return {
     fullMid,
     fullWidth,
     fullMidStd,
     loo,
     mostInfluentialLens: SLOPE_LOO_LENS_NAMES[mostIdx]!,
+    mostInfluentialSignedShift,
+    mostInfluentialDirection,
     leastInfluentialLens: SLOPE_LOO_LENS_NAMES[leastIdx]!,
     tightestLens: SLOPE_LOO_LENS_NAMES[tightestIdx]!,
     widestLens: SLOPE_LOO_LENS_NAMES[widestIdx]!,
@@ -587,12 +612,20 @@ function fmtNum(x: number, digits = 4): string {
  * lensRemoved, looMid, looWidth, midShift, widthRatio,
  * midShiftStd. Useful for full attribution; the default summary
  * row only names mostInfluential / leastInfluential.
+ *
+ * When `showDirection` is true, a compact one-line directional
+ * summary is appended after each source row naming the
+ * `mostInfluentialLens`, the `mostInfluentialDirection`
+ * (`up`/`down`/`neutral`), and the raw `mostInfluentialSignedShift`
+ * value. Lighter-weight alternative to `--show-loo` that surfaces
+ * just the dominant lens's directional pull on the consensus.
  */
 export function renderSourceRowTokenSlopeCiLeaveOneLensOut(
   r: SourceRowTokenSlopeCiLeaveOneLensOutReport,
-  opts: { showLoo?: boolean } = {},
+  opts: { showLoo?: boolean; showDirection?: boolean } = {},
 ): string {
   const showLoo = opts.showLoo ?? false;
+  const showDirection = opts.showDirection ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-leave-one-lens-out');
   lines.push(
@@ -630,6 +663,17 @@ export function renderSourceRowTokenSlopeCiLeaveOneLensOut(
         row.widestLens.padEnd(17),
       ].join('  '),
     );
+    if (showDirection) {
+      const arrow =
+        row.mostInfluentialDirection === 'up'
+          ? '^'
+          : row.mostInfluentialDirection === 'down'
+            ? 'v'
+            : '=';
+      lines.push(
+        `    direction: removing ${row.mostInfluentialLens} pulls consensus midpoint ${row.mostInfluentialDirection} ${arrow} (signedShift=${fmtNum(row.mostInfluentialSignedShift)})`,
+      );
+    }
     if (showLoo) {
       lines.push(
         '    lensRemoved        looMid      looWidth    midShift    widthRatio  midShiftStd',

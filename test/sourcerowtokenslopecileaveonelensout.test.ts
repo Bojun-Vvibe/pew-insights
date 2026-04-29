@@ -510,3 +510,69 @@ test('renderer: header includes confidence, lambda, bootstraps, seed, sort', () 
   assert.ok(out.includes('seed: 42'));
   assert.ok(out.includes('sort: stability-desc'));
 });
+
+// --- refinement: mostInfluentialSignedShift / mostInfluentialDirection ---
+
+test('refinement: mostInfluentialSignedShift matches the dominant LOO row', () => {
+  // lens 3 is far above the others -> removing it pulls consensus DOWN
+  const r = leaveOneLensOut([1, 1, 1, 100, 1, 1], [1, 1, 1, 1, 1, 1]);
+  assert.equal(r.mostInfluentialLens, SLOPE_LOO_LENS_NAMES[3]);
+  assert.ok(r.mostInfluentialSignedShift < 0);
+  assert.equal(r.mostInfluentialDirection, 'down');
+  // and signedShift must equal the looRow's signedMidShift exactly
+  assert.equal(r.mostInfluentialSignedShift, r.loo[3]!.signedMidShift);
+});
+
+test('refinement: mostInfluentialDirection up when removing a low-outlier', () => {
+  // lens 0 is far below the others -> removing it pulls consensus UP
+  const r = leaveOneLensOut([-100, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1]);
+  assert.equal(r.mostInfluentialLens, SLOPE_LOO_LENS_NAMES[0]);
+  assert.ok(r.mostInfluentialSignedShift > 0);
+  assert.equal(r.mostInfluentialDirection, 'up');
+});
+
+test('refinement: mostInfluentialDirection neutral when all mids identical', () => {
+  const r = leaveOneLensOut([5, 5, 5, 5, 5, 5], [2, 2, 2, 2, 2, 2]);
+  assert.equal(r.mostInfluentialSignedShift, 0);
+  assert.equal(r.mostInfluentialDirection, 'neutral');
+});
+
+test('refinement: builder propagates direction fields onto the per-source row', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiLeaveOneLensOut(queue, {
+    bootstraps: 100,
+  });
+  const row = r.rows[0]!;
+  assert.ok(['up', 'down', 'neutral'].includes(row.mostInfluentialDirection));
+  assert.equal(typeof row.mostInfluentialSignedShift, 'number');
+  // raw signed shift |.|  must equal abs of the dominant looRow signedMidShift
+  const dominant = row.loo.find((l) => l.lensRemoved === row.mostInfluentialLens)!;
+  assert.equal(row.mostInfluentialSignedShift, dominant.signedMidShift);
+});
+
+test('renderer: --show-direction emits one direction line per source', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiLeaveOneLensOut(queue, {
+    bootstraps: 100,
+  });
+  const out = renderSourceRowTokenSlopeCiLeaveOneLensOut(r, {
+    showDirection: true,
+  });
+  // exactly one "direction:" line per source
+  const dirLines = out.split('\n').filter((l) => l.includes('direction:'));
+  assert.equal(dirLines.length, r.rows.length);
+  assert.ok(dirLines[0]!.includes('signedShift='));
+});
+
+test('renderer: --show-direction line names the most-influential lens and direction', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiLeaveOneLensOut(queue, {
+    bootstraps: 100,
+  });
+  const out = renderSourceRowTokenSlopeCiLeaveOneLensOut(r, {
+    showDirection: true,
+  });
+  const row = r.rows[0]!;
+  assert.ok(out.includes(`removing ${row.mostInfluentialLens}`));
+  assert.ok(out.includes(row.mostInfluentialDirection));
+});

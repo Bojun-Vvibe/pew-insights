@@ -22291,6 +22291,10 @@ program
     '--show-loo',
     'when rendering pretty (non-JSON), append a per-source 6-row LOO sub-table (one row per removed lens)',
   )
+  .option(
+    '--show-direction',
+    'when rendering pretty (non-JSON), append a compact one-line directional summary per source naming the mostInfluentialLens, the up/down direction, and the raw signed-shift value',
+  )
   .action(
     async (
       opts: {
@@ -22307,6 +22311,7 @@ program
         sort: string;
         json?: boolean;
         showLoo?: boolean;
+        showDirection?: boolean;
       },
       cmd,
     ) => {
@@ -22408,6 +22413,7 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiLeaveOneLensOut(report, {
               showLoo: opts.showLoo ?? false,
+              showDirection: opts.showDirection ?? false,
             }) + '\n',
           );
         }
