@@ -14455,12 +14455,12 @@ export function renderSourceRowTokenProfileLikelihoodSlopeCi(
   );
   lines.push(
     chalk.dim(
-      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    confidence: ${r.confidence}    chi2-threshold: ${r.chi2Threshold.toFixed(6)}    lambda: ${r.lambda}    bisection-iters: ${r.bisectionIterations}    max-bracket-doublings: ${r.maxBracketDoublings}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    alert-reject-zero: ${r.alertRejectZero ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    confidence: ${r.confidence}    chi2-threshold: ${r.chi2Threshold.toFixed(6)}    lambda: ${r.lambda}    bisection-iters: ${r.bisectionIterations}    max-bracket-doublings: ${r.maxBracketDoublings}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    alert-reject-zero: ${r.alertRejectZero ? 'yes' : 'no'}    alert-bracket-saturated: ${r.alertBracketSaturated ? 'yes' : 'no'}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
     ),
   );
   lines.push(
     chalk.dim(
-      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert), ${formatNumber(r.droppedNotRejectZero)} LR fails to reject zero (alert), ${formatNumber(r.droppedBelowTopCap)} below top cap; bracket-saturated: ${formatNumber(r.bracketSaturatedCount)}`,
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert), ${formatNumber(r.droppedNotRejectZero)} LR fails to reject zero (alert), ${formatNumber(r.droppedNotBracketSaturated)} bracket not saturated (alert), ${formatNumber(r.droppedBelowTopCap)} below top cap; bracket-saturated: ${formatNumber(r.bracketSaturatedCount)}`,
     ),
   );
   if (r.windowStart || r.windowEnd) {
@@ -14504,6 +14504,7 @@ export function renderSourceRowTokenProfileLikelihoodSlopeCi(
     'rej0?',
     'brkLo',
     'brkHi',
+    'brkTot',
     'sat?',
   ];
   const rowsTbl: string[][] = r.sources.map(
@@ -14525,6 +14526,7 @@ export function renderSourceRowTokenProfileLikelihoodSlopeCi(
       s.rejectZero ? 'yes' : 'no',
       String(s.bracketDoublingsLower),
       String(s.bracketDoublingsUpper),
+      String(s.bracketDoublingsTotal),
       s.bracketSaturated ? 'yes' : 'no',
     ],
   );

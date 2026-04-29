@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.226 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-profile-likelihood-slope-ci`:
+  three small refinements that surface bracket-search quality
+  without disturbing the v0.6.225 contract:
+
+    - **`bracketDoublingsTotal`** — new per-source field equal to
+      `bracketDoublingsLower + bracketDoublingsUpper`. A scalar
+      "bracket effort" diagnostic: sources with high totals are
+      those whose CI extends far from `thetaHat` relative to the
+      Fisher-information local SE seed step (heavy-tailed residuals
+      or strong asymmetry pulling one side outward). Surfaced in
+      both the JSON output and the pretty-printed table as `brkTot`.
+    - **`--alert-bracket-saturated`** — new flag that filters to
+      only sources whose `bracketSaturated` is true (i.e. the
+      bracket-doubling phase hit `--max-bracket-doublings` on at
+      least one side without crossing the chi-square threshold).
+      Useful for identifying rows whose true CI extends beyond the
+      conservative reported endpoint and where increasing
+      `--max-bracket-doublings` would help. Suppressed rows
+      surface as `droppedNotBracketSaturated`.
+    - **`--sort bracket-doublings-total-desc`** — new sort key
+      that orders sources by their bracket-doublings total
+      descending. Pairs with the above filter to triage where the
+      search algorithm is working hardest.
+
+  ### Live-smoke
+
+  Real run on the local `~/.config/pew/queue.jsonl` (1,973 rows
+  across 6 sources; source name `vscode-copilot` redacted to
+  `vscode-redacted` below; default sort; `brkTot` column added):
+
+  ```
+  source           rows  slope          ciWidth       brkLo  brkHi  brkTot  sat?
+  ---------------  ----  -------------  ------------  -----  -----  ------  ----
+  codex            64    +2225990.4792  2707168.7119  1      2      3       no
+  opencode         445   -1123016.0151  5204533.6133  5      1      6       no
+  claude-code      299   +412420.1539   118731.1454   1      1      2       no
+  openclaw         551   -85830.0846    29268.9797    1      1      2       no
+  hermes           281   -31975.1024    16436.1612    1      1      2       no
+  vscode-redacted  333   +761.5738      641.4379      1      2      3       no
+  ```
+
+  Highlights:
+
+  - `opencode` posts the **highest bracket-doublings total
+    (`brkTot = 6`)**, all 5 of them on the lower endpoint — its
+    massively asymmetric negative-slope CI required five rounds of
+    step-doubling on the far-from-MLE side just to bracket the
+    chi-square threshold. The new `--sort
+    bracket-doublings-total-desc` would surface this row first;
+    the symmetric jackknife and studentized-t lenses give zero
+    such "the search worked harder on this side" signal.
+  - `codex` and `vscode-redacted` both posted `brkTot = 3` (one
+    side took two doublings) — also asymmetric but to a lesser
+    degree.
+  - `--alert-bracket-saturated` would have returned an empty
+    table on this dataset (no source saturated the 64-round cap),
+    confirming the default `--max-bracket-doublings` is well-sized
+    for this corpus.
+
 ## 0.6.225 — 2026-04-29
 
 ### Added

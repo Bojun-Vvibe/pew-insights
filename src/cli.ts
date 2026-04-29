@@ -10506,12 +10506,16 @@ program
     'only emit sources where the Wilks LR test rejects H0: slope = 0 at the requested confidence (wilksAtZero > chi2Threshold)',
   )
   .option(
+    '--alert-bracket-saturated',
+    'only emit sources where the bracket-doubling phase saturated on at least one CI endpoint (bracketSaturated = true). Useful for identifying rows whose true CI extends beyond the conservative reported endpoint and where increasing --max-bracket-doublings would help.',
+  )
+  .option(
     '--top <n>',
     'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'ci-asymmetry-magnitude-desc' | 'wilks-at-zero-desc' | 'ci-contains-zero-first' | 'reject-zero-first' | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'ci-asymmetry-magnitude-desc' | 'wilks-at-zero-desc' | 'ci-contains-zero-first' | 'reject-zero-first' | 'bracket-doublings-total-desc' | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -10528,6 +10532,7 @@ program
         maxBracketDoublings: string;
         alertZeroInCi?: boolean;
         alertRejectZero?: boolean;
+        alertBracketSaturated?: boolean;
         top?: string;
         sort: string;
         json?: boolean;
@@ -10589,6 +10594,7 @@ program
           'wilks-at-zero-desc',
           'ci-contains-zero-first',
           'reject-zero-first',
+          'bracket-doublings-total-desc',
           'rows',
           'source',
         ];
@@ -10609,6 +10615,7 @@ program
           maxBracketDoublings,
           alertZeroInCi: opts.alertZeroInCi ?? false,
           alertRejectZero: opts.alertRejectZero ?? false,
+          alertBracketSaturated: opts.alertBracketSaturated ?? false,
           top,
           sort: opts.sort as
             | 'magnitude-desc'
@@ -10620,6 +10627,7 @@ program
             | 'wilks-at-zero-desc'
             | 'ci-contains-zero-first'
             | 'reject-zero-first'
+            | 'bracket-doublings-total-desc'
             | 'rows'
             | 'source',
         });

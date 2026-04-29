@@ -151,6 +151,15 @@ export interface SourceRowTokenProfileLikelihoodSlopeCiOptions {
    * H0: slope = 0 at the requested confidence). Default false.
    */
   alertRejectZero?: boolean;
+  /**
+   * If true, only emit sources where the bracket-doubling phase
+   * saturated on at least one side (i.e. `bracketSaturated` is
+   * true). Useful for surfacing sources whose true CI endpoint is
+   * beyond the conservative reported endpoint and where increasing
+   * `--max-bracket-doublings` would help. Default false.
+   * (Refinement field, v0.6.226 follow-up.)
+   */
+  alertBracketSaturated?: boolean;
   top?: number | null;
   sort?:
     | 'magnitude-desc'
@@ -162,6 +171,7 @@ export interface SourceRowTokenProfileLikelihoodSlopeCiOptions {
     | 'wilks-at-zero-desc'
     | 'ci-contains-zero-first'
     | 'reject-zero-first'
+    | 'bracket-doublings-total-desc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -211,6 +221,15 @@ export interface SourceRowTokenProfileLikelihoodSlopeCiRow {
   /** Same for the upper endpoint. */
   bracketDoublingsUpper: number;
   /**
+   * `bracketDoublingsLower + bracketDoublingsUpper`. A scalar
+   * "bracket effort" diagnostic — sources with high totals are
+   * those whose CI extends far from `thetaHat` relative to the
+   * Fisher-information local SE seed step (e.g. heavy-tailed
+   * residuals or strong asymmetry pulling one side outward).
+   * (Refinement field, v0.6.226 follow-up.)
+   */
+  bracketDoublingsTotal: number;
+  /**
    * True iff either side hit `maxBracketDoublings` without crossing
    * the chi-square threshold. The reported endpoint is then the
    * last bracket value (a lower bound on the true endpoint) and the
@@ -233,6 +252,7 @@ export interface SourceRowTokenProfileLikelihoodSlopeCiReport {
   maxBracketDoublings: number;
   alertZeroInCi: boolean;
   alertRejectZero: boolean;
+  alertBracketSaturated: boolean;
   top: number | null;
   sort:
     | 'magnitude-desc'
@@ -244,6 +264,7 @@ export interface SourceRowTokenProfileLikelihoodSlopeCiReport {
     | 'wilks-at-zero-desc'
     | 'ci-contains-zero-first'
     | 'reject-zero-first'
+    | 'bracket-doublings-total-desc'
     | 'rows'
     | 'source';
   totalSources: number;
@@ -255,6 +276,7 @@ export interface SourceRowTokenProfileLikelihoodSlopeCiReport {
   droppedBelowMinRows: number;
   droppedNotZeroInCi: number;
   droppedNotRejectZero: number;
+  droppedNotBracketSaturated: number;
   droppedBelowTopCap: number;
   bracketSaturatedCount: number;
   sources: SourceRowTokenProfileLikelihoodSlopeCiRow[];
@@ -272,6 +294,7 @@ const VALID_SORTS = [
   'wilks-at-zero-desc',
   'ci-contains-zero-first',
   'reject-zero-first',
+  'bracket-doublings-total-desc',
   'rows',
   'source',
 ] as const;
@@ -428,6 +451,7 @@ export function buildSourceRowTokenProfileLikelihoodSlopeCi(
   }
   const alertZeroInCi = opts.alertZeroInCi ?? false;
   const alertRejectZero = opts.alertRejectZero ?? false;
+  const alertBracketSaturated = opts.alertBracketSaturated ?? false;
   const top = opts.top ?? null;
   if (top !== null) {
     if (!Number.isInteger(top) || top < 1) {
@@ -632,12 +656,14 @@ export function buildSourceRowTokenProfileLikelihoodSlopeCi(
       rejectZero,
       bracketDoublingsLower,
       bracketDoublingsUpper,
+      bracketDoublingsTotal: bracketDoublingsLower + bracketDoublingsUpper,
       bracketSaturated,
     });
   }
 
   let droppedNotZeroInCi = 0;
   let droppedNotRejectZero = 0;
+  let droppedNotBracketSaturated = 0;
   const survived: SourceRowTokenProfileLikelihoodSlopeCiRow[] = [];
   for (const row of allRows) {
     if (alertZeroInCi && !row.ciContainsZero) {
@@ -646,6 +672,10 @@ export function buildSourceRowTokenProfileLikelihoodSlopeCi(
     }
     if (alertRejectZero && !row.rejectZero) {
       droppedNotRejectZero += 1;
+      continue;
+    }
+    if (alertBracketSaturated && !row.bracketSaturated) {
+      droppedNotBracketSaturated += 1;
       continue;
     }
     survived.push(row);
@@ -669,6 +699,8 @@ export function buildSourceRowTokenProfileLikelihoodSlopeCi(
       primary = (q.ciContainsZero ? 1 : 0) - (p.ciContainsZero ? 1 : 0);
     else if (sort === 'reject-zero-first')
       primary = (q.rejectZero ? 1 : 0) - (p.rejectZero ? 1 : 0);
+    else if (sort === 'bracket-doublings-total-desc')
+      primary = q.bracketDoublingsTotal - p.bracketDoublingsTotal;
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
     else primary = p.source < q.source ? -1 : p.source > q.source ? 1 : 0;
     if (primary !== 0) return primary;
@@ -698,6 +730,7 @@ export function buildSourceRowTokenProfileLikelihoodSlopeCi(
     maxBracketDoublings,
     alertZeroInCi,
     alertRejectZero,
+    alertBracketSaturated,
     top,
     sort,
     totalSources,
@@ -709,6 +742,7 @@ export function buildSourceRowTokenProfileLikelihoodSlopeCi(
     droppedBelowMinRows,
     droppedNotZeroInCi,
     droppedNotRejectZero,
+    droppedNotBracketSaturated,
     droppedBelowTopCap,
     bracketSaturatedCount,
     sources: finalSources,

@@ -477,3 +477,65 @@ test('builder: source filter only emits the chosen source', () => {
   assert.equal(r.sources[0]!.source, 's2');
   assert.equal(r.droppedSourceFilter, 5);
 });
+
+// =========================================================================
+// v0.6.226 refinement: bracketDoublingsTotal + alertBracketSaturated +
+// 'bracket-doublings-total-desc' sort key.
+// =========================================================================
+
+test('refinement: bracketDoublingsTotal = lower + upper', () => {
+  const queue = mkSeries('s1', [10, 14, 12, 18, 21, 19, 25, 28, 30, 33]);
+  const r = buildSourceRowTokenProfileLikelihoodSlopeCi(queue, {
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.equal(
+    s.bracketDoublingsTotal,
+    s.bracketDoublingsLower + s.bracketDoublingsUpper,
+  );
+});
+
+test('refinement: alert-bracket-saturated filters to saturated rows; clean series drops to empty', () => {
+  // A clean noisy series should NOT saturate at default 64 doublings.
+  const queue = mkSeries('s1', [10, 14, 12, 18, 21, 19, 25, 28, 30, 33]);
+  const r = buildSourceRowTokenProfileLikelihoodSlopeCi(queue, {
+    alertBracketSaturated: true,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedNotBracketSaturated, 1);
+});
+
+test('refinement: alert-bracket-saturated drop counter is wired (returns empty when no source saturates)', () => {
+  // With default max-bracket-doublings = 64 and a clean series the
+  // search converges in 1-2 rounds and never saturates. The alert
+  // filter should drop the source and the counter should reflect
+  // it. (Forcing saturation is hard without contriving a series
+  // whose Fisher-information seed step is microscopic; this test
+  // just verifies the alert wiring rather than the saturation
+  // pathology.)
+  const queue = mkSeries('s1', [10, 14, 12, 18, 21, 19, 25, 28, 30, 33]);
+  const r = buildSourceRowTokenProfileLikelihoodSlopeCi(queue, {
+    alertBracketSaturated: true,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.droppedNotBracketSaturated, 1);
+  assert.equal(r.bracketSaturatedCount, 0);
+});
+
+test('refinement: bracket-doublings-total-desc sort key works', () => {
+  const queue = [
+    ...mkSeries('s1', [1, 2, 3, 4, 5, 6, 7, 8]),
+    ...mkSeries('s2', [10, 100, 50, 200, 150, 300, 250, 400]),
+  ];
+  const r = buildSourceRowTokenProfileLikelihoodSlopeCi(queue, {
+    sort: 'bracket-doublings-total-desc',
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 2);
+  // Whichever has more doublings comes first.
+  assert.ok(
+    r.sources[0]!.bracketDoublingsTotal >= r.sources[1]!.bracketDoublingsTotal,
+  );
+});
