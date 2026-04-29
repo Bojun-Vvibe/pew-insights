@@ -135,10 +135,13 @@ export interface SourceRowTokenSlopeCiOverlapGraphOptions {
     | 'triangles-asc'
     | 'transitivity-desc'
     | 'transitivity-asc'
-    | 'bridges-desc'
-    | 'bridges-asc'
-    | 'rows'
-    | 'source';
+  | 'bridges-desc'
+  | 'bridges-asc'
+  | 'bridge-fraction-desc'
+  | 'bridge-fraction-asc'
+  | 'graph-signature'
+  | 'rows'
+  | 'source';
   generatedAt?: string;
 }
 
@@ -168,6 +171,24 @@ export interface SourceRowTokenSlopeCiOverlapGraphRow {
   transitivity: number;
   consensusBackbone: boolean;
   fragmented: boolean;
+  /**
+   * Stable string fingerprint of the graph's coarse-isomorphism class:
+   * `"comp=<sizes-desc-csv>|clique=<k>|tri=<t>|edges=<e>"`. Sources
+   * whose overlap graphs are coarsely isomorphic (same component-size
+   * vector + same max-clique + same triangle count + same edge count)
+   * collide on this key and can be grouped client-side. Cheaper /
+   * weaker than full graph6 canonicalisation but sufficient for the
+   * 6-vertex regime here.
+   */
+  graphSignature: string;
+  /**
+   * `bridgeCount / max(edgeCount, 1)`. Fraction of overlap edges
+   * whose removal would split a component. 0 when no bridges
+   * (or no edges); 1 when every edge is a bridge (a tree / forest).
+   * In [0, 1]. A "robust consensus" graph has low bridgeFraction
+   * — its overlaps are reinforced by triangles.
+   */
+  bridgeFraction: number;
 }
 
 export interface SourceRowTokenSlopeCiOverlapGraphReport {
@@ -215,6 +236,9 @@ const VALID_SORTS = [
   'transitivity-asc',
   'bridges-desc',
   'bridges-asc',
+  'bridge-fraction-desc',
+  'bridge-fraction-asc',
+  'graph-signature',
   'rows',
   'source',
 ] as const;
@@ -544,6 +568,8 @@ export function buildSourceRowTokenSlopeCiOverlapGraph(
     const br = bridgeCount(adj);
     const consensusBackbone = componentCount === 1 && mc >= 4;
     const fragmented = componentCount >= 3;
+    const bridgeFraction = edgeCount === 0 ? 0 : br / edgeCount;
+    const graphSignature = `comp=${compSizes.join(',')}|clique=${mc}|tri=${tri}|edges=${edgeCount}`;
 
     rows.push({
       source: s,
@@ -563,6 +589,8 @@ export function buildSourceRowTokenSlopeCiOverlapGraph(
       transitivity,
       consensusBackbone,
       fragmented,
+      graphSignature,
+      bridgeFraction,
     });
   }
 
@@ -606,6 +634,9 @@ export function buildSourceRowTokenSlopeCiOverlapGraph(
     'transitivity-asc': (a, b) => a.transitivity - b.transitivity,
     'bridges-desc': (a, b) => b.bridgeCount - a.bridgeCount,
     'bridges-asc': (a, b) => a.bridgeCount - b.bridgeCount,
+    'bridge-fraction-desc': (a, b) => b.bridgeFraction - a.bridgeFraction,
+    'bridge-fraction-asc': (a, b) => a.bridgeFraction - b.bridgeFraction,
+    'graph-signature': (a, b) => a.graphSignature.localeCompare(b.graphSignature),
     rows: (a, b) => b.rowsKept - a.rowsKept,
     source: (a, b) => a.source.localeCompare(b.source),
   };
@@ -671,10 +702,10 @@ export function renderSourceRowTokenSlopeCiOverlapGraph(
     return lines.join('\n');
   }
   lines.push(
-    'source           rows  edges/15  density  comps  largest  singles  maxClq  tri  trans   bridges  compSizes      backbone  fragm  singletonLenses',
+    'source           rows  edges/15  density  comps  largest  singles  maxClq  tri  trans   bridges  brFrac  compSizes      backbone  fragm  signature',
   );
   lines.push(
-    '---------------  ----  --------  -------  -----  -------  -------  ------  ---  ------  -------  -------------  --------  -----  --------------------',
+    '---------------  ----  --------  -------  -----  -------  -------  ------  ---  ------  -------  ------  -------------  --------  -----  -----------------------------------',
   );
   for (const row of r.sources) {
     lines.push(
@@ -690,10 +721,11 @@ export function renderSourceRowTokenSlopeCiOverlapGraph(
         String(row.triangleCount).padStart(3),
         row.transitivity.toFixed(4).padStart(6),
         String(row.bridgeCount).padStart(7),
+        row.bridgeFraction.toFixed(3).padStart(6),
         row.componentSizes.join(',').padEnd(13),
         (row.consensusBackbone ? 'yes' : 'NO').padStart(8),
         (row.fragmented ? 'yes' : 'NO').padStart(5),
-        (row.singletonLenses.length === 0 ? '-' : row.singletonLenses.join(',')).padEnd(20),
+        row.graphSignature.padEnd(35),
       ].join('  '),
     );
   }

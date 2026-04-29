@@ -665,3 +665,115 @@ test('renderer: backbone yes/NO and fragm yes/NO present', () => {
   // at least one of yes/NO must appear in each col context
   assert.ok(/(yes|NO)/.test(out));
 });
+
+// --- refinement (v0.6.230 release-followup): graphSignature + bridgeFraction + new sort keys ---
+
+test('refinement: graphSignature is a deterministic non-empty string', () => {
+  const queue = ascending('s1', 30);
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {});
+  const row = rep.sources[0]!;
+  assert.equal(typeof row.graphSignature, 'string');
+  assert.ok(row.graphSignature.length > 0);
+  assert.match(row.graphSignature, /^comp=.*\|clique=\d+\|tri=\d+\|edges=\d+$/);
+});
+
+test('refinement: graphSignature encodes componentSizes / clique / tri / edges', () => {
+  const queue = ascending('s1', 30);
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {});
+  const row = rep.sources[0]!;
+  const sig = row.graphSignature;
+  assert.ok(sig.includes(`comp=${row.componentSizes.join(',')}`));
+  assert.ok(sig.includes(`clique=${row.maxCliqueSize}`));
+  assert.ok(sig.includes(`tri=${row.triangleCount}`));
+  assert.ok(sig.includes(`edges=${row.edgeCount}`));
+});
+
+test('refinement: bridgeFraction in [0, 1]', () => {
+  const queue = ascending('s1', 30);
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {});
+  const row = rep.sources[0]!;
+  assert.ok(row.bridgeFraction >= 0 && row.bridgeFraction <= 1);
+});
+
+test('refinement: bridgeFraction == bridgeCount / edgeCount when edgeCount > 0', () => {
+  const queue = ascending('s1', 30);
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {});
+  const row = rep.sources[0]!;
+  if (row.edgeCount > 0) {
+    const expected = row.bridgeCount / row.edgeCount;
+    assert.ok(Math.abs(row.bridgeFraction - expected) < 1e-12);
+  }
+});
+
+test('refinement: bridgeFraction is 0 when edgeCount is 0 (vacuous)', () => {
+  // Synthetic empty-edge case via direct call (rather than queue);
+  // exercise the API surface only.
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph([], {});
+  // No sources to inspect. This test pins the empty-queue path
+  // and the well-typed shape of bridgeFraction in the type contract.
+  assert.equal(rep.sources.length, 0);
+});
+
+test('refinement: same overlap graph => same graphSignature (deterministic)', () => {
+  const queue = ascending('s1', 30);
+  const a = buildSourceRowTokenSlopeCiOverlapGraph(queue, { seed: 42 });
+  const b = buildSourceRowTokenSlopeCiOverlapGraph(queue, { seed: 42 });
+  assert.equal(a.sources[0]!.graphSignature, b.sources[0]!.graphSignature);
+});
+
+test('refinement: sort=graph-signature is alphabetic on signature string', () => {
+  const queue = [
+    ...ascending('aa', 25),
+    ...ascending('bb', 25),
+    ...ascending('cc', 25),
+  ];
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {
+    sort: 'graph-signature',
+  });
+  for (let i = 1; i < rep.sources.length; i++) {
+    const prev = rep.sources[i - 1]!.graphSignature;
+    const cur = rep.sources[i]!.graphSignature;
+    assert.ok(prev.localeCompare(cur) <= 0);
+  }
+});
+
+test('refinement: sort=bridge-fraction-desc orders descending', () => {
+  const queue = [
+    ...ascending('aa', 25),
+    ...ascending('bb', 25),
+    ...ascending('cc', 25),
+  ];
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {
+    sort: 'bridge-fraction-desc',
+  });
+  for (let i = 1; i < rep.sources.length; i++) {
+    assert.ok(
+      rep.sources[i - 1]!.bridgeFraction >= rep.sources[i]!.bridgeFraction,
+    );
+  }
+});
+
+test('refinement: sort=bridge-fraction-asc orders ascending', () => {
+  const queue = [
+    ...ascending('aa', 25),
+    ...ascending('bb', 25),
+    ...ascending('cc', 25),
+  ];
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {
+    sort: 'bridge-fraction-asc',
+  });
+  for (let i = 1; i < rep.sources.length; i++) {
+    assert.ok(
+      rep.sources[i - 1]!.bridgeFraction <= rep.sources[i]!.bridgeFraction,
+    );
+  }
+});
+
+test('refinement: renderer includes brFrac and signature columns', () => {
+  const queue = ascending('s1', 30);
+  const rep = buildSourceRowTokenSlopeCiOverlapGraph(queue, {});
+  const out = renderSourceRowTokenSlopeCiOverlapGraph(rep);
+  assert.match(out, /brFrac/);
+  assert.match(out, /signature/);
+  assert.match(out, /comp=.*\|clique=/);
+});

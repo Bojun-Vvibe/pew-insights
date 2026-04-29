@@ -21182,6 +21182,9 @@ program
           'transitivity-asc',
           'bridges-desc',
           'bridges-asc',
+          'bridge-fraction-desc',
+          'bridge-fraction-asc',
+          'graph-signature',
           'rows',
           'source',
         ];
@@ -21218,6 +21221,9 @@ program
             | 'transitivity-asc'
             | 'bridges-desc'
             | 'bridges-asc'
+            | 'bridge-fraction-desc'
+            | 'bridge-fraction-asc'
+            | 'graph-signature'
             | 'rows'
             | 'source',
         });
