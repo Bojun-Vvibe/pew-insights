@@ -12149,6 +12149,10 @@ import type {
   SourceRowTokenJackknifeSlopeCiReport,
   SourceRowTokenJackknifeSlopeCiRow,
 } from './sourcerowtokenjackknifeslopeci.js';
+import type {
+  SourceRowTokenBcaBootstrapSlopeCiReport,
+  SourceRowTokenBcaBootstrapSlopeCiRow,
+} from './sourcerowtokenbcabootstrapslopeci.js';
 
 export function renderSourceRowTokenTrimMean25(
   r: SourceRowTokenTrimMean25Report,
@@ -14147,6 +14151,87 @@ export function renderSourceRowTokenJackknifeSlopeCi(
       (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
       (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
       s.ciWidth.toFixed(4),
+      s.ciContainsZero ? 'yes' : 'no',
+    ],
+  );
+  lines.push(renderTableLocal(headers, rowsTbl));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderSourceRowTokenBcaBootstrapSlopeCi(
+  r: SourceRowTokenBcaBootstrapSlopeCiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights source-row-token-bca-bootstrap-slope-ci'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    rows: ${formatNumber(r.totalRowsKept)}    min-rows: ${r.minRows}    bootstraps: ${r.bootstraps}    confidence: ${r.confidence}    lambda: ${r.lambda}    seed: ${r.seed}    alert-zero-in-ci: ${r.alertZeroInCi ? 'yes' : 'no'}    alert-bca-shift-min: ${r.alertBcaShiftMin}    top: ${r.top ?? '\u2014'}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedInvalidTokens)} bad total_tokens, ${formatNumber(r.droppedNegativeTokens)} negative total_tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedBelowMinRows)} below min-rows, ${formatNumber(r.droppedNotZeroInCi)} CI excludes zero (alert mode), ${formatNumber(r.droppedBelowBcaShift)} below bca-shift threshold, ${formatNumber(r.droppedBelowTopCap)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(
+        `window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`,
+      ),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BCa (bias-corrected and accelerated) bootstrap CI for the Deming slope of per-row total_tokens against row index. Third uncertainty-quantification lens. Same B Deming bootstrap resamples as v0.6.220, but the percentile picks are shifted by z0 = Phi^-1(P{theta* < thetaHat}) and stretched by the jackknife-derived acceleration a, after Efron 1987. Recovers the percentile interval iff z0 = 0 and a = 0; otherwise CI is shifted/stretched toward correct coverage. ciContainsZero flags sources whose CI straddles zero. bcaPercentileShift = |alphaLower - (1-conf)/2| + |alphaUpper - (1+conf)/2| measures how much BCa disagrees with the percentile interval on the same data.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source row-token BCa bootstrap slope CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'rows',
+    'slope',
+    'z0',
+    'accel',
+    'alphaLo',
+    'alphaHi',
+    'ciLower',
+    'ciUpper',
+    'ciWidth',
+    'bcaShift',
+    'pctShift',
+    '0inCI?',
+  ];
+  const rowsTbl: string[][] = r.sources.map(
+    (s: SourceRowTokenBcaBootstrapSlopeCiRow) => [
+      s.source,
+      formatNumber(s.rowsKept),
+      (s.slope >= 0 ? '+' : '') + s.slope.toFixed(4),
+      (s.z0 >= 0 ? '+' : '') + s.z0.toFixed(4),
+      (s.acceleration >= 0 ? '+' : '') + s.acceleration.toFixed(4),
+      s.alphaLower.toFixed(4),
+      s.alphaUpper.toFixed(4),
+      (s.ciLower >= 0 ? '+' : '') + s.ciLower.toFixed(4),
+      (s.ciUpper >= 0 ? '+' : '') + s.ciUpper.toFixed(4),
+      s.ciWidth.toFixed(4),
+      (s.bcaShift >= 0 ? '+' : '') + s.bcaShift.toFixed(4),
+      s.bcaPercentileShift.toFixed(4),
       s.ciContainsZero ? 'yes' : 'no',
     ],
   );

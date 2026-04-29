@@ -147,6 +147,7 @@ import {
   renderSourceRowTokenDemingSlope,
   renderSourceRowTokenBootstrapSlopeCi,
   renderSourceRowTokenJackknifeSlopeCi,
+  renderSourceRowTokenBcaBootstrapSlopeCi,
   renderSourceRowTokenLehmerNegOneMean,
   renderSourceRowTokenLehmerNegTwoMean,
   renderSourceRowTokenLehmerNegThreeMean,
@@ -391,6 +392,7 @@ import { buildSourceRowTokenPassingBablokSlope } from './sourcerowtokenpassingba
 import { buildSourceRowTokenDemingSlope } from './sourcerowtokendemingslope.js';
 import { buildSourceRowTokenBootstrapSlopeCi } from './sourcerowtokenbootstrapslopeci.js';
 import { buildSourceRowTokenJackknifeSlopeCi } from './sourcerowtokenjackknifeslopeci.js';
+import { buildSourceRowTokenBcaBootstrapSlopeCi } from './sourcerowtokenbcabootstrapslopeci.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -9899,6 +9901,188 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenJackknifeSlopeCi(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('source-row-token-bca-bootstrap-slope-ci')
+  .description(
+    "Per-source BCa (bias-corrected and accelerated) bootstrap CI for the Deming regression slope of per-row total_tokens against row index. Third uncertainty-quantification lens, mechanically distinct from v0.6.220 (percentile bootstrap CI) and v0.6.221 (jackknife normal CI). Same B Deming bootstrap resamples as v0.6.220, but the percentile picks are shifted by a bias-correction z0 = Phi^-1(P{theta* < thetaHat}) and stretched by an acceleration a derived from jackknife replicates (Efron 1987, JASA 82:171-185). Recovers the percentile interval iff z0 = 0 AND a = 0; otherwise the BCa CI is shifted/stretched toward correct second-order coverage. Reports z0, acceleration, alphaLower/alphaUpper (the actual percentiles picked from the bootstrap distribution), ciLower/ciUpper, ciWidth, ciContainsZero, bcaShift (median(theta*) - thetaHat), and bcaPercentileShift = |alphaLower - (1-conf)/2| + |alphaUpper - (1+conf)/2| (a single scalar showing how much BCa disagreed with the percentile bootstrap on the same data). Use --alert-zero-in-ci to filter to only sources whose CI straddles zero, and --alert-bca-shift-min to surface only sources where BCa meaningfully disagreed with the percentile interval.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--bootstraps <n>',
+    'number of bootstrap resamples; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio var(eps_y)/var(eps_x) for inner Deming fit; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--seed <n>',
+    'integer seed for the LCG bootstrap RNG (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-zero-in-ci',
+    'only emit sources whose CI strictly contains zero (i.e. slope not significantly different from zero under the BCa CI)',
+  )
+  .option(
+    '--alert-bca-shift-min <f>',
+    'only emit sources whose summed BCa percentile shift |alphaLower - (1-conf)/2| + |alphaUpper - (1+conf)/2| is at least this threshold; in [0, 2], default 0 (keep all)',
+    '0',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'z0-magnitude-desc' | 'acceleration-magnitude-desc' | 'bca-shift-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    'magnitude-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        bootstraps: string;
+        confidence: string;
+        lambda: string;
+        seed: string;
+        alertZeroInCi?: boolean;
+        alertBcaShiftMin: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        const alertBcaShiftMin = Number.parseFloat(opts.alertBcaShiftMin);
+        if (
+          !Number.isFinite(alertBcaShiftMin) ||
+          alertBcaShiftMin < 0 ||
+          alertBcaShiftMin > 2
+        ) {
+          throw new Error(
+            `--alert-bca-shift-min must be a finite number in [0, 2] (got ${opts.alertBcaShiftMin})`,
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'magnitude-desc',
+          'slope-desc',
+          'slope-asc',
+          'ci-width-desc',
+          'ci-width-asc',
+          'z0-magnitude-desc',
+          'acceleration-magnitude-desc',
+          'bca-shift-desc',
+          'ci-contains-zero-first',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenBcaBootstrapSlopeCi(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          bootstraps,
+          confidence,
+          lambda,
+          seed,
+          alertZeroInCi: opts.alertZeroInCi ?? false,
+          alertBcaShiftMin,
+          top,
+          sort: opts.sort as
+            | 'magnitude-desc'
+            | 'slope-desc'
+            | 'slope-asc'
+            | 'ci-width-desc'
+            | 'ci-width-asc'
+            | 'z0-magnitude-desc'
+            | 'acceleration-magnitude-desc'
+            | 'bca-shift-desc'
+            | 'ci-contains-zero-first'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenBcaBootstrapSlopeCi(report) + '\n',
           );
         }
       } catch (e) {
