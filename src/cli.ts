@@ -22072,6 +22072,10 @@ program
     '--show-pairs',
     'when rendering pretty (non-JSON), append a per-source line listing the 15-vector of per-pair iou values',
   )
+  .option(
+    '--show-extremes',
+    'when rendering pretty (non-JSON), append a per-source line naming the lens pairs that achieve minIou and maxIou (compact alternative to --show-pairs)',
+  )
   .action(
     async (
       opts: {
@@ -22090,6 +22094,7 @@ program
         sort: string;
         json?: boolean;
         showPairs?: boolean;
+        showExtremes?: boolean;
       },
       cmd,
     ) => {
@@ -22224,6 +22229,7 @@ program
           process.stdout.write(
             renderSourceRowTokenSlopeCiCoverageVolume(report, {
               showPairs: opts.showPairs ?? false,
+              showExtremes: opts.showExtremes ?? false,
             }) + '\n',
           );
         }

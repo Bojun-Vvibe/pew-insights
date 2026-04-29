@@ -263,6 +263,8 @@ export interface SourceRowTokenSlopeCiCoverageVolumeRow {
   disjointPairs: number;
   meanWidth: number;
   coherenceScore: number;
+  minIouPair: { lensA: SlopeCoverageLensName; lensB: SlopeCoverageLensName; iou: number };
+  maxIouPair: { lensA: SlopeCoverageLensName; lensB: SlopeCoverageLensName; iou: number };
 }
 
 export interface SourceRowTokenSlopeCiCoverageVolumeReport {
@@ -483,6 +485,7 @@ export function buildSourceRowTokenSlopeCiCoverageVolume(
     }
 
     const pairs: CoverageVolumePair[] = [];
+    const pairLabels: { lensA: SlopeCoverageLensName; lensB: SlopeCoverageLensName }[] = [];
     for (let i = 0; i < N_LENSES; i++) {
       for (let j = i + 1; j < N_LENSES; j++) {
         pairs.push(
@@ -493,6 +496,10 @@ export function buildSourceRowTokenSlopeCiCoverageVolume(
             intervals[j]!.hi,
           ),
         );
+        pairLabels.push({
+          lensA: SLOPE_COVERAGE_LENS_NAMES[i]!,
+          lensB: SLOPE_COVERAGE_LENS_NAMES[j]!,
+        });
       }
     }
 
@@ -501,13 +508,22 @@ export function buildSourceRowTokenSlopeCiCoverageVolume(
     let sumIou = 0;
     let mnIou = Infinity;
     let mxIou = -Infinity;
+    let mnIdx = 0;
+    let mxIdx = 0;
     let weakPairs = 0;
     let strongPairs = 0;
     let disjointPairs = 0;
-    for (const p of pairs) {
+    for (let pi = 0; pi < pairs.length; pi++) {
+      const p = pairs[pi]!;
       sumIou += p.iou;
-      if (p.iou < mnIou) mnIou = p.iou;
-      if (p.iou > mxIou) mxIou = p.iou;
+      if (p.iou < mnIou) {
+        mnIou = p.iou;
+        mnIdx = pi;
+      }
+      if (p.iou > mxIou) {
+        mxIou = p.iou;
+        mxIdx = pi;
+      }
       if (p.iou < weakIouThreshold) weakPairs += 1;
       if (p.iou >= strongIouThreshold) strongPairs += 1;
       if (p.overlap === 0) disjointPairs += 1;
@@ -551,6 +567,16 @@ export function buildSourceRowTokenSlopeCiCoverageVolume(
       disjointPairs,
       meanWidth,
       coherenceScore,
+      minIouPair: {
+        lensA: pairLabels[mnIdx]!.lensA,
+        lensB: pairLabels[mnIdx]!.lensB,
+        iou: mnIou,
+      },
+      maxIouPair: {
+        lensA: pairLabels[mxIdx]!.lensA,
+        lensB: pairLabels[mxIdx]!.lensB,
+        iou: mxIou,
+      },
     });
   }
 
@@ -654,12 +680,20 @@ function fmtNum(x: number, digits = 4): string {
  * second line printing the canonical 15-vector of `iou` values in
  * `i<j` order over canonical lens order. Useful for spotting the
  * specific lens pair that drives `minIou` or `iouSpread`.
+ *
+ * When `showExtremes` is true, each source row is followed by a
+ * compact line naming the specific lens pair achieving `minIou`
+ * (the weakest agreement, i.e. the worst-overlap pair) and the
+ * pair achieving `maxIou` (the strongest agreement). Cheaper than
+ * `showPairs` (one line vs the full 15-vector) and surfaces
+ * exactly the two pairs a triage user actually wants to see.
  */
 export function renderSourceRowTokenSlopeCiCoverageVolume(
   r: SourceRowTokenSlopeCiCoverageVolumeReport,
-  opts: { showPairs?: boolean } = {},
+  opts: { showPairs?: boolean; showExtremes?: boolean } = {},
 ): string {
   const showPairs = opts.showPairs ?? false;
+  const showExtremes = opts.showExtremes ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-coverage-volume');
   lines.push(
@@ -697,6 +731,11 @@ export function renderSourceRowTokenSlopeCiCoverageVolume(
         fmtNum(row.meanWidth).padStart(10),
       ].join('  '),
     );
+    if (showExtremes) {
+      lines.push(
+        `                 extremes: min ${row.minIouPair.lensA}~${row.minIouPair.lensB}=${row.minIouPair.iou.toFixed(4)}    max ${row.maxIouPair.lensA}~${row.maxIouPair.lensB}=${row.maxIouPair.iou.toFixed(4)}`,
+      );
+    }
     if (showPairs) {
       const parts: string[] = [];
       let k = 0;

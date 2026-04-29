@@ -910,3 +910,150 @@ test('renderer: surfaces threshold and sort metadata in the header', () => {
   assert.match(out, /strong-iou: 0\.85/);
   assert.match(out, /sort: mean-iou-desc/);
 });
+
+// --- refinement: minIouPair / maxIouPair + showExtremes ---
+
+test('refinement: per-source minIouPair has iou == minIou and is a valid lens pair', () => {
+  const queue = [
+    ...ascending('alpha', 30, 8),
+    ...ascending('beta', 30, 12),
+  ];
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  for (const row of r.sources) {
+    assert.equal(row.minIouPair.iou, row.minIou);
+    assert.ok(SLOPE_COVERAGE_LENS_NAMES.includes(row.minIouPair.lensA));
+    assert.ok(SLOPE_COVERAGE_LENS_NAMES.includes(row.minIouPair.lensB));
+    // Canonical pair order: lensA index < lensB index
+    const ai = SLOPE_COVERAGE_LENS_NAMES.indexOf(row.minIouPair.lensA);
+    const bi = SLOPE_COVERAGE_LENS_NAMES.indexOf(row.minIouPair.lensB);
+    assert.ok(ai < bi, `pair (${row.minIouPair.lensA}, ${row.minIouPair.lensB}) violates canonical order`);
+  }
+});
+
+test('refinement: per-source maxIouPair has iou == maxIou and is a valid lens pair', () => {
+  const queue = [
+    ...ascending('alpha', 30, 8),
+    ...ascending('beta', 30, 12),
+  ];
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  for (const row of r.sources) {
+    assert.equal(row.maxIouPair.iou, row.maxIou);
+    assert.ok(SLOPE_COVERAGE_LENS_NAMES.includes(row.maxIouPair.lensA));
+    assert.ok(SLOPE_COVERAGE_LENS_NAMES.includes(row.maxIouPair.lensB));
+    const ai = SLOPE_COVERAGE_LENS_NAMES.indexOf(row.maxIouPair.lensA);
+    const bi = SLOPE_COVERAGE_LENS_NAMES.indexOf(row.maxIouPair.lensB);
+    assert.ok(ai < bi, `pair (${row.maxIouPair.lensA}, ${row.maxIouPair.lensB}) violates canonical order`);
+  }
+});
+
+test('refinement: minIouPair and maxIouPair iou values bracket every per-pair iou', () => {
+  const queue = [
+    ...ascending('alpha', 30, 8),
+    ...ascending('beta', 30, 12),
+  ];
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  for (const row of r.sources) {
+    for (const p of row.pairs) {
+      assert.ok(p.iou >= row.minIouPair.iou - 1e-12);
+      assert.ok(p.iou <= row.maxIouPair.iou + 1e-12);
+    }
+  }
+});
+
+test('refinement: tie-broken to the FIRST pair achieving min/max in canonical order', () => {
+  // Two identical CIs (e.g. all six lenses produce the same interval)
+  // have minIou == maxIou == 1 and the first canonical pair wins.
+  // We can't easily fabricate that with the real lens kernels, but we
+  // CAN check that when min == max the recorded pair is consistent.
+  const queue = ascending('alpha', 30);
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  const row = r.sources[0]!;
+  if (row.minIou === row.maxIou) {
+    assert.equal(row.minIouPair.lensA, row.maxIouPair.lensA);
+    assert.equal(row.minIouPair.lensB, row.maxIouPair.lensB);
+  }
+  // The first pair scanned that achieves min is the one with the
+  // smallest flat index over (i<j) lens order.
+  let firstMinIdx = 0;
+  for (let i = 1; i < row.pairs.length; i++) {
+    if (row.pairs[i]!.iou < row.pairs[firstMinIdx]!.iou) firstMinIdx = i;
+  }
+  // Reconstruct that pair label
+  let k = 0;
+  let expectedA = SLOPE_COVERAGE_LENS_NAMES[0]!;
+  let expectedB = SLOPE_COVERAGE_LENS_NAMES[1]!;
+  outer: for (let i = 0; i < SLOPE_COVERAGE_LENS_NAMES.length; i++) {
+    for (let j = i + 1; j < SLOPE_COVERAGE_LENS_NAMES.length; j++) {
+      if (k === firstMinIdx) {
+        expectedA = SLOPE_COVERAGE_LENS_NAMES[i]!;
+        expectedB = SLOPE_COVERAGE_LENS_NAMES[j]!;
+        break outer;
+      }
+      k += 1;
+    }
+  }
+  assert.equal(row.minIouPair.lensA, expectedA);
+  assert.equal(row.minIouPair.lensB, expectedB);
+});
+
+test('refinement: renderer with showExtremes appends an extremes line per source', () => {
+  const queue = ascending('alpha', 30);
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  const out = renderSourceRowTokenSlopeCiCoverageVolume(r, {
+    showExtremes: true,
+  });
+  assert.match(out, /extremes: min /);
+  assert.match(out, / max /);
+});
+
+test('refinement: renderer without showExtremes omits the extremes line', () => {
+  const queue = ascending('alpha', 30);
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  const out = renderSourceRowTokenSlopeCiCoverageVolume(r);
+  assert.equal(/extremes: min /.test(out), false);
+});
+
+test('refinement: showExtremes and showPairs can be combined', () => {
+  const queue = ascending('alpha', 30);
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  const out = renderSourceRowTokenSlopeCiCoverageVolume(r, {
+    showExtremes: true,
+    showPairs: true,
+  });
+  assert.match(out, /extremes: min /);
+  assert.match(out, /bootstrap~jackknife=/);
+});
+
+test('refinement: extremes line uses 4-decimal iou formatting', () => {
+  const queue = ascending('alpha', 30);
+  const r = buildSourceRowTokenSlopeCiCoverageVolume(queue, {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    bootstraps: 200,
+  });
+  const out = renderSourceRowTokenSlopeCiCoverageVolume(r, {
+    showExtremes: true,
+  });
+  // every iou in the extremes line is reported with exactly 4 decimal places
+  assert.match(out, /extremes: min \w+~\w+=\d\.\d{4} +max \w+~\w+=\d\.\d{4}/);
+});

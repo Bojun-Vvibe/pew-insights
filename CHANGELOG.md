@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.236 — 2026-04-30
+
+### Added — refinement to v0.6.235 ci-coverage-volume
+
+Per-source `minIouPair` and `maxIouPair` fields on every
+`SourceRowTokenSlopeCiCoverageVolumeRow`. Each is a
+`{ lensA, lensB, iou }` triple naming the specific lens pair (in
+canonical lens order, lensA-index < lensB-index) that achieves
+the row's `minIou` (worst-overlap pair = weakest agreement) and
+`maxIou` (best-overlap pair = strongest agreement) over the 15
+unordered lens pairs.
+
+Renderer flag `--show-extremes` (also `showExtremes` option on
+`renderSourceRowTokenSlopeCiCoverageVolume`) appends a compact
+single line per source naming both extreme pairs and their IoU
+values to 4 decimal places. Compact alternative to the existing
+`--show-pairs` (one line vs the full 15-vector); the two flags
+compose.
+
+Why: the v0.6.235 row aggregates `minIou` / `maxIou` / `iouSpread`
+report the magnitudes but not the WHICH-PAIRS attribution. Live
+smoke against the local queue showed every source reports
+`minIou = 0.0000` (i.e. at least one disjoint pair), and a triage
+user immediately wants to know which lens pair is disjoint.
+Without the pair-attribution fields the only path was running
+`--show-pairs` and eyeballing 15 numbers per source.
+
+Live smoke (same queue, 2006 rows, 6 sources):
+
+  - 5 of 6 sources have `minIouPair = jackknife~studentizedT`
+    with iou = 0.0000 — the studentized-t bootstrap CI for
+    those sources is consistently disjoint from the jackknife
+    CI on the slope axis.
+  - The remaining source (`opencode`) has
+    `minIouPair = studentizedT~abc` (also 0.0000); jackknife
+    overlaps everything for that source.
+  - `maxIouPair` varies more: 3 sources peak on
+    `studentizedT~abc`, 2 on `bootstrap~bca`, 1 on
+    `studentizedT~profileLikelihood`.
+  - `bca~profileLikelihood` and `abc~profileLikelihood` (which
+    were near-1 in v0.6.235's pair view) are NOT the global
+    max for any source under the per-source breakdown.
+
+Pure helper `coveragePair`, builder, sort keys, threshold
+defaults, and JSON / pretty default output otherwise unchanged.
+
+Tests: 6456 total (was 6448, +8).
+
 ## 0.6.235 — 2026-04-30
 
 ### Added
