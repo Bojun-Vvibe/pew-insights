@@ -681,6 +681,11 @@ export function renderSourceRowTokenSlopeCiRankCorrelation(
       `min-agreement: ${r.minAgreementPair.lensA}~${r.minAgreementPair.lensB} = ${fmtNum(r.minAgreementPair.agreement)}    max-agreement: ${r.maxAgreementPair.lensA}~${r.maxAgreementPair.lensB} = ${fmtNum(r.maxAgreementPair.agreement)}`,
     );
   }
+  if (r.sourcesWithAllLenses < 2) {
+    lines.push(
+      `(insufficient data: n=${r.sourcesWithAllLenses} < 2 sources with all six lenses; spearman / kendall require at least 2 sources -- every pair metric is 0 by convention, NOT NaN)`,
+    );
+  }
   lines.push('');
   if (r.pairs.length === 0) {
     lines.push('(no pairs)');

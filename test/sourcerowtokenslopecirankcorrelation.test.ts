@@ -531,3 +531,24 @@ test('renderer: prints all 15 pair rows by default', () => {
   const lines = txt.split('\n').filter((l) => /^bootstrap|^jackknife|^bca|^studentizedT|^abc|^profileLikelihood/.test(l));
   assert.equal(lines.length, 15);
 });
+
+// --- refinement v0.6.234.1: insufficient-data hint in renderer ---
+
+test('renderer: emits insufficient-data hint when n < 2', () => {
+  const r = buildSourceRowTokenSlopeCiRankCorrelation([], {
+    bootstraps: 100,
+    seed: 1,
+  });
+  const txt = renderSourceRowTokenSlopeCiRankCorrelation(r);
+  assert.ok(txt.includes('insufficient data'));
+  assert.ok(txt.includes('n=0 < 2'));
+});
+
+test('renderer: insufficient-data hint absent when n >= 2', () => {
+  const r = buildSourceRowTokenSlopeCiRankCorrelation(bigQueue(), {
+    bootstraps: 100,
+    seed: 1,
+  });
+  const txt = renderSourceRowTokenSlopeCiRankCorrelation(r);
+  assert.ok(!txt.includes('insufficient data'));
+});
