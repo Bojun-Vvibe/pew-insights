@@ -423,6 +423,10 @@ import {
   buildSourceRowTokenSlopeCiAsymmetryConcordance,
   renderSourceRowTokenSlopeCiAsymmetryConcordance,
 } from './sourcerowtokenslopeciasymmetryconcordance.js';
+import {
+  buildSourceRowTokenSlopeCiContainmentNestedness,
+  renderSourceRowTokenSlopeCiContainmentNestedness,
+} from './sourcerowtokenslopecicontainmentnestedness.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -21621,6 +21625,186 @@ program
             renderSourceRowTokenSlopeCiAsymmetryConcordance(report, {
               showAsymmetries: opts.showAsymmetries ?? false,
             }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-containment-nestedness')
+  .description(
+    "Per-source CI-CONTAINMENT diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from v0.6.227 (Jaccard set-overlap), v0.6.228 (sign), v0.6.229 (width), v0.6.230 (overlap-graph topology), v0.6.231 (midpoint-dispersion / location), and v0.6.232 (asymmetry-shape) because it is the ONLY one that classifies the JOINT (location + width) inclusion structure of each pair of CIs. For each of the C(6,2)=15 pairs we assign one of five MECE buckets: EQ (identical endpoints), A_IN_B / B_IN_A (one CI strictly nested inside the other), PARTIAL (intersect but neither contains), DISJOINT (no overlap). From the pair classification we derive a per-lens containment profile (`contains[i]` / `containedBy[i]` / `equalTo[i]`), `nestingChainDepth` (length of the longest inclusion chain, 1..6 -- 6 means the six CIs form a TOTAL ORDER under inclusion), `cleanChain` (every pair is EQ or strict nest), `widestLens` / `tightestLens` (most-conservative / most-confident lens), `nestingFraction = (eqPairs + nestedPairs)/15`, `disjointFraction = disjointPairs/15`, and `anyDisjoint` (red-flag boolean: at least one pair has non-overlapping CIs -- a contradiction the other six diagnostics cannot raise pairwise). --alert-disjoint surfaces sources with `anyDisjoint == true`; --alert-clean-chain surfaces sources whose six CIs form a total order.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-disjoint',
+    'only emit sources where at least one CI pair is DISJOINT (lenses produce non-overlapping confidence ranges -- a red flag)',
+  )
+  .option(
+    '--alert-clean-chain',
+    'only emit sources whose six CIs form a TOTAL ORDER under inclusion (cleanChain == true AND nestingChainDepth == 6)',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'nesting-fraction-desc' (default) | 'nesting-fraction-asc' | 'disjoint-fraction-desc' | 'disjoint-fraction-asc' | 'chain-depth-desc' | 'chain-depth-asc' | 'nested-pairs-desc' | 'partial-pairs-desc' | 'disjoint-pairs-desc' | 'eq-pairs-desc' | 'widest-contains-desc' | 'tightest-contained-by-desc' | 'mean-width-desc' | 'width-spread-desc' | 'rows' | 'source'",
+    'nesting-fraction-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertDisjoint?: boolean;
+        alertCleanChain?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'nesting-fraction-desc',
+          'nesting-fraction-asc',
+          'disjoint-fraction-desc',
+          'disjoint-fraction-asc',
+          'chain-depth-desc',
+          'chain-depth-asc',
+          'nested-pairs-desc',
+          'partial-pairs-desc',
+          'disjoint-pairs-desc',
+          'eq-pairs-desc',
+          'widest-contains-desc',
+          'tightest-contained-by-desc',
+          'mean-width-desc',
+          'width-spread-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertDisjoint: opts.alertDisjoint ?? false,
+          alertCleanChain: opts.alertCleanChain ?? false,
+          top,
+          sort: opts.sort as
+            | 'nesting-fraction-desc'
+            | 'nesting-fraction-asc'
+            | 'disjoint-fraction-desc'
+            | 'disjoint-fraction-asc'
+            | 'chain-depth-desc'
+            | 'chain-depth-asc'
+            | 'nested-pairs-desc'
+            | 'partial-pairs-desc'
+            | 'disjoint-pairs-desc'
+            | 'eq-pairs-desc'
+            | 'widest-contains-desc'
+            | 'tightest-contained-by-desc'
+            | 'mean-width-desc'
+            | 'width-spread-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiContainmentNestedness(report) + '\n',
           );
         }
       } catch (e) {
