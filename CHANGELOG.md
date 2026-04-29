@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.218 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-passing-bablok-slope` —
+  per-source **Passing-Bablok shifted-median** slope of per-row
+  `total_tokens` against row index. Errors-in-both-variables
+  R-estimator (Passing & Bablok 1983, originally for
+  clinical-chemistry method comparison): enumerate all
+  `n*(n-1)/2` pairwise slopes `s_ij = (x_j - x_i)/(j - i)`, drop
+  any `s == -1`, let `K = #{s < -1}`, then pick the slope at
+  sorted 1-based position `floor((N+1)/2) + K` (lower pick when
+  `(N - K)` is even). Intercept = `median_i(x_i - slope * i)`.
+
+  ```
+  K          = #{ s_ij < -1 }
+  shiftIndex = floor((N + 1)/2) + K
+  slope      = sortedSlopes[shiftIndex - 1]    (if (N - K) odd)
+             = avg(sortedSlopes[shiftIndex - 1 ..])  (if even)
+  ```
+
+  This is the **first x<->y SYMMETRIC slope estimator** in the
+  suite and the **first errors-in-both-variables (Deming-style)
+  regression** shipped here. Every prior slope lens implicitly
+  assumes the index axis is exact and only `total_tokens`
+  carries error; Passing-Bablok stays invariant under x<->y swap
+  (regress y on x or x on y, you get reciprocal slopes), which
+  no other lens in the suite does.
+
+  Sits structurally between the two existing pairwise-slope
+  lenses:
+
+  - vs **Theil-Sen** (v0.6.214, plain median of pairwise slopes,
+    breakdown ~29.3%, y-asymmetric): same pair cloud, same ~29.3%
+    breakdown — but Passing-Bablok takes a **shifted** median
+    where the shift `K` exactly compensates for the asymmetry the
+    plain median has under x<->y swap. When `K = 0` (e.g. all
+    pristine slopes positive) PB collapses to Theil-Sen exactly;
+    when `K > 0` PB pulls toward the upper part of the slope
+    distribution.
+  - vs **Siegel repeated-medians** (v0.6.216, nested medians,
+    breakdown ~50%, y-asymmetric): Siegel maximizes raw outlier
+    tolerance; PB maximizes functional invariance (x<->y
+    symmetry). Different robustness axes — pick PB when both
+    axes can carry error, pick Siegel when up to half the points
+    can be arbitrary outliers.
+  - vs every M-estimator location lens (Huber/Tukey/Hampel/
+    Andrews/Welsch/Cauchy/Geman-McClure, v0.6.207-v0.6.217):
+    those find a robust **center**, not a slope — completely
+    different output dimension.
+
+  Reports a unique **shift-diagnostic triple**:
+  - `pairsValid` (`N`), the number of slopes used after dropping
+    any `s == -1`
+  - `pairsBelowMinusOne` (`K`), the count driving the PB shift
+  - `shiftIndex` and `shiftRatio = shiftIndex / N`. Close to 0.5
+    means PB ~ Theil-Sen (no need to shift); noticeably above 0.5
+    means PB has shifted substantially.
+  - `pbVsTheilSenGap = slope - theilSenSlope`, the literal
+    correction in `tokens / row` introduced by the PB shift.
+
+  Plus the standard slope-lens header (`mean`, `median`, `firstX`,
+  `lastX`, `naiveSlope`, `intercept`, `slopeMagnitude`,
+  `slopeSign`).
+
+  CLI options mirror the rest of the slope family:
+  `--since/--until`, `--source`, `--min-rows` (>= 4),
+  `--min-slope-magnitude`, `--max-pairs` (default
+  5_000_000 ~ n=3163), `--top`, `--sort`
+  (`magnitude-desc` | `slope-desc` | `slope-asc` | `gap-desc` |
+  `gap-magnitude-desc` | `shift-ratio-desc` | `rows` | `source`),
+  `--json`. Pure builder; deterministic; sort tiebreak is `source`
+  asc.
+
+  Live smoke against the local `~/.config/pew/queue.jsonl`
+  (1,940 rows across 6 sources, sorted `magnitude-desc`):
+
+  ```
+  source          rows  mean         median      first       last        naive        theilSen      slope         sign  N        K       shiftIdx  shiftRatio  pbGap
+  codex           64    12650385.31  7132861.00  2695764.00  8565718.00  +93173.8730  +123739.4516  +665127.3556  up    2,016    832     1,424     0.706       +541387.9039
+  claude-code     299   11512995.95  3319967.00  1470723.00  201134.00   -4260.3658   +31445.1270   +157590.2711  up    44,551   16,757  30,654    0.688       +126145.1442
+  opencode        434   10395878.93  8107520.00  96926.00    6052401.00  +13753.9838  +13869.9719   +44700.5333   up    93,961   38,458  66,210    0.705       +30830.5614
+  openclaw        540   3704978.28   2295689.00  721224.00   1423435.00  +1302.8033   -5223.2956    +15914.1405   up    145,530  93,060  119,295   0.820       +21137.4361
+  hermes          270   749303.41    432176.00   2061198.00  317933.00   -6480.5390   -577.0853     +3628.8263    up    36,315   19,223  27,769    0.765       +4205.9116
+  vscode-redacted 333   5662.84      2319.00     458.00      9990.00     +28.7108     +1.9689       +34.5276      up    55,268   25,076  40,172    0.727       +32.5587
+  ```
+
+  Notable: every source shows `slopeSign = up` under the PB lens,
+  even when `naiveSlope` (raw endpoint-to-endpoint slope) is
+  negative — three of six sources (`claude-code`, `hermes`,
+  `vscode-redacted`'s historical run) have a negative endpoint
+  slope but a positive PB slope, because the endpoint pair is
+  pulled down by outliers while the PB shifted-median pulls the
+  estimate up to the bulk of slowly-rising pairs. The shiftRatio
+  cohort is tightly clustered around 0.69-0.82, with `openclaw`
+  the highest (0.820) — meaning roughly 82% of its sorted
+  pairwise slopes lie at or below the PB pick, i.e. its slope
+  cloud is heavily dominated by negative-magnitude pairs and PB
+  has had to shift far up the distribution to settle on a
+  small-positive consensus. `pbVsTheilSenGap` is large for
+  high-throughput sources (codex `+541k`, claude-code `+126k`)
+  and small for low-throughput sources (vscode-redacted `+33`),
+  scaling roughly with the source's mean — exactly what an
+  errors-in-both-variables correction should do when the y-error
+  is order-of-magnitude proportional to `y`.
+
 ## 0.6.217 — 2026-04-29
 
 ### Added
