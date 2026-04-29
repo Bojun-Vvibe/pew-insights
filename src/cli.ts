@@ -439,6 +439,10 @@ import {
   buildSourceRowTokenSlopeCiLeaveOneLensOut,
   renderSourceRowTokenSlopeCiLeaveOneLensOut,
 } from './sourcerowtokenslopecileaveonelensout.js';
+import {
+  buildSourceRowTokenSlopeCiPrecisionPull,
+  renderSourceRowTokenSlopeCiPrecisionPull,
+} from './sourcerowtokenslopeciprecisionpull.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22414,6 +22418,178 @@ program
             renderSourceRowTokenSlopeCiLeaveOneLensOut(report, {
               showLoo: opts.showLoo ?? false,
               showDirection: opts.showDirection ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-precision-pull')
+  .description(
+    "Per-source PRECISION-WEIGHTED vs EQUAL-WEIGHTED consensus shift diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL TEN prior cross-lens diagnostics (v0.6.227-235, v0.6.237 LOO) on a fundamental axis: every prior axis treats the six lenses as exchangeable equal-weight contributors. This is the ONLY axis that asks 'where does consensus go if we re-weight each lens by its PRECISION (1/width), as in inverse-variance pooling, instead of treating them all equally?' For each source, on the 6 CI midpoints and widths, we compute equalMid (arithmetic mean of midpoints), precisionMid (inverse-width-weighted mean of midpoints), signedPull = precisionMid - equalMid, pull = |signedPull|, pullStd = pull / equalWidth (unitless), pullDirection in {up, down, neutral}, weightShares (length 6, sums to 1), weightGini (concentration of precision in [0, 5/6]), dominantLens (largest weightShare), dominantWeightShare, mostPrecisionPullingLens (lens whose midpoint is furthest from equalMid AMONG above-average-precision lenses), and precisionAlignmentScore = 1 / (1 + pullStd) in (0, 1] (default sort key; 1 = precision re-weighting doesn't move consensus, near-0 = precise lenses sharply pull consensus away from equal-weight center). Report-level: meanPrecisionAlignment / medianPrecisionAlignment, meanWeightGini, globalDominantLens (mode across sources), globalPullDirection. --alert-misaligned <f> filters to sources whose precisionAlignmentScore is strictly less than f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-misaligned <f>',
+    'only emit sources whose precisionAlignmentScore is strictly less than f (in (0, 1])',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'alignment-desc' (default) | 'alignment-asc' | 'pull-std-desc' | 'pull-std-asc' | 'weight-gini-desc' | 'weight-gini-asc' | 'rows' | 'source'",
+    'alignment-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-weights',
+    'when rendering pretty (non-JSON), append a per-source 6-row sub-table showing each lens weightShare',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertMisaligned?: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showWeights?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertMisaligned: number | null = null;
+        if (opts.alertMisaligned != null) {
+          const a = Number.parseFloat(opts.alertMisaligned);
+          if (!Number.isFinite(a) || a <= 0 || a > 1) {
+            throw new Error(
+              `--alert-misaligned must be a finite number in (0, 1] (got ${opts.alertMisaligned})`,
+            );
+          }
+          alertMisaligned = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'alignment-desc',
+          'alignment-asc',
+          'pull-std-desc',
+          'pull-std-asc',
+          'weight-gini-desc',
+          'weight-gini-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiPrecisionPull(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertMisaligned,
+          top,
+          sort: opts.sort as
+            | 'alignment-desc'
+            | 'alignment-asc'
+            | 'pull-std-desc'
+            | 'pull-std-asc'
+            | 'weight-gini-desc'
+            | 'weight-gini-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiPrecisionPull(report, {
+              showWeights: opts.showWeights ?? false,
             }) + '\n',
           );
         }
