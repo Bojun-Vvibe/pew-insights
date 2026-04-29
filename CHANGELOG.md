@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.235 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-coverage-volume` —
+  per-source CI-COVERAGE-VOLUME diagnostic for the v0.6.219
+  Deming-slope uncertainty-quantification suite. Consumes the SAME
+  six per-source CIs that v0.6.227–v0.6.234 consume (percentile
+  bootstrap, jackknife normal, BCa, studentized-t, ABC,
+  profile-likelihood) but feeds them through a CONTINUOUS Lebesgue
+  intersection-over-union per pair, exposing gradations no prior
+  axis resolves.
+
+  **Mechanically distinct from ALL EIGHT prior cross-lens diagnostics
+  on a fundamental axis** — every prior axis collapses pair-overlap
+  to a coarser representation and loses the actual numeric extent
+  of agreement:
+
+    - v0.6.227 jaccard reduces overlap to a `{-1, 0, +1}` SIGN-SET
+      intersection-over-union — set-based on slope sign, not on the
+      Lebesgue measure of the CI interval. Two CIs whose signs
+      agree get jaccard = 1 regardless of how thin the actual
+      interval overlap is.
+    - v0.6.228 sign concordance is per-source on slope sign only.
+    - v0.6.229 width-concordance compares CI WIDTHS in isolation;
+      it never measures pair-wise interval intersection at all.
+    - v0.6.230 overlap-graph collapses each pair to a SINGLE BIT
+      (overlap or disjoint) and from there builds a graph; loses
+      all magnitude information.
+    - v0.6.231 midpoint-dispersion measures CENTER spread; midpoints
+      alone don't say anything about overlap volume.
+    - v0.6.232 asymmetry measures CI shape AROUND the point estimate
+      INSIDE a single CI; says nothing pairwise.
+    - v0.6.233 pair-inclusion classifies each pair into one of
+      FIVE CATEGORICAL buckets (`EQ`/`A_IN_B`/`B_IN_A`/`PARTIAL`/
+      `DISJOINT`); two `PARTIAL` pairs with wildly different
+      overlap volumes get the same label.
+    - v0.6.234 rank-correlation is the only CROSS-SOURCE axis; it
+      never looks at any single source's CI interval geometry.
+
+  The 9th axis is therefore the CONTINUOUS COVERAGE-VOLUME axis:
+  for each of the C(6,2) = 15 lens pairs we compute the actual
+  Lebesgue intersection-over-union of the intervals, plus a
+  containment-normalized variant. This surfaces "the lenses
+  technically agree on signs and overlap, but only by a hair" and
+  "the lenses nominally PARTIAL-overlap but actually share 99% of
+  their length" — gradations none of the 8 prior axes resolve.
+
+  Per lens-pair we report:
+
+    - `iou` — `|A ∩ B| / |A ∪ B|` in `[0, 1]`. The headline
+      coverage-volume metric. 1 means identical intervals; 0 means
+      disjoint OR one of A, B has zero length and is not contained
+      in the other.
+    - `overlap` — raw `|A ∩ B|` length, `>= 0`.
+    - `union` — raw `|A ∪ B|` length, `>= 0`. Disjoint pairs use
+      the OUTER-HULL convention so that `1 - iou` is a proper
+      pseudo-distance and the metric stays in `[0, 1]` without
+      truncation.
+    - `containmentRatio` — `|A ∩ B| / min(|A|, |B|)` in `[0, 1]`.
+      1 means the SMALLER interval is fully covered by the larger.
+      Distinguishes "tightly nested" (containment = 1, iou < 1)
+      from "side-by-side overlap" (containment < 1, iou < 1).
+
+  Per-source aggregates: `meanIou` / `medianIou` / `minIou` /
+  `maxIou` / `iouSpread`, `meanContainment` / `minContainment` /
+  `maxContainment`, `weakPairs` (`iou < weak-iou-threshold`,
+  default 0.5), `strongPairs` (`iou >= strong-iou-threshold`,
+  default 0.9), `disjointPairs` (`overlap == 0`), `meanWidth`, and
+  `coherenceScore = meanIou * (1 - disjointPairs/15)` (the default
+  sort key, in `[0, 1]`, rewarding both high mean overlap volume
+  AND no outright disjoint pairs).
+
+  Report-level: `weakMeanIouCount`, `strongMeanIouCount`,
+  `anyDisjointCount`, plus a global `meanCoherenceScore` across
+  kept sources. Knobs: `--weak-iou`, `--strong-iou`,
+  `--alert-weak-mean <f>` (filter to sources whose `meanIou < f`),
+  `--top <n>`, `--sort <key>`, `--show-pairs` (renderer flag that
+  appends a per-source 15-vector of `lensA~lensB=iou` tokens).
+
+  Edge cases:
+
+    - Disjoint intervals: `overlap = 0`, `union` is the outer-hull
+      length (so `iou = 0` and `1 - iou` grows with separation).
+    - Zero-length point CI inside another CI: `iou = 0` but
+      `containmentRatio = 1`. Two coincident zero-length points:
+      `iou = 1` by convention. Two distinct zero-length points:
+      `iou = 0`.
+    - Sources missing from any one of the six lens reports are
+      dropped (intersection across all six).
+
+  ### Live smoke output
+
+  Run against the live `~/.config/pew/queue.jsonl` (2005 rows, 6
+  sources, all six lenses produce CIs for every source):
+
+  ```
+  $ pew-insights source-row-token-slope-ci-coverage-volume \
+      --bootstraps 500
+  pew-insights source-row-token-slope-ci-coverage-volume
+  as of: 2026-04-29T20:05:36.110Z    sources: 6 (with all lenses 6, shown 6)    rows: 2005    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 500    seed: 42    weak-iou: 0.5    strong-iou: 0.9    alert-weak-mean: -    top: -    sort: coherence-desc
+  dropped: 0 missing-from-some-lens, 0 above-alert-threshold, 0 below top cap; weak-mean-iou: 6; strong-mean-iou: 0; any-disjoint-pair: 6; meanCoherenceScore: 0.1468
+
+  source           rows  meanIou  medIou   minIou   maxIou   spread   weak  strong  disj  meanCont  cohScore  meanWidth
+  ---------------  ----  -------  -------  -------  -------  -------  ----  ------  ----  --------  --------  ----------
+  hermes            291   0.2355   0.0037   0.0000   0.9314   0.9314    11       1     3    0.7964    0.1884  1565611.3766
+  claude-code       299   0.2224   0.0011   0.0000   0.9165   0.9165    11       2     3    0.7908    0.1779  41575464.8671
+  opencode          456   0.1785   0.0503   0.0000   0.9425   0.9425    12       1     2    0.7304    0.1547  20300985.9062
+  vscode-copilot    333   0.1722   0.0070   0.0000   0.7373   0.7373    12       0     3    0.7814    0.1377  31321.2346
+  openclaw          562   0.1719   0.0022   0.0000   0.9126   0.9126    11       1     3    0.7810    0.1375  7321279.1932
+  codex              64   0.1154   0.0166   0.0000   0.8148   0.8148    13       0     4    0.7239    0.0846  55124537.5794
+  ```
+
+  Headline reading: the global `meanCoherenceScore = 0.1468` and
+  ALL six sources are flagged `weak-mean-iou` (every source has
+  `meanIou < 0.5`); ALL six also have at least one `disjoint-pair`
+  among the 15 lens pairs. The split is concentrated in a few
+  pairs that consistently disagree (`jackknife~studentizedT`,
+  `jackknife~abc`, `jackknife~profileLikelihood` are exactly 0 on
+  most sources — see `--show-pairs`), while a small handful of
+  pairs (`bootstrap~bca`, `studentizedT~profileLikelihood`,
+  `abc~profileLikelihood`) reach IoU `> 0.8` on the same data.
+  This is exactly the "the lenses agree on signs and overall
+  topology but disagree wildly on the actual numeric extent" story
+  the prior eight axes cannot tell — v0.6.230 overlap-graph would
+  collapse each `iou = 0` and each `iou = 0.93` to a single bit,
+  v0.6.233 pair-inclusion would collapse `iou = 0.50` and
+  `iou = 0.99` into the same `PARTIAL` bucket, and v0.6.234
+  rank-correlation never even looks at intervals.
+
+  65 new tests; total suite is 6448 cases.
+
 ## 0.6.234 — 2026-04-30
 
 ### Added
