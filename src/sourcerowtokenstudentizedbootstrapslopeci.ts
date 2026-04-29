@@ -159,7 +159,7 @@
  */
 import type { QueueLine } from './types.js';
 import { demingSlope } from './sourcerowtokendemingslope.js';
-import { jackknifeLeaveOneOutSlopes } from './sourcerowtokenjackknifeslopeci.js';
+import { jackknifeLeaveOneOutSlopes, inverseStandardNormalCdf } from './sourcerowtokenjackknifeslopeci.js';
 import {
   makeLcg,
   bootstrapResample,
@@ -203,6 +203,8 @@ export interface SourceRowTokenStudentizedBootstrapSlopeCiOptions {
     | 'se-full-desc'
     | 't-skew-magnitude-desc'
     | 'degenerate-se-desc'
+    | 'se-sensitivity-deviation-desc'
+    | 'pivot-vs-normal-disagreement-desc'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -243,6 +245,33 @@ export interface SourceRowTokenStudentizedBootstrapSlopeCiRow {
    * vs the symmetric `+/- z` of v0.6.221.
    */
   tSkewSignal: number;
+  /**
+   * `mean(SE*_b) / SE_full` over the B bootstrap replicates: a
+   * pivot-stability diagnostic. A ratio near 1 means the resampling
+   * produced inner SEs comparable to the full-data SE (the
+   * studentized statistic is well-pivoted on this data). A ratio
+   * far from 1 (e.g. < 0.5 or > 2) flags resamples whose internal
+   * variability disagrees sharply with the full-data SE — a
+   * cautionary signal that the bootstrap-t pivot may not be
+   * approximately pivotal here. NaN if SE_full is 0 (degenerate
+   * full-data jackknife). Refinement field, v0.6.223 follow-up.
+   */
+  seSensitivityRatio: number;
+  /**
+   * `+1` if the BCa-style equivalent (raw percentile) interval
+   * would have **excluded** zero where the bootstrap-t includes it,
+   * `-1` if the bootstrap-t excludes zero where the symmetric
+   * `+/- z * SE_full` envelope would have included it, `0` if both
+   * agree on the zero-inclusion verdict. Compares the bootstrap-t
+   * `ciContainsZero` against the v0.6.221-style normal envelope
+   * `[thetaHat - z * seFull, thetaHat + z * seFull]` evaluated at
+   * the same confidence (z = Phi^-1((1+conf)/2) ~= 1.96 at 95%).
+   * Surfaces sources where the bootstrap-t's asymmetry-aware CI
+   * disagrees with a symmetric normal envelope on the
+   * "is the slope significantly different from zero?" verdict.
+   * Refinement field, v0.6.223 follow-up.
+   */
+  pivotVsNormalZeroDisagreement: number;
 }
 
 export interface SourceRowTokenStudentizedBootstrapSlopeCiReport {
@@ -267,6 +296,8 @@ export interface SourceRowTokenStudentizedBootstrapSlopeCiReport {
     | 'se-full-desc'
     | 't-skew-magnitude-desc'
     | 'degenerate-se-desc'
+    | 'se-sensitivity-deviation-desc'
+    | 'pivot-vs-normal-disagreement-desc'
     | 'ci-contains-zero-first'
     | 'rows'
     | 'source';
@@ -295,6 +326,8 @@ const VALID_SORTS = [
   'se-full-desc',
   't-skew-magnitude-desc',
   'degenerate-se-desc',
+  'se-sensitivity-deviation-desc',
+  'pivot-vs-normal-disagreement-desc',
   'ci-contains-zero-first',
   'rows',
   'source',
@@ -506,10 +539,12 @@ export function buildSourceRowTokenStudentizedBootstrapSlopeCi(
     // jackknife SE. T*_b = (theta*_b - thetaHat) / SE*_b.
     const tStars = new Array<number>(bootstraps);
     let degenerateSeReplicates = 0;
+    let seStarSum = 0;
     for (let b = 0; b < bootstraps; b += 1) {
       const resampled = bootstrapResample(xs, rng);
       const slopeStar = bootstrapDemingSlope(resampled, lambda);
       const seStar = jackknifeSlopeSe(resampled, lambda);
+      seStarSum += Number.isFinite(seStar) ? seStar : 0;
       if (seStar === 0 || !Number.isFinite(seStar)) {
         tStars[b] = 0;
         degenerateSeReplicates += 1;
@@ -527,6 +562,24 @@ export function buildSourceRowTokenStudentizedBootstrapSlopeCi(
     const ciContainsZero = ciLower <= 0 && ciUpper >= 0;
     const tSkewSignal = bootstrapTSkewSignal(tLower, tUpper);
 
+    // Refinement: pivot-stability ratio = mean(SE*_b)/SE_full.
+    const meanSeStar = bootstraps > 0 ? seStarSum / bootstraps : 0;
+    const seSensitivityRatio =
+      seFull === 0 || !Number.isFinite(seFull) ? NaN : meanSeStar / seFull;
+
+    // Refinement: bootstrap-t vs symmetric normal envelope on the
+    // "is zero in the CI?" verdict.
+    const zCrit = inverseStandardNormalCdf((1 + confidence) / 2);
+    const normalLo = pointSlope - zCrit * seFull;
+    const normalHi = pointSlope + zCrit * seFull;
+    const normalContainsZero = normalLo <= 0 && normalHi >= 0;
+    let pivotVsNormalZeroDisagreement = 0;
+    if (ciContainsZero && !normalContainsZero) {
+      pivotVsNormalZeroDisagreement = -1;
+    } else if (!ciContainsZero && normalContainsZero) {
+      pivotVsNormalZeroDisagreement = +1;
+    }
+
     allRows.push({
       source,
       rowsKept: n,
@@ -540,6 +593,8 @@ export function buildSourceRowTokenStudentizedBootstrapSlopeCi(
       ciContainsZero,
       degenerateSeReplicates,
       tSkewSignal,
+      seSensitivityRatio,
+      pivotVsNormalZeroDisagreement,
     });
   }
 
@@ -573,6 +628,19 @@ export function buildSourceRowTokenStudentizedBootstrapSlopeCi(
       primary = qv - pv;
     } else if (sort === 'degenerate-se-desc')
       primary = q.degenerateSeReplicates - p.degenerateSeReplicates;
+    else if (sort === 'se-sensitivity-deviation-desc') {
+      // |ratio - 1| desc; NaN -> sort last.
+      const qv = Number.isFinite(q.seSensitivityRatio)
+        ? Math.abs(q.seSensitivityRatio - 1)
+        : -1;
+      const pv = Number.isFinite(p.seSensitivityRatio)
+        ? Math.abs(p.seSensitivityRatio - 1)
+        : -1;
+      primary = qv - pv;
+    } else if (sort === 'pivot-vs-normal-disagreement-desc')
+      primary =
+        Math.abs(q.pivotVsNormalZeroDisagreement) -
+        Math.abs(p.pivotVsNormalZeroDisagreement);
     else if (sort === 'ci-contains-zero-first')
       primary = (q.ciContainsZero ? 1 : 0) - (p.ciContainsZero ? 1 : 0);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;

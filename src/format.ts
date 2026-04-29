@@ -14311,6 +14311,8 @@ export function renderSourceRowTokenStudentizedBootstrapSlopeCi(
     'ciUpper',
     'ciWidth',
     'tSkew',
+    'seRatio',
+    'pvN',
     'degSE',
     '0inCI?',
   ];
@@ -14328,6 +14330,14 @@ export function renderSourceRowTokenStudentizedBootstrapSlopeCi(
       Number.isFinite(s.tSkewSignal)
         ? (s.tSkewSignal >= 0 ? '+' : '') + s.tSkewSignal.toFixed(4)
         : 'n/a',
+      Number.isFinite(s.seSensitivityRatio)
+        ? s.seSensitivityRatio.toFixed(4)
+        : 'n/a',
+      s.pivotVsNormalZeroDisagreement > 0
+        ? 'pTght'
+        : s.pivotVsNormalZeroDisagreement < 0
+          ? 'pWide'
+          : 'agree',
       formatNumber(s.degenerateSeReplicates),
       s.ciContainsZero ? 'yes' : 'no',
     ],

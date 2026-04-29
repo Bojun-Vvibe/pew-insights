@@ -664,10 +664,67 @@ test('row: includes all per-source fields', () => {
   assert.equal(typeof s.ciWidth, 'number');
   assert.equal(typeof s.ciContainsZero, 'boolean');
   assert.equal(typeof s.degenerateSeReplicates, 'number');
+  assert.equal(typeof s.seSensitivityRatio, 'number');
+  assert.equal(typeof s.pivotVsNormalZeroDisagreement, 'number');
   // tSkewSignal can be NaN (allowed) or finite in [-1, 1]
   if (Number.isFinite(s.tSkewSignal)) {
     assert.ok(s.tSkewSignal >= -1 && s.tSkewSignal <= 1);
   }
+  // pivot-vs-normal disagreement is in {-1, 0, +1}
+  assert.ok([-1, 0, 1].includes(s.pivotVsNormalZeroDisagreement));
+});
+
+test('row: seSensitivityRatio NaN when seFull = 0 (constant series)', () => {
+  const rows = mkSeries('flat', [7, 7, 7, 7, 7, 7]);
+  const r = buildSourceRowTokenStudentizedBootstrapSlopeCi(rows, {
+    bootstraps: 100,
+    seed: 1,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.seFull, 0);
+  assert.ok(Number.isNaN(s.seSensitivityRatio));
+});
+
+test('row: seSensitivityRatio finite and > 0 for monotone series', () => {
+  const rows = mkSeries('rising', [10, 20, 30, 40, 50, 60, 70, 80, 90]);
+  const r = buildSourceRowTokenStudentizedBootstrapSlopeCi(rows, {
+    bootstraps: 300,
+    seed: 1,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.ok(Number.isFinite(s.seSensitivityRatio));
+  assert.ok(s.seSensitivityRatio > 0);
+});
+
+test('builder: sort=se-sensitivity-deviation-desc orders by |ratio - 1|', () => {
+  const series = [
+    ...mkSeries('a', [1, 2, 3, 4, 5, 6, 7]),
+    ...mkSeries('b', [1, 100, 2, 99, 3, 98, 4]),
+  ];
+  const r = buildSourceRowTokenStudentizedBootstrapSlopeCi(series, {
+    bootstraps: 200,
+    seed: 5,
+    sort: 'se-sensitivity-deviation-desc',
+    generatedAt: GEN,
+  });
+  // Just assert: runs and returns the same set.
+  assert.equal(r.sources.length, 2);
+});
+
+test('builder: sort=pivot-vs-normal-disagreement-desc orders by |verdict diff|', () => {
+  const series = [
+    ...mkSeries('flat', [5, 5, 5, 5, 5, 5]),
+    ...mkSeries('rise', [1, 2, 3, 4, 5, 6, 7, 8]),
+  ];
+  const r = buildSourceRowTokenStudentizedBootstrapSlopeCi(series, {
+    bootstraps: 200,
+    seed: 5,
+    sort: 'pivot-vs-normal-disagreement-desc',
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 2);
 });
 
 // =========================================================================

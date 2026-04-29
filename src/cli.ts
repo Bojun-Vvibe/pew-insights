@@ -9817,7 +9817,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'se-full-desc' | 't-skew-magnitude-desc' | 'degenerate-se-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'se-full-desc' | 't-skew-magnitude-desc' | 'degenerate-se-desc' | 'se-sensitivity-deviation-desc' | 'pivot-vs-normal-disagreement-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9904,6 +9904,8 @@ program
           'se-full-desc',
           't-skew-magnitude-desc',
           'degenerate-se-desc',
+          'se-sensitivity-deviation-desc',
+          'pivot-vs-normal-disagreement-desc',
           'ci-contains-zero-first',
           'rows',
           'source',
@@ -9935,6 +9937,8 @@ program
             | 'se-full-desc'
             | 't-skew-magnitude-desc'
             | 'degenerate-se-desc'
+            | 'se-sensitivity-deviation-desc'
+            | 'pivot-vs-normal-disagreement-desc'
             | 'ci-contains-zero-first'
             | 'rows'
             | 'source',
