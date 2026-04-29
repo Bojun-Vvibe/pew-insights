@@ -9641,7 +9641,7 @@ program
   )
   .option(
     '--sort <key>',
-    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'boot-std-desc' | 'ci-contains-zero-first' | 'rows' | 'source'",
+    "sort key: 'magnitude-desc' (default; |slope| desc) | 'slope-desc' | 'slope-asc' | 'ci-width-desc' | 'ci-width-asc' | 'boot-std-desc' | 'ci-contains-zero-first' | 'boot-skew-magnitude-desc' | 'rows' | 'source'",
     'magnitude-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -9716,6 +9716,7 @@ program
           'ci-width-asc',
           'boot-std-desc',
           'ci-contains-zero-first',
+          'boot-skew-magnitude-desc',
           'rows',
           'source',
         ];
@@ -9744,6 +9745,7 @@ program
             | 'ci-width-asc'
             | 'boot-std-desc'
             | 'ci-contains-zero-first'
+            | 'boot-skew-magnitude-desc'
             | 'rows'
             | 'source',
         });

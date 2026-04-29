@@ -122,6 +122,7 @@ export interface SourceRowTokenBootstrapSlopeCiOptions {
     | 'ci-width-asc'
     | 'boot-std-desc'
     | 'ci-contains-zero-first'
+    | 'boot-skew-magnitude-desc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -136,6 +137,21 @@ export interface SourceRowTokenBootstrapSlopeCiRow {
   bootMean: number;
   /** Sample std (n-1) of the resample slopes. */
   bootStd: number;
+  /**
+   * Median of the `bootstraps` resample slopes (50th percentile).
+   * (Refinement field, v0.6.220 follow-up.)
+   */
+  bootMedian: number;
+  /**
+   * `bootMean - bootMedian` — a non-parametric skewness diagnostic
+   * for the bootstrap distribution of the Deming slope. Positive =
+   * mean above median (right-skewed; the bootstrap distribution has
+   * a heavy upper tail); negative = left-skewed. Useful for spotting
+   * sources where a percentile CI is misleading because the
+   * resampling distribution is asymmetric. (Refinement field,
+   * v0.6.220 follow-up.)
+   */
+  bootSkewMeanMinusMedian: number;
   /** Lower percentile of resample slopes at the requested confidence. */
   ciLower: number;
   /** Upper percentile of resample slopes at the requested confidence. */
@@ -170,6 +186,7 @@ export interface SourceRowTokenBootstrapSlopeCiReport {
     | 'ci-width-asc'
     | 'boot-std-desc'
     | 'ci-contains-zero-first'
+    | 'boot-skew-magnitude-desc'
     | 'rows'
     | 'source';
   totalSources: number;
@@ -195,6 +212,7 @@ const VALID_SORTS = [
   'ci-width-asc',
   'boot-std-desc',
   'ci-contains-zero-first',
+  'boot-skew-magnitude-desc',
   'rows',
   'source',
 ] as const;
@@ -428,6 +446,8 @@ export function buildSourceRowTokenBootstrapSlopeCi(
     const ciUpper = percentileSorted(sorted, hi);
     const ciWidth = ciUpper - ciLower;
     const ciContainsZero = ciLower <= 0 && ciUpper >= 0;
+    const bootMedian = percentileSorted(sorted, 0.5);
+    const bootSkewMeanMinusMedian = bootMean - bootMedian;
 
     allRows.push({
       source,
@@ -435,6 +455,8 @@ export function buildSourceRowTokenBootstrapSlopeCi(
       slope: pointSlope,
       bootMean,
       bootStd,
+      bootMedian,
+      bootSkewMeanMinusMedian,
       ciLower,
       ciUpper,
       ciWidth,
@@ -463,6 +485,10 @@ export function buildSourceRowTokenBootstrapSlopeCi(
     else if (sort === 'boot-std-desc') primary = q.bootStd - p.bootStd;
     else if (sort === 'ci-contains-zero-first')
       primary = (q.ciContainsZero ? 1 : 0) - (p.ciContainsZero ? 1 : 0);
+    else if (sort === 'boot-skew-magnitude-desc')
+      primary =
+        Math.abs(q.bootSkewMeanMinusMedian) -
+        Math.abs(p.bootSkewMeanMinusMedian);
     else if (sort === 'rows') primary = q.rowsKept - p.rowsKept;
     else primary = p.source < q.source ? -1 : p.source > q.source ? 1 : 0;
     if (primary !== 0) return primary;

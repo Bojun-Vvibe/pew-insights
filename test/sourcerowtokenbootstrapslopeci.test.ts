@@ -775,3 +775,95 @@ test('property: alertZeroInCi=false keeps all rows', () => {
   });
   assert.equal(r.droppedNotZeroInCi, 0);
 });
+
+// =========================================================================
+// refinement: bootMedian + bootSkewMeanMinusMedian
+// =========================================================================
+
+test('refinement: bootMedian and bootSkewMeanMinusMedian present on every row', () => {
+  const r = buildSourceRowTokenBootstrapSlopeCi(MULTI, {
+    bootstraps: 200,
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.bootMedian));
+    assert.ok(Number.isFinite(s.bootSkewMeanMinusMedian));
+  }
+});
+
+test('refinement: bootSkewMeanMinusMedian = bootMean - bootMedian exactly', () => {
+  const r = buildSourceRowTokenBootstrapSlopeCi(MULTI, {
+    bootstraps: 200,
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    assert.equal(s.bootSkewMeanMinusMedian, s.bootMean - s.bootMedian);
+  }
+});
+
+test('refinement: all-equal series -> bootMedian = 0 and bootSkew = 0', () => {
+  const q = mkSeries('flat', [42, 42, 42, 42, 42, 42, 42, 42]);
+  const r = buildSourceRowTokenBootstrapSlopeCi(q, {
+    bootstraps: 200,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.bootMedian, 0);
+  assert.equal(s.bootSkewMeanMinusMedian, 0);
+});
+
+test('refinement: bootMedian is between min and max of resample slopes (within CI bounds)', () => {
+  const q = mkSeries('a', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const r = buildSourceRowTokenBootstrapSlopeCi(q, {
+    bootstraps: 200,
+    confidence: 0.99,
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  // 99% CI is wide; median must lie within it for any reasonable
+  // distribution.
+  assert.ok(s.bootMedian >= s.ciLower);
+  assert.ok(s.bootMedian <= s.ciUpper);
+});
+
+test('refinement: boot-skew-magnitude-desc sort orders by |bootSkew| desc', () => {
+  const r = buildSourceRowTokenBootstrapSlopeCi(MULTI, {
+    bootstraps: 200,
+    sort: 'boot-skew-magnitude-desc',
+    generatedAt: GEN,
+  });
+  for (let i = 1; i < r.sources.length; i += 1) {
+    assert.ok(
+      Math.abs(r.sources[i - 1]!.bootSkewMeanMinusMedian) >=
+        Math.abs(r.sources[i]!.bootSkewMeanMinusMedian),
+    );
+  }
+});
+
+test('refinement: boot-skew-magnitude-desc accepted by validator', () => {
+  // Should not throw.
+  buildSourceRowTokenBootstrapSlopeCi([], {
+    bootstraps: 100,
+    sort: 'boot-skew-magnitude-desc',
+    generatedAt: GEN,
+  });
+});
+
+test('refinement: bootMedian determinism under same seed', () => {
+  const q = mkSeries('a', [1, 4, 2, 8, 5, 9, 3, 7, 6, 10]);
+  const r1 = buildSourceRowTokenBootstrapSlopeCi(q, {
+    bootstraps: 300,
+    seed: 7,
+    generatedAt: GEN,
+  });
+  const r2 = buildSourceRowTokenBootstrapSlopeCi(q, {
+    bootstraps: 300,
+    seed: 7,
+    generatedAt: GEN,
+  });
+  assert.equal(r1.sources[0]!.bootMedian, r2.sources[0]!.bootMedian);
+  assert.equal(
+    r1.sources[0]!.bootSkewMeanMinusMedian,
+    r2.sources[0]!.bootSkewMeanMinusMedian,
+  );
+});
