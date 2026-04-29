@@ -943,3 +943,140 @@ test('render: yes/NO for cleanChain column', () => {
   // At least one of yes or NO must appear in the data row.
   assert.ok(/\b(yes|NO)\b/.test(out));
 });
+
+// --- refinement: --show-pairs / --show-profile ---
+
+test('render: showPairs=false omits the pairs follow-up line', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: false,
+  });
+  assert.equal(/^\s+pairs:/m.test(out), false);
+});
+
+test('render: showPairs=true emits a pairs follow-up line', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: true,
+  });
+  assert.match(out, /pairs:/);
+});
+
+test('render: showPairs lists all 15 lens-pair labels', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: true,
+  });
+  // 15 pairs each with `~` as the separator.
+  const matches = out.match(/[a-zA-Z]+~[a-zA-Z]+=/g) ?? [];
+  assert.equal(matches.length, 15);
+});
+
+test('render: showPairs labels include canonical lens names', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: true,
+  });
+  assert.match(out, /bootstrap~jackknife=/);
+  assert.match(out, /abc~profileLikelihood=/);
+});
+
+test('render: showPairs values are valid relation strings', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: true,
+  });
+  // Capture the value after each `=`
+  const vals = (out.match(/[a-zA-Z]+~[a-zA-Z]+=([A-Z_]+)/g) ?? []).map(
+    (s) => s.split('=')[1]!,
+  );
+  const valid = new Set(['EQ', 'A_IN_B', 'B_IN_A', 'PARTIAL', 'DISJOINT']);
+  for (const v of vals) assert.ok(valid.has(v), `invalid relation: ${v}`);
+});
+
+test('render: showProfile=false omits profile line', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showProfile: false,
+  });
+  assert.equal(/profile \(contains/.test(out), false);
+});
+
+test('render: showProfile=true emits profile line', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showProfile: true,
+  });
+  assert.match(out, /profile \(contains\/containedBy\/equalTo\)/);
+});
+
+test('render: showProfile lists all 6 lens labels', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showProfile: true,
+  });
+  for (const lens of SLOPE_CONTAINMENT_LENS_NAMES) {
+    assert.ok(out.includes(`${lens}=`), `missing lens label ${lens}`);
+  }
+});
+
+test('render: showProfile values are c/cb/eq triples', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showProfile: true,
+  });
+  // each lens label like bootstrap=4/0/0
+  const triples = out.match(/[a-zA-Z]+=\d+\/\d+\/\d+/g) ?? [];
+  assert.ok(triples.length >= 6);
+});
+
+test('render: both flags can be combined', () => {
+  const queue = ascending('s1', 30);
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness(queue, {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: true,
+    showProfile: true,
+  });
+  assert.match(out, /pairs:/);
+  assert.match(out, /profile \(contains/);
+});
+
+test('render: showPairs on empty source list does not error', () => {
+  const r = buildSourceRowTokenSlopeCiContainmentNestedness([], {
+    generatedAt: 'x',
+  });
+  const out = renderSourceRowTokenSlopeCiContainmentNestedness(r, {
+    showPairs: true,
+    showProfile: true,
+  });
+  assert.match(out, /\(no sources\)/);
+});

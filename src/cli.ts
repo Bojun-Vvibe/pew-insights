@@ -21684,6 +21684,14 @@ program
     'nesting-fraction-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-pairs',
+    'when rendering pretty (non-JSON), print the canonical 15-vector of pair relations on a follow-up line under each source row',
+  )
+  .option(
+    '--show-profile',
+    'when rendering pretty (non-JSON), print the per-lens contains/containedBy/equalTo profile on a follow-up line under each source row',
+  )
   .action(
     async (
       opts: {
@@ -21700,6 +21708,8 @@ program
         top?: string;
         sort: string;
         json?: boolean;
+        showPairs?: boolean;
+        showProfile?: boolean;
       },
       cmd,
     ) => {
@@ -21804,7 +21814,10 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(
-            renderSourceRowTokenSlopeCiContainmentNestedness(report) + '\n',
+            renderSourceRowTokenSlopeCiContainmentNestedness(report, {
+              showPairs: opts.showPairs ?? false,
+              showProfile: opts.showProfile ?? false,
+            }) + '\n',
           );
         }
       } catch (e) {

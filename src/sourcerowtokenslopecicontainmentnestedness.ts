@@ -632,10 +632,21 @@ function fmtNum(x: number, digits = 4): string {
 
 /**
  * Plain-text renderer. Self-contained, no chalk dependency.
+ *
+ * When `showPairs` is true, each source row is followed by a
+ * second line printing the canonical 15-vector of pair relations
+ * in `i<j` order over canonical lens order. When `showProfile` is
+ * true, a third line prints the per-lens contains/containedBy/
+ * equalTo profile in canonical lens order. Either flag is useful
+ * for spotting which specific lens dominates the containment
+ * structure without having to re-run with --json.
  */
 export function renderSourceRowTokenSlopeCiContainmentNestedness(
   r: SourceRowTokenSlopeCiContainmentNestednessReport,
+  opts: { showPairs?: boolean; showProfile?: boolean } = {},
 ): string {
+  const showPairs = opts.showPairs ?? false;
+  const showProfile = opts.showProfile ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-containment-nestedness');
   lines.push(
@@ -675,6 +686,29 @@ export function renderSourceRowTokenSlopeCiContainmentNestedness(
         (row.anyDisjoint ? 'yes' : 'NO').padStart(4),
       ].join('  '),
     );
+    if (showPairs) {
+      const parts: string[] = [];
+      let k = 0;
+      for (let i = 0; i < N_LENSES; i++) {
+        for (let j = i + 1; j < N_LENSES; j++) {
+          const li = SLOPE_CONTAINMENT_LENS_NAMES[i]!;
+          const lj = SLOPE_CONTAINMENT_LENS_NAMES[j]!;
+          parts.push(`${li}~${lj}=${row.pairs[k]!}`);
+          k += 1;
+        }
+      }
+      lines.push(`                 pairs: ${parts.join('  ')}`);
+    }
+    if (showProfile) {
+      const parts: string[] = [];
+      for (let i = 0; i < N_LENSES; i++) {
+        const lens = SLOPE_CONTAINMENT_LENS_NAMES[i]!;
+        parts.push(
+          `${lens}=${row.contains[i]!}/${row.containedBy[i]!}/${row.equalTo[i]!}`,
+        );
+      }
+      lines.push(`                 profile (contains/containedBy/equalTo): ${parts.join('  ')}`);
+    }
   }
   return lines.join('\n');
 }
