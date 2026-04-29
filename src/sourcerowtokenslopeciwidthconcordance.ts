@@ -129,6 +129,8 @@ export interface SourceRowTokenSlopeCiWidthConcordanceOptions {
     | 'width-vs-bootstrap-desc'
     | 'width-vs-bootstrap-asc'
     | 'width-max-desc'
+    | 'width-iqr-desc'
+    | 'width-iqr-asc'
     | 'rows'
     | 'source';
   generatedAt?: string;
@@ -160,6 +162,21 @@ export interface SourceRowTokenSlopeCiWidthConcordanceRow {
   widestLens: SlopeWidthLensName;
   tightConsensus: boolean;
   widthVsBootstrapMaxRatio: number;
+  /**
+   * Inter-quartile width spread of the 6 lens widths. Computed as
+   * the linear-interpolation Q3 − Q1 over the sorted 6-vector
+   * (positions 1.25 and 3.75 in 0-indexed coords). A robust
+   * cousin of `widthRange` that ignores the absolute extremes
+   * (the narrowest lens and the widest lens) and reports the
+   * spread of the middle 4 lenses' widths only.
+   */
+  widthIqr: number;
+  /**
+   * `widthIqr / widthMedian`. A robust cousin of `widthCv` that
+   * is insensitive to single-lens outliers. Reported as 0 when
+   * `widthMedian == 0`. Always finite & >= 0 when median > 0.
+   */
+  widthIqrRatio: number;
 }
 
 export interface SourceRowTokenSlopeCiWidthConcordanceReport {
@@ -204,6 +221,8 @@ const VALID_SORTS = [
   'width-vs-bootstrap-desc',
   'width-vs-bootstrap-asc',
   'width-max-desc',
+  'width-iqr-desc',
+  'width-iqr-asc',
   'rows',
   'source',
 ] as const;
@@ -264,6 +283,29 @@ export function median(values: readonly number[]): number {
   const mid = Math.floor(n / 2);
   if (n % 2 === 1) return sorted[mid]!;
   return (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Type-7 (linear-interpolation) quantile of a non-empty numeric
+ * vector. `q` must be in [0, 1]. Matches numpy / R default.
+ */
+export function linearQuantile(
+  values: readonly number[],
+  q: number,
+): number {
+  const n = values.length;
+  if (n === 0) throw new Error('linearQuantile: empty input');
+  if (!(q >= 0 && q <= 1)) {
+    throw new Error(`linearQuantile: q must be in [0, 1] (got ${q})`);
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  if (n === 1) return sorted[0]!;
+  const h = (n - 1) * q;
+  const lo = Math.floor(h);
+  const hi = Math.ceil(h);
+  if (lo === hi) return sorted[lo]!;
+  const frac = h - lo;
+  return sorted[lo]! * (1 - frac) + sorted[hi]! * frac;
 }
 
 export function buildSourceRowTokenSlopeCiWidthConcordance(
@@ -460,6 +502,11 @@ export function buildSourceRowTokenSlopeCiWidthConcordance(
     else if (bootstrapWidth === 0) widthVsBootstrapMaxRatio = Infinity;
     else widthVsBootstrapMaxRatio = widthMax / bootstrapWidth;
 
+    const widthQ1 = linearQuantile(widths, 0.25);
+    const widthQ3 = linearQuantile(widths, 0.75);
+    const widthIqr = widthQ3 - widthQ1;
+    const widthIqrRatio = widthMedianVal === 0 ? 0 : widthIqr / widthMedianVal;
+
     rows.push({
       source: s,
       rowsKept,
@@ -476,6 +523,8 @@ export function buildSourceRowTokenSlopeCiWidthConcordance(
       widestLens,
       tightConsensus,
       widthVsBootstrapMaxRatio,
+      widthIqr,
+      widthIqrRatio,
     });
   }
 
@@ -545,6 +594,8 @@ export function buildSourceRowTokenSlopeCiWidthConcordance(
     'width-vs-bootstrap-asc': (a, b) =>
       numCmp(a.widthVsBootstrapMaxRatio, b.widthVsBootstrapMaxRatio, false),
     'width-max-desc': (a, b) => b.widthMax - a.widthMax,
+    'width-iqr-desc': (a, b) => b.widthIqr - a.widthIqr,
+    'width-iqr-asc': (a, b) => a.widthIqr - b.widthIqr,
     rows: (a, b) => b.rowsKept - a.rowsKept,
     source: (a, b) => a.source.localeCompare(b.source),
   };
@@ -615,10 +666,10 @@ export function renderSourceRowTokenSlopeCiWidthConcordance(
     return lines.join('\n');
   }
   lines.push(
-    'source           rows  widthMin    widthMax    widthRange  widthRatio  widthCv  widthGini  vsBoot   narrow            widest            tight',
+    'source           rows  widthMin    widthMax    widthRange  widthRatio  widthCv  widthGini  iqrRatio  vsBoot   narrow            widest            tight',
   );
   lines.push(
-    '---------------  ----  ----------  ----------  ----------  ----------  -------  ---------  -------  ----------------  ----------------  -----',
+    '---------------  ----  ----------  ----------  ----------  ----------  -------  ---------  --------  -------  ----------------  ----------------  -----',
   );
   for (const row of r.sources) {
     lines.push(
@@ -631,6 +682,7 @@ export function renderSourceRowTokenSlopeCiWidthConcordance(
         fmtFiniteOr(row.widthRatio, 3, '   inf').padStart(10),
         row.widthCv.toFixed(4).padStart(7),
         row.widthGini.toFixed(4).padStart(9),
+        row.widthIqrRatio.toFixed(4).padStart(8),
         fmtFiniteOr(row.widthVsBootstrapMaxRatio, 2, '  inf').padStart(7),
         row.narrowestLens.padEnd(16),
         row.widestLens.padEnd(16),

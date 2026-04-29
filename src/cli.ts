@@ -20997,6 +20997,8 @@ program
           'width-vs-bootstrap-desc',
           'width-vs-bootstrap-asc',
           'width-max-desc',
+          'width-iqr-desc',
+          'width-iqr-asc',
           'rows',
           'source',
         ];
@@ -21030,6 +21032,8 @@ program
             | 'width-vs-bootstrap-desc'
             | 'width-vs-bootstrap-asc'
             | 'width-max-desc'
+            | 'width-iqr-desc'
+            | 'width-iqr-asc'
             | 'rows'
             | 'source',
         });

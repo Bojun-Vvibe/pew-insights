@@ -9,6 +9,7 @@ import {
   widthGini,
   widthCoeffOfVariation,
   median,
+  linearQuantile,
   SLOPE_WIDTH_LENS_NAMES,
 } from '../src/sourcerowtokenslopeciwidthconcordance.js';
 import type { QueueLine } from '../src/types.js';
@@ -122,6 +123,38 @@ test('median: does not mutate input', () => {
   const arr = [3, 1, 2];
   median(arr);
   assert.deepEqual(arr, [3, 1, 2]);
+});
+
+// --- Pure helpers: linearQuantile (type-7 / numpy default) ---
+
+test('linearQuantile: q=0 returns min, q=1 returns max', () => {
+  assert.equal(linearQuantile([1, 2, 3, 4], 0), 1);
+  assert.equal(linearQuantile([1, 2, 3, 4], 1), 4);
+});
+
+test('linearQuantile: q=0.5 matches median for odd-length', () => {
+  assert.equal(linearQuantile([1, 2, 3, 4, 5], 0.5), 3);
+});
+
+test('linearQuantile: type-7 quartiles on [1..6]', () => {
+  // numpy default: Q1 = 2.25, Q3 = 4.75 for [1,2,3,4,5,6]
+  const v = [1, 2, 3, 4, 5, 6];
+  assert.ok(Math.abs(linearQuantile(v, 0.25) - 2.25) < 1e-12);
+  assert.ok(Math.abs(linearQuantile(v, 0.75) - 4.75) < 1e-12);
+});
+
+test('linearQuantile: throws on empty', () => {
+  assert.throws(() => linearQuantile([], 0.5), /empty/);
+});
+
+test('linearQuantile: throws on out-of-range q', () => {
+  assert.throws(() => linearQuantile([1, 2, 3], -0.1), /q must be/);
+  assert.throws(() => linearQuantile([1, 2, 3], 1.1), /q must be/);
+});
+
+test('linearQuantile: single-element vector returns that element', () => {
+  assert.equal(linearQuantile([7], 0.25), 7);
+  assert.equal(linearQuantile([7], 0.75), 7);
 });
 
 // --- Validation ---
@@ -433,6 +466,37 @@ test('integration: deterministic across re-runs with the same seed', () => {
     r1.sources[0]!.perLens.map((p) => [p.lens, p.width, p.widthRank]),
     r2.sources[0]!.perLens.map((p) => [p.lens, p.width, p.widthRank]),
   );
+});
+
+test('integration: widthIqr / widthIqrRatio present, finite, non-negative', () => {
+  const queue = mkSeries('iqr', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+  const r = buildSourceRowTokenSlopeCiWidthConcordance(queue, {
+    bootstraps: 100,
+    seed: 51,
+  });
+  const row = r.sources[0]!;
+  assert.ok(Number.isFinite(row.widthIqr));
+  assert.ok(row.widthIqr >= 0);
+  assert.ok(Number.isFinite(row.widthIqrRatio));
+  assert.ok(row.widthIqrRatio >= 0);
+  // IQR (Q3 − Q1) of 6 widths must be <= widthRange (max − min) modulo float slop.
+  assert.ok(row.widthIqr <= row.widthRange + 1e-9);
+});
+
+test('integration: width-iqr-desc sort orders by widthIqr descending', () => {
+  const queue = [
+    ...mkSeries('iA', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]),
+    ...mkSeries('iB', [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]),
+    ...mkSeries('iC', [3, 6, 9, 12, 15, 18, 21, 24, 27, 30]),
+  ];
+  const r = buildSourceRowTokenSlopeCiWidthConcordance(queue, {
+    bootstraps: 100,
+    seed: 53,
+    sort: 'width-iqr-desc',
+  });
+  for (let i = 1; i < r.sources.length; i++) {
+    assert.ok(r.sources[i - 1]!.widthIqr >= r.sources[i]!.widthIqr);
+  }
 });
 
 // --- Renderer ---
