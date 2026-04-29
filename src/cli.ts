@@ -419,6 +419,10 @@ import {
   buildSourceRowTokenSlopeCiMidpointDispersion,
   renderSourceRowTokenSlopeCiMidpointDispersion,
 } from './sourcerowtokenslopecimidpointdispersion.js';
+import {
+  buildSourceRowTokenSlopeCiAsymmetryConcordance,
+  renderSourceRowTokenSlopeCiAsymmetryConcordance,
+} from './sourcerowtokenslopeciasymmetryconcordance.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -21428,6 +21432,188 @@ program
         } else {
           process.stdout.write(
             renderSourceRowTokenSlopeCiMidpointDispersion(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-asymmetry-concordance')
+  .description(
+    "Per-source CI-SHAPE diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from v0.6.227 (Jaccard set-overlap), v0.6.228 (sign), v0.6.229 (width), v0.6.230 (overlap-graph topology), and v0.6.231 (midpoint-dispersion / location). For each lens we compute asym = (ciUpper - slope) - (slope - ciLower) = ciUpper + ciLower - 2*slope. The SIGN of asym tells you which side of the point estimate is wider: +1 right tail wider, -1 left tail wider, 0 perfectly symmetric. Per source we report the 6-vector of asymmetries, the +/0/- counts, the dominant sign (strict majority of the 6, or null when split), concordance = max(+,0,-)/6 in [1/6,1], the dissenting lens names, meanAsym, meanAbsAsym, meanAbsAsymOverWidth = meanAbsAsym/meanWidth (fraction-of-CI-width metric in [0,1]), the argMaxAbs lens, and three booleans: unanimousAsymmetric (all six signs +1 or all -1), unanimousSymmetric (all six exactly 0), and mixed (both +1 and -1 present -- lenses disagree on which tail is wider; --alert-mixed surfaces these).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-mixed',
+    'only emit sources whose 6-lens sign vector contains BOTH +1 and -1 (lenses disagree on which CI tail is wider)',
+  )
+  .option(
+    '--alert-unanimous',
+    'only emit sources where all six lenses agree on a non-zero asymmetry sign',
+  )
+  .option(
+    '--top <n>',
+    'cap the per-source table to the top N rows after sort + filters; suppressed rows surface as droppedBelowTopCap',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'concordance-desc' (default) | 'concordance-asc' | 'mean-abs-asym-desc' | 'mean-abs-asym-asc' | 'mean-abs-over-width-desc' | 'mean-abs-over-width-asc' | 'mean-asym-desc' | 'mean-asym-asc' | 'arg-max-abs-desc' | 'arg-max-abs-asc' | 'pluses-desc' | 'minuses-desc' | 'zeros-desc' | 'dominant-sign-desc' | 'dominant-sign-asc' | 'rows' | 'source'",
+    'concordance-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertMixed?: boolean;
+        alertUnanimous?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseFloat(opts.top);
+          if (!Number.isFinite(t) || t < 1 || !Number.isInteger(t)) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'concordance-desc',
+          'concordance-asc',
+          'mean-abs-asym-desc',
+          'mean-abs-asym-asc',
+          'mean-abs-over-width-desc',
+          'mean-abs-over-width-asc',
+          'mean-asym-desc',
+          'mean-asym-asc',
+          'arg-max-abs-desc',
+          'arg-max-abs-asc',
+          'pluses-desc',
+          'minuses-desc',
+          'zeros-desc',
+          'dominant-sign-desc',
+          'dominant-sign-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiAsymmetryConcordance(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertMixed: opts.alertMixed ?? false,
+          alertUnanimous: opts.alertUnanimous ?? false,
+          top,
+          sort: opts.sort as
+            | 'concordance-desc'
+            | 'concordance-asc'
+            | 'mean-abs-asym-desc'
+            | 'mean-abs-asym-asc'
+            | 'mean-abs-over-width-desc'
+            | 'mean-abs-over-width-asc'
+            | 'mean-asym-desc'
+            | 'mean-asym-asc'
+            | 'arg-max-abs-desc'
+            | 'arg-max-abs-asc'
+            | 'pluses-desc'
+            | 'minuses-desc'
+            | 'zeros-desc'
+            | 'dominant-sign-desc'
+            | 'dominant-sign-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiAsymmetryConcordance(report) + '\n',
           );
         }
       } catch (e) {
