@@ -435,6 +435,10 @@ import {
   buildSourceRowTokenSlopeCiCoverageVolume,
   renderSourceRowTokenSlopeCiCoverageVolume,
 } from './sourcerowtokenslopecicoveragevolume.js';
+import {
+  buildSourceRowTokenSlopeCiLeaveOneLensOut,
+  renderSourceRowTokenSlopeCiLeaveOneLensOut,
+} from './sourcerowtokenslopecileaveonelensout.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22230,6 +22234,180 @@ program
             renderSourceRowTokenSlopeCiCoverageVolume(report, {
               showPairs: opts.showPairs ?? false,
               showExtremes: opts.showExtremes ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-leave-one-lens-out')
+  .description(
+    "Per-source LEAVE-ONE-LENS-OUT (LOO) influence diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). Mechanically distinct from ALL NINE prior cross-lens diagnostics (v0.6.227 jaccard, v0.6.228 sign, v0.6.229 width, v0.6.230 overlap-graph, v0.6.231 midpoint-dispersion, v0.6.232 asymmetry, v0.6.233 pair-inclusion, v0.6.234 rank-correlation, v0.6.235 coverage-volume) on a fundamental axis: it is the ONLY one that is a SENSITIVITY axis. Every prior axis describes the JOINT geometry of the six CIs as a static configuration; none answers 'if we deleted lens k, how much would the consensus midpoint move and how much would the consensus width change?' For each source, on the 6 CI midpoints and widths, we compute a 6-row LOO table: looMid / looWidth / midShift / signedMidShift / widthShift / widthRatio / midShiftStd (= midShift / fullWidth, unitless and comparable across sources). Per-source aggregates: mostInfluentialLens (largest midShiftStd), leastInfluentialLens, tightestLens (largest widthRatio), widestLens, maxMidShiftStd, meanMidShiftStd, widthRatioRange, and looStabilityScore = 1 / (1 + maxMidShiftStd) in (0, 1] (default sort key; 1 = perfectly stable, near-0 = at least one lens dominates the consensus). Report-level: meanLooStability/medianLooStability, globalMostInfluentialLens / globalLeastInfluentialLens (mode across sources). --alert-unstable <f> filters to sources whose looStabilityScore is strictly less than f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-unstable <f>',
+    'only emit sources whose looStabilityScore is strictly less than f (in (0, 1])',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'stability-desc' (default) | 'stability-asc' | 'max-mid-shift-std-desc' | 'max-mid-shift-std-asc' | 'mean-mid-shift-std-desc' | 'width-ratio-range-desc' | 'width-ratio-range-asc' | 'rows' | 'source'",
+    'stability-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-loo',
+    'when rendering pretty (non-JSON), append a per-source 6-row LOO sub-table (one row per removed lens)',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertUnstable?: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showLoo?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertUnstable: number | null = null;
+        if (opts.alertUnstable != null) {
+          const a = Number.parseFloat(opts.alertUnstable);
+          if (!Number.isFinite(a) || a <= 0 || a > 1) {
+            throw new Error(
+              `--alert-unstable must be a finite number in (0, 1] (got ${opts.alertUnstable})`,
+            );
+          }
+          alertUnstable = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'stability-desc',
+          'stability-asc',
+          'max-mid-shift-std-desc',
+          'max-mid-shift-std-asc',
+          'mean-mid-shift-std-desc',
+          'width-ratio-range-desc',
+          'width-ratio-range-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLeaveOneLensOut(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertUnstable,
+          top,
+          sort: opts.sort as
+            | 'stability-desc'
+            | 'stability-asc'
+            | 'max-mid-shift-std-desc'
+            | 'max-mid-shift-std-asc'
+            | 'mean-mid-shift-std-desc'
+            | 'width-ratio-range-desc'
+            | 'width-ratio-range-asc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLeaveOneLensOut(report, {
+              showLoo: opts.showLoo ?? false,
             }) + '\n',
           );
         }
