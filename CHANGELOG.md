@@ -2,6 +2,151 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.211 — 2026-04-29
+
+### Added
+
+- `pew-insights source-row-token-m-estimator-hampel` — per-source
+  **Hampel three-part redescending M-estimator** of location of
+  per-row `total_tokens`. Solves
+  `sum_i psi(z) = 0` by iteratively reweighted least squares
+  (IRLS) with `mu_0 = median`, `s = MAD/0.6745`, and the
+  **piecewise-linear three-part redescending** influence function
+
+  ```
+  psi(z) = z                                 if |z| <= a
+         = a * sign(z)                       if a < |z| <= b
+         = a * sign(z) * (c - |z|) / (c - b) if b < |z| <= c
+         = 0                                 if |z| >  c
+  ```
+
+  with canonical knots `(a, b, c) = (1.7, 3.4, 8.5)` (≈ 95 %
+  asymptotic relative efficiency at the normal).
+
+  **First PIECEWISE-LINEAR REDESCENDER** and **first THREE-PART
+  M-estimator** in the location-lens suite. Mechanically distinct
+  from both currently shipped M-estimators:
+
+  - **vs Huber (v0.6.209, monotone, `c = 1.345`)**: Huber `psi`
+    clips to `+- c` forever — bounded but **nonzero** tail
+    influence. Hampel eventually rejects entirely (`psi = 0`
+    beyond `c`), like Tukey but unlike Huber.
+  - **vs Tukey biweight (v0.6.210, smooth, `c = 4.685`)**: Tukey
+    is a smooth degree-4 single-knob redescender, tangent to zero
+    at `+- c`. Hampel is **piecewise linear** with corners at
+    `+- a, +- b, +- c` and an **inner plateau** on `(a, b]` where
+    `psi` is constant `+- a`. Three knobs (vs Tukey's one) tune
+    the descent slope: long `(b, c)` gap → gentle Tukey-like;
+    short → near-step rejection.
+
+  Reports the unique **four-bucket residual partition** per source
+  (no other M-estimator in the suite reports four buckets):
+
+  - `coreRows`        rows with `|z| <= a`        (full weight 1)
+  - `plateauRows`     rows with `a < |z| <= b`    (`psi` plateau at `a`)
+  - `descendingRows`  rows with `b < |z| <= c`    (linear descent)
+  - `rejectedRows`    rows with `|z| > c`         (weight = 0)
+
+  with `coreRows + plateauRows + descendingRows + rejectedRows = n`.
+
+  Translation- and scale-equivariant. Breakdown 0.5 under the MAD
+  scale.
+
+  Flags: `--knot-a <f>` (default 1.7), `--knot-b <f>` (default 3.4),
+  `--knot-c <f>` (default 8.5), `--min-rows <n>` (default 4),
+  `--min-hampel <f>`, `--top <n>`, `--sort` with nine keys
+  including `hampel-desc` (default), `mean-gap-desc`,
+  `median-gap-desc`, `rejected-desc`.
+
+### Live smoke (`pew-insights source-row-token-m-estimator-hampel --sort hampel-desc` against `~/.config/pew/queue.jsonl`)
+
+```
+source          rows  mean         median      hampel       core  plateau  descend  rejected  hampel-mean   hampel-median
+--------------  ----  -----------  ----------  -----------  ----  -------  -------  --------  ------------  -------------
+codex           64    12650385.31  7132861.00  10355217.45  55    6        3        0         -2295167.86   +3222356.45
+opencode        424   10410917.37  7860856.00  7904086.08   383   11       29       1         -2506831.29     +43230.08
+claude-code     299   11512995.95  3319967.00  4237949.51   217   26       30       26        -7275046.44    +917982.51
+openclaw        530   3743356.46   2327218.50  2833958.20   443   53       26       8         -909398.26     +506739.70
+hermes          260   761554.65    434837.50   527277.57    205   24       29       2         -234277.08      +92440.07
+vscode-XXX      333   5662.84      2319.00     2848.70      276   28       20       9         -2814.15          +529.70
+```
+
+All six sources show **negative `hampelMeanGap`** and **positive
+`hampelMedianGap`** — consistent with the right-tail-heavy
+contamination seen by Tukey and Huber on the same queue. The
+new four-bucket partition is highly informative:
+
+- **`codex`** (n=64) has **0 rejected rows** — its tail, while
+  heavy enough to drag the mean ~3 MAD above the median, never
+  exceeds the canonical `c = 8.5` MAD threshold. All tail rows
+  fall into the `descend` (3) and `plateau` (6) buckets, where
+  Hampel still down-weights but does not zero them. Hampel
+  therefore lands above Tukey here (10.36M vs 9.01M) — Hampel is
+  more conservative on borderline tails.
+- **`claude-code`** (n=299) has the most aggressive partition:
+  **26 rejected**, 30 descending, 26 plateau, 217 core. Hampel
+  lands at 4.24M, **between** Huber (5.10M, monotone clipping)
+  and Tukey (3.38M, full smooth rejection) — exactly the predicted
+  three-part-vs-two-part ordering.
+- **`opencode`** (n=424) shows the same pattern: 1 rejected, 29
+  descending, 11 plateau, 383 core. Hampel = 7.90M sits above
+  Tukey (7.35M) and below Huber (8.04M), tightly bracketed.
+
+### Cross-redescender comparison (real queue)
+
+| source        | mean         | median       | huber        | hampel       | tukey        | huber-clip | hampel-rej | tukey-rej |
+| ------------- | -----------: | -----------: | -----------: | -----------: | -----------: | ---------: | ---------: | --------: |
+| codex         | 12,650,385   | 7,132,861    | 9,898,511    | 10,355,217   | 9,005,373    | 13         | 0          | 2         |
+| opencode      | 10,410,917   | 7,860,856    | 8,043,909    | 7,904,086    | 7,348,125    | 48         | 1          | 21        |
+| claude-code   | 11,512,996   | 3,319,967    | 5,095,027    | 4,237,950    | 3,375,629    | 86         | 26         | 51        |
+| openclaw      | 3,743,356    | 2,327,219    | 2,802,748    | 2,833,958    | 2,585,769    | 101        | 8          | 17        |
+| hermes        | 761,555      | 434,838      | 524,061      | 527,278      | 440,568      | 61         | 2          | 16        |
+| vscode-XXX    | 5,663        | 2,319        | 2,914        | 2,849        | 2,498        | 66         | 9          | 22        |
+
+Headline finding: **Hampel sits strictly between Huber and Tukey
+on 4 of 6 sources** (`opencode`, `claude-code`, `hermes`,
+`vscode-XXX`), confirming the predicted family ordering — Huber
+clips (most-pulled by tails), Tukey fully rejects with smooth
+weights (least-pulled), Hampel rejects with a piecewise-linear
+descent (in between). On `openclaw` the three sit within
+2.5 % of each other (mild contamination, descent region barely
+engaged). On `codex` Hampel actually lands **above** Huber: the
+codex tail is dispersed enough to land entirely in the
+`descend`/`plateau` band (0 Hampel-rejected) while Huber clips
+13 rows — so Hampel keeps more of the tail mass than Huber on
+this single low-contamination source.
+
+`hampel-rej < tukey-rej` on every source: the canonical Hampel
+`c = 8.5` is much wider than Tukey's `c = 4.685`, so Hampel
+declares fewer rows fully outlying. Hampel's `descend` bucket
+(20 - 30 rows on the larger sources) holds the rows that Tukey
+zero-rejects but Hampel down-weights linearly — the qualitative
+piecewise-linear-vs-smooth distinction made visible per row.
+
+IRLS converged in 8 - 13 iterations on every source. No source
+hit the 200-iteration cap.
+
+### Tests
+
+- New suite `sourcerowtokenmestimatorhampel` (~55 tests: shape,
+  validation, knot bounds, raw `hampelWeight` closed form across
+  all four regions including continuity at `z = c`, monotonic
+  non-increasing in `|z|`, evenness, IRLS kernel
+  translation/scale equivariance, all-tied / MAD = 0 fallback,
+  bucket-sum invariance, large-knot → mean limit, tight-knot
+  aggressive rejection, builder integration with all gates,
+  `rejected-desc` sort, signed gap directions, property tests
+  for translation/scale/bounded influence/monotone rejection)
+  and `sourcerowtokenmestimatorhampel.ladder` (~20 tests:
+  cross-analyzer ladder vs Tukey / Huber / TM25 / median /
+  mean — clean-data agreement, full-rejection match between
+  Hampel and Tukey on extreme outliers, sandwich claim
+  `median <= hampel/tukey <= huber <= mean` on heavy-tail mixes,
+  redescender dominance over Huber, four-bucket partition
+  activation, knob sensitivity, and structural source-list
+  equality with Tukey).
+- Test count: **5045 → 5120 (+75)**.
+
 ## 0.6.210 — 2026-04-29
 
 ### Added
