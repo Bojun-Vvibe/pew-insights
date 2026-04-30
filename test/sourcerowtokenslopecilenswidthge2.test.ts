@@ -9,6 +9,7 @@ import {
   renderSourceRowTokenSlopeCiLensWidthGe2,
   lensWidthGe2,
   ge2BetweenGroupShare,
+  ge2CvSquaredFromGe2,
   SLOPE_LENS_WIDTH_GE2_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthge2.js';
 import type { QueueLine } from '../src/types.js';
@@ -498,4 +499,19 @@ test('axis27 renderer: filtered-to-empty rows render the (no lenses) sentinel', 
   });
   const out = renderSourceRowTokenSlopeCiLensWidthGe2(r, {});
   assert.match(out, /\(no lenses\)/);
+});
+
+// ---------- ge2CvSquaredFromGe2 helper (refinement) ----------
+
+test('axis27 helper: ge2CvSquaredFromGe2 round-trips the identity exactly', () => {
+  for (const ge2 of [0, 0.001, 0.125, 0.5, 1, 1.5, 100, 1e9]) {
+    assert.equal(ge2CvSquaredFromGe2(ge2), 2 * ge2);
+  }
+});
+
+test('axis27 helper: ge2CvSquaredFromGe2 returns 0 on non-finite / negative input', () => {
+  assert.equal(ge2CvSquaredFromGe2(NaN), 0);
+  assert.equal(ge2CvSquaredFromGe2(-Infinity), 0);
+  assert.equal(ge2CvSquaredFromGe2(Infinity), 0);
+  assert.equal(ge2CvSquaredFromGe2(-0.5), 0);
 });

@@ -298,6 +298,26 @@ function median(xs: number[]): number {
   return (s[m - 1]! + s[m]!) / 2;
 }
 
+/**
+ * Inverse of the GE(2) <-> CV^2 identity:
+ *
+ *     CV^2 = 2 * GE(2)
+ *
+ * Exposed so that downstream consumers (and the unit tests) can
+ * round-trip the identity at exactly the precision of the input
+ * GE(2), without re-summing the underlying half-widths. Used
+ * internally to populate the `cvSquared` field in `lensWidthGe2`
+ * so the identity holds by construction rather than only up to
+ * floating-point rounding.
+ *
+ * Returns 0 for non-finite or negative inputs (parity with the
+ * degenerate-row convention).
+ */
+export function ge2CvSquaredFromGe2(ge2: number): number {
+  if (!Number.isFinite(ge2) || ge2 < 0) return 0;
+  return 2 * ge2;
+}
+
 function classifyConcentration(
   ge2: number,
   saturated: boolean,
@@ -413,7 +433,13 @@ export function lensWidthGe2(halfWidths: number[]): {
   }
   let ge2Raw = sumSq / (2 * n);
   if (ge2Raw < 0) ge2Raw = 0;
-  const cvSquared = (2 * ge2Raw);
+  // Identity: GE(2) == cvSquared / 2 holds by construction here. We
+  // expose cvSquared = 2 * ge2Raw rather than recomputing
+  // sigma^2 / mean^2 from a separate pass, because the two paths
+  // would only agree to within floating-point rounding and the
+  // GE(2) <-> CV identity is the canonical Shorrocks-Cowell form
+  // -- consumers can reverse the identity exactly via cvSquared / 2.
+  const cvSquared = ge2CvSquaredFromGe2(ge2Raw);
   const cv = Math.sqrt(cvSquared);
   let ge2Saturated = false;
   let ge2 = ge2Raw;
