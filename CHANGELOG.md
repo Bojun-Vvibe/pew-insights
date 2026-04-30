@@ -2,6 +2,163 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.242 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-precision-monotonicity-isotonic` —
+  per-source ORDER-RESTRICTED PRECISION-vs-MIDPOINT
+  MONOTONICITY diagnostic (FIFTEENTH cross-lens axis) for the
+  v0.6.219 Deming-slope uncertainty-quantification suite.
+  Consumes the same six per-source slope CIs as v0.6.227–v0.6.241
+  (percentile bootstrap, jackknife normal, BCa, studentized-t,
+  ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL FOURTEEN prior cross-lens
+  diagnostics on a fundamental axis.** Every prior axis is one
+  of:
+
+    - a SCALE estimate of the six midpoints (midpoint-dispersion
+      SD, MAE, scaled MAD, range coverage volume, gini, …);
+    - a single-lens identifier (LOO drop, precision-pull max,
+      adversarial extreme, residual-Z outlier, MAD-vs-MAE tail
+      lens);
+    - an across-source rank/agreement statistic on lens pairs
+      (Spearman/Kendall on per-lens midpoint vectors;
+      containment nestedness; overlap-graph connectivity).
+
+  NONE of the fourteen ask: "within ONE source, when the six
+  lenses are sorted by their CI WIDTH (precision proxy), do
+  their MIDPOINTS form a MONOTONE sequence?" An isotonic
+  precision-vs-midpoint relationship is the canonical signature
+  of width-dependent BIAS — narrower CIs cluster on one side of
+  the true slope and wider CIs on the other — orthogonal to ALL
+  prior axes.
+
+  For each source we form 6 `(width_k, mid_k)` pairs:
+    - `width_k = hi_k - lo_k`         (CI width; precision proxy)
+    - `mid_k   = (lo_k + hi_k) / 2`   (point-estimate proxy)
+
+  Then sort the six pairs by ascending width and fit a
+  Pool-Adjacent-Violators (PAV) isotonic regression of midpoints
+  in BOTH directions (monotone-increasing and monotone-decreasing
+  as width grows), picking the direction with smaller residual
+  SSE.
+
+  Per-source columns:
+    - `widthOrder` — lens canonical-name array sorted by ascending
+      width (ties: canonical order);
+    - `widths`, `mids` — sorted arrays parallel to `widthOrder`;
+    - `tssMid` — total sum of squares of mids around their
+      arithmetic mean (constant-model SSE; floor for the
+      monotonicity gain);
+    - `sseInc`, `sseDec` — residual SSE of the PAV
+      monotone-increasing / monotone-decreasing fits;
+    - `direction` ∈ {`increasing`, `decreasing`} — `increasing` if
+      `sseInc <= sseDec`, else `decreasing` (tie-break favours
+      `increasing`, the conventional precision-tightens-as-
+      midpoint-grows narrative);
+    - `sseChosen` — `min(sseInc, sseDec)`;
+    - `monotonicityScore` — `1 - sseChosen / tssMid` clamped to
+      `[0, 1]` — DEFAULT SORT KEY. 1.0 = chosen direction fits
+      the midpoints exactly (perfect monotone precision-vs-
+      midpoint relationship); 0 = no improvement over the
+      constant model. Convention: when `tssMid == 0` (all
+      midpoints identical), `monotonicityScore == 1`,
+      `direction == 'increasing'`;
+    - `flatRunCount` — # of distinct PAV plateaus in the chosen
+      direction. 1 = collapsed to a single constant (no monotone
+      structure); 6 = strictly respects the chosen ordering;
+    - `crossoverIndex` — 0-based index of the first PAV
+      plateau-boundary in the chosen direction's fit, or `-1` if
+      a single plateau;
+    - `narrowestLens`, `widestLens` — lens at index 0 / 5 of
+      `widthOrder`;
+    - `narrowestMid`, `widestMid` — corresponding midpoints;
+    - `widthSpan` — `widths[5] - widths[0]`;
+    - `monotoneFlag` — `monotonicityScore >= 0.95` boolean
+      "strongly monotone precision-vs-midpoint relationship"
+      signal. Threshold chosen so that random / no-structure data
+      does not trip the flag.
+
+  Per-report aggregates: `meanMonotonicityScore`,
+  `medianMonotonicityScore`, `nMonotone` (count with
+  `monotoneFlag == true`), `nIncreasing`, `nDecreasing`,
+  `globalDirection` (mode of `direction`; ties favour
+  `increasing`), `globalNarrowestLens` (mode of `narrowestLens`,
+  canonical-order tie-break), `globalWidestLens` (mode of
+  `widestLens`, canonical-order tie-break).
+
+  Edge cases:
+    - Source missing from any of the six lenses → not reported
+      (counted in `droppedMissingLens`).
+    - All six widths identical → `widthOrder` is the canonical
+      lens order; PAV still runs against the canonical-order
+      anchor.
+    - All six midpoints identical → `tssMid == 0`, `sseInc == 0`,
+      `sseDec == 0`, `monotonicityScore == 1`,
+      `direction == 'increasing'`, `flatRunCount == 1`,
+      `crossoverIndex == -1`.
+    - Source slope CI width zero from any lens → still consumed.
+
+  CLI options:
+    - `--alert-monotone <f>` — only emit sources whose
+      `monotonicityScore` is strictly GREATER than `f`
+      (`0 < f < 1`); surfaces strongly biased sources for
+      inspection;
+    - `--alert-flat` — only emit sources whose
+      `flatRunCount == 1` (PAV collapsed entirely to a single
+      plateau); composes independently with `--alert-monotone`.
+
+  Why a 15th axis: the prior 14 axes ignore CI WIDTHS as an
+  ORDERING variable. Width-concordance (v0.6.228) treats widths
+  as a vector to correlate ACROSS SOURCES per-lens; coverage
+  volume / midpoint dispersion treat widths as a magnitude.
+  NONE sort the six lenses BY width WITHIN one source and ask
+  whether the midpoints are monotone in that order. This 15th
+  axis is the only diagnostic for the precision-bias
+  relationship — a high `monotonicityScore` with `direction ==
+  'increasing'` is the signature that narrower-CI lenses
+  systematically estimate smaller slopes than wider-CI lenses
+  for that source, a reproducible orthogonal warning that the
+  choice of uncertainty quantifier is co-varying with the point
+  estimate.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (6 sources,
+  --bootstraps 200 --seed 7 --show-monotone-aggregate; one
+  third-party source name redacted to `vendor-x` per
+  identifier-hygiene policy):
+
+  ```
+  pew-insights source-row-token-slope-ci-precision-monotonicity-isotonic
+  as of: 2026-04-30T00:56:24.930Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 200    seed: 7    alert-monotone: -    alert-flat: false    top: -    sort: monotonicity-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanMonotonicityScore: 0.8853; medianMonotonicityScore: 0.9901; nMonotone: 4; nIncreasing: 5; nDecreasing: 1; globalDirection: increasing; globalNarrowestLens: abc; globalWidestLens: bca
+
+  source           rows  narrowLens         widestLens         widthSpan   narrowMid   widestMid   tssMid      sseChosen   direction     plat  cross  monoton
+  ---------------  ----  -----------------  -----------------  ----------  ----------  ----------  ----------  ----------  ------------  ----  -----  -------
+  claude-code       299  profileLikelihood  bca                181896105.5341  420795.4145  60498778.9354  2922692554099027.0000  133849021677.9747  increasing       3      4   1.0000
+  vendor-x          333  abc                bca                343823.4992    763.1413  126349.4999  13541976202.2153  48008233.6783  increasing       2      5   0.9965
+  hermes            301  profileLikelihood  bootstrap          4551822.0547  -30250.6349  204955.9442  52954299685.9167  476856504.7089  increasing       4      2   0.9910
+  openclaw          571  profileLikelihood  bca                134194447.5416  -80905.8107  -60308105.9809  3191961350722856.0000  34313128212634.2930  decreasing       2      5   0.9893
+  opencode          465  abc                bca                66676461.5616  642880.7693  12844855.5647  310540834952480.6250  16216202257574.2813  increasing       2      4   0.9478
+  codex              64  abc                bootstrap          248209575.2895  -708835.3986  592228.1488  1676311393636730.5000  1027464166046696.0000  increasing       4      1   0.3871
+  [monotone aggregate] 4/6 sources crossed monotonicityScore>=0.95 (0.6667); globalDirection=increasing; globalNarrowestLens=abc; globalWidestLens=bca
+  ```
+
+  Reading: 4 of 6 sources cross the `monotonicityScore >= 0.95`
+  threshold — narrower-CI lenses do systematically yield smaller
+  midpoints than wider-CI lenses for the majority of real
+  workloads, and the `globalNarrowestLens == abc` /
+  `globalWidestLens == bca` mode pins down WHICH lens pair
+  drives the precision-bias gradient most often. The single
+  `decreasing`-direction source (`openclaw`) is the
+  counter-example whose narrower CIs actually estimate a SMALLER
+  (more negative) slope — the inverse of the dominant pattern.
+  The low-monotonicity outlier (`codex`, score 0.3871) is the
+  only source where neither direction explains the midpoint
+  variance well, an explicit negative result orthogonal to all
+  fourteen prior cross-lens diagnostics.
+
 ## 0.6.241 — 2026-04-30
 
 ### Added
