@@ -24262,6 +24262,10 @@ program
     'only emit lenses whose A(2) is strictly GREATER than f (f in [0, 1])',
   )
   .option(
+    '--alert-aversion-gap <f>',
+    'only emit lenses whose aversionGap = A(2) - A(0.5) is strictly GREATER than f (f in [0, 1]) -- surfaces lenses whose half-width inequality is most concentrated in the tail',
+  )
+  .option(
     '--sort <key>',
     "sort key: 'atkinson-two-desc' (default) | 'atkinson-two-asc' | 'atkinson-half-desc' | 'aversion-gap-desc' | 'mean-halfwidth-desc' | 'lens'",
     'atkinson-two-desc',
@@ -24301,6 +24305,7 @@ program
         seed: string;
         alertAtkinsonHalf?: string;
         alertAtkinsonTwo?: string;
+        alertAversionGap?: string;
         sort: string;
         json?: boolean;
         showSummary?: boolean;
@@ -24363,6 +24368,16 @@ program
           }
           alertAtkinsonTwo = a;
         }
+        let alertAversionGap: number | null = null;
+        if (opts.alertAversionGap != null) {
+          const a = Number.parseFloat(opts.alertAversionGap);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-aversion-gap must be a finite number in [0, 1] (got ${opts.alertAversionGap})`,
+            );
+          }
+          alertAversionGap = a;
+        }
         const validSorts = [
           'atkinson-two-desc',
           'atkinson-two-asc',
@@ -24388,6 +24403,7 @@ program
           seed,
           alertAtkinsonHalf,
           alertAtkinsonTwo,
+          alertAversionGap,
           sort: opts.sort as
             | 'atkinson-two-desc'
             | 'atkinson-two-asc'

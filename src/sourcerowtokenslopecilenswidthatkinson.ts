@@ -148,6 +148,10 @@
  *   - --alert-atkinson-half <f>  — keep lenses with A(0.5) > f
  *   - --alert-atkinson-two <f>   — keep lenses with A(2)   > f
  *                                    (f in [0, 1])
+ *   - --alert-aversion-gap <f>   — keep lenses with aversionGap > f
+ *                                    (f in [0, 1]) -- surfaces lenses
+ *                                    whose half-width inequality is
+ *                                    most concentrated in the tail
  */
 
 import type { QueueLine } from './types.js';
@@ -202,6 +206,7 @@ export interface SourceRowTokenSlopeCiLensWidthAtkinsonOptions {
   seed?: number;
   alertAtkinsonHalf?: number | null;
   alertAtkinsonTwo?: number | null;
+  alertAversionGap?: number | null;
   sort?:
     | 'atkinson-two-desc'
     | 'atkinson-two-asc'
@@ -244,6 +249,7 @@ export interface SourceRowTokenSlopeCiLensWidthAtkinsonReport {
   seed: number;
   alertAtkinsonHalf: number | null;
   alertAtkinsonTwo: number | null;
+  alertAversionGap: number | null;
   sort: NonNullable<SourceRowTokenSlopeCiLensWidthAtkinsonOptions['sort']>;
   totalSources: number;
   sourcesWithAllLenses: number;
@@ -504,6 +510,18 @@ export function buildSourceRowTokenSlopeCiLensWidthAtkinson(
       );
     }
   }
+  const alertAversionGap = opts.alertAversionGap ?? null;
+  if (alertAversionGap !== null) {
+    if (
+      !Number.isFinite(alertAversionGap) ||
+      alertAversionGap < 0 ||
+      alertAversionGap > 1
+    ) {
+      throw new Error(
+        `alertAversionGap must be a finite number in [0, 1] (got ${opts.alertAversionGap})`,
+      );
+    }
+  }
   const sort = opts.sort ?? 'atkinson-two-desc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
@@ -687,6 +705,9 @@ export function buildSourceRowTokenSlopeCiLensWidthAtkinson(
   if (alertAtkinsonTwo !== null) {
     filtered = filtered.filter((r) => r.atkinsonTwo > alertAtkinsonTwo);
   }
+  if (alertAversionGap !== null) {
+    filtered = filtered.filter((r) => r.aversionGap > alertAversionGap);
+  }
 
   const sortFns: Record<
     (typeof VALID_SORTS)[number],
@@ -725,6 +746,7 @@ export function buildSourceRowTokenSlopeCiLensWidthAtkinson(
     seed,
     alertAtkinsonHalf,
     alertAtkinsonTwo,
+    alertAversionGap,
     sort,
     totalSources: sharedSources.length + droppedMissingLens,
     sourcesWithAllLenses: sharedSources.length,
@@ -775,7 +797,7 @@ export function renderSourceRowTokenSlopeCiLensWidthAtkinson(
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-atkinson');
   lines.push(
-    `as of: ${r.generatedAt}    sources: ${r.totalSources} (with all lenses ${r.sourcesWithAllLenses})    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    bootstraps: ${r.bootstraps}    seed: ${r.seed}    alert-atkinson-half: ${r.alertAtkinsonHalf ?? '-'}    alert-atkinson-two: ${r.alertAtkinsonTwo ?? '-'}    sort: ${r.sort}`,
+    `as of: ${r.generatedAt}    sources: ${r.totalSources} (with all lenses ${r.sourcesWithAllLenses})    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    bootstraps: ${r.bootstraps}    seed: ${r.seed}    alert-atkinson-half: ${r.alertAtkinsonHalf ?? '-'}    alert-atkinson-two: ${r.alertAtkinsonTwo ?? '-'}    alert-aversion-gap: ${r.alertAversionGap ?? '-'}    sort: ${r.sort}`,
   );
   lines.push(
     `dropped: ${r.droppedMissingLens} missing-from-some-lens; meanA(0.5): ${fmtNum(r.meanAtkinsonHalf)}; meanA(2): ${fmtNum(r.meanAtkinsonTwo)}; medianA(0.5): ${fmtNum(r.medianAtkinsonHalf)}; medianA(2): ${fmtNum(r.medianAtkinsonTwo)}; maxA(2): ${fmtNum(r.maxAtkinsonTwo)}; minA(2): ${fmtNum(r.minAtkinsonTwo)}; rangeA(2): ${fmtNum(r.rangeAtkinsonTwo)}; meanGap: ${fmtNum(r.meanAversionGap)}; nHighlyConcentrated: ${r.nHighlyConcentrated}; nNearEqual: ${r.nNearEqual}; nDegenHalf: ${r.nDegenerateHalf}; nDegenTwo: ${r.nDegenerateTwo}; mostConcentrated: ${r.mostConcentratedLens ?? '-'}; mostEqual: ${r.mostEqualLens ?? '-'}; largestGap: ${r.largestAversionGapLens ?? '-'}`,

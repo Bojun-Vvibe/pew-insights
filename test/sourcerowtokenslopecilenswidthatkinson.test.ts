@@ -552,3 +552,81 @@ test('axis23 boundary: A(eps=1) limit consistent with eps near 1 from below and 
   assert.ok(Math.abs(a - b) < 0.01, `A(0.99)=${a} vs A(1)=${b}`);
   assert.ok(Math.abs(c - b) < 0.01, `A(1.01)=${c} vs A(1)=${b}`);
 });
+
+// ---------- refinement: alertAversionGap filter ----------
+
+test('axis23 refinement: alertAversionGap filter keeps only large-gap lenses', () => {
+  const queue = syntheticQueue([
+    { source: 'sA', nRows: 30, slope: 0.5, noise: 5 },
+    { source: 'sB', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'sC', nRows: 30, slope: 1.5, noise: 5 },
+  ]);
+  const r0 = buildSourceRowTokenSlopeCiLensWidthAtkinson(queue, {
+    bootstraps: 200,
+    seed: 1,
+  });
+  // Pick a threshold strictly between the smallest and largest gap.
+  const gaps = r0.rows.map((r) => r.aversionGap).sort((a, b) => a - b);
+  if (gaps.length >= 2 && gaps[gaps.length - 1]! > gaps[0]!) {
+    const threshold = (gaps[0]! + gaps[gaps.length - 1]!) / 2;
+    const r1 = buildSourceRowTokenSlopeCiLensWidthAtkinson(queue, {
+      bootstraps: 200,
+      seed: 1,
+      alertAversionGap: threshold,
+    });
+    assert.ok(r1.rows.length < r0.rows.length);
+    for (const row of r1.rows) {
+      assert.ok(
+        row.aversionGap > threshold,
+        `row.aversionGap=${row.aversionGap} should be > threshold=${threshold}`,
+      );
+    }
+    assert.equal(r1.alertAversionGap, threshold);
+  }
+});
+
+test('axis23 refinement: alertAversionGap rejects out-of-range values', () => {
+  assert.throws(() =>
+    buildSourceRowTokenSlopeCiLensWidthAtkinson([], { alertAversionGap: 1.5 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenSlopeCiLensWidthAtkinson([], { alertAversionGap: -0.1 }),
+  );
+  assert.throws(() =>
+    buildSourceRowTokenSlopeCiLensWidthAtkinson([], { alertAversionGap: NaN }),
+  );
+});
+
+test('axis23 refinement: alertAversionGap header surfaces in renderer', () => {
+  const queue = syntheticQueue([
+    { source: 'sA', nRows: 30, slope: 0.5, noise: 5 },
+    { source: 'sB', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'sC', nRows: 30, slope: 1.5, noise: 5 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthAtkinson(queue, {
+    bootstraps: 200,
+    seed: 1,
+    alertAversionGap: 0.1,
+    generatedAt: '2026-04-30T00:00:00Z',
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthAtkinson(r);
+  assert.ok(out.includes('alert-aversion-gap: 0.1'));
+});
+
+test('axis23 refinement: combined alert filters compose (AND)', () => {
+  const queue = syntheticQueue([
+    { source: 'sA', nRows: 30, slope: 0.5, noise: 5 },
+    { source: 'sB', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'sC', nRows: 30, slope: 1.5, noise: 5 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthAtkinson(queue, {
+    bootstraps: 200,
+    seed: 1,
+    alertAtkinsonTwo: 0.5,
+    alertAversionGap: 0.1,
+  });
+  for (const row of r.rows) {
+    assert.ok(row.atkinsonTwo > 0.5);
+    assert.ok(row.aversionGap > 0.1);
+  }
+});
