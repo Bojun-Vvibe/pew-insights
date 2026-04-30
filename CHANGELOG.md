@@ -2,6 +2,168 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.286 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-FOURTH):
+  `pew-insights daily-token-kolm-pollak-index`.
+
+  Per-source KOLM-POLLAK absolute inequality index (Kolm 1976;
+  Pollak 1971) of the per-day total_tokens distribution:
+
+      K(alpha) = (1/alpha) * ln( (1/n) * sum_i exp(alpha * (mu - D_i)) )
+
+  in TOKEN units, where alpha > 0 has units `1/tokens` and mu =
+  mean(D). Computed via the log-sum-exp identity centred at
+  `z_max = mu - min(D)` for numerical stability across the wide
+  token-mass dynamic range. Range `[0, mu - min(D)]`. K = 0 iff
+  every day carries identical mass; K -> mu - min(D) (the
+  "Rawlsian deficit") as alpha -> infinity.
+
+  The DEFINING PROPERTY is TRANSLATION-INVARIANCE:
+
+      K(D + c) = K(D)   for any constant c
+
+  Adding a flat token amount to every day MOVES Gini, Atkinson,
+  Bonferroni, Theil-L/T, GE(2), Pietra, Hoover, Palma, Zenga, FGT
+  towards 0 — but leaves Kolm-Pollak EXACTLY unchanged. This is
+  the polar-opposite invariance axiom to all 12 prior daily-token
+  inequality axes (which are scale-invariant). Kolm-Pollak is the
+  ONLY translation-invariant daily-token axis in the suite, and
+  occupies the absolute (additive) corner of the inequality
+  measurement design space.
+
+  GENUINELY ORTHOGONAL to every prior daily-token axis — the
+  central design point of axis-44:
+
+  - axis-32 GINI / axis-43 BONFERRONI / axis-35 PIETRA / axis-42
+    HOOVER / axis-40 PALMA / axis-41 FGT: ALL scale-invariant
+    (relative). Kolm-Pollak is translation-invariant (absolute).
+    Two day-vectors that differ by an additive constant have
+    IDENTICAL Kolm-Pollak but DIFFERENT readings on every other
+    inequality axis. Conversely, scaling D by `c` MULTIPLIES
+    Kolm-Pollak by `c` but leaves all relative axes unchanged.
+  - axis-36 ATKINSON: CRRA welfare loss as a FRACTION of the mean
+    (multiplicative). Kolm-Pollak is the CARA welfare loss in
+    TOKEN units (additive). Both share an alpha parameter, but
+    Atkinson's epsilon is dimensionless while Kolm's alpha has
+    units of 1/tokens; identical "shape" alphas produce different
+    rankings on the same data.
+  - axes 37/38/39 GE-FAMILY (Theil-L / Theil-T / GE(2)): all are
+    scale-invariant smooth indices on share ratios. Kolm-Pollak
+    operates on RAW SHORTFALLS in token units; no monotone
+    bijection between the two families.
+  - axis-34 ZENGA: averages bottom-vs-top mean RATIOS (scale-
+    invariant). Kolm-Pollak averages exp(alpha * shortfall)
+    (translation-invariant). Different functional class.
+  - All time-ordered axes (autocorrelation, monotone-run-length,
+    second-difference-sign-runs, z-score-extremes): Kolm-Pollak
+    is permutation-invariant, so orthogonal by construction.
+
+  Cross-anchor / orthogonality witness: the literal additive-
+  transform identity. `--include-additive-invariance-witness`
+  emits per-row `kolmIfPlusMu` = K(alpha) computed on the SHIFTED
+  vector `D + mu` and the residual `additiveInvarianceResidual =
+  |kolm - kolmIfPlusMu|`. Translation-invariance forces the
+  residual to be ~0 (we observe < 2e-7 in the live smoke run, all
+  attributable to floating-point round-off). Every other shipped
+  daily-token index would CHANGE materially under the same shift.
+
+  Headline question:
+  **"For each source, what FLAT TOKEN REDUCTION per day would an
+    inequality-averse planner accept to perfectly flatten the
+    per-day token distribution? And how does this absolute
+    (additive) reading reorder sources versus the relative
+    (multiplicative) Gini / Atkinson / Bonferroni readings?"**
+
+  The dimensionless aversion `--alpha-rel` (default 1.0) is
+  rescaled per-source as `alpha_eff = alphaRel / meanDaily` so
+  `alpha_eff * mu = alphaRel` is identical across sources — the
+  standard Kolm-Pollak cross-unit normalisation (Chakravarty 2009
+  Sec 3.2). `--alpha-absolute` bypasses scaling and uses the raw
+  alpha verbatim. `--include-rawlsian-anchor` surfaces
+  `rawlsianDeficit = mu - min` (the alpha -> infinity upper bound
+  on K) and `kolmOverRawlsian` in [0, 1] (approaches 1 as alpha
+  -> infinity).
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (default
+  `kolm`; also `tokens` | `days` | `source` | `meanDaily` |
+  `rawlsianDeficit` | `kolmRelativeIntensity`), `--alpha-rel`
+  (default 1.0), `--alpha-absolute`, `--min-kolm` (display filter
+  in token units), `--include-additive-invariance-witness`,
+  `--include-rawlsian-anchor`, `--json`.
+
+  Live smoke-test against the local `~/.config/pew/queue.jsonl`
+  (6 sources, 11.80B tokens; one source name normalised to
+  `vscode-other` per house style):
+
+  ```
+  per-source Kolm-Pollak index of per-day total_tokens (sorted by kolm; ties: source asc)
+  source        firstDay    lastDay     days  kolm        k/mu    gini    alphaEff  meanDaily    minDay      maxDay      tokens
+  ------------  ----------  ----------  ----  ----------  ------  ------  --------  -----------  ----------  ----------  -------------
+  claude-code   2026-02-11  2026-04-23  35    59,106,036  0.6010  0.7590  1.02e-8   98,353,880   2026-03-06  2026-04-20  3,442,385,788
+  codex         2026-04-13  2026-04-20  8     42,318,127  0.4182  0.5892  9.88e-9   101,203,083  2026-04-16  2026-04-20  809,624,660
+  opencode      2026-04-20  2026-04-30  11    38,914,725  0.0822  0.1964  2.11e-9   473,217,122  2026-04-20  2026-04-21  5,205,388,343
+  openclaw      2026-04-17  2026-04-30  14    24,675,342  0.1649  0.3429  6.68e-9   149,596,383  2026-04-30  2026-04-19  2,094,349,364
+  hermes        2026-04-17  2026-04-30  14    2,673,179   0.1534  0.3244  5.74e-8   17,429,844   2026-04-26  2026-04-19  244,017,811
+  vscode-other  2025-07-30  2026-04-20  73    13,757      0.5326  0.7000  3.87e-5   25,832       2025-08-22  2026-04-17  1,885,727
+
+  additive-invariance witness: K(D + mu) should equal K(D) by translation-invariance (Kolm 1976)
+  source        kolm        kolm(D+mu)  residual
+  ------------  ----------  ----------  --------
+  claude-code   59,106,036  59,106,036  1.79e-7
+  codex         42,318,127  42,318,127  0.00e+0
+  opencode      38,914,725  38,914,725  0.00e+0
+  openclaw      24,675,342  24,675,342  0.00e+0
+  hermes        2,673,179   2,673,179   0.00e+0
+  vscode-other  13,757      13,757      1.46e-11
+
+  rawlsian anchor: deficit = mu - min (max possible kolm); kolm/deficit in [0, 1] approaches 1 as alpha -> infinity
+  source        deficit      kolm        kolm/deficit
+  ------------  -----------  ----------  ------------
+  claude-code   98,275,894   59,106,036  0.6014
+  codex         95,419,812   42,318,127  0.4435
+  opencode      456,069,606  38,914,725  0.0853
+  openclaw      94,422,274   24,675,342  0.2613
+  hermes        13,958,862   2,673,179   0.1915
+  vscode-other  25,760       13,757      0.5340
+  ```
+
+  Three orthogonality readings to call out from the live numbers:
+
+  1. **opencode reorders dramatically**. Under Gini (0.1964, near-
+     uniform) opencode looks like one of the most equitable per-day
+     distributions. Under Kolm-Pollak it ranks THIRD (38.9M tokens)
+     because the absolute deficit is HUGE (456M tokens) — opencode
+     has very large mean-daily mass, so even modest relative
+     dispersion translates into a large absolute flat-cost figure.
+     Gini sees "shape"; Kolm-Pollak sees "tokens forfeited".
+  2. **kolm/deficit ratios cluster by alpha-rel = 1.0 calibration**.
+     The ratios sit in [0.085, 0.60], well below the Rawlsian
+     ceiling of 1.0. Cranking alpha-rel toward infinity would
+     monotonically push every ratio toward 1.0; the spread we see
+     here is the per-source distributional shape under a moderate
+     planner.
+  3. **vscode-other holds rank under both lenses** (Gini 0.700,
+     k/mu 0.5326 — the second-highest relative intensity).
+     Translation-invariance does not buy this source any softer
+     reading because its absolute deficit is tiny (25,760 tokens),
+     so the reordering pressure is concentrated on the high-mass
+     sources.
+
+  Tested with 37 cases covering the kolmPollakOfVector primitive
+  (degenerate, equality, small-alpha variance limit, large-alpha
+  Rawlsian limit, TRANSLATION-INVARIANCE K(D+c)=K(D), scale-
+  equivariance K(c*D, alpha)=c*K(D, c*alpha), permutation
+  invariance, regressive Pigou-Dalton transfer, non-negativity,
+  input validation, log-sum-exp numerical stability on 1e8-
+  magnitude tokens) and the full builder (filters, top cap,
+  per-source alpha auto-scaling vs alpha-absolute, witnesses,
+  sort modes, zero-day amplification).
+
 ## 0.6.284 — 2026-05-01
 
 ### Added
