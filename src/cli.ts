@@ -479,6 +479,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation,
   renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation,
 } from './sourcerowtokenslopecilenswidthmidpointcorrelation.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthGini,
+  renderSourceRowTokenSlopeCiLensWidthGini,
+} from './sourcerowtokenslopecilenswidthgini.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -23823,6 +23827,179 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showMoments: opts.showMoments ?? false,
               showPerSourcePairs: opts.showPerSourcePairs ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-gini')
+  .description(
+    "Per-lens CROSS-SOURCE GINI COEFFICIENT of CI half-widths (TWENTY-FIRST cross-lens axis). Mechanically distinct from ALL TWENTY priors on THREE orthogonal dimensions: (1) POPULATION GEOMETRY -- like axis-20 the population is LENSES (six rows), inverting the per-source geometry of axes 1-19. (2) STATISTIC FAMILY -- this is a UNIVARIATE inequality / concentration measure on a single distribution (across-source half-widths for one lens). Axes 1-19 are per-source scalars aggregated across sources only as means / medians / mode counts; axis-20 is BIVARIATE Pearson correlation between |midpoint| and half-width. Axis-21 has no second variable, no covariance, no entropy. (3) SCALE INVARIANCE -- Pearson r is invariant under independent positive affine rescaling of two variables; Gini G is invariant under positive scalar multiplication of a single distribution but NOT under additive shifts. They probe different invariants of the half-width distribution: r asks 'does CI width grow with |slope|?'; G asks 'is the CI width budget concentrated in a few sources or spread evenly?'. For each lens L: halfWidth = (ciUpper - ciLower) / 2; gini = (1 / (n^2 * mean)) * sum_i (2 i - n - 1) * y_i over the n shared sources sorted ascending. Equivalent to mean-absolute-pairwise-difference / (2 * mean). gini in [0, 1): 0 iff perfect cross-source equality; -> (n-1)/n iff one source absorbs the entire half-width budget. Per-lens: nShared, meanHalfWidth, minHalfWidth, maxHalfWidth, mad, gini, topShareMax, concentrationLabel ('highly-concentrated' gini > 0.5; 'moderately-concentrated' gini in (0.3, 0.5]; 'mild-concentration' gini in (0.1, 0.3]; 'near-equal' gini in [0, 0.1]; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n < 3, 'zero-mean-halfwidth', 'non-finite'). Report-level: meanGini, medianGini, maxGini, minGini, rangeGini, nDegenerate, nHighlyConcentrated, nNearEqual, mostConcentratedLens (argmax gini), mostEqualLens (argmin gini). --alert-gini <f> filters to lenses with gini > f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-gini <f>',
+    'only emit lenses whose gini is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'gini-desc' (default) | 'gini-asc' | 'mean-halfwidth-desc' | 'top-share-desc' | 'lens'",
+    'gini-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses',
+  )
+  .option(
+    '--show-moments',
+    'append per-lens moments line listing meanHalf / minHalf / maxHalf / mad',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) for each shared source -- the raw inputs to the Gini computation',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertGini?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showMoments?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertGini: number | null = null;
+        if (opts.alertGini != null) {
+          const a = Number.parseFloat(opts.alertGini);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-gini must be a finite number in [0, 1] (got ${opts.alertGini})`,
+            );
+          }
+          alertGini = a;
+        }
+        const validSorts = [
+          'gini-desc',
+          'gini-asc',
+          'mean-halfwidth-desc',
+          'top-share-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthGini(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertGini,
+          sort: opts.sort as
+            | 'gini-desc'
+            | 'gini-asc'
+            | 'mean-halfwidth-desc'
+            | 'top-share-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthGini(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showMoments: opts.showMoments ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
         }
