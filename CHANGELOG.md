@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.277 — 2026-05-01
+
+### Added
+
+- New cross-source axis (THIRTY-NINTH):
+  `pew-insights daily-token-ge2-index`.
+
+  Per-source GE(2) = `(1/(2n)) * sum_i ((D_i/mu - 1)^2)` = `(1/2) * CV^2`
+  of the per-day total_tokens distribution. Range `[0, +inf)`; one-day-
+  takes-all on `n` days saturates at `(n-1)/2`. Reported as a pure
+  ratio (NOT in nats -- this is the structural break with axes 37/38).
+
+  The QUADRATIC TOP-EXTREME-SENSITIVE corner of the GE(alpha) family
+  alongside axis-37 Theil-L = GE(0) (logarithmic, bottom-sensitive)
+  and axis-38 Theil-T = GE(1) (log-linear, mass-balanced). The
+  moment family is ordered:
+
+  - GE(0) absorbs deviations LOGARITHMICALLY (bottom-sensitive)
+  - GE(1) absorbs deviations LOG-LINEARLY     (mass-balanced)
+  - GE(2) absorbs deviations QUADRATICALLY    (top-EXTREME-sensitive)
+
+  Two sources can have IDENTICAL Gini, IDENTICAL Theil-L, and
+  IDENTICAL Theil-T but very different GE(2) -- because GE(2) is
+  uniquely sensitive to a single isolated outlier day.
+
+  The headline derived field is the SQUARED-VS-LOG SKEW RATIO
+  `ge2OverT = GE(2) / Theil-T` (cross-anchor on axis-38). High ratio
+  means the inequality lives in the QUADRATIC TAIL (a few mega-days
+  dominate quadratically); low ratio means top mass is spread out.
+  Cannot be recovered from either axis alone.
+
+  Identity `GE(2) == cvSquared / 2` is exact and audited per row via
+  `cvSquaredOverTwo` (mirrors the cross-lens axis-27
+  `--show-cv-identity` flag).
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (default `ge2`;
+  also `tokens` | `days` | `source` | `meanDaily` | `cv` |
+  `ge2OverT`), `--min-ge2` (default 0), `--alpha-sweep`, `--json`.
+
+  Live smoke-test against the local `~/.config/pew/queue.jsonl` (6
+  sources, 11.7B tokens; one source name normalised to `vscode-other`
+  per house style):
+
+  ```
+  $ pew-insights daily-token-ge2-index --top 8
+  per-source GE(2) of per-day total_tokens (sorted by ge2; ties: source asc)
+  source         firstDay    lastDay     days  ge2     cv      theilT  ge2/T   meanDaily    tokens
+  -------------  ----------  ----------  ----  ------  ------  ------  ------  -----------  -------------
+  claude-code    2026-02-11  2026-04-23  35    2.2601  2.1261  1.1897  1.8998  98,353,880   3,442,385,788
+  vscode-other   2025-07-30  2026-04-20  73    1.6243  1.8024  0.9545  1.7016  25,832       1,885,727
+  codex          2026-04-13  2026-04-20  8     0.7350  1.2124  0.6157  1.1939  101,203,083  809,624,660
+  openclaw       2026-04-17  2026-04-30  14    0.2050  0.6404  0.1956  1.0481  148,749,390  2,082,491,464
+  hermes         2026-04-17  2026-04-30  14    0.1592  0.5642  0.1728  0.9212  17,177,123   240,479,715
+  opencode       2026-04-20  2026-04-30  11    0.0760  0.3899  0.1078  0.7051  466,873,001  5,135,603,011
+  ```
+
+  Reading: `claude-code` carries the largest QUADRATIC tail (ge2 =
+  2.26 of a possible (35-1)/2 = 17.0; ge2/T = 1.90 says its
+  inequality is far more visible to GE(2) than to Theil-T, i.e. the
+  top tail is concentrated). `opencode` has the lowest ge2 (0.08)
+  and a ge2/T < 1 indicating its top mass is spread out rather
+  than spiked.
+
+### Tests
+
+- `7696 -> 7729` (+33 new tests covering: ge2OfVector empty /
+  singleton / all-zeros / perfect-equality / saturation at (n-1)/2 /
+  zero-day-FINITE contrast vs Theil-L / scale-invariance /
+  permutation-invariance / identity ge2 == cvSquared/2 / negatives
+  rejected / cross-axis contrast vs Theil-T (quadratic vs log-
+  linear) and Theil-L (zero-day asymmetry); buildDailyTokenGe2Index
+  full pipeline (filters, minTokens / minDays / minGe2 / top,
+  alphaSweep cross-validation against theilT / theilL, source
+  filter, window filter, ge2Saturated flag, sort modes, option
+  validation); the `ge2PerWeekCollapse` refinement (within-week-
+  noise smoothing ratio, per-week == per-day when each day in own
+  ISO week, degenerate ratio = null)).
+
 ## 0.6.276 — 2026-05-01
 
 ### Added
