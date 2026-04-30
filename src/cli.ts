@@ -499,6 +499,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthHoover,
   renderSourceRowTokenSlopeCiLensWidthHoover,
 } from './sourcerowtokenslopecilenswidthhoover.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthPalma,
+  renderSourceRowTokenSlopeCiLensWidthPalma,
+} from './sourcerowtokenslopecilenswidthpalma.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -24856,6 +24860,215 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showRedistribution: opts.showRedistribution ?? false,
               showLorenzGap: opts.showLorenzGap ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-palma')
+  .description(
+    "Per-lens CROSS-SOURCE PALMA RATIO (S90/S40) of CI half-widths (TWENTY-SIXTH cross-lens axis). Palma = (1 - L(0.9)) / L(0.4) = topDecileMassShare / bottomFourDecilesMassShare (Cobham-Sumner-Palma 2011, 2013). Mechanically distinct from ALL TWENTY-FIVE priors: a TWO-POINT EVALUATION of the Lorenz process at p=0.4 and p=0.9 combined as a RATIO -- not an integral (axis-21 Gini), not an L_infinity sup (axis-25 Hoover), not entropic (axis-22 Theil), not a CRRA welfare loss (axis-23 Atkinson), not an interquartile spread (axis-24 QCD). UNBOUNDED above (Palma in [0, +inf)) -- the only cross-lens axis that can diverge to infinity. Pigou-Dalton transfer principle holds ONLY when the transfer crosses a decile boundary p=0.4 or p=0.9; transfers entirely WITHIN the bottom 40%, middle 50%, or top 10% leave Palma unchanged. Per-lens: nShared, meanHalfWidth, totalHalfWidth, s40 (= L(0.4), bottom-40% mass share), s90 (= 1 - L(0.9), top-10% mass share), s50middle (= 1 - s40 - s90, the Palma-hypothesis 'constant middle'), palma (S90/S40), palmaIsInfinite (true iff S40=0 and S90>0; numeric clamped to 1e12), concentrationLabel ('extreme' palmaIsInfinite or palma>4; 'high' palma in (2,4]; 'moderate' palma in (1,2]; 'balanced' palma in (0.5,1]; 'inverted' palma in [0,0.5]; 'degenerate' otherwise), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mass', 'zero-bottom-mass', 'non-finite'). Report-level: meanPalma, medianPalma, maxPalma, minPalma, rangePalma (over finite non-degenerate), nDegenerate, nExtreme, nBalancedOrInverted, mostExtremeLens, mostBalancedLens (Palma closest to 1).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-palma <f>',
+    'only emit lenses whose Palma ratio is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-mass <f>',
+    'only emit lenses whose totalHalfWidth (sum of cross-source half-widths) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-bottom-share <f>',
+    'only emit lenses whose s40 (bottom-40% mass share) is strictly LESS than f (f in [0, 1]); useful for surfacing tail-heavy lenses',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'palma-desc' (default) | 'palma-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 's40-asc' | 's90-desc' | 'lens'",
+    'palma-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostBalanced)',
+  )
+  .option(
+    '--show-tail-decomposition',
+    'append per-lens tails line listing bottom-40%, middle-50%, top-10% mass shares and the Palma ratio',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertPalma?: string;
+        alertMass?: string;
+        alertBottomShare?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showTailDecomposition?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertPalma: number | null = null;
+        if (opts.alertPalma != null) {
+          const a = Number.parseFloat(opts.alertPalma);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-palma must be a finite, non-negative number (got ${opts.alertPalma})`,
+            );
+          }
+          alertPalma = a;
+        }
+        let alertMass: number | null = null;
+        if (opts.alertMass != null) {
+          const a = Number.parseFloat(opts.alertMass);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-mass must be a finite, non-negative number (got ${opts.alertMass})`,
+            );
+          }
+          alertMass = a;
+        }
+        let alertBottomShare: number | null = null;
+        if (opts.alertBottomShare != null) {
+          const a = Number.parseFloat(opts.alertBottomShare);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-bottom-share must be a finite number in [0, 1] (got ${opts.alertBottomShare})`,
+            );
+          }
+          alertBottomShare = a;
+        }
+        const validSorts = [
+          'palma-desc',
+          'palma-asc',
+          'mass-desc',
+          'mean-halfwidth-desc',
+          's40-asc',
+          's90-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthPalma(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertPalma,
+          alertMass,
+          alertBottomShare,
+          sort: opts.sort as
+            | 'palma-desc'
+            | 'palma-asc'
+            | 'mass-desc'
+            | 'mean-halfwidth-desc'
+            | 's40-asc'
+            | 's90-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthPalma(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showTailDecomposition: opts.showTailDecomposition ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
