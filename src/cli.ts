@@ -25824,6 +25824,10 @@ program
     'append per-lens giniPair line listing M, vanilla Gini G on the same widths, and the ratio M/G (kernel-vs-kernel diagnostic vs axis-21)',
   )
   .option(
+    '--show-kernel-sweep',
+    'append per-lens kernelSweep line listing the generalised Mehran-family index M_alpha at alpha = 0, 0.5, 1, 2, 4, 8 (alpha=0 recovers Gini, alpha=1 is Mehran, alpha->inf approaches the Bonferroni-style bottom-only limit). All values calibrated by (alpha+1)(alpha+2) so that perfect-concentration limit gives 1 at every alpha.',
+  )
+  .option(
     '--show-per-source-widths',
     'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
   )
@@ -25845,6 +25849,7 @@ program
         showConcentrationAggregate?: boolean;
         showLensAttribution?: boolean;
         showGiniPair?: boolean;
+        showKernelSweep?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -25928,6 +25933,7 @@ program
                 opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showGiniPair: opts.showGiniPair ?? false,
+              showKernelSweep: opts.showKernelSweep ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );

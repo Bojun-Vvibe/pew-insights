@@ -693,6 +693,110 @@ export function buildSourceRowTokenSlopeCiLensWidthMehran(
   };
 }
 
+/**
+ * Derived diagnostic: KERNEL-EXPONENT SWEEP.
+ *
+ * Generalised Mehran-family index with a tunable kernel exponent
+ * `alpha >= 0`:
+ *
+ *   M_alpha = (alpha + 2)(alpha + 1) * integral_0^1 (1 - p)^alpha
+ *             * (p - L(p)) dp
+ *
+ * The leading constant `(alpha + 2)(alpha + 1)` is the inverse of
+ * `integral_0^1 (1 - p)^alpha * p dp = 1 / ((alpha + 1)(alpha + 2))`,
+ * so M_alpha = 1 at the Lorenz-perfect-concentration limit
+ * (L(p) = 0 for p < 1, L(1) = 1) for any alpha. This calibration
+ * makes M_alpha values comparable across alphas.
+ *
+ * Special cases:
+ *   - alpha = 0: M_0 = 2 * integral (p - L(p)) dp = Gini (axis-21)
+ *   - alpha = 1: M_1 = 6 * integral (1-p)(p-L(p)) dp = Mehran (this axis)
+ *   - alpha >> 1: weight collapses onto p->0, recovering the
+ *     Bonferroni-style bottom-emphasising regime as a LIMIT
+ *     (although NOT identical to the harmonic 1/p kernel).
+ *
+ * Returns null on degenerate input. Otherwise returns an array of
+ * { alpha, m } pairs at the requested grid points.
+ */
+export function lensWidthMehranKernelSweep(
+  halfWidths: number[],
+  alphas: number[],
+): { alpha: number; m: number }[] | null {
+  if (alphas.length === 0) return [];
+  for (const a of alphas) {
+    if (!Number.isFinite(a) || a < 0) {
+      throw new Error(
+        `lensWidthMehranKernelSweep: alphas must be finite >= 0 (got ${a})`,
+      );
+    }
+  }
+  for (const v of halfWidths) {
+    if (!Number.isFinite(v)) {
+      throw new Error(
+        `lensWidthMehranKernelSweep: halfWidths must be finite (got ${v})`,
+      );
+    }
+    if (v < 0) {
+      throw new Error(
+        `lensWidthMehranKernelSweep: halfWidths must be non-negative (got ${v})`,
+      );
+    }
+  }
+  const n = halfWidths.length;
+  if (n < MIN_SHARED_SOURCES) return null;
+  let total = 0;
+  for (const v of halfWidths) total += v;
+  const mean = total / n;
+  if (!(mean > 0) || !Number.isFinite(mean)) return null;
+
+  const sorted = [...halfWidths].sort((a, b) => a - b);
+  let cum = 0;
+  const cumNorm: number[] = [0];
+  for (let i = 0; i < n; i++) {
+    cum += sorted[i]!;
+    cumNorm.push(cum / (n * mean));
+  }
+  const lorenzAt = (p: number): number => {
+    if (p <= 0) return 0;
+    if (p >= 1) return 1;
+    const fIdx = p * n;
+    const lo = Math.floor(fIdx);
+    const hi = lo + 1;
+    if (hi > n) return 1;
+    const frac = fIdx - lo;
+    return cumNorm[lo]! + frac * (cumNorm[hi]! - cumNorm[lo]!);
+  };
+
+  // For alpha != 1 the integrand is no longer quadratic on each
+  // piece, so Simpson's rule is no longer exact. Use 64 Simpson
+  // sub-intervals per rank step -- ample precision (truncation
+  // error decays as h^4 ~ (1/(64n))^4, well below 1e-9 at n=6).
+  const subdiv = 64;
+  const out: { alpha: number; m: number }[] = [];
+  for (const a of alphas) {
+    let acc = 0;
+    for (let i = 1; i <= n; i++) {
+      const p0 = (i - 1) / n;
+      const p1 = i / n;
+      const h = (p1 - p0) / subdiv;
+      for (let k = 0; k < subdiv; k++) {
+        const a0 = p0 + k * h;
+        const a1 = a0 + h;
+        const am = a0 + h / 2;
+        const f0 = Math.pow(1 - a0, a) * (a0 - lorenzAt(a0));
+        const fm = Math.pow(1 - am, a) * (am - lorenzAt(am));
+        const f1 = Math.pow(1 - a1, a) * (a1 - lorenzAt(a1));
+        acc += (h / 6) * (f0 + 4 * fm + f1);
+      }
+    }
+    let m = (a + 2) * (a + 1) * acc;
+    if (m < 0 && m > -1e-9) m = 0;
+    if (m > 1 && m - 1 < 1e-6) m = 1;
+    out.push({ alpha: a, m });
+  }
+  return out;
+}
+
 function fmtNum(x: number, digits = 4): string {
   if (!Number.isFinite(x)) {
     return x === Infinity ? 'inf' : x === -Infinity ? '-inf' : 'NaN';
@@ -707,6 +811,7 @@ export function renderSourceRowTokenSlopeCiLensWidthMehran(
     showConcentrationAggregate?: boolean;
     showLensAttribution?: boolean;
     showGiniPair?: boolean;
+    showKernelSweep?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -714,6 +819,7 @@ export function renderSourceRowTokenSlopeCiLensWidthMehran(
   const showConcentrationAggregate = opts.showConcentrationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showGiniPair = opts.showGiniPair ?? false;
+  const showKernelSweep = opts.showKernelSweep ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-mehran');
@@ -764,6 +870,26 @@ export function renderSourceRowTokenSlopeCiLensWidthMehran(
         } else {
           lines.push(
             `    giniPair: M=${fmtNum(pair.mehran, 6)} G=${fmtNum(pair.gini, 6)} ratio=M/G=${fmtNum(pair.ratio, 4)} (Mehran kernel (1-p) is bottom-emphasising vs Gini uniform)`,
+          );
+        }
+      }
+    }
+    if (showKernelSweep) {
+      if (row.degenerateFlag) {
+        lines.push(`    kernelSweep: (degenerate)`);
+      } else {
+        const sweep = lensWidthMehranKernelSweep(
+          row.perSourceHalfWidths,
+          [0, 0.5, 1, 2, 4, 8],
+        );
+        if (sweep === null) {
+          lines.push(`    kernelSweep: (degenerate)`);
+        } else {
+          const parts = sweep.map(
+            (s) => `M_a=${fmtNum(s.alpha, 1)}=${fmtNum(s.m, 6)}`,
+          );
+          lines.push(
+            `    kernelSweep: ${parts.join(' ')} (a=0 -> Gini; a=1 -> Mehran; a->inf -> Bonferroni-style bottom-only limit)`,
           );
         }
       }

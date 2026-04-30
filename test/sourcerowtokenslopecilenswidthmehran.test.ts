@@ -9,6 +9,7 @@ import {
   renderSourceRowTokenSlopeCiLensWidthMehran,
   lensWidthMehran,
   lensWidthMehranGiniPair,
+  lensWidthMehranKernelSweep,
   SLOPE_LENS_WIDTH_MEHRAN_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthmehran.js';
 import type { QueueLine } from '../src/types.js';
@@ -594,4 +595,118 @@ test('axis30 helper: kernel ordering vs Bonferroni-style harmonic kernel - bound
   assert.ok(tinyOut.mehran > 0);
   // Mehran is bounded, so the move is bounded
   assert.ok(tinyOut.mehran < 1, `M=${tinyOut.mehran}`);
+});
+
+// ---------- helper: lensWidthMehranKernelSweep (refinement v0.6.263) ----------
+
+test('axis30 kernelSweep: returns null on degenerate', () => {
+  assert.equal(lensWidthMehranKernelSweep([1, 2], [0, 1]), null);
+  assert.equal(lensWidthMehranKernelSweep([0, 0, 0, 0], [0, 1]), null);
+});
+
+test('axis30 kernelSweep: empty alphas list returns empty array', () => {
+  const out = lensWidthMehranKernelSweep([1, 2, 3, 4], []);
+  assert.deepEqual(out, []);
+});
+
+test('axis30 kernelSweep: alpha=0 recovers the vanilla Gini index (axis-21 kernel)', () => {
+  const xs = [1, 2, 3, 4, 5, 10];
+  const sweep = lensWidthMehranKernelSweep(xs, [0]);
+  assert.ok(sweep !== null);
+  const pair = lensWidthMehranGiniPair(xs);
+  assert.ok(pair !== null);
+  assert.ok(
+    Math.abs(sweep![0]!.m - pair!.gini) < 1e-6,
+    `M_a=0=${sweep![0]!.m} should equal Gini=${pair!.gini}`,
+  );
+});
+
+test('axis30 kernelSweep: alpha=1 recovers the canonical Mehran index', () => {
+  const xs = [1, 2, 3, 4, 5, 10];
+  const sweep = lensWidthMehranKernelSweep(xs, [1]);
+  assert.ok(sweep !== null);
+  const m = lensWidthMehran(xs);
+  assert.ok(
+    Math.abs(sweep![0]!.m - m.mehran) < 1e-6,
+    `M_a=1=${sweep![0]!.m} should equal Mehran=${m.mehran}`,
+  );
+});
+
+test('axis30 kernelSweep: M_alpha is monotone non-decreasing in alpha for skewed-bottom inputs', () => {
+  // Increasing alpha shifts the kernel weight further onto the
+  // BOTTOM ranks, where the Lorenz gap is largest for bottom-skewed
+  // distributions, so M_alpha should be (weakly) monotone increasing
+  // in alpha for any bottom-skewed distribution.
+  const xs = [0.1, 0.2, 0.3, 0.4, 100];
+  const sweep = lensWidthMehranKernelSweep(xs, [0, 0.5, 1, 2, 4, 8]);
+  assert.ok(sweep !== null);
+  for (let i = 1; i < sweep!.length; i++) {
+    assert.ok(
+      sweep![i]!.m >= sweep![i - 1]!.m - 1e-6,
+      `non-monotone at i=${i}: ${sweep![i - 1]!.m} -> ${sweep![i]!.m}`,
+    );
+  }
+});
+
+test('axis30 kernelSweep: every M_alpha bounded in [0, 1]', () => {
+  const xs = [0.1, 0.2, 0.3, 0.4, 100, 1000];
+  const sweep = lensWidthMehranKernelSweep(xs, [0, 0.25, 0.5, 1, 2, 5, 10, 20]);
+  assert.ok(sweep !== null);
+  for (const s of sweep!) {
+    assert.ok(s.m >= 0 && s.m <= 1, `alpha=${s.alpha}: M=${s.m} outside [0,1]`);
+  }
+});
+
+test('axis30 kernelSweep: M_alpha = 0 at perfect equality for any alpha', () => {
+  const xs = [5, 5, 5, 5, 5, 5];
+  const sweep = lensWidthMehranKernelSweep(xs, [0, 1, 2, 4, 8]);
+  assert.ok(sweep !== null);
+  for (const s of sweep!) {
+    assert.ok(Math.abs(s.m) < 1e-6, `alpha=${s.alpha}: M=${s.m} not 0 at equality`);
+  }
+});
+
+test('axis30 kernelSweep: rejects negative or non-finite alphas', () => {
+  assert.throws(
+    () => lensWidthMehranKernelSweep([1, 2, 3, 4], [-1]),
+    /finite >= 0/,
+  );
+  assert.throws(
+    () => lensWidthMehranKernelSweep([1, 2, 3, 4], [NaN]),
+    /finite >= 0/,
+  );
+  assert.throws(
+    () => lensWidthMehranKernelSweep([1, 2, 3, 4], [Infinity]),
+    /finite >= 0/,
+  );
+});
+
+test('axis30 kernelSweep: rejects negative or non-finite half-widths', () => {
+  assert.throws(
+    () => lensWidthMehranKernelSweep([1, 2, 3, -1], [1]),
+    /non-negative/,
+  );
+  assert.throws(
+    () => lensWidthMehranKernelSweep([1, 2, 3, NaN], [1]),
+    /finite/,
+  );
+});
+
+test('axis30 render: showKernelSweep appends per-lens kernelSweep line', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 72, slope: 1, noise: 5 },
+    { source: 'b', nRows: 72, slope: 2, noise: 5 },
+    { source: 'c', nRows: 72, slope: 3, noise: 5 },
+    { source: 'd', nRows: 72, slope: 4, noise: 5 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthMehran(queue, {
+    bootstraps: 200,
+    seed: 1,
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthMehran(r, {
+    showKernelSweep: true,
+  });
+  assert.ok(out.includes('kernelSweep:'));
+  assert.ok(out.includes('M_a=0.0'));
+  assert.ok(out.includes('M_a=1.0'));
 });

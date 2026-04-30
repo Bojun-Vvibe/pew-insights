@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.263 — 2026-04-30
+
+### Changed
+
+- `pew-insights source-row-token-slope-ci-lens-width-mehran`
+  refinement: added a generalised KERNEL-EXPONENT SWEEP diagnostic
+  on top of the v0.6.262 axis-30 surface, with no behaviour change
+  to the headline Mehran index.
+
+  New helper `lensWidthMehranKernelSweep(halfWidths, alphas)` and
+  matching `--show-kernel-sweep` per-lens line. Computes the
+  generalised Mehran-family index
+
+  ```
+  M_alpha = (alpha + 2)(alpha + 1)
+            * integral_0^1 (1 - p)^alpha * (p - L(p)) dp
+  ```
+
+  at each requested `alpha >= 0`. The leading constant
+  `(alpha + 2)(alpha + 1)` is the inverse of the perfect-
+  concentration limit, so `M_alpha = 1` at perfect concentration
+  for every alpha -- values are directly comparable across alphas.
+
+  Special cases:
+
+  - `alpha = 0`: recovers the vanilla **Gini** index (axis-21).
+  - `alpha = 1`: recovers the canonical **Mehran** index (this
+    axis).
+  - `alpha -> +inf`: weight collapses onto `p -> 0`, recovering
+    the Bonferroni-style bottom-only limit (although NOT
+    identical to the harmonic `1/p` kernel of axis-28).
+
+  `--show-kernel-sweep` emits the curve at the standard grid
+  `alpha = 0, 0.5, 1, 2, 4, 8` per lens, so an operator can read
+  off the kernel-vs-kernel sensitivity at a glance: M_alpha is
+  monotone non-decreasing in alpha for any bottom-skewed
+  distribution (verified at runtime for the synthetic test
+  vectors), and the alpha=0 column is exactly the Gini index on
+  the same widths.
+
+  Numerical: for `alpha != 1` the integrand is no longer quadratic
+  on each rank step, so we drop EXACT Simpson and use
+  `64`-subdivision composite Simpson per step instead. Truncation
+  error decays as `h^4 ~ (1/(64n))^4`, well below `1e-9` at the
+  typical `n = 6` shared-source count.
+
+  Numerical floor / ceiling: `M_alpha < 0` clipped to `0` if
+  within `1e-9`; `M_alpha > 1` clipped to `1` if within `1e-6`
+  (the looser ceiling reflects the slightly larger composite-
+  Simpson truncation at `alpha != 1`).
+
+  ### Test count delta
+
+  +10 new tests (kernel-sweep degenerate handling, empty alphas,
+  Gini-recovery at alpha=0, Mehran-recovery at alpha=1,
+  monotonicity in alpha for bottom-skewed inputs, [0,1] bound,
+  perfect-equality identity, input rejection, render line).
+  Project total: 7355 -> 7365.
+
 ## 0.6.262 — 2026-04-30
 
 ### Added
