@@ -507,6 +507,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthGe2,
   renderSourceRowTokenSlopeCiLensWidthGe2,
 } from './sourcerowtokenslopecilenswidthge2.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthBonferroni,
+  renderSourceRowTokenSlopeCiLensWidthBonferroni,
+} from './sourcerowtokenslopecilenswidthbonferroni.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -25312,6 +25316,213 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showCvIdentity: opts.showCvIdentity ?? false,
               showBetweenGroup: opts.showBetweenGroup ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-bonferroni')
+  .description(
+    "Per-lens CROSS-SOURCE BONFERRONI INDEX of CI half-widths (TWENTY-EIGHTH cross-lens axis). B = 1 - (1/((n-1)*mean)) * sum_{i=1..n-1} M_i where M_i = (1/i) * sum_{j<=i} w_(j) (Bonferroni 1930; Tarsitano 1990; Nygard-Sandstrom 1981). Mechanically distinct from ALL TWENTY-SEVEN prior cross-lens diagnostics: RANK-CUMULATIVE functional on prefix means -- NOT L_1 of the Lorenz gap (axis-21 Gini), NOT log-share entropic (axis-22 Theil), NOT CRRA welfare (axis-23 Atkinson), NOT two-order-statistic IQR (axis-24 QCD), NOT L_infinity sup of the Lorenz process (axis-25 Hoover), NOT a two-point decile ratio (axis-26 Palma), NOT a SECOND-MOMENT functional (axis-27 GE(2)). Uses the `1/i` rank-weighting kernel which makes Bonferroni the canonical BOTTOM-tail-sensitive complement to GE(2)'s TOP-sensitivity: a transfer to the smallest source raises Bonferroni STRICTLY MORE if the receiver's rank is LOWER. ALWAYS bounded in [0, 1] (UNLIKE GE(2)/Theil which are unbounded above). Tolerates up to n-1 zero half-widths (only all-zero is degenerate -- WIDER domain than Theil/Atkinson). Per-lens: nShared, meanHalfWidth, totalHalfWidth, bonferroni, lowerTailMassShare (bottom-half cumulative mass / total, in [0, 0.5]), bottomToTopRatio (w_(1)/w_(n)), concentrationLabel ('extreme' B>0.7; 'high-concentration' B in (0.5, 0.7]; 'moderate' B in (0.3, 0.5]; 'mild' B in (0.1, 0.3]; 'near-uniform' B in [0, 0.1]; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mass', 'non-finite'). Report-level: meanBonferroni, medianBonferroni, maxBonferroni, minBonferroni, rangeBonferroni, nDegenerate, nExtreme, nNearUniform, mostExtremeLens (argmax B), mostUniformLens (argmin B). The lowerTailMassShare diagnostic is unique to this axis -- NO prior diagnostic exposes a prefix-mass share.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-bonferroni <f>',
+    'only emit lenses whose Bonferroni index B is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-mass <f>',
+    'only emit lenses whose totalHalfWidth (sum of cross-source half-widths) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-lower-tail <f>',
+    'only emit lenses whose lowerTailMassShare is strictly LESS than f (f in [0, 1]); flags lenses where the bottom half of sources carries unusually little mass',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'bonferroni-desc' (default) | 'bonferroni-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 'lower-tail-asc' | 'lens'",
+    'bonferroni-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostUniform)',
+  )
+  .option(
+    '--show-lower-tail',
+    'append per-lens lowerTail line listing the bottom-half mass share, top-half mass share, and bottomToTopRatio (Bonferroni rank-cumulative bottom-tail diagnostic)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertBonferroni?: string;
+        alertMass?: string;
+        alertLowerTail?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showLowerTail?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertBonferroni: number | null = null;
+        if (opts.alertBonferroni != null) {
+          const a = Number.parseFloat(opts.alertBonferroni);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-bonferroni must be a finite, non-negative number (got ${opts.alertBonferroni})`,
+            );
+          }
+          alertBonferroni = a;
+        }
+        let alertMass: number | null = null;
+        if (opts.alertMass != null) {
+          const a = Number.parseFloat(opts.alertMass);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-mass must be a finite, non-negative number (got ${opts.alertMass})`,
+            );
+          }
+          alertMass = a;
+        }
+        let alertLowerTail: number | null = null;
+        if (opts.alertLowerTail != null) {
+          const a = Number.parseFloat(opts.alertLowerTail);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-lower-tail must be a finite number in [0, 1] (got ${opts.alertLowerTail})`,
+            );
+          }
+          alertLowerTail = a;
+        }
+        const validSorts = [
+          'bonferroni-desc',
+          'bonferroni-asc',
+          'mass-desc',
+          'mean-halfwidth-desc',
+          'lower-tail-asc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthBonferroni(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertBonferroni,
+          alertMass,
+          alertLowerTail,
+          sort: opts.sort as
+            | 'bonferroni-desc'
+            | 'bonferroni-asc'
+            | 'mass-desc'
+            | 'mean-halfwidth-desc'
+            | 'lower-tail-asc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthBonferroni(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showLowerTail: opts.showLowerTail ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
