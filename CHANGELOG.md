@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.267 — 2026-04-30
+
+### Changed
+
+- `pew-insights source-row-token-slope-ci-lens-width-mld`
+  refinement: added a per-lens **GE(alpha) FAMILY SWEEP**
+  diagnostic on top of the v0.6.266 axis-32 surface. No behaviour
+  change to the headline `MLD = GE(0)` value.
+
+  New helper `lensWidthMldAlphaSweep(halfWidths, alphas)` and a
+  matching `--show-alpha-sweep` per-lens line. Computes the full
+  Generalised-Entropy index `GE(alpha)` at a 7-point grid
+  `alpha = -1, -0.5, 0, 0.5, 1, 1.5, 2`. The two limit identities
+  `GE(0) = MLD` and `GE(1) = Theil-T` are handled exactly via
+  their closed forms (no FP-unsafe `0^0` or `(x/m) * log(0)`
+  paths). Negative alphas return `+inf` whenever any `x_i = 0`,
+  which the helper tags rather than silently producing NaN.
+
+  Distinct from the v0.6.266 `theilPair` diagnostic (which
+  reports only the two endpoints `MLD` and `Theil-T`) -- the
+  alpha sweep returns the entire family CURVE across alpha. The
+  two are complementary: `theilPair` gives the GE(0) <-> GE(1)
+  ratio at the family corners; `alphaSweep` gives the U-shape of
+  the GE function across the whole top/bottom-tail-emphasis
+  spectrum.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 6 shared sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-mld \
+      --bootstraps 500 --seed 42 --show-alpha-sweep
+
+  abc      alphaSweep: GE(-1.0)=156.088 GE(-0.5)=14.162  GE(0.0)=2.985
+                       GE(0.5)=1.615   GE(1.0)=1.425    GE(1.5)=1.581
+                       GE(2.0)=2.026
+  profileLikelihood
+           alphaSweep: GE(-1.0)=148.043 GE(-0.5)=11.974  GE(0.0)=2.587
+                       GE(0.5)=1.307   GE(1.0)=0.990    GE(1.5)=0.915
+                       GE(2.0)=0.953
+  studentizedT
+           alphaSweep: GE(-1.0)=125.554 GE(-0.5)=10.441  GE(0.0)=2.328
+                       GE(0.5)=1.223   GE(1.0)=0.944    GE(1.5)=0.874
+                       GE(2.0)=0.903
+  jackknife
+           alphaSweep: GE(-1.0)=135.512 GE(-0.5)=10.706  GE(0.0)=2.315
+                       GE(0.5)=1.215   GE(1.0)=0.943    GE(1.5)=0.879
+                       GE(2.0)=0.915
+  bootstrap
+           alphaSweep: GE(-1.0)=58.232  GE(-0.5)=6.130   GE(0.0)=1.405
+                       GE(0.5)=0.725   GE(1.0)=0.561    GE(1.5)=0.516
+                       GE(2.0)=0.524
+  bca      alphaSweep: GE(-1.0)=52.027  GE(-0.5)=5.763   GE(0.0)=1.354
+                       GE(0.5)=0.696   GE(1.0)=0.531    GE(1.5)=0.480
+                       GE(2.0)=0.475
+  ```
+
+  All six lenses display a U-shaped `GE(alpha)` curve across the
+  grid: the index is LARGE at both extremes (`alpha = -1` is in
+  the 50-160 range; `alpha = 2` is in the 0.5-2 range) and SMALLEST
+  near the equal-weighted midpoint (`alpha = 1` to `alpha = 1.5`).
+  This is the canonical concentrated-distribution signature of
+  GE(alpha): the index always has a global minimum near the mean
+  and grows in both directions. The MLD `(alpha = 0)` reading we
+  ship is therefore the LEFT shoulder of the U -- a moderate
+  bottom-tail emphasis that does NOT fully commit to the
+  bottom-only regime that `alpha = -1` exposes (`alpha = -1` is
+  ~50x bigger than the `alpha = 0` MLD across all six lenses).
+  The `alpha = -1` reading is dominated entirely by the SMALLEST
+  half-width per lens, an extreme bottom-only diagnostic that
+  would be too aggressive as a default.
+
 ## 0.6.266 — 2026-04-30
 
 ### Added

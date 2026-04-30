@@ -26192,6 +26192,10 @@ program
     'append per-lens theilPair line listing MLD = GE(0) alongside Theil-T = GE(1) on the same widths and the ratio MLD/T (family-corner diagnostic vs axis-22)',
   )
   .option(
+    '--show-alpha-sweep',
+    'append per-lens alphaSweep line listing GE(alpha) at alpha = -1, -0.5, 0, 0.5, 1, 1.5, 2 (a=0 is MLD, a=1 is Theil-T axis-22, a=2 is GE(2) axis-27, a<0 emphasises the bottom tail more aggressively than MLD; a=0 returns inf if any x_i = 0; a<0 returns inf if any x_i = 0)',
+  )
+  .option(
     '--show-per-source-widths',
     'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
   )
@@ -26213,6 +26217,7 @@ program
         showConcentrationAggregate?: boolean;
         showLensAttribution?: boolean;
         showTheilPair?: boolean;
+        showAlphaSweep?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -26296,6 +26301,7 @@ program
                 opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showTheilPair: opts.showTheilPair ?? false,
+              showAlphaSweep: opts.showAlphaSweep ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );

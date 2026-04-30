@@ -9,6 +9,7 @@ import {
   renderSourceRowTokenSlopeCiLensWidthMld,
   lensWidthMld,
   lensWidthMldTheilPair,
+  lensWidthMldAlphaSweep,
   SLOPE_LENS_WIDTH_MLD_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthmld.js';
 import type { QueueLine } from '../src/types.js';
@@ -388,4 +389,102 @@ test('axis32 render: degenerate reason surfaces in table', () => {
   });
   const text = renderSourceRowTokenSlopeCiLensWidthMld(r);
   assert.ok(text.includes('too-few-sources'));
+});
+
+// ---------- alphaSweep helper ----------
+
+test('axis32 alphaSweep: GE(0) matches MLD; GE(1) matches Theil-T from theilPair', () => {
+  const xs = [0.1, 0.5, 1.2, 3.7, 8.0, 100];
+  const sweep = lensWidthMldAlphaSweep(xs, [0, 1]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  const mld = lensWidthMld(xs);
+  const pair = lensWidthMldTheilPair(xs);
+  assert.ok(pair !== null);
+  if (pair === null) return;
+  const ge0 = sweep.find((s) => s.alpha === 0)!;
+  const ge1 = sweep.find((s) => s.alpha === 1)!;
+  assert.ok(
+    Math.abs(ge0.ge - mld.mld) < 1e-12,
+    `GE(0)=${ge0.ge} MLD=${mld.mld}`,
+  );
+  assert.ok(
+    Math.abs(ge1.ge - pair.theilT) < 1e-12,
+    `GE(1)=${ge1.ge} TheilT=${pair.theilT}`,
+  );
+});
+
+test('axis32 alphaSweep: top-heavy input -- GE(2) > GE(1) > 0 (top-tail emphasis)', () => {
+  const xs = [1, 1, 1, 1, 1, 100];
+  const sweep = lensWidthMldAlphaSweep(xs, [1, 2]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  const ge1 = sweep.find((s) => s.alpha === 1)!;
+  const ge2 = sweep.find((s) => s.alpha === 2)!;
+  assert.ok(ge1.ge > 0, `GE(1)=${ge1.ge}`);
+  assert.ok(ge2.ge > ge1.ge, `GE(2)=${ge2.ge} should exceed GE(1)=${ge1.ge}`);
+});
+
+test('axis32 alphaSweep: GE(0) returns inf with x_i=0; GE(1) is finite', () => {
+  const xs = [0, 1, 2, 3, 4];
+  const sweep = lensWidthMldAlphaSweep(xs, [0, 1, 2]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  const ge0 = sweep.find((s) => s.alpha === 0)!;
+  const ge1 = sweep.find((s) => s.alpha === 1)!;
+  const ge2 = sweep.find((s) => s.alpha === 2)!;
+  assert.equal(ge0.ge, Infinity);
+  assert.ok(Number.isFinite(ge1.ge), `GE(1)=${ge1.ge}`);
+  assert.ok(Number.isFinite(ge2.ge), `GE(2)=${ge2.ge}`);
+});
+
+test('axis32 alphaSweep: negative alpha returns inf if x_i=0', () => {
+  const xs = [0, 1, 2, 3, 4];
+  const sweep = lensWidthMldAlphaSweep(xs, [-1, -0.5]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  for (const s of sweep) {
+    assert.equal(s.ge, Infinity, `alpha=${s.alpha} ge=${s.ge}`);
+  }
+});
+
+test('axis32 alphaSweep: returns null for too-few-sources or zero-mean', () => {
+  assert.equal(lensWidthMldAlphaSweep([1, 2, 3], [0, 1]), null);
+  assert.equal(lensWidthMldAlphaSweep([0, 0, 0, 0, 0], [0, 1]), null);
+});
+
+test('axis32 alphaSweep: empty alphas returns []', () => {
+  const sweep = lensWidthMldAlphaSweep([1, 2, 3, 4, 5], []);
+  assert.deepEqual(sweep, []);
+});
+
+test('axis32 alphaSweep: throws on non-finite alpha or negative width', () => {
+  assert.throws(
+    () => lensWidthMldAlphaSweep([1, 2, 3, 4], [NaN]),
+    /alphas must be finite/,
+  );
+  assert.throws(
+    () => lensWidthMldAlphaSweep([1, 2, -3, 4], [0]),
+    /halfWidths must be non-negative/,
+  );
+});
+
+test('axis32 render: --show-alpha-sweep includes GE family line', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 40, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 40, slope: 1.5, noise: 10 },
+    { source: 'c', nRows: 40, slope: 0.5, noise: 3 },
+    { source: 'd', nRows: 40, slope: 2.0, noise: 20 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthMld(queue, {
+    bootstraps: 150,
+    seed: 11,
+  });
+  const text = renderSourceRowTokenSlopeCiLensWidthMld(r, {
+    showAlphaSweep: true,
+  });
+  assert.ok(text.includes('alphaSweep'));
+  assert.ok(text.includes('GE(0.0)'));
+  assert.ok(text.includes('GE(1.0)'));
+  assert.ok(text.includes('GE(2.0)'));
 });

@@ -441,6 +441,106 @@ export function lensWidthMldTheilPair(
   return { mld: m.mld, theilT: tFloor, ratio };
 }
 
+/**
+ * Derived diagnostic: GE(alpha) FAMILY SWEEP.
+ *
+ * Generalised-Entropy index at arbitrary alpha:
+ *
+ *   GE(alpha) = (1 / (n * alpha * (alpha - 1)))
+ *               * sum_i ((x_i / mean)^alpha - 1)        if alpha != 0, 1
+ *
+ * with the two limit identities:
+ *
+ *   GE(0)  = MLD     = (1/n) * sum_i log(mean / x_i)
+ *   GE(1)  = Theil-T = (1/n) * sum_i (x_i / mean) * log(x_i / mean)
+ *
+ * The leading sign convention places GE(alpha) >= 0 with equality
+ * iff perfectly equal. As alpha -> -inf the index becomes
+ * dominated by the SMALLEST x_i (extreme bottom-sensitivity); as
+ * alpha -> +inf it becomes dominated by the LARGEST x_i (extreme
+ * top-sensitivity). Numerically unstable for very large |alpha|
+ * and very heterogeneous inputs; intended grid is small integer
+ * and half-integer alphas.
+ *
+ * Returns null on degenerate input. Returns +inf at alpha = 0 if
+ * any x_i = 0, since MLD = log(AM / GM) -> +inf there.
+ */
+export function lensWidthMldAlphaSweep(
+  halfWidths: number[],
+  alphas: number[],
+): { alpha: number; ge: number }[] | null {
+  if (alphas.length === 0) return [];
+  for (const a of alphas) {
+    if (!Number.isFinite(a)) {
+      throw new Error(
+        `lensWidthMldAlphaSweep: alphas must be finite (got ${a})`,
+      );
+    }
+  }
+  for (const v of halfWidths) {
+    if (!Number.isFinite(v)) {
+      throw new Error(
+        `lensWidthMldAlphaSweep: halfWidths must be finite (got ${v})`,
+      );
+    }
+    if (v < 0) {
+      throw new Error(
+        `lensWidthMldAlphaSweep: halfWidths must be non-negative (got ${v})`,
+      );
+    }
+  }
+  const n = halfWidths.length;
+  if (n < MIN_SHARED_SOURCES) return null;
+  let total = 0;
+  let hasZero = false;
+  for (const v of halfWidths) {
+    total += v;
+    if (v === 0) hasZero = true;
+  }
+  const mean = total / n;
+  if (!(mean > 0) || !Number.isFinite(mean)) return null;
+
+  const out: { alpha: number; ge: number }[] = [];
+  for (const a of alphas) {
+    let ge: number;
+    if (Math.abs(a) < 1e-12) {
+      // GE(0) = MLD
+      if (hasZero) {
+        ge = Infinity;
+      } else {
+        let sumLog = 0;
+        for (const v of halfWidths) sumLog += Math.log(v);
+        ge = Math.log(mean) - sumLog / n;
+      }
+    } else if (Math.abs(a - 1) < 1e-12) {
+      // GE(1) = Theil-T -- well-defined even with x_i = 0
+      // because lim_{x->0+} (x/m) * log(x/m) = 0.
+      let acc = 0;
+      for (const v of halfWidths) {
+        if (v === 0) continue;
+        const r = v / mean;
+        acc += r * Math.log(r);
+      }
+      ge = acc / n;
+    } else {
+      if (hasZero && a < 0) {
+        // (0/m)^a = 0^a -> +inf for a < 0
+        ge = Infinity;
+      } else {
+        let acc = 0;
+        for (const v of halfWidths) {
+          const r = v / mean;
+          acc += Math.pow(r, a) - 1;
+        }
+        ge = acc / (n * a * (a - 1));
+      }
+    }
+    if (ge < 0 && ge > -1e-9) ge = 0;
+    out.push({ alpha: a, ge });
+  }
+  return out;
+}
+
 export function buildSourceRowTokenSlopeCiLensWidthMld(
   queue: QueueLine[],
   opts: SourceRowTokenSlopeCiLensWidthMldOptions = {},
@@ -689,6 +789,7 @@ export function renderSourceRowTokenSlopeCiLensWidthMld(
     showConcentrationAggregate?: boolean;
     showLensAttribution?: boolean;
     showTheilPair?: boolean;
+    showAlphaSweep?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -696,6 +797,7 @@ export function renderSourceRowTokenSlopeCiLensWidthMld(
   const showConcentrationAggregate = opts.showConcentrationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showTheilPair = opts.showTheilPair ?? false;
+  const showAlphaSweep = opts.showAlphaSweep ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-mld');
@@ -747,6 +849,27 @@ export function renderSourceRowTokenSlopeCiLensWidthMld(
         } else {
           lines.push(
             `    theilPair: MLD=${fmtNum(pair.mld, 6)} TheilT=${fmtNum(pair.theilT, 6)} ratio=MLD/T=${fmtNum(pair.ratio, 4)} (MLD=GE(0) bottom-emphasising; TheilT=GE(1) equal-weighted)`,
+          );
+        }
+      }
+    }
+    if (showAlphaSweep) {
+      if (row.degenerateFlag) {
+        lines.push(`    alphaSweep: (degenerate)`);
+      } else {
+        const sweep = lensWidthMldAlphaSweep(
+          row.perSourceHalfWidths,
+          [-1, -0.5, 0, 0.5, 1, 1.5, 2],
+        );
+        if (sweep === null) {
+          lines.push(`    alphaSweep: (degenerate)`);
+        } else {
+          const parts = sweep.map(
+            (s) =>
+              `GE(${fmtNum(s.alpha, 1)})=${Number.isFinite(s.ge) ? fmtNum(s.ge, 6) : 'inf'}`,
+          );
+          lines.push(
+            `    alphaSweep: ${parts.join(' ')} (a=0 -> MLD/this axis; a=1 -> Theil-T axis-22; a=2 -> GE(2) axis-27; a<0 emphasises bottom even harder)`,
           );
         }
       }
