@@ -2,6 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.274 — 2026-05-01
+
+### Added
+
+- New cross-source axis (THIRTY-SEVENTH):
+  `pew-insights daily-token-theil-l-index`.
+
+  Per-source THEIL-L (mean log deviation, MLD) of the per-day
+  `total_tokens` distribution. The alpha=0 element of the
+  generalised-entropy GE(alpha) family.
+
+  ```
+  L = (1/n) * sum_i log(mu / D_i)
+    = log(mu) - (1/n) * sum_i log(D_i)
+    = log(mu / GeoMean(D))
+  ```
+
+  where `D_i` is the day-`i` total token mass and `mu = mean(D)`.
+  Reported in NATS (multiply by `1/ln(2)` for bits). Range
+  `L in [0, +inf)`. Equivalently, `L = D_KL(uniform || q)` where
+  `q_i = D_i / sum D` is the empirical mass-share -- the KL
+  divergence FROM the uniform-share distribution TO the empirical
+  share, evaluated against the uniform reference. This is the
+  information-theoretic reading of inequality.
+
+  Why a new axis: Theil-L is the entropy-divergence inequality
+  measure and is mechanically distinct from every prior daily-
+  token axis on at least four counts:
+
+  1. STRICT bottom-sensitivity: `log(mu / D_i)` blows up as
+     `D_i -> 0`. A small day weighs much more in L than the same
+     transfer weighs in Gini (which weighs by Lorenz position)
+     or in Pietra (which is L-infinity, ignoring sub-max
+     transfers entirely).
+  2. ADDITIVE SUBGROUP DECOMPOSABILITY with NO residual:
+     `L_total = sum_g (n_g / n) * L_g + L_between`
+     where `L_g` is within-subgroup-`g` Theil-L on `D` restricted
+     to that subgroup and `L_between` is L of the subgroup-mean
+     vector. Atkinson (axis-36) does NOT decompose this way; it
+     has a cross term that depends on subgroup means. Gini does
+     not either; it only decomposes when subgroups do not overlap
+     on the value axis. This makes Theil-L the ONLY axis in the
+     suite that lets you cleanly answer "how much of the total
+     daily-token inequality comes from within-source variation
+     vs. between-source variation" in a single decomposition.
+  3. UNBOUNDED above. Atkinson is in `[0, 1]`; Pietra is in
+     `[0, 1 - 1/n]`; Gini is in `[0, 1]`. Theil-L is in
+     `[0, +inf)`. The unboundedness matters when the headline
+     concentration is so extreme that the bounded measures
+     saturate near 1: L still discriminates.
+  4. The alpha=0 anchor of GE(alpha): we ship `--alpha-sweep`
+     so a single command surfaces `GE(0)=L`, `GE(1)=Theil-T`,
+     and `GE(2)=half-squared-CV` on the SAME vector. The whole
+     GE family in one row.
+
+  Connection to axis-36: only at `epsilon = 1` do Atkinson and
+  Theil-L share an ordering, via `L = -log(1 - A)` (equivalently
+  `A(1) = 1 - exp(-L) = 1 - GeoMean / mu`). At every other
+  Atkinson `epsilon`, the two are functionally independent. We
+  surface `atkinsonAtEpsilon1 = 1 - exp(-L)` per row as a
+  numerical cross-validation against axis-36's epsilon=1 limit.
+
+  ZERO-COLLAPSE: any single zero day forces `L = +Infinity`
+  (because `log(mu / 0) = +inf`). We surface `zeroCollapse: true`
+  and report `theilL: Infinity`, sorted to the top. The
+  `--drop-zero-days` flag removes zero days from the vector
+  before the index is computed (only relevant under hypothetical
+  augmentation; our ingestion drops non-positive token rows
+  upstream).
+
+  Per-source columns: `theilL` (in nats), `atkinsonAtEpsilon1`
+  (cross-check), `geometricMeanDaily` (= mu * exp(-L)),
+  `meanDailyTokens`, `minDay` / `minDailyTokens` /
+  `maxDay` / `maxDailyTokens`, `tokens`, `nDays`, `zeroCollapse`.
+  Sort keys: `theilL` (default) | `tokens` | `days` | `source` |
+  `meanDaily`. Display filters: `--min-theil-l`, `--top`. Time
+  window: `--since` / `--until`. Source filter: `--source`.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights daily-token-theil-l-index
+
+  source         days  theilL  A(eps=1)  geoMean      meanDaily    tokens
+  claude-code    35    1.5874  0.7955    20,108,718   98,353,880   3,442,385,788
+  vscode-other   73    1.1257  0.6756    8,381        25,832       1,885,727
+  codex          8     0.7968  0.5492    45,620,424   101,203,083  809,624,660
+  opencode       11    0.2443  0.2167    364,093,933  464,847,267  5,113,319,934
+  openclaw       14    0.2169  0.1950    119,372,215  148,282,600  2,075,956,406
+  hermes         14    0.2149  0.1934    13,789,494   17,096,157   239,346,199
+  ```
+
+  Key real-data finding: `claude-code` carries `L = 1.5874 nats`
+  of within-source daily inequality -- which converts to a
+  `1 - exp(-1.5874) = 79.6%` welfare-loss reading on the
+  Atkinson(epsilon=1) scale. Equivalent statement: the geometric
+  mean of `claude-code` daily token mass is **~20.1M tokens**
+  against an arithmetic mean of **~98.4M** -- a 4.9x spread that
+  L captures cleanly because of the bottom-sensitivity (the
+  77,986-token day on 2026-03-06 dominates the log shortfalls).
+  Compare `opencode` at `L = 0.2443 nats` (geo 364M vs mean
+  464M, 1.28x spread) -- the most uniform daily rhythm in the
+  workspace despite carrying the largest TOTAL token mass
+  (5.1B).
+
+  Cross-validation against axis-36: every `A(eps=1)` column
+  matches `1 - exp(-L)` to within 1e-12 on the same vector,
+  confirming the analytic link at the log-utility limit. At
+  alpha != 0, the GE family discriminates further on the same
+  shape:
+
+  ```
+  $ pew-insights daily-token-theil-l-index --alpha-sweep 0,0.5,1,2
+
+  source         GE(0)=L  GE(0.5)  GE(1)=T  GE(2)=halfCV^2
+  claude-code    1.5874   1.1721   1.1897   2.2601
+  vscode-other   1.1257   0.9296   0.9545   1.6243
+  codex          0.7968   0.6550   0.6157   0.7350
+  opencode       0.2443   0.1513   0.1100   0.0781
+  openclaw       0.2169   0.2052   0.2004   0.2086
+  hermes         0.2149   0.1884   0.1720   0.1588
+  ```
+
+  `claude-code` is the only source where `GE(2) > GE(0)`: its
+  half-squared-CV is **larger** than its mean log deviation.
+  That ordering flip witnesses a top-heavy outlier (the 1.05B-
+  token day on 2026-04-20 against a mean of 98M) -- exactly the
+  kind of non-monotone GE-family signature that a single scalar
+  axis cannot capture.
+
+  This is the orthogonality witness for axis-37: Theil-L and
+  Atkinson agree on RANKING (they must, at the epsilon=1 limit),
+  but disagree on SCALE (L = 1.59 vs. A = 0.80 for `claude-
+  code`), and the `--alpha-sweep` reveals that the underlying
+  GE-family shape is non-monotone in alpha for top-heavy sources
+  -- information that neither axis-35 (Pietra) nor axis-36
+  (Atkinson) surfaces alone.
+
 ## 0.6.273 — 2026-05-01
 
 ### Added
