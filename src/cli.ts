@@ -11798,6 +11798,10 @@ program
     '0',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--epsilon-sweep <list>',
+    'comma-separated list of additional epsilon values; for each row append an epsilonSweep array of { epsilon, atkinson, ede }. Pure compute; witnesses the CRRA aversion-knob trade-off (top-sensitive at small epsilon, bottom-sensitive at large) on the same per-day vector. Example: --epsilon-sweep 0,0.25,0.5,1,2,5. Refinement (v0.6.273).',
+  )
   .action(
     async (
       opts: {
@@ -11812,6 +11816,7 @@ program
         sort: string;
         minAtkinson: string;
         json?: boolean;
+        epsilonSweep?: string;
       },
       cmd,
     ) => {
@@ -11855,6 +11860,22 @@ program
           );
         }
         const queue = await readQueue(paths);
+        let epsilonSweep: number[] | undefined;
+        if (opts.epsilonSweep) {
+          epsilonSweep = opts.epsilonSweep
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+            .map((s) => {
+              const v = Number.parseFloat(s);
+              if (!Number.isFinite(v) || v < 0) {
+                throw new Error(
+                  `--epsilon-sweep entries must be non-negative finite numbers (got ${s})`,
+                );
+              }
+              return v;
+            });
+        }
         const report = buildDailyTokenAtkinsonIndex(queue, {
           since: opts.since ?? null,
           until: opts.until ?? null,
@@ -11871,6 +11892,7 @@ program
             | 'days'
             | 'source'
             | 'ede',
+          epsilonSweep,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

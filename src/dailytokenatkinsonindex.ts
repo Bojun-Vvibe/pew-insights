@@ -119,6 +119,17 @@ export interface DailyTokenAtkinsonOptions {
   minTokens?: number;
   minDays?: number;
   /**
+   * Refinement (v0.6.274): when set to a non-empty array, every
+   * emitted row gains an `epsilonSweep` array with one entry per
+   * epsilon value `{ epsilon, atkinson, ede }`. Pure compute; no
+   * extra I/O. Demonstrates the CRRA aversion-knob trade-off
+   * (top-sensitive at small epsilon, bottom-sensitive at large)
+   * on the same per-day vector. The headline `atkinson` /
+   * `epsilon` / `ede` fields still reflect the primary
+   * `epsilon` knob; the sweep is purely diagnostic.
+   */
+  epsilonSweep?: readonly number[];
+  /**
    * CRRA inequality-aversion parameter epsilon >= 0. Default 0.5.
    * epsilon = 1 uses the geometric-mean limit (log utility).
    */
@@ -180,6 +191,15 @@ export interface DailyTokenAtkinsonSourceRow {
    * vs. "computed" extremes.
    */
   zeroCollapse: boolean;
+  /**
+   * Refinement (v0.6.273): present iff `epsilonSweep` was set.
+   * Each entry pins `{ epsilon, atkinson, ede }` for the SAME
+   * day vector. Used to witness the bottom-sensitivity flip
+   * around the epsilon = 1 log-utility limit and to show
+   * orthogonality between the family at different epsilon and
+   * the headline single-scalar value.
+   */
+  epsilonSweep?: { epsilon: number; atkinson: number; ede: number }[];
 }
 
 export interface DailyTokenAtkinsonReport {
@@ -203,6 +223,8 @@ export interface DailyTokenAtkinsonReport {
   droppedBelowMinDays: number;
   droppedBelowMinAtkinson: number;
   droppedTopSources: number;
+  /** Echo of the epsilonSweep knob; empty array when not set. */
+  epsilonSweep: number[];
   sources: DailyTokenAtkinsonSourceRow[];
 }
 
@@ -335,6 +357,18 @@ export function buildDailyTokenAtkinsonIndex(
   }
   const dropZeroDays = opts.dropZeroDays ?? false;
 
+  const epsilonSweep: number[] = [];
+  if (opts.epsilonSweep && opts.epsilonSweep.length > 0) {
+    for (const e of opts.epsilonSweep) {
+      if (!Number.isFinite(e) || e < 0) {
+        throw new Error(
+          `epsilonSweep values must be non-negative finite numbers (got ${e})`,
+        );
+      }
+      epsilonSweep.push(e);
+    }
+  }
+
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
   if (opts.since != null && (sinceMs === null || !Number.isFinite(sinceMs))) {
@@ -432,7 +466,7 @@ export function buildDailyTokenAtkinsonIndex(
       }
     }
     const a = atkinsonOfVector(values, epsilon);
-    rows.push({
+    const row: DailyTokenAtkinsonSourceRow = {
       source: src,
       totalTokens: acc.totalTokens,
       nDays,
@@ -445,7 +479,14 @@ export function buildDailyTokenAtkinsonIndex(
       maxDailyTokens: Math.max(0, maxDailyTokens),
       maxDay,
       zeroCollapse: a.zeroCollapse,
-    });
+    };
+    if (epsilonSweep.length > 0) {
+      row.epsilonSweep = epsilonSweep.map((e) => {
+        const sa = atkinsonOfVector(values, e);
+        return { epsilon: e, atkinson: sa.atkinson, ede: sa.ede };
+      });
+    }
+    rows.push(row);
     totalTokensSum += acc.totalTokens;
   }
 
@@ -512,6 +553,7 @@ export function buildDailyTokenAtkinsonIndex(
     droppedBelowMinDays,
     droppedBelowMinAtkinson,
     droppedTopSources,
+    epsilonSweep,
     sources: kept,
   };
 }

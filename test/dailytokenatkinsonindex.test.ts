@@ -488,3 +488,80 @@ test('build: orthogonality witness vs Pietra (epsilon high reorders)', () => {
   // relative to min.
   assert.ok(b > a, `expected b (${b}) > a (${a}) under bottom-sensitivity`);
 });
+
+// ---- refinement (v0.6.273): epsilonSweep -------------------------------
+
+test('refinement: epsilonSweep echoes empty by default', () => {
+  const r = buildDailyTokenAtkinsonIndex([], { generatedAt: GEN });
+  assert.deepEqual(r.epsilonSweep, []);
+});
+
+test('refinement: epsilonSweep populates per-row sweep array', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 100),
+    ql('2026-04-02T00:00:00Z', 'a', 200),
+    ql('2026-04-03T00:00:00Z', 'a', 5000),
+  ];
+  const r = buildDailyTokenAtkinsonIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    epsilonSweep: [0, 0.5, 1, 2],
+  });
+  assert.deepEqual(r.epsilonSweep, [0, 0.5, 1, 2]);
+  const row = r.sources[0];
+  assert.equal(row.epsilonSweep?.length, 4);
+  // epsilon=0 always 0.
+  assert.equal(row.epsilonSweep?.[0].atkinson, 0);
+  // monotone in epsilon
+  const vals = row.epsilonSweep?.map((e) => e.atkinson) ?? [];
+  for (let i = 1; i < vals.length; i++) {
+    assert.ok(vals[i] >= vals[i - 1] - 1e-9, `monotone broken at ${i}: ${vals}`);
+  }
+  // headline atkinson uses primary epsilon (default 0.5) -> matches sweep entry
+  const sweepHalf = row.epsilonSweep?.find((e) => e.epsilon === 0.5);
+  assert.ok(Math.abs(row.atkinson - (sweepHalf?.atkinson ?? -1)) < 1e-12);
+});
+
+test('refinement: epsilonSweep with empty array is no-op', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 100),
+    ql('2026-04-02T00:00:00Z', 'a', 200),
+  ];
+  const r = buildDailyTokenAtkinsonIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    epsilonSweep: [],
+  });
+  assert.deepEqual(r.epsilonSweep, []);
+  assert.equal(r.sources[0].epsilonSweep, undefined);
+});
+
+test('refinement: epsilonSweep rejects negative entries', () => {
+  assert.throws(
+    () =>
+      buildDailyTokenAtkinsonIndex([], {
+        epsilonSweep: [0, 0.5, -1],
+      }),
+    /epsilonSweep/,
+  );
+});
+
+test('refinement: epsilonSweep witnesses bottom-sensitivity flip on real-shape data', () => {
+  // Two profiles with similar mid-range Atkinson but inverted high-
+  // epsilon ranking: a "long flat tail with one spike" (top-heavy)
+  // vs "one tiny min with mostly equal rest" (bottom-light).
+  const topHeavy = [10, 10, 10, 10, 10, 10, 10, 10, 10, 200];
+  const bottomLight = [1, 30, 30, 30, 30, 30, 30, 30, 30, 30];
+  const meanT = topHeavy.reduce((a, b) => a + b, 0) / topHeavy.length;
+  const meanB = bottomLight.reduce((a, b) => a + b, 0) / bottomLight.length;
+  // sanity: similar means
+  assert.ok(Math.abs(meanT - meanB) < 5);
+  const aT_low = atkinsonOfVector(topHeavy, 0.25).atkinson;
+  const aB_low = atkinsonOfVector(bottomLight, 0.25).atkinson;
+  const aT_hi = atkinsonOfVector(topHeavy, 5).atkinson;
+  const aB_hi = atkinsonOfVector(bottomLight, 5).atkinson;
+  // At low epsilon top-heavy spike dominates loss; at high epsilon
+  // the tiny min in bottom-light dominates. Rankings should flip.
+  assert.ok(aT_low > aB_low, `low-eps: top-heavy should lead (${aT_low} > ${aB_low})`);
+  assert.ok(aB_hi > aT_hi, `high-eps: bottom-light should lead (${aB_hi} > ${aT_hi})`);
+});

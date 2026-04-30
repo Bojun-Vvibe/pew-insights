@@ -14784,5 +14784,29 @@ export function renderDailyTokenAtkinsonIndex(
   ]);
   lines.push(renderTableLocal(headers, rows));
 
+  if (r.epsilonSweep.length > 0 && r.sources.some((s) => s.epsilonSweep)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `epsilon sweep: A(epsilon) per source (witnesses CRRA aversion-knob trade-off)`,
+      ),
+    );
+    const sweepHeaders = [
+      'source',
+      ...r.epsilonSweep.map((e) => `eps=${e}`),
+    ];
+    const sweepRows: string[][] = r.sources.map((s) => {
+      const row = [s.source];
+      const map = new Map<number, number>();
+      for (const e of s.epsilonSweep ?? []) map.set(e.epsilon, e.atkinson);
+      for (const e of r.epsilonSweep) {
+        const v = map.get(e);
+        row.push(v !== undefined ? v.toFixed(4) : '\u2014');
+      }
+      return row;
+    });
+    lines.push(renderTableLocal(sweepHeaders, sweepRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }
