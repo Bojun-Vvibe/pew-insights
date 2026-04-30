@@ -12391,6 +12391,10 @@ program
     'rank cutoff for the denominator share (default 0.4 => bottom 40%). q in (0, 1) and < --top-quantile. Useful pairs: (0.95, 0.4) "P95-40 ratio", (0.8, 0.2) "20-20 ratio", (0.95, 0.05) "P95/P5 inter-decile spread".',
     '0.4',
   )
+  .option(
+    '--include-quintile-decomposition',
+    'every row gains a quintileDecomposition field with the 5 quintile mass shares (Q1..Q5) plus the 20-20 ratio (Q5/Q1). Surfaces the Lorenz BODY shape (Q2/Q3/Q4) that the headline palma collapses.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12406,6 +12410,7 @@ program
         topQuantile: string;
         bottomQuantile: string;
         json?: boolean;
+        includeQuintileDecomposition?: boolean;
       },
       cmd,
     ) => {
@@ -12483,6 +12488,7 @@ program
           minPalma,
           topQuantile,
           bottomQuantile,
+          includeQuintileDecomposition: opts.includeQuintileDecomposition ?? false,
           sort: opts.sort as
             | 'palma'
             | 'tokens'

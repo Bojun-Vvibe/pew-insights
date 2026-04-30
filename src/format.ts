@@ -15244,5 +15244,33 @@ export function renderDailyTokenPalmaRatio(
   ]);
   lines.push(renderTableLocal(headers, rows));
 
+  if (r.sources.some((s) => s.quintileDecomposition)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `quintile decomposition (refinement v0.6.279): Q1..Q5 from bottom-up; ratio = Q5/Q1 (20-20 ratio)`,
+      ),
+    );
+    const qHeaders = ['source', 'q1', 'q2', 'q3', 'q4', 'q5', '20-20'];
+    const qRows: string[][] = r.sources.map((s) => {
+      const q = s.quintileDecomposition;
+      if (!q) return [s.source, '\u2014', '\u2014', '\u2014', '\u2014', '\u2014', '\u2014'];
+      return [
+        s.source,
+        q.q1Share.toFixed(4),
+        q.q2Share.toFixed(4),
+        q.q3Share.toFixed(4),
+        q.q4Share.toFixed(4),
+        q.q5Share.toFixed(4),
+        Number.isNaN(q.twentyTwentyRatio)
+          ? 'n/a'
+          : !Number.isFinite(q.twentyTwentyRatio)
+            ? '+inf'
+            : q.twentyTwentyRatio.toFixed(4),
+      ];
+    });
+    lines.push(renderTableLocal(qHeaders, qRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

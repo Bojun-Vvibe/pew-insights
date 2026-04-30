@@ -502,3 +502,58 @@ test('builder: zero-mass days surface in nZeroDays', () => {
   const r = buildDailyTokenPalmaRatio(q, { generatedAt: GEN });
   assert.equal(r.sources[0]!.nZeroDays, 0);
 });
+
+// ---- quintileDecompositionOfVector (refinement) -----------------------
+
+import { quintileDecompositionOfVector } from '../src/dailytokenpalmaratio.js';
+
+test('quintileDecomposition: empty -> NaN ratio', () => {
+  const r = quintileDecompositionOfVector([]);
+  assert.ok(Number.isNaN(r.twentyTwentyRatio));
+});
+
+test('quintileDecomposition: equal vector -> each q ~ 0.2', () => {
+  const r = quintileDecompositionOfVector(Array(10).fill(100));
+  assert.ok(Math.abs(r.q1Share - 0.2) < 1e-12);
+  assert.ok(Math.abs(r.q5Share - 0.2) < 1e-12);
+  assert.ok(Math.abs(r.twentyTwentyRatio - 1) < 1e-12);
+});
+
+test('quintileDecomposition: shares sum to 1', () => {
+  const r = quintileDecompositionOfVector([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const sum = r.q1Share + r.q2Share + r.q3Share + r.q4Share + r.q5Share;
+  assert.ok(Math.abs(sum - 1) < 1e-12);
+});
+
+test('quintileDecomposition: one-day-takes-all -> +Inf ratio', () => {
+  const r = quintileDecompositionOfVector([0, 0, 0, 0, 0, 0, 0, 0, 0, 100]);
+  assert.equal(r.q1Share, 0);
+  assert.equal(r.twentyTwentyRatio, Number.POSITIVE_INFINITY);
+});
+
+test('quintileDecomposition: throws on negative', () => {
+  assert.throws(() => quintileDecompositionOfVector([1, -1, 2]));
+});
+
+test('builder: includeQuintileDecomposition surfaces quintile field', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    q.push(ql(`2026-04-${String(i + 1).padStart(2, '0')}T00:00:00Z`, 'a', (i + 1) * 100));
+  }
+  const r = buildDailyTokenPalmaRatio(q, {
+    includeQuintileDecomposition: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.ok(row.quintileDecomposition);
+  assert.ok(row.quintileDecomposition!.q5Share > row.quintileDecomposition!.q1Share);
+});
+
+test('builder: omits quintileDecomposition by default', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    q.push(ql(`2026-04-${String(i + 1).padStart(2, '0')}T00:00:00Z`, 'a', 100));
+  }
+  const r = buildDailyTokenPalmaRatio(q, { generatedAt: GEN });
+  assert.equal(r.sources[0]!.quintileDecomposition, undefined);
+});

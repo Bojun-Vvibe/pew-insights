@@ -135,6 +135,14 @@ export interface DailyTokenPalmaOptions {
   topQuantile?: number;
   /** Bottom-rank cutoff (default 0.4 => "bottom 40%"). In (0, 1). */
   bottomQuantile?: number;
+  /**
+   * Refinement (v0.6.279): when true, every emitted row gains a
+   * `quintileDecomposition` field: the 5 quintile mass shares
+   * (Q1..Q5 from the bottom-up) plus the 20-20 ratio (Q5/Q1).
+   * Pure compute over the same per-day vector. Surfaces the Lorenz
+   * BODY shape that the headline palma alone cannot show.
+   */
+  includeQuintileDecomposition?: boolean;
   generatedAt?: string;
 }
 
@@ -182,6 +190,24 @@ export interface DailyTokenPalmaSourceRow {
   maxDay: string;
   minDailyTokens: number;
   minDay: string;
+  /**
+   * Refinement (v0.6.279): per-quintile mass shares (Q1..Q5 from
+   * bottom-up; each of the 5 vigesimal-rank slices of width 0.2)
+   * plus the 20-20 ratio Q5/Q1. Present iff caller set
+   * `includeQuintileDecomposition: true`. Surfaces the Lorenz BODY
+   * shape (Q2/Q3/Q4) that the headline palma cannot show.
+   *   - q1Share..q5Share: each in [0, 1]; they sum to 1.
+   *   - twentyTwentyRatio: q5Share / q1Share. NaN if q1=q5=0;
+   *     +Inf if q1=0 and q5>0.
+   */
+  quintileDecomposition?: {
+    q1Share: number;
+    q2Share: number;
+    q3Share: number;
+    q4Share: number;
+    q5Share: number;
+    twentyTwentyRatio: number;
+  };
 }
 
 export interface DailyTokenPalmaReport {
@@ -530,6 +556,9 @@ export function buildDailyTokenPalmaRatio(
       maxDay,
       minDailyTokens: Number.isFinite(minDailyTokens) ? minDailyTokens : 0,
       minDay,
+      ...(opts.includeQuintileDecomposition
+        ? { quintileDecomposition: quintileDecompositionOfVector(values) }
+        : {}),
     });
     totalTokensSum += acc.totalTokens;
   }
@@ -618,5 +647,88 @@ export function buildDailyTokenPalmaRatio(
     droppedBelowMinPalma,
     droppedTopSources,
     sources: kept,
+  };
+}
+
+/**
+ * Quintile decomposition of a non-negative vector. Returns the 5
+ * quintile mass shares (Q1..Q5 from bottom-up; each of width 0.2 on
+ * the rank axis) plus the 20-20 ratio Q5/Q1. Pure compute. Reuses
+ * `lorenzMassAtRank` for the rank-cut readings so it shares numerical
+ * behaviour with the headline palma.
+ *
+ * Why this is the right refinement to ship alongside the headline:
+ *   - Reuses `lorenzMassAtRank` exactly; no duplicate Lorenz logic.
+ *   - The 5 quintile shares ARE the Lorenz body shape that the
+ *     headline palma collapses (palma reads only Q5+Q4.5 and Q1+Q2).
+ *     Two sources with identical palma can have wildly different
+ *     middle-quintile (Q2/Q3/Q4) shapes; this surfaces that.
+ *   - The 20-20 ratio Q5/Q1 is a strict generalisation cousin of the
+ *     headline palma (top/bottom 20 vs top/bottom 10/40) and is a
+ *     standard income-distribution diagnostic on its own.
+ *   - Mirrors the "headline + cross-anchor + decomposition" pattern
+ *     established by axes 37/38/39 (theilL/theilT/ge2 + sweeps).
+ */
+export function quintileDecompositionOfVector(values: number[]): {
+  q1Share: number;
+  q2Share: number;
+  q3Share: number;
+  q4Share: number;
+  q5Share: number;
+  twentyTwentyRatio: number;
+} {
+  const n = values.length;
+  if (n < 2) {
+    return {
+      q1Share: 0,
+      q2Share: 0,
+      q3Share: 0,
+      q4Share: 0,
+      q5Share: 0,
+      twentyTwentyRatio: Number.NaN,
+    };
+  }
+  let total = 0;
+  for (const v of values) {
+    if (!Number.isFinite(v) || v < 0) {
+      throw new Error(
+        `quintileDecompositionOfVector requires non-negative finite values (got ${v})`,
+      );
+    }
+    total += v;
+  }
+  if (total <= 0) {
+    return {
+      q1Share: 0,
+      q2Share: 0,
+      q3Share: 0,
+      q4Share: 0,
+      q5Share: 0,
+      twentyTwentyRatio: Number.NaN,
+    };
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const c20 = lorenzMassAtRank(sorted, total, 0.2);
+  const c40 = lorenzMassAtRank(sorted, total, 0.4);
+  const c60 = lorenzMassAtRank(sorted, total, 0.6);
+  const c80 = lorenzMassAtRank(sorted, total, 0.8);
+  const q1 = c20;
+  const q2 = c40 - c20;
+  const q3 = c60 - c40;
+  const q4 = c80 - c60;
+  const q5 = 1 - c80;
+  let ratio: number;
+  if (q1 === 0) {
+    ratio = q5 === 0 ? Number.NaN : Number.POSITIVE_INFINITY;
+  } else {
+    ratio = q5 / q1;
+  }
+  return {
+    q1Share: q1,
+    q2Share: q2,
+    q3Share: q3,
+    q4Share: q4,
+    q5Share: q5,
+    twentyTwentyRatio: ratio,
   };
 }
