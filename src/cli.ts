@@ -459,6 +459,10 @@ import {
   buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic,
   renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic,
 } from './sourcerowtokenslopeciprecisionmonotonicityisotonic.js';
+import {
+  buildSourceRowTokenSlopeCiCurvatureSecondDerivative,
+  renderSourceRowTokenSlopeCiCurvatureSecondDerivative,
+} from './sourcerowtokenslopecicurvaturesecondderivative.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22811,6 +22815,201 @@ program
               showSummary: opts.showSummary ?? false,
               showMonotoneAggregate: opts.showMonotoneAggregate ?? false,
               showDirectionAggregate: opts.showDirectionAggregate ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-curvature-second-derivative')
+  .description(
+    "Per-source DISCRETE SECOND-DERIVATIVE CURVATURE diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). SIXTEENTH cross-lens axis: mechanically distinct from ALL FIFTEEN prior axes (v0.6.227-242). The 15th axis (PAV isotonic) measures order-restricted MONOTONIC fit and is INVISIBLE to non-monotone structure (a peak/valley collapses into a single PAV plateau, indistinguishable from a flat constant). This 16th axis fills that gap by computing D2[k] = mid_{k+1} - 2*mid_k + mid_{k-1} for k=1..4 on the six midpoints sorted by ascending CI width, and reports curvatureL2 = sqrt(sum D2^2) (default sort key; 0 ⇔ midpoints lie on a perfect line in width-sorted order), curvatureLinf = max|D2| (peak local curvature), signChanges (# of sign changes in D2; >=1 ⇔ inflection point exists), peakIndex / peakLens / peakSign (where the sharpest bend lives), convexitySum, convexityAbsSum, convexityScore = convexitySum/convexityAbsSum in [-1,1] (+1 purely convex, -1 purely concave, 0 balanced; convention 0 when convexityAbsSum==0), convexityLabel ∈ {convex,concave,mixed} (>=0.5 / <=-0.5 thresholds), linearFlag = curvatureL2==0, oscillatoryFlag = signChanges>=2. Report-level: meanCurvatureL2, medianCurvatureL2, meanConvexityScore, nLinear, nOscillatory, nConvex, nConcave, nMixed, globalConvexityLabel (mode; ties favour convex>concave>mixed), globalPeakLens (mode; canonical-order tie-break). --alert-curvature <f> filters to sources with curvatureL2 > f. --alert-oscillatory filters to sources with signChanges>=2.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-curvature <f>',
+    'only emit sources whose curvatureL2 is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-oscillatory',
+    'only emit sources whose signChanges >= 2 (>= 2 inflection points in the four interior second-differences); independent of --alert-curvature',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'curvature-l2-desc' (default) | 'curvature-l2-asc' | 'curvature-linf-desc' | 'sign-changes-desc' | 'sign-changes-asc' | 'convexity-score-desc' | 'convexity-score-asc' | 'rows' | 'source'",
+    'curvature-l2-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-summary',
+    'when rendering pretty (non-JSON), append a per-source one-line summary naming convexity label, peak lens / sign, curvatureL2, signChanges, and (linear)/(oscillatory) flags',
+  )
+  .option(
+    '--show-curvature-aggregate',
+    'when rendering pretty (non-JSON), append a single one-line aggregate AFTER the table reporting meanCurvatureL2, medianCurvatureL2, linear/oscillatory fractions, and globalPeakLens',
+  )
+  .option(
+    '--show-convexity-aggregate',
+    'when rendering pretty (non-JSON), append a single one-line convexity-split aggregate AFTER the table reporting nConvex/nConcave/nMixed fractions, meanConvexityScore, and globalConvexityLabel (composes independently with --show-curvature-aggregate and --show-summary)',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertCurvature?: string;
+        alertOscillatory?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showCurvatureAggregate?: boolean;
+        showConvexityAggregate?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertCurvature: number | null = null;
+        if (opts.alertCurvature != null) {
+          const a = Number.parseFloat(opts.alertCurvature);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-curvature must be a finite, non-negative number (got ${opts.alertCurvature})`,
+            );
+          }
+          alertCurvature = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'curvature-l2-desc',
+          'curvature-l2-asc',
+          'curvature-linf-desc',
+          'sign-changes-desc',
+          'sign-changes-asc',
+          'convexity-score-desc',
+          'convexity-score-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiCurvatureSecondDerivative(
+          queue,
+          {
+            since: opts.since ?? null,
+            until: opts.until ?? null,
+            source: opts.source ?? null,
+            minRows,
+            confidence,
+            lambda,
+            bootstraps,
+            seed,
+            alertCurvature,
+            alertOscillatory: opts.alertOscillatory ?? false,
+            top,
+            sort: opts.sort as
+              | 'curvature-l2-desc'
+              | 'curvature-l2-asc'
+              | 'curvature-linf-desc'
+              | 'sign-changes-desc'
+              | 'sign-changes-asc'
+              | 'convexity-score-desc'
+              | 'convexity-score-asc'
+              | 'rows'
+              | 'source',
+          },
+        );
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiCurvatureSecondDerivative(report, {
+              showSummary: opts.showSummary ?? false,
+              showCurvatureAggregate: opts.showCurvatureAggregate ?? false,
+              showConvexityAggregate: opts.showConvexityAggregate ?? false,
             }) + '\n',
           );
         }
