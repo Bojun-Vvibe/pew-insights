@@ -53,6 +53,7 @@ import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { DailyTokenZengaReport } from './dailytokenzengaindex.js';
 import type { DailyTokenPietraReport } from './dailytokenpietraratio.js';
+import type { DailyTokenAtkinsonReport } from './dailytokenatkinsonindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -14710,6 +14711,77 @@ export function renderDailyTokenPietraRatio(
     }
     return row;
   });
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenAtkinsonIndex(
+  r: DailyTokenAtkinsonReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-atkinson-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    epsilon: ${r.epsilon}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-atkinson: ${r.minAtkinson === 0 ? '\u2014' : r.minAtkinson}    drop-zero-days: ${r.dropZeroDays ? 'yes' : 'no'}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinAtkinson)} below min-atkinson, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Atkinson index A(epsilon) of per-day total_tokens; A = 1 - EDE/mu where EDE is the CRRA equally-distributed-equivalent at epsilon; range [0, 1]; UTC days)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Atkinson(epsilon=${r.epsilon}) of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'atkinson',
+    'ede',
+    'meanDaily',
+    'maxDay',
+    'maxDayTokens',
+    'tokens',
+    'zeroCollapse',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.atkinson.toFixed(4),
+    formatNumber(Math.round(s.ede)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.maxDay,
+    formatNumber(s.maxDailyTokens),
+    formatNumber(s.totalTokens),
+    s.zeroCollapse ? 'yes' : 'no',
+  ]);
   lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');

@@ -87,6 +87,7 @@ import {
   renderDailyTokenGini,
   renderDailyTokenZengaIndex,
   renderDailyTokenPietraRatio,
+  renderDailyTokenAtkinsonIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -336,6 +337,7 @@ import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmass
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildDailyTokenZengaIndex } from './dailytokenzengaindex.js';
 import { buildDailyTokenPietraRatio } from './dailytokenpietraratio.js';
+import { buildDailyTokenAtkinsonIndex } from './dailytokenatkinsonindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -11743,6 +11745,137 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenPietraRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-atkinson-index')
+  .description(
+    "Per-source ATKINSON inequality index of the per-day total_tokens distribution at a configurable CRRA inequality-aversion parameter epsilon (THIRTY-SIXTH cross-source axis; default epsilon=0.5). A(epsilon) = 1 - EDE(epsilon)/mu where EDE is the equally-distributed-equivalent (CRRA certainty equivalent): EDE = (mean of D_i^(1-epsilon))^(1/(1-epsilon)) for epsilon != 1, and EDE = geometric mean for epsilon = 1. Range [0, 1]. Equals the FRACTION of total mass that an inequality-averse planner with CRRA preferences would give up to flatten the distribution. ORTHOGONAL to daily-token-gini-coefficient (Gini is a Lorenz integral; Atkinson is a CRRA welfare loss with strict Pigou-Dalton transfer sensitivity at every epsilon > 0). ORTHOGONAL to daily-token-pietra-ratio (Pietra is the L-infinity Lorenz gap; Atkinson is an integral of CRRA utility -- different functional class). ORTHOGONAL to daily-token-zenga-index (Zenga averages bottom-vs-top mean ratios; Atkinson uses no rank ordering). Permutation-invariant, so orthogonal to all time-ordered axes. The epsilon knob tunes sensitivity: small epsilon is top-sensitive, epsilon=1 is the log-utility / Theil-L link, large epsilon is bottom-sensitive (Rawlsian limit -> 1 - min/mean). Per-source columns: atkinson, ede (in tokens), meanDaily, zeroCollapse (true iff a single zero day pinned A=1 at epsilon>=1).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--epsilon <e>',
+    'CRRA inequality-aversion parameter epsilon >= 0 (default 0.5). 0 = utilitarian (A=0); 0.5 = mild aversion; 1 = log utility / geometric mean; 2 = strong bottom-sensitive aversion. At epsilon >= 1, a single zero day pins A=1 (zeroCollapse).',
+    '0.5',
+  )
+  .option(
+    '--drop-zero-days',
+    'remove days with total_tokens=0 BEFORE the index is computed (only relevant at epsilon >= 1; safe under hypothetical augmentation; nDroppedZeroDays surfaces per row)',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Atkinson is degenerate for n < 2. Counts surface as droppedBelowMinDays.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: atkinson (default) | tokens | days | source | ede. Applied before --top.',
+    'atkinson',
+  )
+  .option(
+    '--min-atkinson <a>',
+    'display filter: hide sources whose Atkinson is strictly below this value. a in [0, 1]. Default 0 = no filter.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        epsilon: string;
+        dropZeroDays?: boolean;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minAtkinson: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const epsilon = Number.parseFloat(opts.epsilon);
+        if (!Number.isFinite(epsilon) || epsilon < 0) {
+          throw new Error(
+            `--epsilon must be a non-negative finite number (got ${opts.epsilon})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minAtkinson = Number.parseFloat(opts.minAtkinson);
+        if (!Number.isFinite(minAtkinson) || minAtkinson < 0 || minAtkinson > 1) {
+          throw new Error(
+            `--min-atkinson must be a number in [0, 1] (got ${opts.minAtkinson})`,
+          );
+        }
+        const validSorts = ['atkinson', 'tokens', 'days', 'source', 'ede'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAtkinsonIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          epsilon,
+          dropZeroDays: opts.dropZeroDays ?? false,
+          top,
+          minAtkinson,
+          sort: opts.sort as
+            | 'atkinson'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'ede',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenAtkinsonIndex(report) + '\n');
         }
       } catch (e) {
         die(e);
