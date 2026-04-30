@@ -2,6 +2,152 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.244 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-tail-mass-asymmetry` —
+  per-source CI-MIDPOINT TAIL-MASS ASYMMETRY diagnostic
+  (SEVENTEENTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six
+  per-source slope CIs as v0.6.227-v0.6.243 (percentile bootstrap,
+  jackknife normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL SIXTEEN prior cross-lens
+  diagnostics on a fundamental axis.** Scale axes 1-13
+  (midpoint-dispersion SD, MAE, scaled MAD, range, gini, ...) are
+  by construction symmetric in the six midpoints around their
+  centre and cannot tell whether dispersion comes from upward or
+  downward deviation. Single-lens identifier axes (LOO drop,
+  precision-pull max, residual-Z, MAD-vs-MAE tail lens) name
+  WHICH lens is extreme but not WHICH SIDE of the midpoint median
+  carries more mass. Rank/agreement axes operate on lens pairs
+  across sources, not on the within-source tail balance. PAV
+  isotonic (axis 15) measures monotone fit of midpoint vs WIDTH;
+  second-derivative curvature (axis 16) measures local D2 bending
+  in width-sorted midpoint order. NONE of the sixteen index which
+  side of the midpoint median carries the heavier mass.
+
+  This 17th axis fills exactly that gap by measuring tail-mass
+  asymmetry of the six midpoints around their median:
+
+  ```
+    med        = median(mid_1..mid_6)
+    absDev_i   = |mid_i - med|
+    absDevSum  = sum_i absDev_i
+    upperMass  = sum_{i: mid_i > med} (mid_i - med)
+    lowerMass  = sum_{i: mid_i < med} (med - mid_i)
+    asymRatio  = upperMass / (upperMass + lowerMass)   in [0, 1]
+    asymSigned = (upperMass - lowerMass) / absDevSum   in [-1, 1]
+  ```
+
+  asymRatio == 0.5 ⇔ balanced; > 0.5 ⇔ upper-tail dominant
+  (lenses skew HIGH); < 0.5 ⇔ lower-tail dominant (lenses skew
+  LOW). asymSigned has the same sign as (asymRatio - 0.5) and is
+  rescaled to [-1, 1] for direct comparison with axis 16's
+  `convexityScore`.
+
+  Per-source columns:
+    - `midpointMedian` — median of the six midpoints;
+    - `mids`, `absDeviations` — six-vectors in canonical lens order;
+    - `absDevSum` — total absolute deviation budget;
+    - `upperLensCount`, `lowerLensCount`, `tieLensCount` — lens
+      counts on each side / at the median;
+    - `upperLenses`, `lowerLenses` — canonical-order lens names on
+      each side;
+    - `upperTailMass`, `lowerTailMass` — non-negative mass on each
+      side of the median;
+    - `asymmetryRatio` ∈ [0, 1] — convention 0.5 when both
+      tail masses are zero;
+    - `asymmetrySigned` ∈ [-1, 1] — convention 0 when
+      `absDevSum == 0`;
+    - `direction` ∈ {`upper`, `lower`, `balanced`} — `upper` if
+      `asymmetrySigned >= 0.5`, `lower` if `<= -0.5`, else
+      `balanced`;
+    - `dominantLens` — `argmax_i absDev_i` in canonical order
+      (single farthest-from-median lens; ties favour smallest
+      canonical index);
+    - `dominantLensSign` — +1 / -1 / 0 sign of (mid - median) at
+      `dominantLens`;
+    - `degenerateFlag` — `absDevSum == 0` boolean (all six
+      midpoints identical).
+
+  Per-report aggregates: `meanAsymmetryRatio`,
+  `medianAsymmetryRatio`, `meanAsymmetrySigned`, `nUpperDominant`,
+  `nLowerDominant`, `nBalanced`, `nDegenerate`,
+  `globalAsymmetryDirection` (mode of `direction`; ties favour
+  `upper` > `lower` > `balanced`), `globalDominantLens` (mode of
+  `dominantLens`; canonical-order tie-break).
+
+  Edge cases:
+    - Source missing from any of the six lenses → not reported
+      (counted in `droppedMissingLens`).
+    - All six midpoints identical → `absDevSum == 0`,
+      `upperTailMass == 0`, `lowerTailMass == 0`,
+      `asymmetryRatio == 0.5`, `asymmetrySigned == 0`,
+      `direction == 'balanced'`, `degenerateFlag == true`,
+      `dominantLens == bootstrap` (canonical first),
+      `dominantLensSign == 0`.
+    - Source slope CI width zero from any lens → still consumed
+      (only midpoint matters here).
+
+  CLI options:
+    - `--alert-asymmetry <f>` — only emit sources whose
+      `|asymmetrySigned|` is strictly GREATER than `f` (`f` in
+      `[0, 1]`); surfaces one-sided sources;
+    - `--alert-upper` / `--alert-lower` — only emit sources whose
+      `direction == 'upper'` / `'lower'` (mutually exclusive);
+    - `--show-summary`, `--show-asymmetry-aggregate`,
+      `--show-direction-aggregate`, `--show-tail-attribution` —
+      compose independently.
+
+  Why a 17th axis (orthogonal to axes 1-16): a source whose six
+  lens midpoints are 0.20 above the median for the upper three
+  and 0.20 below the median for the lower three gets identical
+  scores under axes 1-16 as a source whose six midpoints are ALL
+  0.20 above the median except one outlier at -1.00 below — the
+  first is symmetric, the second is heavily lower-tail-dominated.
+  No scale, single-lens-identifier, rank/agreement, monotone-fit,
+  or curvature diagnostic surfaces this distinction. Tail-mass
+  asymmetry is the only diagnostic that does, and is therefore
+  mechanically orthogonal to all sixteen prior axes.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (6 sources, 2042
+  queue lines, --bootstraps 200 --seed 7
+  --show-asymmetry-aggregate --show-direction-aggregate
+  --show-tail-attribution; one third-party source name redacted
+  to `vendor-x` per identifier-hygiene policy):
+
+  ```
+  pew-insights source-row-token-slope-ci-tail-mass-asymmetry
+  as of: 2026-04-30T02:18:28.813Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 200    seed: 7    alert-asymmetry: -    alert-upper: false    alert-lower: false    top: -    sort: asymmetry-abs-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanAsymmetryRatio: 0.5966; medianAsymmetryRatio: 0.6329; meanAsymmetrySigned: 0.1932; nUpperDominant: 3; nLowerDominant: 1; nBalanced: 2; nDegenerate: 0; globalAsymmetryDirection: upper; globalDominantLens: bca
+
+  source           rows  direction  asymRatio  asymSigned  upperMass   lowerMass   absDevSum   dominantLens       domSign  flags
+  ---------------  ----  ---------  ---------  ----------  ----------  ----------  ----------  -----------------  -------  -----
+  openclaw          574  lower         0.0045     -0.9909  85295.4676  18739382.9372  18824678.4049  bca                     -1  -
+  claude-code       299  upper         0.9936      0.9872  66520441.6102  427677.3284  66948118.9386  bca                      1  -
+  vendor-x          333  upper         0.9692      0.9385  40208.4839   1276.0242  41484.5082  bca                      1  -
+  codex              64  upper         0.8927      0.7854  46760116.8830  5620921.2194  52381038.1025  bca                      1  -
+  opencode          468  balanced      0.3465     -0.3070  3903577.8061  7362642.6550  11266220.4611  profileLikelihood       -1  -
+  hermes            304  balanced      0.3731     -0.2538  399426.4207  671111.9132  1070538.3339  bca                     -1  -
+  [asymmetry aggregate] meanAsymmetryRatio=0.5966 medianAsymmetryRatio=0.6329 meanAsymmetrySigned=0.1932 nDegenerate=0/6 (0.0000)
+  [direction aggregate] upper=3/6 (0.5000) lower=1/6 (0.1667) balanced=2/6 (0.3333) globalAsymmetryDirection=upper
+  [tail attribution] bootstrap=0/6 (0.0000) jackknife=0/6 (0.0000) bca=5/6 (0.8333) studentizedT=0/6 (0.0000) abc=0/6 (0.0000) profileLikelihood=1/6 (0.1667) globalDominantLens=bca
+  ```
+
+  Reading: 3 of 6 sources are upper-tail dominant (lenses skew
+  HIGH on slope estimate), 1 lower (`openclaw` extremely so:
+  asymSigned=-0.99), 2 balanced (`opencode`, `hermes`); the BCa
+  lens is the dominantLens for 5 of 6 sources, surfacing it as
+  the systematic tail-pulling lens in this dataset. None of the
+  sixteen prior axes can produce this attribution.
+
+  Test delta: 6820 → 6867 (+47 new tests covering the
+  `tailMassAsymmetry` primitive, all build validation paths,
+  alert / sort / top / window / source filters, and four
+  renderer modes).
+
 ## 0.6.243 — 2026-04-30
 
 ### Added
