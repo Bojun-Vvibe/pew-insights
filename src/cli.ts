@@ -515,6 +515,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthKolmPollak,
   renderSourceRowTokenSlopeCiLensWidthKolmPollak,
 } from './sourcerowtokenslopecilenswidthkolmpollak.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthMehran,
+  renderSourceRowTokenSlopeCiLensWidthMehran,
+} from './sourcerowtokenslopecilenswidthmehran.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -25753,6 +25757,177 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showRawlsianBound: opts.showRawlsianBound ?? false,
               showAlphaCurve: opts.showAlphaCurve ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-mehran')
+  .description(
+    "Per-lens CROSS-SOURCE MEHRAN INDEX of CI half-widths (THIRTIETH cross-lens axis). M = (3/(n^2*mean)) * sum_i (2n - 2i + 1) * (mean - x_(i)) on sorted-ascending half-widths. Equivalently M = 6 * integral_0^1 (1-p) * (p - L(p)) dp -- the Lorenz GAP integrated against the LINEAR-DESCENDING rank kernel (1-p). FUNDAMENTALLY ORTHOGONAL to ALL TWENTY-NINE prior cross-lens diagnostics: same Lorenz-gap (p-L(p)) integrand as Gini (axis-21) and Bonferroni (axis-28) but a strictly different rank-weight kernel -- Gini uses uniform 1, Bonferroni uses harmonic 1/p (UNBOUNDED at p->0), Mehran uses linear (1-p) (BOUNDED in [0,1]). Mehran is therefore BOTTOM-EMPHASISING but RESISTANT to single-smallest-value domination, unlike Bonferroni which is HYPERSENSITIVE to it. The Mehran kernel is the LINEAR midpoint between Gini and Bonferroni and is dimensionless in [0, 1] (M=0 perfect equality; M->1 perfect concentration). Per-lens: nShared, meanHalfWidth, minHalfWidth, maxHalfWidth, mehran, bottomShareWeight (kernel-normalisation invariant, always 1), kernelEmphasis (kernel weight at median rank, diagnostic), concentrationLabel ('extreme' M>=0.6; 'high' [0.3,0.6); 'moderate' [0.1,0.3); 'mild' (0,0.1); 'near-uniform' ==0; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mean'). Report-level: meanM, medianM, maxM, minM, rangeM, nDegenerate, nExtreme, nNearUniform, mostExtremeLens (argmax M), mostUniformLens (argmin M).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-mehran <f>',
+    'only emit lenses whose Mehran index M is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'mehran-desc' (default) | 'mehran-asc' | 'mean-halfwidth-desc' | 'lens'",
+    'mehran-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostUniform)',
+  )
+  .option(
+    '--show-gini-pair',
+    'append per-lens giniPair line listing M, vanilla Gini G on the same widths, and the ratio M/G (kernel-vs-kernel diagnostic vs axis-21)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertMehran?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showGiniPair?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertMehran: number | null = null;
+        if (opts.alertMehran != null) {
+          const a = Number.parseFloat(opts.alertMehran);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-mehran must be a finite number in [0, 1] (got ${opts.alertMehran})`,
+            );
+          }
+          alertMehran = a;
+        }
+        const validSorts = [
+          'mehran-desc',
+          'mehran-asc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthMehran(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertMehran,
+          sort: opts.sort as
+            | 'mehran-desc'
+            | 'mehran-asc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthMehran(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showGiniPair: opts.showGiniPair ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
