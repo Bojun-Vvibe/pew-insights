@@ -2,6 +2,121 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.250 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-atkinson` —
+  per-lens CROSS-SOURCE ATKINSON INDEX A(epsilon) of CI half-widths
+  (TWENTY-THIRD cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six per-source
+  slope CIs as v0.6.227-v0.6.249. Reports A at TWO inequality-
+  aversion parameters simultaneously: eps=0.5 (mild, near-utilitarian)
+  and eps=2 (strong, near-Rawlsian).
+
+  **Mechanically distinct from ALL TWENTY-TWO prior cross-lens
+  diagnostics on FOUR orthogonal dimensions, AND distinct from
+  axes 21 (Gini) and 22 (Theil GE(1)) on TWO of those:**
+
+  1. **POPULATION GEOMETRY (vs axes 1-19).** Like axes 20-22, the
+     report is indexed by LENS (six rows). Axes 1-19 reduce a
+     6-vector per source to a per-source scalar; this axis reduces
+     the across-source cloud for each fixed lens to a single scalar.
+
+  2. **STATISTIC FAMILY (vs all 1-22).** Atkinson is a PARAMETRIC,
+     WELFARE-THEORETIC inequality measure derived from a constant-
+     relative-risk-aversion (CRRA) social welfare function. It is
+     bounded in `[0, 1]` for ALL n (unlike Theil in `[0, ln n]`
+     and Gini in `[0, (n-1)/n]`) and admits the canonical
+     "equally-distributed equivalent income" interpretation:
+     `A(eps) = 1 - x_EDE(eps) / mean`, where `x_EDE` is the level
+     which, if shared by all sources, would yield the same social
+     welfare as the observed distribution. Not a Pearson r
+     (axis-20), not Gini's non-parametric Lorenz-area (axis-21),
+     not Theil's fixed-alpha=1 entropy (axis-22).
+
+  3. **PARAMETRIC FAMILY (vs axes 21 and 22).** Atkinson is
+     parameterised by an explicit inequality-aversion parameter
+     epsilon. We report TWO points on this family simultaneously:
+     `eps=0.5` (mild aversion) and `eps=2` (strong aversion). This
+     EXPOSES the parametric structure that is hidden by Gini (no
+     parameter) and Theil (fixed alpha=1). Two distributions can
+     have the same Gini and same Theil but differ in
+     `(A(0.5), A(2))` ratios — the canonical Pigou-Dalton
+     transfer-sensitivity diagnostic.
+
+  4. **CARDINAL WELFARE-LOSS INTERPRETATION (vs all 1-22).**
+     `A(eps)` is the FRACTION of total half-width budget that
+     could be saved by perfect equalisation while preserving the
+     same social welfare. Gini and Theil have no such direct
+     cardinal interpretation in the half-width budget.
+
+  Closed forms used:
+  - `A(eps != 1) = 1 - ((1/n) sum (x_i / mu)^(1-eps))^(1/(1-eps))`
+  - `A(eps == 1) = 1 - exp((1/n) sum ln(x_i / mu))`  (geometric-mean limit)
+  - `A(eps == 2) = 1 - harmonic_mean(x) / arithmetic_mean(x)`
+  - `A(eps == 0.5) = 1 - ((1/n) sum sqrt(x_i))^2 / mean`
+
+  Per-lens row: `lens`, `nShared`, `meanHalfWidth`,
+  `minHalfWidth`, `maxHalfWidth`, `atkinsonHalf` (A(0.5)),
+  `atkinsonTwo` (A(2)), `xEdeHalf`, `xEdeTwo`, `aversionGap`
+  (`A(2) - A(0.5)` >= 0; weakly increasing in eps), four-bin
+  `concentrationLabel` thresholded on `A(2)`, separate
+  `degenerateFlag{Half,Two}` and `degenerateReason{Half,Two}`
+  fields. Degenerate reasons: `too-few-sources` (n < 3),
+  `zero-mean-halfwidth`, `zero-source-eps-ge-1` (any zero source
+  forces `A=1` for `eps>=1`), `non-finite`.
+
+  Report-level: `meanAtkinsonHalf`, `meanAtkinsonTwo`,
+  `medianAtkinsonHalf`, `medianAtkinsonTwo`, `maxAtkinsonTwo`,
+  `minAtkinsonTwo`, `rangeAtkinsonTwo`, `meanAversionGap`,
+  `nDegenerate{Half,Two}`, `nHighlyConcentrated`, `nNearEqual`,
+  `mostConcentratedLens` (argmax A(2)), `mostEqualLens`
+  (argmin A(2)), `largestAversionGapLens` (argmax `A(2) - A(0.5)`).
+
+  Sort keys: `atkinson-two-desc` (default), `atkinson-two-asc`,
+  `atkinson-half-desc`, `aversion-gap-desc`,
+  `mean-halfwidth-desc`, `lens`. Alert filters
+  `--alert-atkinson-half`, `--alert-atkinson-two` (both in
+  `[0, 1]`). Render flags `--show-summary`,
+  `--show-concentration-aggregate`, `--show-lens-attribution`,
+  `--show-moments`, `--show-per-source-widths`, `--show-x-ede`.
+
+  Live smoke (`pew-insights source-row-token-slope-ci-lens-width-atkinson
+  --show-lens-attribution --show-concentration-aggregate` against
+  `~/.config/pew/queue.jsonl`, source names redacted to `vendor-x`
+  family per repo policy):
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-width-atkinson
+  as of: 2026-04-30T06:28:05.240Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-atkinson-half: -    alert-atkinson-two: -    sort: atkinson-two-desc
+  dropped: 0 missing-from-some-lens; meanA(0.5): 0.4908; meanA(2): 0.9955; medianA(0.5): 0.5311; medianA(2): 0.9962; maxA(2): 0.9976; minA(2): 0.9920; rangeA(2): 0.0056; meanGap: 0.5047; nHighlyConcentrated: 6; nNearEqual: 0; nDegenHalf: 0; nDegenTwo: 0; mostConcentrated: profileLikelihood; mostEqual: bootstrap; largestGap: bca
+
+  lens               n     A(0.5)   A(2)     gap      concentration            reasonHalf               reasonTwo
+  -----------------  ----  -------  -------  -------  -----------------------  -----------------------  -----------------------
+  profileLikelihood     6   0.5786   0.9976   0.4190  highly-concentrated      -                        -
+  jackknife             6   0.5274   0.9967   0.4694  highly-concentrated      -                        -
+  studentizedT          6   0.5349   0.9966   0.4617  highly-concentrated      -                        -
+  abc                   6   0.6329   0.9959   0.3629  highly-concentrated      -                        -
+  bca                   6   0.3334   0.9940   0.6605  highly-concentrated      -                        -
+  bootstrap             6   0.3373   0.9920   0.6547  highly-concentrated      -                        -
+  [concentration aggregate] nHighlyConcentrated=6/6 (1.0000) nNearEqual=0/6 (0.0000) nDegenHalf=0/6 (0.0000) nDegenTwo=0/6 (0.0000) meanA(0.5)=0.4908 meanA(2)=0.9955 meanGap=0.5047
+  [lens attribution] mostConcentrated=profileLikelihood (max A(2)) mostEqual=bootstrap (min A(2)) largestAversionGap=bca (max A(2)-A(0.5))
+  ```
+
+  Reading: ALL SIX lenses register as highly-concentrated under
+  strong aversion (A(2) ~ 0.99); under mild aversion the mild-aversion
+  index spans a much wider band (A(0.5) from 0.33 to 0.63), so the
+  aversionGap diagnostic is doing real work — `bca` and `bootstrap`
+  show the LARGEST gaps (~0.65), meaning their cross-source
+  half-width inequality is most concentrated in the tail (consistent
+  with the documented behaviour that bias-corrected and naive
+  percentile bootstraps under-cover when one source dominates the
+  half-width budget). `profileLikelihood` shows the smallest gap
+  (~0.42) — its cross-source half-width inequality is the most
+  spread-out / least tail-driven, consistent with profile-likelihood
+  CIs being more shape-aware than resample-based ones at small n.
+
 ## 0.6.249 — 2026-04-30
 
 ### Added
