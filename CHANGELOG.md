@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.268 — 2026-04-30
+
+### Added
+
+- New cross-lens axis (THIRTY-THIRD):
+  `pew-insights source-row-token-slope-ci-lens-width-wolfson`.
+
+  Per-lens CROSS-SOURCE **WOLFSON BIPOLARISATION INDEX**
+  (Wolfson 1994, 1997) of CI half-widths:
+
+  ```
+  W = 2 * (2*T - Gini) * (mean / median)
+  T = 0.5 - L(0.5)
+  ```
+
+  where `L(0.5)` is the empirical Lorenz curve evaluated at the
+  median point and `Gini` is the standard Gini of the same
+  half-widths.
+
+  **Orthogonality rationale.** All thirty-two prior lens-width
+  axes (Gini, Theil-T, Atkinson, QCD, Hoover, Palma, GE(2),
+  Bonferroni, Kolm-Pollak, Mehran, S-Gini, MLD/GE(0)) are
+  MEAN-anchored inequality measures that score "spread of the
+  whole distribution from equality". Wolfson is MEDIAN-anchored
+  and BIMODALITY-sensitive: it isolates the gap between the
+  Lorenz curve at the median POINT (`T`) and the average Lorenz
+  gap (`Gini/2`). A unimodal distribution centred at the median
+  yields `W` ~ 0 even with high variance (Gini may still be
+  large). A bimodal distribution with modes far from the median
+  yields a LARGE `W` even when Gini is moderate. Two
+  distributions with the same Gini but different polarisation
+  structure are SEPARATED by W and only by W.
+
+  Helper `lensWidthWolfson(halfWidths)` exposed for direct unit
+  testing. Returns `{nShared, meanHalfWidth, medianHalfWidth,
+  gini, lorenzAtMedian, t, wolfson, meanOverMedian,
+  degenerateFlag, degenerateReason}`. Unique edge case:
+  `zero-median` degenerate reason (NO prior axis raises this --
+  needed because the `(mean/median)` scaling factor blows up
+  when the bottom-half of the distribution is all zero).
+
+  Per-lens columns: `nShared`, `meanHalfWidth`,
+  `medianHalfWidth`, `gini`, `lorenzAtMedian`, `t`, `wolfson`,
+  `meanOverMedian`, `polarisationSignLabel` (`bipolarised` W>0;
+  `unipolarised` W<0; `balanced` |W|<1e-9; `degenerate`),
+  `polarisationLabel` (`extreme` |W|>=0.5; `high` [0.25,0.5);
+  `moderate` [0.1,0.25); `mild` (0,0.1); `near-zero` ==0;
+  `degenerate`), `degenerateFlag`, `degenerateReason`
+  (`too-few-sources` n<4, `zero-mean`, `zero-median`).
+
+  Report-level: `meanW`, `medianW`, `maxW`, `minW`, `rangeW`,
+  `nDegenerate`, `nExtreme`, `nNearZero`, `nBipolarised`,
+  `nUnipolarised`, `mostBipolarisedLens` (argmax W),
+  `mostUnipolarisedLens` (argmin W).
+
+  Filters: `--alert-wolfson <f>` keeps lenses with `|W| > f`.
+  Sorts: `wolfson-desc` (default), `wolfson-asc`,
+  `abs-wolfson-desc`, `mean-halfwidth-desc`, `lens`.
+
+  +27 tests (7432 -> 7459), covering: closed-form Gini and
+  L(0.5) on `[1,2,3,4]`, exact Wolfson on the canonical bimodal
+  `[1,1,1,1,9,9,9,9]` (Gini=0.4, L(0.5)=0.1, T=0.4, W=0.8),
+  bipolar-vs-unipolar W/Gini ratio separation (the
+  orthogonality witness), scale invariance, translation-shrinks-W,
+  monotonicity (widening the bimodal gap raises W), Gini in
+  [0,1] and T in [0,0.5] bounds, all three degenerate paths
+  including the Wolfson-unique `zero-median`, throws on
+  negative/non-finite, six-lens integration, sort orderings,
+  attribution consistency with min/max W, render output.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 6 shared sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-wolfson \
+      --bootstraps 500 --seed 42 \
+      --show-summary --show-polarisation-aggregate \
+      --show-lens-attribution
+
+  meanW=4.496728  medianW=4.564665  maxW=9.119927  minW=0.865034
+  rangeW=8.254893
+  nExtreme=6/6  nBipolarised=6/6  nDegen=0/6
+  mostBipolarised: profileLikelihood (W=9.119927)
+  mostUnipolarised: bootstrap        (W=0.865034)
+
+  lens               W          gini       T          mean/med
+  -----------------  ---------  ---------  ---------  ---------
+  profileLikelihood  9.119927   0.654966   0.493228   13.755963
+  studentizedT       6.886362   0.657770   0.488505   10.785590
+  jackknife          6.120284   0.669427   0.487360   10.023636
+  abc                3.009046   0.773665   0.480647    8.018617
+  bca                0.979714   0.517926   0.440212    1.351338
+  bootstrap          0.865034   0.526350   0.433352    1.270786
+  ```
+
+  All six lenses are STRICTLY POSITIVE on real data --
+  bipolarised in every UQ lens. The mean/median ratio is the
+  dominant amplifier (between 1.27 and 13.76) and is what
+  separates the two clusters of lenses: `bca` and `bootstrap`
+  see a much SMALLER mean/median amplifier (~1.3) whereas the
+  jackknife / studentized-t / profileLikelihood / ABC family
+  cluster sees an order-of-magnitude larger one (~8 to ~14).
+  Note that `T` is nearly saturated at its theoretical maximum
+  of 0.5 across ALL lenses (range 0.43 to 0.49), meaning the
+  Lorenz curve is essentially pinned to the bottom-axis at the
+  median point (one source dominates the distribution).
+  Polarisation magnitude therefore tracks the mean/median
+  amplifier rather than the median-Lorenz-gap, which is the
+  exact OPPOSITE of how Gini ranks the same lenses (Gini is
+  largest on `abc` at 0.77 but `abc` ranks 4th in W).
+  This separation is the orthogonality vs axis-21.
+
 ## 0.6.267 — 2026-04-30
 
 ### Changed
