@@ -2,6 +2,139 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.258 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-bonferroni` —
+  per-lens CROSS-SOURCE BONFERRONI INDEX of CI half-widths
+  (TWENTY-EIGHTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SAME six per-source
+  slope CIs as v0.6.227-v0.6.257 (percentile bootstrap, jackknife
+  normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY-SEVEN prior cross-lens
+  diagnostics.** Bonferroni (1930); Tarsitano (1990);
+  Nygard-Sandstrom (1981) is a RANK-CUMULATIVE functional defined
+  on the sequence of partial means of the ascending-sorted
+  half-widths:
+
+  ```
+  Sort w_(1) <= w_(2) <= ... <= w_(n).
+  M_i = (1/i) * sum_{j=1..i} w_(j)         (cumulative prefix mean)
+  B   = 1 - (1 / ((n-1) * mean)) * sum_{i=1..n-1} M_i
+  ```
+
+  **Why this is genuinely orthogonal to axes 21-27.** The unique
+  `1/i` rank-weighting kernel makes Bonferroni the canonical
+  BOTTOM-tail-sensitive complement to GE(2)'s TOP-sensitivity:
+
+  - axis-21 Gini integrates `(p - L(p))` over `p` (an L_1
+    functional of the LORENZ process) with rank-uniform weight.
+    Bonferroni integrates the CUMULATIVE-MEAN curve `M_i / mean`
+    over the rank index with the `1/(n-1)` weighting that
+    emphasises the BOTTOM-TAIL prefix means quadratically more
+    than the Lorenz gap does — the M_1 prefix-mean (the smallest
+    single half-width) carries weight 1, M_2 carries weight 1/2,
+    and so on.
+  - axis-22 Theil GE(1) is an entropic LOG-SHARE functional.
+    Bonferroni uses NO logarithm and is defined on prefix
+    arithmetic means.
+  - axis-23 Atkinson is a CRRA welfare loss
+    `(1 - M_(1-eps) / mean)`. Bonferroni is NOT a welfare
+    aggregator — it is the rank-weighted area between the
+    prefix-mean curve and the population mean.
+  - axis-24 QCD uses TWO order statistics `(Q1, Q3)`. Bonferroni
+    uses ALL n prefix sums.
+  - axis-25 Hoover is L_infinity on the Lorenz process.
+    Bonferroni is L_1 on the prefix-mean GAP curve
+    `(1 - M_i / mean)` with rank-uniform weight.
+  - axis-26 Palma is a TWO-POINT decile ratio. Bonferroni
+    integrates over EVERY rank.
+  - axis-27 GE(2) is a SECOND-MOMENT functional weighted by `x^2`
+    (TOP-tail-sensitive). Bonferroni's `1/i` rank-weighting
+    kernel is the polar opposite — BOTTOM-tail-sensitive: a
+    fixed absolute transfer FROM the population mean TO the
+    smallest source raises Bonferroni MUCH more than it raises
+    GE(2), Gini, or Palma.
+
+  **Boundedness and zero-immunity.** Bonferroni is ALWAYS bounded
+  in [0, 1] (UNLIKE GE(2) and Theil which are unbounded above).
+  Tolerates up to `n - 1` zero half-widths (only the all-zero
+  case is degenerate) — the WIDEST domain shared with axis-25
+  Hoover and strictly wider than axis-22 Theil and axis-23
+  Atkinson at eps>=1.
+
+  **Edge cases (parity with axes 21-27):**
+
+  - `n < 4`: `B = 0`, `degenerateFlag = true`,
+    `reason = 'too-few-sources'`.
+  - All-zero input: `B = 0`, `degenerateFlag = true`,
+    `reason = 'zero-mass'`.
+  - Any half-width is negative or non-finite: throws.
+  - non-finite intermediate sum: `degenerateFlag = true`,
+    `reason = 'non-finite'`.
+
+  **Per-lens columns (new).** `lowerTailMassShare` (bottom-half
+  cumulative mass / total, in [0, 0.5]) and `bottomToTopRatio`
+  (`w_(1) / w_(n)`, in [0, 1]) are prefix-mass diagnostics that
+  NO prior axis carries. Together with `bonferroni` they
+  characterise the rank-cumulative shape of the half-width cloud
+  in a way that the L_1 Gini smears uniformly and the
+  second-moment GE(2) collapses onto the squared-deviation
+  kernel.
+
+  **Live smoke against `~/.config/pew/queue.jsonl`** (default
+  flags + `--bootstraps 200 --seed 7`):
+
+  ```
+  sources: 6 (with all lenses 6); dropped 0; nExtreme: 6/6;
+    nNearUniform: 0; nDegen: 0
+  meanB:    0.8645
+  medianB:  0.8688
+  maxB:     0.9826  (lens=abc)
+  minB:     0.7675  (lens=bca)
+  rangeB:   0.2151
+  mostExtreme: abc           (B=0.9826, lowerTail=0.0038, bottomTop=0.0001)
+  mostUniform: bca           (B=0.7675, lowerTail=0.0677, bottomTop=0.0005)
+
+  per-lens (sorted by B desc):
+    abc                B=0.9826  lowerTail=0.0038  bottomTop=0.0001  extreme
+    profileLikelihood  B=0.8893  lowerTail=0.0050  bottomTop=0.0002  extreme
+    jackknife          B=0.8711  lowerTail=0.0101  bottomTop=0.0002  extreme
+    studentizedT       B=0.8665  lowerTail=0.0091  bottomTop=0.0002  extreme
+    bootstrap          B=0.8100  lowerTail=0.0509  bottomTop=0.0003  extreme
+    bca                B=0.7675  lowerTail=0.0677  bottomTop=0.0005  extreme
+  ```
+
+  Substantively, every single lens lands in the `extreme`
+  concentration bin (B > 0.7) — the half-width distribution
+  across the six sources is dominated by one or two large
+  sources at every CI lens. The `abc` lens is the most
+  bottom-tail-deprived (`lowerTailMassShare = 0.0038` — the
+  bottom three sources together carry less than 0.4% of the
+  total half-width mass), while the `bca` lens is the least
+  concentrated of the six but still solidly in the `extreme`
+  bin. The `bottomToTopRatio` of 0.0001-0.0005 across all
+  lenses confirms a four-orders-of-magnitude smallest:largest
+  spread — exactly the kind of bottom-tail starvation that
+  axis-27 GE(2) (top-sensitive) and axis-26 Palma (two-point
+  ratio) cannot resolve as cleanly as Bonferroni's
+  rank-cumulative kernel.
+
+  **Filters.** `--alert-bonferroni <f>` keeps lenses with `B > f`;
+  `--alert-mass <f>` keeps lenses with `totalHalfWidth > f`;
+  `--alert-lower-tail <f>` keeps lenses with
+  `lowerTailMassShare < f` (flags lenses where the bottom half of
+  sources carries unusually little mass).
+
+  **Renderer.** `--show-summary`, `--show-concentration-aggregate`,
+  `--show-lens-attribution`, `--show-lower-tail` (Bonferroni
+  rank-cumulative bottom-tail diagnostic), and
+  `--show-per-source-widths`.
+
+  +33 unit + integration tests (test count: 7261 -> 7294).
+
 ## 0.6.257 — 2026-04-30
 
 ### Added
