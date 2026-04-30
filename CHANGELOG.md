@@ -2,6 +2,106 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.255 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-palma` —
+  per-lens CROSS-SOURCE PALMA RATIO (S90/S40) of CI half-widths
+  (TWENTY-SIXTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SAME six per-source
+  slope CIs as v0.6.227-v0.6.254 (percentile bootstrap, jackknife
+  normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY-FIVE prior cross-lens
+  diagnostics.** Palma (Cobham-Sumner-Palma 2011, 2013) is
+
+  ```
+  Palma = (1 - L(0.9)) / L(0.4)
+        = topDecileMassShare / bottomFourDecilesMassShare
+  ```
+
+  a TWO-POINT EVALUATION of the Lorenz process at p = 0.4 and
+  p = 0.9 combined as a RATIO. In direct contrast to every prior
+  axis:
+
+  - axis-21 Gini integrates the WHOLE Lorenz gap.
+  - axis-22 Theil GE(1) is an entropic functional `sum p log p`.
+  - axis-23 Atkinson is a CRRA welfare loss
+    `1 - M_(1-eps) / mean`.
+  - axis-24 QCD uses TWO QUANTILES of the VALUE distribution
+    (Q1, Q3); Palma uses TWO QUANTILES of the CUMULATIVE-MASS
+    distribution (the Lorenz process at p = 0.4 and p = 0.9).
+  - axis-25 Hoover is the L_infinity sup of `(p - L(p))`.
+
+  Palma is the only cross-lens axis shipped that is **unbounded
+  above** (Palma in `[0, +inf)`) — it can diverge to +infinity as
+  the bottom-40% mass goes to zero while the top-10% mass stays
+  bounded (`palmaIsInfinite = true`, numeric clamped to a finite
+  sentinel `1e12`).
+
+  **Sensitivity profile.** Palma satisfies the Pigou-Dalton
+  transfer principle ONLY when the transfer crosses one of the
+  decile boundaries `p = 0.4` or `p = 0.9`. Mean-preserving
+  transfers entirely WITHIN the bottom 40%, the middle 50%, or the
+  top 10% leave Palma UNCHANGED. This is a different insensitivity
+  from Hoover's same-side-of-the-mean exclusion.
+
+  **Lorenz interpolation.** With `n` typically small (4-12), L(p)
+  is evaluated by piecewise-linear interpolation between the n+1
+  anchor points `(k/n, c_k)` so that the canonical Palma cut-points
+  `p = 0.4` and `p = 0.9` are exact for any n, not only multiples
+  of 10.
+
+  Per-lens columns: `nShared`, `meanHalfWidth`, `totalHalfWidth`,
+  `s40` (= L(0.4)), `s90` (= 1 - L(0.9)), `s50middle`
+  (= 1 - s40 - s90, the Palma-hypothesis "constant middle"),
+  `palma`, `palmaIsInfinite`, `concentrationLabel`
+  ('extreme' palmaIsInfinite or palma > 4; 'high' (2, 4];
+  'moderate' (1, 2]; 'balanced' (0.5, 1]; 'inverted' [0, 0.5];
+  'degenerate'), `degenerateFlag`, `degenerateReason`
+  ('too-few-sources' n < 4, 'zero-mass', 'zero-bottom-mass',
+  'non-finite').
+
+  Report-level: `meanPalma`, `medianPalma`, `maxPalma`, `minPalma`,
+  `rangePalma` (over finite non-degenerate values), `nDegenerate`,
+  `nExtreme`, `nBalancedOrInverted`, `mostExtremeLens` (infinite
+  rows preferred, then argmax), `mostBalancedLens` (Palma closest
+  to 1).
+
+  CLI flags: `--alert-palma <f>` (palma > f), `--alert-mass <f>`
+  (totalHalfWidth > f), `--alert-bottom-share <f>` (s40 < f); six
+  sort keys (`palma-desc`, `palma-asc`, `mass-desc`,
+  `mean-halfwidth-desc`, `s40-asc`, `s90-desc`, `lens`); render
+  flags `--show-summary`, `--show-concentration-aggregate`,
+  `--show-lens-attribution`, `--show-tail-decomposition`,
+  `--show-per-source-widths`.
+
+  Thirty test() blocks covering the Lorenz interpolation helper
+  (uniform diagonal, anchor exactness, piecewise-linear segment),
+  the Palma helper (worked examples — `[1,1,1,1,1,1,1,1,1,10]` →
+  Palma = `(10/19) / (4/19)` = `2.5`; `[0,0,0,0,1,1,1,1,1,5]` →
+  zero-bottom-mass + palmaIsInfinite, S40 = 0, S90 = 0.5), mass
+  conservation `s40 + s50middle + s90 = 1`, scale invariance under
+  `c > 0`, monotonicity in top concentration and bottom emptying,
+  decile-boundary insensitivity to within-bottom-40% transfers,
+  all four degeneracy reasons, build-level option validation, the
+  end-to-end synthetic queue path, sort + filter invariants, and
+  the render layer (table, summary, concentration aggregate, lens
+  attribution, tail decomposition, empty case). Suite: 7197 ->
+  7227, all passing.
+
+  **Live smoke (`~/.config/pew/queue.jsonl`, n=6 shared sources):**
+  meanPalma = `139.8873`; medianPalma = `58.7869`; maxPalma =
+  `568.4542` (lens=`abc`, S40=`0.0010`, S90=`0.5828`); minPalma =
+  `7.3959` (lens=`bca`, S40=`0.0348`, S90=`0.2572`); rangePalma =
+  `561.0583`; nExtreme = `6/6`; nDegenerate = `0`; mostExtreme =
+  `abc`; mostBalanced = `bca`. Every lens lands in the
+  'extreme' bin (Palma > 4), reflecting that the bottom-4 sources'
+  combined mass-share of CI half-widths is dwarfed by the
+  top-source share across all six uncertainty-quantification
+  lenses on the live queue.
+
 ## 0.6.254 — 2026-04-30
 
 ### Added
