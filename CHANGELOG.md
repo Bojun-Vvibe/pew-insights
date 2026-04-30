@@ -2,6 +2,145 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.248 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-gini` —
+  per-lens CROSS-SOURCE GINI COEFFICIENT of CI half-widths
+  (TWENTY-FIRST cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six per-source
+  slope CIs as v0.6.227-v0.6.247 (percentile bootstrap, jackknife
+  normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY prior cross-lens
+  diagnostics on THREE orthogonal dimensions.**
+
+  1. **POPULATION GEOMETRY (vs axes 1-19).** Like axis-20, the
+     report is indexed by LENS (six rows), inverting the per-source
+     geometry of axes 1-19. Axes 1-19 reduce a 6-vector per source
+     to a per-source scalar; this axis reduces the across-source
+     cloud for each fixed lens to a single scalar.
+
+  2. **STATISTIC FAMILY (vs all 1-20).** This is a UNIVARIATE
+     INEQUALITY / CONCENTRATION measure on a single distribution
+     (across-source half-widths for one lens). Every prior
+     cross-lens axis is either (a) a per-source scalar with cross-
+     source aggregation only as means / medians / mode counts of
+     the scalar (axes 1-19), or (b) a BIVARIATE Pearson correlation
+     between two distinct per-source quantities (axis-20:
+     |midpoint| vs half-width). Axis-21 has NO second variable, NO
+     covariance, NO regression, NO entropy. The Gini coefficient is
+     mathematically independent of axis-19's log-ratio variance and
+     axis-17's Shannon entropy: a Pareto distribution and a
+     lognormal can share log-ratio variance while having different
+     Gini, and two distributions can share Shannon entropy
+     (continuous-rank discretised) while having different Gini.
+
+  3. **SCALE INVARIANCE (vs axis-20).** Pearson r is invariant
+     under independent positive affine rescaling of the two
+     variables; the Gini coefficient G is invariant under positive
+     scalar multiplication of the single distribution but NOT under
+     additive shifts. They probe different invariants of the
+     half-width distribution: axis-20 r asks "does CI width grow
+     proportionally with |slope|?"; axis-21 G asks "is the CI width
+     budget concentrated in a few sources or spread evenly?". A
+     lens with uniform half-widths has G ~ 0 regardless of axis-20
+     r; a lens where one source absorbs the entire half-width
+     budget has G near (n-1)/n regardless of whether that source
+     is the largest |slope| or not.
+
+  The diagnostic, for each lens L:
+
+  ```
+    halfWidth_{L,s} = (ciUpper_{L,s} - ciLower_{L,s}) / 2
+
+    sort halfWidths ascending -> y_1 <= y_2 <= ... <= y_n
+    mean_L  = (1/n) * sum_i y_i
+    gini_L  = (1 / (n^2 * mean_L)) *
+                sum_{i=1..n} (2 i - n - 1) * y_i
+  ```
+
+  Equivalent to `gini_L = mad_L / mean_L` where `mad_L =
+  (1/(2 n^2)) sum_ij |x_i - x_j|`. Both forms agree algebraically
+  and produce `gini_L` in `[0, 1)`:
+  - `gini_L = 0` iff all half-widths are identical (perfect
+    cross-source equality of CI width)
+  - `gini_L -> (n-1)/n` in the limit where one source absorbs the
+    entire half-width budget
+
+  Edge cases: `n < 3`, `mean = 0` (all CIs collapse to a point),
+  or non-finite each set `degenerateFlag = true` with the matching
+  `degenerateReason` and report `gini = 0`. Floating-point values
+  slightly outside `[0, 1]` are clamped.
+
+  Per-lens columns: `lens`, `nShared`, `meanHalfWidth`,
+  `minHalfWidth`, `maxHalfWidth`, `mad`, `gini`, `topShareMax`
+  (max source share of the total half-width budget),
+  `concentrationLabel` (`highly-concentrated` g > 0.5;
+  `moderately-concentrated` g in (0.3, 0.5]; `mild-concentration`
+  g in (0.1, 0.3]; `near-equal` g in [0, 0.1]; `degenerate`),
+  `degenerateFlag`, `degenerateReason`.
+
+  Report-level: `meanGini`, `medianGini`, `maxGini`, `minGini`,
+  `rangeGini` (cross-lens divergence in concentration regime),
+  `nDegenerate`, `nHighlyConcentrated`, `nNearEqual`,
+  `mostConcentratedLens` (argmax g), `mostEqualLens` (argmin g).
+
+  Filters:
+  - `--alert-gini <f>` — keep lenses with `gini > f` (`f in [0,1]`)
+
+  Sort keys: `gini-desc` (default), `gini-asc`,
+  `mean-halfwidth-desc`, `top-share-desc`, `lens`.
+
+  Renderer flags: `--show-summary`, `--show-concentration-aggregate`,
+  `--show-lens-attribution`, `--show-moments`,
+  `--show-per-source-widths`.
+
+  Threshold rationale: `gini <= 0.1` is the conventional
+  "near-equal" inequality bound (Cowell 2011); `gini > 0.5` is
+  conventionally "highly unequal".
+
+  Test delta: +40 tests (7040 -> 7080), all green.
+
+  **Live smoke (n = 6 shared sources, real `~/.config/pew/queue.jsonl`;
+  one source name redacted to `vendor-x` per content policy):**
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-width-gini
+  meanGini: 0.6492  medianGini: 0.6521  maxGini: 0.7741  minGini: 0.5362  rangeGini: 0.2379
+  nHighlyConcentrated: 6/6  nNearEqual: 0/6  nDegenerate: 0/6
+  mostConcentrated: abc   mostEqual: bca
+
+  lens               n     gini     topShare  concentration
+  abc                   6   0.7741    0.8735  highly-concentrated
+  profileLikelihood     6   0.7214    0.6868  highly-concentrated
+  studentizedT          6   0.6574    0.5104  highly-concentrated
+  jackknife             6   0.6468    0.4844  highly-concentrated
+  bootstrap             6   0.5596    0.5064  highly-concentrated
+  bca                   6   0.5362    0.4157  highly-concentrated
+  ```
+
+  Interpretation: every one of the six UQ lenses is in the
+  "highly-concentrated" regime on this corpus (all `gini > 0.5`)
+  — the half-width budget is heavily skewed toward a small subset
+  of sources for every lens. ABC is the most extreme at
+  `gini = 0.7741`, with a single source absorbing 87.4% of the
+  total half-width budget (`topShare = 0.8735`); BCa is the most
+  equal at `gini = 0.5362` with the same dominant source taking
+  41.6%. Cross-lens range of `0.2379` in Gini is itself a
+  population-level disagreement signal: ABC and profile-likelihood
+  agree the budget is highly skewed (g > 0.72), while BCa and
+  bootstrap put it closer to half (g ~ 0.55).
+
+  Cross-axis interpretation (vs axis-20 on the same corpus): in
+  v0.6.247 ABC was the LEAST heteroscedastic lens
+  (`pearsonR = 0.5096`) but here it is the MOST concentrated
+  (`gini = 0.7741`). This is exactly the orthogonality the axis is
+  designed to detect: ABC's CI widths are concentrated in a few
+  sources, but those sources are not necessarily the ones with the
+  largest `|slope|`. The two axes carry independent information.
+
 ## 0.6.247 — 2026-04-30
 
 ### Added
