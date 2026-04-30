@@ -614,6 +614,69 @@ test('render: --show-half-widths appends per-source halfWidths line', () => {
   assert.match(txt, /halfWidths: bootstrap=/);
 });
 
+test('render: --show-clr-coords appends per-source clrCoords line', () => {
+  const queue = ascending('alpha', 60);
+  const r = buildSourceRowTokenSlopeCiHalfWidthLogRatioVariance(queue, {
+    bootstraps: 200,
+  });
+  const txt = renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance(r, {
+    showClrCoords: true,
+  });
+  assert.match(txt, /clrCoords: bootstrap=/);
+});
+
+test('render: --show-clr-coords reports "-" for degenerate row', () => {
+  const r = {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    windowStart: null,
+    windowEnd: null,
+    source: null,
+    minRows: 4,
+    confidence: 0.95,
+    lambda: 1,
+    bootstraps: 1000,
+    seed: 42,
+    alertVariance: null,
+    alertMaxRatio: null,
+    top: null,
+    sort: 'variance-desc' as const,
+    totalSources: 1,
+    sourcesWithAllLenses: 1,
+    droppedMissingLens: 0,
+    droppedAboveAlert: 0,
+    meanLogRatioVariance: 0,
+    medianLogRatioVariance: 0,
+    meanLogRatioStdDev: 0,
+    meanMaxAbsLogRatio: 0,
+    nDegenerate: 1,
+    nNearIsotropic: 0,
+    nHighlyDispersed: 0,
+    globalWidestLens: null,
+    globalNarrowestLens: null,
+    rows: [
+      {
+        source: 'zzz',
+        rowsKept: 10,
+        halfWidths: [0, 0, 0, 0, 0, 0],
+        positiveCount: 0,
+        pairsCount: 0,
+        logRatioMean: 0,
+        logRatioVariance: 0,
+        logRatioStdDev: 0,
+        maxAbsLogRatio: 0,
+        clrVariance: 0,
+        widestLens: null,
+        narrowestLens: null,
+        degenerateFlag: true,
+      },
+    ],
+  };
+  const txt = renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance(r, {
+    showClrCoords: true,
+  });
+  assert.match(txt, /clrCoords: bootstrap=- jackknife=- bca=- studentizedT=- abc=- profileLikelihood=-/);
+});
+
 test('render: degenerate flag rendered as "degen"', () => {
   // Force degenerate by handcrafted report.
   const r = {

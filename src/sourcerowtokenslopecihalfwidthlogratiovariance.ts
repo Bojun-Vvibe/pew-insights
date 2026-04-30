@@ -682,12 +682,14 @@ export function renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance(
     showVarianceAggregate?: boolean;
     showLensAttribution?: boolean;
     showHalfWidths?: boolean;
+    showClrCoords?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
   const showVarianceAggregate = opts.showVarianceAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showHalfWidths = opts.showHalfWidths ?? false;
+  const showClrCoords = opts.showClrCoords ?? false;
   const lines: string[] = [];
   lines.push(
     'pew-insights source-row-token-slope-ci-half-width-logratio-variance',
@@ -741,6 +743,37 @@ export function renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance(
         );
       }
       lines.push(`    halfWidths: ${parts.join(' ')}`);
+    }
+    if (showClrCoords) {
+      // Recompute CLR coordinates per canonical lens. For ineligible
+      // (h_i == 0) lenses we report `-` since log(0) is undefined.
+      // For degenerate sources (all metrics zero) we report all `-`.
+      const parts: string[] = [];
+      if (row.degenerateFlag || row.positiveCount === 0) {
+        for (const lens of SLOPE_HALFWIDTH_LRV_LENS_NAMES) {
+          parts.push(`${lens}=-`);
+        }
+      } else {
+        let logSum = 0;
+        let nElig = 0;
+        for (const h of row.halfWidths) {
+          if (h > 0) {
+            logSum += Math.log(h);
+            nElig += 1;
+          }
+        }
+        const logMean = logSum / nElig;
+        for (let i = 0; i < SLOPE_HALFWIDTH_LRV_LENS_NAMES.length; i++) {
+          const h = row.halfWidths[i]!;
+          if (h > 0) {
+            const clr = Math.log(h) - logMean;
+            parts.push(`${SLOPE_HALFWIDTH_LRV_LENS_NAMES[i]}=${fmtNum(clr, 6)}`);
+          } else {
+            parts.push(`${SLOPE_HALFWIDTH_LRV_LENS_NAMES[i]}=-`);
+          }
+        }
+      }
+      lines.push(`    clrCoords: ${parts.join(' ')}`);
     }
   }
   if (showVarianceAggregate && r.rows.length > 0) {

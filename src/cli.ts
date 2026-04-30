@@ -23484,6 +23484,10 @@ program
     '--show-half-widths',
     'append a per-source half-widths line listing h_i for each canonical lens',
   )
+  .option(
+    '--show-clr-coords',
+    'append a per-source CLR-coordinates line: clr_i = log(h_i) - mean_{j eligible} log(h_j) for each canonical lens (- for ineligible h_i == 0)',
+  )
   .action(
     async (
       opts: {
@@ -23504,6 +23508,7 @@ program
         showVarianceAggregate?: boolean;
         showLensAttribution?: boolean;
         showHalfWidths?: boolean;
+        showClrCoords?: boolean;
       },
       cmd,
     ) => {
@@ -23620,6 +23625,7 @@ program
               showVarianceAggregate: opts.showVarianceAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showHalfWidths: opts.showHalfWidths ?? false,
+              showClrCoords: opts.showClrCoords ?? false,
             }) + '\n',
           );
         }
