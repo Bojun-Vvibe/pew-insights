@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.259 — 2026-04-30
+
+### Changed
+
+- `pew-insights source-row-token-slope-ci-lens-width-bonferroni`
+  refinement: expanded the `lensWidthBonferroni` docstring to
+  document the single-pass O(n) prefix-sum accumulator and the
+  running-division `1/i` kernel application (no precomputed
+  factorial-sized table; tolerates n in the millions; realistic
+  queue half-widths up to ~10^9 stay well clear of
+  double-precision overflow). Plus four extra edge-case unit
+  tests covering n=0, n=1 (explicit too-few-sources path),
+  numerical safety on 10^7-10^9 magnitude inputs, and tied
+  half-widths (sort stability + permutation invariance under
+  ties). Test count: 7294 -> 7298 (+4). No behaviour change.
+
 ## 0.6.258 — 2026-04-30
 
 ### Added

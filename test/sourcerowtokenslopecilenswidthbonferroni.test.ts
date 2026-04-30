@@ -521,3 +521,45 @@ test('axis28 lens-name constant exposes exactly six canonical lenses', () => {
     'profileLikelihood',
   ]);
 });
+
+// ---------- refinement: extra edge-case + numerical safety tests ----------
+
+test('axis28 helper edge: n=0 returns degenerate too-few-sources, B=0', () => {
+  const out = lensWidthBonferroni([]);
+  assert.equal(out.degenerateFlag, true);
+  assert.equal(out.degenerateReason, 'too-few-sources');
+  assert.equal(out.bonferroni, 0);
+  assert.equal(out.lowerTailMassShare, 0);
+  assert.equal(out.bottomToTopRatio, 0);
+  assert.equal(out.nShared, 0);
+});
+
+test('axis28 helper edge: n=1 returns degenerate too-few-sources, B=0 (no inequality definable)', () => {
+  const out = lensWidthBonferroni([42]);
+  assert.equal(out.degenerateFlag, true);
+  assert.equal(out.degenerateReason, 'too-few-sources');
+  assert.equal(out.bonferroni, 0);
+});
+
+test('axis28 helper edge: very large but finite inputs stay in [0, 1]', () => {
+  // Numerical safety: ensure the prefix-sum accumulation does not overflow
+  // or wrap for realistic-but-large half-widths drawn from real-world
+  // queues where CI half-widths can hit 10^7-10^9 magnitude. The output
+  // must remain in [0, 1] and finite.
+  const xs = [1e7, 5e7, 2e8, 8e8, 1e9, 4e9];
+  const out = lensWidthBonferroni(xs);
+  assert.equal(out.degenerateFlag, false);
+  assert.ok(out.bonferroni >= 0 && out.bonferroni <= 1);
+  assert.ok(Number.isFinite(out.bonferroni));
+});
+
+test('axis28 helper edge: tied half-widths sort stably and yield the same B as the unique-permutation variant', () => {
+  const out1 = lensWidthBonferroni([2, 2, 2, 2, 2, 2]);
+  const out2 = lensWidthBonferroni([2, 2, 2, 2, 2, 2]);
+  assert.equal(out1.bonferroni, out2.bonferroni);
+  assert.equal(out1.bonferroni, 0);
+  // A tied bottom plus distinct top:
+  const out3 = lensWidthBonferroni([1, 1, 1, 1, 5, 9]);
+  const out4 = lensWidthBonferroni([1, 1, 9, 5, 1, 1]);
+  assert.ok(Math.abs(out3.bonferroni - out4.bonferroni) < 1e-12);
+});

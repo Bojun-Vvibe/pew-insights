@@ -291,6 +291,14 @@ function classifyConcentration(
  * edge cases. Also returns `lowerTailMassShare` (bottom-half mass
  * share, in [0, 0.5]) and `bottomToTopRatio` (w_(1) / w_(n)).
  *
+ * Numerical safety: the prefix-sum accumulator is single-pass O(n)
+ * after a single ascending sort, and the `1/i` rank-weighting kernel
+ * is applied via a running division (never as a precomputed table)
+ * so the implementation tolerates n in the millions without an
+ * intermediate factorial-sized table. Realistic queue magnitudes
+ * (CI half-widths up to ~10^9) stay well clear of double-precision
+ * overflow.
+ *
  * Exposed for direct unit-testing.
  */
 export function lensWidthBonferroni(halfWidths: number[]): {
