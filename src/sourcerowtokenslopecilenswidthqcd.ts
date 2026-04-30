@@ -174,10 +174,12 @@ export interface SourceRowTokenSlopeCiLensWidthQcdOptions {
   seed?: number;
   alertQcd?: number | null;
   alertIqr?: number | null;
+  alertQ3Q1Ratio?: number | null;
   sort?:
     | 'qcd-desc'
     | 'qcd-asc'
     | 'iqr-desc'
+    | 'q3-q1-ratio-desc'
     | 'median-halfwidth-desc'
     | 'lens';
   generatedAt?: string;
@@ -210,6 +212,7 @@ export interface SourceRowTokenSlopeCiLensWidthQcdReport {
   seed: number;
   alertQcd: number | null;
   alertIqr: number | null;
+  alertQ3Q1Ratio: number | null;
   sort: NonNullable<SourceRowTokenSlopeCiLensWidthQcdOptions['sort']>;
   totalSources: number;
   sourcesWithAllLenses: number;
@@ -231,9 +234,26 @@ const VALID_SORTS = [
   'qcd-desc',
   'qcd-asc',
   'iqr-desc',
+  'q3-q1-ratio-desc',
   'median-halfwidth-desc',
   'lens',
 ] as const;
+
+/**
+ * Q3/Q1 multiplicative ratio (the classic order-statistic
+ * "quartile ratio" dispersion summary). Returns +Infinity when
+ * Q1 = 0 < Q3 (the cloud is genuinely scale-divergent at the
+ * lower quartile) and NaN when both are zero (degenerate).
+ *
+ * Exposed for direct unit-testing.
+ */
+export function q3q1Ratio(q1: number, q3: number): number {
+  if (!Number.isFinite(q1) || !Number.isFinite(q3)) return NaN;
+  if (q1 < 0 || q3 < 0) return NaN;
+  if (q3 === 0) return NaN;
+  if (q1 === 0) return Infinity;
+  return q3 / q1;
+}
 
 function median(xs: number[]): number {
   if (xs.length === 0) return 0;
@@ -417,6 +437,14 @@ export function buildSourceRowTokenSlopeCiLensWidthQcd(
       );
     }
   }
+  const alertQ3Q1Ratio = opts.alertQ3Q1Ratio ?? null;
+  if (alertQ3Q1Ratio !== null) {
+    if (!Number.isFinite(alertQ3Q1Ratio) || alertQ3Q1Ratio < 1) {
+      throw new Error(
+        `alertQ3Q1Ratio must be a finite number >= 1 (got ${opts.alertQ3Q1Ratio})`,
+      );
+    }
+  }
   const sort = opts.sort ?? 'qcd-desc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
@@ -561,6 +589,12 @@ export function buildSourceRowTokenSlopeCiLensWidthQcd(
   if (alertIqr !== null) {
     filtered = filtered.filter((r) => r.iqrHalfWidth > alertIqr);
   }
+  if (alertQ3Q1Ratio !== null) {
+    filtered = filtered.filter((r) => {
+      const ratio = q3q1Ratio(r.q1HalfWidth, r.q3HalfWidth);
+      return Number.isFinite(ratio) && ratio > alertQ3Q1Ratio;
+    });
+  }
 
   const sortFns: Record<
     (typeof VALID_SORTS)[number],
@@ -572,6 +606,15 @@ export function buildSourceRowTokenSlopeCiLensWidthQcd(
     'qcd-desc': (a, b) => b.qcd - a.qcd,
     'qcd-asc': (a, b) => a.qcd - b.qcd,
     'iqr-desc': (a, b) => b.iqrHalfWidth - a.iqrHalfWidth,
+    'q3-q1-ratio-desc': (a, b) => {
+      // Treat infinite/NaN as -Infinity for sort stability,
+      // pushing degenerate rows to the bottom of a desc sort.
+      const ra = q3q1Ratio(a.q1HalfWidth, a.q3HalfWidth);
+      const rb = q3q1Ratio(b.q1HalfWidth, b.q3HalfWidth);
+      const fa = Number.isFinite(ra) ? ra : -Infinity;
+      const fb = Number.isFinite(rb) ? rb : -Infinity;
+      return fb - fa;
+    },
     'median-halfwidth-desc': (a, b) => b.medianHalfWidth - a.medianHalfWidth,
     lens: (a, b) =>
       SLOPE_LENS_WIDTH_QCD_LENS_NAMES.indexOf(a.lens) -
@@ -598,6 +641,7 @@ export function buildSourceRowTokenSlopeCiLensWidthQcd(
     seed,
     alertQcd,
     alertIqr,
+    alertQ3Q1Ratio,
     sort,
     totalSources: sharedSources.length + droppedMissingLens,
     sourcesWithAllLenses: sharedSources.length,
@@ -630,6 +674,7 @@ export function renderSourceRowTokenSlopeCiLensWidthQcd(
     showDispersionAggregate?: boolean;
     showLensAttribution?: boolean;
     showQuartiles?: boolean;
+    showQ3Q1Ratio?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -637,6 +682,7 @@ export function renderSourceRowTokenSlopeCiLensWidthQcd(
   const showDispersionAggregate = opts.showDispersionAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showQuartiles = opts.showQuartiles ?? false;
+  const showQ3Q1Ratio = opts.showQ3Q1Ratio ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-qcd');
@@ -679,6 +725,17 @@ export function renderSourceRowTokenSlopeCiLensWidthQcd(
     if (showQuartiles) {
       lines.push(
         `    quartiles: Q1=${fmtNum(row.q1HalfWidth, 6)} median=${fmtNum(row.medianHalfWidth, 6)} Q3=${fmtNum(row.q3HalfWidth, 6)} IQR=${fmtNum(row.iqrHalfWidth, 6)}`,
+      );
+    }
+    if (showQ3Q1Ratio) {
+      const ratio = q3q1Ratio(row.q1HalfWidth, row.q3HalfWidth);
+      const ratioStr = Number.isFinite(ratio)
+        ? fmtNum(ratio, 4)
+        : ratio === Infinity
+          ? 'inf (Q1=0)'
+          : 'NaN (degenerate)';
+      lines.push(
+        `    q3q1Ratio: Q3/Q1=${ratioStr} (multiplicative quartile ratio)`,
       );
     }
     if (showPerSourceWidths) {

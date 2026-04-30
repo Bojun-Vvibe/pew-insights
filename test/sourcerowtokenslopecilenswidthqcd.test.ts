@@ -8,6 +8,7 @@ import {
   buildSourceRowTokenSlopeCiLensWidthQcd,
   renderSourceRowTokenSlopeCiLensWidthQcd,
   lensWidthQcd,
+  q3q1Ratio,
   SLOPE_LENS_WIDTH_QCD_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthqcd.js';
 import type { QueueLine } from '../src/types.js';
@@ -263,4 +264,90 @@ test('axis24 integration: invalid options throw', () => {
       }),
     /sort/,
   );
+});
+
+// ---------- refinement (v0.6.252): q3q1Ratio helper + alert/sort/render ----------
+
+test('axis24 refinement: q3q1Ratio matches direct definition Q3 / Q1', () => {
+  assert.equal(q3q1Ratio(2, 8), 4);
+  assert.equal(q3q1Ratio(0.5, 0.5), 1);
+  assert.equal(q3q1Ratio(1, 1000), 1000);
+});
+
+test('axis24 refinement: q3q1Ratio = +Infinity when Q1 = 0 < Q3', () => {
+  assert.equal(q3q1Ratio(0, 1), Infinity);
+  assert.equal(q3q1Ratio(0, 0.0001), Infinity);
+});
+
+test('axis24 refinement: q3q1Ratio = NaN when Q3 = 0 (degenerate)', () => {
+  assert.ok(Number.isNaN(q3q1Ratio(0, 0)));
+});
+
+test('axis24 refinement: q3q1Ratio = NaN on negative or non-finite inputs', () => {
+  assert.ok(Number.isNaN(q3q1Ratio(-1, 1)));
+  assert.ok(Number.isNaN(q3q1Ratio(1, -1)));
+  assert.ok(Number.isNaN(q3q1Ratio(NaN, 1)));
+  assert.ok(Number.isNaN(q3q1Ratio(1, Infinity)));
+});
+
+test('axis24 refinement: --alert-q3-q1-ratio filter and q3-q1-ratio-desc sort', () => {
+  const queue = syntheticQueue([
+    { source: 'src-a', nRows: 40, slope: 1, noise: 3 },
+    { source: 'src-b', nRows: 40, slope: 2, noise: 25 },
+    { source: 'src-c', nRows: 40, slope: 1.5, noise: 6 },
+    { source: 'src-d', nRows: 40, slope: 0.8, noise: 4 },
+  ]);
+  // Sort by q3/q1 ratio desc; expect monotone non-increasing finite ratios.
+  const report = buildSourceRowTokenSlopeCiLensWidthQcd(queue, {
+    bootstraps: 100,
+    seed: 5,
+    sort: 'q3-q1-ratio-desc',
+    generatedAt: '2026-01-01T00:00:00Z',
+  });
+  let prev = Infinity;
+  for (const row of report.rows) {
+    const ratio = q3q1Ratio(row.q1HalfWidth, row.q3HalfWidth);
+    if (Number.isFinite(ratio)) {
+      assert.ok(
+        ratio <= prev + 1e-9,
+        `ratio for ${row.lens} = ${ratio} broke desc order (prev=${prev})`,
+      );
+      prev = ratio;
+    }
+  }
+  // alert-q3-q1-ratio = 1e9 should drop everything realistic.
+  const filtered = buildSourceRowTokenSlopeCiLensWidthQcd(queue, {
+    bootstraps: 100,
+    seed: 5,
+    alertQ3Q1Ratio: 1e9,
+    generatedAt: '2026-01-01T00:00:00Z',
+  });
+  assert.equal(filtered.rows.length, 0);
+});
+
+test('axis24 refinement: alertQ3Q1Ratio < 1 throws', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSlopeCiLensWidthQcd([], { alertQ3Q1Ratio: 0.5 }),
+    /alertQ3Q1Ratio/,
+  );
+});
+
+test('axis24 refinement: --show-q3-q1-ratio appears in render', () => {
+  const queue = syntheticQueue([
+    { source: 'src-a', nRows: 30, slope: 1, noise: 3 },
+    { source: 'src-b', nRows: 30, slope: 2, noise: 8 },
+    { source: 'src-c', nRows: 30, slope: 0.5, noise: 4 },
+    { source: 'src-d', nRows: 30, slope: 1.5, noise: 6 },
+  ]);
+  const report = buildSourceRowTokenSlopeCiLensWidthQcd(queue, {
+    bootstraps: 100,
+    seed: 9,
+    generatedAt: '2026-01-01T00:00:00Z',
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthQcd(report, {
+    showQ3Q1Ratio: true,
+  });
+  assert.ok(out.includes('q3q1Ratio:'));
+  assert.ok(out.includes('Q3/Q1='));
 });

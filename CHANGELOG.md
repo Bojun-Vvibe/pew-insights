@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.252 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-qcd` —
+  refinement to v0.6.251 axis-24:
+
+  - New exported helper `q3q1Ratio(q1, q3)` returning the
+    multiplicative quartile ratio `Q3 / Q1`. Returns `+Infinity`
+    when `Q1 = 0 < Q3` (the cloud is genuinely scale-divergent
+    at the lower quartile) and `NaN` when `Q3 = 0` (degenerate)
+    or on negative / non-finite inputs. Complements QCD by
+    surfacing scale divergence: two distributions can share QCD
+    but differ by orders of magnitude in `Q3/Q1` (e.g. a uniform
+    `[1, 9]` and a uniform `[0.001, 0.009]` share QCD = 0.8 but
+    have wildly different `Q3/Q1` because the lower-quartile
+    floor sits in different scale regimes).
+
+  - New CLI flag `--alert-q3-q1-ratio <f>` (`f >= 1`): emits only
+    lenses whose `Q3/Q1` strictly exceeds `f`. Rows with `Q1 = 0`
+    (infinite ratio, ill-defined for the threshold comparison) or
+    `Q3 = 0` (degenerate) are excluded.
+
+  - New CLI sort key `q3-q1-ratio-desc`: order lenses by
+    multiplicative quartile ratio descending. Degenerate rows
+    (Q3 = 0) are pushed to the bottom.
+
+  - New CLI render flag `--show-q3-q1-ratio`: appends a per-lens
+    `q3q1Ratio: Q3/Q1=...` line.
+
+  Six new test() blocks covering the helper edge cases, sort
+  monotonicity, alert filter, validation, and render. Suite:
+  7156 -> 7163, all passing.
+
 ## 0.6.251 — 2026-04-30
 
 ### Added

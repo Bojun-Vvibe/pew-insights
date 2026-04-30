@@ -24479,8 +24479,12 @@ program
     'only emit lenses whose IQR (Q3 - Q1) is strictly GREATER than f (f >= 0)',
   )
   .option(
+    '--alert-q3-q1-ratio <f>',
+    'only emit lenses whose multiplicative quartile ratio Q3/Q1 is strictly GREATER than f (f >= 1); rows with Q1 = 0 (infinite ratio) or Q3 = 0 (degenerate) are excluded',
+  )
+  .option(
     '--sort <key>',
-    "sort key: 'qcd-desc' (default) | 'qcd-asc' | 'iqr-desc' | 'median-halfwidth-desc' | 'lens'",
+    "sort key: 'qcd-desc' (default) | 'qcd-asc' | 'iqr-desc' | 'q3-q1-ratio-desc' | 'median-halfwidth-desc' | 'lens'",
     'qcd-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -24496,6 +24500,10 @@ program
   .option(
     '--show-quartiles',
     'append per-lens quartiles line listing Q1 / median / Q3 / IQR',
+  )
+  .option(
+    '--show-q3-q1-ratio',
+    'append per-lens q3q1Ratio line listing the multiplicative quartile ratio Q3/Q1 (a scale-divergence diagnostic complementary to QCD)',
   )
   .option(
     '--show-per-source-widths',
@@ -24514,12 +24522,14 @@ program
         seed: string;
         alertQcd?: string;
         alertIqr?: string;
+        alertQ3Q1Ratio?: string;
         sort: string;
         json?: boolean;
         showSummary?: boolean;
         showDispersionAggregate?: boolean;
         showLensAttribution?: boolean;
         showQuartiles?: boolean;
+        showQ3Q1Ratio?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -24575,10 +24585,21 @@ program
           }
           alertIqr = a;
         }
+        let alertQ3Q1Ratio: number | null = null;
+        if (opts.alertQ3Q1Ratio != null) {
+          const a = Number.parseFloat(opts.alertQ3Q1Ratio);
+          if (!Number.isFinite(a) || a < 1) {
+            throw new Error(
+              `--alert-q3-q1-ratio must be a finite number >= 1 (got ${opts.alertQ3Q1Ratio})`,
+            );
+          }
+          alertQ3Q1Ratio = a;
+        }
         const validSorts = [
           'qcd-desc',
           'qcd-asc',
           'iqr-desc',
+          'q3-q1-ratio-desc',
           'median-halfwidth-desc',
           'lens',
         ];
@@ -24599,10 +24620,12 @@ program
           seed,
           alertQcd,
           alertIqr,
+          alertQ3Q1Ratio,
           sort: opts.sort as
             | 'qcd-desc'
             | 'qcd-asc'
             | 'iqr-desc'
+            | 'q3-q1-ratio-desc'
             | 'median-halfwidth-desc'
             | 'lens',
         });
@@ -24615,6 +24638,7 @@ program
               showDispersionAggregate: opts.showDispersionAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showQuartiles: opts.showQuartiles ?? false,
+              showQ3Q1Ratio: opts.showQ3Q1Ratio ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
