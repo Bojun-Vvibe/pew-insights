@@ -8,6 +8,7 @@ import {
   buildSourceRowTokenSlopeCiLensWidthKolmPollak,
   renderSourceRowTokenSlopeCiLensWidthKolmPollak,
   lensWidthKolmPollak,
+  lensWidthKolmPollakAlphaCurve,
   SLOPE_LENS_WIDTH_KOLM_POLLAK_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthkolmpollak.js';
 import type { QueueLine } from '../src/types.js';
@@ -363,4 +364,77 @@ test('axis29 render: empty rows path', () => {
   });
   const out = renderSourceRowTokenSlopeCiLensWidthKolmPollak(r);
   assert.match(out, /\(no lenses\)/);
+});
+
+// ---------- alpha-curve derived diagnostic ----------
+
+test('axis29 alphaCurve: identical inputs give doublingRatio = 1 (perfect-equality limit)', () => {
+  const out = lensWidthKolmPollakAlphaCurve([0.5, 0.5, 0.5, 0.5], 1);
+  assert.notEqual(out, null);
+  assert.equal(out!.kAtAlpha, 0);
+  assert.equal(out!.kAtTwoAlpha, 0);
+  assert.equal(out!.doublingRatio, 1);
+});
+
+test('axis29 alphaCurve: doublingRatio > 1 for generic non-equal inputs (more aversion -> more inequality)', () => {
+  const xs = [0.1, 0.3, 1.0, 5.0];
+  const out = lensWidthKolmPollakAlphaCurve(xs, 1);
+  assert.notEqual(out, null);
+  assert.ok(out!.kAtTwoAlpha > out!.kAtAlpha);
+  assert.ok(out!.doublingRatio > 1);
+});
+
+test('axis29 alphaCurve: doublingRatio bounded by Rawlsian saturation', () => {
+  // Pick big alpha so K is already near Rawlsian; doubling alpha
+  // shouldn't change it much.
+  const xs = [0.1, 0.3, 1.0, 5.0];
+  const out = lensWidthKolmPollakAlphaCurve(xs, 100);
+  assert.notEqual(out, null);
+  // Both should be near the Rawlsian deficit, so doubling ratio ~ 1.
+  assert.ok(
+    out!.doublingRatio < 1.01,
+    `doublingRatio=${out!.doublingRatio} not near 1 at alpha=100`,
+  );
+});
+
+test('axis29 alphaCurve: too-few-sources returns null (not throws)', () => {
+  assert.equal(lensWidthKolmPollakAlphaCurve([1, 2, 3], 1), null);
+  assert.equal(lensWidthKolmPollakAlphaCurve([], 1), null);
+});
+
+test('axis29 alphaCurve: render --show-alpha-curve emits expected line', () => {
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 60, slope: 1, noise: 5 },
+    { source: 's2', nRows: 60, slope: 2, noise: 10 },
+    { source: 's3', nRows: 60, slope: 0.5, noise: 1 },
+    { source: 's4', nRows: 60, slope: 3, noise: 50 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthKolmPollak(queue, {
+    bootstraps: 100,
+    seed: 1,
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthKolmPollak(r, {
+    showAlphaCurve: true,
+  });
+  assert.match(out, /alphaCurve: K\(alpha=/);
+  assert.match(out, /doublingRatio=/);
+  assert.match(out, /Rawlsian saturation/);
+});
+
+test('axis29 rawlsianBound: render with --show-rawlsian-bound includes log(n)/alpha analytic gap', () => {
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 60, slope: 1, noise: 5 },
+    { source: 's2', nRows: 60, slope: 2, noise: 10 },
+    { source: 's3', nRows: 60, slope: 0.5, noise: 1 },
+    { source: 's4', nRows: 60, slope: 3, noise: 50 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthKolmPollak(queue, {
+    bootstraps: 100,
+    seed: 1,
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthKolmPollak(r, {
+    showRawlsianBound: true,
+  });
+  assert.match(out, /log\(n\)\/alpha=/);
+  assert.match(out, /gapDev=/);
 });

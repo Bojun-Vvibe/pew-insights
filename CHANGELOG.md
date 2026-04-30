@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.261 — 2026-04-30
+
+### Changed
+
+- `pew-insights source-row-token-slope-ci-lens-width-kolm-pollak`
+  refinement: added two derived diagnostics on top of the v0.6.260
+  axis-29 surface, with no behaviour change to the headline
+  Kolm-Pollak index itself.
+
+  1. `--show-rawlsian-bound` now also reports the analytic Xi-vs-min
+     upper bound `log(n)/alpha` and the deviation
+     `gapDev = | (rawls - K) - log(n)/alpha |`. When `K` saturates
+     the Rawlsian limit, slack converges to exactly `log(n)/alpha`
+     so `gapDev -> 0`. This gives operators an independent
+     verification handle on the log-sum-exp max-trick
+     implementation: any non-trivial `gapDev` at saturation would
+     indicate a numerical bug.
+
+  2. New helper `lensWidthKolmPollakAlphaCurve(halfWidths, alpha)`
+     and matching `--show-alpha-curve` per-lens line. Reports
+     `K(alpha)`, `K(2*alpha)`, and the dimensionless
+     `doublingRatio = K(2*alpha) / K(alpha)`. Properties:
+     - Perfect-equality limit: `doublingRatio = 1`
+       (both K = 0; explicit 0/0 -> 1).
+     - Rawlsian-saturated limit: `doublingRatio -> 1`
+       (both K -> mean - min).
+     - Generic intermediate: `doublingRatio in (1, 2]` --
+       monotonically rises with alpha because exponential utility
+       is more bottom-tail-sensitive at higher alpha.
+
+  Test count: 7315 -> 7321 (+6). All pass.
+
+  **Live smoke test against `~/.config/pew/queue.jsonl`** (2096
+  rows; 6 sources; `--bootstraps 200 --show-alpha-curve
+  --show-rawlsian-bound`):
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-width-kolm-pollak
+  alpha: 1
+
+  meanK:   16902978.818546
+  medianK:    526527.474028
+  maxK:    66710406.185531  (mostExtreme: bca)
+  minK:       307109.363449 (mostUniform: abc)
+  rangeK:  66403296.822083
+
+  lens                 K              rawls          slack       gapDev      doublingRatio
+  bca                  66710406.19    66710407.98    1.791759    0.000000    1.0000
+  bootstrap            32889819.85    32889821.64    1.791759    0.000000    1.0000
+  profileLikelihood      565623.83      565625.62    1.791759    0.000000    1.0000
+  studentizedT           487431.12      487432.91    1.791759    0.000000    1.0000
+  jackknife              457482.56      457484.35    1.791759    0.000000    1.0000
+  abc                    307109.36      307111.16    1.791759    0.000000    1.0000
+  ```
+
+  Across ALL six lenses, `gapDev = 0.000000` (matching the
+  analytic `log(6)/1 = 1.791759` to full double precision) and
+  `doublingRatio = 1.0000` (Rawlsian-saturated -- doubling alpha
+  has no effect because every lens already pegs against
+  `mean - min`). Both diagnostics independently confirm the
+  v0.6.260 log-sum-exp max-subtraction implementation is
+  numerically clean on real-world half-width magnitudes
+  (3e5 to 7e7).
+
 ## 0.6.260 — 2026-04-30
 
 ### Added

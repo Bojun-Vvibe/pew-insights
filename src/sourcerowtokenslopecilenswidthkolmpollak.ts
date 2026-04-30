@@ -693,6 +693,46 @@ export function buildSourceRowTokenSlopeCiLensWidthKolmPollak(
   };
 }
 
+/**
+ * Derived diagnostic: ALPHA-DOUBLING SENSITIVITY ratio.
+ *
+ * Returns K_{2*alpha} / K_{alpha} on the same input distribution.
+ * In the limit:
+ *   - Perfect equality:    ratio is 0/0 -> reported as 1
+ *     (both numerator and denominator collapse to 0).
+ *   - Rawlsian-saturated:  ratio -> 1 (both Ks pin to mean - min).
+ *   - Generic intermediate: ratio in (1, 2] -- doubling alpha
+ *     monotonically RAISES K (more aversion -> larger
+ *     welfare-loss gap), bounded above by the Rawlsian limit
+ *     mean - min.
+ *
+ * Computed without re-deriving the helper inputs -- callable on
+ * any non-negative array. Returns null if the helper degenerates
+ * (n<4 etc) so that callers can render '-' for the column.
+ */
+export function lensWidthKolmPollakAlphaCurve(
+  halfWidths: number[],
+  alpha: number,
+): { kAtAlpha: number; kAtTwoAlpha: number; doublingRatio: number } | null {
+  const a = lensWidthKolmPollak(halfWidths, alpha);
+  if (a.degenerateFlag) return null;
+  const b = lensWidthKolmPollak(halfWidths, 2 * alpha);
+  if (b.degenerateFlag) return null;
+  let ratio: number;
+  if (a.kolmPollak === 0 && b.kolmPollak === 0) {
+    ratio = 1; // perfect-equality limit
+  } else if (a.kolmPollak === 0) {
+    ratio = Number.POSITIVE_INFINITY;
+  } else {
+    ratio = b.kolmPollak / a.kolmPollak;
+  }
+  return {
+    kAtAlpha: a.kolmPollak,
+    kAtTwoAlpha: b.kolmPollak,
+    doublingRatio: ratio,
+  };
+}
+
 function fmtNum(x: number, digits = 4): string {
   if (!Number.isFinite(x)) {
     return x === Infinity ? 'inf' : x === -Infinity ? '-inf' : 'NaN';
@@ -707,6 +747,7 @@ export function renderSourceRowTokenSlopeCiLensWidthKolmPollak(
     showConcentrationAggregate?: boolean;
     showLensAttribution?: boolean;
     showRawlsianBound?: boolean;
+    showAlphaCurve?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -714,6 +755,7 @@ export function renderSourceRowTokenSlopeCiLensWidthKolmPollak(
   const showConcentrationAggregate = opts.showConcentrationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showRawlsianBound = opts.showRawlsianBound ?? false;
+  const showAlphaCurve = opts.showAlphaCurve ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-kolm-pollak');
@@ -762,9 +804,33 @@ export function renderSourceRowTokenSlopeCiLensWidthKolmPollak(
         const slack = row.rawlsianDeficit - row.kolmPollak;
         const ratio =
           row.rawlsianDeficit > 0 ? row.kolmPollak / row.rawlsianDeficit : 0;
+        // Analytic upper bound on the Xi-vs-min gap is log(n)/alpha
+        // (because Xi >= min - log(n)/alpha for n>=1, alpha>0). When
+        // K saturates the Rawlsian limit this slack converges to
+        // exactly log(n)/alpha. Emitting it lets the operator
+        // independently verify the log-sum-exp implementation.
+        const analyticGap = Math.log(row.nShared) / r.alpha;
+        const gapDeviation = Math.abs(slack - analyticGap);
         lines.push(
-          `    rawlsianBound: K=${fmtNum(row.kolmPollak, 6)} <= rawls=${fmtNum(row.rawlsianDeficit, 6)} (slack=${fmtNum(slack, 6)} ratio=${fmtNum(ratio)} alpha=${r.alpha})`,
+          `    rawlsianBound: K=${fmtNum(row.kolmPollak, 6)} <= rawls=${fmtNum(row.rawlsianDeficit, 6)} (slack=${fmtNum(slack, 6)} ratio=${fmtNum(ratio)} alpha=${r.alpha} log(n)/alpha=${fmtNum(analyticGap, 6)} gapDev=${fmtNum(gapDeviation, 6)})`,
         );
+      }
+    }
+    if (showAlphaCurve) {
+      if (row.degenerateFlag) {
+        lines.push(`    alphaCurve: (degenerate)`);
+      } else {
+        const curve = lensWidthKolmPollakAlphaCurve(
+          row.perSourceHalfWidths,
+          r.alpha,
+        );
+        if (curve === null) {
+          lines.push(`    alphaCurve: (degenerate at 2*alpha)`);
+        } else {
+          lines.push(
+            `    alphaCurve: K(alpha=${r.alpha})=${fmtNum(curve.kAtAlpha, 6)} K(alpha=${2 * r.alpha})=${fmtNum(curve.kAtTwoAlpha, 6)} doublingRatio=${fmtNum(curve.doublingRatio, 4)} (>= 1; -> 1 at Rawlsian saturation)`,
+          );
+        }
       }
     }
     if (showPerSourceWidths) {

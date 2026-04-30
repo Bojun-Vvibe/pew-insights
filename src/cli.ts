@@ -25604,7 +25604,11 @@ program
   )
   .option(
     '--show-rawlsian-bound',
-    'append per-lens rawlsianBound line listing the upper-bound deficit (mean - min), slack (rawls - K), and ratio (K / rawls)',
+    'append per-lens rawlsianBound line listing the upper-bound deficit (mean - min), slack (rawls - K), ratio (K / rawls), and the analytic Xi-vs-min upper bound log(n)/alpha (independent verification of the log-sum-exp implementation)',
+  )
+  .option(
+    '--show-alpha-curve',
+    'append per-lens alphaCurve line listing K at alpha and at 2*alpha, plus doublingRatio = K(2*alpha)/K(alpha) (>= 1; -> 1 at Rawlsian saturation; bottom-tail-aversion sensitivity check)',
   )
   .option(
     '--show-per-source-widths',
@@ -25631,6 +25635,7 @@ program
         showConcentrationAggregate?: boolean;
         showLensAttribution?: boolean;
         showRawlsianBound?: boolean;
+        showAlphaCurve?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -25747,6 +25752,7 @@ program
                 opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showRawlsianBound: opts.showRawlsianBound ?? false,
+              showAlphaCurve: opts.showAlphaCurve ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
