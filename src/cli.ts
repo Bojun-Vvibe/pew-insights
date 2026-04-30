@@ -24916,8 +24916,12 @@ program
     'only emit lenses whose s40 (bottom-40% mass share) is strictly LESS than f (f in [0, 1]); useful for surfacing tail-heavy lenses',
   )
   .option(
+    '--alert-hypothesis-distance <f>',
+    'only emit lenses whose palmaHypothesisDistance (= |s50middle - 0.5|) is strictly GREATER than f (f in [0, 0.5]); surfaces lenses violating the Cobham-Sumner-Palma 2013 empirical-constant-middle target most',
+  )
+  .option(
     '--sort <key>',
-    "sort key: 'palma-desc' (default) | 'palma-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 's40-asc' | 's90-desc' | 'lens'",
+    "sort key: 'palma-desc' (default) | 'palma-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 's40-asc' | 's90-desc' | 'hypothesis-distance-desc' | 'lens'",
     'palma-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -24933,6 +24937,10 @@ program
   .option(
     '--show-tail-decomposition',
     'append per-lens tails line listing bottom-40%, middle-50%, top-10% mass shares and the Palma ratio',
+  )
+  .option(
+    '--show-palma-hypothesis',
+    'append per-lens hypothesis line listing middle-50% share, the Cobham-Sumner-Palma 2013 target=0.5, and palmaHypothesisDistance = |s50middle - 0.5|',
   )
   .option(
     '--show-per-source-widths',
@@ -24952,12 +24960,14 @@ program
         alertPalma?: string;
         alertMass?: string;
         alertBottomShare?: string;
+        alertHypothesisDistance?: string;
         sort: string;
         json?: boolean;
         showSummary?: boolean;
         showConcentrationAggregate?: boolean;
         showLensAttribution?: boolean;
         showTailDecomposition?: boolean;
+        showPalmaHypothesis?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -25023,6 +25033,16 @@ program
           }
           alertBottomShare = a;
         }
+        let alertHypothesisDistance: number | null = null;
+        if (opts.alertHypothesisDistance != null) {
+          const a = Number.parseFloat(opts.alertHypothesisDistance);
+          if (!Number.isFinite(a) || a < 0 || a > 0.5) {
+            throw new Error(
+              `--alert-hypothesis-distance must be a finite number in [0, 0.5] (got ${opts.alertHypothesisDistance})`,
+            );
+          }
+          alertHypothesisDistance = a;
+        }
         const validSorts = [
           'palma-desc',
           'palma-asc',
@@ -25030,6 +25050,7 @@ program
           'mean-halfwidth-desc',
           's40-asc',
           's90-desc',
+          'hypothesis-distance-desc',
           'lens',
         ];
         if (!validSorts.includes(opts.sort)) {
@@ -25050,6 +25071,7 @@ program
           alertPalma,
           alertMass,
           alertBottomShare,
+          alertHypothesisDistance,
           sort: opts.sort as
             | 'palma-desc'
             | 'palma-asc'
@@ -25057,6 +25079,7 @@ program
             | 'mean-halfwidth-desc'
             | 's40-asc'
             | 's90-desc'
+            | 'hypothesis-distance-desc'
             | 'lens',
         });
         if (opts.json || common.json) {
@@ -25069,6 +25092,7 @@ program
                 opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showTailDecomposition: opts.showTailDecomposition ?? false,
+              showPalmaHypothesis: opts.showPalmaHypothesis ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );

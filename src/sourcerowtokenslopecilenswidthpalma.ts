@@ -115,6 +115,14 @@
  *   - `s90`               -- top-10%   mass share 1 - L(0.9) in [0, 1]
  *   - `s50middle`         -- middle-50% residual share = 1 - s40 - s90
  *                            (Palma-hypothesis "constant middle")
+ *   - `palmaHypothesisDistance` -- |s50middle - 0.5|, the absolute
+ *                            distance from the Cobham-Sumner-Palma
+ *                            (2013) empirical-constant-middle
+ *                            target of 0.5. Smaller is better
+ *                            agreement with the Palma hypothesis.
+ *                            Reported as 0.5 (the worst possible
+ *                            value for a valid distribution) when
+ *                            degenerate.
  *   - `palma`             -- Palma ratio S90/S40 in [0, +inf)
  *                            (clamped to `palmaSentinel` when S40 = 0)
  *   - `palmaIsInfinite`   -- true iff S40 = 0 and S90 > 0
@@ -142,6 +150,11 @@
  *   - --alert-palma <f>   -- keep lenses with palma > f (f >= 0)
  *   - --alert-mass <f>    -- keep lenses with totalHalfWidth > f
  *   - --alert-bottom-share <f> -- keep lenses with s40 < f (f in [0,1])
+ *   - --alert-hypothesis-distance <f> -- keep lenses with
+ *                            palmaHypothesisDistance > f
+ *                            (f in [0, 0.5]); surfaces lenses
+ *                            whose middle-50% share deviates most
+ *                            from the canonical Palma target.
  */
 
 import type { QueueLine } from './types.js';
@@ -199,6 +212,7 @@ export interface SourceRowTokenSlopeCiLensWidthPalmaOptions {
   alertPalma?: number | null;
   alertMass?: number | null;
   alertBottomShare?: number | null;
+  alertHypothesisDistance?: number | null;
   sort?:
     | 'palma-desc'
     | 'palma-asc'
@@ -206,6 +220,7 @@ export interface SourceRowTokenSlopeCiLensWidthPalmaOptions {
     | 'mean-halfwidth-desc'
     | 's40-asc'
     | 's90-desc'
+    | 'hypothesis-distance-desc'
     | 'lens';
   generatedAt?: string;
 }
@@ -218,6 +233,7 @@ export interface SourceRowTokenSlopeCiLensWidthPalmaLensRow {
   s40: number;
   s90: number;
   s50middle: number;
+  palmaHypothesisDistance: number;
   palma: number;
   palmaIsInfinite: boolean;
   concentrationLabel: PalmaConcentrationLabel;
@@ -240,6 +256,7 @@ export interface SourceRowTokenSlopeCiLensWidthPalmaReport {
   alertPalma: number | null;
   alertMass: number | null;
   alertBottomShare: number | null;
+  alertHypothesisDistance: number | null;
   sort: NonNullable<SourceRowTokenSlopeCiLensWidthPalmaOptions['sort']>;
   totalSources: number;
   sourcesWithAllLenses: number;
@@ -264,8 +281,11 @@ const VALID_SORTS = [
   'mean-halfwidth-desc',
   's40-asc',
   's90-desc',
+  'hypothesis-distance-desc',
   'lens',
 ] as const;
+
+const PALMA_HYPOTHESIS_TARGET = 0.5;
 
 function median(xs: number[]): number {
   if (xs.length === 0) return 0;
@@ -532,6 +552,18 @@ export function buildSourceRowTokenSlopeCiLensWidthPalma(
       );
     }
   }
+  const alertHypothesisDistance = opts.alertHypothesisDistance ?? null;
+  if (alertHypothesisDistance !== null) {
+    if (
+      !Number.isFinite(alertHypothesisDistance) ||
+      alertHypothesisDistance < 0 ||
+      alertHypothesisDistance > 0.5
+    ) {
+      throw new Error(
+        `alertHypothesisDistance must be a finite number in [0, 0.5] (got ${opts.alertHypothesisDistance})`,
+      );
+    }
+  }
   const sort = opts.sort ?? 'palma-desc';
   if (!(VALID_SORTS as readonly string[]).includes(sort)) {
     throw new Error(
@@ -633,6 +665,9 @@ export function buildSourceRowTokenSlopeCiLensWidthPalma(
       s40: comp.s40,
       s90: comp.s90,
       s50middle: comp.s50middle,
+      palmaHypothesisDistance: comp.degenerateFlag
+        ? PALMA_HYPOTHESIS_TARGET
+        : Math.abs(comp.s50middle - PALMA_HYPOTHESIS_TARGET),
       palma: comp.palma,
       palmaIsInfinite: comp.palmaIsInfinite,
       concentrationLabel,
@@ -705,6 +740,13 @@ export function buildSourceRowTokenSlopeCiLensWidthPalma(
       (r) => !r.degenerateFlag && r.s40 < alertBottomShare!,
     );
   }
+  if (alertHypothesisDistance !== null) {
+    filtered = filtered.filter(
+      (r) =>
+        !r.degenerateFlag &&
+        r.palmaHypothesisDistance > alertHypothesisDistance!,
+    );
+  }
 
   const sortFns: Record<
     (typeof VALID_SORTS)[number],
@@ -743,6 +785,11 @@ export function buildSourceRowTokenSlopeCiLensWidthPalma(
       const sb = b.degenerateFlag ? -Infinity : b.s90;
       return sb - sa;
     },
+    'hypothesis-distance-desc': (a, b) => {
+      const sa = a.degenerateFlag ? -Infinity : a.palmaHypothesisDistance;
+      const sb = b.degenerateFlag ? -Infinity : b.palmaHypothesisDistance;
+      return sb - sa;
+    },
     lens: (a, b) =>
       SLOPE_LENS_WIDTH_PALMA_LENS_NAMES.indexOf(a.lens) -
       SLOPE_LENS_WIDTH_PALMA_LENS_NAMES.indexOf(b.lens),
@@ -769,6 +816,7 @@ export function buildSourceRowTokenSlopeCiLensWidthPalma(
     alertPalma,
     alertMass,
     alertBottomShare,
+    alertHypothesisDistance,
     sort,
     totalSources: sharedSources.length + droppedMissingLens,
     sourcesWithAllLenses: sharedSources.length,
@@ -806,6 +854,7 @@ export function renderSourceRowTokenSlopeCiLensWidthPalma(
     showConcentrationAggregate?: boolean;
     showLensAttribution?: boolean;
     showTailDecomposition?: boolean;
+    showPalmaHypothesis?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -813,11 +862,12 @@ export function renderSourceRowTokenSlopeCiLensWidthPalma(
   const showConcentrationAggregate = opts.showConcentrationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showTailDecomposition = opts.showTailDecomposition ?? false;
+  const showPalmaHypothesis = opts.showPalmaHypothesis ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-palma');
   lines.push(
-    `as of: ${r.generatedAt}    sources: ${r.totalSources} (with all lenses ${r.sourcesWithAllLenses})    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    bootstraps: ${r.bootstraps}    seed: ${r.seed}    alert-palma: ${r.alertPalma ?? '-'}    alert-mass: ${r.alertMass ?? '-'}    alert-bottom-share: ${r.alertBottomShare ?? '-'}    sort: ${r.sort}`,
+    `as of: ${r.generatedAt}    sources: ${r.totalSources} (with all lenses ${r.sourcesWithAllLenses})    min-rows: ${r.minRows}    confidence: ${r.confidence}    lambda: ${r.lambda}    bootstraps: ${r.bootstraps}    seed: ${r.seed}    alert-palma: ${r.alertPalma ?? '-'}    alert-mass: ${r.alertMass ?? '-'}    alert-bottom-share: ${r.alertBottomShare ?? '-'}    alert-hypothesis-distance: ${r.alertHypothesisDistance ?? '-'}    sort: ${r.sort}`,
   );
   lines.push(
     `dropped: ${r.droppedMissingLens} missing-from-some-lens; meanPalma: ${fmtNum(r.meanPalma)}; medianPalma: ${fmtNum(r.medianPalma)}; maxPalma: ${fmtNum(r.maxPalma)}; minPalma: ${fmtNum(r.minPalma)}; rangePalma: ${fmtNum(r.rangePalma)}; nExtreme: ${r.nExtreme}; nBalancedOrInverted: ${r.nBalancedOrInverted}; nDegen: ${r.nDegenerate}; mostExtreme: ${r.mostExtremeLens ?? '-'}; mostBalanced: ${r.mostBalancedLens ?? '-'}`,
@@ -856,6 +906,15 @@ export function renderSourceRowTokenSlopeCiLensWidthPalma(
       lines.push(
         `    tails: bottom-40%=${fmtNum(row.s40)} middle-50%=${fmtNum(row.s50middle)} top-10%=${fmtNum(row.s90)} (sum=${fmtNum(row.s40 + row.s50middle + row.s90)}); palma=S90/S40=${fmtPalma(row.palma, row.palmaIsInfinite)}`,
       );
+    }
+    if (showPalmaHypothesis) {
+      if (row.degenerateFlag) {
+        lines.push(`    hypothesis: (degenerate)`);
+      } else {
+        lines.push(
+          `    hypothesis: middle-50%=${fmtNum(row.s50middle)} target=0.5000 distance=${fmtNum(row.palmaHypothesisDistance)} (Cobham-Sumner-Palma 2013 empirical-constant-middle target)`,
+        );
+      }
     }
     if (showPerSourceWidths) {
       if (row.perSourceSources.length === 0) {

@@ -429,3 +429,99 @@ test('axis26 render: empty rows reports "(no lenses)"', () => {
   const out = renderSourceRowTokenSlopeCiLensWidthPalma(r);
   assert.ok(out.includes('(no lenses)'));
 });
+
+// ---------- refinement: palmaHypothesisDistance ----------
+
+test('axis26 refinement: palmaHypothesisDistance equals |s50middle - 0.5| for non-degenerate rows', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 30, slope: 0.5, noise: 8 },
+    { source: 'c', nRows: 30, slope: 2.0, noise: 12 },
+    { source: 'd', nRows: 30, slope: 1.5, noise: 3 },
+    { source: 'e', nRows: 30, slope: 0.8, noise: 15 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthPalma(queue);
+  for (const row of r.rows) {
+    if (row.degenerateFlag) {
+      assert.equal(row.palmaHypothesisDistance, 0.5);
+      continue;
+    }
+    const d = Math.abs(row.s50middle - 0.5);
+    assert.ok(
+      Math.abs(row.palmaHypothesisDistance - d) < 1e-12,
+      `lens ${row.lens}: ${row.palmaHypothesisDistance} vs ${d}`,
+    );
+    assert.ok(row.palmaHypothesisDistance >= 0);
+    assert.ok(row.palmaHypothesisDistance <= 0.5 + 1e-12);
+  }
+});
+
+test('axis26 refinement: hypothesis-distance-desc sort order', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 30, slope: 0.5, noise: 8 },
+    { source: 'c', nRows: 30, slope: 2.0, noise: 12 },
+    { source: 'd', nRows: 30, slope: 1.5, noise: 3 },
+    { source: 'e', nRows: 30, slope: 0.8, noise: 15 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthPalma(queue, {
+    sort: 'hypothesis-distance-desc',
+  });
+  let last = Infinity;
+  for (const row of r.rows) {
+    if (row.degenerateFlag) continue;
+    assert.ok(row.palmaHypothesisDistance <= last + 1e-12);
+    last = row.palmaHypothesisDistance;
+  }
+});
+
+test('axis26 refinement: alert-hypothesis-distance filter', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 30, slope: 0.5, noise: 8 },
+    { source: 'c', nRows: 30, slope: 2.0, noise: 12 },
+    { source: 'd', nRows: 30, slope: 1.5, noise: 3 },
+    { source: 'e', nRows: 30, slope: 0.8, noise: 15 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthPalma(queue, {
+    alertHypothesisDistance: 0.49,
+  });
+  for (const row of r.rows) {
+    assert.ok(!row.degenerateFlag);
+    assert.ok(row.palmaHypothesisDistance > 0.49);
+  }
+});
+
+test('axis26 refinement: alert-hypothesis-distance validates bounds', () => {
+  assert.throws(
+    () =>
+      buildSourceRowTokenSlopeCiLensWidthPalma([], {
+        alertHypothesisDistance: 0.6,
+      }),
+    /alertHypothesisDistance/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenSlopeCiLensWidthPalma([], {
+        alertHypothesisDistance: -0.01,
+      }),
+    /alertHypothesisDistance/,
+  );
+});
+
+test('axis26 refinement: render --show-palma-hypothesis emits hypothesis line', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 30, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 30, slope: 0.5, noise: 8 },
+    { source: 'c', nRows: 30, slope: 2.0, noise: 12 },
+    { source: 'd', nRows: 30, slope: 1.5, noise: 3 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthPalma(queue, {
+    generatedAt: '2026-04-30T00:00:00Z',
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthPalma(r, {
+    showPalmaHypothesis: true,
+  });
+  assert.ok(out.includes('hypothesis:'));
+  assert.ok(out.includes('target=0.5000'));
+});

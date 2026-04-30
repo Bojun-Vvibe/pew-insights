@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.256 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-palma` —
+  refinement to v0.6.255 axis-26:
+
+  - New per-lens column `palmaHypothesisDistance` =
+    `|s50middle - 0.5|`, the absolute distance from the
+    Cobham-Sumner-Palma (2013) empirical-constant-middle target of
+    `0.5`. Smaller values indicate better agreement with the Palma
+    hypothesis (the empirical claim that the middle 50% of a
+    well-formed inequality distribution captures roughly half the
+    mass). Reported as `0.5` (the worst possible value for a valid
+    distribution) when the row is degenerate, so a single
+    `--sort hypothesis-distance-desc` cannot accidentally promote
+    degenerate lenses to the top.
+
+  - New CLI flag `--alert-hypothesis-distance <f>` (`f` in
+    `[0, 0.5]`): emits only lenses whose `palmaHypothesisDistance`
+    strictly exceeds `f`. Validates bounds on both ends; degenerate
+    rows are excluded from the surviving set.
+
+  - New CLI sort key `hypothesis-distance-desc`: orders lenses by
+    Palma-hypothesis violation descending. Degenerate rows are
+    demoted to the bottom.
+
+  - New CLI render flag `--show-palma-hypothesis`: appends a
+    per-lens `hypothesis: middle-50%=... target=0.5000 distance=...`
+    line. Degenerate rows render `hypothesis: (degenerate)`.
+
+  Five new test() blocks covering the identity
+  `palmaHypothesisDistance == |s50middle - 0.5|` for non-degenerate
+  rows (and `0.5` for degenerate ones), the new sort key, the new
+  alert filter with explicit upper-bound validation at `0.5`, and
+  the render emission of the new line. Suite: 7227 -> 7232, all
+  passing.
+
+  **Live smoke (`~/.config/pew/queue.jsonl`, n=6 shared sources)
+  with `--show-palma-hypothesis`:** middle-50% mass shares range
+  from `0.4162` (lens=`abc`, distance=`0.0838`) to `0.7080`
+  (lens=`bca`, distance=`0.2080`); profileLikelihood `0.6158`
+  (distance=`0.1158`); studentizedT `0.6898` (distance=`0.1898`);
+  jackknife `0.6915` (distance=`0.1915`); bootstrap `0.6555`
+  (distance=`0.1555`). On the live queue, only one of the six
+  uncertainty-quantification lenses (`abc`) lands within
+  `0.10` of the canonical Palma target — every other lens
+  concentrates more than half the mass-share into the middle
+  band, in tension with the Cobham-Sumner-Palma 2013 empirical
+  prior.
+
 ## 0.6.255 — 2026-04-30
 
 ### Added
