@@ -487,6 +487,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthTheil,
   renderSourceRowTokenSlopeCiLensWidthTheil,
 } from './sourcerowtokenslopecilenswidththeil.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthAtkinson,
+  renderSourceRowTokenSlopeCiLensWidthAtkinson,
+} from './sourcerowtokenslopecilenswidthatkinson.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -24207,6 +24211,203 @@ program
               showMoments: opts.showMoments ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
               showShares: opts.showShares ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-atkinson')
+  .description(
+    "Per-lens CROSS-SOURCE ATKINSON INDEX A(epsilon) of CI half-widths (TWENTY-THIRD cross-lens axis). Mechanically distinct from ALL TWENTY-TWO priors on FOUR orthogonal dimensions, AND distinct from axes 21 (Gini) and 22 (Theil GE(1)) on TWO of those: (1) POPULATION GEOMETRY -- like axes 20-22 the population is LENSES (six rows). (2) STATISTIC FAMILY -- this is a PARAMETRIC, WELFARE-THEORETIC inequality measure derived from a constant-relative-risk-aversion (CRRA) social welfare function with inequality-aversion parameter epsilon > 0; bounded in [0, 1] for ALL n (unlike Theil [0, ln n] and Gini [0, (n-1)/n]). A(eps) = 1 - x_EDE(eps) / mean, where x_EDE is the equally-distributed-equivalent level. (3) PARAMETRIC FAMILY -- reports BOTH eps=0.5 (mild aversion, near-utilitarian) and eps=2 (strong aversion, near-Rawlsian). Two distributions can have identical Gini and Theil but differ in (A(0.5), A(2)) ratios -- the canonical Pigou-Dalton transfer-sensitivity diagnostic. (4) CARDINAL WELFARE-LOSS interpretation -- A(eps) is the FRACTION of total half-width budget that could be saved by perfect equalisation while preserving the same social welfare. For each lens L: halfWidth = (ciUpper - ciLower) / 2; A(eps != 1) = 1 - ((1/n) sum (x_i/mu)^(1-eps))^(1/(1-eps)); A(1) = 1 - exp((1/n) sum ln(x_i/mu)) (geometric-mean limit). Per-lens: nShared, meanHalfWidth, minHalfWidth, maxHalfWidth, atkinsonHalf=A(0.5), atkinsonTwo=A(2), xEdeHalf, xEdeTwo, aversionGap = A(2)-A(0.5) >= 0 (Atkinson is weakly increasing in eps; gap measures how much extra inequality is uncovered by stronger aversion), concentrationLabel ('highly-concentrated' A(2) > 0.5; 'moderately-concentrated' A(2) in (0.3, 0.5]; 'mild-concentration' A(2) in (0.1, 0.3]; 'near-equal' A(2) in [0, 0.1]; 'degenerate'), degenerateFlagHalf/Two, degenerateReasonHalf/Two ('too-few-sources' n < 3, 'zero-mean-halfwidth', 'zero-source-eps-ge-1' (only for eps=2: any zero source forces A=1), 'non-finite'). Report-level: meanAtkinsonHalf, meanAtkinsonTwo, medianAtkinsonHalf, medianAtkinsonTwo, maxAtkinsonTwo, minAtkinsonTwo, rangeAtkinsonTwo, meanAversionGap, nDegenerateHalf/Two, nHighlyConcentrated, nNearEqual, mostConcentratedLens (argmax A(2)), mostEqualLens (argmin A(2)), largestAversionGapLens (argmax A(2)-A(0.5)).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-atkinson-half <f>',
+    'only emit lenses whose A(0.5) is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--alert-atkinson-two <f>',
+    'only emit lenses whose A(2) is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'atkinson-two-desc' (default) | 'atkinson-two-asc' | 'atkinson-half-desc' | 'aversion-gap-desc' | 'mean-halfwidth-desc' | 'lens'",
+    'atkinson-two-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the three extremal lenses (mostConcentrated, mostEqual, largestAversionGap)',
+  )
+  .option(
+    '--show-moments',
+    'append per-lens moments line listing meanHalf / minHalf / maxHalf',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .option(
+    '--show-x-ede',
+    'append per-lens equally-distributed-equivalent levels for both eps values (xEde(0.5), xEde(2)) -- the cardinal welfare-loss diagnostic A(eps) = 1 - xEde(eps)/mean',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertAtkinsonHalf?: string;
+        alertAtkinsonTwo?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showMoments?: boolean;
+        showPerSourceWidths?: boolean;
+        showXEde?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertAtkinsonHalf: number | null = null;
+        if (opts.alertAtkinsonHalf != null) {
+          const a = Number.parseFloat(opts.alertAtkinsonHalf);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-atkinson-half must be a finite number in [0, 1] (got ${opts.alertAtkinsonHalf})`,
+            );
+          }
+          alertAtkinsonHalf = a;
+        }
+        let alertAtkinsonTwo: number | null = null;
+        if (opts.alertAtkinsonTwo != null) {
+          const a = Number.parseFloat(opts.alertAtkinsonTwo);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-atkinson-two must be a finite number in [0, 1] (got ${opts.alertAtkinsonTwo})`,
+            );
+          }
+          alertAtkinsonTwo = a;
+        }
+        const validSorts = [
+          'atkinson-two-desc',
+          'atkinson-two-asc',
+          'atkinson-half-desc',
+          'aversion-gap-desc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthAtkinson(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertAtkinsonHalf,
+          alertAtkinsonTwo,
+          sort: opts.sort as
+            | 'atkinson-two-desc'
+            | 'atkinson-two-asc'
+            | 'atkinson-half-desc'
+            | 'aversion-gap-desc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthAtkinson(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showMoments: opts.showMoments ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+              showXEde: opts.showXEde ?? false,
             }) + '\n',
           );
         }
