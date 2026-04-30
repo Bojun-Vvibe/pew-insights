@@ -495,6 +495,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthQcd,
   renderSourceRowTokenSlopeCiLensWidthQcd,
 } from './sourcerowtokenslopecilenswidthqcd.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthHoover,
+  renderSourceRowTokenSlopeCiLensWidthHoover,
+} from './sourcerowtokenslopecilenswidthhoover.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -24639,6 +24643,195 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showQuartiles: opts.showQuartiles ?? false,
               showQ3Q1Ratio: opts.showQ3Q1Ratio ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-hoover')
+  .description(
+    "Per-lens CROSS-SOURCE HOOVER (Pietra / Schutz / Robin Hood) INDEX of CI half-widths (TWENTY-FIFTH cross-lens axis). H = (1/2) * sum_i | w_i / S - 1/n | = sup_p | L(p) - p | -- the maximum vertical distance between the Lorenz curve and the equality diagonal. Mechanically distinct from ALL TWENTY-FOUR priors on FIVE orthogonal dimensions: (1) POPULATION GEOMETRY -- like axes 20-24 the population is LENSES (six rows). (2) STATISTIC FAMILY -- L_infinity functional of the Lorenz process; axis-21 Gini integrates the SAME Lorenz gap (L_1 vs L_inf are inequivalent on the simplex), axis-22 Theil is entropic, axis-23 Atkinson is a CRRA power-mean welfare loss, axis-24 QCD uses EXACTLY TWO order statistics. Hoover has a UNIQUE Robin Hood interpretation: the FRACTION of total mass to redistribute for perfect equality. (3) SENSITIVITY PROFILE -- Hoover transfer principle is WEAKER than Pigou-Dalton: insensitive to mean-preserving transfers ON THE SAME SIDE of the mean (axes 21/22/23 all satisfy strict Pigou-Dalton). Canonical diagnostic for 'what fraction of mass crosses the mean'. (4) BOUNDEDNESS / ZERO-IMMUNITY -- bounded in [0, 1 - 1/n], tolerates up to n-1 zero half-widths (only all-zero is degenerate); axis-22 needs every source > 0, axis-23 collapses to A=1 on a single zero. WIDEST domain of any cross-lens inequality measure shipped. (5) COMPUTATIONAL FORM -- single-pass O(n) sum of absolute deviations, derivative-free, no quantile/log/power/Lorenz-cumulation/Pearson-moment. Per-lens: nShared, meanHalfWidth, totalHalfWidth, hoover, hooverNormalised (H / (1 - 1/n)), hooverMax, redistributableShare, concentrationLabel ('highly-concentrated' H > 0.5; 'moderately-concentrated' H in (0.3, 0.5]; 'mild-concentration' H in (0.1, 0.3]; 'near-uniform' H in [0, 0.1]; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n < 4, 'zero-mass', 'non-finite'). Report-level: meanHoover, medianHoover, maxHoover, minHoover, rangeHoover, nDegenerate, nHighlyConcentrated, nNearUniform, mostConcentratedLens (argmax H), mostUniformLens (argmin H).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-hoover <f>',
+    'only emit lenses whose Hoover index H is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--alert-mass <f>',
+    'only emit lenses whose totalHalfWidth (sum of cross-source half-widths) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'hoover-desc' (default) | 'hoover-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 'lens'",
+    'hoover-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostConcentrated, mostUniform)',
+  )
+  .option(
+    '--show-redistribution',
+    'append per-lens redistribution line interpreting H as the Robin Hood "fraction of total half-width mass to redistribute"',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertHoover?: string;
+        alertMass?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showRedistribution?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertHoover: number | null = null;
+        if (opts.alertHoover != null) {
+          const a = Number.parseFloat(opts.alertHoover);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-hoover must be a finite number in [0, 1] (got ${opts.alertHoover})`,
+            );
+          }
+          alertHoover = a;
+        }
+        let alertMass: number | null = null;
+        if (opts.alertMass != null) {
+          const a = Number.parseFloat(opts.alertMass);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-mass must be a finite, non-negative number (got ${opts.alertMass})`,
+            );
+          }
+          alertMass = a;
+        }
+        const validSorts = [
+          'hoover-desc',
+          'hoover-asc',
+          'mass-desc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertHoover,
+          alertMass,
+          sort: opts.sort as
+            | 'hoover-desc'
+            | 'hoover-asc'
+            | 'mass-desc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthHoover(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showRedistribution: opts.showRedistribution ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
