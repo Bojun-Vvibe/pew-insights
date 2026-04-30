@@ -511,6 +511,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthBonferroni,
   renderSourceRowTokenSlopeCiLensWidthBonferroni,
 } from './sourcerowtokenslopecilenswidthbonferroni.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthKolmPollak,
+  renderSourceRowTokenSlopeCiLensWidthKolmPollak,
+} from './sourcerowtokenslopecilenswidthkolmpollak.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -25523,6 +25527,226 @@ program
                 opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showLowerTail: opts.showLowerTail ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-kolm-pollak')
+  .description(
+    "Per-lens CROSS-SOURCE KOLM-POLLAK INDEX of CI half-widths (TWENTY-NINTH cross-lens axis). K_alpha = mean(x) - Xi_alpha, where Xi_alpha = -(1/alpha) * log((1/n) * sum_i exp(-alpha*x_i)) is the equally-distributed-equivalent under exponential utility u(x) = -exp(-alpha*x) (Kolm 1976; Pollak 1971; Atkinson-Stiglitz 1980). FUNDAMENTALLY ORTHOGONAL to ALL TWENTY-EIGHT prior cross-lens diagnostics: every prior axis (21 Gini, 22 Theil, 23 Atkinson, 24 QCD, 25 Hoover, 26 Palma, 27 GE(2), 28 Bonferroni) is SCALE-INVARIANT (rescaling all half-widths by c leaves the index unchanged). Kolm-Pollak is TRANSLATION-INVARIANT instead: adding c to every half-width leaves K unchanged but rescaling MULTIPLIES K by c. Satisfies the LEFTIST equity axiom (a fixed ABSOLUTE transfer matters equally regardless of receiver level), the polar opposite of the RIGHTIST proportional-transfer axiom satisfied by axes 21-28. Carries the SAME UNITS as the half-widths (UNLIKE all prior dimensionless ratios). Aversion knob alpha (default 1) controls bottom-tail sensitivity exponentially: alpha->0 gives K->0; alpha->+inf gives K->mean-min (Rawlsian limit). Numerical safety via log-sum-exp max-subtraction trick (no overflow/underflow at any magnitude). Per-lens: nShared, meanHalfWidth, minHalfWidth, maxHalfWidth, kolmPollak, equallyDistributedEquivalent (Xi = mean - K), kolmRelativeIntensity (K / mean, dimensionless), rawlsianDeficit (mean - min, upper bound on K), concentrationLabel ('extreme' relK>=0.5; 'high' [0.2,0.5); 'moderate' [0.05,0.2); 'mild' (0,0.05); 'near-uniform' ==0; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'non-finite'). Report-level: meanK, medianK, maxK, minK, rangeK, nDegenerate, nExtreme, nNearUniform, mostExtremeLens (argmax K), mostUniformLens (argmin K).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alpha <f>',
+    'Kolm-Pollak aversion parameter; finite > 0 (default 1). alpha->0 gives K->0; alpha->+inf gives K->mean-min',
+    '1',
+  )
+  .option(
+    '--alert-kolm <f>',
+    'only emit lenses whose Kolm-Pollak index K is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-relative <f>',
+    'only emit lenses whose kolmRelativeIntensity (K / mean) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-rawls <f>',
+    'only emit lenses whose rawlsianDeficit (mean - min) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'kolm-desc' (default) | 'kolm-asc' | 'relative-desc' | 'rawls-desc' | 'mean-halfwidth-desc' | 'lens'",
+    'kolm-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostUniform)',
+  )
+  .option(
+    '--show-rawlsian-bound',
+    'append per-lens rawlsianBound line listing the upper-bound deficit (mean - min), slack (rawls - K), and ratio (K / rawls)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alpha: string;
+        alertKolm?: string;
+        alertRelative?: string;
+        alertRawls?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showRawlsianBound?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha <= 0) {
+          throw new Error(
+            `--alpha must be a finite, strictly positive number (got ${opts.alpha})`,
+          );
+        }
+        let alertKolm: number | null = null;
+        if (opts.alertKolm != null) {
+          const a = Number.parseFloat(opts.alertKolm);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-kolm must be a finite, non-negative number (got ${opts.alertKolm})`,
+            );
+          }
+          alertKolm = a;
+        }
+        let alertRelative: number | null = null;
+        if (opts.alertRelative != null) {
+          const a = Number.parseFloat(opts.alertRelative);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-relative must be a finite, non-negative number (got ${opts.alertRelative})`,
+            );
+          }
+          alertRelative = a;
+        }
+        let alertRawls: number | null = null;
+        if (opts.alertRawls != null) {
+          const a = Number.parseFloat(opts.alertRawls);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-rawls must be a finite, non-negative number (got ${opts.alertRawls})`,
+            );
+          }
+          alertRawls = a;
+        }
+        const validSorts = [
+          'kolm-desc',
+          'kolm-asc',
+          'relative-desc',
+          'rawls-desc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthKolmPollak(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alpha,
+          alertKolm,
+          alertRelative,
+          alertRawls,
+          sort: opts.sort as
+            | 'kolm-desc'
+            | 'kolm-asc'
+            | 'relative-desc'
+            | 'rawls-desc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthKolmPollak(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showRawlsianBound: opts.showRawlsianBound ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
