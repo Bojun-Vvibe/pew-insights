@@ -24083,6 +24083,10 @@ program
     '--show-per-source-widths',
     'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
   )
+  .option(
+    '--show-shares',
+    'append per-lens shares line listing (source=p:share/c:contribution) for each shared source -- the per-source contribution to the Theil sum, which sums to theil exactly (audit trail showing which source is doing the bulk of the inequality lifting)',
+  )
   .action(
     async (
       opts: {
@@ -24103,6 +24107,7 @@ program
         showLensAttribution?: boolean;
         showMoments?: boolean;
         showPerSourceWidths?: boolean;
+        showShares?: boolean;
       },
       cmd,
     ) => {
@@ -24201,6 +24206,7 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showMoments: opts.showMoments ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
+              showShares: opts.showShares ?? false,
             }) + '\n',
           );
         }
