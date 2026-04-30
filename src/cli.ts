@@ -26372,6 +26372,14 @@ program
     '--show-per-source-widths',
     'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
   )
+  .option(
+    '--show-decomposition',
+    'append per-lens decomposition line splitting W into 2 * gapAtMedian * (mean/median) and showing the additive T-contribution vs Gini-contribution',
+  )
+  .option(
+    '--show-anchor-sweep',
+    'append per-lens anchorSweep line listing the generalised W_p index at p=0.25,0.4,0.5,0.6,0.75 (p=0.5 is the standard Wolfson median anchor; off-median anchors diagnose whether the polarisation reading is median-specific)',
+  )
   .action(
     async (
       opts: {
@@ -26390,6 +26398,8 @@ program
         showPolarisationAggregate?: boolean;
         showLensAttribution?: boolean;
         showPerSourceWidths?: boolean;
+        showDecomposition?: boolean;
+        showAnchorSweep?: boolean;
       },
       cmd,
     ) => {
@@ -26474,6 +26484,8 @@ program
                 opts.showPolarisationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
+              showDecomposition: opts.showDecomposition ?? false,
+              showAnchorSweep: opts.showAnchorSweep ?? false,
             }) + '\n',
           );
         }

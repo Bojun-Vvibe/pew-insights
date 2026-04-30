@@ -2,6 +2,106 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.269 — 2026-04-30
+
+### Changed
+
+- `pew-insights source-row-token-slope-ci-lens-width-wolfson`
+  refinement: added two new diagnostics on top of the v0.6.268
+  axis-33 surface. No behaviour change to the headline `W` value.
+
+  New helper `lensWidthWolfsonDecomposition(halfWidths)` and a
+  matching `--show-decomposition` per-lens line. Splits W into
+  the polarisation core `gapAtMedian = (2*T - Gini)`, the
+  amplifier `meanOverMedian`, and the constant 2:
+
+  ```
+  W = 2 * gapAtMedian * (mean / median)
+    = 4*T*(mean/median) + (-2*Gini)*(mean/median)
+    = tContribution     + giniContribution
+  ```
+
+  The two contributions sum exactly to W and answer the
+  question "is this lens bipolarised because the Lorenz curve
+  dips at the median (T-driven), or because the right-skew
+  amplifier is large (mean/median-driven)?" -- a separation
+  that the headline W reading cannot show.
+
+  New helper `lensWidthWolfsonAnchorSweep(halfWidths, ps)` and
+  a matching `--show-anchor-sweep` per-lens line. Generalises
+  the Wolfson construction to an arbitrary quantile anchor
+  `p in (0, 1)`:
+
+  ```
+  W_p = 2 * (2*T_p - Gini) * (mean / Q_p)
+  T_p = p - L(p)
+  ```
+
+  Reports the anchor-curve at `p = 0.25, 0.4, 0.5, 0.6, 0.75`
+  with the standard Wolfson `W = W_0.5` always in the middle.
+  Distinct from the v0.6.268 headline reading -- the anchor
+  sweep tests whether the polarisation is MEDIAN-SPECIFIC (the
+  diagnostic intent of Wolfson 1994) or just a property of the
+  distribution at any anchor. Returns +inf when the empirical
+  p-quantile is 0.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 6 shared sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-wolfson \
+      --bootstraps 500 --seed 42 \
+      --show-decomposition --show-anchor-sweep
+
+  meanW=4.578452  medianW=4.748476  maxW=9.296470  minW=0.960326
+  rangeW=8.336144
+
+  profileLikelihood
+      W=9.296470 = 2 * gapAtMedian(0.325841) * mean/med(14.265348)
+      tContrib=28.159318 giniContrib=-18.862848 (sum=9.296470)
+      anchorSweep: W(0.25)=-18.5769  W(0.40)=12.7354  W(0.50)=9.2965
+                   W(0.60)=  2.6420  W(0.75)= 0.2437
+
+  abc
+      W=3.224328 = 2 * gapAtMedian(0.186049) * mean/med(8.665254)
+      tContrib=16.708253 giniContrib=-13.483925 (sum=3.224328)
+      anchorSweep: W(0.25)=-378.2816 W(0.40)= 0.1488 W(0.50)=3.2243
+                   W(0.60)=  4.6592  W(0.75)= 2.7619
+
+  bootstrap
+      W=0.960326 = 2 * gapAtMedian(0.282280) * mean/med(1.701014)
+      tContrib=2.851751 giniContrib=-1.891426 (sum=0.960326)
+      anchorSweep: W(0.25)=-1.5737  W(0.40)= 0.8875 W(0.50)=0.9603
+                   W(0.60)= 0.7296  W(0.75)= 0.2224
+  ```
+
+  Two structural patterns emerge.
+
+  **Decomposition.** Across all six lenses, `tContrib` is
+  positive and `giniContrib` is negative; the headline W is the
+  RESIDUAL between two large counter-acting forces. On
+  `profileLikelihood` the T-contribution is +28.2 and the
+  Gini-contribution is -18.9, leaving W = 9.3 (a 33% net
+  margin); on `abc` they are +16.7 and -13.5, leaving W = 3.2 (a
+  19% net margin). The most uniform lens (`bootstrap`) has the
+  SMALLEST raw contributions but a similar 34% net margin --
+  meaning the W-rank ordering across lenses is dominated by
+  the (mean/median) amplifier scale, not by the polarisation
+  core, exactly as the v0.6.268 raw output suggested.
+
+  **Anchor sweep.** Every lens shows `W(p)` NEGATIVE at
+  `p = 0.25` (often dramatically so; `abc` hits -378 because
+  the bottom-quartile quantile is tiny) and `W(p)` near the
+  headline value at `p = 0.5`, then DECAYS towards 0 as
+  `p -> 0.75`. Three lenses (`profileLikelihood`,
+  `studentizedT`, `jackknife`) are MAXIMISED at `p = 0.40-0.50`
+  rather than exactly at 0.5, suggesting the natural
+  polarisation anchor for these CI lenses sits slightly BELOW
+  the median. The other three (`abc`, `bca`, `bootstrap`)
+  are maximised at p = 0.5-0.6. The standard `p = 0.5` Wolfson
+  is therefore neither always the local max nor an anchor-
+  invariant reading -- it is a defensible default that we now
+  validate per lens.
+
 ## 0.6.268 — 2026-04-30
 
 ### Added

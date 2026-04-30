@@ -471,6 +471,152 @@ export function lensWidthWolfson(halfWidths: number[]): {
   };
 }
 
+/**
+ * Derived diagnostic: WOLFSON DECOMPOSITION.
+ *
+ * Decomposes the Wolfson index into its three multiplicative
+ * components: the median-Lorenz-gap `gapAtMedian = (2*T - Gini)`
+ * (the polarisation core; positive when the Lorenz curve dips
+ * BELOW its average gap at the median point, i.e. mass is at
+ * the extremes), the `meanOverMedian` amplifier (the right-skew
+ * scaling), and the constant 2. Reported alongside the standard
+ * `gini` and `t` so that callers can see WHICH component is
+ * driving a given W reading.
+ *
+ *   wolfson = 2 * gapAtMedian * meanOverMedian
+ *
+ * Returns null on degenerate input.
+ */
+export function lensWidthWolfsonDecomposition(
+  halfWidths: number[],
+): {
+  wolfson: number;
+  gapAtMedian: number;
+  meanOverMedian: number;
+  gini: number;
+  t: number;
+  giniContribution: number;
+  tContribution: number;
+} | null {
+  const w = lensWidthWolfson(halfWidths);
+  if (w.degenerateFlag) return null;
+  const gapAtMedian = 2 * w.t - w.gini;
+  // Decompose 2*gapAtMedian = 4*T - 2*Gini; tag the two pieces
+  // scaled by the same meanOverMedian amplifier so they sum to W.
+  const tContribution = 4 * w.t * w.meanOverMedian;
+  const giniContribution = -2 * w.gini * w.meanOverMedian;
+  return {
+    wolfson: w.wolfson,
+    gapAtMedian,
+    meanOverMedian: w.meanOverMedian,
+    gini: w.gini,
+    t: w.t,
+    giniContribution,
+    tContribution,
+  };
+}
+
+/**
+ * Derived diagnostic: ANCHOR SENSITIVITY SWEEP.
+ *
+ * Generalises the Wolfson construction by replacing the median
+ * anchor `p = 0.5` with an arbitrary quantile anchor
+ * `p in (0, 1)`. Reports the generalised-anchor index
+ *
+ *   W_p = 2 * (2 * T_p - Gini) * (mean / Q_p)
+ *   T_p = p - L(p)
+ *
+ * where `Q_p` is the empirical p-quantile and `L(p)` is the
+ * Lorenz curve at p. The standard Wolfson is recovered at
+ * `p = 0.5`.
+ *
+ * Reports the ANCHOR-CURVE -- diagnostic for whether the W=W_0.5
+ * reading is a feature of the median anchor specifically or
+ * just a property of the distribution at any anchor. A
+ * distribution that is bimodal AROUND THE MEDIAN will show
+ * `W_0.5` as the local maximum of the curve; a distribution
+ * with a single dominant outlier will show `W_p` monotone in p.
+ *
+ * Returns null on degenerate input. Returns +inf at any anchor
+ * where the empirical p-quantile is 0.
+ */
+export function lensWidthWolfsonAnchorSweep(
+  halfWidths: number[],
+  ps: number[],
+): { p: number; w: number; gini: number; t: number; q: number }[] | null {
+  for (const p of ps) {
+    if (!Number.isFinite(p) || p <= 0 || p >= 1) {
+      throw new Error(
+        `lensWidthWolfsonAnchorSweep: ps must be in (0, 1) (got ${p})`,
+      );
+    }
+  }
+  for (const v of halfWidths) {
+    if (!Number.isFinite(v)) {
+      throw new Error(
+        `lensWidthWolfsonAnchorSweep: halfWidths must be finite (got ${v})`,
+      );
+    }
+    if (v < 0) {
+      throw new Error(
+        `lensWidthWolfsonAnchorSweep: halfWidths must be non-negative (got ${v})`,
+      );
+    }
+  }
+  const n = halfWidths.length;
+  if (n < MIN_SHARED_SOURCES) return null;
+  let total = 0;
+  for (const v of halfWidths) total += v;
+  const mean = total / n;
+  if (!(mean > 0) || !Number.isFinite(mean)) return null;
+
+  const sorted = [...halfWidths].sort((a, b) => a - b);
+  const gini = giniSorted(sorted);
+
+  // Linearly-interpolated empirical Lorenz curve and quantile.
+  const lorenzAt = (p: number): number => {
+    const kFloat = p * n;
+    const kLow = Math.floor(kFloat);
+    const kHigh = Math.ceil(kFloat);
+    let cumLow = 0;
+    for (let i = 0; i < kLow; i++) cumLow += sorted[i]!;
+    if (kLow === kHigh) return cumLow / total;
+    const cumHigh = cumLow + sorted[kLow]!;
+    const shareLow = cumLow / total;
+    const shareHigh = cumHigh / total;
+    const pLow = kLow / n;
+    const pHigh = kHigh / n;
+    const frac = (p - pLow) / (pHigh - pLow);
+    return shareLow + frac * (shareHigh - shareLow);
+  };
+  // Linear interp for the quantile (matches median() helper at p=0.5).
+  const quantileAt = (p: number): number => {
+    const idxFloat = p * n - 0.5;
+    if (idxFloat <= 0) return sorted[0]!;
+    if (idxFloat >= n - 1) return sorted[n - 1]!;
+    const lo = Math.floor(idxFloat);
+    const hi = Math.ceil(idxFloat);
+    if (lo === hi) return sorted[lo]!;
+    const frac = idxFloat - lo;
+    return sorted[lo]! + frac * (sorted[hi]! - sorted[lo]!);
+  };
+
+  const out: { p: number; w: number; gini: number; t: number; q: number }[] = [];
+  for (const p of ps) {
+    const lp = lorenzAt(p);
+    const tp = p - lp;
+    const q = quantileAt(p);
+    let w: number;
+    if (!(q > 0) || !Number.isFinite(q)) {
+      w = Infinity;
+    } else {
+      w = 2 * (2 * tp - gini) * (mean / q);
+    }
+    out.push({ p, w, gini, t: tp, q });
+  }
+  return out;
+}
+
 export function buildSourceRowTokenSlopeCiLensWidthWolfson(
   queue: QueueLine[],
   opts: SourceRowTokenSlopeCiLensWidthWolfsonOptions = {},
@@ -735,12 +881,16 @@ export function renderSourceRowTokenSlopeCiLensWidthWolfson(
     showPolarisationAggregate?: boolean;
     showLensAttribution?: boolean;
     showPerSourceWidths?: boolean;
+    showDecomposition?: boolean;
+    showAnchorSweep?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
   const showPolarisationAggregate = opts.showPolarisationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
+  const showDecomposition = opts.showDecomposition ?? false;
+  const showAnchorSweep = opts.showAnchorSweep ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-wolfson');
   lines.push(
@@ -781,6 +931,41 @@ export function renderSourceRowTokenSlopeCiLensWidthWolfson(
       lines.push(
         `    summary: lens=${row.lens} n=${row.nShared} W=${fmtNum(row.wolfson, 6)} Gini=${fmtNum(row.gini, 6)} T=${fmtNum(row.t, 6)} mean/med=${fmtNum(row.meanOverMedian, 6)} sign=${row.polarisationSignLabel} polarisation=${row.polarisationLabel}`,
       );
+    }
+    if (showDecomposition) {
+      if (row.degenerateFlag) {
+        lines.push(`    decomposition: (degenerate)`);
+      } else {
+        const dec = lensWidthWolfsonDecomposition(row.perSourceHalfWidths);
+        if (dec === null) {
+          lines.push(`    decomposition: (degenerate)`);
+        } else {
+          lines.push(
+            `    decomposition: W=${fmtNum(dec.wolfson, 6)} = 2 * gapAtMedian(${fmtNum(dec.gapAtMedian, 6)}) * mean/med(${fmtNum(dec.meanOverMedian, 6)}); tContrib=4*T*r=${fmtNum(dec.tContribution, 6)} giniContrib=-2*G*r=${fmtNum(dec.giniContribution, 6)} (sum=${fmtNum(dec.tContribution + dec.giniContribution, 6)})`,
+          );
+        }
+      }
+    }
+    if (showAnchorSweep) {
+      if (row.degenerateFlag) {
+        lines.push(`    anchorSweep: (degenerate)`);
+      } else {
+        const sweep = lensWidthWolfsonAnchorSweep(
+          row.perSourceHalfWidths,
+          [0.25, 0.4, 0.5, 0.6, 0.75],
+        );
+        if (sweep === null) {
+          lines.push(`    anchorSweep: (degenerate)`);
+        } else {
+          const parts = sweep.map(
+            (s) =>
+              `W(p=${fmtNum(s.p, 2)})=${Number.isFinite(s.w) ? fmtNum(s.w, 4) : 'inf'}`,
+          );
+          lines.push(
+            `    anchorSweep: ${parts.join(' ')} (p=0.5 is the standard Wolfson; off-median anchors test whether bipolarisation is median-specific or anchor-invariant)`,
+          );
+        }
+      }
     }
     if (showPerSourceWidths) {
       if (row.perSourceSources.length === 0) {

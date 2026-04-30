@@ -8,6 +8,8 @@ import {
   buildSourceRowTokenSlopeCiLensWidthWolfson,
   renderSourceRowTokenSlopeCiLensWidthWolfson,
   lensWidthWolfson,
+  lensWidthWolfsonDecomposition,
+  lensWidthWolfsonAnchorSweep,
   SLOPE_LENS_WIDTH_WOLFSON_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthwolfson.js';
 import type { QueueLine } from '../src/types.js';
@@ -519,4 +521,189 @@ test('axis33 polarisationSignLabel classifies correctly', () => {
   // Identical -> balanced
   const eq = lensWidthWolfson([5, 5, 5, 5, 5, 5]);
   assert.ok(Math.abs(eq.wolfson) < 1e-9);
+});
+
+// ---------- decomposition helper ----------
+
+test('axis33 decomposition: tContrib + giniContrib = wolfson', () => {
+  const xs = [1, 1, 1, 1, 9, 9, 9, 9];
+  const dec = lensWidthWolfsonDecomposition(xs);
+  assert.ok(dec !== null);
+  if (dec === null) return;
+  // 4*T*r + (-2*Gini)*r = (4*T - 2*Gini)*r = 2*(2T - Gini)*r = W
+  const sum = dec.tContribution + dec.giniContribution;
+  assert.ok(
+    Math.abs(sum - dec.wolfson) < 1e-12,
+    `tContrib(${dec.tContribution}) + giniContrib(${dec.giniContribution}) = ${sum} should equal W=${dec.wolfson}`,
+  );
+});
+
+test('axis33 decomposition: gapAtMedian = 2*T - Gini', () => {
+  const xs = [1, 2, 5, 8, 9, 12];
+  const dec = lensWidthWolfsonDecomposition(xs);
+  assert.ok(dec !== null);
+  if (dec === null) return;
+  const expected = 2 * dec.t - dec.gini;
+  assert.ok(
+    Math.abs(dec.gapAtMedian - expected) < 1e-12,
+    `gapAtMedian=${dec.gapAtMedian} expected ${expected}`,
+  );
+});
+
+test('axis33 decomposition: returns null on degenerate', () => {
+  assert.equal(lensWidthWolfsonDecomposition([0.5, 0.5, 0.5]), null);
+  assert.equal(lensWidthWolfsonDecomposition([0, 0, 0, 0]), null);
+});
+
+test('axis33 decomposition: identical inputs give zero contributions', () => {
+  const dec = lensWidthWolfsonDecomposition([5, 5, 5, 5, 5, 5]);
+  assert.ok(dec !== null);
+  if (dec === null) return;
+  assert.ok(Math.abs(dec.tContribution) < 1e-12);
+  assert.ok(Math.abs(dec.giniContribution) < 1e-12);
+  assert.ok(Math.abs(dec.gapAtMedian) < 1e-12);
+});
+
+// ---------- anchor sweep helper ----------
+
+test('axis33 anchorSweep: W at p=0.5 matches the standard wolfson', () => {
+  const xs = [1, 2, 5, 8, 9, 12, 100];
+  const sweep = lensWidthWolfsonAnchorSweep(xs, [0.5]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  const w = lensWidthWolfson(xs);
+  // Anchor sweep uses linear-interp quantile, which matches the median()
+  // helper at p=0.5 by construction.
+  assert.ok(
+    Math.abs(sweep[0]!.w - w.wolfson) < 1e-9,
+    `anchorSweep p=0.5 W=${sweep[0]!.w} vs wolfson=${w.wolfson}`,
+  );
+});
+
+test('axis33 anchorSweep: W_p varies with p (off-median anchors yield different readings)', () => {
+  // The whole point of the sweep is that W_p is NOT anchor-invariant:
+  // moving p away from 0.5 gives a materially different reading,
+  // confirming that the standard Wolfson is a median-specific
+  // diagnostic.
+  const xs = [1, 1, 1, 1, 1, 1, 1, 1000];
+  const sweep = lensWidthWolfsonAnchorSweep(xs, [0.25, 0.5, 0.75]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  for (const s of sweep) {
+    assert.ok(Number.isFinite(s.w), `p=${s.p} W=${s.w} expected finite`);
+  }
+  // At least one off-median anchor should differ from the median by > 1e-3
+  const w50 = sweep[1]!.w;
+  const offMedianDiff = Math.max(
+    Math.abs(sweep[0]!.w - w50),
+    Math.abs(sweep[2]!.w - w50),
+  );
+  assert.ok(
+    offMedianDiff > 1e-3,
+    `off-median anchors should differ from median W=${w50}; max diff=${offMedianDiff}`,
+  );
+});
+
+test('axis33 anchorSweep: bimodal -- W_p produces well-defined readings at every anchor', () => {
+  // Symmetric bimodal: standard Wolfson (p=0.5) is the canonical
+  // bipolarisation reading. Off-median anchors give different but
+  // also finite numbers; they are NOT guaranteed to be smaller in
+  // magnitude (the (mean/Q_p) amplifier dominates the gap term).
+  const xs = [1, 1, 1, 1, 9, 9, 9, 9];
+  const sweep = lensWidthWolfsonAnchorSweep(xs, [0.4, 0.5, 0.6]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  for (const s of sweep) {
+    assert.ok(Number.isFinite(s.w), `p=${s.p} W=${s.w} expected finite`);
+  }
+  // The standard W (p=0.5) should match our exact calculation = 0.8
+  assert.ok(
+    Math.abs(sweep[1]!.w - 0.8) < 1e-9,
+    `W(0.5)=${sweep[1]!.w} expected 0.8`,
+  );
+});
+
+test('axis33 anchorSweep: throws on p out of (0,1)', () => {
+  assert.throws(
+    () => lensWidthWolfsonAnchorSweep([1, 2, 3, 4], [0]),
+    /ps must be in/,
+  );
+  assert.throws(
+    () => lensWidthWolfsonAnchorSweep([1, 2, 3, 4], [1]),
+    /ps must be in/,
+  );
+  assert.throws(
+    () => lensWidthWolfsonAnchorSweep([1, 2, 3, 4], [NaN]),
+    /ps must be in/,
+  );
+});
+
+test('axis33 anchorSweep: returns null on degenerate', () => {
+  assert.equal(lensWidthWolfsonAnchorSweep([1, 2, 3], [0.5]), null);
+  assert.equal(lensWidthWolfsonAnchorSweep([0, 0, 0, 0], [0.5]), null);
+});
+
+test('axis33 anchorSweep: throws on negative or non-finite widths', () => {
+  assert.throws(
+    () => lensWidthWolfsonAnchorSweep([1, 2, -3, 4], [0.5]),
+    /halfWidths must be non-negative/,
+  );
+  assert.throws(
+    () => lensWidthWolfsonAnchorSweep([1, 2, NaN, 4], [0.5]),
+    /halfWidths must be finite/,
+  );
+});
+
+test('axis33 anchorSweep: returns inf if quantile is 0', () => {
+  // Bottom half all zero -> Q(0.25) = 0 -> W = inf at that anchor.
+  const xs = [0, 0, 0, 0, 5, 10, 20];
+  const sweep = lensWidthWolfsonAnchorSweep(xs, [0.25, 0.75]);
+  assert.ok(sweep !== null);
+  if (sweep === null) return;
+  assert.equal(sweep[0]!.w, Infinity, `W(0.25)=${sweep[0]!.w} expected inf`);
+  // At p=0.75, Q is well-defined and positive
+  assert.ok(
+    Number.isFinite(sweep[1]!.w),
+    `W(0.75)=${sweep[1]!.w} expected finite`,
+  );
+});
+
+test('axis33 render: --show-decomposition includes decomposition line', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 40, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 40, slope: 1.5, noise: 10 },
+    { source: 'c', nRows: 40, slope: 0.5, noise: 3 },
+    { source: 'd', nRows: 40, slope: 2.0, noise: 20 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthWolfson(queue, {
+    bootstraps: 150,
+    seed: 11,
+  });
+  const text = renderSourceRowTokenSlopeCiLensWidthWolfson(r, {
+    showDecomposition: true,
+  });
+  assert.ok(text.includes('decomposition'));
+  assert.ok(text.includes('gapAtMedian'));
+  assert.ok(text.includes('tContrib'));
+  assert.ok(text.includes('giniContrib'));
+});
+
+test('axis33 render: --show-anchor-sweep includes anchorSweep line', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 40, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 40, slope: 1.5, noise: 10 },
+    { source: 'c', nRows: 40, slope: 0.5, noise: 3 },
+    { source: 'd', nRows: 40, slope: 2.0, noise: 20 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthWolfson(queue, {
+    bootstraps: 150,
+    seed: 11,
+  });
+  const text = renderSourceRowTokenSlopeCiLensWidthWolfson(r, {
+    showAnchorSweep: true,
+  });
+  assert.ok(text.includes('anchorSweep'));
+  assert.ok(text.includes('W(p=0.50)'));
+  assert.ok(text.includes('W(p=0.25)'));
+  assert.ok(text.includes('W(p=0.75)'));
 });
