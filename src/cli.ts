@@ -90,6 +90,7 @@ import {
   renderDailyTokenAtkinsonIndex,
   renderDailyTokenTheilLIndex,
   renderDailyTokenTheilTIndex,
+  renderDailyTokenGe2Index,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -342,6 +343,7 @@ import { buildDailyTokenPietraRatio } from './dailytokenpietraratio.js';
 import { buildDailyTokenAtkinsonIndex } from './dailytokenatkinsonindex.js';
 import { buildDailyTokenTheilLIndex } from './dailytokentheillindex.js';
 import { buildDailyTokenTheilTIndex } from './dailytokentheiltindex.js';
+import { buildDailyTokenGe2Index } from './dailytokenge2index.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12184,6 +12186,150 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenTheilTIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-ge2-index')
+  .description(
+    "Per-source GE(2) = (1/2) * CV^2 of the per-day total_tokens distribution (THIRTY-NINTH cross-source axis). GE(2) = (1/(2n)) * sum_i ((D_i/mu - 1)^2). Range [0, +inf); GE(2) = 0 iff perfect equality; one-day-takes-all on n days saturates at (n-1)/2. The QUADRATIC TOP-EXTREME-SENSITIVE corner of the GE(alpha) family alongside axis-37 Theil-L = GE(0) (logarithmic, bottom-sensitive) and axis-38 Theil-T = GE(1) (log-linear, mass-balanced). Two sources can share identical Gini/Theil-L/Theil-T but differ sharply in GE(2) -- GE(2) is the only daily-token axis whose transfer-sensitivity at the top is QUADRATIC. The headline derived field is the MOMENT-FAMILY-GAP RATIO ge2OverT = GE(2) / Theil-T (cross-anchor on axis-38). Per-source columns: ge2, cv, cvSquared, cvSquaredOverTwo (audit), theilT, theilL, ge2OverT, lInfinite, meanDaily, stdDaily, minDay, maxDay, ge2Saturated. Identity GE(2) == cvSquared / 2 is exact; surfaced via cvSquaredOverTwo for independent verification.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). GE(2) is degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: ge2 (default) | tokens | days | source | meanDaily | cv | ge2OverT (moment-family-gap). Applied before --top.',
+    'ge2',
+  )
+  .option(
+    '--min-ge2 <g>',
+    'display filter: hide sources whose ge2 is strictly below this value. g in [0, +inf). Default 0 = no filter.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--alpha-sweep <list>',
+    'comma-separated list of alpha values; for each row append a geSweep array of { alpha, ge }. Example: --alpha-sweep 0,0.5,1,2.',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minGe2: string;
+        json?: boolean;
+        alphaSweep?: string;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minGe2 = Number.parseFloat(opts.minGe2);
+        if (!Number.isFinite(minGe2) || minGe2 < 0) {
+          throw new Error(
+            `--min-ge2 must be a non-negative finite number (got ${opts.minGe2})`,
+          );
+        }
+        const validSorts = [
+          'ge2',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'cv',
+          'ge2OverT',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        let alphaSweep: number[] | undefined;
+        if (opts.alphaSweep) {
+          alphaSweep = opts.alphaSweep
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+            .map((s) => {
+              const v = Number.parseFloat(s);
+              if (!Number.isFinite(v)) {
+                throw new Error(
+                  `--alpha-sweep entries must be finite numbers (got ${s})`,
+                );
+              }
+              return v;
+            });
+        }
+        const report = buildDailyTokenGe2Index(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minGe2,
+          sort: opts.sort as
+            | 'ge2'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'cv'
+            | 'ge2OverT',
+          alphaSweep,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenGe2Index(report) + '\n');
         }
       } catch (e) {
         die(e);
