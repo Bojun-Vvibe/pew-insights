@@ -2,6 +2,119 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.271 — 2026-05-01
+
+### Added
+
+- New cross-source axis (THIRTY-FIFTH):
+  `pew-insights daily-token-pietra-ratio`.
+
+  Per-source PIETRA / SCHUTZ / HOOVER ratio of the per-day
+  `total_tokens` distribution. For each source we collapse hourly
+  buckets into a single scalar per UTC day to obtain the day vector
+  `D = (D_1, ..., D_n)` and compute
+
+  ```
+  P = (1 / (2 * n * mu)) * sum_{i=1..n} |D_i - mu|
+    = max_{p in [0,1]} (p - L(p))         // max Lorenz gap
+  ```
+
+  where `mu = mean(D)` and `L(p)` is the Lorenz curve. The maximum
+  is achieved at `p* = #{i : D_i <= mu} / n`. Range `[0, 1 - 1/n]`.
+
+  Interpretation: P is the FRACTION of total token mass that would
+  have to be transferred from above-mean days to below-mean days
+  in order to flatten the distribution. It is a *single anchored
+  max*, not an integral (Gini) and not an average of bottom-vs-top
+  mean ratios (Zenga).
+
+  Per-source columns: `pietra`, `belowMeanShare` (population share
+  at the Lorenz argmax), `nBelowMean`, `lorenzAtBelowMean`,
+  `aboveMeanLift` (mean of above-mean days / overall mean),
+  `meanDaily`, `maxDay`, `maxDayTokens`, `tokens`, `firstDay`,
+  `lastDay`, `days`. The identity
+  `pietra = belowMeanShare - lorenzAtBelowMean` is enforced by
+  construction and is unit-tested.
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (`pietra`
+  default | `tokens` | `days` | `source`), `--min-pietra` display
+  filter, `--json`.
+
+  ORTHOGONALITY (anti-duplicate justification):
+
+  - vs. `daily-token-gini-coefficient`: Gini is the AREA under the
+    Lorenz gap (integral over `p in [0,1]`). Pietra is the MAX of
+    the same gap. Two vectors with identical Pietra can have
+    meaningfully different Gini and vice versa. The orthogonality
+    test in `test/dailytokenpietraratio.test.ts` constructs two
+    five-day vectors with identical Pietra (0.4) but different
+    internal shape below the mean.
+  - vs. `daily-token-zenga-index`: Zenga averages `(n - 1)`
+    bottom-vs-top mean ratios `u(k)`. Pietra averages NOTHING --
+    it is a single mean-anchored max. Live-smoke confirms this:
+    `opencode` Zenga = 0.5403 with `maxU` = 0.97, but Pietra =
+    0.1512 -- Zenga ranks it mid-pack while Pietra ranks it last.
+  - vs. `daily-token-monotone-run-length`,
+    `daily-token-second-difference-sign-runs`,
+    `daily-token-autocorrelation-lag1`,
+    `daily-token-zscore-extremes`: all order-dependent. Pietra is
+    permutation-invariant.
+  - vs. `cumulative-tokens-midpoint` (single 50%-of-mass quantile)
+    and `single-day-mass-concentration` (fixed top-1 / top-2 /
+    top-3 mass shares): Pietra cuts at the MEAN, not at fixed
+    population or mass quantiles, so it adapts to the
+    distribution's own scale.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights daily-token-pietra-ratio
+
+  sources: 6 (shown 6)    tokens: 11,652,634,687
+
+  source          days  pietra  belowMeanShare  nBelowMean  aboveMeanLift  meanDaily    maxDay      maxDayTokens
+  claude-code     35    0.6137  0.8000          28          4.0687         98,353,880   2026-04-20  1,052,011,841
+  vscode-copilot  73    0.5495  0.7534          55          3.2284         25,832       2026-04-17  240,730
+  codex           8     0.4716  0.6250          5           2.2575         101,203,083  2026-04-20  389,724,254
+  openclaw        14    0.2817  0.6429          9           1.7889         147,970,185  2026-04-19  354,037,834
+  hermes          14    0.2525  0.5000          7           1.5051         16,983,098   2026-04-19  34,683,508
+  opencode        11    0.1512  0.3636          4           1.2376         462,672,051  2026-04-21  724,269,445
+
+  meanP=0.3867  rangeP=0.4625  (medianP between codex 0.47 and openclaw 0.28)
+  ```
+
+  Two structural observations the headline scalar surfaces.
+
+  **`claude-code` requires 61.4% of its mass redistributed to
+  flatten -- `opencode` only 15.1%.** Despite both being heavy
+  hitters by total tokens (3.4B vs 5.1B), they sit at opposite
+  ends of the Pietra ranking. `claude-code` has 28 of 35 days
+  (80%) sitting BELOW its own daily mean and a single mean-day
+  carrying 4.07x the average; `opencode` has only 4 of 11 days
+  (36%) below the mean with the heavy days only 1.24x the mean.
+  This is a structural shape difference Gini and Zenga show in
+  different forms but Pietra makes directly readable as "fraction
+  of mass to move".
+
+  **Pietra disagrees with Zenga on the ranking of `opencode`.**
+  Zenga (v0.6.270) put `opencode` at Z=0.5403 with `maxU`=0.97
+  and `argmaxK`=1 -- one extremely cold day at the bottom of an
+  otherwise even distribution. Pietra anchors at the population
+  share BELOW the mean, sees only 4 days at-or-below the 462M
+  daily mean, and reports just 0.15 -- because moving the small
+  bottom mass to the mean covers the whole gap. The Pietra and
+  Zenga rank correlations are not 1; this is exactly the
+  orthogonality witness this axis was added to provide.
+
+  **`vscode-copilot` (73 days, 25.8k mean) and `claude-code`
+  (35 days, 98M mean) sit in the same Pietra band (0.55 vs 0.61)
+  despite a 2x difference in `n` and a 3800x difference in scale.**
+  Pietra is mass-share-normalised, so it reads pure inequality
+  shape independent of how many days you have or what the absolute
+  token counts are -- as intended.
+
 ## 0.6.270 — 2026-04-30
 
 ### Added
