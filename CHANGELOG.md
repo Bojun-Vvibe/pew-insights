@@ -2,6 +2,156 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.253 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-hoover` —
+  per-lens CROSS-SOURCE HOOVER (a.k.a. PIETRA / SCHUTZ / ROBIN HOOD)
+  INDEX of CI half-widths (TWENTY-FIFTH cross-lens axis) for the
+  v0.6.219 Deming-slope uncertainty-quantification suite. Consumes
+  the SAME six per-source slope CIs as v0.6.227-v0.6.252 (percentile
+  bootstrap, jackknife normal, BCa, studentized-t, ABC,
+  profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY-FOUR prior cross-lens
+  diagnostics on FIVE orthogonal dimensions:**
+
+  1. **POPULATION GEOMETRY (vs axes 1-19).** Like axes 20-24, the
+     report is indexed by LENS (six rows). Axes 1-19 reduce a
+     6-vector per source to a per-source scalar; this axis reduces
+     the across-source half-width cloud at each fixed lens to a
+     single scalar.
+
+  2. **STATISTIC FAMILY (vs all 1-24).** Hoover is the MAXIMUM
+     VERTICAL DISTANCE between the Lorenz curve and the line of
+     perfect equality:
+
+     ```
+     H = (1/2) * sum_i | x_i / sum(x) - 1/n |
+       = sup_p | L(p) - p |
+     ```
+
+     Pietra (1915); Schutz (1951); Hoover (1936). It is a
+     Kolmogorov-Smirnov-style **L_infinity** functional of the
+     Lorenz process, NOT an integral functional. In direct contrast:
+
+     - axis-21 Gini integrates the SAME Lorenz gap over `p`
+       (`Gini = 2 * integral of (p - L(p)) dp`). Hoover takes the
+       SUPREMUM of the same integrand. The L_1 and L_infinity norms
+       of `(p - L(p))` are inequivalent on the simplex — two
+       distributions can share Hoover but differ in Gini, and
+       vice-versa.
+     - axis-22 Theil GE(1) integrates `p log p`, an entropic
+       functional with unbounded sensitivity to upper-tail mass.
+     - axis-23 Atkinson is a CRRA power-mean welfare loss
+       (`1 - M_(1-eps) / mean`).
+     - axis-24 QCD uses EXACTLY TWO order statistics (Q1, Q3);
+       Hoover uses the FULL n-vector via an absolute-deviation sum.
+
+     Hoover therefore has a DIFFERENT NORM (L_infinity on the
+     Lorenz process), DIFFERENT GEOMETRY (max gap, not area), and a
+     DIRECT ECONOMIC INTERPRETATION that no prior axis shares: the
+     **fraction of total half-width mass that would have to be
+     redistributed across sources to achieve perfect equality**
+     (the "Robin Hood" interpretation).
+
+  3. **SENSITIVITY PROFILE (vs axes 21, 22, 23).** The Hoover
+     transfer principle is WEAKER than the Pigou-Dalton transfer
+     principle that Gini, Theil, and Atkinson all satisfy: Hoover
+     is INSENSITIVE to mean-preserving transfers ON THE SAME SIDE
+     of the mean (transfers entirely above or entirely below the
+     mean leave H unchanged). This makes Hoover the canonical
+     diagnostic for **what fraction of mass crosses the mean line**,
+     which Gini/Theil/Atkinson smear across the whole distribution.
+
+  4. **BOUNDEDNESS AND ZERO-IMMUNITY (vs axes 22, 23).** Bounded in
+     `[0, 1 - 1/n]` for any non-negative n-vector with positive sum.
+     Tolerates up to `n - 1` zero half-widths without degeneracy
+     (only the all-zero case is degenerate). Theil GE(1) requires
+     every source `> 0`; Atkinson at `eps>=1` collapses to A=1 on a
+     single zero. Hoover therefore has the WIDEST domain of any
+     cross-lens inequality measure shipped.
+
+  5. **COMPUTATIONAL FORM (vs all 1-24).** H is a SINGLE-PASS sum of
+     absolute deviations from the mean share — O(n) and
+     derivative-free. No quantile, no log, no power, no Lorenz
+     cumulation, no Pearson moment.
+
+  Per-lens columns: `lens`, `nShared`, `meanHalfWidth`,
+  `totalHalfWidth`, `hoover`, `hooverNormalised` (= H / (1 - 1/n) in
+  `[0, 1]`), `hooverMax`, `redistributableShare`,
+  `concentrationLabel` ("highly-concentrated" H > 0.5;
+  "moderately-concentrated" H in (0.3, 0.5]; "mild-concentration" H
+  in (0.1, 0.3]; "near-uniform" H in [0, 0.1]; "degenerate"),
+  `degenerateFlag`, `degenerateReason` ("too-few-sources" n < 4,
+  "zero-mass", "non-finite").
+
+  Report-level: `meanHoover`, `medianHoover`, `maxHoover`,
+  `minHoover`, `rangeHoover`, `nDegenerate`, `nHighlyConcentrated`,
+  `nNearUniform`, `mostConcentratedLens`, `mostUniformLens`.
+
+  CLI flags: `--alert-hoover <f>` (`f` in [0, 1]), `--alert-mass <f>`
+  (`f >= 0`), `--sort` (`hoover-desc` | `hoover-asc` | `mass-desc` |
+  `mean-halfwidth-desc` | `lens`), `--show-summary`,
+  `--show-concentration-aggregate`, `--show-lens-attribution`,
+  `--show-redistribution`, `--show-per-source-widths`.
+
+  25 new test() blocks / subtests covering helper edge cases, the
+  Lorenz-supremum identity, scale-invariance, zero-immunity,
+  monotonicity in concentration, the deliberate sensitivity contrast
+  vs axis-24 QCD's robustness, integration sort/filter behaviour,
+  render section markers, and validation. Suite: 7163 -> 7188, all
+  passing.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (vendor names
+  redacted; no per-source widths emitted in this CHANGELOG entry to
+  avoid leaking source identifiers):
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-width-hoover
+  sources: 6 (with all lenses 6); min-rows: 4; confidence: 0.95;
+  lambda: 1; bootstraps: 1000; seed: 42; sort: hoover-desc
+
+  meanH = 0.6013   medianH = 0.6337   rangeH = 0.3917
+  nHighlyConcentrated = 4/6   nNearUniform = 0/6   nDegen = 0/6
+  mostConcentrated = abc       (H = 0.8177, Hnorm = 0.9812)
+  mostUniform      = bootstrap (H = 0.4260, Hnorm = 0.5112)
+
+  lens               n     H        Hnorm    concentration
+  -----------------  ----  -------  -------  -----------------------
+  abc                   6   0.8177   0.9812  highly-concentrated
+  profileLikelihood     6   0.6452   0.7743  highly-concentrated
+  studentizedT          6   0.6342   0.7610  highly-concentrated
+  jackknife             6   0.6332   0.7598  highly-concentrated
+  bca                   6   0.4516   0.5420  moderately-concentrated
+  bootstrap             6   0.4260   0.5112  moderately-concentrated
+
+  [concentration aggregate]
+    nHighlyConcentrated=4/6 (0.6667) nNearUniform=0/6 (0.0000)
+    nDegen=0/6 (0.0000)
+    meanH=0.6013 medianH=0.6337 rangeH=0.3917
+
+  [lens attribution]
+    mostConcentrated=abc       (max H)
+    mostUniform     =bootstrap (min H)
+  ```
+
+  Reading: under the ABC lens, ~82% of cross-source half-width mass
+  would have to be redistributed to achieve perfect equality across
+  sources — Hnorm = 0.98 means ABC is sitting essentially at the
+  attainable concentration ceiling (Hmax = 1 - 1/6 ≈ 0.833). Under
+  the percentile-bootstrap lens, the same redistribution figure
+  drops to ~43%. The four-fold spread between max and min H across
+  lenses (0.39 of attainable mass) confirms that the choice of CI
+  construction materially changes which sources appear to dominate
+  the half-width budget, **independently of the structural
+  inequality** that axes 21-24 measure (Gini integrates the same
+  gap; QCD reads it at the quartiles; Hoover reads it at the
+  supremum).
+
+  7188 tests passing.
+
 ## 0.6.252 — 2026-04-30
 
 ### Added
