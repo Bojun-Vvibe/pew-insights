@@ -2,6 +2,96 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.260 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-kolm-pollak` —
+  per-lens CROSS-SOURCE KOLM-POLLAK INDEX of CI half-widths
+  (TWENTY-NINTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the SAME six per-source
+  slope CIs as v0.6.227-v0.6.259.
+
+  ```
+  Xi_alpha = -(1/alpha) * log( (1/n) * sum_i exp(-alpha * x_i) )
+  K_alpha  = mean(x) - Xi_alpha
+  ```
+
+  Kolm (1976); Pollak (1971); Atkinson-Stiglitz (1980). Xi_alpha is
+  the equally-distributed-equivalent (EDE) under exponential utility
+  u(x) = -exp(-alpha*x); K_alpha is the welfare-loss gap measured
+  in the SAME UNITS as the half-widths.
+
+  **Fundamentally orthogonal to ALL TWENTY-EIGHT prior cross-lens
+  diagnostics on the invariance axis.** Every prior axis (21 Gini,
+  22 Theil, 23 Atkinson, 24 QCD, 25 Hoover, 26 Palma, 27 GE(2),
+  28 Bonferroni) is SCALE-INVARIANT (rescaling all half-widths by
+  c leaves the index unchanged). Kolm-Pollak is TRANSLATION-
+  INVARIANT instead -- adding c to every half-width leaves K
+  unchanged but rescaling MULTIPLIES K by c. Satisfies the
+  LEFTIST equity axiom (a fixed ABSOLUTE transfer matters equally
+  regardless of receiver level), the polar opposite of the
+  RIGHTIST proportional-transfer axiom shared by axes 21-28.
+
+  Aversion knob `--alpha` (default 1) controls bottom-tail
+  sensitivity exponentially: alpha->0 gives K->0; alpha->+inf
+  gives K->mean-min (Rawlsian limit) within an analytic gap of
+  log(n)/alpha. Numerical safety via the standard log-sum-exp
+  max-subtraction trick: every exp is in (0, 1] regardless of
+  magnitude, so K stays finite even at 1e9-scale inputs.
+
+  Per-lens columns: nShared, meanHalfWidth, minHalfWidth,
+  maxHalfWidth, kolmPollak, equallyDistributedEquivalent (Xi),
+  kolmRelativeIntensity (K/mean), rawlsianDeficit (mean-min,
+  upper bound on K), concentrationLabel (extreme relK>=0.5;
+  high [0.2,0.5); moderate [0.05,0.2); mild (0,0.05);
+  near-uniform ==0; degenerate), degenerateFlag,
+  degenerateReason ('too-few-sources' n<4, 'non-finite').
+  Report-level: meanK, medianK, maxK, minK, rangeK, nDegenerate,
+  nExtreme, nNearUniform, mostExtremeLens (argmax K),
+  mostUniformLens (argmin K).
+
+  Filters: `--alert-kolm <f>`, `--alert-relative <f>`,
+  `--alert-rawls <f>`. Sorts: `kolm-desc` (default), `kolm-asc`,
+  `relative-desc`, `rawls-desc`, `mean-halfwidth-desc`, `lens`.
+
+  **Live smoke test against `~/.config/pew/queue.jsonl`** (2096
+  rows; 6 sources, all six lenses populated; `--bootstraps 200
+  --show-rawlsian-bound`):
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-width-kolm-pollak
+  alpha: 1    sort: kolm-desc
+
+  meanK:   14544473.412420
+  medianK:    515670.762813
+  maxK:    52806440.411598   (mostExtreme: bca)
+  minK:       249990.079140  (mostUniform: abc)
+  rangeK:  52556450.332458
+  nExtreme: 6/6   nNearUniform: 0/6   nDegen: 0/6
+
+  lens                 K              Xi             relK    rawls           mean
+  bca                  52806440.41    37010.73     0.9993    52806442.20    52843451.15
+  bootstrap            32726339.20    27746.14     0.9992    32726340.99    32754085.34
+  profileLikelihood      548991.86      322.51     0.9994      548993.65      549314.37
+  studentizedT           482349.66      480.54     0.9990      482351.45      482830.20
+  jackknife              452729.26      288.12     0.9994      452731.05      453017.38
+  abc                    249990.08      207.36     0.9992      249991.87      250197.44
+  ```
+
+  Every lens lands in the `extreme` bin (relK >= 0.9990),
+  reflecting that one source carries enormously more half-width
+  mass than the rest -- the Rawlsian limit is essentially
+  saturated. The `slack = rawls - K` column converges to
+  `log(6) = 1.79176` for every lens, which is exactly the
+  log(n)/alpha analytic upper bound on the Xi-vs-min gap at
+  alpha=1, n=6 (independent verification of the log-sum-exp
+  max-trick implementation).
+
+  bca and bootstrap dominate (K = 5.28e7 and 3.27e7), which is
+  consistent with these two lenses' wider tail handling vs the
+  asymptotic-Normal lenses (jackknife K = 4.53e5).
+
 ## 0.6.259 — 2026-04-30
 
 ### Changed
