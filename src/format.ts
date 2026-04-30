@@ -15397,5 +15397,32 @@ export function renderDailyTokenFgtIndex(r: DailyTokenFgtReport): string {
     lines.push(renderTableLocal(sHeaders, sRows));
   }
 
+  if (r.sources.some((s) => s.transferSensitivityLift !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `orthogonality witness (refinement v0.6.281): Jensen lift = severity*nPoor / (povGap^2 * nDays); >=1 with equality iff all poor-day shortfalls are identical`,
+      ),
+    );
+    const wHeaders = ['source', 'nPoor', 'povGap', 'severity', 'lift', 'uniform'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      formatNumber(s.nPoor),
+      s.povertyGap.toFixed(4),
+      s.severity.toFixed(4),
+      s.transferSensitivityLift === undefined
+        ? '\u2014'
+        : Number.isNaN(s.transferSensitivityLift)
+          ? 'n/a'
+          : s.transferSensitivityLift.toFixed(4),
+      s.uniformPoorShortfalls === undefined
+        ? '\u2014'
+        : s.uniformPoorShortfalls
+          ? 'yes'
+          : 'no',
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

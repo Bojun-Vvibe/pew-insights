@@ -428,3 +428,122 @@ test('buildDailyTokenFgtIndex: zero days are flagged in nZeroDays', () => {
   const r = buildDailyTokenFgtIndex(q, { generatedAt: GEN, minTokens: 0 });
   assert.equal(r.sources[0]!.nZeroDays, 0);
 });
+
+// ---- refinement v0.6.281: orthogonality witness -------------------------
+
+test('orthogonality witness: omitted by default', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 100),
+    ql('2026-04-02T00:00:00Z', 'a', 200),
+  ];
+  const r = buildDailyTokenFgtIndex(q, { generatedAt: GEN, minTokens: 0 });
+  assert.equal(r.sources[0]!.transferSensitivityLift, undefined);
+  assert.equal(r.sources[0]!.uniformPoorShortfalls, undefined);
+});
+
+test('orthogonality witness: lift = 1 when all poor shortfalls identical', () => {
+  // 4 days [10, 10, 1000, 1000]. mean = 505. line = 252.5.
+  // poor days: both 10s. shortfalls equal -> lift should be 1.
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 10),
+    ql('2026-04-02T00:00:00Z', 'a', 10),
+    ql('2026-04-03T00:00:00Z', 'a', 1000),
+    ql('2026-04-04T00:00:00Z', 'a', 1000),
+  ];
+  const r = buildDailyTokenFgtIndex(q, {
+    generatedAt: GEN,
+    minTokens: 0,
+    alpha: 2,
+    includeOrthogonalityWitness: true,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.nPoor, 2);
+  assert.ok(Math.abs(s.transferSensitivityLift! - 1) < 1e-12);
+  assert.equal(s.uniformPoorShortfalls, true);
+});
+
+test('orthogonality witness: lift > 1 with heterogeneous poor shortfalls', () => {
+  // 4 days [1, 100, 1000, 1000]. mean = 525.25. line = 262.625.
+  // poor days: 1 and 100 -- highly heterogeneous shortfalls.
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 1),
+    ql('2026-04-02T00:00:00Z', 'a', 100),
+    ql('2026-04-03T00:00:00Z', 'a', 1000),
+    ql('2026-04-04T00:00:00Z', 'a', 1000),
+  ];
+  const r = buildDailyTokenFgtIndex(q, {
+    generatedAt: GEN,
+    minTokens: 0,
+    alpha: 2,
+    includeOrthogonalityWitness: true,
+  });
+  const s = r.sources[0]!;
+  assert.ok(s.transferSensitivityLift! > 1);
+  assert.equal(s.uniformPoorShortfalls, false);
+});
+
+test('orthogonality witness: NaN lift when no poor days', () => {
+  // line = 0.5 * mean. If we make all days identical they all sit at
+  // the mean and none are strictly below.
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 100),
+    ql('2026-04-02T00:00:00Z', 'a', 100),
+    ql('2026-04-03T00:00:00Z', 'a', 100),
+  ];
+  const r = buildDailyTokenFgtIndex(q, {
+    generatedAt: GEN,
+    minTokens: 0,
+    includeOrthogonalityWitness: true,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.nPoor, 0);
+  assert.ok(Number.isNaN(s.transferSensitivityLift!));
+  assert.equal(s.uniformPoorShortfalls, false);
+});
+
+test('orthogonality witness: lift independent of headline alpha', () => {
+  // Witness uses povertyGap (alpha=1) and severity (alpha=2)
+  // exclusively, so changing the headline alpha must not change it.
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 1),
+    ql('2026-04-02T00:00:00Z', 'a', 100),
+    ql('2026-04-03T00:00:00Z', 'a', 1000),
+    ql('2026-04-04T00:00:00Z', 'a', 1000),
+  ];
+  const r1 = buildDailyTokenFgtIndex(q, {
+    generatedAt: GEN,
+    minTokens: 0,
+    alpha: 0,
+    includeOrthogonalityWitness: true,
+  });
+  const r2 = buildDailyTokenFgtIndex(q, {
+    generatedAt: GEN,
+    minTokens: 0,
+    alpha: 3.5,
+    includeOrthogonalityWitness: true,
+  });
+  assert.equal(
+    r1.sources[0]!.transferSensitivityLift,
+    r2.sources[0]!.transferSensitivityLift,
+  );
+});
+
+test('orthogonality witness + subgroup decomposition coexist', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-06T00:00:00Z', 'a', 10),
+    ql('2026-04-07T00:00:00Z', 'a', 1000),
+    ql('2026-04-04T00:00:00Z', 'a', 5),
+    ql('2026-04-05T00:00:00Z', 'a', 1000),
+  ];
+  const r = buildDailyTokenFgtIndex(q, {
+    generatedAt: GEN,
+    minTokens: 0,
+    alpha: 2,
+    includeSubgroupDecomposition: true,
+    includeOrthogonalityWitness: true,
+  });
+  const s = r.sources[0]!;
+  assert.ok(s.subgroupDecomposition);
+  assert.notEqual(s.transferSensitivityLift, undefined);
+  assert.ok(s.subgroupDecomposition!.decompositionExact);
+});

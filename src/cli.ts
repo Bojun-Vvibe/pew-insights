@@ -12566,6 +12566,10 @@ program
     '--include-subgroup-decomposition',
     'every row gains a subgroupDecomposition field that splits FGT additively across the weekday/weekend partition with the exact identity FGT = w_wd * FGT_wd + w_we * FGT_we. Surfaces the WHEN-IS-IT-DRY pattern that the headline FGT collapses (refinement v0.6.281).',
   )
+  .option(
+    '--include-orthogonality-witness',
+    'every row gains a transferSensitivityLift field = (severity * nPoor) / (povertyGap^2 * nDays). By Jensen on x->x^2 this is >=1 with equality iff all poor-day shortfalls are identical. Independent of the headline alpha; surfaces shortfall heterogeneity that FGT(2) alone cannot disentangle from FGT(1) (refinement v0.6.281).',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12583,6 +12587,7 @@ program
         minHeadcount: string;
         json?: boolean;
         includeSubgroupDecomposition?: boolean;
+        includeOrthogonalityWitness?: boolean;
       },
       cmd,
     ) => {
@@ -12661,6 +12666,7 @@ program
           absoluteLine,
           minHeadcount,
           includeSubgroupDecomposition: opts.includeSubgroupDecomposition ?? false,
+          includeOrthogonalityWitness: opts.includeOrthogonalityWitness ?? false,
           sort: opts.sort as
             | 'fgt'
             | 'headcount'

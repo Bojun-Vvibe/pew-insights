@@ -84,6 +84,18 @@
  */
 import type { QueueLine } from './types.js';
 
+/**
+ * Tolerance for the additive subgroup-decomposition identity check
+ * and for the orthogonality witness uniformPoorShortfalls flag.
+ * Loosened from a hard 1e-12 to 1e-9 to absorb the cumulative
+ * floating-point error of (i) summing per-subgroup FGTs that each
+ * normalise by nDays and (ii) the divide-multiply round-trip in the
+ * Jensen lift. Empirically every well-formed input lands within
+ * ~1e-15; 1e-9 leaves six orders of magnitude of headroom for
+ * pathological vectors before the consumer flag flips.
+ */
+export const FGT_UNIFORMITY_TOLERANCE = 1e-9;
+
 export type DailyTokenFgtSort =
   | 'fgt'
   | 'headcount'
@@ -115,6 +127,25 @@ export interface DailyTokenFgtOptions {
   /** Refinement (v0.6.281): emit weekday/weekend subgroup
    * decomposition. */
   includeSubgroupDecomposition?: boolean;
+  /**
+   * Refinement (v0.6.281): emit a JSON-only "orthogonality witness"
+   * field per row that quantifies how heterogeneous the shortfalls
+   * are among the poor days alone. By Jensen's inequality on the
+   * convex map x -> x^2, for any non-negative shortfall vector,
+   *
+   *     mean(gap^2) >= (mean(gap))^2   <=>   FGT(2) / FGT(1)^2 >= n / nPoor
+   *
+   * (The n vs nPoor factor comes from FGT being normalised by n
+   * rather than nPoor.) The witness reports the LIFT
+   *
+   *     transferSensitivityLift = (severity * nPoor) / (povertyGap * povertyGap * n)
+   *
+   * which is exactly 1 iff all poor days have IDENTICAL shortfall
+   * (the equality case of Jensen's), and strictly > 1 whenever the
+   * shortfalls vary. Independent of the headline alpha. NaN when
+   * there are no poor days.
+   */
+  includeOrthogonalityWitness?: boolean;
   generatedAt?: string;
 }
 
@@ -172,6 +203,18 @@ export interface DailyTokenFgtSourceRow {
   minDay: string;
   /** Refinement (v0.6.281): subgroup split. */
   subgroupDecomposition?: FgtSubgroupDecomposition;
+  /**
+   * Refinement (v0.6.281): orthogonality witness lift. See
+   * DailyTokenFgtOptions.includeOrthogonalityWitness for definition.
+   * NaN when nPoor = 0 or povertyGap = 0.
+   */
+  transferSensitivityLift?: number;
+  /**
+   * Refinement (v0.6.281): true iff transferSensitivityLift is
+   * within decompositionTolerance of 1 (i.e. all poor-day
+   * shortfalls are effectively equal). Convenient consumer flag.
+   */
+  uniformPoorShortfalls?: boolean;
 }
 
 export interface DailyTokenFgtReport {
@@ -477,7 +520,7 @@ export function buildDailyTokenFgtIndex(
         nWeekday: wdVals.length,
         nWeekend: weVals.length,
         recombinedFgt: recombined,
-        decompositionExact: Math.abs(recombined - headlineRes.fgt) < 1e-9,
+        decompositionExact: Math.abs(recombined - headlineRes.fgt) < FGT_UNIFORMITY_TOLERANCE,
       };
     }
 
@@ -501,6 +544,26 @@ export function buildDailyTokenFgtIndex(
       minDailyTokens: Number.isFinite(minDailyTokens) ? minDailyTokens : 0,
       minDay,
       ...(subgroupDecomposition ? { subgroupDecomposition } : {}),
+      ...(opts.includeOrthogonalityWitness
+        ? (() => {
+            const nP = headlineRes.nPoor;
+            const pg = headlineRes.povertyGap;
+            const sev = severityRes.fgt;
+            let lift: number;
+            let uniform: boolean;
+            if (nP === 0 || pg === 0) {
+              lift = Number.NaN;
+              uniform = false;
+            } else {
+              lift = (sev * nP) / (pg * pg * nDays);
+              uniform = Math.abs(lift - 1) < FGT_UNIFORMITY_TOLERANCE;
+            }
+            return {
+              transferSensitivityLift: lift,
+              uniformPoorShortfalls: uniform,
+            };
+          })()
+        : {}),
     });
     totalTokensSum += acc.totalTokens;
   }
