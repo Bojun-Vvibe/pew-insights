@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.278 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTIETH):
+  `pew-insights daily-token-palma-ratio`.
+
+  Per-source PALMA RATIO = `mass(top 10% of days) / mass(bottom 40%
+  of days)` of the per-day total_tokens distribution. Range
+  `[0, +inf)`; `palma = 1` iff the top decile carries exactly the
+  same total mass as the bottom 4 deciles; `palma > 1` is the
+  canonical "concentration" reading: the few largest days dominate
+  the long thin bottom 40%.
+
+  RANK-CUTOFF-BASED (NOT entropy/variance-based) -- this is the
+  structural break with axes 32-39. Reads only TWO points on the
+  empirical Lorenz curve (the 40th and 90th percentile rank cuts).
+  Orthogonal to:
+
+  - axis-32 Gini (rank-weighted L1 of the FULL Lorenz curve area)
+  - axis-35 Pietra (L_infinity Lorenz gap, single-point reading)
+  - axis-36 Atkinson (CRRA welfare loss, bounded in [0, 1])
+  - axes 37/38/39 GE(0)/GE(1)/GE(2) family (logarithmic /
+    log-linear / quadratic moments of share ratios)
+  - axis-34 Zenga (averages bottom-vs-top mean ratios over EVERY
+    rank cut; Palma reads ONE such ratio without averaging)
+
+  Two sources can have IDENTICAL Gini but very different Palma
+  ratios when bulk mass migrates between the middle deciles and the
+  tails -- because Palma is immune to the within-decile distribution
+  as long as the rank-cut decile shares are unchanged.
+
+  The headline derived field is the LORENZ-SHAPE RATIO
+  `palmaOverGini = palma / gini` (cross-anchor on axis-32). Two
+  indices on the same Lorenz curve; their ratio quantifies how
+  concentrated the inequality is in the 40/10 rank-cut tug-of-war
+  versus spread across the curve body. Set to NaN when gini = 0
+  (degenerate; both should be 0).
+
+  EDGE CASE: when n < 10 the literal "top 10%" decile is undefined.
+  We use FRACTIONAL-RANK quantile cutoffs (linear interpolation
+  across day bins) and surface `interpolatedCutoffs: true` so
+  consumers can flag rows where a single day straddles a cutoff. For
+  n >= 10 the cutoffs collapse exactly to the literal whole-decile
+  reading. ZERO-DAY HANDLING: a zero-mass day in the bottom 40%
+  contributes 0; pure-zero bottom 40% (denominator = 0) yields
+  `palma = +Inf` when top 10% > 0 -- flagged via `bottomZero`.
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (default
+  `palma`; also `tokens` | `days` | `source` | `meanDaily` |
+  `topShare` | `bottomShare` | `palmaOverGini`), `--min-palma`
+  (default 0), `--top-quantile` (default 0.9), `--bottom-quantile`
+  (default 0.4), `--json`. Custom cutoff pairs unlock classic
+  variants without code changes:
+  `(0.95, 0.4)` "P95-40 ratio", `(0.8, 0.2)` "20-20 ratio",
+  `(0.95, 0.05)` "P95/P5 inter-decile spread".
+
+  Live smoke-test against the local `~/.config/pew/queue.jsonl` (6
+  sources, 11.7B tokens; one source name normalised to
+  `vscode-other` per house style):
+
+  ```
+  per-source Palma ratio of per-day total_tokens (sorted by palma; ties: source asc)
+  source         firstDay    lastDay     days  palma    topShare  midShare  botShare  gini    palma/gini  meanDaily    minDay      maxDay      tokens         interp
+  -------------  ----------  ----------  ----  -------  --------  --------  --------  ------  ----------  -----------  ----------  ----------  -------------  ------
+  claude-code    2026-02-11  2026-04-23  35    32.4015  0.6328    0.3477    0.0195    0.7590  42.6876     98,353,880   2026-03-06  2026-04-20  3,442,385,788  yes
+  vscode-other   2025-07-30  2026-04-20  73    14.7231  0.5691    0.3922    0.0387    0.7000  21.0331     25,832       2025-08-22  2026-04-17  1,885,727      yes
+  codex          2026-04-13  2026-04-20  8     6.2397   0.3851    0.5532    0.0617    0.5892  10.5896     101,203,083  2026-04-16  2026-04-20  809,624,660    yes
+  openclaw       2026-04-17  2026-04-30  14    1.3138   0.2245    0.6046    0.1709    0.3491  3.7631      148,873,255  2026-04-30  2026-04-19  2,084,225,569  yes
+  hermes         2026-04-17  2026-04-30  14    1.1572   0.1937    0.6389    0.1674    0.3212  3.6024      17,241,148   2026-04-26  2026-04-19  241,376,069    yes
+  opencode       2026-04-20  2026-04-30  11    0.5961   0.1535    0.5891    0.2574    0.2055  2.9013      468,017,602  2026-04-20  2026-04-21  5,148,193,624  yes
+  ```
+
+  Reading: `claude-code` is the most rank-cut-skewed source by a
+  wide margin -- its busiest 10% of days (~3.5 days out of 35)
+  carry **63.3%** of all token mass while its quietest 40% (~14
+  days) carry only **1.95%**, giving palma = 32.4 (the top decile
+  out-weighs the bottom 4 deciles by a factor of 32). At the other
+  end, `opencode` (only 11 days, mass dominated by a 4-day
+  rebalance batch in the middle of its window) is the only source
+  with `palma < 1`: its bottom 40% (4-5 days) holds 25.7% of the
+  mass while its top 10% (~1 day) holds only 15.4%. The
+  `palmaOverGini` cross-anchor reproduces the same ranking but
+  separates "rank-cut concentration" (high ratio) from "Lorenz-
+  body spread" (low ratio): `claude-code` clocks 42.7 (almost all
+  inequality is in the 40/10 tug-of-war, very little is body
+  spread) while `opencode` clocks 2.9 (much more of the small
+  inequality it has IS body spread). Every row sits in the
+  interpolated regime (`interp = yes`) since none of these
+  windows hit n divisible by 10 at both 0.4 and 0.9 cutoffs.
+
+### Changed
+
+- Bumped to 0.6.278.
+
 ## 0.6.277 — 2026-05-01
 
 ### Added
