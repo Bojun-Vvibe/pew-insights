@@ -455,6 +455,10 @@ import {
   buildSourceRowTokenSlopeCiMadVsMaeDivergence,
   renderSourceRowTokenSlopeCiMadVsMaeDivergence,
 } from './sourcerowtokenslopecimadvsmaedivergence.js';
+import {
+  buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic,
+  renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic,
+} from './sourcerowtokenslopeciprecisionmonotonicityisotonic.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -22614,6 +22618,193 @@ program
             renderSourceRowTokenSlopeCiMadVsMaeDivergence(report, {
               showSummary: opts.showSummary ?? false,
               showBreakdownAggregate: opts.showBreakdownAggregate ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-precision-monotonicity-isotonic')
+  .description(
+    "Per-source ORDER-RESTRICTED PRECISION-vs-MIDPOINT MONOTONICITY diagnostic across the SIX uncertainty-quantification CIs (v0.6.220-225). FIFTEENTH cross-lens axis: mechanically distinct from ALL FOURTEEN prior axes (v0.6.227-241). The prior axes are scale estimates of the six midpoints, single-lens identifiers, or across-source rank/agreement statistics on lens pairs; NONE ask whether, when the six lenses are sorted BY CI WIDTH within ONE source, the midpoints form a MONOTONE sequence (the canonical signature of width-dependent bias). For each source we form 6 (width_k, mid_k) pairs (width=hi-lo; mid=(lo+hi)/2), sort by ascending width, and fit a Pool-Adjacent-Violators isotonic regression in BOTH directions. We pick the direction with smaller fit SSE (tie ⇒ increasing) and report tssMid (constant-model SSE), sseInc, sseDec, sseChosen, direction in {increasing,decreasing}, monotonicityScore=1-sseChosen/tssMid clamped to [0,1] (default sort key; 1=perfect monotone fit; 0=no improvement over constant; convention 1 when tssMid==0), flatRunCount (# of distinct PAV plateaus; 1=collapsed, 6=strict), crossoverIndex (first plateau-boundary index, -1 if single plateau), narrowestLens, widestLens, narrowestMid, widestMid, widthSpan=widths[5]-widths[0], monotoneFlag=monotonicityScore>=0.95. Report-level: meanMonotonicityScore, medianMonotonicityScore, nMonotone, nIncreasing, nDecreasing, globalDirection (mode of direction; ties favour increasing), globalNarrowestLens, globalWidestLens. --alert-monotone <f> filters to sources with monotonicityScore strictly greater than f. --alert-flat filters to sources with flatRunCount==1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-monotone <f>',
+    'only emit sources whose monotonicityScore is strictly GREATER than f (in (0, 1))',
+  )
+  .option(
+    '--alert-flat',
+    'only emit sources whose flatRunCount == 1 (PAV collapsed to a single plateau); independent of --alert-monotone',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'monotonicity-desc' (default) | 'monotonicity-asc' | 'flat-run-asc' | 'flat-run-desc' | 'width-span-desc' | 'width-span-asc' | 'rows' | 'source'",
+    'monotonicity-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-summary',
+    'when rendering pretty (non-JSON), append a per-source one-line summary naming direction, narrowest/widest lens, monotonicityScore, and (monotone) flag',
+  )
+  .option(
+    '--show-monotone-aggregate',
+    'when rendering pretty (non-JSON), append a single one-line aggregate summary AFTER the table reporting the monotone fraction, globalDirection, globalNarrowestLens, and globalWidestLens',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertMonotone?: string;
+        alertFlat?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showMonotoneAggregate?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (
+          !Number.isFinite(confidence) ||
+          confidence <= 0 ||
+          confidence >= 1
+        ) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertMonotone: number | null = null;
+        if (opts.alertMonotone != null) {
+          const a = Number.parseFloat(opts.alertMonotone);
+          if (!Number.isFinite(a) || a <= 0 || a >= 1) {
+            throw new Error(
+              `--alert-monotone must be a finite number in (0, 1) (got ${opts.alertMonotone})`,
+            );
+          }
+          alertMonotone = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'monotonicity-desc',
+          'monotonicity-asc',
+          'flat-run-asc',
+          'flat-run-desc',
+          'width-span-desc',
+          'width-span-asc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(
+          queue,
+          {
+            since: opts.since ?? null,
+            until: opts.until ?? null,
+            source: opts.source ?? null,
+            minRows,
+            confidence,
+            lambda,
+            bootstraps,
+            seed,
+            alertMonotone,
+            alertFlat: opts.alertFlat ?? false,
+            top,
+            sort: opts.sort as
+              | 'monotonicity-desc'
+              | 'monotonicity-asc'
+              | 'flat-run-asc'
+              | 'flat-run-desc'
+              | 'width-span-desc'
+              | 'width-span-asc'
+              | 'rows'
+              | 'source',
+          },
+        );
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(report, {
+              showSummary: opts.showSummary ?? false,
+              showMonotoneAggregate: opts.showMonotoneAggregate ?? false,
             }) + '\n',
           );
         }
