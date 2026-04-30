@@ -766,6 +766,77 @@ function fmtNum(x: number, digits = 4): string {
   return x.toFixed(digits);
 }
 
+/**
+ * Refinement helper (v0.6.265): RANK-AVERSION ELASTICITY PROFILE.
+ *
+ * Computes the local elasticity (d ln G / d ln nu) at EACH nu on a
+ * user-supplied grid by central FD with a fixed RELATIVE step
+ * h_rel = 1/12 (i.e., h_abs = nu / 12). This generalises the
+ * single-point elasticity reported at nu=3 in the headline axis-31
+ * functional and exposes how the rank-aversion-sensitivity itself
+ * varies with nu.
+ *
+ * Distinct from `lensWidthSGiniNuSweep` (which reports G LEVELS
+ * across nu) -- this returns the LOCAL DERIVATIVE at each nu. The
+ * two functions are complementary: nuSweep gives the inequality
+ * VALUE across nu, this gives the inequality SENSITIVITY across nu.
+ *
+ * Returns null on degenerate input. Reports `null` for the
+ * elasticity at any nu where either FD endpoint hits the FP-noise
+ * floor (1e-12); the level G is still reported in that case.
+ */
+export function lensWidthSGiniElasticityProfile(
+  halfWidths: number[],
+  nus: number[],
+): { nu: number; g: number; elasticity: number | null }[] | null {
+  if (nus.length === 0) return [];
+  for (const v of nus) {
+    if (!Number.isFinite(v) || v <= 1) {
+      throw new Error(
+        `lensWidthSGiniElasticityProfile: nus must be finite > 1 (got ${v})`,
+      );
+    }
+  }
+  for (const v of halfWidths) {
+    if (!Number.isFinite(v)) {
+      throw new Error(
+        `lensWidthSGiniElasticityProfile: halfWidths must be finite (got ${v})`,
+      );
+    }
+    if (v < 0) {
+      throw new Error(
+        `lensWidthSGiniElasticityProfile: halfWidths must be non-negative (got ${v})`,
+      );
+    }
+  }
+  const n = halfWidths.length;
+  if (n < MIN_SHARED_SOURCES) return null;
+  let total = 0;
+  for (const v of halfWidths) total += v;
+  const mean = total / n;
+  if (!(mean > 0) || !Number.isFinite(mean)) return null;
+
+  const REL_H = 1 / 12;
+  const ELAST_EPS = 1e-12;
+  const out: { nu: number; g: number; elasticity: number | null }[] = [];
+  for (const nu of nus) {
+    const g = lensWidthSGiniAtNu(halfWidths, nu)!;
+    const hAbs = nu * REL_H;
+    const nuLow = Math.max(nu - hAbs, 1 + 1e-6);
+    const nuHigh = nu + hAbs;
+    const gLow = lensWidthSGiniAtNu(halfWidths, nuLow)!;
+    const gHigh = lensWidthSGiniAtNu(halfWidths, nuHigh)!;
+    let elasticity: number | null = null;
+    if (gLow > ELAST_EPS && gHigh > ELAST_EPS && nuHigh > nuLow) {
+      const dLnG = Math.log(gHigh) - Math.log(gLow);
+      const dLnNu = Math.log(nuHigh) - Math.log(nuLow);
+      elasticity = dLnG / dLnNu;
+    }
+    out.push({ nu, g, elasticity });
+  }
+  return out;
+}
+
 export function renderSourceRowTokenSlopeCiLensWidthSGini(
   r: SourceRowTokenSlopeCiLensWidthSGiniReport,
   opts: {
@@ -774,6 +845,7 @@ export function renderSourceRowTokenSlopeCiLensWidthSGini(
     showLensAttribution?: boolean;
     showElasticity?: boolean;
     showNuSweep?: boolean;
+    showElasticityProfile?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -782,6 +854,7 @@ export function renderSourceRowTokenSlopeCiLensWidthSGini(
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showElasticity = opts.showElasticity ?? false;
   const showNuSweep = opts.showNuSweep ?? false;
+  const showElasticityProfile = opts.showElasticityProfile ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-sgini');
@@ -842,6 +915,27 @@ export function renderSourceRowTokenSlopeCiLensWidthSGini(
           );
           lines.push(
             `    nuSweep: ${parts.join(' ')} (nu=2 -> Gini; nu=3 -> Mehran/S-Gini@3; larger nu -> bottom-tail-emphasising)`,
+          );
+        }
+      }
+    }
+    if (showElasticityProfile) {
+      if (row.degenerateFlag) {
+        lines.push(`    elasticityProfile: (degenerate)`);
+      } else {
+        const prof = lensWidthSGiniElasticityProfile(
+          row.perSourceHalfWidths,
+          [2, 2.5, 3, 4, 6],
+        );
+        if (prof === null) {
+          lines.push(`    elasticityProfile: (degenerate)`);
+        } else {
+          const parts = prof.map(
+            (p) =>
+              `nu=${fmtNum(p.nu, 1)}:G=${fmtNum(p.g, 6)},e=${p.elasticity === null ? '-' : fmtNum(p.elasticity, 4)}`,
+          );
+          lines.push(
+            `    elasticityProfile: ${parts.join(' ')} (e = dlnG/dlnNu via central FD with relative h=1/12; complementary to nuSweep which reports LEVELS not derivatives)`,
           );
         }
       }

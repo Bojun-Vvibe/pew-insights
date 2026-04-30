@@ -26009,6 +26009,10 @@ program
     'append per-lens nuSweep line listing G(nu) at nu = 2, 2.5, 3, 4, 6 (nu=2 recovers Gini; nu=3 is the operating point and equals Mehran; larger nu emphasises bottom tail)',
   )
   .option(
+    '--show-elasticity-profile',
+    'append per-lens elasticityProfile line listing the rank-aversion elasticity (d ln G / d ln nu) at nu = 2, 2.5, 3, 4, 6 by central FD with relative h=1/12 -- complementary to --show-nu-sweep which reports LEVELS not derivatives',
+  )
+  .option(
     '--show-per-source-widths',
     'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
   )
@@ -26031,6 +26035,7 @@ program
         showLensAttribution?: boolean;
         showElasticity?: boolean;
         showNuSweep?: boolean;
+        showElasticityProfile?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -26115,6 +26120,7 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showElasticity: opts.showElasticity ?? false,
               showNuSweep: opts.showNuSweep ?? false,
+              showElasticityProfile: opts.showElasticityProfile ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );

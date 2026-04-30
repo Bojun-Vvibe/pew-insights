@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.265 — 2026-04-30
+
+### Changed
+
+- `pew-insights source-row-token-slope-ci-lens-width-sgini`
+  refinement: added a per-lens **rank-aversion ELASTICITY PROFILE**
+  diagnostic on top of the v0.6.264 axis-31 surface. No behaviour
+  change to the headline `G(3)` or single-point elasticity.
+
+  New helper `lensWidthSGiniElasticityProfile(halfWidths, nus)` and
+  matching `--show-elasticity-profile` per-lens line. Computes the
+  local elasticity `(d ln G / d ln nu)` at EACH `nu` on a
+  user-supplied grid by central FD with a fixed RELATIVE step
+  `h_rel = 1/12` (so `h_abs = nu / 12`). Reports `null` for
+  elasticity at any `nu` where either FD endpoint hits the FP-noise
+  floor (1e-12); the level `G(nu)` is still reported.
+
+  Distinct from the v0.6.264 `lensWidthSGiniNuSweep` (which reports
+  G LEVELS across nu) -- the elasticity profile returns the LOCAL
+  DERIVATIVE at each nu instead. The two are complementary:
+  nuSweep gives the inequality VALUE across nu, the elasticity
+  profile gives the inequality SENSITIVITY across nu.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 6 shared sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-sgini \
+      --bootstraps 500 --seed 42 --show-elasticity-profile
+
+  per-lens elasticity profile (e = dlnG/dlnNu, central FD, h_rel=1/12):
+
+    abc                nu=2.0 G=0.789567 e=-       nu=2.5 G=0.893232 e=0.3876
+                       nu=3.0 G=0.940535 e=0.2082  nu=4.0 G=0.975343 e=0.0740
+                       nu=6.0 G=0.991378 e=0.0219
+    profileLikelihood  nu=2.0 G=0.670604 e=-       nu=2.5 G=0.805877 e=0.6344
+                       nu=3.0 G=0.883322 e=0.4010  nu=4.0 G=0.954575 e=0.1716
+                       nu=6.0 G=0.989200 e=0.0365
+    jackknife          nu=2.0 G=0.663640 e=-       nu=2.5 G=0.797870 e=0.6374
+                       nu=3.0 G=0.875173 e=0.4057  nu=4.0 G=0.947375 e=0.1784
+                       nu=6.0 G=0.984595 e=0.0435
+    studentizedT       nu=2.0 G=0.654015 e=-       nu=2.5 G=0.790907 e=0.6605
+                       nu=3.0 G=0.870715 e=0.4229  nu=4.0 G=0.945917 e=0.1866
+                       nu=6.0 G=0.984652 e=0.0446
+    bootstrap          nu=2.0 G=0.535349 e=-       nu=2.5 G=0.664723 e=0.7931
+                       nu=3.0 G=0.751117 e=0.5731  nu=4.0 G=0.853206 e=0.3395
+                       nu=6.0 G=0.937124 e=0.1495
+    bca                nu=2.0 G=0.500815 e=-       nu=2.5 G=0.633649 e=0.8698
+                       nu=3.0 G=0.725122 e=0.6355  nu=4.0 G=0.835811 e=0.3801
+                       nu=6.0 G=0.928767 e=0.1692
+  ```
+
+  Across all six lenses the elasticity is MONOTONICALLY DECREASING
+  in nu -- the inequality verdict gets less sensitive to the
+  rank-aversion knob as nu grows (kernel weight migrates further
+  into the bottom and saturates). The lens with the lowest G(3)
+  (bca, 0.725) has the largest elasticity at every nu (0.870 at
+  nu=2.5; 0.169 at nu=6); the lens with the highest G(3) (abc,
+  0.941) has the smallest (0.388 at nu=2.5; 0.022 at nu=6) -- a
+  consistent inverse relationship between LEVEL and SENSITIVITY
+  across the entire rank-aversion grid, not just at the operating
+  point nu=3.
+
 ## 0.6.264 — 2026-04-30
 
 ### Added

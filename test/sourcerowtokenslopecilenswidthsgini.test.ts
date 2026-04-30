@@ -10,6 +10,7 @@ import {
   lensWidthSGini,
   lensWidthSGiniAtNu,
   lensWidthSGiniNuSweep,
+  lensWidthSGiniElasticityProfile,
   SLOPE_LENS_WIDTH_SGINI_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthsgini.js';
 import { lensWidthMehran } from '../src/sourcerowtokenslopecilenswidthmehran.js';
@@ -413,5 +414,82 @@ test('axis31 integration: degenerate (insufficient sources) -> all lenses degene
     assert.equal(row.degenerateFlag, true);
     assert.equal(row.degenerateReason, 'too-few-sources');
     assert.equal(row.sgini, 0);
+  }
+});
+
+// ---------- refinement helper: lensWidthSGiniElasticityProfile (v0.6.265) ----------
+
+test('axis31 elasticityProfile: returns null on degenerate input', () => {
+  assert.equal(lensWidthSGiniElasticityProfile([1, 2], [3]), null);
+  assert.equal(lensWidthSGiniElasticityProfile([0, 0, 0, 0], [3]), null);
+});
+
+test('axis31 elasticityProfile: returns one entry per nu with finite g and elasticity on a non-uniform input', () => {
+  const out = lensWidthSGiniElasticityProfile(
+    [1, 2, 3, 4, 5],
+    [2, 2.5, 3, 4, 6],
+  );
+  assert.ok(out !== null);
+  assert.equal(out!.length, 5);
+  for (const r of out!) {
+    assert.ok(Number.isFinite(r.g) && r.g >= 0 && r.g <= 1);
+    assert.ok(r.elasticity === null || Number.isFinite(r.elasticity));
+  }
+});
+
+test('axis31 elasticityProfile: elasticity is null at every nu on a uniform distribution (G==0)', () => {
+  const out = lensWidthSGiniElasticityProfile([1, 1, 1, 1, 1, 1], [2, 3, 4]);
+  assert.ok(out !== null);
+  for (const r of out!) {
+    assert.equal(r.elasticity, null);
+    assert.ok(Math.abs(r.g) < 1e-12);
+  }
+});
+
+test('axis31 elasticityProfile: elasticity at nu=3 matches the headline single-point elasticity within FD tolerance', () => {
+  const xs = [1, 2, 3, 4, 5, 6];
+  const headline = lensWidthSGini(xs);
+  const prof = lensWidthSGiniElasticityProfile(xs, [3])!;
+  assert.ok(prof[0]!.elasticity !== null);
+  // The two use slightly different FD step strategies (h=0.25 absolute vs
+  // h_rel=1/12 ~= 0.25 at nu=3) -- they should agree to within a few percent.
+  const diff = Math.abs(prof[0]!.elasticity! - headline.elasticity);
+  assert.ok(
+    diff < 0.05,
+    `prof.elasticity=${prof[0]!.elasticity} vs headline=${headline.elasticity} diff=${diff}`,
+  );
+});
+
+test('axis31 elasticityProfile: rejects nu <= 1 and bad halfWidths', () => {
+  assert.throws(
+    () => lensWidthSGiniElasticityProfile([1, 2, 3, 4], [1]),
+    /nu/,
+  );
+  assert.throws(
+    () => lensWidthSGiniElasticityProfile([1, 2, 3, -1], [3]),
+    /non-negative/,
+  );
+  assert.throws(
+    () => lensWidthSGiniElasticityProfile([1, 2, 3, NaN], [3]),
+    /finite/,
+  );
+});
+
+test('axis31 elasticityProfile: empty nus -> empty result, but non-null', () => {
+  const out = lensWidthSGiniElasticityProfile([1, 2, 3, 4, 5], []);
+  assert.deepEqual(out, []);
+});
+
+test('axis31 elasticityProfile: elasticity on a bottom-loaded skew is FINITE and SMALL relative to G changes', () => {
+  // For a bottom-loaded distribution the elasticity at moderate nu should be
+  // positive (G is increasing in nu) and bounded.
+  const out = lensWidthSGiniElasticityProfile(
+    [0, 0, 0, 1, 2, 3, 100],
+    [2.5, 3, 3.5, 4],
+  )!;
+  for (const r of out) {
+    assert.ok(r.elasticity !== null);
+    assert.ok(r.elasticity! > 0, `elasticity at nu=${r.nu} should be > 0`);
+    assert.ok(r.elasticity! < 5, `elasticity at nu=${r.nu} unreasonably large`);
   }
 });
