@@ -13028,6 +13028,10 @@ program
     '--include-rawlsian-anchor',
     'every row gains rawlsianDeficit = mu - min (the alpha -> infinity limit of kolm) and kolmOverRawlsian in [0, 1] (approaches 1 as alpha -> infinity). Surfaces how close Kolm-Pollak sits to its Rawlsian upper bound.',
   )
+  .option(
+    '--include-scale-equivariance-witness',
+    'refinement (v0.6.287): every row gains kolmIfTimesTwo = K(alpha/2) computed on the SCALED vector 2*D, plus scaleEquivarianceResidual = |kolmIfTimesTwo - 2*kolm|. Numerically proves the homogeneity-of-degree-1 axiom K(c*D, alpha/c) = c*K(D, alpha) that, together with translation-invariance, uniquely characterises Kolm-Pollak (Kolm 1976 Thm 2).',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -13044,6 +13048,7 @@ program
         minKolm: string;
         includeAdditiveInvarianceWitness?: boolean;
         includeRawlsianAnchor?: boolean;
+        includeScaleEquivarianceWitness?: boolean;
         json?: boolean;
       },
       cmd,
@@ -13109,6 +13114,8 @@ program
           includeAdditiveInvarianceWitness:
             opts.includeAdditiveInvarianceWitness ?? false,
           includeRawlsianAnchor: opts.includeRawlsianAnchor ?? false,
+          includeScaleEquivarianceWitness:
+            opts.includeScaleEquivarianceWitness ?? false,
           sort: opts.sort as
             | 'kolm'
             | 'tokens'

@@ -15790,5 +15790,26 @@ export function renderDailyTokenKolmPollakIndex(
     lines.push(renderTableLocal(aHeaders, aRows));
   }
 
+  if (r.sources.some((s) => s.kolmIfTimesTwo !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `scale-equivariance witness (refinement v0.6.287): K(2*D, alpha/2) should equal 2*K(D, alpha) by homogeneity of degree 1 (Kolm 1976 Thm 2)`,
+      ),
+    );
+    const sHeaders = ['source', '2*kolm', 'kolm(2*D)', 'residual'];
+    const sRows: string[][] = r.sources.map((s) => [
+      s.source,
+      formatNumber(Math.round(2 * s.kolm)),
+      s.kolmIfTimesTwo === undefined
+        ? '\u2014'
+        : formatNumber(Math.round(s.kolmIfTimesTwo)),
+      s.scaleEquivarianceResidual === undefined
+        ? '\u2014'
+        : s.scaleEquivarianceResidual.toExponential(2),
+    ]);
+    lines.push(renderTableLocal(sHeaders, sRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

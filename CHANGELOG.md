@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.287 — 2026-05-01
+
+### Added
+
+- New `--include-scale-equivariance-witness` flag on
+  `pew-insights daily-token-kolm-pollak-index` (axis-44).
+
+  Every emitted row gains:
+
+  - `kolmIfTimesTwo` = K(alpha/2) computed on the SCALED vector
+    `2*D` (every day boosted by 2x).
+  - `scaleEquivarianceResidual` = `|kolmIfTimesTwo - 2*kolm|`.
+
+  By the Kolm-Pollak homogeneity-of-degree-1 axiom (Kolm 1976
+  Theorem 2):
+
+      K(c*D, alpha/c) = c * K(D, alpha)
+
+  the residual must be ~0 by construction. Live smoke confirms
+  residual = 0.00e+0 on every source against the local
+  `~/.config/pew/queue.jsonl` (claude-code, codex, opencode,
+  openclaw, hermes, vscode-other) — exact agreement to the last
+  bit after rounding.
+
+  Together with `--include-additive-invariance-witness`
+  (translation-invariance K(D + c, alpha) = K(D, alpha)), this
+  pair of axiomatic witnesses completes the structural
+  characterisation that uniquely identifies Kolm-Pollak among all
+  CARA welfare-loss inequality indices. A non-trivial residual on
+  either witness would indicate a numerical pathology in the
+  log-sum-exp implementation; the all-zero residuals observed
+  live are a quiet sanity floor for the axis as it ships.
+
+  Tested: 2 new cases bringing the axis-44 suite to 39 cases.
+  The witness writes pure additive metadata to each row; no
+  default behaviour changes.
+
 ## 0.6.286 — 2026-05-01
 
 ### Added

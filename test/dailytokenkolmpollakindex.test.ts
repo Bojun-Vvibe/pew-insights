@@ -404,3 +404,41 @@ test('build: zero-day boosts kolm relative to non-zero baseline', () => {
   const b = buildDailyTokenKolmPollakIndex(baseline, { generatedAt: GEN });
   assert.ok(a.sources[0]!.kolm > b.sources[0]!.kolm);
 });
+
+test('build: includeScaleEquivarianceWitness verifies homogeneity-of-degree-1 (refinement v0.6.287)', () => {
+  const lines: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'a', 1000),
+    ql('2026-04-21T00:00:00Z', 'a', 9000),
+    ql('2026-04-22T00:00:00Z', 'a', 5000),
+    ql('2026-04-23T00:00:00Z', 'a', 7000),
+  ];
+  const r = buildDailyTokenKolmPollakIndex(lines, {
+    includeScaleEquivarianceWitness: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.ok(row.kolmIfTimesTwo !== undefined);
+  assert.ok(row.scaleEquivarianceResidual !== undefined);
+  // K(2*D, alpha/2) = 2 * K(D, alpha) within fp tolerance.
+  assert.ok(Math.abs(row.kolmIfTimesTwo! - 2 * row.kolm) < 1e-6);
+  assert.ok(row.scaleEquivarianceResidual! < 1e-6);
+});
+
+test('build: scale-equivariance + additive-invariance both pass simultaneously', () => {
+  const lines: QueueLine[] = [
+    ql('2026-04-20T00:00:00Z', 'a', 100),
+    ql('2026-04-21T00:00:00Z', 'a', 1000),
+    ql('2026-04-22T00:00:00Z', 'a', 5000),
+    ql('2026-04-23T00:00:00Z', 'a', 9000),
+    ql('2026-04-24T00:00:00Z', 'a', 50000),
+  ];
+  const r = buildDailyTokenKolmPollakIndex(lines, {
+    includeAdditiveInvarianceWitness: true,
+    includeScaleEquivarianceWitness: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  // Both axiomatic residuals near 0.
+  assert.ok(row.additiveInvarianceResidual! < 1e-3); // looser due to mu shift
+  assert.ok(row.scaleEquivarianceResidual! < 1e-3);
+});

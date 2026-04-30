@@ -155,6 +155,22 @@ export interface DailyTokenKolmPollakOptions {
   minKolm?: number;
   includeAdditiveInvarianceWitness?: boolean;
   includeRawlsianAnchor?: boolean;
+  /**
+   * Refinement (v0.6.287): when true, every emitted row gains a
+   * `kolmIfTimesTwo` field = K(alpha/2) computed on the SCALED
+   * vector 2*D, plus a `scaleEquivarianceResidual` field =
+   * |kolmIfTimesTwo - 2*kolm|. The textbook scale-equivariance
+   * identity for Kolm-Pollak is K(c*D, alpha/c) = c * K(D, alpha)
+   * (homogeneity of degree 1 in the data when alpha is rescaled
+   * inversely). Together with the additive-invariance witness
+   * (K(D + c, alpha) = K(D, alpha)), this completes the pair of
+   * structural axioms that uniquely characterise Kolm-Pollak among
+   * all welfare-loss inequality indices (Kolm 1976, Theorem 2).
+   * The residual should be ~0 by construction; observing a non-
+   * trivial residual would indicate either a numerical pathology
+   * or a bug in the log-sum-exp implementation.
+   */
+  includeScaleEquivarianceWitness?: boolean;
   generatedAt?: string;
 }
 
@@ -191,6 +207,12 @@ export interface DailyTokenKolmPollakSourceRow {
   rawlsianDeficit?: number;
   /** Refinement: kolm / rawlsianDeficit in [0, 1]. NaN if deficit=0. */
   kolmOverRawlsian?: number;
+  /** Refinement (v0.6.287): K(alpha/2) on the SCALED vector 2*D.
+   * By scale-equivariance K(c*D, alpha/c) = c * K(D, alpha) this
+   * should equal 2*kolm to within floating-point tolerance. */
+  kolmIfTimesTwo?: number;
+  /** Refinement (v0.6.287): |kolmIfTimesTwo - 2*kolm|. ~0 by axiom. */
+  scaleEquivarianceResidual?: number;
 }
 
 export interface DailyTokenKolmPollakReport {
@@ -454,6 +476,14 @@ export function buildDailyTokenKolmPollakIndex(
       const deficit = meanDaily - row.minDailyTokens;
       row.rawlsianDeficit = deficit;
       row.kolmOverRawlsian = deficit > 0 ? k.kolm / deficit : Number.NaN;
+    }
+    if (opts.includeScaleEquivarianceWitness) {
+      const scaled = values.map((v) => v * 2);
+      // K(2*D, alpha/2) = 2 * K(D, alpha) (Kolm-Pollak homogeneity
+      // of degree 1 when alpha is rescaled inversely).
+      const k3 = kolmPollakOfVector(scaled, alphaEffective / 2);
+      row.kolmIfTimesTwo = k3.kolm;
+      row.scaleEquivarianceResidual = Math.abs(k3.kolm - 2 * k.kolm);
     }
     rows.push(row);
     totalTokensSum += acc.totalTokens;
