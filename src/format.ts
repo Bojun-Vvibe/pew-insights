@@ -55,6 +55,7 @@ import type { DailyTokenZengaReport } from './dailytokenzengaindex.js';
 import type { DailyTokenPietraReport } from './dailytokenpietraratio.js';
 import type { DailyTokenAtkinsonReport } from './dailytokenatkinsonindex.js';
 import type { DailyTokenTheilLReport } from './dailytokentheillindex.js';
+import type { DailyTokenTheilTReport } from './dailytokentheiltindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -14897,6 +14898,114 @@ export function renderDailyTokenTheilLIndex(
       'source',
       ...r.alphaSweep.map((a) => `a=${a}`),
     ];
+    const sweepRows: string[][] = r.sources.map((s) => {
+      const row = [s.source];
+      const map = new Map<number, number>();
+      for (const e of s.geSweep ?? []) map.set(e.alpha, e.ge);
+      for (const a of r.alphaSweep) {
+        const v = map.get(a);
+        row.push(
+          v === undefined
+            ? '\u2014'
+            : Number.isFinite(v)
+              ? v.toFixed(4)
+              : '+inf',
+        );
+      }
+      return row;
+    });
+    lines.push(renderTableLocal(sweepHeaders, sweepRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTheilTIndex(
+  r: DailyTokenTheilTReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-theil-t-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-theil-t: ${r.minTheilT === 0 ? '\u2014' : r.minTheilT}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinTheilT)} below min-theil-t, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Theil-T (mass-weighted KL from uniform), GE(1), in NATS; range [0, log n]; with axis-37 cross-anchor T/L skew indicator)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Theil-T of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'theilT',
+    'normT',
+    'theilL',
+    'T/L',
+    'H_q',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+    'lInf',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.theilT.toFixed(4),
+    s.normalisedTheilT.toFixed(4),
+    Number.isFinite(s.theilL) ? s.theilL.toFixed(4) : '+inf',
+    Number.isNaN(s.tOverL)
+      ? 'n/a'
+      : !Number.isFinite(s.tOverL)
+        ? '+inf'
+        : s.tOverL.toFixed(4),
+    s.shannonEntropyQ.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+    s.lInfinite ? 'yes' : 'no',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.alphaSweep.length > 0 && r.sources.some((s) => s.geSweep)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `GE(alpha) sweep per source (alpha=0 -> theilL; alpha=1 -> theilT; alpha=2 -> half-squared-CV)`,
+      ),
+    );
+    const sweepHeaders = ['source', ...r.alphaSweep.map((a) => `a=${a}`)];
     const sweepRows: string[][] = r.sources.map((s) => {
       const row = [s.source];
       const map = new Map<number, number>();

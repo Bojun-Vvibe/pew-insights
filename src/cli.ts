@@ -89,6 +89,7 @@ import {
   renderDailyTokenPietraRatio,
   renderDailyTokenAtkinsonIndex,
   renderDailyTokenTheilLIndex,
+  renderDailyTokenTheilTIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -340,6 +341,7 @@ import { buildDailyTokenZengaIndex } from './dailytokenzengaindex.js';
 import { buildDailyTokenPietraRatio } from './dailytokenpietraratio.js';
 import { buildDailyTokenAtkinsonIndex } from './dailytokenatkinsonindex.js';
 import { buildDailyTokenTheilLIndex } from './dailytokentheillindex.js';
+import { buildDailyTokenTheilTIndex } from './dailytokentheiltindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12040,6 +12042,148 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenTheilLIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-theil-t-index')
+  .description(
+    "Per-source THEIL-T (mass-weighted entropy deviation, GE(1)) of the per-day total_tokens distribution (THIRTY-EIGHTH cross-source axis). T = sum_i q_i * log(q_i / (1/n)) = log(n) + sum q log q where q_i = D_i/sum(D). In NATS; range [0, log(n)]. Equivalently, KL divergence FROM empirical-share TO uniform-share -- the MIRROR of axis-37 Theil-L = D_KL(uniform || empirical). Because KL is asymmetric, T and L are FUNCTIONALLY INDEPENDENT. T is TOP-SENSITIVE (mass-weighted: large days dominate the sum); L is BOTTOM-SENSITIVE (uniform-weighted log shortfall: small days dominate). T remains FINITE on zero-day vectors (axis-37 zero-collapses to +inf). The headline derived field is the SKEW RATIO T/L (lInfinite=true if L=+inf): >1 means upper-tail-dominated inequality, <1 means lower-tail-dominated. Cannot be recovered from either axis alone. Per-source columns: theilT, normalisedTheilT (=T/log(n) in [0,1]), theilL (cross-anchor), tOverL (skew indicator), shannonEntropyQ (=log(n)-T), meanDaily, minDay, maxDay, lInfinite.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Theil-T is degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: theilT (default) | tokens | days | source | meanDaily | tOverL (skew indicator). Applied before --top.',
+    'theilT',
+  )
+  .option(
+    '--min-theil-t <t>',
+    'display filter: hide sources whose theilT is strictly below this value. t in [0, +inf). Default 0 = no filter.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--alpha-sweep <list>',
+    'comma-separated list of alpha values; for each row append a geSweep array of { alpha, ge }. Example: --alpha-sweep 0,0.5,1,2.',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minTheilT: string;
+        json?: boolean;
+        alphaSweep?: string;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minTheilT = Number.parseFloat(opts.minTheilT);
+        if (!Number.isFinite(minTheilT) || minTheilT < 0) {
+          throw new Error(
+            `--min-theil-t must be a non-negative finite number (got ${opts.minTheilT})`,
+          );
+        }
+        const validSorts = [
+          'theilT',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'tOverL',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        let alphaSweep: number[] | undefined;
+        if (opts.alphaSweep) {
+          alphaSweep = opts.alphaSweep
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+            .map((s) => {
+              const v = Number.parseFloat(s);
+              if (!Number.isFinite(v)) {
+                throw new Error(
+                  `--alpha-sweep entries must be finite numbers (got ${s})`,
+                );
+              }
+              return v;
+            });
+        }
+        const report = buildDailyTokenTheilTIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minTheilT,
+          sort: opts.sort as
+            | 'theilT'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'tOverL',
+          alphaSweep,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenTheilTIndex(report) + '\n');
         }
       } catch (e) {
         die(e);
