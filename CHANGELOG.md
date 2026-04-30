@@ -2,6 +2,92 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.273 — 2026-05-01
+
+### Added
+
+- New cross-source axis (THIRTY-SIXTH):
+  `pew-insights daily-token-atkinson-index`.
+
+  Per-source ATKINSON inequality index of the per-day
+  `total_tokens` distribution at a configurable CRRA inequality-
+  aversion parameter `epsilon` (default 0.5):
+
+  ```
+  A(epsilon) = 1 - EDE(epsilon) / mu
+
+  EDE(epsilon) = (1/n * sum_i D_i^(1 - epsilon))^(1/(1 - epsilon))   epsilon != 1
+  EDE(1)       = (prod_i D_i)^(1/n)                                  geometric mean
+  ```
+
+  where `D_i` is the day-`i` total token mass and `mu = mean(D)`.
+  Range `A in [0, 1]`. Equals the FRACTION of total mass an
+  inequality-averse planner with CRRA preferences would surrender
+  to flatten the distribution.
+
+  Why a new axis: Atkinson is the canonical CRRA welfare-loss
+  inequality measure and is mechanically distinct from every
+  prior daily-token axis on at least three counts:
+
+  1. It satisfies STRICT Pigou-Dalton transfer sensitivity at
+     every `epsilon > 0`. Pietra (axis-35) does not (Pietra is
+     insensitive to same-side mean-preserving transfers). Gini
+     does, but only along the Lorenz curve; Atkinson re-weights
+     transfers by CRRA marginal utility at the transfer level.
+  2. The `epsilon` knob smoothly interpolates between top-
+     sensitive (small epsilon -> a few huge days dominate the
+     loss), the log-utility / geometric-mean limit at
+     `epsilon = 1` (Theil-L family link), and bottom-sensitive
+     (large epsilon -> Rawlsian limit `1 - min/mu`). Single
+     scalar axes (Gini, Pietra, Zenga, MLD) cannot reproduce
+     this trade-off without re-parametrisation.
+  3. CRRA welfare has a structural ZERO-COLLAPSE at
+     `epsilon >= 1`: any single zero day pins `A = 1`. We
+     surface this as `zeroCollapse: true` so a "pinned" extreme
+     is not mistaken for a "computed" extreme. The
+     `--drop-zero-days` flag guards against this under
+     hypothetical augmentation (our ingestion pipeline already
+     drops non-positive token rows).
+
+  Per-source columns: `atkinson`, `ede` (in tokens, equals
+  `mu * (1 - A)`), `meanDaily`, `maxDay`, `maxDayTokens`,
+  `tokens`, `nDays`, `zeroCollapse`. Sort keys: `atkinson`
+  (default) | `tokens` | `days` | `source` | `ede`. Display
+  filters: `--min-atkinson`, `--top`. Time window: `--since` /
+  `--until`. Source filter: `--source`.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights daily-token-atkinson-index
+
+  source          days  atkinson  ede          meanDaily    tokens
+  claude-code     35    0.5002    49,158,551   98,353,880   3,442,385,788
+  vscode-copilot  73    0.4108    15,221       25,832       1,885,727
+  codex           8     0.3007    70,772,334   101,203,083  809,624,660
+  openclaw        14    0.1011    133,129,354  148,110,726  2,073,550,162
+  hermes          14    0.0915    15,447,169   17,003,056   238,042,790
+  opencode        11    0.0751    428,560,596  463,356,785  5,096,924,634
+  ```
+
+  Key real-data finding at the default `epsilon = 0.5`: a CRRA
+  social planner facing the `claude-code` per-day distribution
+  would willingly give up **50% of total token mass** in exchange
+  for the same total split equally across the 35 days
+  (`atkinson = 0.5002`, `EDE = 49.2M tokens` against
+  `mean = 98.4M`). For `opencode` over the last 11 days the loss
+  is **7.5%** (`EDE = 428.6M` against `mean = 463.4M`) -- by far
+  the most uniform daily-token rhythm in the workspace, despite
+  carrying the highest TOTAL token mass.
+
+  This is the orthogonality witness for axis-36: total mass and
+  Atkinson are NOT correlated on real data. `opencode` has 1.5x
+  the total tokens of `claude-code` but 1/7th of its CRRA
+  inequality. Sort by `tokens` and sort by `atkinson` produce
+  near-INVERTED rankings on the lower half of the table, which
+  is exactly the kind of distinct shape information a new axis
+  has to provide to earn its keep.
+
 ## 0.6.272 — 2026-05-01
 
 ### Changed
