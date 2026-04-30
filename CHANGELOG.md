@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.266 — 2026-04-30
+
+### Added
+
+- New cross-lens axis (THIRTY-SECOND):
+  `pew-insights source-row-token-slope-ci-lens-width-mld` --
+  per-lens **MEAN LOG DEVIATION** (MLD = Theil-L = GE(alpha=0))
+  of the six bootstrap/jackknife/BCa/studentized-t/ABC/profile-
+  likelihood Deming-slope CI half-widths.
+
+  ```
+  MLD = log(arithmetic_mean) - mean(log(x_i))
+      = log(arithmetic_mean / geometric_mean)
+      = (1/n) * sum_i log(mean / x_i)
+  ```
+
+  ### Orthogonality argument vs axes 21-31
+
+  MLD is the THIRD CORNER of the Generalised-Entropy GE(alpha)
+  family that we already ship. The family is parameterised by
+  `alpha` and at three integer points it reduces to:
+
+    - `GE(0)` = MLD, this axis (BOTTOM-tail-emphasising)
+    - `GE(1)` = Theil-T, axis-22 (EQUAL-WEIGHTED per dollar)
+    - `GE(2)` = half coefficient-of-variation^2, axis-27
+              (TOP-tail-emphasising)
+
+  At the bottom rank, the marginal change in `GE(alpha)` for a
+  small mean-preserving transfer is monotone DECREASING in
+  `alpha`, so MLD is the maximum-bottom-sensitivity member; GE(2)
+  is the maximum-top-sensitivity member; Theil-T is the equal-
+  weighted midpoint. The three are linearly independent on the
+  simplex of inputs. Numerically distinct on every non-degenerate
+  input (verified by the `theilPair` helper, which reports both
+  MLD and Theil-T side-by-side and the ratio).
+
+  Distinct from EVERY OTHER prior axis on at least one of:
+  scale (LOG-SCALE arithmetic-vs-geometric mean RATIO; no other
+  axis is on the log scale), boundedness (UNBOUNDED above; axes
+  21-31 are bounded in [0, 1] or have a bounded Lorenz-gap form),
+  edge-case surface (UNIQUE `zero-element` degenerate reason --
+  any `x_i = 0` forces MLD = +inf; no other cross-lens axis
+  raises this), and Atkinson-limit linkage (MLD <-> Atkinson-eps=1
+  exact identity, surfaced as the bounded `atkinsonEps1` =
+  1 - exp(-MLD) per-lens column).
+
+  CLI surface mirrors axes 30-31: `--alert-mld`, `--sort`
+  (`mld-desc` default), `--json`, `--show-summary`,
+  `--show-concentration-aggregate`, `--show-lens-attribution`,
+  `--show-theil-pair`, `--show-per-source-widths`.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 6 shared sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-mld \
+      --bootstraps 500 --seed 42 --show-summary --show-lens-attribution
+
+  meanMLD: 2.145405; medianMLD: 2.314860;
+  maxMLD: 2.912162 (lens=abc);
+  minMLD: 1.353401 (lens=bca);
+  rangeMLD: 1.558761; nExtreme: 6; nNearUniform: 0; nDegen: 0
+
+  lens               n     MLD        AM             GM             atkE1     concentration
+  abc                   6  2.912162   184392.7       10023.2        0.945642  extreme
+  profileLikelihood     6  2.571371   520400.1       39774.6        0.923569  extreme
+  studentizedT          6  2.320288   495684.1       48698.6        0.901755  extreme
+  jackknife             6  2.309432   444246.0       44121.5        0.900682  extreme
+  bootstrap             6  1.405777   28980872.7    7105425.1       0.754824  extreme
+  bca                   6  1.353401   32400375.1    8370963.8       0.741640  extreme
+
+  [lens attribution] mostExtreme=abc (max MLD) mostUniform=bca (min MLD)
+  ```
+
+  All six lenses report EXTREME concentration (MLD >= 1.0),
+  consistent with the heavy-tailed half-width distribution we
+  observed under axes 21-31. The MLD ordering ABC > profile >
+  studentizedT > jackknife > bootstrap > BCa is OPPOSITE to the
+  arithmetic-mean ordering (BCa has the largest AM at 32.4M but
+  the smallest MLD at 1.353), which is exactly the bottom-tail-
+  emphasising signature: MLD ranks lenses by how MUCH SMALLER
+  their geometric mean is relative to their arithmetic mean, not
+  by their absolute width. The ABC lens has its smallest half-
+  width at 205.6 vs an AM of 184K -- a 900x ratio -- making MLD
+  spike to 2.9, even though ABC's AM is the smallest of the six.
+  This is the signature MLD reading that NEITHER Theil-T (axis-22,
+  equal-weighted) NOR GE(2) (axis-27, top-tail) can produce.
+
 ## 0.6.265 — 2026-04-30
 
 ### Changed
