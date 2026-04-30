@@ -114,6 +114,23 @@ export interface DailyTokenZengaSourceRow {
    */
   maxU: number;
   argmaxK: number;
+  /**
+   * Quantile-anchored sweep of the inequality curve at k =
+   * round(0.25 * n), round(0.50 * n), round(0.75 * n) (each clamped
+   * to [1, n-1]). Reported alongside the scalar Zenga so a reader
+   * can tell whether the inequality is loaded at the bottom, the
+   * middle, or the top of the cutpoint range. Refinement (v0.6.271).
+   */
+  uAt25: number;
+  uAt50: number;
+  uAt75: number;
+  /**
+   * Full per-cutpoint inequality curve u(k) for k = 1..n-1.
+   * Length = nDays - 1. Always emitted in JSON; the pretty
+   * renderer only prints it when --show-curve is passed.
+   * Refinement (v0.6.271).
+   */
+  curve: number[];
 }
 
 export interface DailyTokenZengaReport {
@@ -142,11 +159,14 @@ export interface DailyTokenZengaReport {
  * Zenga (2007) inequality index of a non-negative numeric vector.
  *
  * Returns:
- *   - { zenga: 0, maxU: 0, argmaxK: 0 } for n < 2 (Zenga is
- *     undefined for a singleton; we report 0 by convention so it
- *     composes cleanly with downstream filters).
- *   - { zenga: 0, maxU: 0, argmaxK: 0 } for the all-zero vector.
+ *   - { zenga: 0, maxU: 0, argmaxK: 0, curve: [] } for n < 2.
+ *   - { zenga: 0, maxU: 0, argmaxK: 0, curve: [...zeros] } for the
+ *     all-zero vector.
  *   - zenga in [0, 1] otherwise.
+ *
+ * `curve` is the full per-cutpoint inequality function
+ * `u(k) = 1 - M_k^- / M_k^+` for k = 1, ..., n - 1, in order.
+ * Length n - 1. The scalar Zenga is its arithmetic mean.
  *
  * Throws on negative or non-finite input -- token totals are
  * guaranteed non-negative by upstream filters.
@@ -155,9 +175,10 @@ export function zengaOfVector(values: number[]): {
   zenga: number;
   maxU: number;
   argmaxK: number;
+  curve: number[];
 } {
   const n = values.length;
-  if (n < 2) return { zenga: 0, maxU: 0, argmaxK: 0 };
+  if (n < 2) return { zenga: 0, maxU: 0, argmaxK: 0, curve: [] };
   let total = 0;
   for (const v of values) {
     if (!Number.isFinite(v) || v < 0) {
@@ -167,22 +188,22 @@ export function zengaOfVector(values: number[]): {
     }
     total += v;
   }
-  if (total <= 0) return { zenga: 0, maxU: 0, argmaxK: 0 };
+  if (total <= 0) {
+    return { zenga: 0, maxU: 0, argmaxK: 0, curve: new Array(n - 1).fill(0) };
+  }
   const sorted = values.slice().sort((a, b) => a - b);
-  // Walking prefix sum lets us read both M_k^- and M_k^+ in O(n).
   let prefix = 0;
   let sumU = 0;
   let maxU = 0;
   let argmaxK = 0;
+  const curve: number[] = new Array(n - 1);
   for (let k = 1; k <= n - 1; k++) {
     prefix += sorted[k - 1]!;
     const lower = prefix / k;
     const upperSum = total - prefix;
     const upper = upperSum / (n - k);
-    // Guarded division: when upper == 0 the entire upper tail is 0,
-    // which (given the sort) forces the entire vector to 0 -- ruled
-    // out above. So `upper > 0` whenever we reach this branch.
     const u = upper > 0 ? 1 - lower / upper : 0;
+    curve[k - 1] = u;
     sumU += u;
     if (u > maxU) {
       maxU = u;
@@ -190,7 +211,7 @@ export function zengaOfVector(values: number[]): {
     }
   }
   const zenga = sumU / (n - 1);
-  return { zenga, maxU, argmaxK };
+  return { zenga, maxU, argmaxK, curve };
 }
 
 export function buildDailyTokenZengaIndex(
@@ -323,6 +344,10 @@ export function buildDailyTokenZengaIndex(
       }
     }
     const z = zengaOfVector(values);
+    const clampK = (k: number) => Math.max(1, Math.min(nDays - 1, k));
+    const k25 = clampK(Math.round(0.25 * nDays));
+    const k50 = clampK(Math.round(0.5 * nDays));
+    const k75 = clampK(Math.round(0.75 * nDays));
     rows.push({
       source: src,
       totalTokens: acc.totalTokens,
@@ -335,6 +360,10 @@ export function buildDailyTokenZengaIndex(
       maxDay,
       maxU: z.maxU,
       argmaxK: z.argmaxK,
+      uAt25: z.curve[k25 - 1] ?? 0,
+      uAt50: z.curve[k50 - 1] ?? 0,
+      uAt75: z.curve[k75 - 1] ?? 0,
+      curve: z.curve,
     });
     totalTokensSum += acc.totalTokens;
   }

@@ -14536,7 +14536,10 @@ export function renderSourceRowTokenProfileLikelihoodSlopeCi(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
-export function renderDailyTokenZengaIndex(r: DailyTokenZengaReport): string {
+export function renderDailyTokenZengaIndex(
+  r: DailyTokenZengaReport,
+  opts: { showCurve?: boolean; showQuantileSweep?: boolean } = {},
+): string {
   const lines: string[] = [];
   lines.push(chalk.bold.cyan('pew-insights daily-token-zenga-index'));
   lines.push(
@@ -14601,6 +14604,26 @@ export function renderDailyTokenZengaIndex(r: DailyTokenZengaReport): string {
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  if (opts.showQuantileSweep) {
+    lines.push('');
+    lines.push(chalk.bold('[quantile sweep] u(k) at k = round(0.25*n), round(0.50*n), round(0.75*n)'));
+    for (const s of r.sources) {
+      lines.push(
+        `  ${s.source.padEnd(16)} u(0.25n)=${s.uAt25.toFixed(4)}  u(0.50n)=${s.uAt50.toFixed(4)}  u(0.75n)=${s.uAt75.toFixed(4)}`,
+      );
+    }
+  }
+
+  if (opts.showCurve) {
+    lines.push('');
+    lines.push(chalk.bold('[per-cutpoint inequality curve] u(k) for k = 1..n-1'));
+    for (const s of r.sources) {
+      const formatted = s.curve.map((u) => u.toFixed(3)).join(' ');
+      lines.push(`  ${s.source}  (n=${s.nDays})`);
+      lines.push(`    ${formatted}`);
+    }
+  }
 
   return lines.join('\n').replace(/\n+$/, '');
 }

@@ -11550,6 +11550,14 @@ program
     '0',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-quantile-sweep',
+    'append [quantile sweep] line per source listing u(k) at k=round(0.25*n), round(0.50*n), round(0.75*n) -- positions inside the (n-1) cutpoint range',
+  )
+  .option(
+    '--show-curve',
+    'append [per-cutpoint inequality curve] block per source listing the full u(k) for k=1..n-1 (length n-1)',
+  )
   .action(
     async (
       opts: {
@@ -11562,6 +11570,8 @@ program
         sort: string;
         minZenga: string;
         json?: boolean;
+        showQuantileSweep?: boolean;
+        showCurve?: boolean;
       },
       cmd,
     ) => {
@@ -11612,7 +11622,12 @@ program
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
-          process.stdout.write(renderDailyTokenZengaIndex(report) + '\n');
+          process.stdout.write(
+            renderDailyTokenZengaIndex(report, {
+              showQuantileSweep: opts.showQuantileSweep ?? false,
+              showCurve: opts.showCurve ?? false,
+            }) + '\n',
+          );
         }
       } catch (e) {
         die(e);

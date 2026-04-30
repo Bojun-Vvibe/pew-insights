@@ -384,3 +384,42 @@ test('buildDailyTokenZengaIndex: orthogonality vs gini -- same total/days, diffe
     `src-b zenga (${b.zenga}) should be meaningfully below src-a (${a.zenga})`,
   );
 });
+
+// ---- refinement (v0.6.271): curve, quantile sweep ------------------------
+
+test('zengaOfVector: curve has length n-1 and matches scalar Zenga as mean', () => {
+  const v = [1, 2, 3, 5, 8, 13];
+  const r = zengaOfVector(v);
+  assert.equal(r.curve.length, v.length - 1);
+  const mean = r.curve.reduce((a, b) => a + b, 0) / r.curve.length;
+  assert.ok(Math.abs(mean - r.zenga) < 1e-12);
+  // Each u(k) bounded in [0, 1].
+  for (const u of r.curve) assert.ok(u >= 0 && u <= 1);
+});
+
+test('zengaOfVector: all-zero curve length n-1 of zeros', () => {
+  const r = zengaOfVector([0, 0, 0, 0, 0]);
+  assert.equal(r.curve.length, 4);
+  for (const u of r.curve) assert.equal(u, 0);
+});
+
+test('buildDailyTokenZengaIndex: reports uAt25 / uAt50 / uAt75 and curve', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-21T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-22T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-23T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-24T05:00:00.000Z', 'src-a', 1_000_000),
+  ];
+  const r = buildDailyTokenZengaIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.curve.length, 4);
+  // Heavy-skew: u(k) ≈ 1 at every k from 1..4
+  for (const u of row.curve) assert.ok(u > 0.99);
+  assert.ok(row.uAt25 > 0.99);
+  assert.ok(row.uAt50 > 0.99);
+  assert.ok(row.uAt75 > 0.99);
+});
