@@ -91,6 +91,7 @@ import {
   renderDailyTokenTheilLIndex,
   renderDailyTokenTheilTIndex,
   renderDailyTokenGe2Index,
+  renderDailyTokenPalmaRatio,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -344,6 +345,7 @@ import { buildDailyTokenAtkinsonIndex } from './dailytokenatkinsonindex.js';
 import { buildDailyTokenTheilLIndex } from './dailytokentheillindex.js';
 import { buildDailyTokenTheilTIndex } from './dailytokentheiltindex.js';
 import { buildDailyTokenGe2Index } from './dailytokenge2index.js';
+import { buildDailyTokenPalmaRatio } from './dailytokenpalmaratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12336,6 +12338,165 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenGe2Index(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-palma-ratio')
+  .description(
+    "Per-source PALMA RATIO = mass(top 10% of days) / mass(bottom 40% of days) of the per-day total_tokens distribution (FORTIETH cross-source axis). Range [0, +inf); palma = 1 iff top decile equals bottom 4 deciles in mass; palma > 1 is the canonical concentration reading. RANK-CUTOFF-BASED (NOT entropy/variance-based): reads only TWO points on the empirical Lorenz curve (40th and 90th percentile cutoffs) so it is orthogonal to GE(alpha) family axes 37/38/39 and to the rank-weighted L1 axis-32 Gini. Two sources with identical Gini routinely have very different Palma ratios when bulk mass migrates between middle deciles and tails. Edge case: when n < 10 the literal decile is undefined; we use FRACTIONAL-RANK quantile cutoffs (linear interpolation across day bins) and surface interpolatedCutoffs = true. The headline derived field is the LORENZ-SHAPE RATIO palmaOverGini = palma / gini (cross-anchor on axis-32). Per-source columns: palma, topShare, middleShare, bottomShare, gini, palmaOverGini, meanDaily, minDay, maxDay, bottomZero, interpolatedCutoffs. Configurable cutoffs via --top-quantile / --bottom-quantile.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Palma is degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: palma (default) | tokens | days | source | meanDaily | topShare | bottomShare | palmaOverGini. Applied before --top.',
+    'palma',
+  )
+  .option(
+    '--min-palma <p>',
+    'display filter: hide sources whose palma is strictly below this value. p in [0, +inf). Default 0 = no filter. +Inf rows are always kept.',
+    '0',
+  )
+  .option(
+    '--top-quantile <q>',
+    'rank cutoff for the numerator share (default 0.9 => top 10%). q in (0, 1).',
+    '0.9',
+  )
+  .option(
+    '--bottom-quantile <q>',
+    'rank cutoff for the denominator share (default 0.4 => bottom 40%). q in (0, 1) and < --top-quantile. Useful pairs: (0.95, 0.4) "P95-40 ratio", (0.8, 0.2) "20-20 ratio", (0.95, 0.05) "P95/P5 inter-decile spread".',
+    '0.4',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minPalma: string;
+        topQuantile: string;
+        bottomQuantile: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minPalma = Number.parseFloat(opts.minPalma);
+        if (!Number.isFinite(minPalma) || minPalma < 0) {
+          throw new Error(
+            `--min-palma must be a non-negative finite number (got ${opts.minPalma})`,
+          );
+        }
+        const topQuantile = Number.parseFloat(opts.topQuantile);
+        if (!Number.isFinite(topQuantile) || topQuantile <= 0 || topQuantile >= 1) {
+          throw new Error(
+            `--top-quantile must be a number in (0, 1) (got ${opts.topQuantile})`,
+          );
+        }
+        const bottomQuantile = Number.parseFloat(opts.bottomQuantile);
+        if (
+          !Number.isFinite(bottomQuantile) ||
+          bottomQuantile <= 0 ||
+          bottomQuantile >= 1
+        ) {
+          throw new Error(
+            `--bottom-quantile must be a number in (0, 1) (got ${opts.bottomQuantile})`,
+          );
+        }
+        if (bottomQuantile >= topQuantile) {
+          throw new Error(
+            `--bottom-quantile (${bottomQuantile}) must be < --top-quantile (${topQuantile})`,
+          );
+        }
+        const validSorts = [
+          'palma',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'topShare',
+          'bottomShare',
+          'palmaOverGini',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPalmaRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minPalma,
+          topQuantile,
+          bottomQuantile,
+          sort: opts.sort as
+            | 'palma'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'topShare'
+            | 'bottomShare'
+            | 'palmaOverGini',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenPalmaRatio(report) + '\n');
         }
       } catch (e) {
         die(e);

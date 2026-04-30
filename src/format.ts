@@ -57,6 +57,7 @@ import type { DailyTokenAtkinsonReport } from './dailytokenatkinsonindex.js';
 import type { DailyTokenTheilLReport } from './dailytokentheillindex.js';
 import type { DailyTokenTheilTReport } from './dailytokentheiltindex.js';
 import type { DailyTokenGe2Report } from './dailytokenge2index.js';
+import type { DailyTokenPalmaReport } from './dailytokenpalmaratio.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -15155,6 +15156,93 @@ export function renderDailyTokenGe2Index(
     });
     lines.push(renderTableLocal(wkHeaders, wkRows));
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPalmaRatio(
+  r: DailyTokenPalmaReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-palma-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-palma: ${r.minPalma === 0 ? '\u2014' : r.minPalma}    cutoffs: top=${r.topQuantile} bottom=${r.bottomQuantile}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinPalma)} below min-palma, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PALMA = mass(top ${Math.round((1 - r.topQuantile) * 100)}%) / mass(bottom ${Math.round(r.bottomQuantile * 100)}%) of per-day total_tokens; rank-cutoff Lorenz reading; with axis-32 cross-anchor palma/gini Lorenz-shape ratio)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Palma ratio of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'palma',
+    'topShare',
+    'midShare',
+    'botShare',
+    'gini',
+    'palma/gini',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+    'interp',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    Number.isNaN(s.palma)
+      ? 'n/a'
+      : !Number.isFinite(s.palma)
+        ? '+inf'
+        : s.palma.toFixed(4),
+    s.topShare.toFixed(4),
+    s.middleShare.toFixed(4),
+    s.bottomShare.toFixed(4),
+    s.gini.toFixed(4),
+    Number.isNaN(s.palmaOverGini)
+      ? 'n/a'
+      : !Number.isFinite(s.palmaOverGini)
+        ? '+inf'
+        : s.palmaOverGini.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+    s.interpolatedCutoffs ? 'yes' : 'no',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
