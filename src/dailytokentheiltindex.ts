@@ -544,3 +544,168 @@ export function buildDailyTokenTheilTIndex(
     sources: kept,
   };
 }
+
+/**
+ * Refinement (v0.6.276): MASS-WEIGHTED additive subgroup decomposition
+ * of Theil-T.
+ *
+ * For a non-negative vector `D = (D_1, ..., D_n)` partitioned into
+ * disjoint subgroups `G_1, ..., G_k`, Theil-T decomposes as:
+ *
+ *   T_total = sum_g s_g * T_g  +  T_between
+ *
+ * where:
+ *   - `s_g = sum(D in G_g) / sum(D)` is the MASS share of subgroup g
+ *     (CONTRAST with Theil-L, which uses POPULATION share `n_g/n`),
+ *   - `T_g` is Theil-T of `D` restricted to subgroup `G_g`,
+ *   - `T_between = sum_g s_g * log(mu_g / mu)` where `mu_g` is the
+ *     mean of subgroup `G_g` and `mu` is the mean of the whole vector.
+ *
+ * The mass-weighting (vs. population-weighting in Theil-L) is the
+ * canonical structural difference between the GE(1) and GE(0)
+ * decompositions and reflects each measure's reference distribution
+ * (T weights by empirical mass; L weights by uniform population).
+ *
+ * Like Theil-L, this decomposition has NO RESIDUAL: within + between
+ * = total exactly (up to floating-point). This is what makes Theil-T
+ * an attractive companion to Theil-L for subgroup analysis: BOTH
+ * decompose cleanly, but with COMPLEMENTARY weighting schemes
+ * (mass-weighted vs. population-weighted), so jointly they reveal
+ * whether a between-group gap is more visible on the mass axis or
+ * the population axis.
+ *
+ * Returns:
+ *   - `total`: T of the concatenated vector.
+ *   - `within`: mass-weighted sum sum_g s_g * T_g.
+ *   - `between`: T of the means-vector with mass weight.
+ *   - `subgroups`: array of `{ label, n, mean, theilT, massWeight }`
+ *     where `massWeight = s_g` (NOT n_g/n) and `theilT = T_g`.
+ *   - `zeroCollapse`: true iff total mass = 0 OR any subgroup mean
+ *     = 0 with non-empty subgroup (between term blows up).
+ *
+ * Handles trivial cases:
+ *   - Empty input -> all zeros.
+ *   - All-zero subgroup means -> zeroCollapse = true; between = 0
+ *     (degenerate; total = 0).
+ *   - Singleton subgroup: T_g = 0 by definition (n_g < 2).
+ *   - Single subgroup: between = 0, within = total (trivially).
+ *
+ * Throws on negative or non-finite input.
+ */
+export function theilTSubgroupDecomposition(
+  groups: { label: string; values: number[] }[],
+): {
+  total: number;
+  within: number;
+  between: number;
+  zeroCollapse: boolean;
+  subgroups: {
+    label: string;
+    n: number;
+    mean: number;
+    theilT: number;
+    massWeight: number;
+  }[];
+} {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return {
+      total: 0,
+      within: 0,
+      between: 0,
+      zeroCollapse: false,
+      subgroups: [],
+    };
+  }
+  // Validate and concatenate.
+  const all: number[] = [];
+  for (const g of groups) {
+    if (!Array.isArray(g.values)) {
+      throw new Error(`subgroup ${g.label} must have numeric values[]`);
+    }
+    for (const v of g.values) {
+      if (!Number.isFinite(v) || v < 0) {
+        throw new Error(
+          `theilTSubgroupDecomposition requires non-negative finite values (subgroup ${g.label}, got ${v})`,
+        );
+      }
+      all.push(v);
+    }
+  }
+  const n = all.length;
+  if (n < 2) {
+    return {
+      total: 0,
+      within: 0,
+      between: 0,
+      zeroCollapse: false,
+      subgroups: groups.map((g) => ({
+        label: g.label,
+        n: g.values.length,
+        mean: g.values.length > 0 ? (g.values[0] as number) : 0,
+        theilT: 0,
+        massWeight: 0,
+      })),
+    };
+  }
+  let totalSum = 0;
+  for (const v of all) totalSum += v;
+  if (totalSum === 0) {
+    return {
+      total: 0,
+      within: 0,
+      between: 0,
+      zeroCollapse: true,
+      subgroups: groups.map((g) => ({
+        label: g.label,
+        n: g.values.length,
+        mean: 0,
+        theilT: 0,
+        massWeight: 0,
+      })),
+    };
+  }
+  const muTotal = totalSum / n;
+  const total = theilTOfVector(all);
+  let within = 0;
+  let between = 0;
+  let anyZeroSubgroupMean = false;
+  const subgroups = groups.map((g) => {
+    const ng = g.values.length;
+    const sumG = g.values.reduce((s, x) => s + x, 0);
+    const muG = ng > 0 ? sumG / ng : 0;
+    const massWeight = sumG / totalSum; // s_g
+    if (muG === 0 && ng > 0 && sumG === 0 && totalSum > 0) {
+      // Empty-mass subgroup contributes 0 to both within and between
+      // (s_g = 0). No collapse.
+    }
+    const tg = theilTOfVector(g.values);
+    within += massWeight * tg.theilT;
+    if (sumG > 0 && muG > 0) {
+      between += massWeight * Math.log(muG / muTotal);
+    } else if (sumG === 0) {
+      // s_g = 0 -> contribution is 0 (not infinity); the convention
+      // 0 * log(0) = 0 applies.
+    } else {
+      // Should not be reachable given input validation.
+      anyZeroSubgroupMean = true;
+    }
+    return {
+      label: g.label,
+      n: ng,
+      mean: muG,
+      theilT: tg.theilT,
+      massWeight,
+    };
+  });
+  // Numerical clamp: between >= 0 by Jensen on the means-vector under
+  // mass-weighting (this is exactly KL of the subgroup-mean distribution
+  // from the equal-mass reference, and KL is non-negative).
+  if (Number.isFinite(between) && between < 0) between = 0;
+  return {
+    total: total.theilT,
+    within,
+    between,
+    zeroCollapse: anyZeroSubgroupMean,
+    subgroups,
+  };
+}

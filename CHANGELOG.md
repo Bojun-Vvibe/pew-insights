@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.276 — 2026-05-01
+
+### Added
+
+- `theilTSubgroupDecomposition(groups)`: MASS-WEIGHTED additive
+  subgroup decomposition of Theil-T (axis-38), the canonical companion
+  to `theilLSubgroupDecomposition` (axis-37, population-weighted).
+
+  Identity: `T_total = sum_g s_g * T_g + T_between` where
+  `s_g = sum(D_g) / sum(D)` is the MASS share of subgroup g (the
+  GE(1) decomposition uses MASS weights; the GE(0) Theil-L
+  decomposition uses POPULATION weights `n_g/n`). NO residual term.
+
+  Why this is the right structural complement to v0.6.274's
+  `theilLSubgroupDecomposition`: both decompose cleanly, but with
+  DIFFERENT weighting schemes. Together they answer the question
+  "is the between-group inequality more visible on the mass axis or
+  the population axis?" Disagreement between the two is itself a
+  diagnostic (heterogeneous group sizes vs. heterogeneous group
+  intensities).
+
+  Critical contrast: zero-day-INSIDE-subgroup keeps Theil-T's within
+  term FINITE; the same scenario pins Theil-L's within = +infinity.
+  This is the same zero-day asymmetry as the headline indices,
+  carried into the decomposition.
+
+  Returns: `{ total, within, between, zeroCollapse, subgroups: [{ label,
+  n, mean, theilT, massWeight }, ...] }`. Subgroup `massWeight` is
+  `s_g` (NOT `n_g/n`) -- the key contrast with axis-37's decomposition.
+
+### Tests
+
+- `7686 -> 7696` (+10 new tests covering: empty / single-subgroup /
+  no-residual identity / equal-within / equal-mean / mass-weights-
+  sum-to-1 / negative-input rejection / zero-day-inside-subgroup
+  finite-within contrast vs L / real-shape per-week test / mass-vs-
+  population weighting design point).
+
 ## 0.6.275 — 2026-05-01
 
 ### Added

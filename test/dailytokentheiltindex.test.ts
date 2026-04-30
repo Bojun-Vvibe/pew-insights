@@ -549,3 +549,126 @@ test('build: stable sort breaks ties on source asc', () => {
   assert.equal(r.sources[0].source, 'a');
   assert.equal(r.sources[1].source, 'b');
 });
+
+// ---- theilTSubgroupDecomposition (refinement v0.6.276) -------------------
+
+import { theilTSubgroupDecomposition } from '../src/dailytokentheiltindex.js';
+
+test('decomposition: empty -> all zeros', () => {
+  const r = theilTSubgroupDecomposition([]);
+  assert.equal(r.total, 0);
+  assert.equal(r.within, 0);
+  assert.equal(r.between, 0);
+  assert.equal(r.subgroups.length, 0);
+});
+
+test('decomposition: single subgroup -> between = 0, within = total', () => {
+  const r = theilTSubgroupDecomposition([
+    { label: 'only', values: [1, 2, 4] },
+  ]);
+  const ref = theilTOfVector([1, 2, 4]).theilT;
+  assert.ok(Math.abs(r.total - ref) < 1e-12);
+  assert.ok(Math.abs(r.between) < 1e-12);
+  assert.ok(Math.abs(r.within - r.total) < 1e-12);
+  assert.equal(r.subgroups[0].n, 3);
+  assert.ok(Math.abs(r.subgroups[0].massWeight - 1) < 1e-12);
+});
+
+test('decomposition: NO RESIDUAL -- within + between == total exactly', () => {
+  const groups = [
+    { label: 'a', values: [10, 20, 30, 40] },
+    { label: 'b', values: [100, 200, 300] },
+    { label: 'c', values: [5, 5, 5, 5, 5] },
+  ];
+  const r = theilTSubgroupDecomposition(groups);
+  const reconstituted = r.within + r.between;
+  assert.ok(
+    Math.abs(reconstituted - r.total) < 1e-9,
+    `within=${r.within} + between=${r.between} = ${reconstituted}, total=${r.total}`,
+  );
+});
+
+test('decomposition: subgroups all-equal-within -> within = 0', () => {
+  const groups = [
+    { label: 'low', values: [10, 10, 10, 10] },
+    { label: 'high', values: [100, 100, 100, 100] },
+  ];
+  const r = theilTSubgroupDecomposition(groups);
+  assert.ok(r.within < 1e-9, `within should be ~0, got ${r.within}`);
+  assert.ok(Math.abs(r.between - r.total) < 1e-9);
+  assert.ok(r.total > 0);
+});
+
+test('decomposition: subgroups all-same-mean -> between = 0', () => {
+  // Both subgroups have mean = 20.
+  const groups = [
+    { label: 'a', values: [10, 30] },
+    { label: 'b', values: [5, 35] },
+  ];
+  const r = theilTSubgroupDecomposition(groups);
+  assert.ok(r.between < 1e-9, `between should be ~0, got ${r.between}`);
+  assert.ok(Math.abs(r.within - r.total) < 1e-9);
+});
+
+test('decomposition: mass weights sum to 1', () => {
+  const groups = [
+    { label: 'a', values: [1, 2, 3] },
+    { label: 'b', values: [4, 5] },
+    { label: 'c', values: [6] },
+  ];
+  const r = theilTSubgroupDecomposition(groups);
+  const w = r.subgroups.reduce((s, g) => s + g.massWeight, 0);
+  assert.ok(Math.abs(w - 1) < 1e-12);
+});
+
+test('decomposition: rejects negative input', () => {
+  assert.throws(
+    () =>
+      theilTSubgroupDecomposition([{ label: 'bad', values: [1, -2, 3] }]),
+    /non-negative/,
+  );
+});
+
+test('decomposition: zero-day-INSIDE-subgroup keeps within FINITE (mirror of L)', () => {
+  // CRITICAL CONTRAST vs Theil-L decomposition: a zero day inside a
+  // subgroup pins L's within = +inf; T's within stays finite because
+  // Theil-T tolerates zero days (0 * log(0) = 0 convention).
+  const groups = [
+    { label: 'a', values: [0, 10] },
+    { label: 'b', values: [10, 20] },
+  ];
+  const r = theilTSubgroupDecomposition(groups);
+  assert.ok(Number.isFinite(r.within));
+  assert.ok(Number.isFinite(r.between));
+  assert.ok(Number.isFinite(r.total));
+  assert.ok(Math.abs(r.within + r.between - r.total) < 1e-9);
+});
+
+test('decomposition: real-shape per-day-by-week test', () => {
+  const week1 = [100, 200, 100, 300, 200, 150, 250];
+  const week2 = [50, 60, 70, 80, 90, 100, 110];
+  const r = theilTSubgroupDecomposition([
+    { label: 'week1', values: week1 },
+    { label: 'week2', values: week2 },
+  ]);
+  // No-residual identity must hold.
+  assert.ok(Math.abs(r.within + r.between - r.total) < 1e-9);
+  assert.ok(r.between > 0);
+  assert.ok(r.within > 0);
+});
+
+test('decomposition: mass-weighting differs from population-weighting', () => {
+  // Exercise the COMPLEMENTARY-WEIGHTING design point: the same partition
+  // produces different mass weights than population weights when subgroup
+  // masses are unequal across subgroups of similar size.
+  const groups = [
+    { label: 'tiny', values: [1, 1, 1] }, // n=3, mass=3
+    { label: 'huge', values: [1000, 1000, 1000] }, // n=3, mass=3000
+  ];
+  const r = theilTSubgroupDecomposition(groups);
+  const tiny = r.subgroups.find((s) => s.label === 'tiny')!;
+  const huge = r.subgroups.find((s) => s.label === 'huge')!;
+  // Population weights would both be 0.5; mass weights are skewed.
+  assert.ok(Math.abs(tiny.massWeight - 3 / 3003) < 1e-12);
+  assert.ok(Math.abs(huge.massWeight - 3000 / 3003) < 1e-12);
+});
