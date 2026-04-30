@@ -463,6 +463,10 @@ import {
   buildSourceRowTokenSlopeCiCurvatureSecondDerivative,
   renderSourceRowTokenSlopeCiCurvatureSecondDerivative,
 } from './sourcerowtokenslopecicurvaturesecondderivative.js';
+import {
+  buildSourceRowTokenSlopeCiTailMassAsymmetry,
+  renderSourceRowTokenSlopeCiTailMassAsymmetry,
+} from './sourcerowtokenslopecitailmassasymmetry.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -23016,6 +23020,191 @@ program
               showCurvatureAggregate: opts.showCurvatureAggregate ?? false,
               showConvexityAggregate: opts.showConvexityAggregate ?? false,
               showPeakAttribution: opts.showPeakAttribution ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-tail-mass-asymmetry')
+  .description(
+    "Per-source CI-MIDPOINT TAIL-MASS ASYMMETRY diagnostic across the SIX uncertainty-quantification CIs. SEVENTEENTH cross-lens axis: mechanically distinct from ALL SIXTEEN prior axes. Scale axes (SD, MAD, range, gini) are by construction symmetric in the six midpoints around their centre and cannot tell whether dispersion comes from upward or downward deviation. PAV (axis 15) measures monotone fit of midpoint vs WIDTH. Curvature (axis 16) measures local D2 bending in width-sorted midpoint order. NONE indexes which side of the midpoint median carries more mass. This 17th axis fills that gap by measuring tail-mass asymmetry of the six midpoints around their median: med = median(mid), upperTailMass = sum(mid_i - med | mid_i > med), lowerTailMass = sum(med - mid_i | mid_i < med), asymmetryRatio = upperTailMass / (upperTailMass + lowerTailMass) in [0,1] (0.5 = balanced, >0.5 upper-tail dominant, <0.5 lower-tail dominant; 0.5 by convention when both tails are zero), asymmetrySigned = (upperTailMass - lowerTailMass) / sum|mid_i - med| in [-1,1] (0 by convention when absDevSum=0), direction in {upper,lower,balanced} (>=0.5 / <=-0.5 thresholds on asymmetrySigned). Per-source: midpointMedian, mids, absDeviations, absDevSum, upperLensCount, lowerLensCount, tieLensCount, upperLenses, lowerLenses, upperTailMass, lowerTailMass, asymmetryRatio, asymmetrySigned, direction, dominantLens (argmax|mid-med| canonical-order tie-break), dominantLensSign, degenerateFlag (absDevSum==0). Report-level: meanAsymmetryRatio, medianAsymmetryRatio, meanAsymmetrySigned, nUpperDominant, nLowerDominant, nBalanced, nDegenerate, globalAsymmetryDirection (mode; ties favour upper>lower>balanced), globalDominantLens (mode; canonical-order tie-break). --alert-asymmetry <f> filters to sources with |asymmetrySigned| > f. --alert-upper / --alert-lower filter by direction (mutually exclusive).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-asymmetry <f>',
+    'only emit sources whose |asymmetrySigned| is strictly GREATER than f (f in [0, 1])',
+  )
+  .option('--alert-upper', 'only emit sources whose direction == upper (mutually exclusive with --alert-lower)')
+  .option('--alert-lower', 'only emit sources whose direction == lower (mutually exclusive with --alert-upper)')
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'asymmetry-abs-desc' (default) | 'asymmetry-signed-desc' | 'asymmetry-signed-asc' | 'asymmetry-ratio-desc' | 'asymmetry-ratio-asc' | 'absdev-sum-desc' | 'rows' | 'source'",
+    'asymmetry-abs-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-source summary line')
+  .option('--show-asymmetry-aggregate', 'append [asymmetry aggregate] line')
+  .option('--show-direction-aggregate', 'append [direction aggregate] line')
+  .option('--show-tail-attribution', 'append [tail attribution] per-lens dominantLens histogram line')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertAsymmetry?: string;
+        alertUpper?: boolean;
+        alertLower?: boolean;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showAsymmetryAggregate?: boolean;
+        showDirectionAggregate?: boolean;
+        showTailAttribution?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertAsymmetry: number | null = null;
+        if (opts.alertAsymmetry != null) {
+          const a = Number.parseFloat(opts.alertAsymmetry);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-asymmetry must be a finite number in [0, 1] (got ${opts.alertAsymmetry})`,
+            );
+          }
+          alertAsymmetry = a;
+        }
+        if (opts.alertUpper && opts.alertLower) {
+          throw new Error(
+            '--alert-upper and --alert-lower are mutually exclusive',
+          );
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'asymmetry-signed-desc',
+          'asymmetry-signed-asc',
+          'asymmetry-abs-desc',
+          'asymmetry-ratio-desc',
+          'asymmetry-ratio-asc',
+          'absdev-sum-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiTailMassAsymmetry(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertAsymmetry,
+          alertUpper: opts.alertUpper ?? false,
+          alertLower: opts.alertLower ?? false,
+          top,
+          sort: opts.sort as
+            | 'asymmetry-signed-desc'
+            | 'asymmetry-signed-asc'
+            | 'asymmetry-abs-desc'
+            | 'asymmetry-ratio-desc'
+            | 'asymmetry-ratio-asc'
+            | 'absdev-sum-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiTailMassAsymmetry(report, {
+              showSummary: opts.showSummary ?? false,
+              showAsymmetryAggregate: opts.showAsymmetryAggregate ?? false,
+              showDirectionAggregate: opts.showDirectionAggregate ?? false,
+              showTailAttribution: opts.showTailAttribution ?? false,
             }) + '\n',
           );
         }
