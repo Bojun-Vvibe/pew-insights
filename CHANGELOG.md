@@ -2,6 +2,118 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.280 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-FIRST):
+  `pew-insights daily-token-fgt-index`.
+
+  Per-source FOSTER-GREER-THORBECKE FGT(alpha) poverty index of the
+  per-day total_tokens distribution at a configurable curvature
+  alpha and relative poverty line z = `lineFraction * mean`
+  (Foster, Greer & Thorbecke 1984):
+
+      FGT(alpha) = (1/n) * sum_{i: D_i < z} ((z - D_i) / z)^alpha
+
+  At alpha = 0 this collapses to the HEADCOUNT RATIO (share of
+  "starvation days"); at alpha = 1 it is the POVERTY GAP RATIO
+  (average normalised shortfall, distribution-sensitive only via
+  depth); at alpha = 2 it is the POVERTY SEVERITY index (squared
+  shortfalls; Pigou-Dalton transfer-sensitive among the poor).
+  Range `[0, 1]`. The default headline is alpha=2 (severity); we
+  always also surface FGT(0) (`headcount`) and FGT(1)
+  (`povertyGap`) so a single call answers all three readings.
+
+  GENUINELY ORTHOGONAL to every prior daily-token axis -- this is
+  the central design point of axis-41, which deliberately steps
+  outside the inequality-index family of axes 32-40:
+
+  - ONE-SIDED. Every prior daily-token axis (Gini / Pietra /
+    Atkinson / Theil-L / Theil-T / GE(2) / Palma / Zenga) is a
+    symmetric inequality measure that uses information from BOTH
+    tails. FGT(alpha) is a strictly LOWER-TAIL index: it is
+    exactly 0 for any vector whose minimum >= z, regardless of how
+    concentrated the upper tail is. Two sources can have identical
+    Gini and Atkinson and Palma but very different FGT(alpha).
+  - THRESHOLD-ANCHORED. FGT depends only on (D_i, z); the shape
+    of the distribution above z is invisible. Pietra/Palma/Gini/
+    Zenga read the WHOLE Lorenz curve; Atkinson and the GE family
+    read every value but with a smooth (non-thresholded) weighting.
+  - AXIOMATICALLY DIFFERENT. FGT is the canonical
+    transfer-sensitive POVERTY index (Sen 1976 family) rather than
+    an INEQUALITY index. Inequality measures satisfy mean
+    independence; FGT does not (with an absolute line, FGT is
+    scale-sensitive).
+  - ADDITIVELY SUBGROUP DECOMPOSABLE WITH NO RESIDUAL: for any
+    partition of days into sub-windows g (e.g. weekday vs
+    weekend; pre/post a date), `FGT(alpha) = sum_g (n_g / n) *
+    FGT_g(alpha)`. Theil shares this; Gini / Atkinson / Palma do
+    not (Gini has a residual overlap term). The CLI exposes the
+    classical weekday/weekend split via
+    `--include-subgroup-decomposition`.
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (default
+  `fgt`; also `headcount` | `povertyGap` | `tokens` | `days` |
+  `source` | `meanDaily`), `--alpha` (default 2; non-integer
+  alphas valid), `--line-fraction` (default 0.5; common pairs:
+  0.4 deep poverty, 0.6 at-risk-of-poverty), `--absolute-line`
+  (overrides `--line-fraction` with an absolute token threshold
+  uniform across sources -- enables cross-source comparability),
+  `--min-headcount`, `--include-subgroup-decomposition`, `--json`.
+
+  Live smoke-test against the local `~/.config/pew/queue.jsonl`
+  (6 sources, 11.7B tokens, alpha=2, lineFraction=0.5; one source
+  name normalised to `vscode-other` per house style):
+
+  ```
+  per-source FGT(alpha=2) of per-day total_tokens (sorted by fgt; ties: source asc)
+  source        firstDay    lastDay     days  line         fgt     headcount  povGap  severity  nPoor  meanShortfall  meanDaily    minDay      maxDay      tokens
+  ------------  ----------  ----------  ----  -----------  ------  ---------  ------  --------  -----  -------------  -----------  ----------  ----------  -------------
+  claude-code   2026-02-11  2026-04-23  35    49,176,940   0.3812  0.6571     0.4660  0.3812    23     34,870,717     98,353,880   2026-03-06  2026-04-20  3,442,385,788
+  vscode-other  2025-07-30  2026-04-20  73    12,916       0.2924  0.6301     0.3953  0.2924    46     8,102          25,832       2025-08-22  2026-04-17  1,885,727
+  codex         2026-04-13  2026-04-20  8     50,601,541   0.2189  0.6250     0.3181  0.2189    5      25,757,975     101,203,083  2026-04-16  2026-04-20  809,624,660
+  opencode      2026-04-20  2026-04-30  11    234,692,539  0.0781  0.0909     0.0843  0.0781    1      217,545,023    469,385,078  2026-04-20  2026-04-21  5,163,235,862
+  hermes        2026-04-17  2026-04-30  14    8,648,148    0.0514  0.2857     0.1022  0.0514    4      3,092,683      17,296,296   2026-04-26  2026-04-19  242,148,138
+  openclaw      2026-04-17  2026-04-30  14    74,747,464   0.0117  0.3571     0.0561  0.0117    5      11,731,411     149,494,929  2026-04-30  2026-04-19  2,092,928,999
+  ```
+
+  Reading: `claude-code` is the most poverty-stricken source on
+  the severity axis: 65.7% of its days fall below half the source
+  mean, with an average normalised gap of 0.466 across the whole
+  vector and a severity (squared-gap) reading of 0.381 -- a
+  signature of a long thin trail of "near-zero" days punctuated by
+  a few large-mass days. `vscode-other` and `codex` follow with
+  moderately high headcounts (63%, 62.5%) but smaller absolute
+  shortfalls. The bottom three sources (`opencode`, `hermes`,
+  `openclaw`) have headcounts under 36% and severities under 0.08
+  -- their per-day mass is far more evenly distributed around
+  their respective means.
+
+  Cross-anchor sanity: `claude-code`'s severity (0.381) is well
+  below its headcount (0.657), which is consistent with FGT(2) <=
+  FGT(1) <= FGT(0) for any vector with sub-unit gaps -- exactly
+  what we expect from the monotone reading proven in the test
+  suite. `opencode`'s `nPoor=1` with `meanShortfall=217M tokens`
+  flags the `2026-04-20` debut day as a single anomalous floor
+  before the source's main usage burst.
+
+  Refinement (v0.6.281, separate commit):
+  `--include-subgroup-decomposition` adds a weekday/weekend split
+  per row that satisfies the exact identity `fgt = w_wd*fgtWd +
+  w_we*fgtWe` -- the additive subgroup-decomposability that
+  separates FGT (and Theil) from Gini/Atkinson/Palma.
+
+  Source: `src/dailytokenfgtindex.ts`. CLI wiring:
+  `src/cli.ts`. Renderer: `src/format.ts`. Tests:
+  `test/dailytokenfgtindex.test.ts` (37 cases including the
+  exact subgroup-decomposition identity, Pigou-Dalton transfer
+  sensitivity at alpha=2, strict `<` line semantics, and full
+  validation coverage). All 7,827 tests in the suite remain
+  green.
+
 ## 0.6.278 — 2026-05-01
 
 ### Added
