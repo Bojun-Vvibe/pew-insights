@@ -523,6 +523,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthSGini,
   renderSourceRowTokenSlopeCiLensWidthSGini,
 } from './sourcerowtokenslopecilenswidthsgini.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthMld,
+  renderSourceRowTokenSlopeCiLensWidthMld,
+} from './sourcerowtokenslopecilenswidthmld.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -26121,6 +26125,177 @@ program
               showElasticity: opts.showElasticity ?? false,
               showNuSweep: opts.showNuSweep ?? false,
               showElasticityProfile: opts.showElasticityProfile ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-mld')
+  .description(
+    "Per-lens CROSS-SOURCE MEAN LOG DEVIATION (MLD = Theil-L = GE(alpha=0)) of CI half-widths (THIRTY-SECOND cross-lens axis). MLD = log(arithmetic_mean) - mean(log(x_i)) = log(AM/GM). The third corner of the GE(alpha) family alongside axis-22 Theil-T = GE(1) (equal-weighted) and axis-27 GE(2) (top-tail-emphasising); MLD is the BOTTOM-TAIL-EMPHASISING corner and is UNBOUNDED above (logarithmic). Unique to MLD: any x_i = 0 forces the index to +inf, surfaced as the `zero-element` degenerate reason that NO prior axis raises. Per-lens: nShared, meanHalfWidth, geometricMeanHalfWidth, minHalfWidth, maxHalfWidth, mld, atkinsonEps1 (= 1 - exp(-MLD), the Atkinson-eps=1 limit linkage), bottomKernelWeight (max single-source contribution to MLD), concentrationLabel ('extreme' MLD>=1.0; 'high' [0.5,1.0); 'moderate' [0.1,0.5); 'mild' (0,0.1); 'near-uniform' ==0; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mean', 'zero-element'). Report-level: meanMLD, medianMLD, maxMLD, minMLD, rangeMLD, nDegenerate, nExtreme, nNearUniform, mostExtremeLens (argmax MLD), mostUniformLens (argmin MLD).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-mld <f>',
+    'only emit lenses whose MLD is strictly GREATER than f (f >= 0; UNBOUNDED above so no upper limit)',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'mld-desc' (default) | 'mld-asc' | 'mean-halfwidth-desc' | 'lens'",
+    'mld-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostUniform)',
+  )
+  .option(
+    '--show-theil-pair',
+    'append per-lens theilPair line listing MLD = GE(0) alongside Theil-T = GE(1) on the same widths and the ratio MLD/T (family-corner diagnostic vs axis-22)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertMld?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showTheilPair?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertMld: number | null = null;
+        if (opts.alertMld != null) {
+          const a = Number.parseFloat(opts.alertMld);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-mld must be a finite number >= 0 (got ${opts.alertMld})`,
+            );
+          }
+          alertMld = a;
+        }
+        const validSorts = [
+          'mld-desc',
+          'mld-asc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthMld(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertMld,
+          sort: opts.sort as
+            | 'mld-desc'
+            | 'mld-asc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthMld(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showTheilPair: opts.showTheilPair ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
