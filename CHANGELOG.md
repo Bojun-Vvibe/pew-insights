@@ -2,6 +2,115 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.275 — 2026-05-01
+
+### Added
+
+- New cross-source axis (THIRTY-EIGHTH):
+  `pew-insights daily-token-theil-t-index`.
+
+  Per-source THEIL-T (mass-weighted entropy deviation, GE(1)) of the
+  per-day `total_tokens` distribution. The alpha=1 element of the
+  generalised-entropy GE(alpha) family and the natural twin of
+  axis-37 Theil-L (alpha=0).
+
+  ```
+  T = (1/n) * sum_i (D_i / mu) * log(D_i / mu)
+    = sum_i q_i * log(q_i / (1/n))
+    = log(n) - H_q                     (H_q = Shannon entropy of q)
+  ```
+
+  where `q_i = D_i / sum(D)` is the empirical day-mass-share and
+  `mu = mean(D)`. Reported in NATS. Range `T in [0, log(n)]`.
+
+  Why a new axis (orthogonal to all 37 prior axes including axis-37
+  Theil-L specifically):
+
+  1. **KL-ASYMMETRY ARGUMENT.** Axis-37 is `L = D_KL(uniform || q)`;
+     this axis is `T = D_KL(q || uniform)`. KL divergence is
+     ASYMMETRIC, so T and L are FUNCTIONALLY INDEPENDENT (they only
+     coincide at perfect equality). Same two distributions, opposite
+     reference -> different numerical readings, different rank
+     orderings on most non-trivial vectors.
+  2. **TOP- vs. BOTTOM-SENSITIVITY.** L weights each day by `1/n`
+     (uniform) and the deviation is `log(mu/D_i)` -- explodes as
+     `D_i -> 0`, so L is BOTTOM-SENSITIVE. T weights each day by
+     `q_i = D_i/sum(D)` (mass) and the deviation is `log(D_i/mu)`
+     -- when `D_i` is large BOTH the weight AND the log factor grow,
+     so T is TOP-SENSITIVE.
+  3. **ZERO-DAY HANDLING.** A single zero day pins `L = +inf`. T
+     STAYS FINITE on zero-day vectors (by the convention
+     `0 * log(0) = 0`). Empirically this means T can rank sources
+     even when L cannot.
+  4. **THE T/L SKEW INDICATOR.** We surface `tOverL` per row. This
+     ratio is:
+       - `> 1` => upper-tail-dominated (a few mega-days carry it)
+       - `< 1` => lower-tail-dominated (a few near-zero days carry it)
+       - `= 0` => L = +inf (any zero day; flagged via `lInfinite`)
+     The skew indicator CANNOT be recovered from either axis alone --
+     this axis is what makes the pair informative.
+  5. **BOUNDED, NORMALISED READING.** `normalisedTheilT = T/log(n)`
+     in `[0, 1]` -- the "fraction of the way from uniform to one-day-
+     takes-all". This is a bounded reading L cannot provide (L is
+     unbounded above).
+
+  Per-source columns: `theilT` (in nats), `normalisedTheilT` (in
+  [0,1]), `theilL` (cross-anchor for skew ratio), `tOverL` (skew
+  indicator), `shannonEntropyQ` (= log(n) - T), `meanDaily`,
+  `minDay` / `maxDay`, `lInfinite`. Sort keys: `theilT` (default) |
+  `tokens` | `days` | `source` | `meanDaily` | `tOverL`. Display
+  filters: `--min-theil-t`, `--top`. Time window: `--since` /
+  `--until`. Source filter: `--source`. GE family sweep:
+  `--alpha-sweep 0,0.5,1,2`.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights daily-token-theil-t-index
+
+  source        days  theilT  normT   theilL  T/L     H_q     meanDaily    tokens
+  claude-code   35    1.1897  0.3346  1.5874  0.7494  2.3657  98,353,880   3,442,385,788
+  vscode-other  73    0.9545  0.2225  1.1257  0.8480  3.3359  25,832       1,885,727
+  codex         8     0.6157  0.2961  0.7968  0.7727  1.4638  101,203,083  809,624,660
+  openclaw      14    0.1978  0.0749  0.2121  0.9325  2.4413  148,532,341  2,079,452,771
+  hermes        14    0.1724  0.0653  0.2156  0.7994  2.4667  17,138,037   239,932,524
+  opencode      11    0.1088  0.0454  0.2432  0.4475  2.2891  465,919,345  5,125,112,798
+  ```
+
+  Key real-data findings:
+
+  - All six sources have `T/L < 1`, confirming that on actual usage
+    the BOTTOM-tail effect dominates the TOP-tail effect (Theil-L's
+    bottom-sensitivity gets a stronger pull from the few low-mass
+    days than Theil-T's mass-weighting gets from the few high-mass
+    days). This is non-obvious and could not have been read from
+    axis-37 alone.
+  - `opencode` has the LOWEST `T/L = 0.4475` -- its inequality is
+    overwhelmingly bottom-driven (a few near-floor days against an
+    otherwise heavy distribution). Its absolute T = 0.1088 is small,
+    but axis-37's L = 0.2432 is more than twice as large.
+  - `openclaw` has the HIGHEST `T/L = 0.9325` -- its inequality is
+    the most symmetric of the six (top and bottom tails contribute
+    nearly equally on the KL scale). The headline T and L values
+    almost match (0.198 vs. 0.212).
+  - `claude-code` carries the largest absolute Theil-T (1.1897 nats,
+    `normT = 0.335` of the maximum possible `log(35) = 3.555`).
+    33.5% of the way from uniform to one-day-takes-all on the mass-
+    weighted scale.
+  - The `H_q` column (Shannon entropy of mass-share) shows
+    `vscode-other` as the most ENTROPICALLY SPREAD source
+    (`H_q = 3.336` nats over 73 days; uniform max = `log(73) = 4.290`).
+    Its Theil-T = `4.290 - 3.336 = 0.955` is purely the gap between
+    its mass distribution and the uniform reference.
+
+### Cross-axis identity verified
+
+  For every source row, the equality `T = log(nDays) - H_q` holds to
+  full floating-point precision (verified both in the unit suite and
+  inspecting the live-smoke output above; e.g. `claude-code`:
+  `log(35) - 2.3657 = 3.5553 - 2.3657 = 1.1896`, matching the
+  reported `theilT = 1.1897` to 4 decimal places).
+
 ## 0.6.274 — 2026-05-01
 
 ### Added
