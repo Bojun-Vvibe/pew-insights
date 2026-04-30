@@ -94,6 +94,7 @@ import {
   renderDailyTokenPalmaRatio,
   renderDailyTokenFgtIndex,
   renderDailyTokenHooverIndex,
+  renderDailyTokenBonferroniIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -350,6 +351,7 @@ import { buildDailyTokenGe2Index } from './dailytokenge2index.js';
 import { buildDailyTokenPalmaRatio } from './dailytokenpalmaratio.js';
 import { buildDailyTokenFgtIndex } from './dailytokenfgtindex.js';
 import { buildDailyTokenHooverIndex } from './dailytokenhooverindex.js';
+import { buildDailyTokenBonferroniIndex } from './dailytokenbonferroniindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12822,6 +12824,146 @@ program
       }
     },
   );
+
+program
+  .command('daily-token-bonferroni-index')
+  .description(
+    "Per-source BONFERRONI INDEX of the per-day total_tokens distribution (FORTY-THIRD cross-source axis). B = 1 - (1 / ((n-1) * mu)) * sum_{k=1..n-1} S_k/k where S_k is the cumulative sum of sorted-ascending values. Range [0, 1). B = 0 iff every day carries equal mass; B -> 1 as mass concentrates. Bottom-rank-weighted Lorenz-area cousin to Gini: same Lorenz curve, harmonic-tail rank weighting that makes Bonferroni MORE SENSITIVE to bottom-of-distribution gaps than Gini's uniform weighting. Textbook identity B >= G holds for any non-negative vector with equality only at two-point or degenerate. Distinct from axis-32 Gini (uniform Lorenz weighting), axis-35 Pietra / axis-42 Hoover (single-point L_infinity Lorenz gaps), axis-36 Atkinson (CRRA welfare), axes 37/38/39 GE-family (moment-based smooth indices on share ratios), axis-40 Palma (two-point ratio), axis-41 FGT (one-sided lower-tail threshold-anchored). Per-source columns: bonferroni, gini, bonferroniOverGini, bottomQuintilePartialMean (the partial mean of the bottom 20% of days that drives Bonferroni's bottom-rank pull), meanDaily, minDay, maxDay. The cross-anchor diagnostic is bottomRankExcess = bonferroni - gini >= 0 (the Bonferroni 1930 identity gap); --include-bottom-rank-excess surfaces it.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Bonferroni degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bonferroni (default) | tokens | days | source | meanDaily | bottomQuintilePartialMean | bonferroniOverGini. Applied before --top.',
+    'bonferroni',
+  )
+  .option(
+    '--min-bonferroni <b>',
+    'display filter: hide sources whose bonferroni is strictly below this value. b in [0, 1). Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-bottom-rank-excess',
+    'every row gains a bottomRankExcess field = bonferroni - gini. Surfaces the textbook B >= G identity gap (the bottom-rank weighting excess that distinguishes Bonferroni from Gini).',
+  )
+  .option(
+    '--include-de-vergottini-cross-anchor',
+    'every row gains deVergottini and bonferroniMinusDeVergottini fields. De Vergottini is the TOP-rank-weighted harmonic dual of Bonferroni; the gap b - dv flips sign depending on whether bulk inequality sits in the bottom or top tail.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minBonferroni: string;
+        includeBottomRankExcess?: boolean;
+        includeDeVergottiniCrossAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minBonferroni = Number.parseFloat(opts.minBonferroni);
+        if (
+          !Number.isFinite(minBonferroni) ||
+          minBonferroni < 0 ||
+          minBonferroni >= 1
+        ) {
+          throw new Error(
+            `--min-bonferroni must be a number in [0, 1) (got ${opts.minBonferroni})`,
+          );
+        }
+        const validSorts = [
+          'bonferroni',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'bottomQuintilePartialMean',
+          'bonferroniOverGini',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBonferroniIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minBonferroni,
+          includeBottomRankExcess: opts.includeBottomRankExcess ?? false,
+          includeDeVergottiniCrossAnchor:
+            opts.includeDeVergottiniCrossAnchor ?? false,
+          sort: opts.sort as
+            | 'bonferroni'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'bottomQuintilePartialMean'
+            | 'bonferroniOverGini',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenBonferroniIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
 
 program
   .command('source-hour-of-day-topk-mass-share')
