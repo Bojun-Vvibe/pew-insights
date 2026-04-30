@@ -491,6 +491,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthAtkinson,
   renderSourceRowTokenSlopeCiLensWidthAtkinson,
 } from './sourcerowtokenslopecilenswidthatkinson.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthQcd,
+  renderSourceRowTokenSlopeCiLensWidthQcd,
+} from './sourcerowtokenslopecilenswidthqcd.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -24424,6 +24428,194 @@ program
               showMoments: opts.showMoments ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
               showXEde: opts.showXEde ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-qcd')
+  .description(
+    "Per-lens CROSS-SOURCE QUARTILE COEFFICIENT OF DISPERSION (QCD) of CI half-widths (TWENTY-FOURTH cross-lens axis). QCD = (Q3 - Q1) / (Q3 + Q1) on the cross-source half-width cloud. Mechanically distinct from ALL TWENTY-THREE priors on FIVE orthogonal dimensions: (1) POPULATION GEOMETRY -- like axes 20-23 the population is LENSES (six rows). (2) STATISTIC FAMILY -- ORDER-STATISTIC, ROBUST, NON-PARAMETRIC dispersion measure derived from EXACTLY TWO order statistics (Q1, Q3). Bounded in [0, 1]. NOT a Pearson r (axis-20), NOT Gini's Lorenz-area (axis-21), NOT Theil's entropic deviation (axis-22), NOT Atkinson's CRRA welfare loss (axis-23). All axes 20-23 are functions of the FULL n-vector via central moments, log-ratios, or power means. (3) BREAKDOWN POINT -- HIGHEST of any cross-lens dispersion shipped: ~25%. Axes 20-23 all have breakdown 0. Canonical diagnostic for 'is one outlier source driving the apparent inequality, or is it structural?'. (4) ZERO-IMMUNITY -- Theil GE(1) requires every source > 0 (logarithm); Atkinson eps>=1 collapses to A=1 if ANY source is exactly 0. QCD requires only Q3 > 0 -- up to floor(n/2) sources can be zero without degeneracy. (5) INTERQUARTILE FOOTPRINT vs axis-19 (per-source IQR-RATIO of row tokens) -- different population (rows-of-one-source vs sources-of-one-lens), different observable (token counts vs slope CI widths), different normaliser (median vs Q1+Q3). Per-lens: nShared, medianHalfWidth, q1HalfWidth, q3HalfWidth, iqrHalfWidth, qcd, dispersionLabel ('highly-dispersed' QCD > 0.5; 'moderately-dispersed' QCD in (0.3, 0.5]; 'mild-dispersion' QCD in (0.1, 0.3]; 'near-uniform' QCD in [0, 0.1]; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n < 4, 'zero-q3', 'non-finite'). Report-level: meanQcd, medianQcd, maxQcd, minQcd, rangeQcd, nDegenerate, nHighlyDispersed, nNearUniform, mostDispersedLens (argmax QCD), mostUniformLens (argmin QCD).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-qcd <f>',
+    'only emit lenses whose QCD is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--alert-iqr <f>',
+    'only emit lenses whose IQR (Q3 - Q1) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'qcd-desc' (default) | 'qcd-asc' | 'iqr-desc' | 'median-halfwidth-desc' | 'lens'",
+    'qcd-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-dispersion-aggregate',
+    'append [dispersion aggregate] line summarising dispersion-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostDispersed, mostUniform)',
+  )
+  .option(
+    '--show-quartiles',
+    'append per-lens quartiles line listing Q1 / median / Q3 / IQR',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertQcd?: string;
+        alertIqr?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showDispersionAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showQuartiles?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertQcd: number | null = null;
+        if (opts.alertQcd != null) {
+          const a = Number.parseFloat(opts.alertQcd);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-qcd must be a finite number in [0, 1] (got ${opts.alertQcd})`,
+            );
+          }
+          alertQcd = a;
+        }
+        let alertIqr: number | null = null;
+        if (opts.alertIqr != null) {
+          const a = Number.parseFloat(opts.alertIqr);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-iqr must be a finite, non-negative number (got ${opts.alertIqr})`,
+            );
+          }
+          alertIqr = a;
+        }
+        const validSorts = [
+          'qcd-desc',
+          'qcd-asc',
+          'iqr-desc',
+          'median-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthQcd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertQcd,
+          alertIqr,
+          sort: opts.sort as
+            | 'qcd-desc'
+            | 'qcd-asc'
+            | 'iqr-desc'
+            | 'median-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthQcd(report, {
+              showSummary: opts.showSummary ?? false,
+              showDispersionAggregate: opts.showDispersionAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showQuartiles: opts.showQuartiles ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
         }
