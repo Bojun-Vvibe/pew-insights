@@ -801,6 +801,48 @@ test('render: showConvexityAggregate appends a single convexity-split line', () 
   assert.match(out, /\[convexity aggregate\]/);
 });
 
+test('render: showPeakAttribution appends a per-lens histogram in canonical order', () => {
+  const queue = [
+    ...ascending('alpha', 30),
+    ...ascending('beta', 50),
+    ...ascending('gamma', 70),
+  ];
+  const r = buildSourceRowTokenSlopeCiCurvatureSecondDerivative(queue, {
+    bootstraps: 100,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiCurvatureSecondDerivative(r, {
+    showPeakAttribution: true,
+  });
+  assert.match(out, /\[peak attribution\]/);
+  // All six canonical lens names appear, each with a count.
+  for (const lens of SLOPE_CURVATURE_LENS_NAMES) {
+    assert.match(out, new RegExp(`${lens}=\\d+/\\d+`));
+  }
+  // Counts in attribution sum to row count: pull them out.
+  const attrLine = out.split('\n').find((l) =>
+    l.startsWith('[peak attribution]'),
+  );
+  assert.ok(attrLine);
+  const matches = [...attrLine!.matchAll(/=([0-9]+)\//g)];
+  const sum = matches.reduce((a, m) => a + Number.parseInt(m[1]!, 10), 0);
+  assert.equal(sum, r.rows.length);
+  // globalPeakLens echoed.
+  assert.match(out, /globalPeakLens=/);
+});
+
+test('render: showPeakAttribution is suppressed on empty reports', () => {
+  const r = buildSourceRowTokenSlopeCiCurvatureSecondDerivative([], {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  const out = renderSourceRowTokenSlopeCiCurvatureSecondDerivative(r, {
+    showPeakAttribution: true,
+  });
+  assert.doesNotMatch(out, /\[peak attribution\]/);
+});
+
 test('render: aggregates compose independently', () => {
   const queue = [
     ...ascending('alpha', 30),

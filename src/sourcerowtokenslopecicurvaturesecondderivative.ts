@@ -722,11 +722,13 @@ export function renderSourceRowTokenSlopeCiCurvatureSecondDerivative(
     showSummary?: boolean;
     showCurvatureAggregate?: boolean;
     showConvexityAggregate?: boolean;
+    showPeakAttribution?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
   const showCurvatureAggregate = opts.showCurvatureAggregate ?? false;
   const showConvexityAggregate = opts.showConvexityAggregate ?? false;
+  const showPeakAttribution = opts.showPeakAttribution ?? false;
   const lines: string[] = [];
   lines.push(
     'pew-insights source-row-token-slope-ci-curvature-second-derivative',
@@ -786,6 +788,24 @@ export function renderSourceRowTokenSlopeCiCurvatureSecondDerivative(
     const mxFrac = r.nMixed / r.rows.length;
     lines.push(
       `[convexity aggregate] convex=${r.nConvex}/${r.rows.length} (${fmtNum(cvxFrac, 4)}) concave=${r.nConcave}/${r.rows.length} (${fmtNum(ccvFrac, 4)}) mixed=${r.nMixed}/${r.rows.length} (${fmtNum(mxFrac, 4)}) meanConvexityScore=${fmtNum(r.meanConvexityScore)} globalConvexityLabel=${r.globalConvexityLabel ?? '-'}`,
+    );
+  }
+  if (showPeakAttribution && r.rows.length > 0) {
+    // Per-lens histogram of how many sources peak at that lens.
+    // Iterate canonical-order so output is stable and reproducible.
+    const counts = new Map<SlopeCurvatureLensName, number>();
+    for (const lens of SLOPE_CURVATURE_LENS_NAMES) counts.set(lens, 0);
+    for (const row of r.rows) {
+      counts.set(row.peakLens, counts.get(row.peakLens)! + 1);
+    }
+    const parts: string[] = [];
+    for (const lens of SLOPE_CURVATURE_LENS_NAMES) {
+      const c = counts.get(lens)!;
+      const frac = c / r.rows.length;
+      parts.push(`${lens}=${c}/${r.rows.length} (${fmtNum(frac, 4)})`);
+    }
+    lines.push(
+      `[peak attribution] ${parts.join(' ')} globalPeakLens=${r.globalPeakLens ?? '-'}`,
     );
   }
   return lines.join('\n');

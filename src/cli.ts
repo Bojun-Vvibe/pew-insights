@@ -22884,6 +22884,10 @@ program
     '--show-convexity-aggregate',
     'when rendering pretty (non-JSON), append a single one-line convexity-split aggregate AFTER the table reporting nConvex/nConcave/nMixed fractions, meanConvexityScore, and globalConvexityLabel (composes independently with --show-curvature-aggregate and --show-summary)',
   )
+  .option(
+    '--show-peak-attribution',
+    'when rendering pretty (non-JSON), append a single one-line per-lens histogram of peakLens counts in canonical lens order (composes independently with the other --show-* flags)',
+  )
   .action(
     async (
       opts: {
@@ -22903,6 +22907,7 @@ program
         showSummary?: boolean;
         showCurvatureAggregate?: boolean;
         showConvexityAggregate?: boolean;
+        showPeakAttribution?: boolean;
       },
       cmd,
     ) => {
@@ -23010,6 +23015,7 @@ program
               showSummary: opts.showSummary ?? false,
               showCurvatureAggregate: opts.showCurvatureAggregate ?? false,
               showConvexityAggregate: opts.showConvexityAggregate ?? false,
+              showPeakAttribution: opts.showPeakAttribution ?? false,
             }) + '\n',
           );
         }
