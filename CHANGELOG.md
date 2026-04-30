@@ -2,6 +2,148 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.262 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-mehran` -- the
+  THIRTIETH cross-lens diagnostic on the v0.6.219 Deming-slope CI
+  suite. Per-lens Mehran (1976) inequality index of the six per-source
+  CI half-widths.
+
+  Definition. Sort `x_(1) <= ... <= x_(n)`; with `mean = (1/n) sum x_i`,
+
+  ```
+  M = 6 * integral_0^1 (1 - p) * (p - L(p)) dp
+  ```
+
+  where `L(p)` is the empirical step Lorenz curve. M is the Lorenz
+  GAP integrated against the LINEAR-DESCENDING rank kernel `(1 - p)`.
+  Bounded in `[0, 1]`; `M = 0` iff perfect equality; `M -> 1 - 1/n`
+  iff perfect concentration on a single observation. We compute M by
+  EXACT Simpson's rule on the empirical step Lorenz curve -- on each
+  rank step the integrand `(1 - p)(p - L(p))` is the product of two
+  linear pieces, so Simpson's rule integrates it exactly with zero
+  truncation error. The result is bounded in `[0, 1]` for any
+  non-negative input by the Lorenz dominance `L(p) <= p`.
+
+  ### Novelty argument vs axes 21-29.
+
+  Mehran is FUNDAMENTALLY ORTHOGONAL to all twenty-nine prior
+  cross-lens diagnostics:
+
+  - vs **axis-21 Gini**: same Lorenz-gap integrand `(p - L(p))` but
+    a STRICTLY DIFFERENT rank-weight kernel. Gini uses the uniform
+    kernel `w(p) = 1`; Mehran uses the linear-descending kernel
+    `w(p) = (1 - p)`. The two integrals coincide only in the
+    trivial perfect-equality case.
+  - vs **axis-22 Theil GE(1)**: Theil is an entropic log-share
+    functional with no Lorenz-gap factor; Mehran is a pure
+    Lorenz-gap L_1 functional with no logarithm.
+  - vs **axis-23 Atkinson**: Atkinson is a CRRA welfare-loss ratio
+    `1 - M_eps / mean`; Mehran is not a welfare aggregator.
+  - vs **axis-24 QCD**: QCD uses TWO order statistics (Q1, Q3);
+    Mehran integrates over EVERY rank.
+  - vs **axis-25 Hoover**: Hoover is the L_INFTY gap
+    `max_p (p - L(p))`; Mehran is L_1 with the `(1 - p)` kernel
+    on the same gap. Different functional norm.
+  - vs **axis-26 Palma**: Palma is a TWO-POINT decile ratio
+    `S90 / S40`; Mehran uses ALL n ranks with smooth weighting.
+  - vs **axis-27 GE(2)**: GE(2) is a SECOND-MOMENT functional
+    weighted by `x^2` (TOP-tail-sensitive); Mehran's `(1 - p)`
+    weight is BOTTOM-tail-emphasising.
+  - vs **axis-28 Bonferroni**: this is the closest cousin and the
+    sharpest novelty story. Both are bottom-emphasising
+    Lorenz-gap-style functionals, BUT they use distinct kernel
+    families:
+    - Bonferroni: harmonic kernel `w(p) = 1/p` -- UNBOUNDED as
+      `p -> 0`. Hypersensitive to the single smallest observation.
+    - Mehran:     linear   kernel `w(p) = (1 - p)` -- BOUNDED in
+      `[0, 1]` for all p. Resistant to single-smallest-value
+      domination.
+
+    The kernel families are LINEAR vs HARMONIC -- two distinct
+    function spaces. The Mehran kernel is the LINEAR midpoint
+    between the rank-uniform Gini kernel (axis-21) and the
+    rank-harmonic Bonferroni kernel (axis-28).
+  - vs **axis-29 Kolm-Pollak**: polar-opposite invariance axiom.
+    Kolm-Pollak is TRANSLATION-INVARIANT; Mehran is
+    SCALE-INVARIANT. Adding `c` to every half-width leaves
+    Kolm-Pollak unchanged but DECREASES Mehran towards 0;
+    multiplying every half-width by `c` leaves Mehran unchanged
+    but MULTIPLIES Kolm-Pollak by `c`. The two indices satisfy
+    POLAR-OPPOSITE invariance axioms.
+
+  ### Per-lens columns
+
+  `nShared`, `meanHalfWidth`, `minHalfWidth`, `maxHalfWidth`,
+  `mehran`, `bottomShareWeight` (kernel-normalisation invariant,
+  always = 1), `kernelEmphasis` (Mehran kernel weight at the
+  median rank, diagnostic for kernel decay),
+  `concentrationLabel` (`extreme` M>=0.6; `high` [0.3,0.6);
+  `moderate` [0.1,0.3); `mild` (0,0.1); `near-uniform` ==0;
+  `degenerate`), `degenerateFlag`, `degenerateReason`
+  (`too-few-sources` for n<4, `zero-mean`).
+
+  ### Report-level
+
+  `meanM`, `medianM`, `maxM`, `minM`, `rangeM`, `nDegenerate`,
+  `nExtreme`, `nNearUniform`, `mostExtremeLens` (argmax M),
+  `mostUniformLens` (argmin M).
+
+  ### Filters and sorts
+
+  `--alert-mehran <f>` keeps lenses with `M > f` (`f in [0, 1]`).
+  Sort keys: `mehran-desc` (default), `mehran-asc`,
+  `mean-halfwidth-desc`, `lens`.
+
+  ### Renderer flags
+
+  `--show-summary`, `--show-concentration-aggregate`,
+  `--show-lens-attribution`, `--show-gini-pair` (per-lens
+  side-by-side `M` and Gini `G` on the same widths, plus the
+  ratio `M / G` -- direct kernel-vs-kernel comparison against
+  axis-21), `--show-per-source-widths`.
+
+  ### Live-smoke output
+
+  Run against the operator's real `~/.config/pew/queue.jsonl`
+  with `--since 2026-04-01 --bootstraps 200` (six lenses, six
+  shared sources):
+
+  ```
+  meanM:   0.870220
+  medianM: 0.870835
+  maxM:    0.950665   mostExtreme: abc
+  minM:    0.818117   mostUniform: bca
+  rangeM:  0.132549
+  nExtreme: 6 / 6     nDegen: 0     nNearUniform: 0
+
+  per-lens M (sort: mehran-desc):
+    abc                M=0.950665
+    profileLikelihood  M=0.889176
+    jackknife          M=0.873257
+    studentizedT       M=0.868414
+    bootstrap          M=0.821689
+    bca                M=0.818117
+  ```
+
+  Every lens is in the `extreme` concentration bin (M >= 0.6),
+  consistent with the order-of-magnitude differences observed in
+  the half-widths across sources (mean half-widths range from
+  ~287k for the ABC lens to ~55M for the BCa lens). The ABC lens
+  shows the most concentrated half-width distribution
+  (`M = 0.951`), the BCa the most uniform (`M = 0.818`), with
+  range ~0.133 across the six lenses.
+
+  ### Test count delta
+
+  +34 new tests (helper invariants, Lorenz-integral identity,
+  Pigou-Dalton monotonicity, scale invariance, translation
+  dependence, kernel normalisation invariant, degenerate edge
+  cases, integration shape, sort/filter behaviour, render
+  variants, determinism). Project total: 7321 -> 7355.
+
 ## 0.6.261 — 2026-04-30
 
 ### Changed
