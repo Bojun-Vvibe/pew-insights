@@ -471,6 +471,10 @@ import {
   buildSourceRowTokenSlopeCiHalfWidthEntropy,
   renderSourceRowTokenSlopeCiHalfWidthEntropy,
 } from './sourcerowtokenslopecihalfwidthentropy.js';
+import {
+  buildSourceRowTokenSlopeCiHalfWidthLogRatioVariance,
+  renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance,
+} from './sourcerowtokenslopecihalfwidthlogratiovariance.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -23413,6 +23417,209 @@ program
               showProbabilities: opts.showProbabilities ?? false,
               showEffectiveLensesBuckets:
                 opts.showEffectiveLensesBuckets ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-half-width-logratio-variance')
+  .description(
+    "Per-source CI HALF-WIDTH PAIRWISE LOG-RATIO VARIANCE diagnostic across the SIX uncertainty-quantification CIs. NINETEENTH cross-lens axis: mechanically distinct from ALL EIGHTEEN priors on TWO orthogonal dimensions. (1) STATISTIC FAMILY -- this lives in COMPOSITIONAL / Aitchison geometry on the simplex of normalised half-widths, measuring pairwise log-ratio dispersion. Axes 1-13 (moment / quantile / order-statistic / dispersion of midpoints), axis 14 (single-lens identifiers), rank-correlation axes (Spearman / Kendall / width-concordance), axes 15-17 (PAV monotone fit / second-derivative curvature / tail-mass-asymmetry of midpoints), and axis 18 (Shannon entropy of normalised half-widths) are all from a different statistic family. Two compositions can have IDENTICAL Shannon entropy yet ARBITRARILY different log-ratio variance, and vice versa. (2) INPUT TRANSFORM -- log(h_i) directly, eliminating the absolute scale of half-widths via Aitchison sub-compositional invariance. h_i = (ciUpper_i - ciLower_i) / 2; restricted to the K eligible lenses with h_i > 0; r_{ij} = log(h_i) - log(h_j) for unordered pairs (i, j) with i, j eligible; logRatioVariance = pop variance of r_{ij}; logRatioStdDev = sqrt(logRatioVariance); maxAbsLogRatio = Aitchison L-infinity norm = max_{i<j} |r_{ij}|; clrVariance = pop variance of CLR coordinates clr_i = log(h_i) - mean_j log(h_j). Per-source: halfWidths, positiveCount, pairsCount, logRatioMean, logRatioVariance, logRatioStdDev, maxAbsLogRatio, clrVariance, widestLens (argmax_i h_i over eligible, canonical-order tie-break), narrowestLens (argmin_i h_i over eligible, canonical-order tie-break), degenerateFlag (positiveCount < 2). Report-level: meanLogRatioVariance, medianLogRatioVariance, meanLogRatioStdDev, meanMaxAbsLogRatio, nDegenerate, nNearIsotropic (LRV <= 0.01), nHighlyDispersed (LRV >= 1.00), globalWidestLens / globalNarrowestLens (mode across non-degenerate sources, canonical tie-break). --alert-variance <f> filters to sources with logRatioVariance > f. --alert-max-ratio <f> filters to sources with maxAbsLogRatio > f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-variance <f>',
+    'only emit sources whose logRatioVariance is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-max-ratio <f>',
+    'only emit sources whose maxAbsLogRatio is strictly GREATER than f (f >= 0)',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'variance-desc' (default) | 'variance-asc' | 'stddev-desc' | 'stddev-asc' | 'max-ratio-desc' | 'max-ratio-asc' | 'clr-variance-desc' | 'positive-count-desc' | 'rows' | 'source'",
+    'variance-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-source summary line')
+  .option('--show-variance-aggregate', 'append [variance aggregate] line')
+  .option(
+    '--show-lens-attribution',
+    'append two [lens attribution] lines: per-lens widestLens and narrowestLens histograms over non-degenerate sources',
+  )
+  .option(
+    '--show-half-widths',
+    'append a per-source half-widths line listing h_i for each canonical lens',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertVariance?: string;
+        alertMaxRatio?: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showVarianceAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showHalfWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertVariance: number | null = null;
+        if (opts.alertVariance != null) {
+          const a = Number.parseFloat(opts.alertVariance);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-variance must be a finite non-negative number (got ${opts.alertVariance})`,
+            );
+          }
+          alertVariance = a;
+        }
+        let alertMaxRatio: number | null = null;
+        if (opts.alertMaxRatio != null) {
+          const a = Number.parseFloat(opts.alertMaxRatio);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-max-ratio must be a finite non-negative number (got ${opts.alertMaxRatio})`,
+            );
+          }
+          alertMaxRatio = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'variance-desc',
+          'variance-asc',
+          'stddev-desc',
+          'stddev-asc',
+          'max-ratio-desc',
+          'max-ratio-asc',
+          'clr-variance-desc',
+          'positive-count-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiHalfWidthLogRatioVariance(
+          queue,
+          {
+            since: opts.since ?? null,
+            until: opts.until ?? null,
+            source: opts.source ?? null,
+            minRows,
+            confidence,
+            lambda,
+            bootstraps,
+            seed,
+            alertVariance,
+            alertMaxRatio,
+            top,
+            sort: opts.sort as
+              | 'variance-desc'
+              | 'variance-asc'
+              | 'stddev-desc'
+              | 'stddev-asc'
+              | 'max-ratio-desc'
+              | 'max-ratio-asc'
+              | 'clr-variance-desc'
+              | 'positive-count-desc'
+              | 'rows'
+              | 'source',
+          },
+        );
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance(report, {
+              showSummary: opts.showSummary ?? false,
+              showVarianceAggregate: opts.showVarianceAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showHalfWidths: opts.showHalfWidths ?? false,
             }) + '\n',
           );
         }
