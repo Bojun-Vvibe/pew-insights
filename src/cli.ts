@@ -86,6 +86,7 @@ import {
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
   renderDailyTokenZengaIndex,
+  renderDailyTokenPietraRatio,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -334,6 +335,7 @@ import { buildSourceCostClassMix } from './sourcecostclassmix.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
 import { buildDailyTokenZengaIndex } from './dailytokenzengaindex.js';
+import { buildDailyTokenPietraRatio } from './dailytokenpietraratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -11628,6 +11630,113 @@ program
               showCurve: opts.showCurve ?? false,
             }) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-pietra-ratio')
+  .description(
+    "Per-source PIETRA / SCHUTZ / HOOVER ratio of the per-day total_tokens distribution (THIRTY-FIFTH cross-source axis). P = (1 / (2*n*mu)) * sum_i |D_i - mu| = max_p (p - L(p)) on the Lorenz curve. Equals the FRACTION of total mass that must be transferred from above-mean days to below-mean days to flatten the distribution. Range [0, 1 - 1/n]. ORTHOGONAL to daily-token-gini-coefficient (Gini is the AREA under the Lorenz gap; Pietra is the MAX of the same gap -- two day-vectors with identical Pietra can have very different Gini and vice versa). ORTHOGONAL to daily-token-zenga-index (Zenga averages (n-1) bottom-vs-top mean ratios; Pietra averages NOTHING -- it is a single anchored max). Order-invariant, so orthogonal to daily-token-monotone-run-length / daily-token-second-difference-sign-runs / daily-token-autocorrelation-lag1 / daily-token-zscore-extremes. Mean-anchored, so orthogonal to single-day-mass-concentration (fixed top-k) and cumulative-tokens-midpoint (fixed 50% mass quantile). Per-source columns: pietra, belowMeanShare (population share at the Lorenz argmax), nBelowMean, aboveMeanLift (mean of above-mean days / overall mean).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Pietra is degenerate for n < 2. Counts surface as droppedBelowMinDays.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: pietra (default) | tokens | days | source. Applied before --top.',
+    'pietra',
+  )
+  .option(
+    '--min-pietra <p>',
+    'display filter: hide sources whose Pietra is strictly below this value. p in [0, 1]. Default 0 = no filter.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minPietra: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minPietra = Number.parseFloat(opts.minPietra);
+        if (!Number.isFinite(minPietra) || minPietra < 0 || minPietra > 1) {
+          throw new Error(
+            `--min-pietra must be a number in [0, 1] (got ${opts.minPietra})`,
+          );
+        }
+        const validSorts = ['pietra', 'tokens', 'days', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPietraRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minPietra,
+          sort: opts.sort as 'pietra' | 'tokens' | 'days' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenPietraRatio(report) + '\n');
         }
       } catch (e) {
         die(e);

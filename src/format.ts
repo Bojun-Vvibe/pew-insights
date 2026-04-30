@@ -52,6 +52,7 @@ import type { SourceCostClassMixReport } from './sourcecostclassmix.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { DailyTokenZengaReport } from './dailytokenzengaindex.js';
+import type { DailyTokenPietraReport } from './dailytokenpietraratio.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -14624,6 +14625,79 @@ export function renderDailyTokenZengaIndex(
       lines.push(`    ${formatted}`);
     }
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPietraRatio(
+  r: DailyTokenPietraReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-pietra-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-pietra: ${r.minPietra === 0 ? '\u2014' : r.minPietra}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinPietra)} below min-pietra, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Pietra/Schutz/Hoover ratio of per-day total_tokens; P = (1/(2*n*mu)) * sum_i |D_i - mu| = max_p (p - L(p)); fraction of mass that must be redistributed from above-mean to below-mean days; range [0, 1 - 1/n]; UTC days)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Pietra of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'pietra',
+    'belowMeanShare',
+    'nBelowMean',
+    'aboveMeanLift',
+    'meanDaily',
+    'maxDay',
+    'maxDayTokens',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.pietra.toFixed(4),
+    s.belowMeanShare.toFixed(4),
+    formatNumber(s.nBelowMean),
+    s.aboveMeanLift.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.maxDay,
+    formatNumber(s.maxDailyTokens),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
