@@ -656,3 +656,125 @@ test('build: minDailyTokens / minDay are populated correctly', () => {
   assert.equal(r.sources[0].maxDailyTokens, 12000);
   assert.equal(r.sources[0].maxDay, '2026-04-27');
 });
+
+// ---- theilLSubgroupDecomposition (refinement v0.6.275) -------------------
+
+import { theilLSubgroupDecomposition } from '../src/dailytokentheillindex.js';
+
+test('decomposition: empty -> all zeros', () => {
+  const r = theilLSubgroupDecomposition([]);
+  assert.equal(r.total, 0);
+  assert.equal(r.within, 0);
+  assert.equal(r.between, 0);
+  assert.equal(r.subgroups.length, 0);
+});
+
+test('decomposition: single subgroup -> between = 0, within = total', () => {
+  const r = theilLSubgroupDecomposition([
+    { label: 'only', values: [1, 2, 4] },
+  ]);
+  assert.ok(Math.abs(r.total - Math.log(7 / 6)) < 1e-12);
+  assert.ok(Math.abs(r.between) < 1e-12);
+  assert.ok(Math.abs(r.within - r.total) < 1e-12);
+  assert.equal(r.subgroups[0].n, 3);
+  assert.ok(Math.abs(r.subgroups[0].mean - 7 / 3) < 1e-12);
+});
+
+test('decomposition: NO RESIDUAL -- within + between == total exactly', () => {
+  const groups = [
+    { label: 'a', values: [10, 20, 30, 40] },
+    { label: 'b', values: [100, 200, 300] },
+    { label: 'c', values: [5, 5, 5, 5, 5] },
+  ];
+  const r = theilLSubgroupDecomposition(groups);
+  const reconstituted = r.within + r.between;
+  assert.ok(
+    Math.abs(reconstituted - r.total) < 1e-9,
+    `within=${r.within} + between=${r.between} = ${reconstituted}, total=${r.total}`,
+  );
+});
+
+test('decomposition: subgroups all-equal-within -> within = 0, between captures everything', () => {
+  // Each subgroup is internally uniform.
+  const groups = [
+    { label: 'low', values: [10, 10, 10, 10] },
+    { label: 'high', values: [100, 100, 100, 100] },
+  ];
+  const r = theilLSubgroupDecomposition(groups);
+  assert.ok(r.within < 1e-9, `within should be ~0, got ${r.within}`);
+  // The between term is the entire total.
+  assert.ok(Math.abs(r.between - r.total) < 1e-9);
+  // Sanity: total > 0 because subgroup means differ.
+  assert.ok(r.total > 0);
+});
+
+test('decomposition: subgroups all-same-mean -> between = 0, within captures everything', () => {
+  // Both subgroups have mean = 20.
+  const groups = [
+    { label: 'a', values: [10, 30] },
+    { label: 'b', values: [5, 35] },
+  ];
+  const r = theilLSubgroupDecomposition(groups);
+  assert.ok(r.between < 1e-9, `between should be ~0, got ${r.between}`);
+  assert.ok(Math.abs(r.within - r.total) < 1e-9);
+});
+
+test('decomposition: subgroup zero mean -> zeroCollapse + +inf between', () => {
+  const groups = [
+    { label: 'zero', values: [0, 0] },
+    { label: 'real', values: [10, 20] },
+  ];
+  const r = theilLSubgroupDecomposition(groups);
+  assert.equal(r.zeroCollapse, true);
+  assert.equal(r.between, Number.POSITIVE_INFINITY);
+});
+
+test('decomposition: subgroup with internal zero -> within = +inf', () => {
+  const groups = [
+    { label: 'a', values: [0, 10] },
+    { label: 'b', values: [10, 20] },
+  ];
+  const r = theilLSubgroupDecomposition(groups);
+  assert.equal(r.within, Number.POSITIVE_INFINITY);
+  assert.equal(r.zeroCollapse, true);
+});
+
+test('decomposition: weights sum to 1 across subgroups', () => {
+  const groups = [
+    { label: 'a', values: [1, 2, 3] },
+    { label: 'b', values: [4, 5] },
+    { label: 'c', values: [6] },
+  ];
+  const r = theilLSubgroupDecomposition(groups);
+  const w = r.subgroups.reduce((s, g) => s + g.weight, 0);
+  assert.ok(Math.abs(w - 1) < 1e-12);
+});
+
+test('decomposition: rejects negative input', () => {
+  assert.throws(
+    () =>
+      theilLSubgroupDecomposition([
+        { label: 'bad', values: [1, -2, 3] },
+      ]),
+    /non-negative/,
+  );
+});
+
+test('decomposition: real-shape per-day-by-week test', () => {
+  // Simulate 14 days split into week 1 vs week 2.
+  const week1 = [100, 200, 100, 300, 200, 150, 250];
+  const week2 = [50, 60, 70, 80, 90, 100, 110];
+  const r = theilLSubgroupDecomposition([
+    { label: 'week1', values: week1 },
+    { label: 'week2', values: week2 },
+  ]);
+  // No-residual identity must hold.
+  assert.ok(Math.abs(r.within + r.between - r.total) < 1e-9);
+  // Between term should be positive (week 1 mean > week 2 mean).
+  assert.ok(r.between > 0);
+  // Within should also be positive (each week is non-uniform).
+  assert.ok(r.within > 0);
+  // Total is greater than each component (both positive).
+  assert.ok(r.total > r.within);
+  assert.ok(r.total > r.between);
+});

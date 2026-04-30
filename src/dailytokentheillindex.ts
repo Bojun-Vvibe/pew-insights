@@ -649,3 +649,157 @@ export function buildDailyTokenTheilLIndex(
     sources: kept,
   };
 }
+
+/**
+ * Refinement (v0.6.275): additive subgroup decomposition of Theil-L.
+ *
+ * For a non-negative vector `D = (D_1, ..., D_n)` partitioned into
+ * disjoint subgroups `G_1, ..., G_k`, Theil-L decomposes as:
+ *
+ *   L_total = sum_g (n_g / n) * L_g  +  L_between
+ *
+ * where:
+ *   - `n_g = |G_g|`, `n = sum_g n_g`,
+ *   - `L_g` is Theil-L of `D` restricted to subgroup `G_g`,
+ *   - `L_between = (1/n) * sum_g n_g * log(mu / mu_g)` where
+ *     `mu_g` is the mean of subgroup `G_g` and `mu` is the mean
+ *     of the whole vector.
+ *
+ * Crucially, this decomposition has NO RESIDUAL -- the within-
+ * group weighted sum plus the between-group term equal the total
+ * EXACTLY (up to floating-point). This is the canonical Theil-L
+ * property that distinguishes it from Atkinson and Gini, neither
+ * of which decomposes additively without a residual term in
+ * general.
+ *
+ * Returns:
+ *   - `total`: L of the concatenated vector.
+ *   - `within`: weighted sum sum_g (n_g/n) * L_g.
+ *   - `between`: L of the means-vector with weight n_g/n.
+ *   - `subgroups`: array of `{ label, n, mean, theilL, weight }`
+ *     where `weight = n_g / n` and `theilL = L_g`.
+ *   - `zeroCollapse`: true iff any subgroup mean = 0 (between
+ *     term blows up) OR any subgroup vector has a zero element
+ *     (within-term L_g = +inf).
+ *
+ * Handles trivial cases:
+ *   - Empty input or all-zero -> all fields 0.
+ *   - Singleton subgroup: L_g = 0 by definition (n_g < 2).
+ *   - Single subgroup: between = 0, within = total.
+ */
+export function theilLSubgroupDecomposition(
+  groups: { label: string; values: number[] }[],
+): {
+  total: number;
+  within: number;
+  between: number;
+  zeroCollapse: boolean;
+  subgroups: {
+    label: string;
+    n: number;
+    mean: number;
+    theilL: number;
+    weight: number;
+  }[];
+} {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return {
+      total: 0,
+      within: 0,
+      between: 0,
+      zeroCollapse: false,
+      subgroups: [],
+    };
+  }
+  const all: number[] = [];
+  for (const g of groups) {
+    if (!Array.isArray(g.values)) {
+      throw new Error(`subgroup ${g.label} must have numeric values[]`);
+    }
+    for (const v of g.values) {
+      if (!Number.isFinite(v) || v < 0) {
+        throw new Error(
+          `theilLSubgroupDecomposition requires non-negative finite values (subgroup ${g.label}, got ${v})`,
+        );
+      }
+      all.push(v);
+    }
+  }
+  const n = all.length;
+  if (n < 2) {
+    return {
+      total: 0,
+      within: 0,
+      between: 0,
+      zeroCollapse: false,
+      subgroups: groups.map((g) => ({
+        label: g.label,
+        n: g.values.length,
+        mean: g.values.length > 0 ? (g.values[0] as number) : 0,
+        theilL: 0,
+        weight: g.values.length / Math.max(1, n),
+      })),
+    };
+  }
+  let totalSum = 0;
+  let hasZeroAll = false;
+  for (const v of all) {
+    totalSum += v;
+    if (v === 0) hasZeroAll = true;
+  }
+  if (totalSum === 0) {
+    return {
+      total: 0,
+      within: 0,
+      between: 0,
+      zeroCollapse: false,
+      subgroups: groups.map((g) => ({
+        label: g.label,
+        n: g.values.length,
+        mean: 0,
+        theilL: 0,
+        weight: g.values.length / n,
+      })),
+    };
+  }
+  const muTotal = totalSum / n;
+  const total = theilLOfVector(all);
+  let within = 0;
+  let between = 0;
+  let anyZeroSubgroupMean = false;
+  const subgroups = groups.map((g) => {
+    const ng = g.values.length;
+    const sumG = g.values.reduce((s, x) => s + x, 0);
+    const muG = ng > 0 ? sumG / ng : 0;
+    if (muG === 0 && ng > 0) anyZeroSubgroupMean = true;
+    const lg = theilLOfVector(g.values);
+    const weight = ng / n;
+    if (Number.isFinite(lg.theilL)) {
+      within += weight * lg.theilL;
+    } else {
+      within = Number.POSITIVE_INFINITY;
+    }
+    if (ng > 0 && muG > 0) {
+      between += (ng / n) * Math.log(muTotal / muG);
+    } else if (ng > 0) {
+      between = Number.POSITIVE_INFINITY;
+    }
+    return {
+      label: g.label,
+      n: ng,
+      mean: muG,
+      theilL: lg.theilL,
+      weight,
+    };
+  });
+  // Numerical clamp: between >= 0 by Jensen on the means vector.
+  if (Number.isFinite(between) && between < 0) between = 0;
+  return {
+    total: total.theilL,
+    within,
+    between,
+    zeroCollapse:
+      hasZeroAll || anyZeroSubgroupMean || total.zeroCollapse,
+    subgroups,
+  };
+}
