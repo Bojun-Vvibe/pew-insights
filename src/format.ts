@@ -54,6 +54,7 @@ import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
 import type { DailyTokenZengaReport } from './dailytokenzengaindex.js';
 import type { DailyTokenPietraReport } from './dailytokenpietraratio.js';
 import type { DailyTokenAtkinsonReport } from './dailytokenatkinsonindex.js';
+import type { DailyTokenTheilLReport } from './dailytokentheillindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -14802,6 +14803,113 @@ export function renderDailyTokenAtkinsonIndex(
       for (const e of r.epsilonSweep) {
         const v = map.get(e);
         row.push(v !== undefined ? v.toFixed(4) : '\u2014');
+      }
+      return row;
+    });
+    lines.push(renderTableLocal(sweepHeaders, sweepRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTheilLIndex(
+  r: DailyTokenTheilLReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-theil-l-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-theil-l: ${r.minTheilL === 0 ? '\u2014' : r.minTheilL}    drop-zero-days: ${r.dropZeroDays ? 'yes' : 'no'}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinTheilL)} below min-theil-l, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Theil-L (mean log deviation) of per-day total_tokens; L = log(mu/GeoMean) in NATS; range [0, +inf); UTC days)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Theil-L of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'theilL',
+    'A(eps=1)',
+    'geoMean',
+    'meanDaily',
+    'minDay',
+    'minDayTokens',
+    'maxDay',
+    'maxDayTokens',
+    'tokens',
+    'zeroCollapse',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    Number.isFinite(s.theilL) ? s.theilL.toFixed(4) : '+inf',
+    s.atkinsonAtEpsilon1.toFixed(4),
+    formatNumber(Math.round(s.geometricMeanDaily)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    formatNumber(s.minDailyTokens),
+    s.maxDay,
+    formatNumber(s.maxDailyTokens),
+    formatNumber(s.totalTokens),
+    s.zeroCollapse ? 'yes' : 'no',
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.alphaSweep.length > 0 && r.sources.some((s) => s.geSweep)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `GE(alpha) sweep per source (alpha=0 -> theilL; alpha=1 -> Theil-T; alpha=2 -> half-squared-CV)`,
+      ),
+    );
+    const sweepHeaders = [
+      'source',
+      ...r.alphaSweep.map((a) => `a=${a}`),
+    ];
+    const sweepRows: string[][] = r.sources.map((s) => {
+      const row = [s.source];
+      const map = new Map<number, number>();
+      for (const e of s.geSweep ?? []) map.set(e.alpha, e.ge);
+      for (const a of r.alphaSweep) {
+        const v = map.get(a);
+        row.push(
+          v === undefined
+            ? '\u2014'
+            : Number.isFinite(v)
+              ? v.toFixed(4)
+              : '+inf',
+        );
       }
       return row;
     });
