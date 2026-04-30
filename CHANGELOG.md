@@ -2,6 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.282 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-SECOND):
+  `pew-insights daily-token-hoover-index`.
+
+  Per-source HOOVER INDEX (a.k.a. the "Robin Hood" / Schutz index)
+  of the per-day total_tokens distribution (Hoover 1936; Schutz
+  1951):
+
+      hoover = 0.5 * sum_i | s_i - 1/n |
+
+  where `s_i = D_i / sum(D)` is the i-th day's token mass share.
+  Range `[0, 1)`. hoover = 0 iff every day carries the same mass
+  share; hoover -> 1 iff all mass concentrates on a vanishing
+  fraction of days. The literal Robin-Hood reading: hoover is the
+  SMALLEST FRACTION of total token mass that would have to be
+  redistributed away from above-mean days toward below-mean days
+  to flatten the per-day distribution to perfect equality.
+
+  Equivalently `hoover = sum_{i: s_i > 1/n} (s_i - 1/n)` -- the
+  total above-uniform excess held by the rich half. The two halves
+  of the absolute deviation collapse to the same number because
+  `sum_i (s_i - 1/n) = 0` by construction (verified as an exact
+  identity in the test suite via `aboveMeanExcess === belowMeanDeficit
+  === hoover`).
+
+  GENUINELY ORTHOGONAL to every prior daily-token axis -- this is
+  the central design point of axis-42, which sits in the
+  inequality-index family of axes 32-40 but at a functional point
+  no other axis can recover:
+
+  - LORENZ-CURVE READING: hoover is the L_infinity Lorenz gap
+    measured at the EQUAL-WEIGHTS rank cut (every day = 1/n
+    weight). axis-35 PIETRA is the SAME L_infinity reading at the
+    EQUAL-MASS rank cut (where cumulative mass reaches the mean);
+    the two cutoffs collapse only when n=2. axis-32 GINI reads the
+    AREA between the Lorenz curve and the 45-degree line. axis-40
+    PALMA reads only TWO points on the same curve (90/40 rank
+    cuts) as a RATIO. axis-34 ZENGA averages bottom-vs-top mean
+    ratios over EVERY rank cut.
+  - L1 IN SHARE SPACE: hoover is `||s - 1_n/n||_1 / 2`, a strict
+    L1 deviation from uniform. The GE family (axes 37/38/39) are
+    SMOOTH MOMENT-based readings -- there is no smooth functional
+    of share ratios that recovers hoover. axis-36 ATKINSON has a
+    CRRA welfare-loss interpretation; hoover has a literal
+    transfer-cost interpretation with NO curvature parameter.
+  - TWO-SIDED, THRESHOLD-FREE: hoover is symmetric across the
+    mean and uses no threshold parameter. axis-41 FGT is strictly
+    one-sided lower-tail and threshold-anchored at z = lineFraction
+    * mean.
+  - All time-ordered axes (autocorrelation, monotone-run-length,
+    second-difference-sign-runs, z-score-extremes): hoover is
+    permutation-invariant, so orthogonal by construction.
+
+  Cross-anchor / orthogonality witness: the LORENZ-SHAPE RATIO
+  `hooverOverGini` in (0, 1]. For any non-degenerate Lorenz curve
+  the two indices live on the same curve at different functional
+  points. The textbook reference value under a unit-uniform
+  comparator is 0.75; the deviation `(hoover/gini) - 0.75`
+  (surfaced via `--include-reference-deviation`) is the
+  distribution-shape diagnostic that no other single axis can
+  produce. The ratio equals 1 exactly iff the distribution is
+  two-point (binary) -- proven in the test suite via the
+  `[1000, 9000]` exact case.
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (default
+  `hoover`; also `tokens` | `days` | `source` | `meanDaily` |
+  `aboveMeanExcess` | `hooverOverGini`), `--min-hoover` (display
+  filter; in `[0, 1)`), `--include-reference-deviation`, `--json`.
+
+  Live smoke-test against the local `~/.config/pew/queue.jsonl`
+  (6 sources, 11.77B tokens; one source name normalised to
+  `vscode-other` per house style):
+
+  ```
+  per-source Hoover index of per-day total_tokens (sorted by hoover; ties: source asc)
+  source        firstDay    lastDay     days  hoover  gini    h/g     nAbove  nBelow  meanDaily    minDay      maxDay      tokens
+  ------------  ----------  ----------  ----  ------  ------  ------  ------  ------  -----------  ----------  ----------  -------------
+  claude-code   2026-02-11  2026-04-23  35    0.6137  0.7590  0.8086  7       28      98,353,880   2026-03-06  2026-04-20  3,442,385,788
+  vscode-other  2025-07-30  2026-04-20  73    0.5495  0.7000  0.7850  18      55      25,832       2025-08-22  2026-04-17  1,885,727
+  codex         2026-04-13  2026-04-20  8     0.4716  0.5892  0.8003  3       5       101,203,083  2026-04-16  2026-04-20  809,624,660
+  openclaw      2026-04-17  2026-04-30  14    0.2751  0.3436  0.8007  5       9       149,516,163  2026-04-30  2026-04-19  2,093,226,278
+  hermes        2026-04-17  2026-04-30  14    0.2577  0.3229  0.7981  7       7       17,347,817   2026-04-26  2026-04-19  242,869,432
+  opencode      2026-04-20  2026-04-30  11    0.1395  0.2007  0.6949  6       5       470,491,823  2026-04-20  2026-04-21  5,175,410,056
+
+  reference deviation: hoover/gini - 0.75 (textbook unit-uniform comparator)
+  source        hoover  gini    h/g     dev_from_0.75
+  ------------  ------  ------  ------  -------------
+  claude-code   0.6137  0.7590  0.8086  +0.0586
+  vscode-other  0.5495  0.7000  0.7850  +0.0350
+  codex         0.4716  0.5892  0.8003  +0.0503
+  openclaw      0.2751  0.3436  0.8007  +0.0507
+  hermes        0.2577  0.3229  0.7981  +0.0481
+  opencode      0.1395  0.2007  0.6949  -0.0551
+  ```
+
+  Reading: `claude-code` would have to redistribute 61.4% of its
+  total token mass from its 7 above-mean days to its 28 below-mean
+  days to flatten -- by far the most "Robin-Hood-able" source.
+  `vscode-other` and `codex` follow at 55% and 47%. The bottom
+  three (`openclaw`, `hermes`, `opencode`) are the most uniform,
+  needing only 14-28% redistribution. The `nAbove/nBelow` columns
+  reveal the asymmetry mechanism: the more concentrated sources
+  (`claude-code`, `vscode-other`) have a long tail of below-mean
+  days punctuated by a few large bursts (28 vs 7 below/above for
+  `claude-code`), while the flatter sources (`hermes`, `opencode`)
+  split closer to 50/50 below/above (7/7 for `hermes`, 5/6 for
+  `opencode`).
+
+  Cross-anchor sanity: 5 of 6 sources sit ABOVE the textbook 0.75
+  hoover/gini reference (deviations between +0.035 and +0.059),
+  consistent with empirical right-skewed token-usage distributions
+  carrying a slightly higher Hoover-share-of-redistribution than a
+  unit-uniform comparator would predict for the observed Gini.
+  `opencode` is the lone OUTLIER below the reference (-0.055),
+  driven by its extreme single-day spike on `2026-04-21` that
+  inflates Gini disproportionately to its uniform-deviation
+  (Hoover) reading -- a signature of one-day-anomaly distributions
+  that the cross-anchor surfaces but neither index alone can flag.
+
+  Source: `src/dailytokenhooverindex.ts`. CLI wiring:
+  `src/cli.ts`. Renderer: `src/format.ts`. Tests:
+  `test/dailytokenhooverindex.test.ts`. All 7,871 tests in the
+  suite remain green.
+
 ## 0.6.280 — 2026-05-01
 
 ### Added
