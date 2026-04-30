@@ -51,6 +51,7 @@ import type { SourceBurstinessFanoFactorReport } from './sourceburstinessfanofac
 import type { SourceCostClassMixReport } from './sourcecostclassmix.js';
 import type { SourceHourEntropyReport } from './sourcehourofdaytokenmassentropy.js';
 import type { DailyTokenGiniReport } from './dailytokenginicoefficient.js';
+import type { DailyTokenZengaReport } from './dailytokenzengaindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -14531,6 +14532,75 @@ export function renderSourceRowTokenProfileLikelihoodSlopeCi(
     ],
   );
   lines.push(renderTableLocal(headers, rowsTbl));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenZengaIndex(r: DailyTokenZengaReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-zenga-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-zenga: ${r.minZenga === 0 ? '\u2014' : r.minZenga}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinZenga)} below min-zenga, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Zenga 2007 inequality index of per-day total_tokens; Z = (1/(n-1)) * sum_{k=1..n-1} (1 - M_k^- / M_k^+); range [0, 1]; UTC days; argmaxK = cutpoint at which u(k) is widest)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Zenga of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'zenga',
+    'maxU',
+    'argmaxK',
+    'meanDaily',
+    'maxDay',
+    'maxDayTokens',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.zenga.toFixed(4),
+    s.maxU.toFixed(4),
+    formatNumber(s.argmaxK),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.maxDay,
+    formatNumber(s.maxDailyTokens),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

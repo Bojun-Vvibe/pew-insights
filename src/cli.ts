@@ -85,6 +85,7 @@ import {
   renderSourceCostClassMix,
   renderSourceHourOfDayTokenMassEntropy,
   renderDailyTokenGini,
+  renderDailyTokenZengaIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -332,6 +333,7 @@ import { buildSourceBurstinessFanoFactor } from './sourceburstinessfanofactor.js
 import { buildSourceCostClassMix } from './sourcecostclassmix.js';
 import { buildSourceHourOfDayTokenMassEntropy } from './sourcehourofdaytokenmassentropy.js';
 import { buildDailyTokenGini } from './dailytokenginicoefficient.js';
+import { buildDailyTokenZengaIndex } from './dailytokenzengaindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -11504,6 +11506,113 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenGini(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-zenga-index')
+  .description(
+    "Per-source ZENGA (2007) inequality index of the per-day total_tokens distribution (THIRTY-FOURTH cross-source axis). Z = (1/(n-1)) * sum_{k=1..n-1} (1 - M_k^- / M_k^+) where M_k^- is the bottom-k mean and M_k^+ is the top-(n-k) mean of the sorted day vector. Range [0, 1]. ORTHOGONAL to daily-token-gini-coefficient (Lorenz integral, single Σ over the curve) because Zenga averages (n-1) DIFFERENT bottom-vs-top mean ratios -- two day-vectors with identical Gini can have meaningfully different Zenga, and Zenga is more sensitive to mid-cutpoint shape. Also order-invariant, so orthogonal to daily-token-monotone-run-length / daily-token-second-difference-sign-runs / daily-token-autocorrelation-lag1 / daily-token-zscore-extremes; uses ALL cutpoints, so orthogonal to single-day-mass-concentration (fixed k=1,2,3) and cumulative-tokens-midpoint (single 50% quantile). Per-source columns: zenga, maxU (peak per-cutpoint inequality), argmaxK (1-indexed cutpoint achieving maxU), meanDaily, maxDay, maxDayTokens.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Zenga requires n >= 2. Counts surface as droppedBelowMinDays.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: zenga (default) | tokens | days | source. Applied before --top.',
+    'zenga',
+  )
+  .option(
+    '--min-zenga <z>',
+    'display filter: hide sources whose Zenga is strictly below this value. z in [0,1]. Default 0 = no filter.',
+    '0',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minZenga: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minZenga = Number.parseFloat(opts.minZenga);
+        if (!Number.isFinite(minZenga) || minZenga < 0 || minZenga > 1) {
+          throw new Error(
+            `--min-zenga must be a number in [0, 1] (got ${opts.minZenga})`,
+          );
+        }
+        const validSorts = ['zenga', 'tokens', 'days', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenZengaIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minZenga,
+          sort: opts.sort as 'zenga' | 'tokens' | 'days' | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenZengaIndex(report) + '\n');
         }
       } catch (e) {
         die(e);
