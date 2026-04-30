@@ -271,3 +271,94 @@ test('axis22 builder: alert-theil filter keeps only above threshold', () => {
   });
   assert.equal(filtered.rows.length, 0);
 });
+
+// ---------- boundary tests (axis-22) ----------
+
+test('axis22 boundary: n=3 minimum non-degenerate case', () => {
+  // Smallest valid n: theil bound is ln(3) ~ 1.0986
+  const out = lensWidthTheil([0, 0, 1]);
+  assert.equal(out.degenerateFlag, false);
+  assert.ok(Math.abs(out.theil - Math.log(3)) < 1e-12);
+  assert.ok(Math.abs(out.theilNorm - 1) < 1e-12);
+});
+
+test('axis22 boundary: theil monotone under Pigou-Dalton transfer', () => {
+  // Transfer mass from a richer source to a poorer one (with neither
+  // crossing the other) must DECREASE inequality: theil(after) < theil(before).
+  const before = lensWidthTheil([1, 2, 3, 10]);
+  // Transfer 1 unit from the richest (10) to the second-poorest (2):
+  const after = lensWidthTheil([1, 3, 3, 9]);
+  assert.ok(
+    after.theil < before.theil,
+    `Pigou-Dalton: after(${after.theil}) should be < before(${before.theil})`,
+  );
+});
+
+test('axis22 boundary: replication invariance (Cowell GE family)', () => {
+  // GE indices including Theil are POPULATION-REPLICATION-INVARIANT:
+  // doubling each source (each appearing twice with same value) must
+  // give the same theil.
+  const single = lensWidthTheil([1, 2, 3, 4]);
+  const doubled = lensWidthTheil([1, 1, 2, 2, 3, 3, 4, 4]);
+  assert.ok(
+    Math.abs(single.theil - doubled.theil) < 1e-12,
+    `replication invariance: single=${single.theil} doubled=${doubled.theil}`,
+  );
+});
+
+test('axis22 boundary: many-zero sparse distribution clamp at ln(n)', () => {
+  // n large, all-but-one are zero -> theil = ln(n) exactly.
+  for (const n of [10, 50, 1000]) {
+    const xs = new Array(n).fill(0);
+    xs[0] = 1;
+    const out = lensWidthTheil(xs);
+    assert.equal(out.degenerateFlag, false);
+    assert.ok(
+      Math.abs(out.theil - Math.log(n)) < 1e-9,
+      `n=${n}: theil=${out.theil} expected ln(n)=${Math.log(n)}`,
+    );
+    assert.ok(Math.abs(out.theilNorm - 1) < 1e-9);
+  }
+});
+
+test('axis22 boundary: numerically tiny shares do not produce -Infinity', () => {
+  // Very small but positive share should contribute small positive amount,
+  // not blow up the sum (we never call ln(0)).
+  const xs = [1e-15, 1, 1, 1];
+  const out = lensWidthTheil(xs);
+  assert.equal(out.degenerateFlag, false);
+  assert.ok(Number.isFinite(out.theil));
+  assert.ok(Number.isFinite(out.theilNorm));
+  assert.ok(out.theil >= 0);
+  assert.ok(out.theil <= Math.log(4) + 1e-9);
+});
+
+test('axis22 boundary: theil concordant with shannonEntropy direction', () => {
+  // theil is exactly ln(n) - H(p). So if H decreases (more concentrated),
+  // theil increases. Verify on a controlled pair.
+  const more_equal = lensWidthTheil([2, 3, 4, 5]); // shares fairly close
+  const less_equal = lensWidthTheil([1, 1, 1, 100]); // one dominates
+  assert.ok(more_equal.shannonEntropy > less_equal.shannonEntropy);
+  assert.ok(more_equal.theil < less_equal.theil);
+  // Sum identity.
+  assert.ok(
+    Math.abs(more_equal.theil + more_equal.shannonEntropy - more_equal.lnN) <
+      1e-12,
+  );
+  assert.ok(
+    Math.abs(less_equal.theil + less_equal.shannonEntropy - less_equal.lnN) <
+      1e-12,
+  );
+});
+
+test('axis22 boundary: two-element extremes inside the valid n=3 floor', () => {
+  // Confirm the n < 3 cutoff bites correctly at n = 0, 1, 2.
+  for (const n of [0, 1, 2]) {
+    const xs = new Array(n).fill(1);
+    const out = lensWidthTheil(xs);
+    assert.equal(out.degenerateFlag, true, `n=${n} should be degenerate`);
+    assert.equal(out.degenerateReason, 'too-few-sources');
+    assert.equal(out.theil, 0);
+    assert.equal(out.theilNorm, 0);
+  }
+});
