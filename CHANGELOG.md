@@ -2,6 +2,124 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.247 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-midpoint-correlation` —
+  per-lens CROSS-SOURCE PEARSON CORRELATION between |midpoint| and
+  CI half-width (TWENTIETH cross-lens axis) for the v0.6.219
+  Deming-slope uncertainty-quantification suite. Consumes the same
+  six per-source slope CIs as v0.6.227-v0.6.246 (percentile
+  bootstrap, jackknife normal, BCa, studentized-t, ABC, profile-
+  likelihood).
+
+  **Mechanically distinct from ALL NINETEEN prior cross-lens
+  diagnostics on TWO orthogonal dimensions.**
+
+  1. **POPULATION GEOMETRY — the dominant axis of orthogonality.**
+     Every prior cross-lens axis (axes 1-19) is a PER-SOURCE
+     reduction across the six lenses: a 6-vector per source is
+     reduced to a per-source scalar (entropy, log-ratio variance,
+     midpoint dispersion, curvature, asymmetry, ...) and the
+     report is indexed by source. Axis-20 INVERTS the geometry —
+     for each fixed LENS, we collect the across-source cloud of
+     (midpoint, half-width) pairs and reduce it to a single scalar.
+     The report has SIX rows indexed by lens, not by source. No
+     prior axis computes a non-trivial cross-source statistic
+     conditional on a fixed lens; cross-source aggregation in axes
+     1-19 is restricted to means / medians / mode counts of the
+     per-source scalar.
+
+  2. **STATISTIC FAMILY.** This is a HETEROSCEDASTICITY probe.
+     Positive Pearson r flags multiplicative-noise lenses where
+     larger |slope| sources receive systematically wider CIs;
+     near-zero r flags additive-noise lenses (CI width is
+     scale-invariant); negative r flags anti-heteroscedastic /
+     pathological lens behaviour. Axis-3 (rank correlation across
+     lenses on midpoints) is per-source and is across LENSES;
+     axis-13 (midpoint dispersion) is the spread of midpoints
+     WITHIN a source; neither measures the slope between
+     |midpoint| and half-width across the source population for
+     each fixed lens.
+
+  The diagnostic, for each lens L:
+
+  ```
+    midpoint_{L,s}  = (ciUpper_{L,s} + ciLower_{L,s}) / 2
+    halfWidth_{L,s} = (ciUpper_{L,s} - ciLower_{L,s}) / 2
+    absMid_{L,s}    = |midpoint_{L,s}|
+    pearsonR_L      = pop covariance(absMid, halfWidth) /
+                      sqrt(pop var(absMid) * pop var(halfWidth))
+                      across the n shared sources
+  ```
+
+  Edge cases: n < 3, var(absMid) = 0, var(halfWidth) = 0, or non-
+  finite r each set `degenerateFlag = true` with the matching
+  `degenerateReason` and report `pearsonR = 0`. Floating-point
+  values slightly outside [-1, +1] are clamped.
+
+  Per-lens columns: `lens`, `nShared`, `meanAbsMidpoint`,
+  `meanHalfWidth`, `varAbsMidpoint`, `varHalfWidth`, `covariance`,
+  `pearsonR`, `pearsonRSquared`, `regimeLabel`
+  (`strong-positive` r > +0.5; `mild-positive` r in (+0.1, +0.5];
+  `near-zero` r in [-0.1, +0.1]; `mild-negative` r in [-0.5, -0.1);
+  `strong-negative` r < -0.5; `degenerate`), `degenerateFlag`,
+  `degenerateReason`.
+
+  Report-level: `meanPearsonR`, `medianPearsonR`, `maxPearsonR`,
+  `minPearsonR`, `rangePearsonR` (cross-lens divergence in
+  heteroscedasticity regime), `nDegenerate`, `nStrongPositive`,
+  `nStrongNegative`, `nNearZero`, `mostHeteroscedasticLens`
+  (argmax r), `mostHomoscedasticLens` (argmin |r|),
+  `mostAntiHeteroscedasticLens` (argmin r).
+
+  Filters:
+  - `--alert-pearson <f>`  — keep lenses with |pearsonR| > f
+                              (f in [0, 1])
+  - `--alert-positive <f>` — keep lenses with pearsonR > f
+                              (f in [-1, 1])
+
+  Sort keys: `pearson-desc` (default), `pearson-asc`,
+  `abs-pearson-desc`, `abs-pearson-asc`, `r-squared-desc`, `lens`.
+
+  Renderer flags: `--show-summary`, `--show-regime-aggregate`,
+  `--show-lens-attribution`, `--show-moments`.
+
+  Threshold rationale: |r| <= 0.1 is Cohen's small-effect bound
+  (effectively homoscedastic across the source population);
+  |r| >= 0.5 is Cohen's large-effect bound (strong scale-
+  dependence of CI width on |slope|).
+
+  **Live smoke (n = 6 shared sources, real `~/.config/pew/queue.jsonl`):**
+
+  ```
+  pew-insights source-row-token-slope-ci-lens-width-midpoint-correlation
+  meanR: 0.8637  medianR: 0.9556  maxR: 0.9778  minR: 0.5096  rangeR: 0.4683
+  nStrongPositive: 6/6  nStrongNegative: 0/6  nNearZero: 0/6  nDegenerate: 0/6
+  mostHetero: studentizedT   mostAntiHetero: abc   mostHomo: abc
+
+  lens               n     pearsonR  rSquared  regime
+  studentizedT          6    0.9778    0.9562  strong-positive
+  bootstrap             6    0.9711    0.9431  strong-positive
+  profileLikelihood     6    0.9585    0.9188  strong-positive
+  jackknife             6    0.9527    0.9076  strong-positive
+  bca                   6    0.8124    0.6599  strong-positive
+  abc                   6    0.5096    0.2596  strong-positive
+  ```
+
+  Interpretation: every one of the six UQ lenses is strongly
+  multiplicative-noise on this corpus (all r > 0.5, four of six
+  with r > 0.95) — sources with larger |slope| systematically
+  receive wider CIs. ABC is the outlier at r = 0.5096 (the only
+  non-resampling, non-likelihood lens; its R^2 of 0.26 leaves
+  74% of the half-width variance unexplained by |slope|, vs.
+  studentized-t's 96%). Cross-lens range of 0.47 in pearsonR is
+  itself a population-level disagreement signal: half the lenses
+  (studentized-t, bootstrap, profile-likelihood, jackknife)
+  agree to within 0.025 in r, and ABC sits 0.46 away from the
+  modal cluster.
+
 ## 0.6.246 — 2026-04-30
 
 ### Added
