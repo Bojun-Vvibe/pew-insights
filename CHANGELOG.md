@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.251 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-qcd` —
+  per-lens CROSS-SOURCE QUARTILE COEFFICIENT OF DISPERSION
+  `QCD = (Q3 - Q1) / (Q3 + Q1)` of CI half-widths
+  (TWENTY-FOURTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six
+  per-source slope CIs as v0.6.227-v0.6.250 (percentile bootstrap,
+  jackknife normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY-THREE prior cross-lens
+  diagnostics on FIVE orthogonal dimensions:**
+
+  1. **POPULATION GEOMETRY (vs axes 1-19).** Like axes 20-23, the
+     report is indexed by LENS (six rows). Axes 1-19 reduce a
+     6-vector per source to a per-source scalar; this axis reduces
+     the across-source cloud for each fixed lens to a single scalar.
+
+  2. **STATISTIC FAMILY (vs all 1-23).** QCD is an ORDER-STATISTIC,
+     ROBUST, NON-PARAMETRIC dispersion measure derived from EXACTLY
+     TWO order statistics — the lower and upper quartiles
+     (Bonett 2006; Kirby 1974). Bounded in `[0, 1]` for any
+     non-negative population with `Q3 > 0`. Scale-invariant. NOT a
+     Pearson r (axis-20), NOT Gini's Lorenz-area (axis-21), NOT
+     Theil's entropic deviation (axis-22), NOT Atkinson's CRRA
+     welfare loss (axis-23). All axes 20-23 are functions of the
+     FULL n-vector via central moments, log-ratios, or power
+     means; QCD is a function of EXACTLY TWO order statistics.
+
+  3. **BREAKDOWN POINT (vs all 1-23).** QCD has the HIGHEST
+     finite-sample breakdown point of any cross-lens dispersion
+     shipped: ~25% (a quarter of sources can be replaced with
+     arbitrary values without changing Q1 or Q3). Axes 20-23 all
+     have breakdown 0 — a single extreme half-width can dominate
+     the mean-based statistic. This makes QCD the canonical
+     diagnostic for "is one outlier source driving the apparent
+     inequality, or is the inequality structural?".
+
+  4. **ZERO-IMMUNITY (vs axes 22 and 23).** Theil GE(1) requires
+     every source `> 0` (logarithm); Atkinson at `eps>=1` collapses
+     to `A=1` if ANY source is exactly 0. QCD requires only
+     `Q3 > 0` — up to `floor(n/2)` sources can be exactly zero
+     (every CI collapsed to a point) without any degeneracy. The
+     same input that flips axis-23 into `zero-source-eps-ge-1`
+     degeneracy can yield a perfectly informative QCD.
+
+  5. **INTERQUARTILE FOOTPRINT (vs axis-19 IQR-RATIO of row tokens).**
+     The pre-existing per-source axis `source-row-token-iqr-ratio`
+     (v0.6.95) computes `IQR/median` over WITHIN-source row tokens
+     and reduces to a per-SOURCE scalar; this axis computes
+     `(Q3-Q1)/(Q3+Q1)` over CROSS-source CI half-widths and
+     reduces to a per-LENS scalar. Different population
+     (rows-of-one-source vs sources-of-one-lens), different
+     observable (token counts vs slope CI widths), different
+     normaliser (median vs `Q1+Q3`).
+
+  Quantile method: Hyndman-Fan type 7 (linear interpolation,
+  the default in NumPy and R's `quantile(type=7)`):
+
+  ```
+  h     = (n - 1) * p
+  lo    = floor(h);  hi = ceil(h);  frac = h - lo
+  Q_p   = sorted[lo] + frac * (sorted[hi] - sorted[lo])
+  ```
+
+  Per-lens row: `lens`, `nShared`, `medianHalfWidth`, `q1HalfWidth`,
+  `q3HalfWidth`, `iqrHalfWidth`, `qcd`, four-bin `dispersionLabel`
+  thresholded on QCD, `degenerateFlag`, `degenerateReason`.
+  Degenerate reasons: `too-few-sources` (n < 4), `zero-q3`
+  (>=75% of sources have a zero half-width), `non-finite`.
+
+  Report-level: `meanQcd`, `medianQcd`, `maxQcd`, `minQcd`,
+  `rangeQcd`, `nDegenerate`, `nHighlyDispersed`, `nNearUniform`,
+  `mostDispersedLens` (argmax QCD), `mostUniformLens`
+  (argmin QCD).
+
+  Sort keys: `qcd-desc` (default), `qcd-asc`, `iqr-desc`,
+  `median-halfwidth-desc`, `lens`. Alert filters `--alert-qcd`
+  (in `[0, 1]`) and `--alert-iqr` (`>= 0`).
+
+  Render flags: `--show-summary`, `--show-dispersion-aggregate`,
+  `--show-lens-attribution`, `--show-quartiles`,
+  `--show-per-source-widths`.
+
+  **Live smoke (run against `~/.config/pew/queue.jsonl`,
+  2072 rows, 6 sources — vendor names redacted as `vendor-x`):**
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-qcd \
+      --show-dispersion-aggregate --show-lens-attribution
+
+  sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95
+  bootstraps: 1000    seed: 42    sort: qcd-desc
+
+  meanQCD=0.9245  medianQCD=0.9534  maxQCD=0.9853  minQCD=0.8335
+  rangeQCD=0.1518   nHighlyDispersed=6/6   nDegen=0/6
+
+  lens               n     QCD     dispersion
+  -----------------  ----  ------  ----------------
+  profileLikelihood     6  0.9853  highly-dispersed
+  studentizedT          6  0.9818  highly-dispersed
+  jackknife             6  0.9797  highly-dispersed
+  abc                   6  0.9270  highly-dispersed
+  bca                   6  0.8399  highly-dispersed
+  bootstrap             6  0.8335  highly-dispersed
+
+  [lens attribution]
+    mostDispersed = profileLikelihood (max QCD = 0.9853)
+    mostUniform   = bootstrap         (min QCD = 0.8335)
+  ```
+
+  Interpretation: the cross-source half-width cloud is HIGHLY
+  dispersed across ALL six lenses (every lens lands in the top
+  bin, QCD > 0.5). The `profileLikelihood` lens is the most
+  unequal allocator of half-width budget across sources
+  (QCD = 0.9853 — `Q3` is roughly 135x `Q1`), and even the
+  most uniform lens (`bootstrap`, QCD = 0.8335) places `Q3`
+  at roughly 11x `Q1`. The narrow inter-lens range
+  (`rangeQCD = 0.1518`) confirms that this asymmetry is a
+  property of the underlying source mix, not an artefact of
+  any one CI construction. With 6 shared sources the breakdown
+  point of QCD is ~17% (one outlier source can be neutralised);
+  the persistence of `QCD > 0.83` across all six lenses is
+  therefore strong evidence that the dispersion is structural
+  rather than driven by a single anomaly.
+
 ## 0.6.250 — 2026-04-30
 
 ### Added
