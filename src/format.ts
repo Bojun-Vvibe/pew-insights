@@ -62,6 +62,7 @@ import type { DailyTokenFgtReport } from './dailytokenfgtindex.js';
 import type { DailyTokenHooverReport } from './dailytokenhooverindex.js';
 import type { DailyTokenBonferroniReport } from './dailytokenbonferroniindex.js';
 import type { DailyTokenKolmPollakReport } from './dailytokenkolmpollakindex.js';
+import type { DailyTokenMehranReport } from './dailytokenmehranindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -15809,6 +15810,116 @@ export function renderDailyTokenKolmPollakIndex(
         : s.scaleEquivarianceResidual.toExponential(2),
     ]);
     lines.push(renderTableLocal(sHeaders, sRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMehranIndex(
+  r: DailyTokenMehranReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-mehran-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-mehran: ${r.minMehran === 0 ? '\u2014' : r.minMehran}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinMehran)} below min-mehran, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MEHRAN = 1 - sum_{k=1..n-1} w_k * (S_k/(k*mu)) of per-day total_tokens with linear rank weights w_k = 2*(n-k)/(n*(n-1)); linearly-rank-weighted partial-mean inequality; sits between Gini's uniform Lorenz integral and Bonferroni's harmonic-tail weighting)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Mehran index of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'mehran',
+    'gini',
+    'm/g',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.mehran.toFixed(4),
+    s.gini.toFixed(4),
+    Number.isNaN(s.mehranOverGini) ? 'n/a' : s.mehranOverGini.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.linearRankExcess !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `linear-rank excess: mehran - gini (sign NOT constrained; positive => bottom-heavy, negative => top-heavy)`,
+      ),
+    );
+    const dHeaders = ['source', 'mehran', 'gini', 'm-g'];
+    const dRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.mehran.toFixed(4),
+      s.gini.toFixed(4),
+      s.linearRankExcess === undefined
+        ? '\u2014'
+        : (s.linearRankExcess >= 0 ? '+' : '') + s.linearRankExcess.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(dHeaders, dRows));
+  }
+
+  if (r.sources.some((s) => s.bonferroni !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `bonferroni cross-anchor: same partial-mean shortfalls (1 - M_k/mu); LINEAR (Mehran) vs UNIFORM (Bonferroni) rank-kernel`,
+      ),
+    );
+    const pHeaders = ['source', 'mehran', 'bonferroni', 'm-b'];
+    const pRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.mehran.toFixed(4),
+      s.bonferroni === undefined ? '\u2014' : s.bonferroni.toFixed(4),
+      s.mehranMinusBonferroni === undefined
+        ? '\u2014'
+        : (s.mehranMinusBonferroni >= 0 ? '+' : '') +
+          s.mehranMinusBonferroni.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(pHeaders, pRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');

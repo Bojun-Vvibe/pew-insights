@@ -96,6 +96,7 @@ import {
   renderDailyTokenHooverIndex,
   renderDailyTokenBonferroniIndex,
   renderDailyTokenKolmPollakIndex,
+  renderDailyTokenMehranIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -354,6 +355,7 @@ import { buildDailyTokenFgtIndex } from './dailytokenfgtindex.js';
 import { buildDailyTokenHooverIndex } from './dailytokenhooverindex.js';
 import { buildDailyTokenBonferroniIndex } from './dailytokenbonferroniindex.js';
 import { buildDailyTokenKolmPollakIndex } from './dailytokenkolmpollakindex.js';
+import { buildDailyTokenMehranIndex } from './dailytokenmehranindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13129,6 +13131,142 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenKolmPollakIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-mehran-index')
+  .description(
+    "Per-source MEHRAN INDEX of the per-day total_tokens distribution (FORTY-FIFTH cross-source axis). M = 1 - sum_{k=1..n-1} w_k * (S_k/(k*mu)) with linearly-decreasing rank weights w_k = 2*(n-k)/(n*(n-1)) summing to 1. Range [0, 1]. M = 0 iff every day carries equal mass; M = 1 in the maximal-inequality limit. Linearly-rank-weighted partial-mean inequality (Mehran 1976): a distinct rank-kernel from axis-32 Gini's UNIFORM Lorenz integral and axis-43 Bonferroni's HARMONIC-tail weighting. All three read the SAME family of partial-mean shortfalls (1 - M_k/mu) at the SAME n-1 rank cuts but apply different rank-kernel weightings (uniform Lorenz / linear / harmonic). Mehran-vs-Bonferroni ordering is NOT sign-constrained because linear and harmonic kernels are not pointwise-ordered for all k. Distinct from axis-35 Pietra / axis-42 Hoover (single-point L_infinity Lorenz gaps), axis-36 Atkinson (CRRA welfare), axes 37/38/39 GE-family (moment-based on shares), axis-40 Palma (two-point ratio), axis-41 FGT (one-sided lower-tail threshold), axis-44 Kolm-Pollak (translation-invariant absolute). Per-source columns: mehran, gini, mehranOverGini, meanDaily, minDay, maxDay. Linear-rank-excess diagnostic (sign NOT constrained): --include-linear-rank-excess surfaces mehran - gini per row. Cross-anchor against Bonferroni: --include-bonferroni-cross-anchor exposes the LINEAR-vs-UNIFORM-on-partial-means rank-kernel contrast on identical (1 - M_k/mu) shortfalls.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Mehran degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mehran (default) | tokens | days | source | meanDaily | mehranOverGini | linearRankExcess. Applied before --top.',
+    'mehran',
+  )
+  .option(
+    '--min-mehran <m>',
+    'display filter: hide sources whose mehran is strictly below this value. m in [0, 1]. Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-linear-rank-excess',
+    'every row gains a linearRankExcess field = mehran - gini. Sign NOT constrained: positive => bottom-heavy (Mehran linear kernel pushes more weight onto bottom than Gini uniform Lorenz integral); negative => top-heavy.',
+  )
+  .option(
+    '--include-bonferroni-cross-anchor',
+    'every row gains bonferroni and mehranMinusBonferroni fields. Surfaces the LINEAR (Mehran w_k = 2*(n-k)/(n*(n-1))) vs UNIFORM (Bonferroni w_k = 1/(n-1)) rank-kernel contrast on the SAME partial-mean shortfalls (1 - M_k/mu).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minMehran: string;
+        includeLinearRankExcess?: boolean;
+        includeBonferroniCrossAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minMehran = Number.parseFloat(opts.minMehran);
+        if (!Number.isFinite(minMehran) || minMehran < 0 || minMehran > 1) {
+          throw new Error(
+            `--min-mehran must be a number in [0, 1] (got ${opts.minMehran})`,
+          );
+        }
+        const validSorts = [
+          'mehran',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'mehranOverGini',
+          'linearRankExcess',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMehranIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minMehran,
+          includeLinearRankExcess: opts.includeLinearRankExcess ?? false,
+          includeBonferroniCrossAnchor:
+            opts.includeBonferroniCrossAnchor ?? false,
+          sort: opts.sort as
+            | 'mehran'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'mehranOverGini'
+            | 'linearRankExcess',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenMehranIndex(report) + '\n');
         }
       } catch (e) {
         die(e);
