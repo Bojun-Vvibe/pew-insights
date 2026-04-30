@@ -675,12 +675,14 @@ export function renderSourceRowTokenSlopeCiTailMassAsymmetry(
     showAsymmetryAggregate?: boolean;
     showDirectionAggregate?: boolean;
     showTailAttribution?: boolean;
+    showLensMembership?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
   const showAsymmetryAggregate = opts.showAsymmetryAggregate ?? false;
   const showDirectionAggregate = opts.showDirectionAggregate ?? false;
   const showTailAttribution = opts.showTailAttribution ?? false;
+  const showLensMembership = opts.showLensMembership ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-tail-mass-asymmetry');
   lines.push(
@@ -722,6 +724,14 @@ export function renderSourceRowTokenSlopeCiTailMassAsymmetry(
       const flagStr = flags.length > 0 ? ` (${flags.join(',')})` : '';
       lines.push(
         `    summary: ${row.direction} dominantLens=${row.dominantLens}(sign=${row.dominantLensSign}) asymRatio=${fmtNum(row.asymmetryRatio)} asymSigned=${fmtNum(row.asymmetrySigned)} upperLenses=${row.upperLensCount} lowerLenses=${row.lowerLensCount}${flagStr}`,
+      );
+    }
+    if (showLensMembership) {
+      const upperStr = row.upperLenses.length > 0 ? row.upperLenses.join(',') : '-';
+      const lowerStr = row.lowerLenses.length > 0 ? row.lowerLenses.join(',') : '-';
+      const tieN = row.tieLensCount;
+      lines.push(
+        `    membership: upper=[${upperStr}] lower=[${lowerStr}] tie=${tieN}`,
       );
     }
   }

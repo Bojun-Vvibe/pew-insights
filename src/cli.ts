@@ -23079,6 +23079,7 @@ program
   .option('--show-asymmetry-aggregate', 'append [asymmetry aggregate] line')
   .option('--show-direction-aggregate', 'append [direction aggregate] line')
   .option('--show-tail-attribution', 'append [tail attribution] per-lens dominantLens histogram line')
+  .option('--show-lens-membership', 'when rendering pretty (non-JSON), append a per-source membership line listing upperLenses, lowerLenses (canonical order), and tie count; composes independently with the other --show-* flags')
   .action(
     async (
       opts: {
@@ -23100,6 +23101,7 @@ program
         showAsymmetryAggregate?: boolean;
         showDirectionAggregate?: boolean;
         showTailAttribution?: boolean;
+        showLensMembership?: boolean;
       },
       cmd,
     ) => {
@@ -23205,6 +23207,7 @@ program
               showAsymmetryAggregate: opts.showAsymmetryAggregate ?? false,
               showDirectionAggregate: opts.showDirectionAggregate ?? false,
               showTailAttribution: opts.showTailAttribution ?? false,
+              showLensMembership: opts.showLensMembership ?? false,
             }) + '\n',
           );
         }

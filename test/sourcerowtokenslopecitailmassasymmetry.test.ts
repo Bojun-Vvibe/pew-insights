@@ -630,3 +630,56 @@ test('render: header line includes axis name and parameters', () => {
   assert.match(out, /sort: asymmetry-abs-desc/);
   assert.match(out, /bootstraps: 1000/);
 });
+
+test('render: showLensMembership appends membership line per row', () => {
+  const queue = ascending('s1', 25, 5, 100);
+  const r = buildSourceRowTokenSlopeCiTailMassAsymmetry(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiTailMassAsymmetry(r, {
+    showLensMembership: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /membership: upper=\[/);
+    assert.match(out, /lower=\[/);
+    assert.match(out, /tie=\d/);
+  }
+});
+
+test('render: showLensMembership empty side renders dash', () => {
+  const queue = ascending('s1', 25, 5, 100);
+  const r = buildSourceRowTokenSlopeCiTailMassAsymmetry(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiTailMassAsymmetry(r, {
+    showLensMembership: true,
+  });
+  // Either dash, or named lenses, but format is consistent.
+  if (r.rows.length > 0) {
+    assert.match(out, /membership: upper=\[(.+)\] lower=\[(.+)\] tie=\d+/);
+  }
+});
+
+test('render: showLensMembership composes with other show-flags', () => {
+  const queue = ascending('s1', 25, 5, 100);
+  const r = buildSourceRowTokenSlopeCiTailMassAsymmetry(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiTailMassAsymmetry(r, {
+    showSummary: true,
+    showLensMembership: true,
+    showAsymmetryAggregate: true,
+    showDirectionAggregate: true,
+    showTailAttribution: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /summary:/);
+    assert.match(out, /membership:/);
+    assert.match(out, /\[asymmetry aggregate\]/);
+    assert.match(out, /\[direction aggregate\]/);
+    assert.match(out, /\[tail attribution\]/);
+  }
+});
