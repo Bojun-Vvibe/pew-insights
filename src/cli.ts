@@ -95,6 +95,7 @@ import {
   renderDailyTokenFgtIndex,
   renderDailyTokenHooverIndex,
   renderDailyTokenBonferroniIndex,
+  renderDailyTokenKolmPollakIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -352,6 +353,7 @@ import { buildDailyTokenPalmaRatio } from './dailytokenpalmaratio.js';
 import { buildDailyTokenFgtIndex } from './dailytokenfgtindex.js';
 import { buildDailyTokenHooverIndex } from './dailytokenhooverindex.js';
 import { buildDailyTokenBonferroniIndex } from './dailytokenbonferroniindex.js';
+import { buildDailyTokenKolmPollakIndex } from './dailytokenkolmpollakindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12965,6 +12967,161 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenBonferroniIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-kolm-pollak-index')
+  .description(
+    "Per-source KOLM-POLLAK absolute inequality index of the per-day total_tokens distribution (FORTY-FOURTH cross-source axis). K(alpha) = (1/alpha) * ln((1/n) * sum_i exp(alpha * (mu - D_i))) in TOKEN units. Range [0, mu - min(D)]. K = 0 iff every day carries identical mass; K -> mu - min(D) (the Rawlsian deficit) as alpha -> infinity. The defining property is TRANSLATION-INVARIANCE: K(D + c) = K(D) for any constant c. Adding a flat token amount to every day MOVES Gini / Atkinson / Bonferroni / Theil / Pietra / Hoover / Palma / FGT towards 0, but leaves Kolm-Pollak EXACTLY unchanged. Polar-opposite invariance axiom to all 12 prior daily-token inequality axes (which are scale-invariant). The CARA welfare-loss dual to axis-36 Atkinson's CRRA welfare loss: Atkinson asks 'what fraction of total mass would the planner give up?'; Kolm-Pollak asks 'what flat per-day token reduction would the planner accept?'. Per-source columns: kolm (in tokens), kolmRelativeIntensity (= kolm/meanDaily, dimensionless), gini (cross-anchor), alphaEffective. Cross-anchor witness via --include-additive-invariance-witness emits kolmIfPlusMu = K(D + mu) and the residual |kolm - kolmIfPlusMu| (should be ~0 by translation-invariance). The dimensionless aversion --alpha-rel (default 1.0) is rescaled per-source as alpha_eff = alphaRel/meanDaily so alpha*mu is identical across sources; --alpha-absolute bypasses scaling.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Kolm-Pollak degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: kolm (default) | tokens | days | source | meanDaily | rawlsianDeficit | kolmRelativeIntensity. Applied before --top.',
+    'kolm',
+  )
+  .option(
+    '--alpha-rel <a>',
+    'dimensionless inequality aversion (default 1.0). Effective per-source alpha = alphaRel/meanDaily so alpha*mu is identical across sources. Must be > 0.',
+    '1.0',
+  )
+  .option(
+    '--alpha-absolute',
+    'treat --alpha-rel as the literal alpha in 1/tokens without per-source scaling. Use for absolute cross-source comparison at a fixed rate.',
+  )
+  .option(
+    '--min-kolm <k>',
+    'display filter: hide sources whose kolm is strictly below this token amount. Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-additive-invariance-witness',
+    'every row gains kolmIfPlusMu (Kolm-Pollak on the SHIFTED vector D + mu) and additiveInvarianceResidual = |kolm - kolmIfPlusMu|. Numerically proves the translation-invariance axiom that defines Kolm-Pollak.',
+  )
+  .option(
+    '--include-rawlsian-anchor',
+    'every row gains rawlsianDeficit = mu - min (the alpha -> infinity limit of kolm) and kolmOverRawlsian in [0, 1] (approaches 1 as alpha -> infinity). Surfaces how close Kolm-Pollak sits to its Rawlsian upper bound.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        alphaRel: string;
+        alphaAbsolute?: boolean;
+        minKolm: string;
+        includeAdditiveInvarianceWitness?: boolean;
+        includeRawlsianAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const alphaRel = Number.parseFloat(opts.alphaRel);
+        if (!Number.isFinite(alphaRel) || alphaRel <= 0) {
+          throw new Error(
+            `--alpha-rel must be a finite positive number (got ${opts.alphaRel})`,
+          );
+        }
+        const minKolm = Number.parseFloat(opts.minKolm);
+        if (!Number.isFinite(minKolm) || minKolm < 0) {
+          throw new Error(
+            `--min-kolm must be a finite non-negative number (got ${opts.minKolm})`,
+          );
+        }
+        const validSorts = [
+          'kolm',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'rawlsianDeficit',
+          'kolmRelativeIntensity',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKolmPollakIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          alphaRel,
+          alphaAbsolute: opts.alphaAbsolute ?? false,
+          minKolm,
+          includeAdditiveInvarianceWitness:
+            opts.includeAdditiveInvarianceWitness ?? false,
+          includeRawlsianAnchor: opts.includeRawlsianAnchor ?? false,
+          sort: opts.sort as
+            | 'kolm'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'rawlsianDeficit'
+            | 'kolmRelativeIntensity',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenKolmPollakIndex(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -61,6 +61,7 @@ import type { DailyTokenPalmaReport } from './dailytokenpalmaratio.js';
 import type { DailyTokenFgtReport } from './dailytokenfgtindex.js';
 import type { DailyTokenHooverReport } from './dailytokenhooverindex.js';
 import type { DailyTokenBonferroniReport } from './dailytokenbonferroniindex.js';
+import type { DailyTokenKolmPollakReport } from './dailytokenkolmpollakindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -15674,6 +15675,119 @@ export function renderDailyTokenBonferroniIndex(
         : s.harmonicKernelTail.toFixed(4),
     ]);
     lines.push(renderTableLocal(hHeaders, hRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKolmPollakIndex(
+  r: DailyTokenKolmPollakReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-kolm-pollak-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    alpha-rel: ${r.alphaRel}    alpha-mode: ${r.alphaAbsolute ? 'absolute' : 'per-source-scaled'}    min-kolm: ${r.minKolm === 0 ? '\u2014' : formatNumber(r.minKolm)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinKolm)} below min-kolm, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KOLM-POLLAK = (1/alpha)*ln((1/n)*sum exp(alpha*(mu - D_i))) of per-day total_tokens; TRANSLATION-INVARIANT: K(D + c) = K(D); the absolute (additive) inequality dual of every other relative axis in the suite)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Kolm-Pollak index of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'kolm',
+    'k/mu',
+    'gini',
+    'alphaEff',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(Math.round(s.kolm)),
+    s.kolmRelativeIntensity.toFixed(4),
+    s.gini.toFixed(4),
+    s.alphaEffective.toExponential(2),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.kolmIfPlusMu !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `additive-invariance witness: K(D + mu) should equal K(D) by translation-invariance (Kolm 1976)`,
+      ),
+    );
+    const wHeaders = ['source', 'kolm', 'kolm(D+mu)', 'residual'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      formatNumber(Math.round(s.kolm)),
+      s.kolmIfPlusMu === undefined ? '\u2014' : formatNumber(Math.round(s.kolmIfPlusMu)),
+      s.additiveInvarianceResidual === undefined
+        ? '\u2014'
+        : s.additiveInvarianceResidual.toExponential(2),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  if (r.sources.some((s) => s.rawlsianDeficit !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `rawlsian anchor: deficit = mu - min (max possible kolm); kolm/deficit in [0, 1] approaches 1 as alpha -> infinity`,
+      ),
+    );
+    const aHeaders = ['source', 'deficit', 'kolm', 'kolm/deficit'];
+    const aRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.rawlsianDeficit === undefined
+        ? '\u2014'
+        : formatNumber(Math.round(s.rawlsianDeficit)),
+      formatNumber(Math.round(s.kolm)),
+      s.kolmOverRawlsian === undefined || Number.isNaN(s.kolmOverRawlsian)
+        ? 'n/a'
+        : s.kolmOverRawlsian.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(aHeaders, aRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');
