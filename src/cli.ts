@@ -23699,6 +23699,10 @@ program
     '--show-moments',
     'append per-lens moments line listing meanAbsMid / meanHalf / varAbsMid / varHalf / cov',
   )
+  .option(
+    '--show-per-source-pairs',
+    'append per-lens per-source pairs line listing (source=(absMid,halfW)) for each shared source -- the raw inputs to the Pearson correlation',
+  )
   .action(
     async (
       opts: {
@@ -23718,6 +23722,7 @@ program
         showRegimeAggregate?: boolean;
         showLensAttribution?: boolean;
         showMoments?: boolean;
+        showPerSourcePairs?: boolean;
       },
       cmd,
     ) => {
@@ -23817,6 +23822,7 @@ program
               showRegimeAggregate: opts.showRegimeAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showMoments: opts.showMoments ?? false,
+              showPerSourcePairs: opts.showPerSourcePairs ?? false,
             }) + '\n',
           );
         }

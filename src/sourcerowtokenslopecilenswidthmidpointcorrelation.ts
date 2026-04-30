@@ -218,6 +218,15 @@ export interface SourceRowTokenSlopeCiLensWidthMidpointCorrelationLensRow {
   regimeLabel: RegimeLabel;
   degenerateFlag: boolean;
   degenerateReason: DegenerateReason | null;
+  /**
+   * The per-source (absMidpoint, halfWidth) pairs that fed into
+   * the correlation, in the canonical sorted-source order used to
+   * build the report. Surfaced for diagnostic / audit use; the
+   * arrays are parallel and have length `nShared`.
+   */
+  perSourceAbsMidpoints: number[];
+  perSourceHalfWidths: number[];
+  perSourceSources: string[];
 }
 
 export interface SourceRowTokenSlopeCiLensWidthMidpointCorrelationReport {
@@ -574,6 +583,9 @@ export function buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation(
       lens,
       ...computed,
       regimeLabel,
+      perSourceAbsMidpoints: absMids,
+      perSourceHalfWidths: halfs,
+      perSourceSources: [...sharedSources],
     });
   }
 
@@ -703,12 +715,14 @@ export function renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation(
     showRegimeAggregate?: boolean;
     showLensAttribution?: boolean;
     showMoments?: boolean;
+    showPerSourcePairs?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
   const showRegimeAggregate = opts.showRegimeAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showMoments = opts.showMoments ?? false;
+  const showPerSourcePairs = opts.showPerSourcePairs ?? false;
   const lines: string[] = [];
   lines.push(
     'pew-insights source-row-token-slope-ci-lens-width-midpoint-correlation',
@@ -750,6 +764,19 @@ export function renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation(
       lines.push(
         `    moments: meanAbsMid=${fmtNum(row.meanAbsMidpoint, 6)} meanHalf=${fmtNum(row.meanHalfWidth, 6)} varAbsMid=${fmtNum(row.varAbsMidpoint, 6)} varHalf=${fmtNum(row.varHalfWidth, 6)} cov=${fmtNum(row.covariance, 6)}`,
       );
+    }
+    if (showPerSourcePairs) {
+      if (row.perSourceSources.length === 0) {
+        lines.push(`    pairs: (no shared sources)`);
+      } else {
+        const parts: string[] = [];
+        for (let i = 0; i < row.perSourceSources.length; i++) {
+          parts.push(
+            `${row.perSourceSources[i]}=(absMid=${fmtNum(row.perSourceAbsMidpoints[i]!, 6)},halfW=${fmtNum(row.perSourceHalfWidths[i]!, 6)})`,
+          );
+        }
+        lines.push(`    pairs: ${parts.join(' ')}`);
+      }
     }
   }
   if (showRegimeAggregate && r.rows.length > 0) {

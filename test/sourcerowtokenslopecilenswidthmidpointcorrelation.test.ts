@@ -396,3 +396,109 @@ test('axis20 renderer: empty rows shows "(no lenses)"', () => {
   const txt = renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation(r);
   assert.ok(txt.includes('(no lenses)'));
 });
+
+// ---------- v0.6.247 refinement: per-source pairs ----------
+
+test('axis20 refinement: each lens row exposes parallel per-source pair arrays', () => {
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 24, slope: 1.0, noise: 5 },
+    { source: 's2', nRows: 24, slope: 5.0, noise: 25 },
+    { source: 's3', nRows: 24, slope: 10.0, noise: 50 },
+    { source: 's4', nRows: 24, slope: 0.1, noise: 1 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation(queue, {
+    bootstraps: 200,
+  });
+  for (const row of r.rows) {
+    assert.equal(row.perSourceAbsMidpoints.length, row.nShared);
+    assert.equal(row.perSourceHalfWidths.length, row.nShared);
+    assert.equal(row.perSourceSources.length, row.nShared);
+    // Source ids are sorted lexicographically (canonical shared-set order).
+    const sortedCopy = [...row.perSourceSources].sort();
+    assert.deepEqual(row.perSourceSources, sortedCopy);
+    // All pairs are non-negative finite numbers.
+    for (const v of row.perSourceAbsMidpoints) {
+      assert.ok(Number.isFinite(v) && v >= 0);
+    }
+    for (const v of row.perSourceHalfWidths) {
+      assert.ok(Number.isFinite(v) && v >= 0);
+    }
+  }
+});
+
+test('axis20 refinement: per-source pairs reproduce the stored moments', () => {
+  // Boundary: the pair arrays MUST be the exact inputs to the
+  // Pearson computation, so re-running the helper on them must
+  // yield bit-identical (modulo IEEE-754) statistics.
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 24, slope: 1.0, noise: 5 },
+    { source: 's2', nRows: 24, slope: 5.0, noise: 25 },
+    { source: 's3', nRows: 24, slope: 10.0, noise: 50 },
+    { source: 's4', nRows: 24, slope: 0.1, noise: 1 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation(queue, {
+    bootstraps: 200,
+  });
+  for (const row of r.rows) {
+    if (row.degenerateFlag && row.degenerateReason === 'too-few-sources') {
+      continue;
+    }
+    const recomputed = lensWidthMidpointCorrelation(
+      row.perSourceAbsMidpoints,
+      row.perSourceHalfWidths,
+    );
+    assert.ok(Math.abs(recomputed.pearsonR - row.pearsonR) < 1e-12);
+    assert.ok(Math.abs(recomputed.meanAbsMidpoint - row.meanAbsMidpoint) < 1e-9);
+    assert.ok(Math.abs(recomputed.meanHalfWidth - row.meanHalfWidth) < 1e-9);
+    assert.ok(Math.abs(recomputed.varAbsMidpoint - row.varAbsMidpoint) < 1e-6);
+    assert.ok(Math.abs(recomputed.varHalfWidth - row.varHalfWidth) < 1e-6);
+  }
+});
+
+test('axis20 refinement: --show-per-source-pairs renders pairs line per lens', () => {
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 24, slope: 1.0, noise: 5 },
+    { source: 's2', nRows: 24, slope: 5.0, noise: 25 },
+    { source: 's3', nRows: 24, slope: 10.0, noise: 50 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation(queue, {
+    bootstraps: 200,
+  });
+  const txt = renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation(r, {
+    showPerSourcePairs: true,
+  });
+  assert.ok(txt.includes('pairs:'));
+  assert.ok(txt.includes('s1=(absMid='));
+  assert.ok(txt.includes('halfW='));
+});
+
+test('axis20 refinement: --show-per-source-pairs with no shared sources prints "(no shared sources)"', () => {
+  // Empty queue -> 0 shared sources -> degenerate too-few-sources
+  // for every lens, with empty pair arrays.
+  const r = buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation([], {
+    bootstraps: 100,
+  });
+  const txt = renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation(r, {
+    showPerSourcePairs: true,
+  });
+  assert.ok(txt.includes('(no shared sources)'));
+});
+
+test('axis20 refinement: per-source pairs are identical across all six lens rows in source ordering', () => {
+  // The set of shared sources is computed once and used for all
+  // lenses, so every row must agree on the source list.
+  const queue = syntheticQueue([
+    { source: 'alpha', nRows: 24, slope: 2.0, noise: 10 },
+    { source: 'beta', nRows: 24, slope: 4.0, noise: 20 },
+    { source: 'gamma', nRows: 24, slope: 8.0, noise: 40 },
+    { source: 'delta', nRows: 24, slope: 1.0, noise: 5 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation(queue, {
+    bootstraps: 200,
+  });
+  const reference = r.rows[0]!.perSourceSources;
+  for (const row of r.rows) {
+    assert.deepEqual(row.perSourceSources, reference);
+  }
+});
+
