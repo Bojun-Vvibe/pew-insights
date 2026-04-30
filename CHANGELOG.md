@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.257 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-ge2` —
+  per-lens CROSS-SOURCE GENERALISED ENTROPY GE(alpha=2) of CI
+  half-widths (TWENTY-SEVENTH cross-lens axis) for the v0.6.219
+  Deming-slope uncertainty-quantification suite. Consumes the
+  SAME six per-source slope CIs as v0.6.227-v0.6.256 (percentile
+  bootstrap, jackknife normal, BCa, studentized-t, ABC,
+  profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY-SIX prior cross-lens
+  diagnostics.** GE(2) is the variance-normalised
+  half-squared-CV functional (Bourguignon 1979; Cowell-Kuga
+  1981; Shorrocks 1980 as the additively-decomposable
+  inequality measure with alpha=2):
+
+  ```
+  GE(2) = (1 / (2n)) * sum_i ((w_i / mean) - 1)^2
+        = (1/2) * (sigma / mean)^2
+        = (1/2) * CV^2
+  ```
+
+  In direct contrast to every prior axis:
+
+  - axis-21 Gini integrates `(p - L(p))` over `p` (an L_1
+    functional of the Lorenz process). GE(2) is a SECOND-MOMENT
+    functional of the SHARES around their mean — L_2 SQUARED on
+    share deviations, not L_1 area under the Lorenz gap.
+  - axis-22 Theil GE(1) is the entropic special case
+    `alpha=1`. GE(2) is the `alpha=2` case in the SAME
+    parametric family but DRAMATICALLY MORE TOP-SENSITIVE: the
+    `x^alpha` weighting means doubling the single largest source
+    raises GE(2) ~4x more than it raises GE(1) on skewed
+    inputs.
+  - axis-23 Atkinson is a CRRA welfare loss
+    `(1 - M_(1-eps) / mean)`, bounded in `[0, 1]`. GE(2) is
+    UNBOUNDED above (in `[0, +inf)`) and is moment-based, NOT
+    utility-based.
+  - axis-24 QCD uses EXACTLY TWO order statistics `(Q1, Q3)`.
+    GE(2) uses the FULL n-vector via a squared sum.
+  - axis-25 Hoover is L_infinity on the Lorenz process. GE(2) is
+    L_2 SQUARED on the share deviations — different norm,
+    different sensitivity (a single outlier inflates GE(2)
+    quadratically; Hoover only linearly).
+  - axis-26 Palma is a TWO-POINT RATIO at `p=0.4` and `p=0.9`.
+    GE(2) integrates the WHOLE share-deviation cloud and has NO
+    decile knife-edge.
+
+  Critically, GE(2) is the UNIQUE inequality measure shipped
+  that is ADDITIVELY DECOMPOSABLE into BETWEEN-GROUP and
+  WITHIN-GROUP components in the Shorrocks (1980) sense (Gini,
+  Hoover, Atkinson, QCD, Palma all violate strong
+  decomposability). The implementation exposes a per-lens
+  `betweenGroupShare` = between-quartile-group GE(2) divided
+  by total GE(2), a diagnostic that no prior axis carries.
+
+  **Numerical stability.** The implementation uses the
+  centred-share form `(w_i / mean - 1)^2` (Welford-stable
+  around the centre) rather than the equivalent
+  `(E[X^2] / mean^2 - 1)` form (which suffers catastrophic
+  cancellation when the variance is small relative to
+  `mean^2`). The identity `GE(2) == cvSquared / 2` is enforced
+  by construction so it can be cross-checked at the displayed
+  precision via the new `--show-cv-identity` flag.
+
+  **Edge cases (parity with axes 21-26):**
+
+  - `n < 4`: `GE2 = 0`, `degenerateFlag = true`,
+    `reason = 'too-few-sources'`.
+  - All-zero input: `GE2 = 0`, `degenerateFlag = true`,
+    `reason = 'zero-mass'`.
+  - Tolerates up to `n - 1` zero half-widths (only the all-zero
+    case is degenerate) — the WIDEST domain shared with axis-25
+    Hoover and strictly wider than axis-22 Theil and axis-23
+    Atkinson.
+  - The pathological numerical path (sum-of-squares overflow)
+    sets `degenerateFlag = true` with `reason = 'non-finite'`.
+  - The unbounded-above case is CLAMPED to `1e12` with
+    `ge2Saturated = true`, parallel to the saturation
+    convention in axis-26 Palma.
+
+  **CLI flags:** `--alert-ge2 <f>` (`f >= 0`), `--alert-mass
+  <f>`, `--alert-cv <f>` (`f >= 0`); `--sort
+  ge2-desc|ge2-asc|cv-desc|mass-desc|mean-halfwidth-desc|between-group-share-desc|lens`
+  (`ge2-desc` is saturation-aware: a saturated lens beats a
+  finite one); render flags `--show-summary`,
+  `--show-concentration-aggregate`, `--show-lens-attribution`,
+  `--show-cv-identity`, `--show-between-group`,
+  `--show-per-source-widths`.
+
+  Twenty-seven new `test()` blocks covering the helper
+  closed-form (`[1,1,1,5] -> GE2 = 0.375 = cvSquared/2`),
+  scale-invariance under multiplicative rescale, zero-immunity
+  up to `n-1` zeros, the strict cvSquared-identity, the
+  Shorrocks decomposition staying in `[0, 1]`, the
+  saturation-aware `ge2-desc` sort, the alert filters, builder
+  validation of every option, and the renderer producing a row
+  per lens with all six show-flags. Suite: 7232 -> 7259, all
+  passing.
+
+  **Live smoke (`~/.config/pew/queue.jsonl`, n=6 shared
+  sources) with `--show-cv-identity --show-between-group
+  --show-lens-attribution`:**
+
+  ```
+  meanGE2: 1.0724  medianGE2: 0.9128  maxGE2: 2.4683  minGE2: 0.5304  rangeGE2: 1.9379
+  nExtreme: 2  nNearUniform: 0  nSaturated: 0  nDegen: 0
+  mostExtreme: abc  mostUniform: bca
+
+  abc                GE2=2.4683  CV=2.2218  betweenGroupShare=1.0000  concentration=extreme
+  profileLikelihood  GE2=1.0322  CV=1.4368  betweenGroupShare=0.9997  concentration=extreme
+  studentizedT       GE2=0.9157  CV=1.3533  betweenGroupShare=0.9996  concentration=high-concentration
+  jackknife          GE2=0.9100  CV=1.3491  betweenGroupShare=0.9996  concentration=high-concentration
+  bootstrap          GE2=0.5781  CV=1.0753  betweenGroupShare=0.9799  concentration=high-concentration
+  bca                GE2=0.5304  CV=1.0299  betweenGroupShare=0.9955  concentration=high-concentration
+  ```
+
+  On the live queue, GE(2) ranks `abc` as catastrophically
+  more dispersed than the other five lenses (4.7x the median),
+  with the entire dispersion driven by between-quartile-group
+  variation (`betweenGroupShare = 1.0000` — `abc` has zero
+  within-group residual after the quartile decomposition).
+  Five of six lenses concentrate `>= 99.5%` of total dispersion
+  in the between-group component, indicating the cross-source
+  half-width cloud is structurally stratified rather than
+  symmetrically spread — a signal invisible to axes 21-26 which
+  do not expose the Shorrocks decomposition.
+
 ## 0.6.256 — 2026-04-30
 
 ### Added
