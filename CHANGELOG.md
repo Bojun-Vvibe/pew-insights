@@ -2,6 +2,147 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.245 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-half-width-entropy` —
+  per-source CI HALF-WIDTH SHANNON ENTROPY diagnostic
+  (EIGHTEENTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six
+  per-source slope CIs as v0.6.227-v0.6.244 (percentile bootstrap,
+  jackknife normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL SEVENTEEN prior cross-lens
+  diagnostics on TWO fundamental dimensions.**
+
+  1. **INPUT DOMAIN.** Every prior axis operates on the six CI
+     MIDPOINTS — scale axes 1-13 (midpoint-dispersion SD, MAE,
+     scaled MAD, range coverage volume, gini, ...), single-lens
+     identifiers (LOO drop, precision-pull max, residual-Z,
+     MAD-vs-MAE tail lens), rank/agreement axes on midpoint
+     pairs (Spearman / Kendall, containment, overlap-graph), PAV
+     isotonic monotone fit of midpoint vs WIDTH (axis 15),
+     second-derivative curvature on width-sorted MIDPOINTS (axis
+     16), tail-mass-asymmetry of midpoints around their median
+     (axis 17). Width-concordance (axis 3) is the only one that
+     touches widths and does so as a RANK-CORRELATION between
+     width and midpoint, NOT as analysis of the width distribution
+     ITSELF. NONE of the seventeen analyses the half-width
+     distribution as a probability mass over the six lenses.
+  2. **STATISTIC FAMILY.** Axes 1-17 are all drawn from the
+     moment / quantile / order-statistic / rank / curvature /
+     asymmetry families. NONE is information-theoretic. Shannon
+     entropy of a normalised half-width vector is a fundamentally
+     different statistic family answering "how concentrated is
+     precision in a single lens?" — quantifying how far the
+     half-width vector is from a uniform distribution over the
+     six lenses.
+
+  The diagnostic, for each source s with half-widths
+  `h_i = (ciUpper_i - ciLower_i) / 2`:
+
+  ```
+    hSum    = sum_i h_i
+    p_i     = h_i / hSum             (uniform 1/6 if hSum == 0)
+    H       = - sum_i p_i log2(p_i)  (with 0 log2 0 := 0)
+    Hnorm   = H / log2(6)            in [0, 1]
+    effLens = 2 ^ H                  in [1, 6]   (Hill order 1)
+    concen  = 1 - Hnorm              in [0, 1]
+  ```
+
+  `Hnorm == 1` ⇔ all six half-widths equal (precision uniformly
+  allocated across lenses); `Hnorm == 0` ⇔ one lens carries the
+  entire half-width mass (precision fully concentrated).
+
+  Per-source columns: `halfWidths`, `halfWidthSum`,
+  `probabilities`, `entropyBits`, `entropyNormalised`,
+  `effectiveLenses`, `concentration`, `dominantLens` (argmax_i
+  h_i, canonical-order tie-break), `dominantShare` (p_max),
+  `degenerateFlag` (halfWidthSum == 0).
+
+  Per-report aggregates: `meanEntropyNormalised`,
+  `medianEntropyNormalised`, `meanEffectiveLenses`,
+  `meanConcentration`, `nNearUniform` (Hnorm >= 0.95),
+  `nNearConcentrated` (Hnorm <= 0.30), `nDegenerate`,
+  `globalDominantLens` (mode; canonical-order tie-break).
+
+  Edge cases: missing-from-some-lens sources are dropped (counted
+  in `droppedMissingLens`); all-zero half-widths produce uniform
+  `probabilities = 1/6`, MAX entropy `Hnorm == 1`,
+  `effectiveLenses == 6`, `concentration == 0`, `dominantLens ==
+  bootstrap` (canonical first), `dominantShare == 1/6`,
+  `degenerateFlag == true`. By convention a fully-degenerate
+  source is treated as MAX-entropy (no lens carries more mass
+  than any other) and contributes to `nNearUniform`, NOT to
+  `nNearConcentrated`. A single zero half-width with others
+  non-zero contributes 0 to the entropy sum (0 log2 0 := 0) and
+  has `probabilities[i] == 0` for that lens.
+
+  CLI options: `--alert-concentration <f>` filters to sources with
+  `concentration > f`; `--alert-uniform <f>` filters to sources
+  with `entropyNormalised > f`. Both are independently
+  composable. Sort keys: `concentration-desc` (default),
+  `concentration-asc`, `entropy-asc`, `entropy-desc`,
+  `effective-lenses-desc`, `effective-lenses-asc`,
+  `dominant-share-desc`, `halfwidth-sum-desc`, `rows`, `source`.
+  Renderer flags: `--show-summary`, `--show-entropy-aggregate`,
+  `--show-concentration-aggregate`, `--show-lens-attribution`,
+  `--show-probabilities`.
+
+  Why an 18th axis: scale, asymmetry, rank, curvature, and
+  monotonicity statistics on the six MIDPOINTS cannot tell you
+  how the PRECISION (i.e. half-width) is allocated across lenses.
+  A source whose midpoints are perfectly concordant across lenses
+  (axes 1-17 all benign) but whose half-widths are 99%
+  concentrated in one lens has wildly uneven precision and is
+  methodologically suspect — that single lens is doing almost all
+  the uncertainty-quantification work. Conversely a source with
+  uniform half-widths across lenses has well-balanced precision
+  allocation regardless of how its midpoints disperse. Half-width
+  Shannon entropy is the only diagnostic in the suite that
+  captures this dimension and is therefore mechanically
+  orthogonal to axes 1-17.
+
+  Test count: 6870 → 6941 (+71 tests, all passing).
+
+  Live-smoke run against `~/.config/pew/queue.jsonl` at
+  2026-04-30T03:00:52Z (one upstream-product source name redacted
+  to `vendor-y` per project policy):
+
+  ```
+  $ pew-insights source-row-token-slope-ci-half-width-entropy \
+      --top 10 --show-entropy-aggregate \
+      --show-concentration-aggregate --show-lens-attribution
+
+  pew-insights source-row-token-slope-ci-half-width-entropy
+  as of: 2026-04-30T03:00:52.199Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-concentration: -    alert-uniform: -    top: -    sort: concentration-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanEntropyNormalised: 0.4372; medianEntropyNormalised: 0.4202; meanEffectiveLenses: 2.2162; meanConcentration: 0.5628; nNearUniform: 0; nNearConcentrated: 0; nDegenerate: 0; globalDominantLens: bca
+
+  source           rows  Hbits     Hnorm     effLens   concen    domLens            domShare  hwSum       flags
+  ---------------  ----  --------  --------  --------  --------  -----------------  --------  ----------  -----
+  claude-code       299    0.9087    0.3515    1.8774    0.6485  bca                  0.6930  149977770.5720  -
+  openclaw          575    0.9419    0.3644    1.9211    0.6356  bca                  0.6712  29923252.3651  -
+  hermes            305    1.0520    0.4070    2.0733    0.5930  bca                  0.5145  5682252.1197  -
+  vendor-y          333    1.1204    0.4334    2.1741    0.5666  bca                  0.5184  86390.1220  -
+  codex              64    1.1772    0.4554    2.2614    0.5446  bootstrap            0.4880  188526161.9980  -
+  opencode          469    1.5800    0.6112    2.9897    0.3888  bca                  0.4532  68608844.0574  -
+  [entropy aggregate] meanHnorm=0.4372 medianHnorm=0.4202 meanEffLenses=2.2162 nNearUniform=0/6 (0.0000) nNearConcentrated=0/6 (0.0000)
+  [concentration aggregate] meanConcentration=0.5628 nDegenerate=0/6 (0.0000)
+  [lens attribution] bootstrap=1/6 (0.1667) jackknife=0/6 (0.0000) bca=5/6 (0.8333) studentizedT=0/6 (0.0000) abc=0/6 (0.0000) profileLikelihood=0/6 (0.0000) globalDominantLens=bca
+  ```
+
+  Headline reads from the live data: all 6 reporting sources
+  cluster in the mid-concentration band (`Hnorm` 0.35-0.61, none
+  near-uniform, none near-concentrated). `bca` is the dominant
+  half-width lens for 5 of 6 sources (`bootstrap` once, on
+  `codex`), giving `globalDominantLens=bca` — i.e. the
+  bias-corrected accelerated bootstrap is consistently producing
+  the widest CIs in this queue, carrying ~50-70% of each source's
+  half-width mass. This is exactly the kind of cross-lens
+  precision-allocation skew that axes 1-17 cannot index by
+  construction.
+
 ## 0.6.244 — 2026-04-30
 
 ### Added
