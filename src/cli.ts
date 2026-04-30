@@ -92,6 +92,7 @@ import {
   renderDailyTokenTheilTIndex,
   renderDailyTokenGe2Index,
   renderDailyTokenPalmaRatio,
+  renderDailyTokenFgtIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -346,6 +347,7 @@ import { buildDailyTokenTheilLIndex } from './dailytokentheillindex.js';
 import { buildDailyTokenTheilTIndex } from './dailytokentheiltindex.js';
 import { buildDailyTokenGe2Index } from './dailytokenge2index.js';
 import { buildDailyTokenPalmaRatio } from './dailytokenpalmaratio.js';
+import { buildDailyTokenFgtIndex } from './dailytokenfgtindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12503,6 +12505,175 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenPalmaRatio(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-fgt-index')
+  .description(
+    "Per-source FOSTER-GREER-THORBECKE FGT(alpha) poverty index of the per-day total_tokens distribution at a configurable curvature alpha and a relative poverty line z = lineFraction * mean (FORTY-FIRST cross-source axis; default alpha=2, lineFraction=0.5). FGT(alpha) = (1/n) * sum_{i: D_i < z} ((z - D_i)/z)^alpha. Range [0, 1]. alpha=0 is the headcount ratio; alpha=1 is the poverty gap ratio; alpha=2 is the severity index (Pigou-Dalton transfer-sensitive among poor days). GENUINELY ORTHOGONAL to every prior daily-token axis: ONE-SIDED (uses information only from days strictly below z; identical Gini/Atkinson/Palma can yield very different FGT), THRESHOLD-ANCHORED (the upper-tail shape is invisible), and AXIOMATICALLY a POVERTY index (Sen 1976 family) rather than an INEQUALITY index. Additively subgroup-decomposable with no residual: FGT = sum_g (n_g/n) * FGT_g for any partition (refinement v0.6.281 surfaces the weekday/weekend split). Per-source columns: povertyLine, fgt, headcount (=FGT(0)), povertyGap (=FGT(1)), severity (=FGT(2)), nPoor, meanShortfallTokens, meanDaily, minDay, maxDay. Use --absolute-line to override the relative line with an absolute token threshold for cross-source comparability.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). FGT degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: fgt (default) | headcount | povertyGap | tokens | days | source | meanDaily. Applied before --top.',
+    'fgt',
+  )
+  .option(
+    '--alpha <a>',
+    'curvature parameter alpha >= 0. 0 = headcount, 1 = poverty gap, 2 = severity (default). Non-integer alphas are valid.',
+    '2',
+  )
+  .option(
+    '--line-fraction <f>',
+    'relative poverty line as a fraction of the per-source mean. Default 0.5 (median-income style). Common pairs: 0.4 (deep poverty), 0.6 (at-risk-of-poverty).',
+    '0.5',
+  )
+  .option(
+    '--absolute-line <z>',
+    'override --line-fraction with an absolute token line z applied uniformly across all sources. Useful for cross-source comparability (default unset).',
+  )
+  .option(
+    '--min-headcount <h>',
+    'display filter: hide sources whose headcount is strictly below this value. h in [0, 1]. Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-subgroup-decomposition',
+    'every row gains a subgroupDecomposition field that splits FGT additively across the weekday/weekend partition with the exact identity FGT = w_wd * FGT_wd + w_we * FGT_we. Surfaces the WHEN-IS-IT-DRY pattern that the headline FGT collapses (refinement v0.6.281).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        alpha: string;
+        lineFraction: string;
+        absoluteLine?: string;
+        minHeadcount: string;
+        json?: boolean;
+        includeSubgroupDecomposition?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha < 0) {
+          throw new Error(
+            `--alpha must be a non-negative finite number (got ${opts.alpha})`,
+          );
+        }
+        const lineFraction = Number.parseFloat(opts.lineFraction);
+        if (!Number.isFinite(lineFraction) || lineFraction <= 0) {
+          throw new Error(
+            `--line-fraction must be a positive finite number (got ${opts.lineFraction})`,
+          );
+        }
+        let absoluteLine: number | null = null;
+        if (opts.absoluteLine !== undefined) {
+          absoluteLine = Number.parseFloat(opts.absoluteLine);
+          if (!Number.isFinite(absoluteLine) || absoluteLine < 0) {
+            throw new Error(
+              `--absolute-line must be a non-negative finite number (got ${opts.absoluteLine})`,
+            );
+          }
+        }
+        const minHeadcount = Number.parseFloat(opts.minHeadcount);
+        if (!Number.isFinite(minHeadcount) || minHeadcount < 0 || minHeadcount > 1) {
+          throw new Error(
+            `--min-headcount must be a number in [0, 1] (got ${opts.minHeadcount})`,
+          );
+        }
+        const validSorts = [
+          'fgt',
+          'headcount',
+          'povertyGap',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenFgtIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          alpha,
+          lineFraction,
+          absoluteLine,
+          minHeadcount,
+          includeSubgroupDecomposition: opts.includeSubgroupDecomposition ?? false,
+          sort: opts.sort as
+            | 'fgt'
+            | 'headcount'
+            | 'povertyGap'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenFgtIndex(report) + '\n');
         }
       } catch (e) {
         die(e);

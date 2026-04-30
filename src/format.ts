@@ -58,6 +58,7 @@ import type { DailyTokenTheilLReport } from './dailytokentheillindex.js';
 import type { DailyTokenTheilTReport } from './dailytokentheiltindex.js';
 import type { DailyTokenGe2Report } from './dailytokenge2index.js';
 import type { DailyTokenPalmaReport } from './dailytokenpalmaratio.js';
+import type { DailyTokenFgtReport } from './dailytokenfgtindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -15270,6 +15271,130 @@ export function renderDailyTokenPalmaRatio(
       ];
     });
     lines.push(renderTableLocal(qHeaders, qRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenFgtIndex(r: DailyTokenFgtReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-fgt-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    alpha: ${r.alpha}    line: ${r.absoluteLine !== null ? `abs ${formatNumber(r.absoluteLine)}` : `${r.lineFraction} * mean`}    min-headcount: ${r.minHeadcount === 0 ? '\u2014' : r.minHeadcount}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinHeadcount)} below min-headcount, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source FGT(alpha=${r.alpha}) at z = ${r.absoluteLine !== null ? `${formatNumber(r.absoluteLine)} tokens (absolute)` : `${r.lineFraction} * meanDaily (relative)`}; one-sided lower-tail poverty index; FGT(0)=headcount, FGT(1)=poverty gap, FGT(2)=severity)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source FGT(alpha=${r.alpha}) of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'line',
+    'fgt',
+    'headcount',
+    'povGap',
+    'severity',
+    'nPoor',
+    'meanShortfall',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(Math.round(s.povertyLine)),
+    s.fgt.toFixed(4),
+    s.headcount.toFixed(4),
+    s.povertyGap.toFixed(4),
+    s.severity.toFixed(4),
+    formatNumber(s.nPoor),
+    formatNumber(Math.round(s.meanShortfallTokens)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.subgroupDecomposition)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `subgroup decomposition (refinement v0.6.281): weekday/weekend split with identity FGT = w_wd*FGT_wd + w_we*FGT_we`,
+      ),
+    );
+    const sHeaders = [
+      'source',
+      'wWd',
+      'wWe',
+      'fgtWd',
+      'fgtWe',
+      'nWd',
+      'nWe',
+      'recombined',
+      'exact',
+    ];
+    const sRows: string[][] = r.sources.map((s) => {
+      const d = s.subgroupDecomposition;
+      if (!d)
+        return [
+          s.source,
+          '\u2014',
+          '\u2014',
+          '\u2014',
+          '\u2014',
+          '\u2014',
+          '\u2014',
+          '\u2014',
+          '\u2014',
+        ];
+      return [
+        s.source,
+        d.weekdayShare.toFixed(4),
+        d.weekendShare.toFixed(4),
+        d.fgtWeekday.toFixed(4),
+        d.fgtWeekend.toFixed(4),
+        formatNumber(d.nWeekday),
+        formatNumber(d.nWeekend),
+        d.recombinedFgt.toFixed(6),
+        d.decompositionExact ? 'yes' : 'no',
+      ];
+    });
+    lines.push(renderTableLocal(sHeaders, sRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');
