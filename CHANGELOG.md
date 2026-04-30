@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.284 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-THIRD):
+  `pew-insights daily-token-bonferroni-index`.
+
+  Per-source BONFERRONI INDEX (Bonferroni 1930) of the per-day
+  total_tokens distribution:
+
+      B = 1 - (1 / ((n - 1) * mu)) * sum_{k=1..n-1} (S_k / k)
+
+  where the values are sorted ascending x_(1) <= ... <= x_(n),
+  S_k = sum_{j=1..k} x_(j) is the cumulative sum of sorted values
+  through rank k, and mu = mean(D). Range `[0, 1)`. B = 0 iff every
+  day carries equal mass; B -> 1 as mass concentrates on a vanishing
+  fraction of days.
+
+  The classical reading is BOTTOM-RANK-WEIGHTED Lorenz-area
+  inequality. Where Gini weights every Lorenz-curve gap UNIFORMLY,
+  Bonferroni weights gaps in the BOTTOM ranks much more heavily than
+  gaps near the top. Specifically, the rank weight on the k-th
+  sorted observation (1-indexed, ascending) is proportional to
+  sum_{j=k..n-1} (1/j) -- the harmonic-tail weighting that
+  characterises Bonferroni and gives it its bottom-sensitive
+  personality.
+
+  Textbook identity: `B >= G` for any non-negative vector
+  (Bonferroni 1930; Tarsitano 1990) -- Bonferroni is ALWAYS at
+  least as large as Gini on the same data, with equality only at
+  two-point or degenerate. The empirical gap `B - G >= 0` is the
+  BOTTOM-RANK-EXCESS diagnostic exposed by this axis.
+
+  GENUINELY ORTHOGONAL to every prior daily-token axis -- the
+  central design point of axis-43:
+
+  - axis-32 GINI: uniform-rank-weighted Lorenz-area reading.
+    Bonferroni is the harmonic-tail-weighted Lorenz-area reading
+    on the SAME curve. Two distributions with identical Gini can
+    have very different Bonferroni when bulk-mass migration moves
+    between bottom and middle ranks vs middle and top ranks.
+  - axis-35 PIETRA / axis-42 HOOVER: both are L_infinity Lorenz
+    gaps at a SINGLE rank cut (equal-mass cut for Pietra; equal-
+    weights cut for Hoover). Bonferroni integrates over ALL n-1
+    rank cuts with harmonic weighting -- a strictly different
+    functional with no point-reading reduction.
+  - axis-36 ATKINSON: CRRA welfare loss with smooth power-mean
+    penalty parameterised by aversion epsilon. Bonferroni is
+    parameter-free and rank-based; no power-mean form.
+  - axes 37/38/39 GE-FAMILY (Theil-L / Theil-T / GE(2)): all are
+    moment-based smooth indices on share ratios. Bonferroni is
+    rank-based on cumulative partial means. No monotone bijection
+    between the two families on non-binary distributions.
+  - axis-40 PALMA: reads only TWO points on the Lorenz curve.
+    Bonferroni reads ALL n-1 partial means. Palma is unbounded;
+    Bonferroni is in [0, 1).
+  - axis-41 FGT: one-sided lower-tail poverty index threshold-
+    anchored at z = lineFraction * mean. Bonferroni is two-sided,
+    threshold-FREE, and rank-weighted across the full distribution.
+  - All time-ordered axes (autocorrelation, monotone-run-length,
+    second-difference-sign-runs, z-score-extremes): Bonferroni is
+    permutation-invariant, so orthogonal by construction.
+
+  Cross-anchor / orthogonality witness: the BOTTOM-RANK-EXCESS gap
+  `bottomRankExcess = bonferroni - gini >= 0`. The empirical gap is
+  surfaced via `--include-bottom-rank-excess` and is the rank-weight
+  shape diagnostic that no single Lorenz reading can produce on its
+  own. The ratio `bonferroniOverGini >= 1` is exactly 1 only for
+  two-point binary distributions or under degenerate concentration.
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2), `--top` (default 0 = no cap), `--sort` (default
+  `bonferroni`; also `tokens` | `days` | `source` | `meanDaily` |
+  `bottomQuintilePartialMean` | `bonferroniOverGini`), `--min-bonferroni`
+  (display filter; in `[0, 1)`), `--include-bottom-rank-excess`,
+  `--json`.
+
+  The bottom-quintile partial mean (mean of the bottom 20% of days
+  with at least one day) is surfaced as a row column because it is
+  the most diagnostically interpretable scalar of the underlying
+  partial-mean profile that drives Bonferroni's bottom-rank pull.
+
+  Live smoke-test against the local `~/.config/pew/queue.jsonl`
+  (6 sources, 11.78B tokens; one source name normalised to
+  `vscode-other` per house style):
+
+  ```
+  per-source Bonferroni index of per-day total_tokens (sorted by bonferroni; ties: source asc)
+  source        firstDay    lastDay     days  bonferroni  gini    b/g     bqDays  bqMean       meanDaily    minDay      maxDay      tokens
+  ------------  ----------  ----------  ----  ----------  ------  ------  ------  -----------  -----------  ----------  ----------  -------------
+  claude-code   2026-02-11  2026-04-23  35    0.8594      0.7590  1.1322  7       1,917,460    98,353,880   2026-03-06  2026-04-20  3,442,385,788
+  vscode-other  2025-07-30  2026-04-20  73    0.8040      0.7000  1.1485  14      1,396        25,832       2025-08-22  2026-04-17  1,885,727
+  codex         2026-04-13  2026-04-20  8     0.7573      0.5892  1.2853  1       5,783,271    101,203,083  2026-04-16  2026-04-20  809,624,660
+  hermes        2026-04-17  2026-04-30  14    0.4755      0.3237  1.4688  2       3,626,609    17,389,984   2026-04-26  2026-04-19  243,459,769
+  openclaw      2026-04-17  2026-04-30  14    0.4561      0.3434  1.3281  2       56,267,128   149,539,105  2026-04-30  2026-04-19  2,093,547,474
+  opencode      2026-04-20  2026-04-30  11    0.3441      0.1986  1.7327  2       190,176,321  471,825,597  2026-04-20  2026-04-21  5,190,081,564
+
+  bottom-rank excess: bonferroni - gini >= 0 (textbook identity Bonferroni 1930)
+  source        bonferroni  gini    b-g
+  ------------  ----------  ------  -------
+  claude-code   0.8594      0.7590  +0.1004
+  vscode-other  0.8040      0.7000  +0.1040
+  codex         0.7573      0.5892  +0.1681
+  hermes        0.4755      0.3237  +0.1518
+  openclaw      0.4561      0.3434  +0.1127
+  opencode      0.3441      0.1986  +0.1455
+  ```
+
+  All six sources sit on the textbook side of the identity
+  `B - G > 0`. The deepest bottom-rank excess belongs to `codex`
+  (+0.1681): with only 8 active days and a bottom day at ~5.78M
+  tokens vs a mean of ~101M, Bonferroni's harmonic bottom-tail
+  weight pulls the index well above what Gini reports. The smallest
+  excess belongs to `claude-code` (+0.1004): with 35 days and a
+  bottom-7-day partial mean of ~1.92M, the bottom tail is
+  comparatively thin and Bonferroni and Gini agree more closely.
+  Test suite: 7875 -> 7918 (+43 cases including the textbook
+  `B >= G` identity assertion across seven shapes).
+
 ## 0.6.282 — 2026-05-01
 
 ### Added
