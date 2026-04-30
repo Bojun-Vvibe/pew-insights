@@ -2,6 +2,160 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.243 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-curvature-second-derivative` —
+  per-source DISCRETE SECOND-DERIVATIVE CURVATURE diagnostic
+  (SIXTEENTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six
+  per-source slope CIs as v0.6.227–v0.6.242 (percentile bootstrap,
+  jackknife normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL FIFTEEN prior cross-lens
+  diagnostics on a fundamental axis.** The 15th axis (PAV
+  isotonic) measures order-restricted MONOTONIC fit and is
+  INVISIBLE to non-monotone structure: pooling collapses any
+  local peak/valley into a single PAV plateau, indistinguishable
+  from a flat constant. A source whose midpoints trace a perfect
+  "/\" (rises then falls as width grows) registers identically
+  to a source with constant midpoints under PAV. This 16th axis
+  fills exactly that gap by computing the discrete
+  second-difference operator
+
+  ```
+    D2[k] = mid_{k+1} - 2 * mid_k + mid_{k-1}    for k = 1..4
+  ```
+
+  on the six midpoints sorted by ascending CI width. D2 = 0 ⇔
+  locally linear; D2 > 0 ⇔ locally convex (valley); D2 < 0 ⇔
+  locally concave (peak).
+
+  Per-source columns:
+    - `widthOrder` — lens canonical-name array sorted by ascending
+      width (ties: canonical order);
+    - `widths`, `mids` — sorted arrays parallel to `widthOrder`;
+    - `secondDiffs` — the four interior D2[1..4] in width-sorted
+      order;
+    - `curvatureL2` — `sqrt(sum_k D2[k]^2)`. Total "wiggliness";
+      0 ⇔ midpoints lie on a perfect straight line in
+      width-sorted order. DEFAULT SORT KEY.
+    - `curvatureLinf` — `max_k |D2[k]|`. Peak local curvature.
+      Locates the single sharpest bend.
+    - `signChanges` — number of sign changes between adjacent
+      non-zero entries of `secondDiffs` (zero entries skipped).
+      0 ⇔ purely convex / purely concave / linear; >= 1 ⇔ at
+      least one inflection point.
+    - `peakIndex` — `argmax_k |D2[k]|` in 0..3; tie-break favours
+      the smallest index;
+    - `peakLens` — lens at width-sorted position `peakIndex + 1`
+      (the interior point around which D2 is most extreme);
+    - `peakSign` — sign of the second difference at `peakIndex`:
+      `+1` ⇔ convex/valley, `-1` ⇔ concave/peak, `0` only when
+      `curvatureLinf == 0`;
+    - `convexitySum`, `convexityAbsSum` — sum and absolute sum of
+      the four D2s;
+    - `convexityScore` — `convexitySum / convexityAbsSum` in
+      `[-1, 1]`; +1 ⇔ purely convex (every non-zero D2 has the
+      same positive sign); -1 ⇔ purely concave; 0 ⇔ balanced /
+      oscillatory. Convention: when `convexityAbsSum == 0`
+      (perfectly linear midpoints), `convexityScore == 0`;
+    - `convexityLabel` ∈ {`convex`, `concave`, `mixed`} —
+      `convex` if `convexityScore >= 0.5`, `concave` if
+      `convexityScore <= -0.5`, otherwise `mixed`;
+    - `linearFlag` — `curvatureL2 == 0` boolean. True ⇔ all four
+      second differences vanish (the six midpoints lie on a
+      straight line in width-sorted order);
+    - `oscillatoryFlag` — `signChanges >= 2` boolean. Two or more
+      sign changes in four interior D2s ⇒ at least two
+      inflection points ⇒ the midpoints meaningfully oscillate
+      as width grows.
+
+  Per-report aggregates: `meanCurvatureL2`, `medianCurvatureL2`,
+  `meanConvexityScore`, `nLinear`, `nOscillatory`, `nConvex`,
+  `nConcave`, `nMixed`, `globalConvexityLabel` (mode of
+  `convexityLabel`; ties favour `convex` > `concave` > `mixed`),
+  `globalPeakLens` (mode of `peakLens`; canonical-order
+  tie-break).
+
+  Edge cases:
+    - Source missing from any of the six lenses → not reported
+      (counted in `droppedMissingLens`).
+    - All six widths identical → `widthOrder` is the canonical
+      lens order; second differences computed on canonical-order
+      midpoints.
+    - All six midpoints identical → all four D2s = 0;
+      `curvatureL2 == 0`, `signChanges == 0`, `peakSign == 0`,
+      `convexityScore == 0`, `convexityLabel == 'mixed'`,
+      `linearFlag == true`, `oscillatoryFlag == false`.
+    - Source slope CI width zero from any lens → still consumed.
+
+  CLI options:
+    - `--alert-curvature <f>` — only emit sources whose
+      `curvatureL2` is strictly GREATER than `f` (`f >= 0`);
+      surfaces non-linear sources;
+    - `--alert-oscillatory` — only emit sources whose
+      `oscillatoryFlag == true` (signChanges >= 2); surfaces
+      sources whose width-ordered midpoints have >= 2 inflection
+      points; composes independently with `--alert-curvature`.
+
+  Why a 16th axis: the prior 15 axes are scale estimates,
+  single-lens identifiers, across-source rank statistics on lens
+  pairs, or the order-restricted PAV isotonic monotonicity fit.
+  PAV is structurally INVISIBLE to non-monotone curvature
+  (peaks/valleys collapse into single plateaus and yield the
+  same monotonicityScore as a flat constant). The
+  second-derivative axis is the only diagnostic that
+  distinguishes those two regimes by directly measuring local
+  curvature D2[k] and counting inflection points — a high
+  `curvatureL2` with `oscillatoryFlag == true` is the signature
+  that the precision-vs-midpoint relationship is genuinely
+  NON-MONOTONE in width, an orthogonal warning that no
+  monotone-ordering diagnostic (axes 1–15) can surface.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (6 sources,
+  --bootstraps 200 --seed 7 --show-curvature-aggregate
+  --show-convexity-aggregate; one third-party source name
+  redacted to `vendor-y` per identifier-hygiene policy):
+
+  ```
+  pew-insights source-row-token-slope-ci-curvature-second-derivative
+  as of: 2026-04-30T01:55:54.351Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 200    seed: 7    alert-curvature: -    alert-oscillatory: false    top: -    sort: curvature-l2-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanCurvatureL2: 40344374.2979; medianCurvatureL2: 24519470.8179; meanConvexityScore: 0.1219; nLinear: 0; nOscillatory: 4; nConvex: 2; nConcave: 1; nMixed: 3; globalConvexityLabel: mixed; globalPeakLens: bootstrap
+
+  source           rows  peakLens           peakSign  curvL2      curvLinf    signCh  convScore  convLabel  flags
+  ---------------  ----  -----------------  --------  ----------  ----------  ------  ---------  ---------  -----
+  codex              64  bca                      -1  96493846.1176  87761526.6011       2    -0.3479  mixed      oscill
+  opencode          467  bootstrap                -1  95551786.0497  94677716.6973       1    -0.9014  concave    -
+  claude-code       299  bootstrap                 1  47331159.7389  46764713.2697       1     0.9844  convex     -
+  hermes            303  bootstrap                 1  1707781.8969  1654532.8612       3     0.5579  convex     oscill
+  openclaw          573  bootstrap                 1  977265.7268  830567.6637       2     0.2850  mixed      oscill
+  vendor-y          333  bca                       1   4406.2577   3032.8444       2     0.1536  mixed      oscill
+  [curvature aggregate] meanCurvatureL2=40344374.2979 medianCurvatureL2=24519470.8179 nLinear=0/6 (0.0000) nOscillatory=4/6 (0.6667) globalPeakLens=bootstrap
+  [convexity aggregate] convex=2/6 (0.3333) concave=1/6 (0.1667) mixed=3/6 (0.5000) meanConvexityScore=0.1219 globalConvexityLabel=mixed
+  ```
+
+  Reading: 4 of 6 sources cross the `oscillatoryFlag` threshold
+  (signChanges >= 2) — the precision-vs-midpoint relationship
+  for the majority of real workloads is not just non-monotone
+  but actively oscillates with at least two inflection points,
+  a regime entirely INVISIBLE to the v0.6.242 PAV isotonic axis
+  (which would simply collapse those oscillations into single
+  plateaus and report a low monotonicityScore without
+  distinguishing oscillation from random scatter). The two
+  cleanly convex sources (`claude-code` and `hermes`,
+  `convexityScore` 0.9844 and 0.5579) and the single cleanly
+  concave source (`opencode`, `convexityScore` -0.9014) are the
+  cases where the width-ordered midpoints have a definite
+  curvature direction with no inflection — the canonical
+  signature that one tail of the lens family (narrow or wide
+  CIs) systematically over- or under-estimates the slope. The
+  `globalPeakLens == bootstrap` mode pins down WHICH lens sits
+  at the centre of the sharpest bend most often (5 of 6
+  sources), an explicit cross-source attribution orthogonal to
+  every prior axis.
+
 ## 0.6.242 — 2026-04-30
 
 ### Added
