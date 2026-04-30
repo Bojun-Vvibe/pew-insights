@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.264 — 2026-04-30
+
+### Added
+
+- New cross-lens axis (THIRTY-FIRST):
+  `pew-insights source-row-token-slope-ci-lens-width-sgini` --
+  per-lens **Donaldson-Weymark S-Gini** coefficient `G(nu)` of the
+  six bootstrap/jackknife/BCa/studentized-t/ABC/profile-likelihood
+  Deming-slope CI half-widths, evaluated at the FIXED operating
+  point `nu = 3`.
+
+  ```
+  G(nu) = nu * (nu - 1) * integral_0^1 (1 - p)^(nu - 2)
+          * (p - L(p)) dp
+  ```
+
+  The kernel `w_3(p) = 6*(1 - p)` is six times larger at `p = 0`
+  than the classical Gini's uniform kernel, so a single
+  poorly-precise low-rank source contributes 6x more weight than
+  it does under axis-21 Gini. S-Gini at `nu = 3` is therefore a
+  **bottom-tail-sensitivity DIAL** distinct from the prior axes.
+
+  At `nu = 3` the Lorenz-gap-integral form is numerically
+  IDENTICAL to the Mehran (axis-30) functional. To preserve
+  orthogonality against axis-30 the new axis ALSO emits the
+  **local elasticity** `(d ln G / d ln nu)` at `nu = 3` by central
+  finite difference with `h = 0.25`, which axis-30 cannot produce
+  on its own. Two distributions with the same Mehran value can
+  have different elasticities.
+
+  CLI surface mirrors axis-30: `--alert-sgini`, `--sort`
+  (`sgini-desc` default), `--json`, `--show-summary`,
+  `--show-concentration-aggregate`, `--show-lens-attribution`,
+  `--show-elasticity`, `--show-per-source-widths`.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 6 shared sources)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-sgini \
+      --bootstraps 500 --seed 42
+
+  meanG=0.847779  medianG=0.870163  maxG=0.949857
+  minG=0.736506   rangeG=0.213351
+  nExtreme=6      nNearUniform=0   nDegen=0
+  mostExtreme=abc (G=0.949857)
+  mostUniform=bca (G=0.736506)
+
+  per-lens (sort=sgini-desc):
+    abc                G(3)=0.949857  elasticity=0.193152
+    profileLikelihood  G(3)=0.888941  elasticity=0.383882
+    jackknife          G(3)=0.873352  elasticity=0.412936
+    studentizedT       G(3)=0.866974  elasticity=0.437605
+    bootstrap          G(3)=0.771043  elasticity=0.524091
+    bca                G(3)=0.736506  elasticity=0.599371
+  ```
+
+  All six lenses fall in the `extreme` concentration bin
+  (G(3) >= 0.6). The elasticity ordering is INVERSE to the G(3)
+  ordering: the lens with the highest G(3) (abc, 0.949857) has the
+  LOWEST elasticity (0.193), meaning its inequality verdict is
+  least sensitive to the rank-aversion knob; the lens with the
+  lowest G(3) (bca, 0.736506) has the HIGHEST elasticity (0.599),
+  i.e. its verdict moves most as nu shifts away from 3. This
+  bottom-vs-elasticity divergence IS the orthogonal information
+  axis-30 Mehran cannot surface.
+
 ## 0.6.263 — 2026-04-30
 
 ### Changed
