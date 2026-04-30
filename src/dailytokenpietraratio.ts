@@ -78,6 +78,7 @@
  *     codebase.
  */
 import type { QueueLine } from './types.js';
+import { giniOfVector } from './dailytokenginicoefficient.js';
 
 export type DailyTokenPietraSort = 'pietra' | 'tokens' | 'days' | 'source';
 
@@ -94,6 +95,15 @@ export interface DailyTokenPietraOptions {
    * value. 0 = no filter; in [0, 1].
    */
   minPietra?: number;
+  /**
+   * Refinement (v0.6.272): when true, every emitted row gains a
+   * `gini` value, a `pietraToGiniRatio` (P / G in [0, 1] with the
+   * inequality P <= G enforced by construction), and a verbal
+   * `concentrationStyle` classifier in
+   * { 'point-anchored', 'mixed', 'curve-spread', 'degenerate' }.
+   * Default false. Pure compute; no extra I/O.
+   */
+  showGiniComparison?: boolean;
   generatedAt?: string;
 }
 
@@ -139,6 +149,32 @@ export interface DailyTokenPietraSourceRow {
    * tail" multiplier that drives the Pietra gap.
    */
   aboveMeanLift: number;
+  /**
+   * Refinement (v0.6.272): Gini coefficient of the same day vector,
+   * present iff `showGiniComparison` is set. Always >= pietra.
+   */
+  gini?: number;
+  /**
+   * Refinement (v0.6.272): P / G ratio. Range [0, 1] with 1 iff
+   * the distribution is two-valued (P = G). High ratio (-> 1)
+   * means inequality is concentrated near a single Lorenz argmax;
+   * low ratio (-> 0) means inequality is spread across the curve
+   * (many cutpoints contribute). Present iff `showGiniComparison`.
+   */
+  pietraToGiniRatio?: number;
+  /**
+   * Refinement (v0.6.272): verbal classifier. Present iff
+   * `showGiniComparison`.
+   *   - 'degenerate' if pietra = 0 (uniform).
+   *   - 'point-anchored' if P / G > 0.7.
+   *   - 'curve-spread'   if P / G < 0.55.
+   *   - 'mixed' otherwise.
+   */
+  concentrationStyle?:
+    | 'degenerate'
+    | 'point-anchored'
+    | 'mixed'
+    | 'curve-spread';
 }
 
 export interface DailyTokenPietraReport {
@@ -160,7 +196,38 @@ export interface DailyTokenPietraReport {
   droppedBelowMinDays: number;
   droppedBelowMinPietra: number;
   droppedTopSources: number;
+  /** Echo of the showGiniComparison knob. */
+  showGiniComparison: boolean;
   sources: DailyTokenPietraSourceRow[];
+}
+
+/**
+ * Classify the concentration style of a (P, G) pair. Pure helper
+ * for the v0.6.272 refinement; reused by the renderer.
+ *
+ * Returns 'degenerate' for the all-equal vector, otherwise compares
+ * the Pietra-to-Gini ratio against fixed thresholds (0.55, 0.7).
+ * Both thresholds are exposed to tests.
+ */
+export const PIETRA_GINI_RATIO_THRESHOLDS = {
+  curveSpreadUpper: 0.55,
+  pointAnchoredLower: 0.7,
+} as const;
+
+export function classifyPietraGiniStyle(
+  pietra: number,
+  gini: number,
+): 'degenerate' | 'point-anchored' | 'mixed' | 'curve-spread' {
+  if (!(pietra > 0)) return 'degenerate';
+  if (!(gini > 0)) return 'degenerate';
+  const ratio = pietra / gini;
+  if (ratio > PIETRA_GINI_RATIO_THRESHOLDS.pointAnchoredLower) {
+    return 'point-anchored';
+  }
+  if (ratio < PIETRA_GINI_RATIO_THRESHOLDS.curveSpreadUpper) {
+    return 'curve-spread';
+  }
+  return 'mixed';
 }
 
 /**
@@ -367,7 +434,7 @@ export function buildDailyTokenPietraRatio(
       }
     }
     const p = pietraOfVector(values);
-    rows.push({
+    const row: DailyTokenPietraSourceRow = {
       source: src,
       totalTokens: acc.totalTokens,
       nDays,
@@ -381,7 +448,18 @@ export function buildDailyTokenPietraRatio(
       nBelowMean: p.nBelowMean,
       lorenzAtBelowMean: p.lorenzAtBelowMean,
       aboveMeanLift: p.aboveMeanLift,
-    });
+    };
+    if (opts.showGiniComparison) {
+      const gini = giniOfVector(values);
+      // Enforce the Pietra <= Gini inequality numerically (always
+      // true mathematically; floating-point can put them within
+      // ~1e-15 of each other).
+      const safeGini = gini < p.pietra ? p.pietra : gini;
+      row.gini = safeGini;
+      row.pietraToGiniRatio = safeGini > 0 ? p.pietra / safeGini : 0;
+      row.concentrationStyle = classifyPietraGiniStyle(p.pietra, safeGini);
+    }
+    rows.push(row);
     totalTokensSum += acc.totalTokens;
   }
 
@@ -443,6 +521,7 @@ export function buildDailyTokenPietraRatio(
     droppedBelowMinDays,
     droppedBelowMinPietra,
     droppedTopSources,
+    showGiniComparison: opts.showGiniComparison ?? false,
     sources: kept,
   };
 }

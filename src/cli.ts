@@ -11674,6 +11674,10 @@ program
     '0',
   )
   .option('--json', 'emit JSON instead of a pretty report')
+  .option(
+    '--show-gini-comparison',
+    'compute the Gini coefficient of the same per-day vector and append gini, P/G ratio, and concentration-style classifier (point-anchored if P/G > 0.7, curve-spread if P/G < 0.55, mixed otherwise) per row. Pure compute; the Pietra <= Gini inequality is enforced. Refinement (v0.6.272).',
+  )
   .action(
     async (
       opts: {
@@ -11686,6 +11690,7 @@ program
         sort: string;
         minPietra: string;
         json?: boolean;
+        showGiniComparison?: boolean;
       },
       cmd,
     ) => {
@@ -11732,6 +11737,7 @@ program
           top,
           minPietra,
           sort: opts.sort as 'pietra' | 'tokens' | 'days' | 'source',
+          showGiniComparison: opts.showGiniComparison ?? false,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');

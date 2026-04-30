@@ -415,3 +415,123 @@ test('buildDailyTokenPietraRatio: orthogonality vs Gini -- same Pietra, differen
   assert.ok(Math.abs(rA.sources[0]!.pietra - rB.sources[0]!.pietra) < 1e-12);
   assert.ok(Math.abs(rA.sources[0]!.pietra - 0.4) < 1e-12);
 });
+
+// ---- refinement (v0.6.272): Gini comparison -----------------------------
+
+import { classifyPietraGiniStyle, PIETRA_GINI_RATIO_THRESHOLDS } from '../src/dailytokenpietraratio.js';
+
+test('classifyPietraGiniStyle: degenerate paths', () => {
+  assert.equal(classifyPietraGiniStyle(0, 0), 'degenerate');
+  assert.equal(classifyPietraGiniStyle(0, 0.5), 'degenerate');
+  assert.equal(classifyPietraGiniStyle(0.5, 0), 'degenerate');
+});
+
+test('classifyPietraGiniStyle: ratio thresholds', () => {
+  assert.equal(classifyPietraGiniStyle(0.9, 1.0), 'point-anchored');
+  assert.equal(classifyPietraGiniStyle(0.4, 1.0), 'curve-spread');
+  assert.equal(classifyPietraGiniStyle(0.6, 1.0), 'mixed');
+  // Boundaries: just above 0.7 -> point-anchored, just below -> mixed
+  assert.equal(
+    classifyPietraGiniStyle(PIETRA_GINI_RATIO_THRESHOLDS.pointAnchoredLower + 0.001, 1),
+    'point-anchored',
+  );
+  assert.equal(
+    classifyPietraGiniStyle(PIETRA_GINI_RATIO_THRESHOLDS.pointAnchoredLower - 0.001, 1),
+    'mixed',
+  );
+  // Below 0.55 -> curve-spread
+  assert.equal(
+    classifyPietraGiniStyle(PIETRA_GINI_RATIO_THRESHOLDS.curveSpreadUpper - 0.001, 1),
+    'curve-spread',
+  );
+});
+
+test('buildDailyTokenPietraRatio: showGiniComparison off by default omits gini fields', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-21T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-22T05:00:00.000Z', 'src-a', 1_000_000),
+  ];
+  const r = buildDailyTokenPietraRatio(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+  });
+  const row = r.sources[0]!;
+  assert.equal(r.showGiniComparison, false);
+  assert.equal(row.gini, undefined);
+  assert.equal(row.pietraToGiniRatio, undefined);
+  assert.equal(row.concentrationStyle, undefined);
+});
+
+test('buildDailyTokenPietraRatio: showGiniComparison enforces P <= G', () => {
+  // Exercise a wide variety of shapes.
+  const cases: Array<[string, number[]]> = [
+    ['uniform', [10, 10, 10, 10]],
+    ['ramp', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+    ['two-point', [1, 1, 1, 1, 100]],
+    ['three-cluster', [1, 1, 1, 50, 50, 1000]],
+    ['bimodal', [1, 1, 1, 1, 100, 100, 100, 100]],
+  ];
+  for (const [label, vec] of cases) {
+    const queue: QueueLine[] = vec.map((v, i) => {
+      const day = String(20 + i).padStart(2, '0');
+      return ql(`2026-04-${day}T05:00:00.000Z`, 'src-x', v);
+    });
+    const r = buildDailyTokenPietraRatio(queue, {
+      generatedAt: GEN,
+      minTokens: 0,
+      showGiniComparison: true,
+    });
+    const row = r.sources[0]!;
+    assert.ok(row.gini !== undefined, `${label}: gini undefined`);
+    assert.ok(
+      row.pietra <= row.gini! + 1e-12,
+      `${label}: P (${row.pietra}) > G (${row.gini})`,
+    );
+    assert.ok(
+      row.pietraToGiniRatio! >= 0 && row.pietraToGiniRatio! <= 1 + 1e-12,
+      `${label}: P/G out of range: ${row.pietraToGiniRatio}`,
+    );
+    assert.ok(
+      ['degenerate', 'point-anchored', 'mixed', 'curve-spread'].includes(
+        row.concentrationStyle!,
+      ),
+    );
+  }
+});
+
+test('buildDailyTokenPietraRatio: two-point distribution -> P = G', () => {
+  // Theorem: for a two-valued vector, Pietra equals Gini exactly.
+  const queue: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-21T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-22T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-23T05:00:00.000Z', 'src-a', 1),
+    ql('2026-04-24T05:00:00.000Z', 'src-a', 1_000_000),
+  ];
+  const r = buildDailyTokenPietraRatio(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    showGiniComparison: true,
+  });
+  const row = r.sources[0]!;
+  // Both should be very close to 4/5 = 0.8.
+  assert.ok(Math.abs(row.pietra - row.gini!) < 1e-3);
+  assert.equal(row.concentrationStyle, 'point-anchored');
+});
+
+test('buildDailyTokenPietraRatio: uniform -> degenerate style', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-20T05:00:00.000Z', 'src-a', 100),
+    ql('2026-04-21T05:00:00.000Z', 'src-a', 100),
+    ql('2026-04-22T05:00:00.000Z', 'src-a', 100),
+    ql('2026-04-23T05:00:00.000Z', 'src-a', 100),
+  ];
+  const r = buildDailyTokenPietraRatio(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    showGiniComparison: true,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.concentrationStyle, 'degenerate');
+});

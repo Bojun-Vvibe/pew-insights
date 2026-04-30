@@ -14683,20 +14683,33 @@ export function renderDailyTokenPietraRatio(
     'maxDayTokens',
     'tokens',
   ];
-  const rows: string[][] = r.sources.map((s) => [
-    s.source,
-    s.firstDay,
-    s.lastDay,
-    formatNumber(s.nDays),
-    s.pietra.toFixed(4),
-    s.belowMeanShare.toFixed(4),
-    formatNumber(s.nBelowMean),
-    s.aboveMeanLift.toFixed(4),
-    formatNumber(Math.round(s.meanDailyTokens)),
-    s.maxDay,
-    formatNumber(s.maxDailyTokens),
-    formatNumber(s.totalTokens),
-  ]);
+  if (r.showGiniComparison) {
+    headers.push('gini', 'P/G', 'style');
+  }
+  const rows: string[][] = r.sources.map((s) => {
+    const row = [
+      s.source,
+      s.firstDay,
+      s.lastDay,
+      formatNumber(s.nDays),
+      s.pietra.toFixed(4),
+      s.belowMeanShare.toFixed(4),
+      formatNumber(s.nBelowMean),
+      s.aboveMeanLift.toFixed(4),
+      formatNumber(Math.round(s.meanDailyTokens)),
+      s.maxDay,
+      formatNumber(s.maxDailyTokens),
+      formatNumber(s.totalTokens),
+    ];
+    if (r.showGiniComparison) {
+      row.push(
+        (s.gini ?? 0).toFixed(4),
+        (s.pietraToGiniRatio ?? 0).toFixed(4),
+        s.concentrationStyle ?? '\u2014',
+      );
+    }
+    return row;
+  });
   lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');

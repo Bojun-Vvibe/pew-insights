@@ -2,6 +2,72 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.272 — 2026-05-01
+
+### Changed
+
+- `pew-insights daily-token-pietra-ratio` refinement: added a
+  paired-axis comparison surface on top of the v0.6.271 axis-35
+  scalar. No behaviour change to the headline `pietra` value.
+
+  New `--show-gini-comparison` flag computes the Gini coefficient
+  of the same per-day vector, the `P / G` ratio, and a verbal
+  `concentrationStyle` classifier in
+  `{ degenerate, point-anchored, mixed, curve-spread }`. The
+  Pietra <= Gini inequality is enforced numerically (always true
+  mathematically; this guards against floating-point inversions).
+
+  Thresholds (exposed as `PIETRA_GINI_RATIO_THRESHOLDS` for tests
+  and downstream consumers):
+
+  ```
+  P / G > 0.70  -> 'point-anchored'  (inequality concentrated at one Lorenz argmax)
+  P / G < 0.55  -> 'curve-spread'    (inequality spread across the curve)
+  otherwise     -> 'mixed'
+  P = 0         -> 'degenerate'      (uniform distribution)
+  ```
+
+  Also added a unit test that pins the theorem `P = G` for
+  two-valued vectors (e.g. `[1, 1, 1, 1, 1_000_000]`), confirming
+  the floor on the ratio is a structural property of the vector
+  and not a numeric coincidence.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights daily-token-pietra-ratio --show-gini-comparison
+
+  source          days  pietra  gini    P/G     style
+  claude-code     35    0.6137  0.7590  0.8086  point-anchored
+  vscode-copilot  73    0.5495  0.7000  0.7850  point-anchored
+  codex           8     0.4716  0.5892  0.8003  point-anchored
+  openclaw        14    0.2817  0.3569  0.7894  point-anchored
+  hermes          14    0.2525  0.3187  0.7924  point-anchored
+  opencode        11    0.1512  0.2163  0.6993  mixed
+  ```
+
+  Real-data finding the refinement makes directly readable.
+  **Five of six sources are `point-anchored` (P / G > 0.7), and
+  `opencode` is the lone `mixed` outlier (P / G = 0.6993).**
+
+  Mechanically: a P / G ratio of ~0.79 means that ~79% of the
+  Lorenz-curve "inequality area" Gini integrates is concentrated
+  at the single mean cutpoint. For `claude-code` -> `hermes` the
+  inequality is essentially "one tall day plus a long flat tail"
+  (or its mirror) -- a single Lorenz argmax dominates. For
+  `opencode` (P / G = 0.70) the inequality is spread across more
+  cutpoints; the Pietra max captures less of the total Gini area
+  because the days above and below the mean both span a wider
+  range.
+
+  This is precisely the orthogonality the v0.6.271 axis was
+  introduced to provide -- here as a single derived diagnostic
+  rather than a verbal argument. The Pietra and Gini rankings
+  agree (DESC by both), but the P / G column shows that the two
+  axes encode meaningfully different shape information for at
+  least one source on real data, not just on synthetic test
+  vectors.
+
 ## 0.6.271 — 2026-05-01
 
 ### Added
