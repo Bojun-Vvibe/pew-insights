@@ -478,3 +478,68 @@ test('buildDailyTokenGe2Index: rejects bad option values', () => {
     /sort/,
   );
 });
+
+// ---- includeWeekCollapse refinement (wired through builder) -----------
+
+test('buildDailyTokenGe2Index: includeWeekCollapse=false -> no weekCollapse field', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 100),
+    ql('2026-04-02T00:00:00Z', 'a', 200),
+  ];
+  const r = buildDailyTokenGe2Index(queue, {
+    minTokens: 0,
+    minDays: 2,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources[0]!.weekCollapse, undefined);
+});
+
+test('buildDailyTokenGe2Index: includeWeekCollapse=true emits weekCollapse with consistent ratio', () => {
+  // Two weeks with identical totals (700 each); within-week variance is high.
+  const queue: QueueLine[] = [
+    ql('2026-04-13T00:00:00Z', 'a', 600),
+    ql('2026-04-14T00:00:00Z', 'a', 100),
+    ql('2026-04-15T00:00:00Z', 'a', 0 + 1), // tiny so it survives the >0 filter
+    ql('2026-04-20T00:00:00Z', 'a', 100),
+    ql('2026-04-21T00:00:00Z', 'a', 100),
+    ql('2026-04-22T00:00:00Z', 'a', 500),
+  ];
+  const r = buildDailyTokenGe2Index(queue, {
+    minTokens: 0,
+    minDays: 2,
+    includeWeekCollapse: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.ok(row.weekCollapse, 'weekCollapse should be present');
+  assert.equal(row.weekCollapse!.nWeeks, 2);
+  assert.ok(row.ge2 > 0);
+  // Per-week vector = [701, 700] -> ge2PerWeek ~ 0; smoothing ratio near 0.
+  assert.ok(
+    row.weekCollapse!.ge2PerWeek < row.ge2,
+    `ge2PerWeek (${row.weekCollapse!.ge2PerWeek}) should be < ge2PerDay (${row.ge2}) when within-week variance dominates`,
+  );
+  assert.ok(
+    row.weekCollapse!.weeklySmoothingRatio !== null &&
+      row.weekCollapse!.weeklySmoothingRatio < 0.1,
+    `expected smoothing ratio < 0.1, got ${row.weekCollapse!.weeklySmoothingRatio}`,
+  );
+});
+
+test('buildDailyTokenGe2Index: includeWeekCollapse on equal-day vector -> ratio=null', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-13T00:00:00Z', 'a', 100),
+    ql('2026-04-14T00:00:00Z', 'a', 100),
+    ql('2026-04-15T00:00:00Z', 'a', 100),
+  ];
+  const r = buildDailyTokenGe2Index(queue, {
+    minTokens: 0,
+    minDays: 2,
+    includeWeekCollapse: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.ok(row.weekCollapse);
+  assert.equal(row.weekCollapse!.weeklySmoothingRatio, null);
+  assert.ok(row.ge2 < 1e-20);
+});

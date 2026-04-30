@@ -138,6 +138,14 @@ export interface DailyTokenGe2Options {
    * gains a `geSweep` array `{ alpha, ge }` for cross-family compare.
    */
   alphaSweep?: readonly number[];
+  /**
+   * Refinement (v0.6.278): when true, every emitted row gains a
+   * `weekCollapse` field with `{ ge2PerWeek, nWeeks, weeklySmoothingRatio }`
+   * computed via `ge2PerWeekCollapse`. The ratio quantifies how much
+   * of the GE(2) inequality is sub-weekly noise vs. structural
+   * between-week variation. Pure compute over the same per-day map.
+   */
+  includeWeekCollapse?: boolean;
   generatedAt?: string;
 }
 
@@ -198,6 +206,19 @@ export interface DailyTokenGe2SourceRow {
    */
   ge2Saturated: boolean;
   geSweep?: { alpha: number; ge: number }[];
+  /**
+   * Refinement (v0.6.278): per-week collapse of the same per-day
+   * vector. Present iff caller set `includeWeekCollapse: true`.
+   * `weeklySmoothingRatio = ge2PerWeek / ge2PerDay` in [0, 1] in
+   * practice; lower => more inequality is sub-weekly noise; closer
+   * to 1 => inequality is structural between-week. `null` when
+   * ge2PerDay = 0.
+   */
+  weekCollapse?: {
+    ge2PerWeek: number;
+    nWeeks: number;
+    weeklySmoothingRatio: number | null;
+  };
 }
 
 export interface DailyTokenGe2Report {
@@ -455,6 +476,14 @@ export function buildDailyTokenGe2Index(
         alpha: a,
         ge: generalisedEntropyOfVector(values, a),
       }));
+    }
+    if (opts.includeWeekCollapse) {
+      const wk = ge2PerWeekCollapse(acc.perDay);
+      row.weekCollapse = {
+        ge2PerWeek: wk.ge2PerWeek,
+        nWeeks: wk.nWeeks,
+        weeklySmoothingRatio: wk.weeklySmoothingRatio,
+      };
     }
     rows.push(row);
     totalTokensSum += acc.totalTokens;

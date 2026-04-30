@@ -15132,5 +15132,29 @@ export function renderDailyTokenGe2Index(
     lines.push(renderTableLocal(sweepHeaders, sweepRows));
   }
 
+  if (r.sources.some((s) => s.weekCollapse)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `per-week collapse (refinement v0.6.278): ge2 per week vs per day; ratio < 1 => sub-weekly noise dominates`,
+      ),
+    );
+    const wkHeaders = ['source', 'nWeeks', 'ge2PerWeek', 'ge2PerDay', 'weeklySmoothingRatio'];
+    const wkRows: string[][] = r.sources.map((s) => {
+      const wc = s.weekCollapse;
+      if (!wc) return [s.source, '\u2014', '\u2014', '\u2014', '\u2014'];
+      return [
+        s.source,
+        formatNumber(wc.nWeeks),
+        wc.ge2PerWeek.toFixed(4),
+        s.ge2.toFixed(4),
+        wc.weeklySmoothingRatio === null
+          ? 'n/a'
+          : wc.weeklySmoothingRatio.toFixed(4),
+      ];
+    });
+    lines.push(renderTableLocal(wkHeaders, wkRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

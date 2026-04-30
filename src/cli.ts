@@ -12234,6 +12234,10 @@ program
     '--alpha-sweep <list>',
     'comma-separated list of alpha values; for each row append a geSweep array of { alpha, ge }. Example: --alpha-sweep 0,0.5,1,2.',
   )
+  .option(
+    '--include-week-collapse',
+    'every row gains a weekCollapse field with { ge2PerWeek, nWeeks, weeklySmoothingRatio = ge2PerWeek/ge2PerDay }: a sub-weekly-noise vs structural-between-week diagnostic that requires TWO GE(2) evaluations on differently-aggregated data',
+  )
   .action(
     async (
       opts: {
@@ -12247,6 +12251,7 @@ program
         minGe2: string;
         json?: boolean;
         alphaSweep?: string;
+        includeWeekCollapse?: boolean;
       },
       cmd,
     ) => {
@@ -12325,6 +12330,7 @@ program
             | 'cv'
             | 'ge2OverT',
           alphaSweep,
+          includeWeekCollapse: opts.includeWeekCollapse ?? false,
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
