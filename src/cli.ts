@@ -475,6 +475,10 @@ import {
   buildSourceRowTokenSlopeCiHalfWidthLogRatioVariance,
   renderSourceRowTokenSlopeCiHalfWidthLogRatioVariance,
 } from './sourcerowtokenslopecihalfwidthlogratiovariance.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation,
+  renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation,
+} from './sourcerowtokenslopecilenswidthmidpointcorrelation.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -23626,6 +23630,193 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showHalfWidths: opts.showHalfWidths ?? false,
               showClrCoords: opts.showClrCoords ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-midpoint-correlation')
+  .description(
+    "Per-lens CROSS-SOURCE PEARSON CORRELATION between |midpoint| and half-width (TWENTIETH cross-lens axis). Mechanically distinct from ALL NINETEEN priors on TWO orthogonal dimensions. (1) POPULATION GEOMETRY: every prior cross-lens diagnostic is per-source over the six lenses (population = sources). This axis inverts the geometry -- for each fixed LENS we summarise the across-source cloud of (midpoint, half-width) pairs (population = LENSES, six rows). No prior axis is computed conditional on a fixed lens. (2) STATISTIC FAMILY: heteroscedasticity probe -- positive Pearson r means sources with larger |slope| receive wider CIs (multiplicative noise); near-zero r means additive noise; negative r is anti-heteroscedastic / pathological. For each lens L: midpoint = (ciUpper + ciLower) / 2; halfWidth = (ciUpper - ciLower) / 2; absMid = |midpoint|; pearsonR = pop covariance / sqrt(pop var(absMid) * pop var(halfWidth)) across the n shared sources. Per-lens: nShared, meanAbsMidpoint, meanHalfWidth, varAbsMidpoint, varHalfWidth, covariance, pearsonR, pearsonRSquared, regimeLabel ('strong-positive' r > 0.5; 'mild-positive' r in (0.1, 0.5]; 'near-zero' r in [-0.1, 0.1]; 'mild-negative' r in [-0.5, -0.1); 'strong-negative' r < -0.5; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n < 3, 'zero-variance-absmid', 'zero-variance-halfwidth', 'non-finite'). Report-level: meanPearsonR, medianPearsonR, maxPearsonR, minPearsonR, rangePearsonR, nDegenerate, nStrongPositive, nStrongNegative, nNearZero, mostHeteroscedasticLens (argmax r), mostHomoscedasticLens (argmin |r|), mostAntiHeteroscedasticLens (argmin r). --alert-pearson <f> filters to lenses with |pearsonR| > f. --alert-positive <f> filters to lenses with pearsonR > f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-pearson <f>',
+    'only emit lenses whose |pearsonR| is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--alert-positive <f>',
+    'only emit lenses whose pearsonR is strictly GREATER than f (f in [-1, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'pearson-desc' (default) | 'pearson-asc' | 'abs-pearson-desc' | 'abs-pearson-asc' | 'r-squared-desc' | 'lens'",
+    'pearson-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-regime-aggregate',
+    'append [regime aggregate] line summarising regime-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the three extremal lenses',
+  )
+  .option(
+    '--show-moments',
+    'append per-lens moments line listing meanAbsMid / meanHalf / varAbsMid / varHalf / cov',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertPearson?: string;
+        alertPositive?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showRegimeAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showMoments?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertPearson: number | null = null;
+        if (opts.alertPearson != null) {
+          const a = Number.parseFloat(opts.alertPearson);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-pearson must be a finite number in [0, 1] (got ${opts.alertPearson})`,
+            );
+          }
+          alertPearson = a;
+        }
+        let alertPositive: number | null = null;
+        if (opts.alertPositive != null) {
+          const a = Number.parseFloat(opts.alertPositive);
+          if (!Number.isFinite(a) || a < -1 || a > 1) {
+            throw new Error(
+              `--alert-positive must be a finite number in [-1, 1] (got ${opts.alertPositive})`,
+            );
+          }
+          alertPositive = a;
+        }
+        const validSorts = [
+          'pearson-desc',
+          'pearson-asc',
+          'abs-pearson-desc',
+          'abs-pearson-asc',
+          'r-squared-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthMidpointCorrelation(
+          queue,
+          {
+            since: opts.since ?? null,
+            until: opts.until ?? null,
+            source: opts.source ?? null,
+            minRows,
+            confidence,
+            lambda,
+            bootstraps,
+            seed,
+            alertPearson,
+            alertPositive,
+            sort: opts.sort as
+              | 'pearson-desc'
+              | 'pearson-asc'
+              | 'abs-pearson-desc'
+              | 'abs-pearson-asc'
+              | 'r-squared-desc'
+              | 'lens',
+          },
+        );
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthMidpointCorrelation(report, {
+              showSummary: opts.showSummary ?? false,
+              showRegimeAggregate: opts.showRegimeAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showMoments: opts.showMoments ?? false,
             }) + '\n',
           );
         }
