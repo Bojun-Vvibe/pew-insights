@@ -93,6 +93,7 @@ import {
   renderDailyTokenGe2Index,
   renderDailyTokenPalmaRatio,
   renderDailyTokenFgtIndex,
+  renderDailyTokenHooverIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -348,6 +349,7 @@ import { buildDailyTokenTheilTIndex } from './dailytokentheiltindex.js';
 import { buildDailyTokenGe2Index } from './dailytokenge2index.js';
 import { buildDailyTokenPalmaRatio } from './dailytokenpalmaratio.js';
 import { buildDailyTokenFgtIndex } from './dailytokenfgtindex.js';
+import { buildDailyTokenHooverIndex } from './dailytokenhooverindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -12680,6 +12682,134 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenFgtIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-hoover-index')
+  .description(
+    "Per-source HOOVER INDEX (a.k.a. Robin Hood / Schutz index) of the per-day total_tokens distribution (FORTY-SECOND cross-source axis). hoover = 0.5 * sum |s_i - 1/n|. Range [0, 1). hoover = 0 iff every day carries equal mass share; hoover -> 1 iff all mass concentrates on a vanishing fraction of days. Literal Robin-Hood reading: SMALLEST FRACTION of total mass that would have to be redistributed from above-mean days to below-mean days to flatten the per-day distribution. Geometrically the L_infinity Lorenz gap measured at the EQUAL-WEIGHTS rank cut (every day = 1/n weight) -- distinct from axis-35 Pietra (same L_infinity reading at the EQUAL-MASS rank cut), axis-32 Gini (Lorenz AREA reading), axis-40 Palma (rank-cut RATIO at 90/40), axis-36 Atkinson (CRRA welfare loss with smooth penalty), axes 37/38/39 GE-family (smooth moments of share ratios), and axis-41 FGT (one-sided lower-tail poverty threshold-anchored). Per-source columns: hoover, aboveMeanExcess, belowMeanDeficit, nAboveMean, nBelowMean, nAtMean, gini, hooverOverGini, meanDaily, minDay, maxDay. The cross-anchor LORENZ-SHAPE diagnostic is hooverOverGini in (0, 1] (=1 iff distribution is two-point); --include-reference-deviation surfaces the deviation from the textbook 0.75 reference under a unit-uniform comparator.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Hoover degenerate for n < 2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hoover (default) | tokens | days | source | meanDaily | aboveMeanExcess | hooverOverGini. Applied before --top.',
+    'hoover',
+  )
+  .option(
+    '--min-hoover <h>',
+    'display filter: hide sources whose hoover is strictly below this value. h in [0, 1). Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-reference-deviation',
+    'every row gains a referenceDeviation field = (hoover/gini) - 0.75. Surfaces how far the empirical Lorenz-shape ratio sits from the textbook unit-uniform comparator.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minHoover: string;
+        includeReferenceDeviation?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minHoover = Number.parseFloat(opts.minHoover);
+        if (!Number.isFinite(minHoover) || minHoover < 0 || minHoover >= 1) {
+          throw new Error(
+            `--min-hoover must be a number in [0, 1) (got ${opts.minHoover})`,
+          );
+        }
+        const validSorts = [
+          'hoover',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'aboveMeanExcess',
+          'hooverOverGini',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHooverIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minHoover,
+          includeReferenceDeviation: opts.includeReferenceDeviation ?? false,
+          sort: opts.sort as
+            | 'hoover'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'aboveMeanExcess'
+            | 'hooverOverGini',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHooverIndex(report) + '\n');
         }
       } catch (e) {
         die(e);

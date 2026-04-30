@@ -59,6 +59,7 @@ import type { DailyTokenTheilTReport } from './dailytokentheiltindex.js';
 import type { DailyTokenGe2Report } from './dailytokenge2index.js';
 import type { DailyTokenPalmaReport } from './dailytokenpalmaratio.js';
 import type { DailyTokenFgtReport } from './dailytokenfgtindex.js';
+import type { DailyTokenHooverReport } from './dailytokenhooverindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -15422,6 +15423,104 @@ export function renderDailyTokenFgtIndex(r: DailyTokenFgtReport): string {
           : 'no',
     ]);
     lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHooverIndex(
+  r: DailyTokenHooverReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-hoover-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-hoover: ${r.minHoover === 0 ? '\u2014' : r.minHoover}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinHoover)} below min-hoover, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HOOVER = 0.5 * sum |s_i - 1/n| of per-day total_tokens; literal Robin-Hood "fraction to redistribute"; with axis-32 cross-anchor hoover/gini Lorenz-shape ratio)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Hoover index of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'hoover',
+    'gini',
+    'h/g',
+    'nAbove',
+    'nBelow',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.hoover.toFixed(4),
+    s.gini.toFixed(4),
+    Number.isNaN(s.hooverOverGini) ? 'n/a' : s.hooverOverGini.toFixed(4),
+    formatNumber(s.nAboveMean),
+    formatNumber(s.nBelowMean),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.referenceDeviation !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `reference deviation: hoover/gini - 0.75 (textbook unit-uniform comparator)`,
+      ),
+    );
+    const dHeaders = ['source', 'hoover', 'gini', 'h/g', 'dev_from_0.75'];
+    const dRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.hoover.toFixed(4),
+      s.gini.toFixed(4),
+      Number.isNaN(s.hooverOverGini) ? 'n/a' : s.hooverOverGini.toFixed(4),
+      s.referenceDeviation === undefined
+        ? '\u2014'
+        : Number.isNaN(s.referenceDeviation)
+          ? 'n/a'
+          : (s.referenceDeviation >= 0 ? '+' : '') +
+            s.referenceDeviation.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(dHeaders, dRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');
