@@ -527,6 +527,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthMld,
   renderSourceRowTokenSlopeCiLensWidthMld,
 } from './sourcerowtokenslopecilenswidthmld.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthWolfson,
+  renderSourceRowTokenSlopeCiLensWidthWolfson,
+} from './sourcerowtokenslopecilenswidthwolfson.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -26302,6 +26306,173 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showTheilPair: opts.showTheilPair ?? false,
               showAlphaSweep: opts.showAlphaSweep ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-wolfson')
+  .description(
+    "Per-lens CROSS-SOURCE WOLFSON BIPOLARISATION INDEX of CI half-widths (THIRTY-THIRD cross-lens axis). W = 2 * (2*T - Gini) * (mean/median) where T = 0.5 - L(0.5) is the Lorenz gap AT THE MEDIAN POINT. ORTHOGONAL to all 32 prior axes because it is MEDIAN-anchored and BIMODALITY-sensitive: a unimodal distribution centered at the median yields W approximately 0 even with high variance, while a bimodal distribution with modes far from the median yields a LARGE W even when Gini is moderate. Per-lens: nShared, meanHalfWidth, medianHalfWidth, gini, lorenzAtMedian, t, wolfson, meanOverMedian, polarisationSignLabel ('bipolarised' W>0; 'unipolarised' W<0; 'balanced' |W|<1e-9; 'degenerate'), polarisationLabel ('extreme' |W|>=0.5; 'high' [0.25,0.5); 'moderate' [0.1,0.25); 'mild' (0,0.1); 'near-zero' ==0; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mean', 'zero-median'). Report-level: meanW, medianW, maxW, minW, rangeW, nDegenerate, nExtreme, nNearZero, nBipolarised, nUnipolarised, mostBipolarisedLens (argmax W), mostUnipolarisedLens (argmin W).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-wolfson <f>',
+    'only emit lenses whose |W| is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'wolfson-desc' (default) | 'wolfson-asc' | 'abs-wolfson-desc' | 'mean-halfwidth-desc' | 'lens'",
+    'wolfson-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-polarisation-aggregate',
+    'append [polarisation aggregate] line summarising sign and magnitude bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostBipolarised, mostUnipolarised)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertWolfson?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showPolarisationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertWolfson: number | null = null;
+        if (opts.alertWolfson != null) {
+          const a = Number.parseFloat(opts.alertWolfson);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-wolfson must be a finite number >= 0 (got ${opts.alertWolfson})`,
+            );
+          }
+          alertWolfson = a;
+        }
+        const validSorts = [
+          'wolfson-desc',
+          'wolfson-asc',
+          'abs-wolfson-desc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthWolfson(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertWolfson,
+          sort: opts.sort as
+            | 'wolfson-desc'
+            | 'wolfson-asc'
+            | 'abs-wolfson-desc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthWolfson(report, {
+              showSummary: opts.showSummary ?? false,
+              showPolarisationAggregate:
+                opts.showPolarisationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
