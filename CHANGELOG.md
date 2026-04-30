@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.288 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-FIFTH):
+  `pew-insights daily-token-mehran-index`.
+
+  Per-source MEHRAN INDEX (Mehran 1976) of the per-day total_tokens
+  distribution:
+
+      M = 1 - sum_{k=1..n-1} w_k * (S_k / (k * mu))
+
+  with linearly-decreasing rank weights
+
+      w_k = 2 * (n - k) / (n * (n - 1))     (sum w_k = 1)
+
+  on sorted-ascending values x_(1) <= ... <= x_(n), partial sums
+  S_k = sum_{j=1..k} x_(j), and mu = mean(D). Range `[0, 1]`.
+  M = 0 iff every day carries identical mass; M = 1 in the maximal-
+  inequality limit (all mass on a single day).
+
+  THE DEFINING CONTRAST. Three measures read the SAME family of
+  partial-mean shortfalls (1 - M_k/mu) at the SAME n-1 rank cuts
+  but apply DIFFERENT rank-kernel weightings:
+
+  - axis-32 GINI:        UNIFORM Lorenz weighting (gap weight 1)
+  - axis-43 BONFERRONI:  UNIFORM partial-mean weighting (1/(n-1))
+  - axis-45 MEHRAN:      LINEARLY-DECREASING partial-mean weighting
+                         (2*(n-k)/(n*(n-1)))
+
+  Mehran-vs-Gini ordering: Mehran tends to read ABOVE Gini for
+  bottom-heavy distributions because the linear kernel pushes more
+  weight onto the bottom-rank partial-mean shortfalls than Gini's
+  uniform Lorenz integral, but the gap is NOT sign-constrained in
+  general. Mehran-vs-Bonferroni ordering: NOT sign-constrained either
+  because the linear weight 2*(n-k)/(n*(n-1)) and the Bonferroni
+  weight sum_{j=k..n-1} 1/j are NOT pointwise-ordered for all k.
+
+  Genuinely orthogonal to every prior daily-token axis. Distinct
+  rank-kernel from Gini (uniform Lorenz integral) and Bonferroni
+  (uniform partial-mean integral); not a single-point Lorenz reading
+  like Pietra/Hoover; not moment-based like the GE family or
+  Atkinson; not a two-point Lorenz reading like Palma; not a one-
+  sided threshold-anchored poverty index like FGT; not a translation-
+  invariant absolute reading like Kolm-Pollak. Permutation-invariant,
+  so orthogonal by construction to every time-ordered axis.
+
+  Refinements shipped together:
+
+  - `--include-linear-rank-excess`: per-row `mehran - gini` gap.
+    Sign NOT constrained (unlike the textbook B - G >= 0 identity).
+    Positive => bottom-heavy (the linear kernel pushes more weight
+    onto bottom-rank shortfalls than Gini's uniform Lorenz integral);
+    negative => top-heavy.
+  - `--include-bonferroni-cross-anchor`: per-row `bonferroni` and
+    `mehranMinusBonferroni` gap. Surfaces the LINEAR-vs-UNIFORM-on-
+    partial-means rank-kernel contrast on the SAME (1 - M_k/mu)
+    shortfalls.
+
+  ZERO DAYS: the linear kernel 2*(n-k)/(n*(n-1)) puts the LARGEST
+  weight on k=1, so a single zero day inflates Mehran by a relatively
+  larger amount than a single small-but-positive day would. Asserted
+  in tests via the monotonicity property `M([0, a, b, c]) > M([a,b,c])`.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (vscode-other token
+  scrubbed for changelog policy):
+
+      pew-insights daily-token-mehran-index --include-linear-rank-excess --include-bonferroni-cross-anchor
+
+      per-source Mehran index of per-day total_tokens (sorted by mehran)
+      source          days  mehran  gini    m/g     m-g     bonferroni  m-b
+      claude-code     35    0.9374  0.7590  1.2350  +0.1784  0.8594      +0.0780
+      vscode-other    73    0.8982  0.7000  1.2832  +0.1982  0.8040      +0.0943
+      codex            8    0.8413  0.5892  1.4278  +0.2520  0.7573      +0.0839
+      hermes          14    0.6043  0.3254  1.8568  +0.2788  0.4774      +0.1269
+      openclaw        14    0.5387  0.3424  1.5734  +0.1963  0.4537      +0.0850
+      opencode        11    0.4647  0.1949  2.3847  +0.2698  0.3395      +0.1252
+
+  All six sources show m - g strictly positive (linear kernel
+  reads consistently above Gini's uniform on this corpus); the m/g
+  ratio spans 1.235 (claude-code, broad coverage) to 2.385
+  (opencode, only 11 days with one heavy concentration day). All
+  six also show m - b strictly positive on this corpus, indicating
+  the linear kernel happens to read above the harmonic kernel for
+  these distributions — though this ordering is not guaranteed in
+  general and is itself a structural reading of the per-source
+  bottom-rank shape.
+
+  Tested: 33 cases covering primitive (empty, n=1, all-zero, perfect
+  equality, maximal-inequality M=1, two-point [1,9] = 0.8, three-
+  point [1,2,7] = 0.65, weight normalisation across n, scale and
+  permutation invariance, negative/non-finite throws, zero-day
+  monotonicity), Gini/Bonferroni cross-relations, and pipeline
+  (filters, source filter, time window, sort tie-breaking, top cap,
+  refinement field population, validation throws).
+
 ## 0.6.287 — 2026-05-01
 
 ### Added
