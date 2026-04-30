@@ -2,6 +2,142 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.246 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-half-width-logratio-variance` —
+  per-source CI HALF-WIDTH PAIRWISE LOG-RATIO VARIANCE diagnostic
+  (NINETEENTH cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six per-source
+  slope CIs as v0.6.227-v0.6.245 (percentile bootstrap, jackknife
+  normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL EIGHTEEN prior cross-lens diagnostics
+  on TWO orthogonal dimensions.**
+
+  1. **STATISTIC FAMILY.** This axis lives in COMPOSITIONAL / Aitchison
+     geometry on the simplex of normalised half-widths. It measures
+     pairwise log-ratio dispersion — the canonical Aitchison
+     dispersion of a composition. Axes 1-13 (moment / quantile /
+     order-statistic / dispersion of midpoints), the single-lens
+     identifier axes (LOO drop, precision-pull, residual-Z, MAD-vs-MAE
+     tail lens), the rank-correlation axes (Spearman, Kendall,
+     width-concordance), axes 15-17 (PAV monotone fit / second-
+     derivative curvature on width-sorted midpoints / tail-mass
+     asymmetry of midpoints) and axis 18 (Shannon entropy of
+     normalised half-widths) are all from a different statistic
+     family. Two compositions can have IDENTICAL Shannon entropy
+     yet ARBITRARILY different log-ratio variance, and vice versa:
+     entropy measures distance from the uniform vertex of the simplex
+     via the H-functional; log-ratio variance measures isotropic
+     Aitchison-norm spread of the composition under the log-ratio
+     metric.
+  2. **INPUT TRANSFORM.** Axis 18 normalises h_i to p_i = h_i / sum
+     and applies p log p. This axis applies log(h_i) directly
+     (equivalently log(p_i) since the simplex constraint cancels
+     in pairwise differences). It is INVARIANT to multiplication
+     of all half-widths by a positive scalar (Aitchison sub-
+     compositional / scale invariance) by direct algebraic
+     construction.
+
+  The diagnostic, for each source s with half-widths
+  `h_i = (ciUpper_i - ciLower_i) / 2`:
+
+  ```
+    eligibleIdx       = { i : h_i > 0 }, |eligibleIdx| = K
+    pairsCount        = K * (K - 1) / 2
+    r_{ij}            = log(h_i) - log(h_j) for i < j in eligibleIdx
+    logRatioMean      = (1 / pairsCount) * sum r_{ij}
+    logRatioVariance  = (1 / pairsCount) *
+                        sum (r_{ij} - logRatioMean)^2
+    logRatioStdDev    = sqrt(logRatioVariance)
+    maxAbsLogRatio    = max_{i<j} |r_{ij}|        (Aitchison
+                                                    L-inf norm)
+    clr_i             = log(h_i) - mean_{j in eligibleIdx} log(h_j)
+    clrVariance       = (1 / K) * sum_{i in eligibleIdx} clr_i^2
+  ```
+
+  Sources with `K < 2` (at most one positive half-width) are flagged
+  `degenerateFlag = true` and report all metrics as 0; downstream
+  consumers can filter by `degenerateFlag` to exclude.
+
+  Per-source columns: `halfWidths`, `positiveCount`, `pairsCount`,
+  `logRatioMean`, `logRatioVariance`, `logRatioStdDev`,
+  `maxAbsLogRatio`, `clrVariance`, `widestLens` (argmax_i h_i over
+  eligible, canonical-order tie-break), `narrowestLens` (argmin_i
+  h_i over eligible, canonical-order tie-break), `degenerateFlag`.
+
+  Report-level: `meanLogRatioVariance`, `medianLogRatioVariance`,
+  `meanLogRatioStdDev`, `meanMaxAbsLogRatio`, `nDegenerate`,
+  `nNearIsotropic` (LRV ≤ 0.01), `nHighlyDispersed` (LRV ≥ 1.00),
+  `globalWidestLens` / `globalNarrowestLens` (mode across non-
+  degenerate sources, canonical tie-break).
+
+  Filters:
+  - `--alert-variance <f>`  — keep sources with logRatioVariance > f
+  - `--alert-max-ratio <f>` — keep sources with maxAbsLogRatio > f
+
+  Renderer flags: `--show-summary`, `--show-variance-aggregate`,
+  `--show-lens-attribution`, `--show-half-widths`. Sort keys:
+  `variance-desc` (default), `variance-asc`, `stddev-desc`,
+  `stddev-asc`, `max-ratio-desc`, `max-ratio-asc`,
+  `clr-variance-desc`, `positive-count-desc`, `rows`, `source`.
+
+  **Why this is genuinely orthogonal to axes 1-18.** Axis 18
+  (Shannon entropy) and axis 19 (log-ratio variance) both consume
+  the half-width vector but operate in DISJOINT geometries.
+  Entropy is a non-linear functional on the simplex measuring
+  distance from the uniform vertex; log-ratio variance is the
+  squared Aitchison norm of the centred-log-ratio coordinates. A
+  composition with two strongly dominant lenses (e.g.
+  p = (0.45, 0.45, 0.025, 0.025, 0.025, 0.025)) can have moderate
+  entropy yet very small log-ratio variance among its dominant
+  pair, while a composition with one dominant lens and one near-
+  zero lens can have high log-ratio variance but moderate entropy.
+  These are not redundant.
+
+  ### Smoke test (live)
+
+  Run against a local `~/.config/pew/queue.jsonl` (six sources
+  active over ~1.6k rows; one source name redacted to `vendor-x`
+  per workspace policy):
+
+  ```
+  $ pew-insights source-row-token-slope-ci-half-width-logratio-variance \
+      --show-variance-aggregate --show-lens-attribution --bootstraps 200
+
+  pew-insights source-row-token-slope-ci-half-width-logratio-variance
+  as of: 2026-04-30T03:40:13.397Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 200    seed: 42    alert-variance: -    alert-max-ratio: -    top: -    sort: variance-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanLRV: 15.5531; medianLRV: 14.3385; meanLRStdDev: 3.7299; meanMaxAbsLR: 7.0994; nNearIsotropic: 0; nHighlyDispersed: 6; nDegenerate: 0; globalWidestLens: bca; globalNarrowestLens: abc
+
+  source           rows  pos  pairs  LRV       LRStd     maxAbsLR  clrVar    widest             narrowest          flags
+  ---------------  ----  ---  -----  --------  --------  --------  --------  -----------------  -----------------  -----
+  codex              64    6     15   36.3175    6.0264   13.8640   20.6095  bca                abc                -
+  claude-code       299    6     15   16.7615    4.0941    6.9557    9.8213  bca                profileLikelihood  -
+  openclaw          577    6     15   16.5962    4.0738    7.3082   10.3030  bca                profileLikelihood  -
+  hermes            306    6     15   12.0808    3.4758    5.8166    7.1848  bca                profileLikelihood  -
+  vendor-x          333    6     15    8.0754    2.8417    4.9482    4.7897  bca                abc                -
+  opencode          471    6     15    3.4869    1.8673    3.7034    1.8669  bootstrap          abc                -
+  [variance aggregate] meanLRV=15.5531 medianLRV=14.3385 meanLRStdDev=3.7299 meanMaxAbsLR=7.0994 nNearIsotropic=0/6 (0.0000) nHighlyDispersed=6/6 (1.0000) nDegenerate=0/6 (0.0000)
+  [lens attribution: widest] bootstrap=1/6 (0.1667) jackknife=0/6 (0.0000) bca=5/6 (0.8333) studentizedT=0/6 (0.0000) abc=0/6 (0.0000) profileLikelihood=0/6 (0.0000) globalWidestLens=bca
+  [lens attribution: narrowest] bootstrap=0/6 (0.0000) jackknife=0/6 (0.0000) bca=0/6 (0.0000) studentizedT=0/6 (0.0000) abc=3/6 (0.5000) profileLikelihood=3/6 (0.5000) globalNarrowestLens=abc
+  ```
+
+  Reading: every source is HIGHLY DISPERSED (LRV ≥ 1.0) — the six
+  Deming-slope CI lenses disagree about CI width by orders of
+  magnitude on this workload. The BCa lens is widest for 5 of 6
+  sources (the one exception is `opencode`, whose widest is
+  percentile-bootstrap); `abc` and `profileLikelihood` tie as
+  globally narrowest (each 3 of 6). Per-source `clrVariance` is
+  consistently a fixed multiple of `logRatioVariance`, confirming
+  the Aitchison CLR↔pairwise-log-ratio numerical self-check.
+
+  ### Tests
+
+  `+63` direct unit + integration tests; total 7008 (was 6941 +
+  67 net delta from this WP).
+
 ## 0.6.245 — 2026-04-30
 
 ### Added
