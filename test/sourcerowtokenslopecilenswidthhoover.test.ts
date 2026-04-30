@@ -8,6 +8,7 @@ import {
   buildSourceRowTokenSlopeCiLensWidthHoover,
   renderSourceRowTokenSlopeCiLensWidthHoover,
   lensWidthHoover,
+  lorenzGapArgmax,
   SLOPE_LENS_WIDTH_HOOVER_LENS_NAMES,
 } from '../src/sourcerowtokenslopecilenswidthhoover.js';
 import type { QueueLine } from '../src/types.js';
@@ -542,4 +543,147 @@ test('axis25 integration: hooverMax = 1 - 1/n for non-degenerate rows', () => {
       `lens=${row.lens}: hooverMax=${row.hooverMax}, expected ${1 - 1 / row.nShared}`,
     );
   }
+});
+
+// ---------- refinement (v0.6.254): lorenzGapArgmax + --show-lorenz-gap ----------
+
+test('axis25 refinement: lorenzGapArgmax on uniform vector returns crossover=0', () => {
+  const out = lorenzGapArgmax([1, 1, 1, 1, 1, 1]);
+  assert.equal(out.crossoverIndex, 0);
+  assert.equal(out.crossoverShare, 0);
+  assert.equal(out.argmaxP, 0);
+});
+
+test('axis25 refinement: lorenzGapArgmax matches Pietra crossover characterisation', () => {
+  // n=8, [1,1,1,1,2,2,4,8] sorted ascending. mean = 20/8 = 2.5.
+  // sources strictly below 2.5: the four 1's and the two 2's = 6.
+  // So crossoverIndex = 6, p* = 6/8 = 0.75.
+  const out = lorenzGapArgmax([1, 1, 1, 1, 2, 2, 4, 8]);
+  assert.equal(out.crossoverIndex, 6);
+  assert.ok(Math.abs(out.argmaxP - 0.75) < 1e-12);
+  // Cross-check: at p* = 0.75, L(p*) = sum(below mean)/total = 8/20 = 0.4.
+  // Gap = 0.75 - 0.40 = 0.35 = H from the worked example above.
+});
+
+test('axis25 refinement: lorenzGapArgmax on all-zero returns zeros', () => {
+  const out = lorenzGapArgmax([0, 0, 0, 0]);
+  assert.equal(out.crossoverIndex, 0);
+  assert.equal(out.crossoverShare, 0);
+  assert.equal(out.argmaxP, 0);
+});
+
+test('axis25 refinement: lorenzGapArgmax on extreme [0,0,0,0,9] saturates crossover', () => {
+  const out = lorenzGapArgmax([0, 0, 0, 0, 9]);
+  assert.equal(out.crossoverIndex, 4);
+  assert.ok(Math.abs(out.argmaxP - 0.8) < 1e-12);
+});
+
+test('axis25 refinement: --alert-crossover-share filter respected', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 60, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 60, slope: 1.5, noise: 30 },
+    { source: 'c', nRows: 60, slope: 2.0, noise: 60 },
+    { source: 'd', nRows: 60, slope: 0.5, noise: 2 },
+  ]);
+  const r0 = buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const r1 = buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+    bootstraps: 200,
+    seed: 7,
+    alertCrossoverShare: 0.99,
+  });
+  assert.equal(r1.rows.length, 0, 'no row should have crossoverShare > 0.99');
+  for (const row of r0.rows) {
+    assert.ok(row.meanCrossoverShare >= 0 && row.meanCrossoverShare < 1);
+  }
+});
+
+test('axis25 refinement: sort=crossover-share-desc orders rows by crossover share', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 60, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 60, slope: 1.5, noise: 30 },
+    { source: 'c', nRows: 60, slope: 2.0, noise: 60 },
+    { source: 'd', nRows: 60, slope: 0.5, noise: 2 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+    bootstraps: 200,
+    seed: 7,
+    sort: 'crossover-share-desc',
+  });
+  for (let i = 1; i < r.rows.length; i++) {
+    assert.ok(
+      r.rows[i - 1]!.meanCrossoverShare >=
+        r.rows[i]!.meanCrossoverShare - 1e-12,
+    );
+  }
+});
+
+test('axis25 refinement: --show-lorenz-gap render emits per-lens lorenzGap line', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 60, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 60, slope: 1.5, noise: 30 },
+    { source: 'c', nRows: 60, slope: 2.0, noise: 60 },
+    { source: 'd', nRows: 60, slope: 0.5, noise: 2 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  const out = renderSourceRowTokenSlopeCiLensWidthHoover(r, {
+    showLorenzGap: true,
+  });
+  assert.match(out, /lorenzGap: argmax p\*=/);
+  assert.match(out, /meanCrossoverIndex=/);
+});
+
+test('axis25 refinement: row-level argmaxLorenzGapP equals crossoverShare and is in [0, 1)', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 60, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 60, slope: 1.5, noise: 30 },
+    { source: 'c', nRows: 60, slope: 2.0, noise: 60 },
+    { source: 'd', nRows: 60, slope: 0.5, noise: 2 },
+    { source: 'e', nRows: 60, slope: 1.2, noise: 80 },
+    { source: 'f', nRows: 60, slope: 0.8, noise: 15 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+    bootstraps: 200,
+    seed: 7,
+  });
+  for (const row of r.rows) {
+    assert.equal(row.argmaxLorenzGapP, row.meanCrossoverShare);
+    assert.ok(row.argmaxLorenzGapP >= 0 && row.argmaxLorenzGapP < 1);
+    assert.equal(row.meanCrossoverIndex, Math.round(row.meanCrossoverShare * row.nShared));
+  }
+});
+
+test('axis25 refinement: --alert-crossover-share validates input', () => {
+  const queue = syntheticQueue([
+    { source: 'a', nRows: 60, slope: 1.0, noise: 5 },
+    { source: 'b', nRows: 60, slope: 1.5, noise: 30 },
+    { source: 'c', nRows: 60, slope: 2.0, noise: 60 },
+    { source: 'd', nRows: 60, slope: 0.5, noise: 2 },
+  ]);
+  assert.throws(
+    () =>
+      buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+        alertCrossoverShare: -0.1,
+      }),
+    /alertCrossoverShare/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+        alertCrossoverShare: 1,
+      }),
+    /alertCrossoverShare/,
+  );
+  assert.throws(
+    () =>
+      buildSourceRowTokenSlopeCiLensWidthHoover(queue, {
+        alertCrossoverShare: 1.5,
+      }),
+    /alertCrossoverShare/,
+  );
 });

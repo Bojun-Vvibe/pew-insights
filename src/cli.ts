@@ -24695,8 +24695,12 @@ program
     'only emit lenses whose totalHalfWidth (sum of cross-source half-widths) is strictly GREATER than f (f >= 0)',
   )
   .option(
+    '--alert-crossover-share <f>',
+    'only emit lenses whose meanCrossoverShare (fraction of sources strictly below the mean share 1/n) is strictly GREATER than f (f in [0, 1)); the Lorenz-gap supremum is canonically attained at this crossover (Pietra 1915)',
+  )
+  .option(
     '--sort <key>',
-    "sort key: 'hoover-desc' (default) | 'hoover-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 'lens'",
+    "sort key: 'hoover-desc' (default) | 'hoover-asc' | 'mass-desc' | 'mean-halfwidth-desc' | 'crossover-share-desc' | 'lens'",
     'hoover-desc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -24712,6 +24716,10 @@ program
   .option(
     '--show-redistribution',
     'append per-lens redistribution line interpreting H as the Robin Hood "fraction of total half-width mass to redistribute"',
+  )
+  .option(
+    '--show-lorenz-gap',
+    'append per-lens lorenzGap line listing the Lorenz-gap argmax quantile p* and meanCrossoverIndex (the rank at which the Lorenz gap p - L(p) attains its supremum H; Pietra 1915 characterisation)',
   )
   .option(
     '--show-per-source-widths',
@@ -24730,12 +24738,14 @@ program
         seed: string;
         alertHoover?: string;
         alertMass?: string;
+        alertCrossoverShare?: string;
         sort: string;
         json?: boolean;
         showSummary?: boolean;
         showConcentrationAggregate?: boolean;
         showLensAttribution?: boolean;
         showRedistribution?: boolean;
+        showLorenzGap?: boolean;
         showPerSourceWidths?: boolean;
       },
       cmd,
@@ -24791,11 +24801,22 @@ program
           }
           alertMass = a;
         }
+        let alertCrossoverShare: number | null = null;
+        if (opts.alertCrossoverShare != null) {
+          const a = Number.parseFloat(opts.alertCrossoverShare);
+          if (!Number.isFinite(a) || a < 0 || a >= 1) {
+            throw new Error(
+              `--alert-crossover-share must be a finite number in [0, 1) (got ${opts.alertCrossoverShare})`,
+            );
+          }
+          alertCrossoverShare = a;
+        }
         const validSorts = [
           'hoover-desc',
           'hoover-asc',
           'mass-desc',
           'mean-halfwidth-desc',
+          'crossover-share-desc',
           'lens',
         ];
         if (!validSorts.includes(opts.sort)) {
@@ -24815,11 +24836,13 @@ program
           seed,
           alertHoover,
           alertMass,
+          alertCrossoverShare,
           sort: opts.sort as
             | 'hoover-desc'
             | 'hoover-asc'
             | 'mass-desc'
             | 'mean-halfwidth-desc'
+            | 'crossover-share-desc'
             | 'lens',
         });
         if (opts.json || common.json) {
@@ -24832,6 +24855,7 @@ program
                 opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showRedistribution: opts.showRedistribution ?? false,
+              showLorenzGap: opts.showLorenzGap ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );

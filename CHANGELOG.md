@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.254 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-hoover` —
+  refinement to v0.6.253 axis-25:
+
+  - New exported helper `lorenzGapArgmax(halfWidths)` returning
+    `{ argmaxP, crossoverIndex, crossoverShare }`. The Hoover index
+    `H = sup_p (p - L(p))` is canonically attained at the crossover
+    quantile `p* = k* / n`, where `k*` is the count of sources with
+    half-width strictly below the mean (Pietra 1915). `argmaxP` is
+    that `p*`; `crossoverIndex` is `k*`; `crossoverShare` is
+    `k* / n`. Returns zeros for the degenerate / all-equal cases.
+
+  - New per-row columns `argmaxLorenzGapP`, `meanCrossoverIndex`,
+    `meanCrossoverShare` exposing the Lorenz-gap argmax alongside
+    the scalar `hoover` value. This is the Pietra characterisation
+    of where on the Lorenz curve the Robin-Hood deficit is at its
+    largest — orthogonal to `hoover` itself (which is the
+    *magnitude* of the gap; `argmaxP` is the *location*). Two
+    distributions can share `hoover` but disagree on `argmaxP`,
+    e.g. a "long lower tail with one spike" vs a "split bimodal"
+    can both yield `H ≈ 0.5` while their crossovers sit at
+    `p* ≈ 0.83` and `p* ≈ 0.50` respectively.
+
+  - New CLI flag `--alert-crossover-share <f>` (`f` in `[0, 1)`):
+    emits only lenses whose `meanCrossoverShare` strictly exceeds
+    `f`. Degenerate rows are excluded.
+
+  - New CLI sort key `crossover-share-desc`: order lenses by the
+    Lorenz-gap argmax descending. Degenerate rows are demoted to
+    the bottom.
+
+  - New CLI render flag `--show-lorenz-gap`: appends a per-lens
+    `lorenzGap: argmax p*=... meanCrossoverIndex=k/n (sources
+    strictly below mean share 1/n=...)` line.
+
+  Nine new test() blocks covering the helper edge cases, the Pietra
+  crossover identity (worked example `[1,1,1,1,2,2,4,8]`: `p* =
+  0.75`, `L(p*) = 0.40`, gap = `H = 0.35`), saturation on the
+  extreme `[0,...,0,9]`, the new sort key, the new alert filter
+  with validation, and render emission of the new line. Suite:
+  7188 -> 7197, all passing.
+
 ## 0.6.253 — 2026-04-30
 
 ### Added

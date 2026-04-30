@@ -108,6 +108,18 @@
  *   - `hoover`            -- Hoover index in [0, 1 - 1/n]
  *   - `hooverNormalised`  -- H / (1 - 1/n) in [0, 1]
  *   - `redistributableShare` -- alias for `hoover`; emphasised in render
+ *   - `argmaxLorenzGapP`  -- the quantile p* in (0, 1] at which the
+ *                            Lorenz gap p - L(p) attains its supremum
+ *                            H (Hoover-Pietra characterisation; in a
+ *                            sorted population this is the cumulative
+ *                            share of "small-mass" sources just above
+ *                            the mean-share crossover). Returns 0 if
+ *                            degenerate or H = 0.
+ *   - `meanCrossoverIndex` -- 1-based count of sources whose share is
+ *                             strictly BELOW the mean share 1/n. The
+ *                             argmax-of-the-Lorenz-gap is canonically
+ *                             attained at this crossover (Pietra 1915).
+ *                             0 if degenerate.
  *   - `concentrationLabel` -- qualitative bin on `hoover`:
  *                            'highly-concentrated' (H > 0.5)
  *                            'moderately-concentrated' (H in (0.3, 0.5])
@@ -181,11 +193,13 @@ export interface SourceRowTokenSlopeCiLensWidthHooverOptions {
   seed?: number;
   alertHoover?: number | null;
   alertMass?: number | null;
+  alertCrossoverShare?: number | null;
   sort?:
     | 'hoover-desc'
     | 'hoover-asc'
     | 'mass-desc'
     | 'mean-halfwidth-desc'
+    | 'crossover-share-desc'
     | 'lens';
   generatedAt?: string;
 }
@@ -199,6 +213,9 @@ export interface SourceRowTokenSlopeCiLensWidthHooverLensRow {
   hooverNormalised: number;
   hooverMax: number;
   redistributableShare: number;
+  argmaxLorenzGapP: number;
+  meanCrossoverIndex: number;
+  meanCrossoverShare: number;
   concentrationLabel: HooverConcentrationLabel;
   degenerateFlag: boolean;
   degenerateReason: HooverDegenerateReason | null;
@@ -218,6 +235,7 @@ export interface SourceRowTokenSlopeCiLensWidthHooverReport {
   seed: number;
   alertHoover: number | null;
   alertMass: number | null;
+  alertCrossoverShare: number | null;
   sort: NonNullable<SourceRowTokenSlopeCiLensWidthHooverOptions['sort']>;
   totalSources: number;
   sourcesWithAllLenses: number;
@@ -240,6 +258,7 @@ const VALID_SORTS = [
   'hoover-asc',
   'mass-desc',
   'mean-halfwidth-desc',
+  'crossover-share-desc',
   'lens',
 ] as const;
 
@@ -375,6 +394,50 @@ export function lensWidthHoover(halfWidths: number[]): {
   };
 }
 
+/**
+ * Compute the Lorenz-gap argmax for a non-negative half-width vector.
+ *
+ * Returns:
+ *   - `argmaxP`: the quantile p* in (0, 1] at which the Lorenz gap
+ *                p - L(p) attains its supremum (the same supremum that
+ *                Hoover H equals). Sorted ascending; p* is canonically
+ *                the rank just before the mean-share crossover
+ *                (Pietra 1915 -- the supremum is attained at the
+ *                largest k for which sorted[k] < mean).
+ *   - `crossoverIndex`: 1-based count of sources whose share is
+ *                       strictly below 1/n (i.e. value < mean).
+ *   - `crossoverShare`: crossoverIndex / n in [0, 1).
+ *
+ * Returns zeros for degenerate / all-equal inputs (no gap).
+ *
+ * Exposed for direct unit-testing.
+ */
+export function lorenzGapArgmax(halfWidths: number[]): {
+  argmaxP: number;
+  crossoverIndex: number;
+  crossoverShare: number;
+} {
+  const n = halfWidths.length;
+  if (n === 0) return { argmaxP: 0, crossoverIndex: 0, crossoverShare: 0 };
+  let total = 0;
+  for (const v of halfWidths) total += v;
+  if (!(total > 0)) {
+    return { argmaxP: 0, crossoverIndex: 0, crossoverShare: 0 };
+  }
+  const mean = total / n;
+  const sorted = [...halfWidths].sort((a, b) => a - b);
+  let crossover = 0;
+  for (const v of sorted) {
+    if (v < mean) crossover += 1;
+    else break;
+  }
+  return {
+    argmaxP: crossover / n,
+    crossoverIndex: crossover,
+    crossoverShare: crossover / n,
+  };
+}
+
 export function buildSourceRowTokenSlopeCiLensWidthHoover(
   queue: QueueLine[],
   opts: SourceRowTokenSlopeCiLensWidthHooverOptions = {},
@@ -424,6 +487,18 @@ export function buildSourceRowTokenSlopeCiLensWidthHoover(
     if (!Number.isFinite(alertMass) || alertMass < 0) {
       throw new Error(
         `alertMass must be a finite, non-negative number (got ${opts.alertMass})`,
+      );
+    }
+  }
+  const alertCrossoverShare = opts.alertCrossoverShare ?? null;
+  if (alertCrossoverShare !== null) {
+    if (
+      !Number.isFinite(alertCrossoverShare) ||
+      alertCrossoverShare < 0 ||
+      alertCrossoverShare >= 1
+    ) {
+      throw new Error(
+        `alertCrossoverShare must be a finite number in [0, 1) (got ${opts.alertCrossoverShare})`,
       );
     }
   }
@@ -518,6 +593,9 @@ export function buildSourceRowTokenSlopeCiLensWidthHoover(
       comp.hoover,
       comp.degenerateFlag,
     );
+    const gap = comp.degenerateFlag
+      ? { argmaxP: 0, crossoverIndex: 0, crossoverShare: 0 }
+      : lorenzGapArgmax(halfs);
     rows.push({
       lens,
       nShared: comp.nShared,
@@ -527,6 +605,9 @@ export function buildSourceRowTokenSlopeCiLensWidthHoover(
       hooverNormalised: comp.hooverNormalised,
       hooverMax: comp.hooverMax,
       redistributableShare: comp.hoover,
+      argmaxLorenzGapP: gap.argmaxP,
+      meanCrossoverIndex: gap.crossoverIndex,
+      meanCrossoverShare: gap.crossoverShare,
       concentrationLabel,
       degenerateFlag: comp.degenerateFlag,
       degenerateReason: comp.degenerateReason,
@@ -575,6 +656,11 @@ export function buildSourceRowTokenSlopeCiLensWidthHoover(
   if (alertMass !== null) {
     filtered = filtered.filter((r) => r.totalHalfWidth > alertMass);
   }
+  if (alertCrossoverShare !== null) {
+    filtered = filtered.filter(
+      (r) => !r.degenerateFlag && r.meanCrossoverShare > alertCrossoverShare,
+    );
+  }
 
   const sortFns: Record<
     (typeof VALID_SORTS)[number],
@@ -587,6 +673,12 @@ export function buildSourceRowTokenSlopeCiLensWidthHoover(
     'hoover-asc': (a, b) => a.hoover - b.hoover,
     'mass-desc': (a, b) => b.totalHalfWidth - a.totalHalfWidth,
     'mean-halfwidth-desc': (a, b) => b.meanHalfWidth - a.meanHalfWidth,
+    'crossover-share-desc': (a, b) => {
+      // Degenerate rows demoted to bottom of desc.
+      const sa = a.degenerateFlag ? -Infinity : a.meanCrossoverShare;
+      const sb = b.degenerateFlag ? -Infinity : b.meanCrossoverShare;
+      return sb - sa;
+    },
     lens: (a, b) =>
       SLOPE_LENS_WIDTH_HOOVER_LENS_NAMES.indexOf(a.lens) -
       SLOPE_LENS_WIDTH_HOOVER_LENS_NAMES.indexOf(b.lens),
@@ -612,6 +704,7 @@ export function buildSourceRowTokenSlopeCiLensWidthHoover(
     seed,
     alertHoover,
     alertMass,
+    alertCrossoverShare,
     sort,
     totalSources: sharedSources.length + droppedMissingLens,
     sourcesWithAllLenses: sharedSources.length,
@@ -644,6 +737,7 @@ export function renderSourceRowTokenSlopeCiLensWidthHoover(
     showConcentrationAggregate?: boolean;
     showLensAttribution?: boolean;
     showRedistribution?: boolean;
+    showLorenzGap?: boolean;
     showPerSourceWidths?: boolean;
   } = {},
 ): string {
@@ -651,6 +745,7 @@ export function renderSourceRowTokenSlopeCiLensWidthHoover(
   const showConcentrationAggregate = opts.showConcentrationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showRedistribution = opts.showRedistribution ?? false;
+  const showLorenzGap = opts.showLorenzGap ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-hoover');
@@ -694,6 +789,15 @@ export function renderSourceRowTokenSlopeCiLensWidthHoover(
       lines.push(
         `    redistribution: ${massPct}% of total half-width mass would have to be redistributed across sources to achieve perfect equality (Robin Hood interpretation; Hmax=${fmtNum(row.hooverMax)})`,
       );
+    }
+    if (showLorenzGap) {
+      if (row.degenerateFlag) {
+        lines.push(`    lorenzGap: (degenerate)`);
+      } else {
+        lines.push(
+          `    lorenzGap: argmax p*=${fmtNum(row.argmaxLorenzGapP, 4)} (Lorenz-gap supremum attained at quantile p*); meanCrossoverIndex=${row.meanCrossoverIndex}/${row.nShared} (sources strictly below mean share 1/${row.nShared}=${fmtNum(1 / row.nShared, 4)})`,
+        );
+      }
     }
     if (showPerSourceWidths) {
       if (row.perSourceSources.length === 0) {
