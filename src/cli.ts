@@ -483,6 +483,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthGini,
   renderSourceRowTokenSlopeCiLensWidthGini,
 } from './sourcerowtokenslopecilenswidthgini.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthTheil,
+  renderSourceRowTokenSlopeCiLensWidthTheil,
+} from './sourcerowtokenslopecilenswidththeil.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -24006,6 +24010,197 @@ program
               showMoments: opts.showMoments ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
               showLorenz: opts.showLorenz ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-theil')
+  .description(
+    "Per-lens CROSS-SOURCE THEIL INDEX (T_T) of CI half-widths (TWENTY-SECOND cross-lens axis). Mechanically distinct from ALL TWENTY-ONE priors on FOUR orthogonal dimensions, AND distinct from axis-21 (Gini) on TWO of those: (1) POPULATION GEOMETRY -- like axes 20-21 the population is LENSES (six rows). (2) STATISTIC FAMILY -- this is a UNIVARIATE INFORMATION-THEORETIC inequality measure: the alpha=1 case of the generalised-entropy family GE(alpha). It equals KL(p || uniform) where p_i are the per-source half-width shares. Not a Pearson r, not an entropy of a distribution shape (axis-17), not a log-ratio variance (axis-19), not Gini. (3) WEIGHTING / DECOMPOSABILITY (vs axis-21) -- Theil is SUBGROUP-DECOMPOSABLE (T_T(total) = T_T(within) + T_T(between)); Gini is not in general. Theil weights each source by share*log(share*n); Gini weights only by rank gap (2i-n-1). (4) UPPER BOUND BEHAVIOUR (vs axis-21) -- Gini in [0, (n-1)/n] (linear in n); Theil in [0, ln(n)] (logarithmic in n). Same one-source-takes-all configuration registers as Gini ~ 0.83 vs Theil ~ 1.79 at n=6. Theil is MORE SENSITIVE to a single large outlier than Gini (Pigou-Dalton transfer sensitivity). For each lens L: halfWidth = (ciUpper - ciLower) / 2; theil = ln(n) - H(p) where H(p) = -sum p_i ln p_i (zero half-widths contribute zero, the canonical x ln x -> 0 limit). theil in [0, ln(n)]: 0 iff perfect cross-source equality; ln(n) iff one source absorbs the entire half-width budget. theilNorm = theil / ln(n) in [0, 1] for cross-n comparability. Per-lens: nShared, meanHalfWidth, minHalfWidth, maxHalfWidth, lnN, shannonEntropy (nats), theil, theilNorm, topShareMax, concentrationLabel ('highly-concentrated' theilNorm > 0.5; 'moderately-concentrated' theilNorm in (0.3, 0.5]; 'mild-concentration' theilNorm in (0.1, 0.3]; 'near-equal' theilNorm in [0, 0.1]; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n < 3, 'zero-mean-halfwidth', 'non-finite'). Report-level: meanTheil, medianTheil, maxTheil, minTheil, rangeTheil, meanTheilNorm, nDegenerate, nHighlyConcentrated, nNearEqual, mostConcentratedLens (argmax theil), mostEqualLens (argmin theil). --alert-theil <f> filters lenses with theil > f; --alert-theil-norm <f> filters lenses with theilNorm > f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-theil <f>',
+    'only emit lenses whose theil is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-theil-norm <f>',
+    'only emit lenses whose theilNorm is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'theil-desc' (default) | 'theil-asc' | 'theil-norm-desc' | 'mean-halfwidth-desc' | 'top-share-desc' | 'lens'",
+    'theil-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses',
+  )
+  .option(
+    '--show-moments',
+    'append per-lens moments line listing meanHalf / minHalf / maxHalf / lnN / shannonH',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertTheil?: string;
+        alertTheilNorm?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showMoments?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertTheil: number | null = null;
+        if (opts.alertTheil != null) {
+          const a = Number.parseFloat(opts.alertTheil);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-theil must be a finite, non-negative number (got ${opts.alertTheil})`,
+            );
+          }
+          alertTheil = a;
+        }
+        let alertTheilNorm: number | null = null;
+        if (opts.alertTheilNorm != null) {
+          const a = Number.parseFloat(opts.alertTheilNorm);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-theil-norm must be a finite number in [0, 1] (got ${opts.alertTheilNorm})`,
+            );
+          }
+          alertTheilNorm = a;
+        }
+        const validSorts = [
+          'theil-desc',
+          'theil-asc',
+          'theil-norm-desc',
+          'mean-halfwidth-desc',
+          'top-share-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthTheil(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertTheil,
+          alertTheilNorm,
+          sort: opts.sort as
+            | 'theil-desc'
+            | 'theil-asc'
+            | 'theil-norm-desc'
+            | 'mean-halfwidth-desc'
+            | 'top-share-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthTheil(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showMoments: opts.showMoments ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
         }
