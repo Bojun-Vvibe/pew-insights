@@ -125,7 +125,8 @@ export type DailyTokenBonferroniSort =
   | 'source'
   | 'meanDaily'
   | 'bottomQuintilePartialMean'
-  | 'bonferroniOverGini';
+  | 'bonferroniOverGini'
+  | 'bottomRankExcess';
 
 export interface DailyTokenBonferroniOptions {
   since?: string | null;
@@ -159,6 +160,19 @@ export interface DailyTokenBonferroniOptions {
    * that no single-kernel inequality index can produce on its own.
    */
   includeDeVergottiniCrossAnchor?: boolean;
+  /**
+   * Refinement (v0.6.285): when true, every emitted row gains a
+   * `harmonicKernelTail` field = sum_{k=1..n-1} (1/k) = H_(n-1)
+   * (the (n-1)-th harmonic number). This is the closed-form
+   * normalising sum of the rank-weight kernel that drives Bonferroni
+   * (each k-th sorted observation gets weight proportional to
+   * sum_{j=k..n-1} (1/j) under the Bonferroni functional). Surfacing
+   * H_(n-1) makes the rank-weight scale visible per source: it grows
+   * logarithmically with n, so two sources with identical Bonferroni
+   * values may live on rank-weight scales that differ by orders of
+   * magnitude.
+   */
+  includeHarmonicKernelTail?: boolean;
   generatedAt?: string;
 }
 
@@ -224,6 +238,13 @@ export interface DailyTokenBonferroniSourceRow {
    * `includeDeVergottiniCrossAnchor: true`.
    */
   bonferroniMinusDeVergottini?: number;
+  /**
+   * Refinement (v0.6.285): the (n-1)-th harmonic number H_(n-1) =
+   * sum_{k=1..n-1} (1/k). Closed-form normalising sum of the
+   * Bonferroni rank-weight kernel; grows like ln(n) + gamma.
+   * Present iff caller set `includeHarmonicKernelTail: true`.
+   */
+  harmonicKernelTail?: number;
 }
 
 export interface DailyTokenBonferroniReport {
@@ -405,6 +426,7 @@ export function buildDailyTokenBonferroniIndex(
     'meanDaily',
     'bottomQuintilePartialMean',
     'bonferroniOverGini',
+    'bottomRankExcess',
   ];
   if (!validSorts.includes(sort)) {
     throw new Error(
@@ -535,6 +557,11 @@ export function buildDailyTokenBonferroniIndex(
       row.deVergottini = dv.deVergottini;
       row.bonferroniMinusDeVergottini = b.bonferroni - dv.deVergottini;
     }
+    if (opts.includeHarmonicKernelTail) {
+      let hn1 = 0;
+      for (let k = 1; k <= nDays - 1; k += 1) hn1 += 1 / k;
+      row.harmonicKernelTail = hn1;
+    }
     rows.push(row);
     totalTokensSum += acc.totalTokens;
   }
@@ -576,6 +603,11 @@ export function buildDailyTokenBonferroniIndex(
         break;
       case 'bonferroniOverGini':
         primary = cmpNum(a.bonferroniOverGini, b.bonferroniOverGini);
+        break;
+      case 'bottomRankExcess':
+        primary =
+          (b.bottomRankExcess ?? b.bonferroni - b.gini) -
+          (a.bottomRankExcess ?? a.bonferroni - a.gini);
         break;
       case 'bonferroni':
       default:

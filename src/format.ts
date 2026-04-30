@@ -15657,5 +15657,24 @@ export function renderDailyTokenBonferroniIndex(
     lines.push(renderTableLocal(pHeaders, pRows));
   }
 
+  if (r.sources.some((s) => s.harmonicKernelTail !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `harmonic kernel tail (refinement v0.6.285): H_(n-1) = sum_{k=1..n-1} (1/k); the closed-form normalising sum of the Bonferroni rank-weight kernel; grows as ln(n)+gamma`,
+      ),
+    );
+    const hHeaders = ['source', 'days', 'bonferroni', 'H_(n-1)'];
+    const hRows: string[][] = r.sources.map((s) => [
+      s.source,
+      formatNumber(s.nDays),
+      s.bonferroni.toFixed(4),
+      s.harmonicKernelTail === undefined
+        ? '\u2014'
+        : s.harmonicKernelTail.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(hHeaders, hRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }

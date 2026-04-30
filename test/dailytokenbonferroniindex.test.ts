@@ -506,3 +506,55 @@ test('refinement: bonferroni and deVergottini both vanish on equal-mass vector',
   assert.ok(Math.abs(row.deVergottini!) < 1e-9);
   assert.ok(Math.abs(row.bonferroniMinusDeVergottini!) < 1e-9);
 });
+
+// ---- refinement v0.6.285: harmonic kernel tail diagnostic --------------
+
+test('refinement v0.6.285: includeHarmonicKernelTail surfaces H_(n-1)', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    q.push(
+      ql(
+        `2026-04-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+        'a',
+        (i + 1) * 1000,
+      ),
+    );
+  }
+  const r = buildDailyTokenBonferroniIndex(q, {
+    generatedAt: GEN,
+    includeHarmonicKernelTail: true,
+  });
+  const row = r.sources[0]!;
+  // n=5 -> H_4 = 1 + 1/2 + 1/3 + 1/4 = 25/12
+  assert.ok(row.harmonicKernelTail !== undefined);
+  assert.ok(Math.abs(row.harmonicKernelTail! - 25 / 12) < 1e-12);
+});
+
+test('refinement v0.6.285: harmonicKernelTail absent unless flag set', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 1000),
+    ql('2026-04-02T00:00:00Z', 'a', 9000),
+  ];
+  const r = buildDailyTokenBonferroniIndex(q, { generatedAt: GEN });
+  assert.equal(r.sources[0]!.harmonicKernelTail, undefined);
+});
+
+test('refinement v0.6.285: sort by bottomRankExcess descending', () => {
+  // Two sources with similar Bonferroni but different B-G excess.
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'big-excess', 100),
+    ql('2026-04-02T00:00:00Z', 'big-excess', 100),
+    ql('2026-04-03T00:00:00Z', 'big-excess', 9800),
+    ql('2026-04-01T00:00:00Z', 'small-excess', 3000),
+    ql('2026-04-02T00:00:00Z', 'small-excess', 3500),
+    ql('2026-04-03T00:00:00Z', 'small-excess', 3500),
+  ];
+  const r = buildDailyTokenBonferroniIndex(q, {
+    generatedAt: GEN,
+    sort: 'bottomRankExcess',
+  });
+  // big-excess has greater bonferroni - gini gap.
+  const e0 = r.sources[0]!.bonferroni - r.sources[0]!.gini;
+  const e1 = r.sources[1]!.bonferroni - r.sources[1]!.gini;
+  assert.ok(e0 >= e1);
+});

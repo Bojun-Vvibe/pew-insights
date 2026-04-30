@@ -12853,7 +12853,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: bonferroni (default) | tokens | days | source | meanDaily | bottomQuintilePartialMean | bonferroniOverGini. Applied before --top.',
+    'sort key: bonferroni (default) | tokens | days | source | meanDaily | bottomQuintilePartialMean | bonferroniOverGini | bottomRankExcess. Applied before --top.',
     'bonferroni',
   )
   .option(
@@ -12869,6 +12869,10 @@ program
     '--include-de-vergottini-cross-anchor',
     'every row gains deVergottini and bonferroniMinusDeVergottini fields. De Vergottini is the TOP-rank-weighted harmonic dual of Bonferroni; the gap b - dv flips sign depending on whether bulk inequality sits in the bottom or top tail.',
   )
+  .option(
+    '--include-harmonic-kernel-tail',
+    'refinement (v0.6.285): every row gains a harmonicKernelTail field = H_(n-1), the closed-form normalising sum of the Bonferroni rank-weight kernel. Surfaces the rank-weight scale that grows like ln(n)+gamma.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12883,6 +12887,7 @@ program
         minBonferroni: string;
         includeBottomRankExcess?: boolean;
         includeDeVergottiniCrossAnchor?: boolean;
+        includeHarmonicKernelTail?: boolean;
         json?: boolean;
       },
       cmd,
@@ -12926,6 +12931,7 @@ program
           'meanDaily',
           'bottomQuintilePartialMean',
           'bonferroniOverGini',
+          'bottomRankExcess',
         ];
         if (!validSorts.includes(opts.sort)) {
           throw new Error(
@@ -12944,6 +12950,7 @@ program
           includeBottomRankExcess: opts.includeBottomRankExcess ?? false,
           includeDeVergottiniCrossAnchor:
             opts.includeDeVergottiniCrossAnchor ?? false,
+          includeHarmonicKernelTail: opts.includeHarmonicKernelTail ?? false,
           sort: opts.sort as
             | 'bonferroni'
             | 'tokens'
@@ -12951,7 +12958,8 @@ program
             | 'source'
             | 'meanDaily'
             | 'bottomQuintilePartialMean'
-            | 'bonferroniOverGini',
+            | 'bonferroniOverGini'
+            | 'bottomRankExcess',
         });
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
