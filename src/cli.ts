@@ -13183,6 +13183,14 @@ program
     '--include-bonferroni-cross-anchor',
     'every row gains bonferroni and mehranMinusBonferroni fields. Surfaces the LINEAR (Mehran w_k = 2*(n-k)/(n*(n-1))) vs UNIFORM (Bonferroni w_k = 1/(n-1)) rank-kernel contrast on the SAME partial-mean shortfalls (1 - M_k/mu).',
   )
+  .option(
+    '--include-de-vergottini-cross-anchor',
+    'refinement (v0.6.289): every row gains deVergottini and mehranMinusDeVergottini fields. De Vergottini is the TOP-rank-weighted harmonic dual of Bonferroni. Pairing Mehran (LINEAR bottom-weighted) with De Vergottini (HARMONIC top-weighted) reads the same Lorenz data with rank-kernels at OPPOSITE ends of the bottom-vs-top sensitivity spectrum.',
+  )
+  .option(
+    '--include-equality-identity-witness',
+    'refinement (v0.6.289): every row gains equalityIdentityResidual = |M(mu * 1_n)|. Numerically validates the equal-vector identity axiom M(mu * 1) = 0; expected ~0 to machine precision. Non-trivial residual would indicate a numerical pathology in the partial-mean accumulation.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -13197,6 +13205,8 @@ program
         minMehran: string;
         includeLinearRankExcess?: boolean;
         includeBonferroniCrossAnchor?: boolean;
+        includeDeVergottiniCrossAnchor?: boolean;
+        includeEqualityIdentityWitness?: boolean;
         json?: boolean;
       },
       cmd,
@@ -13254,6 +13264,10 @@ program
           includeLinearRankExcess: opts.includeLinearRankExcess ?? false,
           includeBonferroniCrossAnchor:
             opts.includeBonferroniCrossAnchor ?? false,
+          includeDeVergottiniCrossAnchor:
+            opts.includeDeVergottiniCrossAnchor ?? false,
+          includeEqualityIdentityWitness:
+            opts.includeEqualityIdentityWitness ?? false,
           sort: opts.sort as
             | 'mehran'
             | 'tokens'

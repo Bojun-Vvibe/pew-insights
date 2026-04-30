@@ -119,7 +119,10 @@
  */
 import type { QueueLine } from './types.js';
 import { giniOfVector } from './dailytokenginicoefficient.js';
-import { bonferroniOfVector } from './dailytokenbonferroniindex.js';
+import {
+  bonferroniOfVector,
+  deVergottiniOfVector,
+} from './dailytokenbonferroniindex.js';
 
 export type DailyTokenMehranSort =
   | 'mehran'
@@ -156,6 +159,30 @@ export interface DailyTokenMehranOptions {
    * (1 - M_k/mu) shortfalls.
    */
   includeBonferroniCrossAnchor?: boolean;
+  /**
+   * Refinement (v0.6.289): when true, every emitted row gains a
+   * `deVergottini` field and a `mehranMinusDeVergottini` field.
+   * De Vergottini is the TOP-rank-weighted harmonic dual of
+   * Bonferroni (Tarsitano 1990). Pairing Mehran (LINEAR bottom-
+   * weighted) with De Vergottini (HARMONIC top-weighted) gives the
+   * cleanest cross-rank-kernel diagnostic: same Lorenz-curve data
+   * read with rank-kernels at OPPOSITE ends of the bottom-vs-top
+   * sensitivity spectrum. The gap mehran - deVergottini is large
+   * and positive on bottom-heavy distributions and shrinks (or
+   * flips negative) when bulk inequality sits in the top tail.
+   */
+  includeDeVergottiniCrossAnchor?: boolean;
+  /**
+   * Refinement (v0.6.289): when true, every emitted row gains a
+   * `equalityIdentityResidual` field. Numerically validates the
+   * Mehran homogeneity-of-degree-zero (scale invariance) and
+   * equal-vector identity axioms: M(mu * 1_n) = 0 by construction
+   * (the equal vector with the same mean as D). The residual is
+   * |M(mu * 1_n) - 0| = |M(mu * 1_n)|; expected ~ 0 to machine
+   * precision. A non-trivial residual would indicate a numerical
+   * pathology in the partial-mean accumulation.
+   */
+  includeEqualityIdentityWitness?: boolean;
   generatedAt?: string;
 }
 
@@ -209,6 +236,25 @@ export interface DailyTokenMehranSourceRow {
    * `includeBonferroniCrossAnchor: true`.
    */
   mehranMinusBonferroni?: number;
+  /**
+   * Refinement (v0.6.289): De Vergottini index on the same per-day
+   * vector (top-rank-weighted harmonic dual). Present iff caller
+   * set `includeDeVergottiniCrossAnchor: true`.
+   */
+  deVergottini?: number;
+  /**
+   * Refinement (v0.6.289): mehran - deVergottini. Sign reflects
+   * bottom-vs-top tail dominance. Present iff caller set
+   * `includeDeVergottiniCrossAnchor: true`.
+   */
+  mehranMinusDeVergottini?: number;
+  /**
+   * Refinement (v0.6.289): |M(mu * 1_n)| = |M(equal vector with
+   * same mean as D)|. Should be ~0 by the equal-vector identity
+   * axiom. Present iff caller set `includeEqualityIdentityWitness:
+   * true`.
+   */
+  equalityIdentityResidual?: number;
 }
 
 export interface DailyTokenMehranReport {
@@ -448,6 +494,17 @@ export function buildDailyTokenMehranIndex(
       const b = bonferroniOfVector(values);
       row.bonferroni = b.bonferroni;
       row.mehranMinusBonferroni = m.mehran - b.bonferroni;
+    }
+    if (opts.includeDeVergottiniCrossAnchor) {
+      const dv = deVergottiniOfVector(values);
+      row.deVergottini = dv.deVergottini;
+      row.mehranMinusDeVergottini = m.mehran - dv.deVergottini;
+    }
+    if (opts.includeEqualityIdentityWitness) {
+      // Build equal vector of length nDays with each entry = mu.
+      const equal = new Array<number>(nDays).fill(m.mean);
+      const mEq = mehranOfVector(equal);
+      row.equalityIdentityResidual = Math.abs(mEq.mehran);
     }
     rows.push(row);
     totalTokensSum += acc.totalTokens;

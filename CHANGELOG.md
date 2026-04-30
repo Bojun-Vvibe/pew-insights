@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.289 — 2026-05-01
+
+### Added
+
+- Two refinements on `pew-insights daily-token-mehran-index` (axis-45):
+
+  1. `--include-de-vergottini-cross-anchor`: every emitted row gains
+     a `deVergottini` field and a `mehranMinusDeVergottini` field.
+     De Vergottini (Tarsitano 1990) is the TOP-rank-weighted harmonic
+     dual of Bonferroni. Pairing Mehran (LINEAR bottom-weighted) with
+     De Vergottini (HARMONIC top-weighted) reads the same Lorenz-curve
+     data with rank-kernels at OPPOSITE ends of the bottom-vs-top
+     sensitivity spectrum. The gap m - dv is the cleanest single-row
+     diagnostic of bottom-tail-vs-top-tail dominance for a per-source
+     daily-token distribution.
+
+  2. `--include-equality-identity-witness`: every emitted row gains
+     an `equalityIdentityResidual` field = |M(mu * 1_n)|. Numerically
+     validates the Mehran equal-vector identity axiom M(c * 1) = 0;
+     expected ~0 to machine precision. A non-trivial residual would
+     indicate a numerical pathology in the partial-mean accumulation.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (vscode-other token
+  scrubbed for changelog policy):
+
+      pew-insights daily-token-mehran-index --include-de-vergottini-cross-anchor --include-equality-identity-witness
+
+      de-vergottini cross-anchor:
+      source        mehran  deVergottini  m-dv
+      claude-code   0.9374  0.4274        +0.5101
+      vscode-other  0.8982  0.2354        +0.6628
+      codex         0.8413  0.5030        +0.3383
+      hermes        0.6048  0.1400        +0.4649
+      openclaw      0.5387  0.1757        +0.3630
+      opencode      0.4641  0.0910        +0.3731
+
+      equality-identity witness (|M(mu*1_n)|):
+      source        mehran  |M(mu*1)|
+      claude-code   0.9374  8.88e-16
+      vscode-other  0.8982  0.00e+0
+      codex         0.8413  0.00e+0
+      hermes        0.6048  1.11e-16
+      openclaw      0.5387  1.11e-16
+      opencode      0.4641  0.00e+0
+
+  All six sources show m - dv strictly positive, confirming on this
+  corpus that the LINEAR bottom-weighted kernel reads above the
+  HARMONIC top-weighted kernel — a structural reading consistent
+  with the long-tailed bottom-heavy shape of every per-source daily-
+  token distribution. The equality-identity residual is exactly 0
+  or one machine epsilon (1.11e-16 / 8.88e-16) on every source —
+  exact agreement to the last bit, a quiet sanity floor that the
+  partial-mean accumulation does not accumulate roundoff drift.
+
+  Tested: 2 new cases bringing the axis-45 suite to 35 cases.
+  The refinements write pure additive metadata to each row; no
+  default behaviour changes.
+
 ## 0.6.288 — 2026-05-01
 
 ### Added

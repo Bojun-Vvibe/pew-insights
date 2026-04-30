@@ -375,3 +375,51 @@ test('build: degenerate single-positive-day source set to mehran=0', () => {
   assert.equal(r.droppedBelowMinDays, 1);
   assert.equal(r.sources.length, 0);
 });
+
+// ---- v0.6.289 refinements --------------------------------------------
+
+test('build: includeDeVergottiniCrossAnchor populates fields', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 's', 100),
+    ql('2026-04-02T00:00:00Z', 's', 200),
+    ql('2026-04-03T00:00:00Z', 's', 700),
+    ql('2026-04-04T00:00:00Z', 's', 50),
+  ];
+  const r = buildDailyTokenMehranIndex(queue, {
+    includeDeVergottiniCrossAnchor: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.notEqual(row.deVergottini, undefined);
+  assert.notEqual(row.mehranMinusDeVergottini, undefined);
+  assert.ok(
+    Math.abs(
+      (row.mehranMinusDeVergottini as number) -
+        (row.mehran - (row.deVergottini as number)),
+    ) < 1e-12,
+  );
+  // For bottom-heavy data, Mehran (linear bottom-weighted) should
+  // exceed De Vergottini (harmonic top-weighted).
+  assert.ok((row.mehranMinusDeVergottini as number) > 0);
+});
+
+test('build: includeEqualityIdentityWitness yields ~0 residual', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 's', 100),
+    ql('2026-04-02T00:00:00Z', 's', 200),
+    ql('2026-04-03T00:00:00Z', 's', 700),
+    ql('2026-04-04T00:00:00Z', 's', 1234),
+    ql('2026-04-05T00:00:00Z', 's', 50),
+  ];
+  const r = buildDailyTokenMehranIndex(queue, {
+    includeEqualityIdentityWitness: true,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.notEqual(row.equalityIdentityResidual, undefined);
+  // M(mu * 1) = 0 by construction; allow tiny float epsilon.
+  assert.ok(
+    (row.equalityIdentityResidual as number) < 1e-12,
+    `residual=${row.equalityIdentityResidual}`,
+  );
+});

@@ -15922,5 +15922,43 @@ export function renderDailyTokenMehranIndex(
     lines.push(renderTableLocal(pHeaders, pRows));
   }
 
+  if (r.sources.some((s) => s.deVergottini !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `de-vergottini cross-anchor (refinement v0.6.289): TOP-rank-weighted harmonic dual; opposite end of bottom-vs-top sensitivity from Mehran's LINEAR bottom-weighted kernel`,
+      ),
+    );
+    const dvHeaders = ['source', 'mehran', 'deVergottini', 'm-dv'];
+    const dvRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.mehran.toFixed(4),
+      s.deVergottini === undefined ? '\u2014' : s.deVergottini.toFixed(4),
+      s.mehranMinusDeVergottini === undefined
+        ? '\u2014'
+        : (s.mehranMinusDeVergottini >= 0 ? '+' : '') +
+          s.mehranMinusDeVergottini.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(dvHeaders, dvRows));
+  }
+
+  if (r.sources.some((s) => s.equalityIdentityResidual !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `equality-identity witness (refinement v0.6.289): |M(mu * 1_n)| should be ~0 by construction (M(c * 1) = 0 axiom)`,
+      ),
+    );
+    const eHeaders = ['source', 'mehran', '|M(mu*1)|'];
+    const eRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.mehran.toFixed(4),
+      s.equalityIdentityResidual === undefined
+        ? '\u2014'
+        : s.equalityIdentityResidual.toExponential(2),
+    ]);
+    lines.push(renderTableLocal(eHeaders, eRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }
