@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.270 — 2026-04-30
+
+### Added
+
+- New cross-source axis (THIRTY-FOURTH):
+  `pew-insights daily-token-zenga-index`.
+
+  Per-source ZENGA (2007) inequality index of the per-day
+  `total_tokens` distribution. For each source we collapse hourly
+  buckets into a single scalar per UTC day to obtain the day vector
+  `D = (D_1, ..., D_n)`, sort it ascending, and compute
+
+  ```
+  M_k^- = (1/k)     * sum_{i=1..k}     D_(i)     // bottom-k mean
+  M_k^+ = (1/(n-k)) * sum_{i=k+1..n}   D_(i)     // top-(n-k) mean
+  u(k)  = 1 - M_k^- / M_k^+                       // in [0, 1]
+  Z     = (1 / (n-1)) * sum_{k=1..n-1} u(k)       // Zenga 2007
+  ```
+
+  Zenga averages `(n - 1)` DIFFERENT bottom-vs-top mean ratios and
+  is more sensitive to mid-cutpoint shape than the Lorenz integral
+  used by `daily-token-gini-coefficient`. Two day-vectors with
+  identical Gini can have meaningfully different Zenga.
+
+  Per-source columns: `zenga`, `maxU` (peak per-cutpoint inequality
+  value over k = 1..n-1), `argmaxK` (1-indexed cutpoint achieving
+  `maxU`), `meanDaily`, `maxDay`, `maxDayTokens`, `tokens`,
+  `firstDay`, `lastDay`, `days`.
+
+  Knobs follow the established `daily-token-*` shape: `--since`,
+  `--until`, `--source`, `--min-tokens` (default 1000), `--min-days`
+  (default 2; Zenga requires `n >= 2`), `--top` (default 0 = no
+  cap), `--sort` (`zenga` default | `tokens` | `days` | `source`),
+  `--min-zenga` display filter, `--json`.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights daily-token-zenga-index
+
+  sources: 6 (shown 6)    tokens: 11,637,765,569
+
+  source          days  zenga   maxU    argmaxK  meanDaily    maxDay      maxDayTokens
+  claude-code     35    0.9623  0.9992  1        98,353,880   2026-04-20  1,052,011,841
+  vscode-copilot  73    0.9371  0.9973  1        25,832       2026-04-17  240,730
+  codex           8     0.8986  0.9496  1        101,203,083  2026-04-20  389,724,254
+  openclaw        14    0.6925  0.8102  1        147,782,245  2026-04-19  354,037,834
+  hermes          14    0.6628  0.8108  2        16,952,019   2026-04-19  34,683,508
+  opencode        11    0.5403  0.9661  1        461,599,063  2026-04-21  724,269,445
+
+  meanZ=0.7823  medianZ=0.7956  maxZ=0.9623  minZ=0.5403
+  rangeZ=0.4220
+  ```
+
+  Three structural patterns emerge.
+
+  **The four heaviest concentrators (`claude-code`, `vscode-copilot`,
+  `codex`, `opencode`) all show `argmaxK = 1`.** That means the
+  widest bottom-vs-top mean gap sits at the very first cutpoint --
+  the floor of the day distribution is essentially noise relative
+  to the rest. `openclaw` is the same (argmaxK=1, maxU=0.81). Only
+  `hermes` shows `argmaxK = 2`, meaning its TWO smallest days are
+  both meaningfully below the rest of the distribution -- a different
+  shape than "one cold day plus a normal distribution".
+
+  **`opencode` has the LOWEST Zenga (0.54) but a very HIGH `maxU`
+  (0.97).** A typical mass-concentrated source (e.g. `claude-code`
+  Z=0.96) has high u(k) at every cutpoint. `opencode` instead has
+  ONE extremely low day at the bottom (driving maxU to 0.97 at
+  k=1) and a near-uniform mass distribution above it -- so the
+  AVERAGED Zenga lands far lower than the single-cutpoint maxU
+  would suggest. This is exactly the disagreement Gini cannot
+  surface and the headline scalar this axis is built to add.
+
+  **`vscode-copilot` (73 days) and `claude-code` (35 days) both land
+  in the 0.94-0.96 Zenga band despite a 2x difference in n.** The
+  index is properly normalised by `n-1`, and `meanDaily` confirms
+  the scales (25k vs 98M tokens/day) are unrelated to the
+  inequality reading -- as intended.
+
 ## 0.6.269 — 2026-04-30
 
 ### Changed
