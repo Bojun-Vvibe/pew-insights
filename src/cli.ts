@@ -503,6 +503,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthPalma,
   renderSourceRowTokenSlopeCiLensWidthPalma,
 } from './sourcerowtokenslopecilenswidthpalma.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthGe2,
+  renderSourceRowTokenSlopeCiLensWidthGe2,
+} from './sourcerowtokenslopecilenswidthge2.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -25093,6 +25097,221 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showTailDecomposition: opts.showTailDecomposition ?? false,
               showPalmaHypothesis: opts.showPalmaHypothesis ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-ge2')
+  .description(
+    "Per-lens CROSS-SOURCE GENERALISED ENTROPY GE(alpha=2) of CI half-widths (TWENTY-SEVENTH cross-lens axis). GE(2) = (1/(2n)) * sum_i ((w_i / mean) - 1)^2 = (1/2) * (sigma/mean)^2 = (1/2) * CV^2 (Bourguignon 1979; Cowell-Kuga 1981; Shorrocks 1980). Mechanically distinct from ALL TWENTY-SIX prior cross-lens diagnostics: variance-normalised SECOND-MOMENT functional of the half-width shares -- L_2 SQUARED on share deviations, not L_1 area (axis-21 Gini), not L_infinity sup (axis-25 Hoover), not entropic alpha=1 (axis-22 Theil), not CRRA welfare loss (axis-23 Atkinson), not interquartile spread (axis-24 QCD), not a two-point decile ratio (axis-26 Palma). UNBOUNDED above (in [0, +inf)); clamped to 1e12 for JSON safety. UNIQUELY ADDITIVELY DECOMPOSABLE in the Shorrocks (1980) sense -- exposes a per-lens betweenGroupShare = between-quartile-group GE(2) / total GE(2) in [0, 1] that NO prior axis carries. STRONG principle of transfers (squared kernel weights tail outliers quadratically vs Gini's linear weighting). WIDE domain: tolerates up to n-1 zero half-widths (only all-zero is degenerate). Per-lens: nShared, meanHalfWidth, totalHalfWidth, cv, cvSquared, ge2, ge2Saturated, betweenGroupShare, concentrationLabel ('extreme' ge2>1.0 or saturated; 'high-concentration' ge2 in (0.5, 1.0]; 'moderate' ge2 in (0.125, 0.5]; 'mild' ge2 in (0.02, 0.125]; 'near-uniform' ge2 in [0, 0.02]; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mass', 'non-finite'). Report-level: meanGe2, medianGe2, maxGe2, minGe2, rangeGe2, nDegenerate, nSaturated, nExtreme, nNearUniform, mostExtremeLens (saturation-aware argmax), mostUniformLens (argmin, saturated lenses excluded). Identity GE(2) == cvSquared / 2 holds exactly and is exposed via --show-cv-identity for independent verification.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-ge2 <f>',
+    'only emit lenses whose GE(2) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-mass <f>',
+    'only emit lenses whose totalHalfWidth (sum of cross-source half-widths) is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--alert-cv <f>',
+    'only emit lenses whose coefficient of variation cv = sigma/mean is strictly GREATER than f (f >= 0)',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'ge2-desc' (default; saturation-aware) | 'ge2-asc' | 'cv-desc' | 'mass-desc' | 'mean-halfwidth-desc' | 'between-group-share-desc' | 'lens'",
+    'ge2-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostUniform)',
+  )
+  .option(
+    '--show-cv-identity',
+    'append per-lens cvIdentity line exposing the exact identity GE(2) == cvSquared / 2 for independent verification',
+  )
+  .option(
+    '--show-between-group',
+    'append per-lens betweenGroup line listing the Shorrocks (1980) additive decomposition betweenGroupShare and 1-betweenGroupShare (the within-group share)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertGe2?: string;
+        alertMass?: string;
+        alertCv?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showCvIdentity?: boolean;
+        showBetweenGroup?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertGe2: number | null = null;
+        if (opts.alertGe2 != null) {
+          const a = Number.parseFloat(opts.alertGe2);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-ge2 must be a finite, non-negative number (got ${opts.alertGe2})`,
+            );
+          }
+          alertGe2 = a;
+        }
+        let alertMass: number | null = null;
+        if (opts.alertMass != null) {
+          const a = Number.parseFloat(opts.alertMass);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-mass must be a finite, non-negative number (got ${opts.alertMass})`,
+            );
+          }
+          alertMass = a;
+        }
+        let alertCv: number | null = null;
+        if (opts.alertCv != null) {
+          const a = Number.parseFloat(opts.alertCv);
+          if (!Number.isFinite(a) || a < 0) {
+            throw new Error(
+              `--alert-cv must be a finite, non-negative number (got ${opts.alertCv})`,
+            );
+          }
+          alertCv = a;
+        }
+        const validSorts = [
+          'ge2-desc',
+          'ge2-asc',
+          'cv-desc',
+          'mass-desc',
+          'mean-halfwidth-desc',
+          'between-group-share-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthGe2(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertGe2,
+          alertMass,
+          alertCv,
+          sort: opts.sort as
+            | 'ge2-desc'
+            | 'ge2-asc'
+            | 'cv-desc'
+            | 'mass-desc'
+            | 'mean-halfwidth-desc'
+            | 'between-group-share-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthGe2(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showCvIdentity: opts.showCvIdentity ?? false,
+              showBetweenGroup: opts.showBetweenGroup ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
