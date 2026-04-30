@@ -143,6 +143,50 @@ All notable changes to this project will be documented in this file.
   precision-allocation skew that axes 1-17 cannot index by
   construction.
 
+### Refined
+
+- `--show-effective-lenses-buckets` flag added to the axis-18
+  renderer. Emits an `[effLenses buckets]` line summarising the
+  per-source `effectiveLenses` distribution as a five-bucket
+  histogram covering the full `[1, 6]` range: `[1,2)`, `[2,3)`,
+  `[3,4)`, `[4,5)`, `[5,6]`. The top bucket is closed on both
+  ends so an exactly-uniform source (`effLenses == 6`) lands in
+  `[5,6]`. Boundary-value tests pin 2.0/3.0/4.0/5.0 to their
+  upper buckets. Useful for at-a-glance read of "how many
+  effective lenses does my data lean on?" without reading every
+  per-source row. Composes independently with all other
+  `--show-*` flags.
+
+  Test count: 6941 → 6945 (+4 boundary / shape tests).
+
+  Second live-smoke run against `~/.config/pew/queue.jsonl` at
+  2026-04-30T03:04:29Z (one upstream-product source name redacted
+  to `vendor-y`):
+
+  ```
+  $ pew-insights source-row-token-slope-ci-half-width-entropy \
+      --top 6 --show-effective-lenses-buckets
+
+  pew-insights source-row-token-slope-ci-half-width-entropy
+  as of: 2026-04-30T03:04:29.238Z    sources: 6 (with all lenses 6)    min-rows: 4    confidence: 0.95    lambda: 1    bootstraps: 1000    seed: 42    alert-concentration: -    alert-uniform: -    top: -    sort: concentration-desc
+  dropped: 0 missing-from-some-lens, 0 filtered-by-alert; meanEntropyNormalised: 0.4403; medianEntropyNormalised: 0.4164; meanEffectiveLenses: 2.2245; meanConcentration: 0.5597; nNearUniform: 0; nNearConcentrated: 0; nDegenerate: 0; globalDominantLens: bca
+
+  source           rows  Hbits     Hnorm     effLens   concen    domLens            domShare  hwSum       flags
+  ---------------  ----  --------  --------  --------  --------  -----------------  --------  ----------  -----
+  claude-code       299    0.9087    0.3515    1.8774    0.6485  bca                  0.6930  149977770.5720  -
+  openclaw          576    1.0306    0.3987    2.0429    0.6013  bca                  0.5645  19007480.2544  -
+  hermes            305    1.0520    0.4070    2.0733    0.5930  bca                  0.5145  5682252.1197  -
+  vendor-y          333    1.1008    0.4258    2.1447    0.5742  bca                  0.5094  106858.3950  -
+  codex              64    1.1772    0.4554    2.2614    0.5446  bootstrap            0.4880  188526161.9980  -
+  opencode          470    1.5595    0.6033    2.9474    0.3967  bootstrap            0.4535  66417067.6507  -
+  [effLenses buckets] [1,2)=1/6 (0.1667) [2,3)=5/6 (0.8333) [3,4)=0/6 (0.0000) [4,5)=0/6 (0.0000) [5,6]=0/6 (0.0000)
+  ```
+
+  Refinement read: 5 of 6 sources land in the `[2,3)` effLenses
+  bucket and 1 (`claude-code`) drops below into `[1,2)` —
+  precision is concentrated in essentially 2 of the 6 lenses
+  (predominantly BCa) across the entire active queue.
+
 ## 0.6.244 — 2026-04-30
 
 ### Added

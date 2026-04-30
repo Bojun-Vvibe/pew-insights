@@ -1068,3 +1068,144 @@ test('halfWidthEntropy: dominantShare >= 1/N always', () => {
     assert.ok(r.dominantShare >= 1 / 6 - 1e-12, `dominantShare ${r.dominantShare} for ${c}`);
   }
 });
+
+// --- effective-lenses-buckets renderer flag (axis-18 refinement) ---
+
+test('render: showEffectiveLensesBuckets emits five-bucket histogram', () => {
+  const r = buildSourceRowTokenSlopeCiHalfWidthEntropy(
+    [...ascending('alpha', 10), ...ascending('beta', 12, 3, 50)],
+    { bootstraps: 200, generatedAt: '2026-04-30T00:00:00.000Z' },
+  );
+  const out = renderSourceRowTokenSlopeCiHalfWidthEntropy(r, {
+    showEffectiveLensesBuckets: true,
+  });
+  assert.match(out, /\[effLenses buckets\] \[1,2\)=/);
+  assert.match(out, /\[2,3\)=/);
+  assert.match(out, /\[3,4\)=/);
+  assert.match(out, /\[4,5\)=/);
+  assert.match(out, /\[5,6\]=/);
+});
+
+test('render: showEffectiveLensesBuckets bucket boundaries — exact unit tests', () => {
+  // Synthetic report with rows whose effLenses fall in each bucket.
+  const mkRow = (eff: number) => ({
+    source: `s${eff}`,
+    rowsKept: 5,
+    halfWidths: [1, 0, 0, 0, 0, 0],
+    halfWidthSum: 1,
+    probabilities: [1, 0, 0, 0, 0, 0],
+    entropyBits: Math.log2(eff),
+    entropyNormalised: Math.log2(eff) / LOG2_6,
+    effectiveLenses: eff,
+    concentration: 1 - Math.log2(eff) / LOG2_6,
+    dominantLens: 'bootstrap' as const,
+    dominantShare: 1 / eff,
+    degenerateFlag: false,
+  });
+  const r = {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    windowStart: null,
+    windowEnd: null,
+    source: null,
+    minRows: 4,
+    confidence: 0.95,
+    lambda: 1,
+    bootstraps: 1000,
+    seed: 42,
+    alertConcentration: null,
+    alertUniform: null,
+    top: null,
+    sort: 'concentration-desc' as const,
+    totalSources: 5,
+    sourcesWithAllLenses: 5,
+    droppedMissingLens: 0,
+    droppedAboveAlert: 0,
+    meanEntropyNormalised: 0.5,
+    medianEntropyNormalised: 0.5,
+    meanEffectiveLenses: 3.5,
+    meanConcentration: 0.5,
+    nDegenerate: 0,
+    nNearUniform: 0,
+    nNearConcentrated: 0,
+    globalDominantLens: 'bootstrap' as const,
+    rows: [
+      mkRow(1.5), // [1,2)
+      mkRow(2.5), // [2,3)
+      mkRow(3.5), // [3,4)
+      mkRow(4.5), // [4,5)
+      mkRow(6.0), // [5,6] — top bucket closed on both ends
+    ],
+  };
+  const out = renderSourceRowTokenSlopeCiHalfWidthEntropy(r, {
+    showEffectiveLensesBuckets: true,
+  });
+  assert.match(out, /\[1,2\)=1\/5 \(0\.2000\)/);
+  assert.match(out, /\[2,3\)=1\/5 \(0\.2000\)/);
+  assert.match(out, /\[3,4\)=1\/5 \(0\.2000\)/);
+  assert.match(out, /\[4,5\)=1\/5 \(0\.2000\)/);
+  assert.match(out, /\[5,6\]=1\/5 \(0\.2000\)/);
+});
+
+test('render: showEffectiveLensesBuckets — boundary values 2.0, 3.0, 4.0, 5.0 land in upper bucket', () => {
+  const mkRow = (eff: number) => ({
+    source: `s${eff}`,
+    rowsKept: 5,
+    halfWidths: [1, 0, 0, 0, 0, 0],
+    halfWidthSum: 1,
+    probabilities: [1, 0, 0, 0, 0, 0],
+    entropyBits: Math.log2(eff),
+    entropyNormalised: Math.log2(eff) / LOG2_6,
+    effectiveLenses: eff,
+    concentration: 1 - Math.log2(eff) / LOG2_6,
+    dominantLens: 'bootstrap' as const,
+    dominantShare: 1 / eff,
+    degenerateFlag: false,
+  });
+  const r = {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+    windowStart: null,
+    windowEnd: null,
+    source: null,
+    minRows: 4,
+    confidence: 0.95,
+    lambda: 1,
+    bootstraps: 1000,
+    seed: 42,
+    alertConcentration: null,
+    alertUniform: null,
+    top: null,
+    sort: 'concentration-desc' as const,
+    totalSources: 4,
+    sourcesWithAllLenses: 4,
+    droppedMissingLens: 0,
+    droppedAboveAlert: 0,
+    meanEntropyNormalised: 0.5,
+    medianEntropyNormalised: 0.5,
+    meanEffectiveLenses: 3.5,
+    meanConcentration: 0.5,
+    nDegenerate: 0,
+    nNearUniform: 0,
+    nNearConcentrated: 0,
+    globalDominantLens: 'bootstrap' as const,
+    rows: [mkRow(2.0), mkRow(3.0), mkRow(4.0), mkRow(5.0)],
+  };
+  const out = renderSourceRowTokenSlopeCiHalfWidthEntropy(r, {
+    showEffectiveLensesBuckets: true,
+  });
+  // 2.0 -> [2,3), 3.0 -> [3,4), 4.0 -> [4,5), 5.0 -> [5,6]
+  assert.match(out, /\[1,2\)=0\/4/);
+  assert.match(out, /\[2,3\)=1\/4/);
+  assert.match(out, /\[3,4\)=1\/4/);
+  assert.match(out, /\[4,5\)=1\/4/);
+  assert.match(out, /\[5,6\]=1\/4/);
+});
+
+test('render: showEffectiveLensesBuckets — empty rows omits the line', () => {
+  const r = buildSourceRowTokenSlopeCiHalfWidthEntropy([], {
+    generatedAt: '2026-04-30T00:00:00.000Z',
+  });
+  const out = renderSourceRowTokenSlopeCiHalfWidthEntropy(r, {
+    showEffectiveLensesBuckets: true,
+  });
+  assert.doesNotMatch(out, /\[effLenses buckets\]/);
+});

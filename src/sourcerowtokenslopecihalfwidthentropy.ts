@@ -641,6 +641,7 @@ export function renderSourceRowTokenSlopeCiHalfWidthEntropy(
     showConcentrationAggregate?: boolean;
     showLensAttribution?: boolean;
     showProbabilities?: boolean;
+    showEffectiveLensesBuckets?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
@@ -648,6 +649,7 @@ export function renderSourceRowTokenSlopeCiHalfWidthEntropy(
   const showConcentrationAggregate = opts.showConcentrationAggregate ?? false;
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showProbabilities = opts.showProbabilities ?? false;
+  const showEffectiveLensesBuckets = opts.showEffectiveLensesBuckets ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-half-width-entropy');
   lines.push(
@@ -728,6 +730,31 @@ export function renderSourceRowTokenSlopeCiHalfWidthEntropy(
     lines.push(
       `[lens attribution] ${parts.join(' ')} globalDominantLens=${r.globalDominantLens ?? '-'}`,
     );
+  }
+  if (showEffectiveLensesBuckets && r.rows.length > 0) {
+    // Five buckets covering the full effLenses range [1, 6]:
+    //   [1, 2), [2, 3), [3, 4), [4, 5), [5, 6]
+    // The top bucket is closed on both ends so an exactly-uniform
+    // source (effLenses == 6) lands in [5, 6].
+    const buckets = [0, 0, 0, 0, 0];
+    for (const row of r.rows) {
+      const e = row.effectiveLenses;
+      let idx: number;
+      if (e < 2) idx = 0;
+      else if (e < 3) idx = 1;
+      else if (e < 4) idx = 2;
+      else if (e < 5) idx = 3;
+      else idx = 4;
+      buckets[idx]! += 1;
+    }
+    const labels = ['[1,2)', '[2,3)', '[3,4)', '[4,5)', '[5,6]'];
+    const parts: string[] = [];
+    for (let i = 0; i < buckets.length; i++) {
+      const c = buckets[i]!;
+      const frac = c / r.rows.length;
+      parts.push(`${labels[i]}=${c}/${r.rows.length} (${fmtNum(frac, 4)})`);
+    }
+    lines.push(`[effLenses buckets] ${parts.join(' ')}`);
   }
   return lines.join('\n');
 }

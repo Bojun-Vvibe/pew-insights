@@ -23274,6 +23274,7 @@ program
   .option('--show-concentration-aggregate', 'append [concentration aggregate] line')
   .option('--show-lens-attribution', 'append [lens attribution] per-lens dominantLens histogram line')
   .option('--show-probabilities', 'when rendering pretty (non-JSON), append a per-source probability line listing p_i for each canonical lens')
+  .option('--show-effective-lenses-buckets', 'append [effLenses buckets] line: histogram of per-source effectiveLenses across five buckets [1,2) [2,3) [3,4) [4,5) [5,6] (top bucket closed on both ends)')
   .action(
     async (
       opts: {
@@ -23295,6 +23296,7 @@ program
         showConcentrationAggregate?: boolean;
         showLensAttribution?: boolean;
         showProbabilities?: boolean;
+        showEffectiveLensesBuckets?: boolean;
       },
       cmd,
     ) => {
@@ -23409,6 +23411,8 @@ program
               showConcentrationAggregate: opts.showConcentrationAggregate ?? false,
               showLensAttribution: opts.showLensAttribution ?? false,
               showProbabilities: opts.showProbabilities ?? false,
+              showEffectiveLensesBuckets:
+                opts.showEffectiveLensesBuckets ?? false,
             }) + '\n',
           );
         }
