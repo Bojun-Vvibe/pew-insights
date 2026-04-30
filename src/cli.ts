@@ -519,6 +519,10 @@ import {
   buildSourceRowTokenSlopeCiLensWidthMehran,
   renderSourceRowTokenSlopeCiLensWidthMehran,
 } from './sourcerowtokenslopecilenswidthmehran.js';
+import {
+  buildSourceRowTokenSlopeCiLensWidthSGini,
+  renderSourceRowTokenSlopeCiLensWidthSGini,
+} from './sourcerowtokenslopecilenswidthsgini.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -25934,6 +25938,183 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showGiniPair: opts.showGiniPair ?? false,
               showKernelSweep: opts.showKernelSweep ?? false,
+              showPerSourceWidths: opts.showPerSourceWidths ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-lens-width-sgini')
+  .description(
+    "Per-lens CROSS-SOURCE DONALDSON-WEYMARK S-GINI G(nu) of CI half-widths at fixed nu=3 (THIRTY-FIRST cross-lens axis). G(nu) = nu*(nu-1) * integral_0^1 (1-p)^(nu-2) * (p-L(p)) dp. Bottom-tail-sensitivity DIAL: at nu=3 the kernel 6*(1-p) is 6x larger at p=0 than the Gini uniform kernel, so a single low-rank source contributes 6x more weight than under axis-21 Gini. ORTHOGONAL escape from the well-known G(3) == Mehran (axis-30) identity: this axis ALSO emits the LOCAL ELASTICITY (d ln G / d ln nu) at nu=3 by central FD with h=0.25, which Mehran cannot produce. Per-lens: nShared, meanHalfWidth, minHalfWidth, maxHalfWidth, sgini (G(3)), nu (always 3), elasticity, gNuLow (G(2.75)), gNuHigh (G(3.25)), concentrationLabel ('extreme' G>=0.6; 'high' [0.3,0.6); 'moderate' [0.1,0.3); 'mild' (0,0.1); 'near-uniform' ==0; 'degenerate'), degenerateFlag, degenerateReason ('too-few-sources' n<4, 'zero-mean'). Report-level: nu, meanG, medianG, maxG, minG, rangeG, nDegenerate, nExtreme, nNearUniform, mostExtremeLens (argmax G), mostUniformLens (argmin G).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-sgini <f>',
+    'only emit lenses whose S-Gini G(3) is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--sort <key>',
+    "sort key: 'sgini-desc' (default) | 'sgini-asc' | 'mean-halfwidth-desc' | 'lens'",
+    'sgini-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-lens summary line')
+  .option(
+    '--show-concentration-aggregate',
+    'append [concentration aggregate] line summarising concentration-bin counts',
+  )
+  .option(
+    '--show-lens-attribution',
+    'append [lens attribution] line naming the two extremal lenses (mostExtreme, mostUniform)',
+  )
+  .option(
+    '--show-elasticity',
+    'append per-lens elasticity line listing G(2.75), G(3), G(3.25), and the central-FD elasticity dlnG/dlnNu at nu=3',
+  )
+  .option(
+    '--show-nu-sweep',
+    'append per-lens nuSweep line listing G(nu) at nu = 2, 2.5, 3, 4, 6 (nu=2 recovers Gini; nu=3 is the operating point and equals Mehran; larger nu emphasises bottom tail)',
+  )
+  .option(
+    '--show-per-source-widths',
+    'append per-lens per-source widths line listing (source=halfW) -- the raw inputs',
+  )
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertSgini?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showElasticity?: boolean;
+        showNuSweep?: boolean;
+        showPerSourceWidths?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertSgini: number | null = null;
+        if (opts.alertSgini != null) {
+          const a = Number.parseFloat(opts.alertSgini);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-sgini must be a finite number in [0, 1] (got ${opts.alertSgini})`,
+            );
+          }
+          alertSgini = a;
+        }
+        const validSorts = [
+          'sgini-desc',
+          'sgini-asc',
+          'mean-halfwidth-desc',
+          'lens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiLensWidthSGini(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertSgini,
+          sort: opts.sort as
+            | 'sgini-desc'
+            | 'sgini-asc'
+            | 'mean-halfwidth-desc'
+            | 'lens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiLensWidthSGini(report, {
+              showSummary: opts.showSummary ?? false,
+              showConcentrationAggregate:
+                opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showElasticity: opts.showElasticity ?? false,
+              showNuSweep: opts.showNuSweep ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
             }) + '\n',
           );
