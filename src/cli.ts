@@ -22683,6 +22683,10 @@ program
     '--show-monotone-aggregate',
     'when rendering pretty (non-JSON), append a single one-line aggregate summary AFTER the table reporting the monotone fraction, globalDirection, globalNarrowestLens, and globalWidestLens',
   )
+  .option(
+    '--show-direction-aggregate',
+    'when rendering pretty (non-JSON), append a single one-line direction-split summary AFTER the table reporting nIncreasing / nDecreasing fractions and per-direction mean monotonicityScore (composes independently with --show-monotone-aggregate and --show-summary)',
+  )
   .action(
     async (
       opts: {
@@ -22701,6 +22705,7 @@ program
         json?: boolean;
         showSummary?: boolean;
         showMonotoneAggregate?: boolean;
+        showDirectionAggregate?: boolean;
       },
       cmd,
     ) => {
@@ -22805,6 +22810,7 @@ program
             renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(report, {
               showSummary: opts.showSummary ?? false,
               showMonotoneAggregate: opts.showMonotoneAggregate ?? false,
+              showDirectionAggregate: opts.showDirectionAggregate ?? false,
             }) + '\n',
           );
         }

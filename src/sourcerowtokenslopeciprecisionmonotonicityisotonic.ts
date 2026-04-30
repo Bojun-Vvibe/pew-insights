@@ -780,10 +780,15 @@ function fmtNum(x: number, digits = 4): string {
  */
 export function renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(
   r: SourceRowTokenSlopeCiPrecisionMonotonicityIsotonicReport,
-  opts: { showSummary?: boolean; showMonotoneAggregate?: boolean } = {},
+  opts: {
+    showSummary?: boolean;
+    showMonotoneAggregate?: boolean;
+    showDirectionAggregate?: boolean;
+  } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
   const showMonotoneAggregate = opts.showMonotoneAggregate ?? false;
+  const showDirectionAggregate = opts.showDirectionAggregate ?? false;
   const lines: string[] = [];
   lines.push(
     'pew-insights source-row-token-slope-ci-precision-monotonicity-isotonic',
@@ -835,6 +840,31 @@ export function renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(
     const frac = r.nMonotone / r.rows.length;
     lines.push(
       `[monotone aggregate] ${r.nMonotone}/${r.rows.length} sources crossed monotonicityScore>=0.95 (${fmtNum(frac, 4)}); globalDirection=${r.globalDirection ?? '-'}; globalNarrowestLens=${r.globalNarrowestLens ?? '-'}; globalWidestLens=${r.globalWidestLens ?? '-'}`,
+    );
+  }
+  if (showDirectionAggregate && r.rows.length > 0) {
+    const incFrac = r.nIncreasing / r.rows.length;
+    const decFrac = r.nDecreasing / r.rows.length;
+    // Compute mean monotonicityScore split by direction across the
+    // currently-rendered rows. Rendered-rows-only (consistent with the
+    // per-source table) so an `--alert-monotone` filter doesn't lie.
+    let incSum = 0;
+    let decSum = 0;
+    let incN = 0;
+    let decN = 0;
+    for (const row of r.rows) {
+      if (row.direction === 'increasing') {
+        incSum += row.monotonicityScore;
+        incN += 1;
+      } else {
+        decSum += row.monotonicityScore;
+        decN += 1;
+      }
+    }
+    const incMean = incN > 0 ? incSum / incN : 0;
+    const decMean = decN > 0 ? decSum / decN : 0;
+    lines.push(
+      `[direction aggregate] increasing=${r.nIncreasing}/${r.rows.length} (${fmtNum(incFrac, 4)}, meanScore=${fmtNum(incMean)}); decreasing=${r.nDecreasing}/${r.rows.length} (${fmtNum(decFrac, 4)}, meanScore=${fmtNum(decMean)}); globalDirection=${r.globalDirection ?? '-'}`,
     );
   }
   return lines.join('\n');

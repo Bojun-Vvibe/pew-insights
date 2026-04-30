@@ -741,3 +741,83 @@ test('render: showMonotoneAggregate composes with showSummary', () => {
     assert.match(out, /\[monotone aggregate\]/);
   }
 });
+
+test('render: showDirectionAggregate=true appends direction-split aggregate when rows present', () => {
+  const queue = ascending('s1', 60);
+  const r = buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(queue, {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(r, {
+    showDirectionAggregate: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /\[direction aggregate\]/);
+    assert.match(out, /increasing=/);
+    assert.match(out, /decreasing=/);
+    assert.match(out, /meanScore=/);
+  }
+});
+
+test('render: showDirectionAggregate omitted on empty report', () => {
+  const r = buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic([], {
+    bootstraps: 100,
+    seed: 1,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(r, {
+    showDirectionAggregate: true,
+  });
+  assert.equal(/\[direction aggregate\]/.test(out), false);
+});
+
+test('render: showDirectionAggregate composes with showMonotoneAggregate', () => {
+  const queue = ascending('s1', 60);
+  const r = buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(queue, {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(r, {
+    showMonotoneAggregate: true,
+    showDirectionAggregate: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /\[monotone aggregate\]/);
+    assert.match(out, /\[direction aggregate\]/);
+  }
+});
+
+test('render: showDirectionAggregate composes with showSummary', () => {
+  const queue = ascending('s1', 60);
+  const r = buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(queue, {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: 'gen',
+  });
+  const out = renderSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(r, {
+    showSummary: true,
+    showDirectionAggregate: true,
+  });
+  if (r.rows.length > 0) {
+    assert.match(out, /summary:/);
+    assert.match(out, /\[direction aggregate\]/);
+  }
+});
+
+test('render: showDirectionAggregate fractions sum to 1.0 across direction split', () => {
+  const queue = [
+    ...ascending('s1', 60),
+    ...ascending('s2', 80, 5),
+    ...ascending('s3', 100, 20),
+  ];
+  const r = buildSourceRowTokenSlopeCiPrecisionMonotonicityIsotonic(queue, {
+    bootstraps: 100,
+    seed: 7,
+    generatedAt: 'gen',
+  });
+  if (r.rows.length > 0) {
+    assert.equal(r.nIncreasing + r.nDecreasing, r.rows.length);
+  }
+});
