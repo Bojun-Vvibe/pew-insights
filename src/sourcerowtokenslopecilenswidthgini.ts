@@ -623,6 +623,7 @@ export function renderSourceRowTokenSlopeCiLensWidthGini(
     showLensAttribution?: boolean;
     showMoments?: boolean;
     showPerSourceWidths?: boolean;
+    showLorenz?: boolean;
   } = {},
 ): string {
   const showSummary = opts.showSummary ?? false;
@@ -630,6 +631,7 @@ export function renderSourceRowTokenSlopeCiLensWidthGini(
   const showLensAttribution = opts.showLensAttribution ?? false;
   const showMoments = opts.showMoments ?? false;
   const showPerSourceWidths = opts.showPerSourceWidths ?? false;
+  const showLorenz = opts.showLorenz ?? false;
   const lines: string[] = [];
   lines.push('pew-insights source-row-token-slope-ci-lens-width-gini');
   lines.push(
@@ -681,6 +683,31 @@ export function renderSourceRowTokenSlopeCiLensWidthGini(
           );
         }
         lines.push(`    widths: ${parts.join(' ')}`);
+      }
+    }
+    if (showLorenz) {
+      // Lorenz curve: sort half-widths ascending, then for each
+      // cumulative-rank fraction k/n in (0, 1] emit the cumulative
+      // share of total half-width budget held by the bottom k
+      // sources. The diagonal y = x is perfect equality; the
+      // closer the curve hugs the x-axis before snapping up, the
+      // more concentrated the budget. The 0,0 anchor is implicit.
+      const halfs = [...row.perSourceHalfWidths].sort((a, b) => a - b);
+      const sum = halfs.reduce((a, b) => a + b, 0);
+      if (halfs.length === 0) {
+        lines.push(`    lorenz: (no shared sources)`);
+      } else if (sum === 0) {
+        lines.push(`    lorenz: (zero-mean -- curve undefined)`);
+      } else {
+        const points: string[] = [];
+        let cum = 0;
+        for (let i = 0; i < halfs.length; i++) {
+          cum += halfs[i]!;
+          const popFrac = (i + 1) / halfs.length;
+          const cumShare = cum / sum;
+          points.push(`(${fmtNum(popFrac, 4)},${fmtNum(cumShare, 4)})`);
+        }
+        lines.push(`    lorenz: ${points.join(' ')}`);
       }
     }
   }

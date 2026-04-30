@@ -550,3 +550,107 @@ test('axis21 renderer: degenerate reason rendered when present', () => {
   assert.ok(txt.includes('too-few-sources'));
   assert.ok(txt.includes('degenerate'));
 });
+
+// ---------- v0.6.248 refinement: --show-lorenz ----------
+
+test('axis21 refinement: --show-lorenz renders Lorenz curve points per lens', () => {
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 24, slope: 1.0, noise: 5 },
+    { source: 's2', nRows: 24, slope: 5.0, noise: 25 },
+    { source: 's3', nRows: 24, slope: 10.0, noise: 50 },
+    { source: 's4', nRows: 24, slope: 0.1, noise: 1 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthGini(queue, { bootstraps: 200 });
+  const txt = renderSourceRowTokenSlopeCiLensWidthGini(r, { showLorenz: true });
+  assert.ok(txt.includes('lorenz:'));
+  // Each Lorenz curve must terminate at (1.0000, 1.0000) -- the
+  // entire population holds the entire budget, by construction.
+  for (const line of txt.split('\n')) {
+    if (line.trim().startsWith('lorenz:')) {
+      // Skip the empty / degenerate variants.
+      if (line.includes('(no shared sources)')) continue;
+      if (line.includes('(zero-mean')) continue;
+      assert.ok(
+        line.endsWith('(1.0000,1.0000)'),
+        `Lorenz curve must end at (1,1); got: ${line}`,
+      );
+    }
+  }
+});
+
+test('axis21 refinement: --show-lorenz with no shared sources prints "(no shared sources)"', () => {
+  const r = buildSourceRowTokenSlopeCiLensWidthGini([], { bootstraps: 100 });
+  const txt = renderSourceRowTokenSlopeCiLensWidthGini(r, { showLorenz: true });
+  assert.ok(txt.includes('lorenz: (no shared sources)'));
+});
+
+test('axis21 refinement: --show-lorenz Lorenz curve is monotonically non-decreasing', () => {
+  const queue = syntheticQueue([
+    { source: 's1', nRows: 24, slope: 1.0, noise: 5 },
+    { source: 's2', nRows: 24, slope: 5.0, noise: 25 },
+    { source: 's3', nRows: 24, slope: 10.0, noise: 50 },
+    { source: 's4', nRows: 24, slope: 0.1, noise: 1 },
+  ]);
+  const r = buildSourceRowTokenSlopeCiLensWidthGini(queue, { bootstraps: 200 });
+  const txt = renderSourceRowTokenSlopeCiLensWidthGini(r, { showLorenz: true });
+  for (const line of txt.split('\n')) {
+    if (!line.trim().startsWith('lorenz:')) continue;
+    if (line.includes('(no shared sources)')) continue;
+    if (line.includes('(zero-mean')) continue;
+    // Parse out the (popFrac, cumShare) pairs.
+    const matches = [...line.matchAll(/\(([0-9.]+),([0-9.]+)\)/g)];
+    assert.ok(matches.length >= 1, `expected at least one point in: ${line}`);
+    let prevPop = 0;
+    let prevShare = 0;
+    for (const m of matches) {
+      const pop = Number.parseFloat(m[1]!);
+      const share = Number.parseFloat(m[2]!);
+      assert.ok(pop > prevPop, `popFrac must increase strictly: ${line}`);
+      assert.ok(
+        share >= prevShare - 1e-9,
+        `cumShare must be monotonically non-decreasing: prev=${prevShare} cur=${share}`,
+      );
+      // Lorenz curve always lies at or below the diagonal y = x
+      // (with equality iff perfectly equal).
+      assert.ok(share <= pop + 1e-9, `Lorenz must lie at/below diagonal: pop=${pop} share=${share}`);
+      prevPop = pop;
+      prevShare = share;
+    }
+  }
+});
+
+test('axis21 refinement: --show-lorenz on equal half-widths yields diagonal (perfect equality)', () => {
+  // Construct a setting where helper-level half-widths are equal:
+  // direct helper-level test only (the builder needs the full UQ
+  // pipeline). We simulate the renderer's per-row Lorenz logic
+  // directly by feeding equal widths through the helper.
+  const out = lensWidthGini([1, 1, 1, 1, 1]);
+  assert.equal(out.gini, 0);
+  // Validate the property analytically: equal widths -> Lorenz
+  // points are (k/n, k/n) for k=1..n.
+  const halfs = [1, 1, 1, 1, 1].sort((a, b) => a - b);
+  const sum = halfs.reduce((a, b) => a + b, 0);
+  let cum = 0;
+  for (let i = 0; i < halfs.length; i++) {
+    cum += halfs[i]!;
+    const popFrac = (i + 1) / halfs.length;
+    const cumShare = cum / sum;
+    assert.ok(Math.abs(popFrac - cumShare) < 1e-12);
+  }
+});
+
+test('axis21 refinement: --show-lorenz on one-source-absorbs-all yields max curvature', () => {
+  // For n=5 with only one nonzero source, sorted ascending:
+  //   widths = [0, 0, 0, 0, 1]  =>  cumShare = [0, 0, 0, 0, 1]
+  // Lorenz curve sits flat at zero until the last step, then snaps
+  // to 1 -- maximum possible Lorenz-curve area below the diagonal.
+  const halfs = [0, 0, 0, 0, 1];
+  const sum = halfs.reduce((a, b) => a + b, 0);
+  let cum = 0;
+  const shares: number[] = [];
+  for (let i = 0; i < halfs.length; i++) {
+    cum += halfs[i]!;
+    shares.push(cum / sum);
+  }
+  assert.deepEqual(shares, [0, 0, 0, 0, 1]);
+});

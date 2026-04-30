@@ -23896,6 +23896,10 @@ program
     '--show-per-source-widths',
     'append per-lens per-source widths line listing (source=halfW) for each shared source -- the raw inputs to the Gini computation',
   )
+  .option(
+    '--show-lorenz',
+    'append per-lens Lorenz-curve line listing (popFraction, cumulativeShare) points -- the diagonal y=x is perfect equality; the more the curve hugs the x-axis the more concentrated the half-width budget',
+  )
   .action(
     async (
       opts: {
@@ -23915,6 +23919,7 @@ program
         showLensAttribution?: boolean;
         showMoments?: boolean;
         showPerSourceWidths?: boolean;
+        showLorenz?: boolean;
       },
       cmd,
     ) => {
@@ -24000,6 +24005,7 @@ program
               showLensAttribution: opts.showLensAttribution ?? false,
               showMoments: opts.showMoments ?? false,
               showPerSourceWidths: opts.showPerSourceWidths ?? false,
+              showLorenz: opts.showLorenz ?? false,
             }) + '\n',
           );
         }
