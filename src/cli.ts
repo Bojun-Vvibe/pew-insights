@@ -467,6 +467,10 @@ import {
   buildSourceRowTokenSlopeCiTailMassAsymmetry,
   renderSourceRowTokenSlopeCiTailMassAsymmetry,
 } from './sourcerowtokenslopecitailmassasymmetry.js';
+import {
+  buildSourceRowTokenSlopeCiHalfWidthEntropy,
+  renderSourceRowTokenSlopeCiHalfWidthEntropy,
+} from './sourcerowtokenslopecihalfwidthentropy.js';
 import { buildSourceRowTokenLehmerNegOneMean } from './sourcerowtokenlehmernegonemean.js';
 import { buildSourceRowTokenLehmerNegTwoMean } from './sourcerowtokenlehmernegtwomean.js';
 import { buildSourceRowTokenLehmerNegThreeMean } from './sourcerowtokenlehmernegthreemean.js';
@@ -23208,6 +23212,203 @@ program
               showDirectionAggregate: opts.showDirectionAggregate ?? false,
               showTailAttribution: opts.showTailAttribution ?? false,
               showLensMembership: opts.showLensMembership ?? false,
+            }) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('source-row-token-slope-ci-half-width-entropy')
+  .description(
+    "Per-source CI HALF-WIDTH SHANNON ENTROPY diagnostic across the SIX uncertainty-quantification CIs. EIGHTEENTH cross-lens axis: mechanically distinct from ALL SEVENTEEN prior axes on TWO fundamental dimensions. (1) INPUT DOMAIN — every prior axis operates on the six CI MIDPOINTS (scale axes 1-13, identifier axes, rank/agreement axes, PAV axis 15, curvature axis 16, tail-mass-asymmetry axis 17); width-concordance (axis 3) is the only one that touches widths and does so as a RANK-CORRELATION between width and midpoint, NOT as analysis of the width distribution itself. (2) STATISTIC FAMILY — axes 1-17 are all moment / quantile / order-statistic / rank / curvature / asymmetry; NONE is information-theoretic. Shannon entropy of the normalised half-width vector (treated as a probability mass over the six lenses) is a fundamentally different statistic family answering 'how concentrated is precision in a single lens?'. h_i=(ciUpper_i-ciLower_i)/2; p_i=h_i/sum_j h_j (uniform 1/6 if all-zero); H=-sum p_i log2(p_i); Hnorm=H/log2(6) in [0,1]; effLenses=2^H in [1,6]; concentration=1-Hnorm in [0,1]. Hnorm=1 ⇔ all six half-widths equal (uniform precision allocation); Hnorm=0 ⇔ one lens carries the entire half-width mass. Per-source: halfWidths, halfWidthSum, probabilities, entropyBits, entropyNormalised, effectiveLenses, concentration, dominantLens (argmax_i h_i canonical-order tie-break), dominantShare (p_max), degenerateFlag (halfWidthSum==0). Report-level: meanEntropyNormalised, medianEntropyNormalised, meanEffectiveLenses, meanConcentration, nNearUniform (Hnorm >= 0.95), nNearConcentrated (Hnorm <= 0.30), nDegenerate, globalDominantLens (mode; canonical-order tie-break). --alert-concentration <f> filters to sources with concentration > f. --alert-uniform <f> filters to sources with entropyNormalised > f.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <id>', 'restrict to a single source id')
+  .option(
+    '--min-rows <n>',
+    'drop sources with fewer than n kept rows; integer >= 4 (default 4)',
+    '4',
+  )
+  .option(
+    '--confidence <f>',
+    'confidence level in (0, 1) -- forwarded identically to all six lenses (default 0.95)',
+    '0.95',
+  )
+  .option(
+    '--lambda <f>',
+    'variance ratio for the underlying Deming MLE; finite > 0 (default 1)',
+    '1',
+  )
+  .option(
+    '--bootstraps <n>',
+    'bootstrap replicate count, shared by the percentile / BCa / studentized-t lenses; integer >= 100 (default 1000)',
+    '1000',
+  )
+  .option(
+    '--seed <n>',
+    'LCG seed shared by the three resample-based lenses (default 42)',
+    '42',
+  )
+  .option(
+    '--alert-concentration <f>',
+    'only emit sources whose concentration is strictly GREATER than f (f in [0, 1])',
+  )
+  .option(
+    '--alert-uniform <f>',
+    'only emit sources whose entropyNormalised is strictly GREATER than f (f in [0, 1])',
+  )
+  .option('--top <n>', 'cap output to the top n sources after sorting')
+  .option(
+    '--sort <key>',
+    "sort key: 'concentration-desc' (default) | 'concentration-asc' | 'entropy-asc' | 'entropy-desc' | 'effective-lenses-desc' | 'effective-lenses-asc' | 'dominant-share-desc' | 'halfwidth-sum-desc' | 'rows' | 'source'",
+    'concentration-desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .option('--show-summary', 'append per-source summary line')
+  .option('--show-entropy-aggregate', 'append [entropy aggregate] line')
+  .option('--show-concentration-aggregate', 'append [concentration aggregate] line')
+  .option('--show-lens-attribution', 'append [lens attribution] per-lens dominantLens histogram line')
+  .option('--show-probabilities', 'when rendering pretty (non-JSON), append a per-source probability line listing p_i for each canonical lens')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minRows: string;
+        confidence: string;
+        lambda: string;
+        bootstraps: string;
+        seed: string;
+        alertConcentration?: string;
+        alertUniform?: string;
+        top?: string;
+        sort: string;
+        json?: boolean;
+        showSummary?: boolean;
+        showEntropyAggregate?: boolean;
+        showConcentrationAggregate?: boolean;
+        showLensAttribution?: boolean;
+        showProbabilities?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minRows = Number.parseInt(opts.minRows, 10);
+        if (!Number.isInteger(minRows) || minRows < 4) {
+          throw new Error(
+            `--min-rows must be an integer >= 4 (got ${opts.minRows})`,
+          );
+        }
+        const confidence = Number.parseFloat(opts.confidence);
+        if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+          throw new Error(
+            `--confidence must be a finite number in (0, 1) (got ${opts.confidence})`,
+          );
+        }
+        const lambda = Number.parseFloat(opts.lambda);
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          throw new Error(
+            `--lambda must be a finite, strictly positive number (got ${opts.lambda})`,
+          );
+        }
+        const bootstraps = Number.parseInt(opts.bootstraps, 10);
+        if (!Number.isInteger(bootstraps) || bootstraps < 100) {
+          throw new Error(
+            `--bootstraps must be an integer >= 100 (got ${opts.bootstraps})`,
+          );
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        let alertConcentration: number | null = null;
+        if (opts.alertConcentration != null) {
+          const a = Number.parseFloat(opts.alertConcentration);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-concentration must be a finite number in [0, 1] (got ${opts.alertConcentration})`,
+            );
+          }
+          alertConcentration = a;
+        }
+        let alertUniform: number | null = null;
+        if (opts.alertUniform != null) {
+          const a = Number.parseFloat(opts.alertUniform);
+          if (!Number.isFinite(a) || a < 0 || a > 1) {
+            throw new Error(
+              `--alert-uniform must be a finite number in [0, 1] (got ${opts.alertUniform})`,
+            );
+          }
+          alertUniform = a;
+        }
+        let top: number | null = null;
+        if (opts.top != null) {
+          const t = Number.parseInt(opts.top, 10);
+          if (!Number.isInteger(t) || t < 1) {
+            throw new Error(`--top must be a positive integer (got ${opts.top})`);
+          }
+          top = t;
+        }
+        const validSorts = [
+          'entropy-asc',
+          'entropy-desc',
+          'concentration-desc',
+          'concentration-asc',
+          'effective-lenses-desc',
+          'effective-lenses-asc',
+          'dominant-share-desc',
+          'halfwidth-sum-desc',
+          'rows',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildSourceRowTokenSlopeCiHalfWidthEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minRows,
+          confidence,
+          lambda,
+          bootstraps,
+          seed,
+          alertConcentration,
+          alertUniform,
+          top,
+          sort: opts.sort as
+            | 'entropy-asc'
+            | 'entropy-desc'
+            | 'concentration-desc'
+            | 'concentration-asc'
+            | 'effective-lenses-desc'
+            | 'effective-lenses-asc'
+            | 'dominant-share-desc'
+            | 'halfwidth-sum-desc'
+            | 'rows'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderSourceRowTokenSlopeCiHalfWidthEntropy(report, {
+              showSummary: opts.showSummary ?? false,
+              showEntropyAggregate: opts.showEntropyAggregate ?? false,
+              showConcentrationAggregate: opts.showConcentrationAggregate ?? false,
+              showLensAttribution: opts.showLensAttribution ?? false,
+              showProbabilities: opts.showProbabilities ?? false,
             }) + '\n',
           );
         }
