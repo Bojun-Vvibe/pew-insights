@@ -2,6 +2,127 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.249 — 2026-04-30
+
+### Added
+
+- `pew-insights source-row-token-slope-ci-lens-width-theil` —
+  per-lens CROSS-SOURCE THEIL INDEX (T_T) of CI half-widths
+  (TWENTY-SECOND cross-lens axis) for the v0.6.219 Deming-slope
+  uncertainty-quantification suite. Consumes the same six per-source
+  slope CIs as v0.6.227-v0.6.248 (percentile bootstrap, jackknife
+  normal, BCa, studentized-t, ABC, profile-likelihood).
+
+  **Mechanically distinct from ALL TWENTY-ONE prior cross-lens
+  diagnostics on FOUR orthogonal dimensions, AND distinct from
+  axis-21 (Gini) on TWO of those:**
+
+  1. **POPULATION GEOMETRY (vs axes 1-19).** Like axes 20-21, the
+     report is indexed by LENS (six rows). Axes 1-19 reduce a
+     6-vector per source to a per-source scalar; this axis reduces
+     the across-source cloud for each fixed lens to a single scalar.
+
+  2. **STATISTIC FAMILY (vs all 1-20).** The Theil index is a
+     UNIVARIATE INFORMATION-THEORETIC inequality measure: the
+     alpha = 1 case of the generalised-entropy family GE(alpha).
+     Algebraically `theil = ln(n) - H(p)` where `p_i = x_i /
+     sum_j x_j` are the per-source half-width shares and `H` is
+     Shannon entropy in nats — i.e. `theil = D_KL(p || uniform_n)`.
+     Not a Pearson r (axis-20), not Shannon entropy of a per-source
+     distribution shape (axis-17), not a log-ratio variance
+     (axis-19), not Gini (axis-21).
+
+  3. **WEIGHTING / DECOMPOSABILITY (vs axis-21 Gini).** Theil is
+     SUBGROUP-DECOMPOSABLE: `T_T(total) = T_T(within) +
+     T_T(between)` for any partition of sources. Gini is NOT
+     additively decomposable (the cross-group overlap term is
+     nonzero unless subgroup distributions don't overlap). Theil
+     weights each source by `share * log(share * n)`; Gini weights
+     only by the rank gap `(2 i - n - 1)`. Theil is therefore
+     MORE SENSITIVE to a single large outlier than Gini
+     (Pigou-Dalton transfer sensitivity differs between GE(0),
+     GE(1), and Gini — Cowell 2011).
+
+  4. **UPPER BOUND BEHAVIOUR (vs axis-21).** Gini lives in
+     `[0, (n-1)/n]` (linear in n); Theil lives in `[0, ln(n)]`
+     (logarithmic in n). At n = 6, the same one-source-takes-all
+     configuration registers as Gini ~ 0.83 vs Theil ~ 1.79. We
+     also report `theilNorm = theil / ln(n)` in `[0, 1]` for
+     direct cross-n comparability with axis-21.
+
+  Per-lens columns: `lens`, `nShared`, `meanHalfWidth`,
+  `minHalfWidth`, `maxHalfWidth`, `lnN`, `shannonEntropy` (nats),
+  `theil`, `theilNorm`, `topShareMax`, `concentrationLabel`
+  (`highly-concentrated` theilNorm > 0.5; `moderately-concentrated`
+  in (0.3, 0.5]; `mild-concentration` in (0.1, 0.3]; `near-equal`
+  in [0, 0.1]; `degenerate`), `degenerateFlag`, `degenerateReason`
+  (`too-few-sources` n < 3, `zero-mean-halfwidth`, `non-finite`).
+
+  Report-level: `meanTheil`, `medianTheil`, `maxTheil`, `minTheil`,
+  `rangeTheil`, `meanTheilNorm`, `nDegenerate`,
+  `nHighlyConcentrated`, `nNearEqual`, `mostConcentratedLens`
+  (argmax theil), `mostEqualLens` (argmin theil).
+
+  Filters:
+  - `--alert-theil <f>` — keep lenses with `theil > f` (f >= 0)
+  - `--alert-theil-norm <f>` — keep lenses with `theilNorm > f`
+    (f in [0, 1])
+
+  ### Tests
+
+  Adds `test/sourcerowtokenslopecilenswidththeil.test.ts` with
+  14 cases covering the pure helper (perfect equality -> 0;
+  one-takes-all -> ln(n); algebraic equivalence with the
+  share-form definition; positive-scale invariance and
+  shift-sensitivity; clamp on the upper bound; degenerate
+  paths; throws on negative / non-finite) and the builder
+  (six-lens canonical order; option validation across all
+  numeric knobs; render show-flags; alert-theil filter).
+
+  ### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+  ```
+  $ pew-insights source-row-token-slope-ci-lens-width-theil \
+      --bootstraps 200 --seed 42 \
+      --show-concentration-aggregate --show-lens-attribution
+  pew-insights source-row-token-slope-ci-lens-width-theil
+  as of: 2026-04-30T05:43:29.565Z    sources: 6 (with all lenses 6)
+      min-rows: 4    confidence: 0.95    lambda: 1
+      bootstraps: 200    seed: 42    sort: theil-desc
+  meanTheil: 1.0135; medianTheil: 0.9534; maxTheil: 1.4718;
+  minTheil: 0.7898; rangeTheil: 0.6820; meanTheilNorm: 0.5656;
+  nHighlyConcentrated: 4; nNearEqual: 0; nDegenerate: 0;
+  mostConcentrated: abc; mostEqual: bootstrap
+
+  lens               n   theil    theilNorm  topShare  concentration
+  -----------------  --  -------  ---------  --------  ---------------
+  abc                6   1.4718   0.8214     0.9274    highly-concentrated
+  profileLikelihood  6   1.0614   0.5924     0.6554    highly-concentrated
+  studentizedT       6   0.9541   0.5325     0.4886    highly-concentrated
+  jackknife          6   0.9526   0.5317     0.4962    highly-concentrated
+  bca                6   0.8512   0.4751     0.6806    moderately-concentrated
+  bootstrap          6   0.7898   0.4408     0.6519    moderately-concentrated
+  [concentration aggregate] nHighlyConcentrated=4/6 nNearEqual=0/6
+      meanTheil=1.0135 medianTheil=0.9534 rangeTheil=0.6820
+      meanTheilNorm=0.5656
+  [lens attribution] mostConcentrated=abc (max theil)
+                      mostEqual=bootstrap (min theil)
+  ```
+
+  Reading: at `n = 6` shared sources, the upper bound is
+  `ln(6) ~ 1.7918`. The ABC lens pins to `theilNorm = 0.8214`
+  (theil 1.4718) because one source absorbs ~93% of its cross-
+  source half-width budget — by Theil this is "highly
+  concentrated", consistent with axis-21 Gini's reading of the
+  same lens, but with a much sharper signal (Theil's log-
+  weighting amplifies the single dominant share). The bootstrap
+  and BCa lenses, in contrast, spread the half-width budget
+  more evenly (top share ~ 0.65) and land in the
+  "moderately-concentrated" bin. The `range = 0.682` across
+  lenses confirms that the choice of CI methodology has a
+  first-order effect on cross-source half-width concentration —
+  a property invisible to per-source axes 1-19.
+
 ## 0.6.248 — 2026-04-30
 
 ### Added
