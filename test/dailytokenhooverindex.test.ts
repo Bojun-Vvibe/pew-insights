@@ -407,3 +407,69 @@ test('build: sort by aboveMeanExcess descending', () => {
   assert.equal(r.sources[0]!.source, 'high');
   assert.equal(r.sources[1]!.source, 'low');
 });
+
+// ---- refinement: pietra cross-anchor ----------------------------------
+
+test('refinement: includePietraCrossAnchor surfaces pietra and gap', () => {
+  const q: QueueLine[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    q.push(ql(`2026-04-${String(i + 1).padStart(2, '0')}T00:00:00Z`, 'a', (i + 1) * 1000));
+  }
+  const r = buildDailyTokenHooverIndex(q, {
+    generatedAt: GEN,
+    includePietraCrossAnchor: true,
+  });
+  const row = r.sources[0]!;
+  assert.ok(row.pietra !== undefined);
+  assert.ok(row.hooverMinusPietra !== undefined);
+  assert.ok(row.pietra! >= 0);
+});
+
+test('refinement: hoover >= pietra identity holds for all non-negative vectors', () => {
+  // Exercise on multiple shapes.
+  const cases: number[][] = [
+    [1, 2, 3, 4, 5],
+    [1, 1, 1, 1000],
+    [0, 0, 0, 100, 200],
+    [10, 10, 10, 10, 10, 10, 10, 1000],
+    [1, 5, 9, 23, 100, 2, 7, 11, 19],
+  ];
+  for (const v of cases) {
+    const q: QueueLine[] = v.map((tt, i) =>
+      ql(`2026-04-${String(i + 1).padStart(2, '0')}T00:00:00Z`, 'src', tt),
+    );
+    const r = buildDailyTokenHooverIndex(q, {
+      generatedAt: GEN,
+      includePietraCrossAnchor: true,
+      minTokens: 0,
+    });
+    const row = r.sources[0]!;
+    assert.ok(
+      row.hooverMinusPietra! >= -1e-12,
+      `hoover < pietra for ${JSON.stringify(v)} -- hoover=${row.hoover}, pietra=${row.pietra}`,
+    );
+  }
+});
+
+test('refinement: pietra absent unless flag set', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 1000),
+    ql('2026-04-02T00:00:00Z', 'a', 9000),
+  ];
+  const r = buildDailyTokenHooverIndex(q, { generatedAt: GEN });
+  assert.equal(r.sources[0]!.pietra, undefined);
+  assert.equal(r.sources[0]!.hooverMinusPietra, undefined);
+});
+
+test('refinement: n=2 binary case has hoover - pietra = 0', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'a', 1000),
+    ql('2026-04-02T00:00:00Z', 'a', 9000),
+  ];
+  const r = buildDailyTokenHooverIndex(q, {
+    generatedAt: GEN,
+    includePietraCrossAnchor: true,
+  });
+  const row = r.sources[0]!;
+  assert.ok(Math.abs(row.hooverMinusPietra!) < 1e-9);
+});

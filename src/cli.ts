@@ -12729,6 +12729,10 @@ program
     '--include-reference-deviation',
     'every row gains a referenceDeviation field = (hoover/gini) - 0.75. Surfaces how far the empirical Lorenz-shape ratio sits from the textbook unit-uniform comparator.',
   )
+  .option(
+    '--include-pietra-cross-anchor',
+    'every row gains pietra (axis-35) and hooverMinusPietra fields. Both are L_infinity Lorenz gaps but at different rank cuts (Hoover at equal-weights, Pietra at equal-mass); the gap hoover-pietra >= 0 is the cross-rank-cut diagnostic.',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -12742,6 +12746,7 @@ program
         sort: string;
         minHoover: string;
         includeReferenceDeviation?: boolean;
+        includePietraCrossAnchor?: boolean;
         json?: boolean;
       },
       cmd,
@@ -12797,6 +12802,7 @@ program
           top,
           minHoover,
           includeReferenceDeviation: opts.includeReferenceDeviation ?? false,
+          includePietraCrossAnchor: opts.includePietraCrossAnchor ?? false,
           sort: opts.sort as
             | 'hoover'
             | 'tokens'

@@ -111,6 +111,7 @@
  */
 import type { QueueLine } from './types.js';
 import { giniOfVector } from './dailytokenginicoefficient.js';
+import { pietraOfVector } from './dailytokenpietraratio.js';
 
 export type DailyTokenHooverSort =
   | 'hoover'
@@ -140,6 +141,19 @@ export interface DailyTokenHooverOptions {
    * under a single Pigou-Dalton transfer.
    */
   includeReferenceDeviation?: boolean;
+  /**
+   * Refinement (v0.6.283): when true, every emitted row gains a
+   * `pietra` field and a `hooverMinusPietra` field. Both Hoover
+   * and Pietra are L_infinity Lorenz gaps but at different rank
+   * cuts: Hoover at the EQUAL-WEIGHTS cut (every day = 1/n
+   * weight), Pietra at the EQUAL-MASS cut (cumulative mass reaches
+   * the mean). The identity `hoover >= pietra` holds for any
+   * non-negative vector; equality iff n=2 or under degenerate
+   * concentration. The gap `hoover - pietra >= 0` is the
+   * cross-rank-cut diagnostic that no single L_infinity reading
+   * can produce on its own.
+   */
+  includePietraCrossAnchor?: boolean;
   generatedAt?: string;
 }
 
@@ -201,6 +215,18 @@ export interface DailyTokenHooverSourceRow {
    * hooverOverGini is NaN.
    */
   referenceDeviation?: number;
+  /**
+   * Refinement (v0.6.283): Pietra ratio on the same per-day vector
+   * (axis-35 cross-anchor). Present iff caller set
+   * `includePietraCrossAnchor: true`.
+   */
+  pietra?: number;
+  /**
+   * Refinement (v0.6.283): hoover - pietra. By construction >= 0
+   * for any non-negative vector. Equality iff n=2 or degenerate.
+   * Present iff caller set `includePietraCrossAnchor: true`.
+   */
+  hooverMinusPietra?: number;
 }
 
 export interface DailyTokenHooverReport {
@@ -481,6 +507,11 @@ export function buildDailyTokenHooverIndex(
       row.referenceDeviation = Number.isNaN(hooverOverGini)
         ? Number.NaN
         : hooverOverGini - 0.75;
+    }
+    if (opts.includePietraCrossAnchor) {
+      const p = pietraOfVector(values);
+      row.pietra = p.pietra;
+      row.hooverMinusPietra = h.hoover - p.pietra;
     }
     rows.push(row);
     totalTokensSum += acc.totalTokens;

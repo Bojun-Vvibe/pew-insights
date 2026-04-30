@@ -15523,5 +15523,24 @@ export function renderDailyTokenHooverIndex(
     lines.push(renderTableLocal(dHeaders, dRows));
   }
 
+  if (r.sources.some((s) => s.pietra !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `pietra cross-anchor (refinement v0.6.283): same Lorenz curve, different rank cut; identity hoover >= pietra holds`,
+      ),
+    );
+    const pHeaders = ['source', 'hoover', 'pietra', 'hoover-pietra'];
+    const pRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.hoover.toFixed(4),
+      s.pietra === undefined ? '\u2014' : s.pietra.toFixed(4),
+      s.hooverMinusPietra === undefined
+        ? '\u2014'
+        : s.hooverMinusPietra.toFixed(4),
+    ]);
+    lines.push(renderTableLocal(pHeaders, pRows));
+  }
+
   return lines.join('\n').replace(/\n+$/, '');
 }
