@@ -17074,6 +17074,7 @@ import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.
 import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintileshareratio.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
+import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17786,6 +17787,73 @@ export function renderDailyTokenRunsTestZ(
     ]);
     lines.push(renderTableLocal(wHeaders, wRows));
   }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHillTailIndex(
+  r: DailyTokenHillTailIndexReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-hill-tail-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    top-frac: ${r.topFrac}    max-alpha: ${r.maxAlpha === null ? '\u2014' : r.maxAlpha}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedAboveMaxAlpha)} above max-alpha, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HILL ESTIMATOR: gamma_hat = (1/k) * sum log(X_(i)) - log(X_(k+1)) on the top k = floor(n * topFrac) per-day total_tokens. alpha_hat = 1/gamma. alpha < 1 = INFINITE-MEAN tail; 1<=alpha<2 = INFINITE-VARIANCE; alpha >= 4 = near-light tail. SIXTY-FIFTH cross-source axis. Tail-only and SCALE-INVARIANT (multiply every day by c > 0 -> alpha unchanged); orthogonal to all axes 32-64.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source Hill alpha (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'k',
+    'threshold',
+    'alpha',
+    'gamma',
+    'gammaSE',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.k),
+    formatNumber(Math.round(s.threshold)),
+    s.degenerate || !Number.isFinite(s.alpha) ? '\u2014' : s.alpha.toFixed(4),
+    s.degenerate ? '\u2014' : s.gamma.toFixed(4),
+    s.gammaStdErr === 0 ? '\u2014' : s.gammaStdErr.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

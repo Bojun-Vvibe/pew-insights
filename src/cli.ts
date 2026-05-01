@@ -116,6 +116,7 @@ import {
   renderDailyTokenQuintileShareRatio,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
+  renderDailyTokenHillTailIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -394,6 +395,7 @@ import { buildDailyTokenDecileShareGap } from './dailytokendecilesharegap.js';
 import { buildDailyTokenQuintileShareRatio } from './dailytokenquintileshareratio.js';
 import { buildDailyTokenMadOverMedian } from './dailytokenmadovermedian.js';
 import { buildDailyTokenRunsTestZ } from './dailytokenrunstestz.js';
+import { buildDailyTokenHillTailIndex } from './dailytokenhilltailindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -15893,6 +15895,136 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenRunsTestZ(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-hill-tail-index')
+  .description(
+    "Per-source HILL ESTIMATOR of the Pareto tail index alpha on the per-day total_tokens vector (SIXTY-FIFTH cross-source axis). gamma_hat = (1/k) * sum_{i=1..k} log(X_(i)) - log(X_(k+1)) where X_(1) >= ... >= X_(n) are the descending order statistics and k = floor(n * topFrac) (default topFrac=0.20). alpha_hat = 1/gamma. alpha < 1 = INFINITE-MEAN tail (sample mean dominated by largest day). 1<=alpha<2 = INFINITE-VARIANCE. alpha>=4 = near-light tail. STRUCTURALLY ORTHOGONAL to all axes 32-64: those are full-distribution dispersion functionals; Hill is SEMIPARAMETRIC and TAIL-ONLY (multiply every bottom-80% day by 1000 -> alpha unchanged) and SCALE-INVARIANT (multiply every day by c > 0 -> alpha identical, because gamma is a difference of logs).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 10). With default topFrac=0.2 this guarantees k>=2 and at least one threshold day.',
+    '10',
+  )
+  .option(
+    '--top-frac <f>',
+    'fraction of upper order statistics to use for the Hill sum (default 0.20). Must be in (0, 1).',
+    '0.20',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: alpha (default, lightest tails first; largest alpha first) | invAlpha (heaviest tails first) | tokens | days | source | k. Applied before --top.',
+    'alpha',
+  )
+  .option(
+    '--max-alpha <x>',
+    'display filter: hide non-degenerate rows whose alpha is strictly above this value (>0). Useful for surfacing only the heaviest-tailed sources.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        topFrac: string;
+        top: string;
+        sort: string;
+        maxAlpha?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 5) {
+          throw new Error(
+            `--min-days must be an integer >= 5 (got ${opts.minDays})`,
+          );
+        }
+        const topFrac = Number.parseFloat(opts.topFrac);
+        if (!Number.isFinite(topFrac) || topFrac <= 0 || topFrac >= 1) {
+          throw new Error(
+            `--top-frac must be a finite number in (0, 1) (got ${opts.topFrac})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let maxAlpha: number | null = null;
+        if (opts.maxAlpha !== undefined) {
+          const mv = Number.parseFloat(opts.maxAlpha);
+          if (!Number.isFinite(mv) || mv <= 0) {
+            throw new Error(
+              `--max-alpha must be a strictly positive finite number (got ${opts.maxAlpha})`,
+            );
+          }
+          maxAlpha = mv;
+        }
+        const validSorts = ['alpha', 'invAlpha', 'tokens', 'days', 'source', 'k'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHillTailIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          topFrac,
+          top,
+          maxAlpha,
+          sort: opts.sort as
+            | 'alpha'
+            | 'invAlpha'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'k',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHillTailIndex(report) + '\n');
         }
       } catch (e) {
         die(e);
