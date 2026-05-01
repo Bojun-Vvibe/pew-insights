@@ -408,3 +408,133 @@ test('property: Amato is NOT a monotone function of Gini (orthogonality witness)
     'expected a witness pair where Gini and Amato disagree on ordering',
   );
 });
+
+// ---- additional invariants and defensive guards --------------------
+
+test('invariant: A(L) >= sqrt(2) by the chord lower bound (triangle inequality)', () => {
+  // The Lorenz curve goes from (0,0) to (1,1); the straight-line chord
+  // between those points has length sqrt(2). Any path connecting the
+  // two endpoints has length >= sqrt(2) by the triangle inequality.
+  // Verify on a wide range of randomly generated non-negative vectors.
+  const r = rng(311);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 2 + Math.floor(r() * 30);
+    const v: number[] = [];
+    for (let i = 0; i < n; i++) v.push(r() < 0.1 ? 0 : r() * 1000);
+    const a = amatoOfVector(v).amato;
+    assert.ok(
+      a >= SQRT2 - 1e-12,
+      `chord lower bound violated: A=${a} < sqrt(2) on ${JSON.stringify(v)}`,
+    );
+  }
+});
+
+test('invariant: A(L) <= 2 by the L-shape upper envelope', () => {
+  // The Lorenz curve sits inside the unit square below the diagonal.
+  // Its arc length is bounded above by the perimeter of the right-
+  // angled L-path through (1, 0) -- length 2 -- attained only in the
+  // limit of a single entry holding all mass. Verify on random
+  // vectors plus an explicit near-degenerate case.
+  const r = rng(7331);
+  for (let trial = 0; trial < 100; trial++) {
+    const n = 2 + Math.floor(r() * 30);
+    const v: number[] = [];
+    for (let i = 0; i < n; i++) v.push(r() * 1000);
+    const a = amatoOfVector(v).amato;
+    assert.ok(
+      a <= 2 + 1e-12,
+      `L-shape upper bound violated: A=${a} > 2 on ${JSON.stringify(v)}`,
+    );
+  }
+  // explicit near-degenerate test
+  const huge: number[] = new Array(100).fill(1);
+  huge[99] = 1e9;
+  const aHuge = amatoOfVector(huge).amato;
+  assert.ok(aHuge < 2, `near-degenerate A=${aHuge} >= 2`);
+  assert.ok(aHuge > 1.99, `near-degenerate A=${aHuge} should approach 2`);
+});
+
+test('cross-anchor invariant: Kakwani K(A) of equality-vector is exactly 0', () => {
+  // Cross-anchor identity: building the report with --include-kakwani
+  // on a perfectly equal source must produce kakwani = 0 to machine
+  // precision (the identity K(sqrt(2)) = 0 exposed at the report level).
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00.000Z', 'eq', 100),
+    ql('2026-04-26T00:00:00.000Z', 'eq', 100),
+    ql('2026-04-27T00:00:00.000Z', 'eq', 100),
+    ql('2026-04-28T00:00:00.000Z', 'eq', 100),
+  ];
+  const r = buildDailyTokenAmatoIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    includeKakwani: true,
+  });
+  const s = r.sources[0]!;
+  assert.ok(
+    Math.abs(s.kakwani as number) < 1e-12,
+    `cross-anchor identity K(equality)=0 violated: ${s.kakwani}`,
+  );
+  assert.ok(
+    Math.abs(s.amatoExcessOverEquality as number) < 1e-12,
+    `cross-anchor identity (A-sqrt(2))=0 violated: ${s.amatoExcessOverEquality}`,
+  );
+});
+
+test('cross-anchor invariant: amato/gini ratio diverges as we approach equality (Pigou-Dalton sequence)', () => {
+  // Construct a CONTROLLED Pigou-Dalton sequence: start from a skewed
+  // vector and repeatedly transfer mass from the largest entry to the
+  // smallest holding total fixed. Both Amato and Gini must strictly
+  // decrease (Pigou-Dalton); but Amato is bounded below by sqrt(2)
+  // while Gini is bounded below by 0, so the ratio Amato/Gini must
+  // diverge to +inf along the sequence. Verify monotone increase.
+  function step(v: number[]): number[] {
+    // pure equalising transfer from the max to the min
+    const w = v.slice();
+    let iMin = 0, iMax = 0;
+    for (let i = 1; i < w.length; i++) {
+      if ((w[i] as number) < (w[iMin] as number)) iMin = i;
+      if ((w[i] as number) > (w[iMax] as number)) iMax = i;
+    }
+    if (iMin === iMax) return w;
+    const delta = ((w[iMax] as number) - (w[iMin] as number)) / 4;
+    w[iMin] = (w[iMin] as number) + delta;
+    w[iMax] = (w[iMax] as number) - delta;
+    return w;
+  }
+  let v = [1, 5, 25, 125, 625];
+  let prev = -Infinity;
+  for (let k = 0; k < 8; k++) {
+    const r = buildDailyTokenAmatoIndex(
+      v.map((tt, i) => ql(`2026-04-${20 + i}T00:00:00.000Z`, 'a', tt)),
+      { generatedAt: GEN, minTokens: 0, includeGiniAnchor: true },
+    );
+    const s = r.sources[0]!;
+    const ratio = s.amatoOverGini as number;
+    assert.ok(
+      ratio > prev,
+      `amato/gini not strictly increasing along Pigou-Dalton sequence: ${prev} -> ${ratio} on ${JSON.stringify(v)}`,
+    );
+    prev = ratio;
+    v = step(v);
+  }
+});
+
+test('defensive guard: amatoOverGini is NaN when gini = 0 (perfect equality)', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00.000Z', 'eq', 100),
+    ql('2026-04-26T00:00:00.000Z', 'eq', 100),
+    ql('2026-04-27T00:00:00.000Z', 'eq', 100),
+  ];
+  const r = buildDailyTokenAmatoIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    includeGiniAnchor: true,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.gini, 0);
+  assert.ok(
+    Number.isNaN(s.amatoOverGini as number),
+    `expected NaN ratio when gini=0, got ${s.amatoOverGini}`,
+  );
+});
+
