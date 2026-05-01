@@ -2,6 +2,159 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.322 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-EIGHTH):
+  `pew-insights daily-token-box-count-fd`.
+
+  Per-source Box-Counting Fractal Dimension (Mandelbrot, B. B.,
+  "How long is the coast of Britain? Statistical self-similarity
+  and fractional dimension", Science 156(3775):636-638, 1967;
+  classical implementation per Liebovitch, L. S. & Toth, T.,
+  "A fast algorithm to determine fractal dimensions by box
+  counting", Phys. Lett. A 141(8-9):386-390, 1989) on the
+  gap-filled daily `total_tokens` series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`,
+  `grid-min = 2`, `grid-max = 32`. Algorithm:
+
+      1. DOUBLE-NORMALIZE the waveform onto the unit square:
+           x*[i] = i / (N - 1)
+           y*[i] = (y[i] - ymin) / (ymax - ymin)
+
+      2. For each grid resolution m in {gridMin, 2*gridMin,
+         4*gridMin, ..., gridMax} (geometric doubling, capped
+         at N - 1), partition [0, 1]^2 into an m x m grid of
+         square boxes of side eps = 1/m. Rasterize the polyline
+         at sub-step delta = eps / 4 (Liebovitch-Toth 4x
+         oversample) and count UNIQUE marked boxes -> N(m).
+
+      3. BFD = OLS slope of ln(N(m)) vs ln(m) across the
+         geometric ladder.
+
+  Reported `bfd` is clamped to [1, 2] for symmetry with axes 74
+  (HFD), 75 (KFD), 76 (PFD), 77 (SFD); un-clamped `bfdRaw`,
+  `clampedBelow1`, `clampedAbove2` counters surfaced for
+  operators. Also reports `slopeR2` (OLS goodness-of-fit on
+  the log-log ladder), `nGridSteps`, `gridMin`/`gridMax`
+  actually used, `boxCountsCsv` (the N(m) sequence joined by
+  `|` for traceability), `yRange` (raw informational), and
+  `dxStep = 1 / (N - 1)` (informational).
+
+  Reading `bfd`:
+
+  - `bfd ~ 1.0`   = near-1D path on the unit square (smooth
+                    monotone ramp; N(m) grows linearly in m).
+  - `bfd ~ 1.3`   = moderately rough waveform (N(m) grows
+                    faster than m).
+  - `bfd -> 2`    = highly rough / near-space-filling
+                    (N(m) approaches m^2).
+
+  Edge cases surfaced as drop counters: `droppedZeroVariance`
+  (perfectly flat tenure — `ymin === ymax`), `droppedNonFiniteBfd`
+  (degenerate OLS, e.g. surviving ladder has < 2 grid points
+  after capping at `N - 1`).
+
+  STRUCTURAL ORTHOGONALITY -- MULTI-SCALE OLS LOG-LOG SLOPE OF
+  2D GRID COVERAGE on the DOUBLE-NORMALIZED unit square,
+  fundamentally distinct from every shipped daily-token axis
+  32..77:
+
+  - vs `daily-token-sevcik-fd` (axis 77): SFD is a SINGLE-SCALE
+    CLOSED-FORM ratio (one path length L vs one denominator
+    `2*(N-1)`). BFD is a MULTI-SCALE OLS fit across a geometric
+    grid ladder. Two series can share the same path length L
+    (and hence the same SFD) yet differ in HOW that length is
+    distributed across scales: a series with one big spike has
+    similar L to a series with many small spikes summing to the
+    same L; box-counting at coarse m sees the big spike clearly
+    but is insensitive to the many-small-spike series at the
+    same m, while at fine m they converge — different log-log
+    slopes, different BFDs for the same SFD. The test file
+    ships a `sameL_differentBFD` witness asserting they can
+    disagree by > 1e-2 on hand-constructed series.
+
+  - vs `daily-token-petrosian-fd` (axis 76): PFD is purely
+    BINARY post-sign-mapping; magnitudes drop out completely
+    (multiply values by 13 -> Nd unchanged -> PFD unchanged).
+    BFD operates on range-normalized magnitudes through the
+    `y*` coordinate. Two series with identical sign-of-diff
+    sequences but different magnitude profiles share PFD but
+    typically diverge on BFD because box coverage depends on
+    magnitudes. Both invariant under positive AFFINE rescale
+    of `y` — but BFD is sensitive to non-affine monotone
+    transforms (e.g. `y' = sqrt(y)`) that PFD ignores entirely.
+    The test file ships an explicit `sqrt`-witness asserting
+    `|BFD(v) - BFD(sqrt(v))| > 1e-3`.
+
+  - vs `daily-token-katz-fd` (axis 75): KFD is a single-scale
+    closed-form using RAW path length `L_katz` and RAW max
+    chord `d` as denominator; it is dimensionally inconsistent
+    in the original Katz formulation (mixes unit x-spacing with
+    raw-magnitude y). BFD is multi-scale and operates on the
+    double-normalized unit square; both axes are dimensionless
+    after normalization. They diverge sharply on series with
+    one extreme outlier (inflates `d` -> KFD down via the
+    `d / L_katz` ratio; box coverage at coarse m sees one extra
+    column -> BFD essentially unchanged).
+
+  - vs `daily-token-higuchi-fd` (axis 74): HFD is a multi-scale
+    OLS power-law exponent on STRIDE-K SUBSAMPLED PATH LENGTHS
+    `L(k)` (1D length scaling under reflexive-walk subsampling).
+    BFD's multi-scale ladder is on 2D BOX COVERAGE `N(eps)`;
+    different dependent variables (L vs N), different slope
+    normalizations. They are different complexity probes
+    (path-length scaling vs coverage scaling).
+
+  - vs `daily-token-hurst-rs` (axis 71) and `daily-token-dfa-
+    alpha` (axis 72): R/S and DFA are VARIANCE-scaling
+    estimators on cumulative deviations (DFA additionally
+    detrends each window). BFD has no cumulative profile and
+    no variance fit.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE summarises
+    flatness of the global periodogram (frequency-domain).
+    BFD is a time-domain geometric multi-scale slope.
+
+  - vs `daily-token-permutation-entropy` (axis 70) and
+    `daily-token-sample-entropy` (axis 73): both are pattern /
+    template statistics; BFD is a pure 2D-coverage log-log
+    slope with no embedding window or template matching.
+
+  - vs `daily-token-autocorrelation-lag1` / `lag7` (axes
+    67/68): ACF is a SECOND-MOMENT linear scalar at one fixed
+    lag; BFD is a multi-scale geometric slope with no
+    second-moment interpretation.
+
+  - vs all permutation-invariant dispersion / shape axes
+    32..67 (Gini, Atkinson, Theil, GE, Hill, MC, L-skew, ...):
+    those are shuffle-invariant; BFD is shuffle-sensitive
+    (a sorted monotone sequence covers ~m boxes at each scale
+    -> BFD ~ 1, while a shuffled noisy sequence covers many
+    more boxes and yields a substantially higher BFD).
+
+  Live smoke-test against `~/.config/pew/queue.jsonl` (six
+  sources qualifying after `min-tokens = 1000`,
+  `min-tenure-days = 32` defaults; 4 dropped below tenure):
+
+      $ pew-insights daily-token-box-count-fd --top 3 --json
+      ...
+      vscode-copilot   bfd=1.3732   slopeR2=0.9978   N(m)=4|12|31|78|183
+                       tenure=265   active=73   tokens=1,885,727
+      claude-code      bfd=1.3206   slopeR2=0.9982   N(m)=3|7|16|45|115
+                       tenure=72    active=35   tokens=3,442,385,788
+
+  Both top-2 show high OLS R^2 (> 0.997) on the log-log ladder,
+  confirming the box-coverage scaling is well-described by a
+  single power law over the m = 2..32 grid range. BFDs in the
+  ~1.32-1.37 band indicate moderately rough daily-token
+  waveforms — substantially above the smooth-ramp lower edge
+  (~1.0) but well below space-filling (-> 2.0).
+
+  Test count delta: 8868 -> 8905 (+37).
+
 ## 0.6.321 — 2026-05-02
 
 ### Added
