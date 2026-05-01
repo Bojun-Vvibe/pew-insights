@@ -2,6 +2,125 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.308 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-FOURTH):
+  `pew-insights daily-token-runs-test-z`.
+
+  Per-source WALD-WOLFOWITZ RUNS-TEST z-statistic on the binary
+  above/below-median trace of per-day total_tokens, taken in
+  CALENDAR ORDER:
+
+      s_i = '+'  if D_i > median(D)
+      s_i = '-'  if D_i < median(D)
+      s_i is dropped if D_i == median(D)
+
+      R       = number of maximal runs of identical signs
+      mu_R    = 2 n+ n- / n + 1
+      var_R   = 2 n+ n- (2 n+ n- - n) / (n^2 (n - 1))
+      RTZ = z = (R - mu_R) / sqrt(var_R)
+
+  on the per-day distribution. For each source we collapse all
+  hourly buckets into one scalar per UTC day (D_d = sum of
+  total_tokens on day d), take the per-day median under linear
+  interpolation (numpy 'linear' / R type 7, matching MADM), build
+  the binary trace in calendar order, and compute the closed-form
+  asymptotic standard normal z. Asymptotic null is N(0,1) for
+  n+ >= 4 and n- >= 4 (default --min-days 8 enforces this).
+
+  HEADLINE QUESTION: "For each source, are above-median and
+  below-median days CLUSTERED in time (regime behaviour, z << 0),
+  randomly interleaved (z ~ 0), or hyper-alternating (mean-
+  reversion, z >> 0)?"
+
+  This is the first cross-source axis in the daily-token family
+  (axes 32..63) that is NOT permutation-invariant: every prior
+  axis (Gini, S-Gini, Atkinson, Theil-L/T, GE family, Hoover,
+  Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson, Palma,
+  Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, Var-of-Logs,
+  Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM) shuffles to itself.
+  RTZ requires the calendar ordering -- it answers a TEMPORAL
+  question, not a magnitude question. The closest cousin in the
+  wider repo is `daily-token-autocorrelation-lag-1` (rho_1), which
+  is the OTHER order-sensitive daily-token statistic.
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..63):
+
+  - axes 32..63 are PERMUTATION-INVARIANT: they integrate or
+    rank-cut the day vector and cannot detect any temporal
+    pattern. RTZ is built on the calendar-ordered binary trace.
+  - vs ACF1 (closest cousin): rho_1 is a Pearson autocorrelation
+    on centred values, breakdown 1/n, dominated by the largest
+    absolute deviations. RTZ is built on the binary trace, so it
+    has BREAKDOWN POINT 0.5: a single 1e9 day flips one bit of
+    the trace and changes R by at most 2. The pair (rho_1, RTZ)
+    will disagree under heavy-tailed shocks (rho_1 dominated by
+    the spike) and under symmetric square-wave regimes (RTZ
+    extreme negative, rho_1 mid). We surface this directly via
+    `--include-acf1` and the dimensionless cross-axis witness
+    `signCoherence = -z * acf1`.
+  - axis 32 monotone-run-length and axis 56 second-diff-sign-runs
+    operate on FIRST/SECOND DIFFERENCE signs, NOT on the
+    above-median binary trace. They measure local trend
+    persistence; RTZ measures regime persistence around the
+    GLOBAL median. A 16-day monotone ramp gives runs=2 and
+    z ~= -3.62 in RTZ (extreme regime clustering) but only one
+    long monotone run -- the two axes answer different questions.
+
+  RANGE AND DEGENERACY. RTZ is degenerate when n_+ < 1 or
+  n_- < 1 (a constant-sign trace -- the source is uniformly above
+  or below its own median, only possible when too many days tie).
+  We guard `varRuns > 0` and report `degenerate: true` with
+  `z: 0` in that case. RTZ is also degenerate for an all-tied
+  vector (every day equals the median; nKept=0).
+
+  Knobs: `--since/--until` (ISO window), `--source` (single-
+  source restriction), `--min-tokens` (default 1000), `--min-days`
+  (default 8 -- enforces n+ >= 4 and n- >= 4), `--top` (display
+  cap), `--sort` (`absZ` default | `z` | `tokens` | `days` |
+  `source` | `runs`), `--min-abs-z` (display filter on |z|;
+  degenerate rows always retained), `--include-acf1` (refinement),
+  `--json`.
+
+- Refinement: `--include-acf1` surfaces a median-centred lag-1
+  Pearson autocorrelation `acf1` and the dimensionless cross-axis
+  witness `signCoherence = -z * acf1`. Positive coherence flags
+  axes that AGREE on the "persistence" reading; negative coherence
+  flags magnitude-vs-sign disagreement (e.g. heavy-tail spike that
+  dominates ACF1 but is invisible to RTZ).
+
+### Live smoke (real `~/.config/pew/queue.jsonl`, 2,252 rows, 12.07B tokens, sort=absZ, --include-acf1, --top 5)
+
+  Top-3 sources by |z| (clustering / regime strength):
+
+  1. `claude-code`     z = -2.4382  acf1 = +0.3429  signCoherence = +0.8360  (34 days, runs=11, mu_R=18.0, REGIME CLUSTERING; ACF1 agrees -- persistent magnitude regime, days bunch together)
+  2. `vscode-copilot`  z = -1.8990  acf1 = +0.3181  signCoherence = +0.6040  (72 days, runs=29, mu_R=37.0, REGIME CLUSTERING; ACF1 agrees -- long-history persistence)
+  3. `hermes`          z = -1.6690  acf1 = +0.4184  signCoherence = +0.6983  (14 days, runs=5, mu_R=8.0, REGIME CLUSTERING; ACF1 agrees -- recent-onboard persistence)
+
+  All three top-|z| rows have negative z (regime clustering, NOT
+  hyper-alternation) AND positive acf1 -- the signCoherence > 0
+  shows magnitude and sign axes AGREE that these sources operate
+  in persistent above/below-median regimes rather than independent
+  daily noise. `opencode` is the only "i.i.d.-like" row (z = 0.0,
+  runs=7, mu_R=7.0); `codex` shows |z| ~ 1.53 with near-zero acf1
+  (signCoherence = +0.0071) -- the binary trace clusters but the
+  magnitudes do not, witness for the magnitude-vs-sign distinction.
+
+### Tests
+
+- `test/dailytokenrunstestz.test.ts` (29 cases): closed-form
+  anchors on monotone ramp (z = -3*sqrt(7/12) ~ -2.291), perfect
+  alternation (z = +3*sqrt(7/12)), tied-day handling on 9-vector
+  with 3 ties, bad-knob/throw matrix, all sort keys, top cap,
+  minAbsZ filter (degenerate rows retained), source/window
+  filters, includeAcf1 on/off, BREAKDOWN-0.5 witness (1e9 spike
+  leaves trace, z, runs strictly unchanged), and a 16-day ramp
+  closed-form anchor at z = -7/sqrt(14336/3840) ~ -3.6228.
+  Suite total: 8518 -> 8547 (+29 new), all green.
+
 ## 0.6.307 — 2026-05-01
 
 ### Added
