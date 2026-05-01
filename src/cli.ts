@@ -111,6 +111,7 @@ import {
   renderDailyTokenGeFourIndex,
   renderDailyTokenPercentileGapRatio,
   renderDailyTokenIqrOverMedian,
+  renderDailyTokenMidSpreadRatio,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -384,6 +385,7 @@ import { buildDailyTokenGeThreeIndex } from './dailytokengethreeindex.js';
 import { buildDailyTokenGeFourIndex } from './dailytokengefourindex.js';
 import { buildDailyTokenPercentileGapRatio } from './dailytokenpercentilegapratio.js';
 import { buildDailyTokenIqrOverMedian } from './dailytokeniqrovermedian.js';
+import { buildDailyTokenMidSpreadRatio } from './dailytokenmidspreadratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -15217,6 +15219,142 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenIqrOverMedian(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-mid-spread-ratio')
+  .description(
+    "Per-source MID-TAIL CONCENTRATION RATIO (P75 - P25) / (P90 - P10) of the per-day total_tokens distribution (SIXTIETH cross-source axis). MSR is the dimensionless SHAPE statistic that asks what fraction of the interdecile (10-90) spread is contained inside the interquartile (25-75) box. Range [0, 1]; MSR = 0 iff P25 = P75 (tight body); MSR = 1 iff P10 = P25 AND P75 = P90 (perfectly box-clipped). Reference values: Uniform 0.625; Gaussian ~0.526; Laplace ~0.431; heavy-upper-tail Pareto < 0.4. STRUCTURALLY ORTHOGONAL to every shipped daily-token axis (32-59): GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini/Pietra/Bonferroni/Mehran/Wolfson/Foster-Wolfson/Palma/Kolm-Pollak/Chakravarty/Amato/Esteban-Ray/FGT/S-Gini/Log-MAD all integrate over the full distribution and divide by the mean (axes 32-57); PGR (axis 58) is a tail/median ratio depending on (P50, P90); IOM (axis 59) is a central/median ratio depending on (P25, P50, P75); MSR depends on FOUR order statistics (P10, P25, P75, P90) and is normalised by ANOTHER ORDER-STATISTIC SPREAD instead of by a center -- a pure shape ratio. INVARIANT to changes strictly above P90 OR strictly below P10 AND to median changes that hold P25/P75 fixed. Refinement: --include-iom surfaces IOM = (P75-P25)/P50 alongside MSR for cross-axis comparison.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). MSR degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: msr (default) | tokens | days | source | meanDaily | p50 | iqrAbsolute | idrAbsolute. Applied before --top.',
+    'msr',
+  )
+  .option(
+    '--min-msr <x>',
+    'display filter: hide non-degenerate rows whose msr is strictly below this value (must be >= 0). Default null = no filter.',
+  )
+  .option(
+    '--include-iom',
+    'every row gains iom (= (P75-P25)/P50, axis 59), enabling a side-by-side comparison of the SHAPE ratio (MSR) against the central/median ratio (IOM).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minMsr?: string;
+        includeIom?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minMsr: number | null = null;
+        if (opts.minMsr !== undefined) {
+          const mv = Number.parseFloat(opts.minMsr);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-msr must be a finite number >= 0 (got ${opts.minMsr})`,
+            );
+          }
+          minMsr = mv;
+        }
+        const validSorts = [
+          'msr',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'p50',
+          'iqrAbsolute',
+          'idrAbsolute',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMidSpreadRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minMsr,
+          includeIom: opts.includeIom ?? false,
+          sort: opts.sort as
+            | 'msr'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'p50'
+            | 'iqrAbsolute'
+            | 'idrAbsolute',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMidSpreadRatio(report) + '\n',
           );
         }
       } catch (e) {
