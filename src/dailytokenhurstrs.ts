@@ -264,6 +264,21 @@ export function buildHurstScales(
  * chunks / scales dropped to all-zero degeneracy. Throws when
  * fewer than minScales survive (caller should catch and surface
  * as droppedAllDegenerate at the source level).
+ *
+ * Caveats specific to this estimator:
+ *   - Hurst R/S is documented to carry a small-sample upward
+ *     bias on short series (Weron, Physica A 312, 2002): for
+ *     i.i.d. uniform samples of length ~2k the empirical H
+ *     band is roughly [0.45, 0.65] rather than tightly at 0.5.
+ *     Operators should treat |H - 0.5| < 0.1 as "indistinguishable
+ *     from random walk at this length" rather than as a positive
+ *     long-range claim.
+ *   - On a deterministic monotone ramp R/S grows linearly with
+ *     the window size and H -> 1 spuriously; pass `detrend: true`
+ *     for the per-chunk OLS-detrend mitigation in spirit of
+ *     Lo (1991) modified R/S, and cross-check against an
+ *     independent trend-slope estimator before claiming long-
+ *     range dependence on a trended source.
  */
 export function hurstRs(
   values: number[],

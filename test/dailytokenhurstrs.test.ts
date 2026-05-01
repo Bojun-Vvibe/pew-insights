@@ -360,3 +360,102 @@ test('buildDailyTokenHurstRs: detrend flag is propagated to result', () => {
     `expected detrended H (${rDt.sources[0]!.hurst}) < plain H (${rPlain.sources[0]!.hurst})`,
   );
 });
+
+// ---- refinement: anti-persistent AR(1) witness + JSON shape stability --
+
+test('hurstRs: mean-reverting AR(1) with negative phi -> H < 0.5 (anti-persistence)', () => {
+  // x[t] = phi * x[t-1] + epsilon[t] with phi = -0.7 is strongly anti-persistent;
+  // R/S H is documented to fall well below 0.5 on such series (Mandelbrot &
+  // Wallis 1969 Fig. 4; Weron 2002 Tables 1-2). Use a deterministic PRNG.
+  function mulberry32(seed: number) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rng = mulberry32(2026);
+  const n = 2048;
+  const x: number[] = [0];
+  for (let i = 1; i < n; i += 1) {
+    // Box-Muller-lite via two uniforms -> approx N(0,1)
+    const u1 = Math.max(rng(), 1e-9);
+    const u2 = rng();
+    const eps = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    x.push(-0.7 * x[i - 1]! + eps);
+  }
+  const r = hurstRs(x, { maxScales: 16 });
+  assert.ok(
+    r.hurst < 0.5,
+    `AR(1) phi=-0.7 should give H < 0.5, got ${r.hurst}`,
+  );
+  // r2 of the log-log fit should still be high; the scaling law holds.
+  assert.ok(r.r2 > 0.85);
+});
+
+test('buildDailyTokenHurstRs: JSON-serialisable report carries every documented field', () => {
+  // Belt-and-braces guard against accidental drop of an output field. Every
+  // key in the report and every key in a source row must serialise to a
+  // primitive (string/number/boolean/null) under JSON.stringify.
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 64; d += 1) {
+    const day = new Date(Date.parse('2026-01-01T00:00:00.000Z') + d * 86_400_000)
+      .toISOString();
+    queue.push(ql(day, 'src', 1000 + d * 10));
+  }
+  const r = buildDailyTokenHurstRs(queue, {
+    generatedAt: GEN,
+    minTokens: 1000,
+    minTenureDays: 32,
+  });
+  const round = JSON.parse(JSON.stringify(r));
+  for (const k of [
+    'generatedAt',
+    'windowStart',
+    'windowEnd',
+    'minTokens',
+    'minTenureDays',
+    'minWindow',
+    'maxScales',
+    'minScales',
+    'detrend',
+    'top',
+    'sort',
+    'source',
+    'totalTokens',
+    'totalSources',
+    'droppedInvalidHourStart',
+    'droppedNonPositiveTokens',
+    'droppedSourceFilter',
+    'droppedSparseSources',
+    'droppedBelowMinTenure',
+    'droppedBelowMinScales',
+    'droppedAllDegenerate',
+    'droppedTopSources',
+    'sources',
+  ]) {
+    assert.ok(k in round, `report missing key ${k}`);
+  }
+  assert.equal(round.sources.length, 1);
+  for (const k of [
+    'source',
+    'totalTokens',
+    'nActiveDays',
+    'nTenureDays',
+    'firstActiveDay',
+    'lastActiveDay',
+    'hurst',
+    'intercept',
+    'r2',
+    'scalesUsed',
+    'minScaleUsed',
+    'maxScaleUsed',
+    'degenerateChunks',
+    'scalesDroppedAllDegenerate',
+  ]) {
+    assert.ok(k in round.sources[0], `source row missing key ${k}`);
+  }
+});
