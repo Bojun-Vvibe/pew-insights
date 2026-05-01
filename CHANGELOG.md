@@ -2,6 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.293 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-NINTH):
+  `pew-insights daily-token-genentropy-negone-index`.
+
+  Per-source GENERALISED ENTROPY GE(-1) of the per-day total_tokens
+  distribution (Bourguignon 1979; Shorrocks 1980; Cowell 2011):
+
+      GE(-1) = (1/2) * ( (1/n) * sum_i (mu / x_i)^2  -  1 )
+
+  Range [0, +inf). GE(-1) = 0 iff every D_i = mu (perfect equality).
+  Strictly increasing in any rank-preserving Pigou-Dalton spread.
+  Diverges to +inf as any D_i -> 0+ -- the defining BOTTOM-TAIL
+  signature of the GE(alpha) family at alpha < 0.
+
+  This is the first NEGATIVE-alpha element of the Cowell-Kuga GE
+  family shipped: structurally polar to GE(2) (axis-37; CV^2 / 2;
+  QUADRATIC in LARGE shares). GE(-1) is QUADRATIC in 1/share, so
+  it is dominated by SMALL days. The two anchor the moment family
+  at polar-opposite tail-sensitivities.
+
+  THE DEFINING CONTRAST WITH GE(2). GE(2) and GE(-1) differ by
+  INVERTING the share inside the squared term:
+
+      GE(2)  = (1/2) * ( mean_i (x_i / mu)^2  -  1 )
+      GE(-1) = (1/2) * ( mean_i (mu / x_i)^2  -  1 )
+
+  They are NOT proportional and NOT a monotone transformation of
+  each other; the ordering of two distributions can flip. The test
+  suite includes an explicit orthogonality witness pair (A=[1,100,
+  100,100] vs B=[50,50,50,200]) where A scores higher on GE(-1)
+  but B scores higher on GE(2).
+
+  Genuinely orthogonal to every prior daily-token axis. Distinct
+  functional class from axis-32 Gini (rank-based Lorenz integral;
+  GE(-1) is share-moment-based), axis-33 Theil-L = GE(0)
+  (LOGARITHMIC bottom-bias absorption vs GE(-1)'s QUADRATIC
+  absorption -- the latter is strictly faster as x -> 0+),
+  axis-34 Theil-T = GE(1) and axis-37 GE(2) (positive-alpha members
+  of the same family; GE(-1) occupies a structurally distinct slot
+  in the moment lattice), axes 35/42 Pietra/Hoover (single-point
+  L_infinity gaps), axis-36 Atkinson (power-mean welfare-equivalent;
+  see file header for the textbook A(2) <-> GE(-1) identity that we
+  intentionally do NOT use as the cross-anchor), axis-39 Zenga
+  (rank-anchored), axis-40 Palma (two-point ratio), axis-41 FGT
+  (one-sided threshold-anchored), axes 43/45 Bonferroni/Mehran
+  (rank-based partial-mean kernels), axis-44 Kolm-Pollak (ABSOLUTE,
+  translation-invariant; GE(-1) is RELATIVE), axis-46 Wolfson
+  (median-anchored bipolarization), axis-47 S-Gini (parametric RANK
+  kernel), axis-48 Chakravarty (concave share-power averaging at
+  alpha in (0,1) -- CONCAVE; GE(-1) is CONVEX with negative
+  exponent). Permutation-invariant by construction, so orthogonal
+  to every time-ordered axis.
+
+  Refinement shipped together:
+
+  - `--include-ge2-anchor`: per-row `ge2` (GE(2) on the SAME per-day
+    vector, the polar TOP-tail companion in the same moment family),
+    plus `ge2Gap` = genEntropy - ge2 and `genEntropyOverGe2` =
+    genEntropy / ge2. Surfaces the moment-family tail-bias
+    asymmetry at alpha=-1 vs alpha=+2 side-by-side.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (one editor source
+  token scrubbed for changelog policy):
+
+      pew-insights daily-token-genentropy-negone-index --include-ge2-anchor
+
+      per-source GE(-1) of per-day total_tokens (sorted by genEntropy):
+      source       days  genEntropy   meanDaily    tokens
+      claude-code   35   23730.7268   98,353,880   3,442,385,788
+      [editor]      73    1024.7669       25,832       1,885,727
+      openclaw      15      68.1150  139,909,900   2,098,648,502
+      opencode      12      33.6844  438,579,488   5,262,953,851
+      codex          8      28.7268  101,203,083     809,624,660
+      hermes        15       3.8590   16,491,374     247,370,609
+
+      GE(2) cross-anchor (polar TOP-tail companion in the moment family):
+      source       genEntropy  ge2     GE(-1)-GE(2)  GE(-1)/GE(2)
+      claude-code  23730.7268  2.2601  +23728.4667    10499.9986
+      [editor]      1024.7669  1.6243   +1023.1426      630.9117
+      openclaw        68.1150  0.2460     +67.8690      276.8529
+      opencode        33.6844  0.1136     +33.5708      296.5402
+      codex           28.7268  0.7350     +27.9918       39.0835
+      hermes           3.8590  0.2007      +3.6583       19.2246
+
+  Numerically: GE(-1) values explode relative to GE(2) precisely
+  because both sources have at least one near-zero day (the very
+  first or last day in the window with only minutes of activity);
+  the GE(-1)/GE(2) ratio of ~10500 on `claude-code` is the
+  bottom-tail-bias signature of the negative-alpha moment exponent
+  doing what the family axiomatically guarantees it should.
+
+  Tests: 25 total, including ten primitive invariants
+  (degeneracy, perfect-equality zero, scale-invariance, permutation-
+  invariance, closed-form check on [1,4], bottom-spread monotonicity,
+  zero/negative/non-finite rejection), nine builder integration
+  checks, and three property-based randomized invariants
+  (non-negativity, Pigou-Dalton monotonicity over 30 random
+  vectors, and an explicit GE(-1)/GE(2) ordering-flip witness).
+
 ## 0.6.292 — 2026-05-01
 
 ### Added
