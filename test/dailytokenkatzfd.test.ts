@@ -356,3 +356,89 @@ test('buildDailyTokenKatzFd: drops zero-variance gap-filled tenures', () => {
   assert.equal(r.droppedZeroVariance, 1);
   assert.equal(r.sources.length, 0);
 });
+
+// ---- finite-output property guard (defence-in-depth, mirrors axis-74 c412a78) ---
+
+test('katzFd: finite outputs across IEEE-754 sub-normal-adjacent inputs (property test)', () => {
+  // Defensive: across a deterministic battery of pathological
+  // amplitude regimes, every reported field must be finite, kfd
+  // in [1, 2], and L / d strictly positive. Sub-normal-adjacent
+  // tiny series and astronomically large series both exercise
+  // the IEEE-754 envelope of the sqrt-and-log-ratio pipeline.
+  const n = 64;
+  const cases: number[][] = [];
+  const rng = mulberry32(99);
+
+  // Astronomically large positive series.
+  const huge: number[] = [];
+  for (let i = 0; i < n; i += 1) huge.push(rng() * 1e15);
+  cases.push(huge);
+
+  // Tiny but well-above-subnormal positive series.
+  const tinyOk: number[] = [];
+  const rng2 = mulberry32(31);
+  for (let i = 0; i < n; i += 1) tinyOk.push(rng2() * 1e-10);
+  cases.push(tinyOk);
+
+  // Very wide dynamic range within a single series (huge spike).
+  const spike: number[] = [];
+  for (let i = 0; i < n; i += 1) spike.push(i % 31 === 0 ? 1e12 : 1);
+  cases.push(spike);
+
+  // Mixed sign (centred series).
+  const mixed: number[] = [];
+  const rng3 = mulberry32(43);
+  for (let i = 0; i < n; i += 1) mixed.push((rng3() - 0.5) * 1000);
+  cases.push(mixed);
+
+  // Long monotone with a small terminal anti-spike (probes
+  // d-vs-L tiebreak: max chord may sit at the spike index, not
+  // the terminal index).
+  const antiSpike: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) antiSpike.push(i);
+  antiSpike.push(-100);
+  cases.push(antiSpike);
+
+  for (const x of cases) {
+    const r = katzFd(x);
+    assert.ok(Number.isFinite(r.kfd), `kfd not finite`);
+    assert.ok(Number.isFinite(r.kfdRaw), `kfdRaw not finite`);
+    assert.ok(Number.isFinite(r.pathLength) && r.pathLength > 0);
+    assert.ok(Number.isFinite(r.maxChord) && r.maxChord > 0);
+    assert.ok(r.kfd >= 1 && r.kfd <= 2, `kfd out of [1,2]: ${r.kfd}`);
+    assert.ok(r.maxChordIndex >= 1 && r.maxChordIndex < x.length);
+  }
+});
+
+test('buildDailyTokenKatzFd: absKfdDeviationDesc puts highest-kfd source first', () => {
+  // Two sources of equal tenure where one is monotonically smooth
+  // and the other has heavy oscillation. Default sort places the
+  // rougher source first; tiebreak across equal kfd values falls
+  // back to source-name ascending (verified separately by sort=source).
+  const rng = mulberry32(53);
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 64; d += 1) {
+    const day = new Date(Date.UTC(2026, 0, 1) + d * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    queue.push(ql(`${day}T00:00:00.000Z`, 'aa-smooth', 1000 + d * 25));
+    queue.push(
+      ql(
+        `${day}T00:00:00.000Z`,
+        'zz-rough',
+        Math.max(1, Math.floor(Math.exp(rng() * 8))),
+      ),
+    );
+  }
+  const r = buildDailyTokenKatzFd(queue, {
+    generatedAt: GEN,
+    minTenureDays: 32,
+  });
+  assert.equal(r.sources.length, 2);
+  // Default sort = absKfdDeviationDesc -> kfd descending.
+  // zz-rough must come first DESPITE alphabetical disadvantage
+  // because its kfd strictly exceeds aa-smooth's.
+  assert.equal(r.sources[0]!.source, 'zz-rough');
+  assert.equal(r.sources[1]!.source, 'aa-smooth');
+  assert.ok(r.sources[0]!.kfd > r.sources[1]!.kfd);
+});
