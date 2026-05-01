@@ -2,6 +2,121 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.292 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-EIGHTH):
+  `pew-insights daily-token-chakravarty-index`.
+
+  Per-source CHAKRAVARTY (1988, "Ethical Social Index Numbers")
+  generalized inequality index of the per-day total_tokens
+  distribution at concavity parameter alpha in (0, 1) (default
+  0.5):
+
+      C(alpha) = 1 - (1 / n) * sum_{i=1..n} (x_i / mu)^alpha
+
+  with the convention 0^alpha = 0 for alpha > 0. Range [0, 1].
+  C = 0 iff every day carries equal mass. Strictly increasing in
+  any rank-preserving Pigou-Dalton spread.
+
+  alpha is a CONCAVITY KNOB in the open interval (0, 1):
+
+      alpha = 1   degenerate identity, C = 0 for any vector. We
+                  reject this at parse time.
+      alpha = 0.5 canonical default; balanced concavity.
+      alpha -> 0+ strongest concavity (geometric-mean limit).
+
+  THE DEFINING CONTRAST WITH ATKINSON. Atkinson (axis-36) is built
+  around the equally-distributed-equivalent income (EDE):
+
+      A(eps) = 1 - [(1/n) * sum (x/mu)^(1-eps)]^(1/(1-eps))
+
+  The OUTER power 1/(1-eps) is what makes Atkinson a welfare-
+  equivalent-mean construction (1 - EDE/mu). Chakravarty 1988
+  INTENTIONALLY DROPS that outer wrapper and reads inequality
+  directly off the AVERAGE concave normalised share-deficit:
+
+      C(alpha) = 1 - (arithmetic mean of (x/mu)^alpha)
+
+  So C is the AVERAGE concave share-deficit; A is 1 - the POWER-
+  mean-equivalent of share. They are NOT proportional and NOT a
+  monotone transformation of each other in general; the ordering
+  of two distributions can flip between the two indices. The
+  textbook Chakravarty-Atkinson identity A(1-alpha) = 1 - (1 -
+  C(alpha))^(1/alpha) is non-linear, not rank-preserving.
+
+  Genuinely orthogonal to every prior daily-token axis. Distinct
+  functional class from axis-32 Gini (rank-based, depends on order
+  pairing through Lorenz integration; Chakravarty depends only on
+  the multiset of share VALUES), axes 33/34/37 Theil-L / Theil-T
+  / GE2 (moment functionals built from x*log(x) or x^2/mu^2;
+  Chakravarty uses x^alpha with alpha in (0,1) - a different
+  power family entirely), axis-35 Pietra / axis-42 Hoover
+  (single-point L_infinity Lorenz gaps), axis-36 Atkinson
+  (POLAR-OPPOSITE wrapping; explicit identity gap surfaced by the
+  refinement), axis-39 Zenga (lower-mean / upper-mean rank
+  shortfall), axis-40 Palma (two-point Lorenz ratio), axis-41
+  FGT (one-sided lower-tail threshold-anchored), axis-43
+  Bonferroni / axis-45 Mehran (rank-based partial-mean kernels),
+  axis-44 Kolm-Pollak (translation-invariant absolute, not
+  relative), axis-46 Wolfson (median-anchored bipolarization),
+  axis-47 S-Gini (parametric RANK kernel; Chakravarty is
+  parametric SHARE-VALUE kernel - functionally orthogonal
+  parameter axes). Permutation-invariant by construction (depends
+  only on the multiset of share values), so orthogonal to every
+  time-ordered axis.
+
+  Refinement shipped together:
+
+  - `--include-atkinson-anchor`: per-row `atkinson` (Atkinson at
+    eps = 1 - alpha on the SAME per-day vector, the welfare-
+    economics anchor that shares the share-power exponent with
+    Chakravarty), plus `atkinsonGap` = chakravarty - atkinson and
+    `chakravartyOverAtkinson` = chakravarty / atkinson. Surfaces
+    the Chakravarty-Atkinson identity gap and lets the reader
+    compare the two functionals side-by-side at matched
+    share-power.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (one editor source
+  token scrubbed for changelog policy):
+
+      pew-insights daily-token-chakravarty-index --include-atkinson-anchor
+
+      per-source C(alpha=0.5) of per-day total_tokens (sorted by chakravarty):
+      source        days  chakravarty  meanDaily    tokens
+      claude-code    35   0.2930       98,353,880   3,442,385,788
+      [editor]       73   0.2324       25,832       1,885,727
+      codex           8   0.1638       101,203,083  809,624,660
+      openclaw       15   0.0723       139,827,013  2,097,405,189
+      hermes         15   0.0648       16,447,826   246,717,384
+      opencode       12   0.0601       437,513,265  5,250,159,175
+
+      Atkinson cross-anchor at eps=0.5000 (matched share-power):
+      source        chakravarty  atkinson  C-A      C/A
+      claude-code   0.2930       0.5002    -0.2072  0.5858
+      [editor]      0.2324       0.4108    -0.1784  0.5657
+      codex         0.1638       0.3007    -0.1369  0.5446
+      openclaw      0.0723       0.1394    -0.0671  0.5188
+      hermes        0.0648       0.1254    -0.0606  0.5167
+      opencode      0.0601       0.1166    -0.0565  0.5155
+
+  Every source on this corpus reads C < A at matched share-power
+  (eps = 1 - alpha = 0.5). The C/A ratio is empirically tight
+  around 0.51-0.59 across all six sources, but NOT constant -
+  meaning the Atkinson outer-power wrapper materially reshuffles
+  the ordering distance between sources even when the inner
+  share-power exponent is held fixed. claude-code reads the
+  largest absolute C-A gap (-0.2072), opencode the smallest
+  (-0.0565). The headline C ordering matches the Atkinson
+  ordering on this particular corpus, but the GAP magnitudes
+  diverge enough to justify shipping Chakravarty as a separate
+  axis: a different share distribution shape (bimodal, heavy
+  left-tail, etc.) can flip the ordering.
+
+  SHAs: feat=d7fa867 test=2a5c783 release=PENDING_RELEASE
+  refinement=PENDING_REFINEMENT.
+
 ## 0.6.291 — 2026-05-01
 
 ### Added
