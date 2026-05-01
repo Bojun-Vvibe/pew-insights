@@ -459,3 +459,26 @@ test('rank-flip witness: MADM ignores extreme tail that drives QSR', () => {
   const qh = quintileShareRatioOfVector(baseHigh);
   assert.ok(qh.qsr > 100 * ql_.qsr, 'QSR moves >100x while MADM is invariant');
 });
+
+// ---- Gaussian-consistency witness for the iom/madm refinement ----------
+
+test('refinement: iomOverMadm approaches the symmetric Gaussian-uniform reference under a long uniform ramp', () => {
+  // For a long uniform ramp on [a, b] (a >= 1 to satisfy strictly
+  // positive), both MAD/median and IQR/median are exact closed
+  // forms. With a centred ramp (a = c - r, b = c + r) of length n
+  // and median c, IQR = (b - a)/2 and MAD = (b - a)/4 (under
+  // linear interpolation as n grows). The ratio IOM/MADM converges
+  // to 2.0 (uniform-distribution analogue of the 1.349 Gaussian
+  // consistency factor). A real symmetric Gaussian sample would
+  // give ~1.349; per-day daily-token vectors give 1.65-3.66 (see
+  // CHANGELOG live smoke).
+  const n = 401;
+  const a = 100;
+  const b = 500;
+  const v: number[] = [];
+  for (let i = 0; i < n; i += 1) v.push(a + ((b - a) * i) / (n - 1));
+  const m = madOverMedianOfVector(v);
+  const iqr = iqrOverMedianOfVector(v);
+  const ratio = iqr.iom / m.madm;
+  assert.ok(ratio > 1.99 && ratio < 2.01, `ratio ${ratio} should approach 2.0 for uniform ramp`);
+});
