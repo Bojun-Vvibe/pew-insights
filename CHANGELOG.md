@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.305 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-FIRST):
+  `pew-insights daily-token-decile-share-gap`.
+
+  Per-source DECILE-SHARE GAP
+
+      DSG = (sum of largest ceil(0.10*n) days
+             - sum of smallest ceil(0.10*n) days) / sum of all days
+
+  of the per-day total_tokens distribution. For each source we
+  collapse all hourly buckets into one scalar per UTC day
+  (D_d = sum of total_tokens on day d), sort the resulting day
+  vector ascending, take k = ceil(0.10 * nDays), and compute
+  topMass (sum of the largest k values), bottomMass (sum of the
+  smallest k values), and DSG = (topMass - bottomMass) / total.
+
+  HEADLINE QUESTION: "How much more total daily-token mass lives in
+  each source's busiest 10% of days than in its quietest 10% of
+  days?"
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..60). Axes 32..57 are MOMENT- or
+  LORENZ-functional summaries (Gini, S-Gini, Atkinson, Theil, GE
+  family at alpha in {-1,0,1/2,1,2,3,4}, Hoover, Pietra, Bonferroni,
+  Mehran, Wolfson, Foster-Wolfson, Palma, Kolm-Pollak, Chakravarty,
+  Amato, Esteban-Ray, Var-of-Logs, Log-MAD, FGT). Each integrates
+  over the FULL Lorenz curve / FULL distribution and is normalised
+  by the MEAN. Axis 58 (PGR = P90/P50), axis 59
+  (IOM = (P75-P25)/P50), and axis 60 (MSR = (P75-P25)/(P90-P10))
+  are RATIOS OF PERCENTILE VALUES. DSG (axis 61) is built from
+  MASS SUMS of the two extreme deciles, with NO division between
+  order statistics, and is normalised by the TOTAL not the mean.
+  It is a sparse LINEAR FUNCTIONAL of the sorted day vector
+  (additive in mass), and it is INVARIANT to any rearrangement of
+  the central 80% of days that preserves total. No shipped axis
+  has this structure.
+
+  RANK-FLIP WITNESSES (closed-form). Construct two day vectors of
+  length 10:
+  - A = [1,2,2,2,2,2,2,2,2,11], k=1, bottom=1, top=11, total=28
+        DSG(A) = 10/28 = 0.357142...
+        Hoover(A) = 8.2/28 = 0.292857...
+        MSR(A) = 0 (degenerate -- tight body of 2's)
+  - B = [1,1,1,1,5,5,5,5,9,9],  k=1, bottom=1, top=9,  total=42
+        DSG(B) = 8/42 = 0.190476...
+        Hoover(B) = 12.8/42 = 0.304761...
+        MSR(B) = (5-1)/(9-1) = 0.5
+  DSG ranks A > B; Hoover ranks B > A; MSR ranks B > A. Both flips
+  are real (no monotone transform recovers Hoover or MSR from DSG):
+  Hoover's threshold is the MEAN (a value), DSG's is the rank-decile
+  boundary; MSR depends on percentile VALUES, DSG on extreme
+  percentile MASSES.
+
+  RANGE AND DEGENERACY. 0 <= DSG <= 1 always. DSG == 0 iff
+  topMass == bottomMass (the extreme deciles are balanced; in
+  particular every constant vector). DSG == 1 unreachable on
+  strictly-positive day vectors (bottomMass >= 1 * minDay > 0).
+  DSG is SCALE-INVARIANT and PERMUTATION-INVARIANT.
+
+  CLOSED-FORM ANCHOR ON [1..10]. k=1, bottomMass=1, topMass=10,
+  total=55, DSG=9/55=0.16363636..., reproduced by
+  `decileShareGapOfVector([1..10])` in tests.
+
+  KNOBS. `--since` / `--until` (ISO time-window filter on
+  hour_start), `--source` (single-source restrict), `--min-tokens`
+  (default 1000; sparse-source filter), `--min-days` (default 4;
+  algebraic minimum is 2 since DSG degenerate for n<2),
+  `--top` (display cap, default 0 = no cap),
+  `--sort` (`dsg`|`tokens`|`days`|`source`|`meanDaily`|`topMass`|`bottomMass`|`k`),
+  `--min-dsg` (display filter; degenerate rows always retained),
+  `--include-hoover` (refinement: surface Hoover index alongside DSG
+  for cross-axis comparison vs axis 36), `--json` (raw JSON output).
+
+  LIVE-SMOKE OUTPUT vs ~/.config/pew/queue.jsonl (top-3 by DSG):
+
+      source          days  k  dsg       topShare  botShare  topMass         botMass
+      claude-code     35    4  0.668236  0.669198  0.000962  2,303,638,469   3,311,059
+      vscode-copilot  73    8  0.591082  0.594295  0.003213  1,120,679       6,059
+      codex           8     1  0.474221  0.481364  0.007143  389,724,254     5,783,271
+
+  RANK-FLIP WITNESS vs axis-60 MSR (live data):
+  - DSG ranking (top to bottom):
+        claude-code, vscode-copilot, codex, openclaw, hermes, opencode
+  - MSR ranking (top to bottom):
+        openclaw, hermes, codex, opencode, vscode-copilot, claude-code
+  - claude-code is #1 by DSG (mass-of-extreme-deciles dominates) but
+    LAST by MSR (its central interquartile body collapses relative
+    to its huge interdecile spread). openclaw is #1 by MSR (boxy
+    shape) but only #4 by DSG. Multiple genuine flips, confirming
+    structural orthogonality between the two axes on real data.
+
 ## 0.6.304 — 2026-05-01
 
 ### Added
