@@ -115,6 +115,7 @@ import {
   renderDailyTokenDecileShareGap,
   renderDailyTokenQuintileShareRatio,
   renderDailyTokenMadOverMedian,
+  renderDailyTokenRunsTestZ,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -392,6 +393,7 @@ import { buildDailyTokenMidSpreadRatio } from './dailytokenmidspreadratio.js';
 import { buildDailyTokenDecileShareGap } from './dailytokendecilesharegap.js';
 import { buildDailyTokenQuintileShareRatio } from './dailytokenquintileshareratio.js';
 import { buildDailyTokenMadOverMedian } from './dailytokenmadovermedian.js';
+import { buildDailyTokenRunsTestZ } from './dailytokenrunstestz.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -15768,6 +15770,129 @@ program
           process.stdout.write(
             renderDailyTokenMadOverMedian(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-runs-test-z')
+  .description(
+    "Per-source Wald-Wolfowitz RUNS-TEST z-statistic on the binary above/below-median trace of per-day total_tokens, taken in CALENDAR ORDER (SIXTY-FOURTH cross-source axis). z = (R - mu_R)/sqrt(var_R) where R = number of maximal sign-runs, mu_R = 2 n+ n- /n + 1, var_R = 2 n+ n- (2 n+ n- - n)/(n^2 (n-1)). z << 0 = REGIME CLUSTERING (high days bunch with high days, persistent regime). z >> 0 = MEAN-REVERSION / hyper-alternation. z ~ 0 = consistent with i.i.d. symmetric noise. STRUCTURALLY ORTHOGONAL to all axes 32-63: those are PERMUTATION-INVARIANT magnitude statistics; RTZ is the only daily-token axis besides ACF1 that is order-sensitive. Built on the binary trace -> BREAKDOWN POINT 0.5 (one 1e9 day flips one bit), unlike ACF1 which is dominated by the largest absolute deviations. Refinement: --include-acf1 surfaces the median-centred ACF1 and signCoherence = -z * acf1 (positive = persistence agreement, negative = magnitude-vs-sign disagreement).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 8). Runs-test variance is unstable for n+ or n- < 2; default 8 keeps both arms non-trivial.',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absZ (default, most-clustered/anticlustered first) | z | tokens | days | source | runs. Applied before --top.',
+    'absZ',
+  )
+  .option(
+    '--min-abs-z <x>',
+    'display filter: hide non-degenerate rows whose |z| is strictly below this value (>= 0). Default null = no filter.',
+  )
+  .option(
+    '--include-acf1',
+    'every row gains acf1 (median-centred lag-1 autocorrelation) and signCoherence = -z * acf1. Positive coherence = persistence agreement; negative coherence = magnitude-vs-sign disagreement.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minAbsZ?: string;
+        includeAcf1?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 4) {
+          throw new Error(
+            `--min-days must be an integer >= 4 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minAbsZ: number | null = null;
+        if (opts.minAbsZ !== undefined) {
+          const mv = Number.parseFloat(opts.minAbsZ);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-abs-z must be a non-negative finite number (got ${opts.minAbsZ})`,
+            );
+          }
+          minAbsZ = mv;
+        }
+        const validSorts = ['absZ', 'z', 'tokens', 'days', 'source', 'runs'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenRunsTestZ(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minAbsZ,
+          includeAcf1: opts.includeAcf1 ?? false,
+          sort: opts.sort as
+            | 'absZ'
+            | 'z'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'runs',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenRunsTestZ(report) + '\n');
         }
       } catch (e) {
         die(e);
