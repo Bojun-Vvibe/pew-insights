@@ -130,6 +130,7 @@ import {
   renderDailyTokenPetrosianFd,
   renderDailyTokenSevcikFd,
   renderDailyTokenBoxCountFd,
+  renderDailyTokenHjorthMobility,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -422,6 +423,7 @@ import { buildDailyTokenKatzFd } from './dailytokenkatzfd.js';
 import { buildDailyTokenPetrosianFd } from './dailytokenpetrosianfd.js';
 import { buildDailyTokenSevcikFd } from './dailytokensevcikfd.js';
 import { buildDailyTokenBoxCountFd } from './dailytokenboxcountfd.js';
+import { buildDailyTokenHjorthMobility } from './dailytokenhjorthmobility.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17639,6 +17641,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenBoxCountFd(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-hjorth-mobility')
+  .description(
+    "Per-source Hjorth Mobility (Hjorth, B., \"EEG analysis based on time domain properties\", Electroenceph. Clin. Neurophysiol. 29(3):306-310, 1970) on the gap-filled daily total_tokens series (SEVENTY-NINTH cross-source axis). mobility = sqrt(var(diff(y)) / var(y)) using POPULATION variances (Hjorth's 1970 convention). Single-scale closed-form variance ratio. Reading: mobility ~ 0 = slowly varying / DC-like; mobility ~ sqrt(2) ~ 1.414 = white noise (rho_1 ~ 0); mobility > sqrt(2) = anti-correlated / oscillatory at the one-step scale (rho_1 < 0). Linked to lag-1 ACF by the large-N stationarity approximation mobility^2 ~ 2*(1 - rho_1); diverges from rho_1 under drift / non-stationarity / heavy-tailed step distributions. Scale-, shift-, and sign-flip-invariant; SHUFFLE-sensitive (typically rises under shuffle because var_v is unchanged but var_dv inflates). Structurally orthogonal to (a) box-count FD axis 78 -- multi-scale OLS on 2D coverage vs single-scale variance ratio; (b) Sevcik FD axis 77 -- log-domain path-length ratio vs linear-domain variance ratio; (c) Petrosian FD axis 76 -- binary sign-change count vs magnitude-aware variance; (d) Katz FD axis 75 / Higuchi FD axis 74 -- path-length geometries vs second-moment ratio; (e) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale variance ratio on raw diffs; (f) lag-1 ACF axis 67 -- distinct empirical estimator and surfaces absolute amplitude through varV/varDv; (g) spectral entropy axis 69 -- mobility is the spectral CENTROID (Hjorth 1970 Eq. 3) which is one moment of the spectrum, while SE is a flatness summary across all moments; (h) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; mobility is shuffle-sensitive.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absMobilityDeviationDesc (default, distance from white-noise reference sqrt(2) desc) | mobility | mobilityDesc | tokens | tenure | source.',
+    'absMobilityDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absMobilityDeviationDesc',
+          'mobility',
+          'mobilityDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHjorthMobility(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absMobilityDeviationDesc'
+            | 'mobility'
+            | 'mobilityDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHjorthMobility(report) + '\n');
         }
       } catch (e) {
         die(e);

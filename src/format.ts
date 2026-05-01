@@ -17088,6 +17088,7 @@ import type { DailyTokenKatzFdReport } from './dailytokenkatzfd.js';
 import type { DailyTokenPetrosianFdReport } from './dailytokenpetrosianfd.js';
 import type { DailyTokenSevcikFdReport } from './dailytokensevcikfd.js';
 import type { DailyTokenBoxCountFdReport } from './dailytokenboxcountfd.js';
+import type { DailyTokenHjorthMobilityReport } from './dailytokenhjorthmobility.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18757,6 +18758,73 @@ export function renderDailyTokenBoxCountFd(
     s.slopeR2.toFixed(3),
     `${s.gridMin}..${s.gridMax}`,
     s.boxCountsCsv,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHjorthMobility(
+  r: DailyTokenHjorthMobilityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-hjorth-mobility'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteMobility)} non-finite-mobility, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hjorth Mobility (Hjorth 1970, Electroenceph. Clin. Neurophysiol. 29:306-310) on the gap-filled daily total_tokens series. SEVENTY-NINTH cross-source axis. mobility = sqrt(var(diff(y)) / var(y)) where both variances are population (Hjorth's 1970 convention). Single-scale variance ratio. Reading: mobility ~ 0 = slowly varying; mobility ~ sqrt(2) ~ 1.414 = white noise; mobility > sqrt(2) = anti-correlated / oscillatory at the one-step scale. Linked to lag-1 autocorrelation by mobility^2 ~ 2*(1 - rho_1) under stationarity / mean-zero approximations; diverges from rho_1 under drift or non-stationarity. Scale-, shift-, and sign-flip-invariant; SHUFFLE-sensitive (typically rises under shuffle). Structurally orthogonal to (a) box-count FD axis 78 -- multi-scale 2D coverage slope vs single-scale variance ratio; (b) Sevcik FD axis 77 -- log-domain path-length ratio vs linear-domain variance ratio; (c) Petrosian FD axis 76 -- binary sign-change count vs magnitude-aware variance; (d) Katz FD axis 75 / Higuchi FD axis 74 -- path-length geometries vs second-moment ratio; (e) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale variance ratio on raw diffs; (f) lag-1 ACF axis 67 -- distinct empirical estimator and surfaces absolute amplitude through varV/varDv; (g) spectral entropy axis 69 -- mobility is the spectral CENTROID (Hjorth 1970 Eq. 3) which is one moment of the spectrum, while SE is a flatness summary across all moments; (h) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; mobility is shuffle-sensitive.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source Hjorth mobility (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'mobility',
+    'varV',
+    'varDv',
+    'meanV',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.mobility.toFixed(4),
+    s.varV.toExponential(3),
+    s.varDv.toExponential(3),
+    s.meanV.toFixed(1),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
