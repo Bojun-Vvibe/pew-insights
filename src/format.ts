@@ -17087,6 +17087,7 @@ import type { DailyTokenHiguchiFdReport } from './dailytokenhiguchifd.js';
 import type { DailyTokenKatzFdReport } from './dailytokenkatzfd.js';
 import type { DailyTokenPetrosianFdReport } from './dailytokenpetrosianfd.js';
 import type { DailyTokenSevcikFdReport } from './dailytokensevcikfd.js';
+import type { DailyTokenBoxCountFdReport } from './dailytokenboxcountfd.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18687,6 +18688,75 @@ export function renderDailyTokenSevcikFd(
     s.pathLength.toFixed(4),
     formatNumber(s.yRange),
     s.dxStep.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBoxCountFd(
+  r: DailyTokenBoxCountFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-box-count-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    grid: ${r.gridMin}..${r.gridMax}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteBfd)} non-finite-bfd, ${formatNumber(r.droppedTopSources)} below top cap; clamped: ${formatNumber(r.clampedBelow1)} below 1, ${formatNumber(r.clampedAbove2)} above 2`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Box-Counting Fractal Dimension (Mandelbrot 1967; Liebovitch & Toth 1989) on the gap-filled daily total_tokens series. SEVENTY-EIGHTH cross-source axis. BFD = OLS slope of ln N(m) vs ln m across a geometric grid ladder m = gridMin, 2*gridMin, 4*gridMin, ..., gridMax, where N(m) is the count of unique m-x-m unit-square boxes covered by the polyline rasterized at sub-step delta = (1/m)/4 (Liebovitch-Toth 4x oversample). DOUBLE-NORMALIZED waveform: x to [0, 1] uniformly, y range-normalized to [0, 1]. Multi-scale OLS LOG-LOG SLOPE OF 2D GRID COVERAGE -- structurally orthogonal to (a) Sevcik FD axis 77 -- single-scale closed-form path-length ratio (one L vs one denominator); BFD is multi-scale and probes coverage scaling, not path-length scaling; two series with the same L can have different BFDs because coverage grows differently across scales; (b) Petrosian FD axis 76 -- binary post-sign-mapping (magnitudes drop out); BFD operates on range-normalized magnitudes through the y* coordinate; (c) Katz FD axis 75 -- single-scale closed-form on RAW path length and RAW max chord d; BFD is multi-scale on the unit square; (d) Higuchi FD axis 74 -- multi-scale OLS on STRIDE-K SUBSAMPLED PATH LENGTHS L(k) (1D length scaling); BFD's ladder is on 2D BOX COVERAGE N(eps); different dependent variables (L vs N) and different slope normalizations; (e) Hurst R/S axis 71 / DFA-alpha axis 72 -- variance-scaling on cumulative deviations vs coverage scaling; (f) lag-1 / lag-7 ACF axes 67/68 -- linear second-moment scalars vs multi-scale geometric slope; (g) spectral entropy axis 69 -- frequency-domain flatness vs time-domain coverage; (h) permutation entropy axis 70 / sample entropy axis 73 -- pattern / template statistics vs 2D coverage; (i) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; BFD is shuffle-sensitive (sorted -> small BFD ~ 1, shuffled -> large BFD). bfdRaw is the un-clamped slope; bfd is clamped to [1, 2]. Invariant under positive AFFINE transforms y' = a*y + b with a > 0; NOT invariant under non-affine monotone transforms (e.g. sqrt). slopeR2 surfaces the OLS goodness-of-fit on the log-log ladder.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source BFD (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bfd',
+    'bfdRaw',
+    'R2',
+    'grid',
+    'N(m)',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.bfd.toFixed(4),
+    s.bfdRaw.toFixed(4),
+    s.slopeR2.toFixed(3),
+    `${s.gridMin}..${s.gridMax}`,
+    s.boxCountsCsv,
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

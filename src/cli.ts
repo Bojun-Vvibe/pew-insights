@@ -129,6 +129,7 @@ import {
   renderDailyTokenKatzFd,
   renderDailyTokenPetrosianFd,
   renderDailyTokenSevcikFd,
+  renderDailyTokenBoxCountFd,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -420,6 +421,7 @@ import { buildDailyTokenHiguchiFd } from './dailytokenhiguchifd.js';
 import { buildDailyTokenKatzFd } from './dailytokenkatzfd.js';
 import { buildDailyTokenPetrosianFd } from './dailytokenpetrosianfd.js';
 import { buildDailyTokenSevcikFd } from './dailytokensevcikfd.js';
+import { buildDailyTokenBoxCountFd } from './dailytokenboxcountfd.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17505,6 +17507,138 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSevcikFd(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-box-count-fd')
+  .description(
+    "Per-source Box-Counting Fractal Dimension (Mandelbrot 1967; Liebovitch & Toth 1989, \"A fast algorithm to determine fractal dimensions by box counting\", Phys. Lett. A 141:386-390) on the gap-filled daily total_tokens series (SEVENTY-EIGHTH cross-source axis). BFD = OLS slope of ln(N(m)) vs ln(m) across a geometric grid ladder m = gridMin, 2*gridMin, ..., gridMax (capped at N-1), where N(m) is the count of unique m-x-m unit-square boxes covered by the polyline rasterized at sub-step delta = (1/m)/4 on the DOUBLE-NORMALIZED waveform (x to [0, 1] uniformly, y range-normalized to [0, 1]). Multi-scale OLS LOG-LOG SLOPE OF 2D GRID COVERAGE -- structurally orthogonal to (a) Sevcik FD axis 77 -- single-scale closed-form path-length ratio; BFD is multi-scale and probes coverage scaling, not path length; (b) Petrosian FD axis 76 -- binary post-sign-mapping; BFD operates on range-normalized magnitudes; (c) Katz FD axis 75 -- single-scale on RAW path length and RAW max chord d; BFD is multi-scale on the unit square; (d) Higuchi FD axis 74 -- multi-scale OLS on STRIDE-K SUBSAMPLED PATH LENGTHS L(k) (1D length scaling); BFD's ladder is on 2D BOX COVERAGE N(eps); different dependent variables; (e) Hurst R/S axis 71 / DFA-alpha axis 72 -- variance-scaling on cumulative deviations vs coverage scaling; (f) lag-1 / lag-7 ACF axes 67/68 -- linear second-moment scalars vs multi-scale slope; (g) spectral entropy axis 69 -- frequency-domain flatness vs time-domain coverage; (h) permutation entropy axis 70 / sample entropy axis 73 -- pattern statistics vs 2D coverage; (i) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; BFD is shuffle-sensitive. Invariant under positive AFFINE transforms y' = a*y + b with a > 0; not invariant under non-affine monotone transforms.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 32.',
+    '32',
+  )
+  .option(
+    '--grid-min <m>',
+    'smallest grid resolution (integer >= 2). Default 2.',
+    '2',
+  )
+  .option(
+    '--grid-max <m>',
+    'largest grid resolution (integer > grid-min, capped at N-1 per source). Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absBfdDeviationDesc (default, BFD desc -- furthest from the smooth lower edge first) | bfd | bfdDesc | tokens | tenure | source.',
+    'absBfdDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        gridMin: string;
+        gridMax: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const gridMin = Number.parseInt(opts.gridMin, 10);
+        if (!Number.isInteger(gridMin) || gridMin < 2) {
+          throw new Error(
+            `--grid-min must be an integer >= 2 (got ${opts.gridMin})`,
+          );
+        }
+        const gridMax = Number.parseInt(opts.gridMax, 10);
+        if (!Number.isInteger(gridMax) || gridMax <= gridMin) {
+          throw new Error(
+            `--grid-max must be an integer > --grid-min (got ${opts.gridMax})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absBfdDeviationDesc',
+          'bfd',
+          'bfdDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBoxCountFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          gridMin,
+          gridMax,
+          top,
+          sort: opts.sort as
+            | 'absBfdDeviationDesc'
+            | 'bfd'
+            | 'bfdDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenBoxCountFd(report) + '\n');
         }
       } catch (e) {
         die(e);
