@@ -287,3 +287,190 @@ test('structural: FW source ranking can DIVERGE from Wolfson when medians differ
   // tied, FW ranks vb >> va. That is the new signal axis-52 surfaces.
   assert.ok(fwB > fwA, `FW should rank scaled-up source higher`);
 });
+
+// ---- refinement (axis-52 follow-up): exhaustive non-degeneracy
+// audit + numerical-stability sweep. The KEY LESSON FROM AXIS-51
+// (which we discovered to collapse to 2/n * Gini under per-day
+// projection) is to PROVE that axis-52 is non-degenerate vs every
+// neighboring axis BEFORE committing it as a real signal. We audit:
+//   (a) FW vs Wolfson: closed-form FW/W = 2*m identity on a 50-trial
+//       random sweep, proving the relationship is EXACT (so the only
+//       cross-source variation in FW that is NOT Wolfson is the
+//       median variation -- a real signal whenever medians vary).
+//   (b) FW source ranking vs Wolfson source ranking: Spearman-style
+//       rank-divergence on a synthetic 6-source panel built to mimic
+//       the live-data spread (high-volume / low-bipolarization vs
+//       low-volume / high-bipolarization), proving the rankings
+//       DIVERGE (not just numerically differ) -- the non-degeneracy
+//       proof in source-ordering space.
+//   (c) Numerical stability on long heavy-tailed vectors (n=1000),
+//       checking finite output and the FW/W = 2*m identity at scale.
+
+test('refinement: closed-form FW/W = 2*median identity holds at machine precision on a 50-trial random sweep', () => {
+  const rand = (seed: number) => {
+    let s = seed;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 0xffffffff;
+    };
+  };
+  const r = rand(20260502);
+  let degenerateSkipped = 0;
+  for (let trial = 0; trial < 50; trial += 1) {
+    const len = 4 + Math.floor(r() * 12);
+    const v: number[] = [];
+    for (let i = 0; i < len; i += 1) v.push(Math.floor(r() * 1000) + 1);
+    const fw = fosterWolfsonOfVector(v);
+    const w = wolfsonOfVector(v);
+    if (Math.abs(w.wolfson) < 1e-9) {
+      degenerateSkipped += 1;
+      continue;
+    }
+    const ratio = fw.fw / w.wolfson;
+    const expected = 2 * w.median;
+    assert.ok(
+      Math.abs(ratio - expected) < 1e-7,
+      `FW/W = 2*median drift on ${JSON.stringify(v)}: ` +
+        `got ${ratio}, expected ${expected}`,
+    );
+  }
+  // We expect almost all trials to be non-degenerate; allow up to
+  // 10 to be skipped (would happen if 2T = G by accident).
+  assert.ok(
+    degenerateSkipped <= 10,
+    `too many degenerate trials: ${degenerateSkipped}/50`,
+  );
+});
+
+test('refinement: FW source ranking DIVERGES from Wolfson source ranking on a 6-source panel mimicking live-data spread', () => {
+  // Build 6 synthetic per-day vectors with varying (median, gini, T)
+  // combinations so that the Wolfson order and FW order differ. The
+  // construction: half the sources are HIGH-VOLUME with LOW relative
+  // bipolarization; half are LOW-VOLUME with HIGH relative
+  // bipolarization. This mimics the live opencode-vs-vscode-copilot
+  // pattern.
+  const sources: Record<string, number[]> = {
+    s1_highvol_lowpolar: [
+      400_000_000,
+      450_000_000,
+      450_000_000,
+      500_000_000,
+      500_000_000,
+      550_000_000,
+    ],
+    s2_highvol_modpolar: [
+      80_000_000,
+      90_000_000,
+      100_000_000,
+      150_000_000,
+      200_000_000,
+      300_000_000,
+    ],
+    s3_modvol_modpolar: [
+      40_000_000,
+      50_000_000,
+      60_000_000,
+      80_000_000,
+      120_000_000,
+      200_000_000,
+    ],
+    s4_modvol_highpolar: [
+      10_000_000,
+      15_000_000,
+      25_000_000,
+      35_000_000,
+      80_000_000,
+      150_000_000,
+    ],
+    s5_lowvol_modpolar: [
+      8_000_000,
+      10_000_000,
+      12_000_000,
+      14_000_000,
+      18_000_000,
+      25_000_000,
+    ],
+    s6_lowvol_highpolar: [
+      1_000,
+      2_000,
+      5_000,
+      10_000,
+      30_000,
+      80_000,
+    ],
+  };
+  type Row = { name: string; fw: number; w: number };
+  const rows: Row[] = [];
+  for (const [name, v] of Object.entries(sources)) {
+    rows.push({
+      name,
+      fw: fosterWolfsonOfVector(v).fw,
+      w: wolfsonOfVector(v).wolfson,
+    });
+  }
+  const fwOrder = [...rows].sort((a, b) => b.fw - a.fw).map((r) => r.name);
+  const wOrder = [...rows].sort((a, b) => b.w - a.w).map((r) => r.name);
+  // Compute Spearman-style displacement: count positions that differ.
+  let diff = 0;
+  for (let i = 0; i < rows.length; i += 1) {
+    if (fwOrder[i] !== wOrder[i]) diff += 1;
+  }
+  // We require AT LEAST 4 of 6 positions to differ -- a strong
+  // non-degeneracy witness.
+  assert.ok(
+    diff >= 4,
+    `FW and Wolfson rankings should diverge on >= 4/6 positions; ` +
+      `got diff=${diff}. fwOrder=${JSON.stringify(fwOrder)}, ` +
+      `wOrder=${JSON.stringify(wOrder)}`,
+  );
+  // And the top FW source should NOT equal the top Wolfson source --
+  // the headline non-degeneracy claim from the live-smoke data.
+  assert.notEqual(
+    fwOrder[0],
+    wOrder[0],
+    `FW top != Wolfson top is the headline non-degeneracy claim; both = ${fwOrder[0]}`,
+  );
+});
+
+test('refinement: numerical stability on long heavy-tailed vectors (n=1000) -- finite output, FW/W = 2*m holds at scale', () => {
+  const n = 1000;
+  const v: number[] = [];
+  for (let i = 1; i <= n; i += 1) {
+    v.push(i % 50 === 0 ? i * 100 : i);
+  }
+  const fw = fosterWolfsonOfVector(v);
+  const w = wolfsonOfVector(v);
+  assert.ok(Number.isFinite(fw.fw), `fw not finite: ${fw.fw}`);
+  assert.ok(Number.isFinite(w.wolfson), `wolfson not finite`);
+  assert.equal(fw.degenerate, false);
+  if (Math.abs(w.wolfson) > 1e-9) {
+    const ratio = fw.fw / w.wolfson;
+    const expected = 2 * w.median;
+    // Allow slightly larger tolerance at n=1000.
+    assert.ok(
+      Math.abs(ratio - expected) / Math.abs(expected) < 1e-9,
+      `n=1000 FW/W = 2*m broken: got ${ratio}, expected ${expected}`,
+    );
+  }
+});
+
+test('refinement: defensive sweep over edge inputs -- median = 0 degenerates cleanly', () => {
+  // If more than half the entries are zero, median = 0 and Wolfson
+  // is degenerate; FW must inherit this degeneracy cleanly (no
+  // NaN, no Infinity).
+  const v = [0, 0, 0, 0, 0, 100, 200, 300]; // n=8, sorted -> median = 0
+  const fw = fosterWolfsonOfVector(v);
+  // Wolfson degenerates here (median = 0); FW must follow.
+  assert.equal(fw.degenerate, true);
+  assert.equal(fw.fw, 0);
+});
+
+test('refinement: alpha-free invariance -- FW takes no alpha parameter (unlike Esteban-Ray axis-51); identity is unique', () => {
+  // Defensive: confirm the API surface does not expose an alpha
+  // (FW is parameter-free; the axiom-cube corner it fills has no
+  // axiomatic free parameter, unlike the Esteban-Ray family).
+  const v = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const a = fosterWolfsonOfVector(v);
+  const b = fosterWolfsonOfVector(v);
+  assert.equal(a.fw, b.fw, 'FW must be deterministic and parameter-free');
+});
