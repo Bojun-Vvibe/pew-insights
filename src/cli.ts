@@ -100,6 +100,7 @@ import {
   renderDailyTokenWolfsonPolarizationIndex,
   renderDailyTokenSginiIndex,
   renderDailyTokenChakravartyIndex,
+  renderDailyTokenGenEntropyNegOneIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -362,6 +363,7 @@ import { buildDailyTokenMehranIndex } from './dailytokenmehranindex.js';
 import { buildDailyTokenWolfsonPolarizationIndex } from './dailytokenwolfsonpolarizationindex.js';
 import { buildDailyTokenSginiIndex } from './dailytokensginiindex.js';
 import { buildDailyTokenChakravartyIndex } from './dailytokenchakravartyindex.js';
+import { buildDailyTokenGenEntropyNegOneIndex } from './dailytokengenentropynegoneindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13715,6 +13717,135 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenChakravartyIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-genentropy-negone-index')
+  .description(
+    "Per-source GENERALISED ENTROPY GE(-1) of the per-day total_tokens distribution (FORTY-NINTH cross-source axis). GE(-1) = (1/2) * (mean_i (mu / x_i)^2 - 1). Range [0, +inf). The first NEGATIVE-alpha element of the Cowell-Kuga GE family shipped: structurally polar to GE(2) (axis-37; CV^2 / 2; QUADRATIC in large shares) -- GE(-1) is QUADRATIC in 1/share, so it is dominated by SMALL days. Strict bottom-tail diagnostic; diverges as any D_i -> 0+. Refinement: --include-ge2-anchor surfaces GE(2) on the same vector plus GE(-1) - GE(2) and GE(-1)/GE(2) so the moment-family tail-bias asymmetry is visible side-by-side.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 3). GE(-1) degenerate for n<2; default 3 avoids two-point trivialities.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: genEntropy (default) | tokens | days | source | meanDaily | ge2Gap. Applied before --top.',
+    'genEntropy',
+  )
+  .option(
+    '--min-genentropy <g>',
+    'display filter: hide non-degenerate rows whose genEntropy is strictly below this value. Non-negative. Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-ge2-anchor',
+    'every row gains ge2 (GE(2) on the same per-day vector), ge2Gap (genEntropy - ge2), and genEntropyOverGe2 (genEntropy / ge2). Surfaces moment-family tail-bias asymmetry at alpha=-1 vs alpha=+2.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minGenentropy: string;
+        includeGe2Anchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minGenEntropy = Number.parseFloat(opts.minGenentropy);
+        if (!Number.isFinite(minGenEntropy) || minGenEntropy < 0) {
+          throw new Error(
+            `--min-genentropy must be a non-negative number (got ${opts.minGenentropy})`,
+          );
+        }
+        const validSorts = [
+          'genEntropy',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'ge2Gap',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenGenEntropyNegOneIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minGenEntropy,
+          includeGe2Anchor: opts.includeGe2Anchor ?? false,
+          sort: opts.sort as
+            | 'genEntropy'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'ge2Gap',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenGenEntropyNegOneIndex(report) + '\n',
           );
         }
       } catch (e) {

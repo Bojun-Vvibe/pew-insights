@@ -16265,3 +16265,100 @@ export function renderDailyTokenChakravartyIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { DailyTokenGenEntropyNegOneReport } from './dailytokengenentropynegoneindex.js';
+
+export function renderDailyTokenGenEntropyNegOneIndex(
+  r: DailyTokenGenEntropyNegOneReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-genentropy-negone-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-genentropy: ${r.minGenEntropy}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinGenEntropy)} below min-genentropy, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source GE(-1) = (1/2) * (mean_i (mu / x_i)^2 - 1). BOTTOM-tail-sensitive moment functional. Polar to GE(2) which is TOP-tail-sensitive. Diverges as any x_i -> 0+.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source GE(-1) of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'genEntropy',
+    'meanDaily',
+    'medianDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.genEntropy.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.medianDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.ge2 !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `GE(2) cross-anchor (polar TOP-tail companion in the moment family)`,
+      ),
+    );
+    const aHeaders = ['source', 'genEntropy', 'ge2', 'GE(-1)-GE(2)', 'GE(-1)/GE(2)'];
+    const aRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.genEntropy.toFixed(4),
+      s.ge2 === undefined ? 'n/a' : (s.ge2 as number).toFixed(4),
+      s.ge2Gap === undefined
+        ? 'n/a'
+        : ((s.ge2Gap as number) >= 0 ? '+' : '') +
+          (s.ge2Gap as number).toFixed(4),
+      s.genEntropyOverGe2 === undefined ||
+      Number.isNaN(s.genEntropyOverGe2)
+        ? 'n/a'
+        : (s.genEntropyOverGe2 as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(aHeaders, aRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
