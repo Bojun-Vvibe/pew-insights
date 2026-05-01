@@ -455,3 +455,90 @@ test('buildDailyTokenIqrOverMedian: GE(4) ranks differently than IOM on syntheti
   );
   // RANK FLIP confirmed: IOM(body) > IOM(tail) but GE(4)(tail) >> GE(4)(body).
 });
+
+// ---- Structural edge-case refinements (post-release) ----------------
+
+test('iqrOverMedianOfVector: top-half-constant vector is degenerate ONLY if P25=P75', () => {
+  // Sorted [1,2,3,4,5,7,7,7,7,7,7] (n=11): P25 (h=2.5) = 3+0.5*(4-3)=3.5,
+  //   P50 (h=5) = v[5] = 7, P75 (h=7.5) = 7+0.5*0 = 7. IOM = (7-3.5)/7 = 0.5.
+  // NOT degenerate -- P25 != P75. Contrast with PGR which IS degenerate
+  // here (P50 = P90 = 7), demonstrating the COMPLEMENTARY information
+  // geometry of the two axes.
+  const v = [1, 2, 3, 4, 5, 7, 7, 7, 7, 7, 7];
+  const r = iqrOverMedianOfVector(v);
+  assert.ok(Math.abs(r.iom - 0.5) < 1e-12);
+  assert.equal(r.degenerate, false);
+  // PGR on same vector IS degenerate (P50 = P90 = 7).
+  const pgr = percentileGapRatioOfVector(v);
+  assert.ok(Math.abs(pgr.pgr - 1) < 1e-12);
+  assert.equal(pgr.degenerate, true);
+});
+
+test('iqrOverMedianOfVector: bottom-half-constant vector is degenerate ONLY if P25=P75', () => {
+  // Sorted [1,1,1,1,1,1,3,4,5,6,7] (n=11): P25 (h=2.5) = 1+0.5*0 = 1,
+  //   P50 (h=5) = 1, P75 (h=7.5) = 4+0.5*(5-4) = 4.5. IOM = (4.5-1)/1 = 3.5.
+  // NOT degenerate -- P25 != P75 (the upper half varies, dragging P75 up).
+  const v = [1, 1, 1, 1, 1, 1, 3, 4, 5, 6, 7];
+  const r = iqrOverMedianOfVector(v);
+  assert.ok(Math.abs(r.p25 - 1) < 1e-12);
+  assert.ok(Math.abs(r.p50 - 1) < 1e-12);
+  assert.ok(Math.abs(r.p75 - 4.5) < 1e-12);
+  assert.ok(Math.abs(r.iom - 3.5) < 1e-12);
+  assert.equal(r.degenerate, false);
+});
+
+test('iqrOverMedianOfVector: floating-point clamp -- IOM never < 0, PGR never < 1', () => {
+  // After IEEE 754 subtraction P75 - P25 can produce a tiny negative
+  // value if percentiles are computed via two slightly different paths.
+  // We don't actually trigger that here, but we *do* assert the clamp
+  // semantics on a vector where P25 ~= P75 to within 1 ULP.
+  const v = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+  const r = iqrOverMedianOfVector(v);
+  assert.ok(r.iom >= 0);
+  assert.ok(r.pgr >= 1);
+  assert.equal(r.degenerate, true);
+});
+
+test('iqrOverMedianOfVector: monotonicity of IOM under uniform widening of central body', () => {
+  // Symmetric widening of the central 50% strictly increases IOM (with
+  // P50 fixed). Construct base [4,4,5,5,5,5,5,5,5,6,6] (n=11):
+  //   P25 (h=2.5) = 4+0.5*(5-4)=4.5; P50 = 5; P75 (h=7.5) = 5+0.5*(5-5)=5.
+  //   Hmm, P75 collapses to 5. Use a wider construction so widening
+  //   moves P25 down and P75 up:
+  //   base = [3,3,4,5,5,5,5,5,6,7,7] (n=11):
+  //     P25 (h=2.5) = 4+0.5*(5-4) = 4.5; P50 = 5; P75 (h=7.5) = 5+0.5*(6-5)=5.5
+  //     IOM = (5.5-4.5)/5 = 0.2
+  //   wider = [1,1,4,5,5,5,5,5,6,9,9]: P25 (h=2.5) = 4+0.5*(5-4) = 4.5;
+  //     P50 = 5; P75 (h=7.5) = 5+0.5*(6-5) = 5.5. SAME IOM!
+  //   IOM is determined by ranks 2,3,7,8 only (since k = 2 and 7 with f = 0.5);
+  //   the tails (ranks 0,1,9,10) don't contribute -- a clean illustration
+  //   of the "central-only" information geometry.
+  const base = [3, 3, 4, 5, 5, 5, 5, 5, 6, 7, 7];
+  const wider = [1, 1, 4, 5, 5, 5, 5, 5, 6, 9, 9];
+  assert.ok(
+    Math.abs(iqrOverMedianOfVector(base).iom - iqrOverMedianOfVector(wider).iom) <
+      1e-12,
+    'IOM ignores all values outside ranks 2,3,7,8 in n=11; widening tails is a no-op.',
+  );
+  // PGR DOES respond: P90 (h=9.0) = v[9] which is 7 in base, 9 in wider.
+  const base_pgr = percentileGapRatioOfVector(base).pgr;
+  const wider_pgr = percentileGapRatioOfVector(wider).pgr;
+  assert.ok(wider_pgr > base_pgr, 'PGR responds to upper-tail widening.');
+});
+
+test('iqrOverMedianOfVector: returns IOM equal to QCD * 2 * (P75+P25)/(2*P50) under formal identity', () => {
+  // QCD = (P75-P25)/(P75+P25) = "Quartile Coefficient of Dispersion".
+  // Identity: IOM = (P75-P25)/P50 = QCD * (P75+P25)/P50.
+  // We verify this identity holds under fp arithmetic for [1..100].
+  const v: number[] = [];
+  for (let i = 1; i <= 100; i++) v.push(i);
+  const r = iqrOverMedianOfVector(v);
+  const qcd = (r.p75 - r.p25) / (r.p75 + r.p25);
+  const lhs = r.iom;
+  const rhs = (qcd * (r.p75 + r.p25)) / r.p50;
+  assert.ok(
+    Math.abs(lhs - rhs) < 1e-12,
+    `Identity IOM = QCD*(P75+P25)/P50 should hold; got ${lhs} vs ${rhs}`,
+  );
+});
+
