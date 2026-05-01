@@ -17080,6 +17080,7 @@ import type { DailyTokenLSkewnessReport } from './dailytokenlskewness.js';
 import type { DailyTokenAutocorrelationLag7Report } from './dailytokenautocorrelationlag7.js';
 import type { DailyTokenSpectralEntropyReport } from './dailytokenspectralentropy.js';
 import type { DailyTokenPermutationEntropyReport } from './dailytokenpermutationentropy.js';
+import type { DailyTokenHurstRsReport } from './dailytokenhurstrs.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18201,6 +18202,73 @@ export function renderDailyTokenPermutationEntropy(
     s.flat ? '\u2014' : (PE_PATTERN_LABELS[s.peakPattern] ?? String(s.peakPattern)),
     s.flat ? '\u2014' : s.peakShare.toFixed(4),
     s.flat ? '\u2014' : s.entropyNorm.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHurstRs(r: DailyTokenHurstRsReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-hurst-rs'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    min-window: ${formatNumber(r.minWindow)}    max-scales: ${formatNumber(r.maxScales)}    min-scales: ${formatNumber(r.minScales)}    detrend: ${r.detrend}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedBelowMinScales)} below min-scales tenure, ${formatNumber(r.droppedAllDegenerate)} all-degenerate, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hurst exponent via classical R/S analysis on the gap-filled daily total_tokens series. SEVENTY-FIRST cross-source axis. H = OLS slope of log((R/S)_m) vs log(m) over a log-spaced grid of chunk sizes. H ~ 0.5 = random walk; H > 0.5 = persistent / long-range positive memory; H < 0.5 = anti-persistent / mean-reverting. Multi-scale memory exponent -- structurally orthogonal to (a) lag-1 / lag-7 ACF (single-lag linear scalars; H is well-defined when all rho_k = 0 yet captures fGn long-range memory), (b) spectral entropy (Shannon flatness of the periodogram; H is the scaling exponent linking range-to-stddev to window size -- pink and white noise share spectral entropy ~1 yet H = 1 vs 0.5), (c) permutation entropy (ordinal alphabet of length-3 patterns; H is fully metric and multi-scale), (d) all permutation-invariant dispersion / shape axes (sorted vs shuffled multiset: H ~ 1 vs ~ 0.5 while every multiset statistic agrees), (e) trend-slope axes -- a deterministic monotone trend can drive H -> 1 spuriously; the --detrend knob OLS-detrends each chunk in spirit of Lo (1991) modified R/S.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source Hurst R/S (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'minScale',
+    'maxScale',
+    'scales',
+    'H',
+    'r2',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.minScaleUsed),
+    formatNumber(s.maxScaleUsed),
+    formatNumber(s.scalesUsed),
+    s.hurst.toFixed(4),
+    s.r2.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

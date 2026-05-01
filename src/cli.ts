@@ -122,6 +122,7 @@ import {
   renderDailyTokenAutocorrelationLag7,
   renderDailyTokenSpectralEntropy,
   renderDailyTokenPermutationEntropy,
+  renderDailyTokenHurstRs,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -406,6 +407,7 @@ import { buildDailyTokenLSkewness } from './dailytokenlskewness.js';
 import { buildDailyTokenAutocorrelationLag7 } from './dailytokenautocorrelationlag7.js';
 import { buildDailyTokenSpectralEntropy } from './dailytokenspectralentropy.js';
 import { buildDailyTokenPermutationEntropy } from './dailytokenpermutationentropy.js';
+import { buildDailyTokenHurstRs } from './dailytokenhurstrs.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16618,6 +16620,159 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenPermutationEntropy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-hurst-rs')
+  .description(
+    "Per-source Hurst exponent via classical R/S analysis (Hurst 1951; Mandelbrot & Wallis 1969) on the gap-filled daily total_tokens series (SEVENTY-FIRST cross-source axis). H = OLS slope of log((R/S)_m) vs log(m) over a log-spaced grid of chunk sizes m in [min-window, floor(N/2)]; per chunk R = max(cum dev) - min(cum dev) and S = sqrt((1/m) sum (x-mu)^2); R/S averaged over the floor(N/m) non-overlapping chunks. H ~ 0.5 = random walk; H > 0.5 = persistent / long-range positive memory across multiple horizons; H < 0.5 = anti-persistent / mean-reverting. Multi-scale memory exponent: orthogonal to (a) lag-1 / lag-7 ACF axes -- single-lag linear scalars, well-defined when all rho_k = 0 yet H differs from 0.5 (the Joseph effect that R/S was introduced to detect); (b) spectral entropy axis 69 -- pink and white noise share spectral entropy ~ 1 yet H = 1 vs 0.5; (c) permutation entropy axis 70 -- ordinal alphabet of length-3 patterns, H is fully metric; (d) all permutation-invariant dispersion / shape axes 32-67 -- sorted vs shuffled multiset gives H ~ 1 vs ~ 0.5 while every multiset statistic agrees; (e) trend / forecast linear slope -- a deterministic monotone trend can drive H -> 1 spuriously, the canonical caveat; --detrend OLS-detrends each chunk in the spirit of Lo (1991) modified R/S to mitigate.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 2*minWindow so floor(N/m) >= 2. Default 32.',
+    '32',
+  )
+  .option(
+    '--min-window <n>',
+    'smallest chunk size in days. Hard floor 4. Default 4.',
+    '4',
+  )
+  .option(
+    '--max-scales <n>',
+    'cap on the number of distinct log-spaced scales used in the OLS. Default 12.',
+    '12',
+  )
+  .option(
+    '--min-scales <n>',
+    'minimum surviving scales required to fit the log-log OLS. Default 4.',
+    '4',
+  )
+  .option(
+    '--detrend',
+    'OLS-detrend each chunk in spirit of Lo (1991) modified R/S; mitigates spurious H -> 1 from monotone trends.',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absHurstDeviationDesc (default, sources furthest from H=0.5 first) | hurst | hurstDesc | r2Desc | tokens | tenure | source.',
+    'absHurstDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        minWindow: string;
+        maxScales: string;
+        minScales: string;
+        detrend?: boolean;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minWindow = Number.parseInt(opts.minWindow, 10);
+        if (!Number.isInteger(minWindow) || minWindow < 4) {
+          throw new Error(
+            `--min-window must be an integer >= 4 (got ${opts.minWindow})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 2 * minWindow) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 2*min-window=${2 * minWindow} (got ${opts.minTenureDays})`,
+          );
+        }
+        const maxScales = Number.parseInt(opts.maxScales, 10);
+        if (!Number.isInteger(maxScales) || maxScales < 3) {
+          throw new Error(
+            `--max-scales must be an integer >= 3 (got ${opts.maxScales})`,
+          );
+        }
+        const minScales = Number.parseInt(opts.minScales, 10);
+        if (!Number.isInteger(minScales) || minScales < 3) {
+          throw new Error(
+            `--min-scales must be an integer >= 3 (got ${opts.minScales})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absHurstDeviationDesc',
+          'hurst',
+          'hurstDesc',
+          'r2Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHurstRs(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          minWindow,
+          maxScales,
+          minScales,
+          detrend: opts.detrend === true,
+          top,
+          sort: opts.sort as
+            | 'absHurstDeviationDesc'
+            | 'hurst'
+            | 'hurstDesc'
+            | 'r2Desc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHurstRs(report) + '\n');
         }
       } catch (e) {
         die(e);
