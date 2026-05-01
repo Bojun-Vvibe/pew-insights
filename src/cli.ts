@@ -101,6 +101,7 @@ import {
   renderDailyTokenSginiIndex,
   renderDailyTokenChakravartyIndex,
   renderDailyTokenGenEntropyNegOneIndex,
+  renderDailyTokenAmatoIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -364,6 +365,7 @@ import { buildDailyTokenWolfsonPolarizationIndex } from './dailytokenwolfsonpola
 import { buildDailyTokenSginiIndex } from './dailytokensginiindex.js';
 import { buildDailyTokenChakravartyIndex } from './dailytokenchakravartyindex.js';
 import { buildDailyTokenGenEntropyNegOneIndex } from './dailytokengenentropynegoneindex.js';
+import { buildDailyTokenAmatoIndex } from './dailytokenamatoindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13852,6 +13854,141 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenGenEntropyNegOneIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-amato-index')
+  .description(
+    "Per-source AMATO INDEX (Lorenz-curve ARC LENGTH) of the per-day total_tokens distribution (FIFTIETH cross-source axis). A(L) = sum_i sqrt((1/n)^2 + (x_(i)/S)^2). Range [sqrt(2), 2]. Lower bound sqrt(2) iff perfect equality (Lorenz curve = diagonal). SHAPE functional of the Lorenz curve, structurally distinct from area (Gini), single-point gap (Pietra/Hoover), median-anchored bipolarization (Wolfson), share-moment family (Theil/GE/Atkinson/Chakravarty), and rank-kernel partial-mean families (Bonferroni/Mehran/S-Gini/Zenga). Refinements: --include-kakwani surfaces the normalized arc-length index K = (A - sqrt(2))/(2 - sqrt(2)) in [0,1]; --include-gini-anchor surfaces Gini on the same vector and the amato/gini ratio.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 3). Amato is degenerate for n<2; default 3 avoids two-point trivialities.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: amato (default) | tokens | days | source | meanDaily | kakwani. Applied before --top.',
+    'amato',
+  )
+  .option(
+    '--min-amato <a>',
+    'display filter: hide non-degenerate rows whose amato is strictly below this value. In [sqrt(2), 2]. Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-kakwani',
+    "every row gains kakwani (normalized arc-length index K = (A - sqrt(2))/(2 - sqrt(2)) in [0,1]) and amatoExcessOverEquality = A - sqrt(2).",
+  )
+  .option(
+    '--include-gini-anchor',
+    'every row gains gini (axis-32 functional on the same per-day vector) and amatoOverGini ratio. Surfaces area-vs-arc-length functional decoupling.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minAmato: string;
+        includeKakwani?: boolean;
+        includeGiniAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minAmato = Number.parseFloat(opts.minAmato);
+        if (!Number.isFinite(minAmato) || minAmato < 0) {
+          throw new Error(
+            `--min-amato must be a non-negative number (got ${opts.minAmato})`,
+          );
+        }
+        const validSorts = [
+          'amato',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'kakwani',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAmatoIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minAmato,
+          includeKakwani: opts.includeKakwani ?? false,
+          includeGiniAnchor: opts.includeGiniAnchor ?? false,
+          sort: opts.sort as
+            | 'amato'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'kakwani',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenAmatoIndex(report) + '\n',
           );
         }
       } catch (e) {

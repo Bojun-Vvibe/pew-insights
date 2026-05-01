@@ -16381,3 +16381,114 @@ export function renderDailyTokenGenEntropyNegOneIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { DailyTokenAmatoReport } from './dailytokenamatoindex.js';
+
+export function renderDailyTokenAmatoIndex(
+  r: DailyTokenAmatoReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-amato-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-amato: ${r.minAmato}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinAmato)} below min-amato, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source A(L) = sum_i sqrt((1/n)^2 + (x_(i)/S)^2). LORENZ ARC LENGTH. Range [sqrt(2)~1.4142, 2]. SHAPE functional, distinct from Gini AREA, Pietra/Hoover gaps, Wolfson median anchor, GE/Atkinson moments, Bonferroni/Mehran/S-Gini/Zenga rank kernels.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source AMATO of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'amato',
+    'meanDaily',
+    'medianDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.amato.toFixed(6),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.medianDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.kakwani !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Kakwani normalized arc-length K = (A - sqrt(2)) / (2 - sqrt(2)) in [0, 1]`,
+      ),
+    );
+    const kHeaders = ['source', 'amato', 'amato-sqrt(2)', 'kakwani'];
+    const kRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.amato.toFixed(6),
+      s.amatoExcessOverEquality === undefined
+        ? 'n/a'
+        : (s.amatoExcessOverEquality as number).toFixed(6),
+      s.kakwani === undefined ? 'n/a' : (s.kakwani as number).toFixed(6),
+    ]);
+    lines.push(renderTableLocal(kHeaders, kRows));
+  }
+
+  if (r.sources.some((s) => s.gini !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Gini cross-anchor (axis-32; AREA functional, polar to Amato's ARC-LENGTH functional on the same Lorenz curve)`,
+      ),
+    );
+    const gHeaders = ['source', 'amato', 'gini', 'amato/gini'];
+    const gRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.amato.toFixed(6),
+      s.gini === undefined ? 'n/a' : (s.gini as number).toFixed(4),
+      s.amatoOverGini === undefined || Number.isNaN(s.amatoOverGini)
+        ? 'n/a'
+        : (s.amatoOverGini as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(gHeaders, gRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
