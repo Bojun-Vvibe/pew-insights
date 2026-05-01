@@ -98,6 +98,7 @@ import {
   renderDailyTokenKolmPollakIndex,
   renderDailyTokenMehranIndex,
   renderDailyTokenWolfsonPolarizationIndex,
+  renderDailyTokenSginiIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -358,6 +359,7 @@ import { buildDailyTokenBonferroniIndex } from './dailytokenbonferroniindex.js';
 import { buildDailyTokenKolmPollakIndex } from './dailytokenkolmpollakindex.js';
 import { buildDailyTokenMehranIndex } from './dailytokenmehranindex.js';
 import { buildDailyTokenWolfsonPolarizationIndex } from './dailytokenwolfsonpolarizationindex.js';
+import { buildDailyTokenSginiIndex } from './dailytokensginiindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13416,6 +13418,155 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWolfsonPolarizationIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-sgini-index')
+  .description(
+    "Per-source DONALDSON-WEYMARK / YITZHAKI single-parameter S-GINI of the per-day total_tokens distribution at aversion parameter delta (default 3) (FORTY-SEVENTH cross-source axis). S(delta) = 1 - (1/mu) * sum_i x_(i) * w_i where w_i = ((n-i+1)/n)^delta - ((n-i)/n)^delta and x_(i) is the i-th ascending order statistic. delta=2 reproduces standard Gini exactly; delta>2 places MORE weight on the bottom of the distribution (rank-power kernel). Range [0, 1). Identity: S(delta>=2) >= G with equality only at perfect equality / two-point. Distinct from axis-32 Gini (uniform Lorenz weighting = S(2)), GE family (moment-based on shares, no order kernel), Pietra/Hoover (single-point Lorenz gaps), Atkinson (CRRA welfare, power-mean of VALUES not RANKS), Bonferroni (HARMONIC bottom-rank kernel), Mehran (LINEAR partial-mean kernel), Kolm-Pollak (absolute, translation-invariant), Wolfson (median-anchored bipolarization). Per-source columns: sgini, gini, meanDaily, medianDaily, minDay, maxDay. Refinement: --include-bottom-weight-excess surfaces sgini-gini (the Donaldson-Weymark identity gap) and sgini/gini.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 3). S-Gini degenerate for n<2; default 3 ensures the bottom-weighted rank kernel is meaningfully distinct from standard Gini.',
+    '3',
+  )
+  .option(
+    '--delta <d>',
+    'S-Gini aversion parameter (default 3). Must be > 0 and != 1 (delta=1 is the degenerate identity that returns 0 for any vector). delta=2 reproduces standard Gini.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: sgini (default) | tokens | days | source | meanDaily | sginiOverGini | bottomWeightExcess. Applied before --top.',
+    'sgini',
+  )
+  .option(
+    '--min-sgini <s>',
+    'display filter: hide non-degenerate rows whose sgini is strictly below this value. s in [0, 1). Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-bottom-weight-excess',
+    'every row gains bottomWeightExcess (sgini - gini) and sginiOverGini (sgini / gini) fields. Surfaces the Donaldson-Weymark identity S(delta>=2) >= G; the gap is the bottom-rank weighting EXCESS the parametric kernel extracts beyond the standard Gini baseline.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        delta: string;
+        top: string;
+        sort: string;
+        minSgini: string;
+        includeBottomWeightExcess?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const delta = Number.parseFloat(opts.delta);
+        if (!Number.isFinite(delta) || delta <= 0) {
+          throw new Error(
+            `--delta must be a positive finite number (got ${opts.delta})`,
+          );
+        }
+        if (delta === 1) {
+          throw new Error(
+            `--delta = 1 is the degenerate identity (S(1) = 0 for any vector). Use delta > 1.`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minSgini = Number.parseFloat(opts.minSgini);
+        if (!Number.isFinite(minSgini) || minSgini < 0 || minSgini >= 1) {
+          throw new Error(
+            `--min-sgini must be a number in [0, 1) (got ${opts.minSgini})`,
+          );
+        }
+        const validSorts = [
+          'sgini',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'sginiOverGini',
+          'bottomWeightExcess',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSginiIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          delta,
+          top,
+          minSgini,
+          includeBottomWeightExcess: opts.includeBottomWeightExcess ?? false,
+          sort: opts.sort as
+            | 'sgini'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'sginiOverGini'
+            | 'bottomWeightExcess',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSginiIndex(report) + '\n',
           );
         }
       } catch (e) {

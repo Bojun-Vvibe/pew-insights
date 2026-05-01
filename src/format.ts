@@ -64,6 +64,7 @@ import type { DailyTokenBonferroniReport } from './dailytokenbonferroniindex.js'
 import type { DailyTokenKolmPollakReport } from './dailytokenkolmpollakindex.js';
 import type { DailyTokenMehranReport } from './dailytokenmehranindex.js';
 import type { DailyTokenWolfsonReport } from './dailytokenwolfsonpolarizationindex.js';
+import type { DailyTokenSginiReport } from './dailytokensginiindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -1660,12 +1661,108 @@ export function renderSessionLengths(
 }
 
 import type { ReplyRatioReport } from './replyratio.js';
-
 function fmtRatio(r: number): string {
   if (r === 0) return '0';
   if (Number.isInteger(r)) return String(r);
   return r < 1 ? r.toFixed(2) : r.toFixed(2);
 }
+
+export function renderDailyTokenSginiIndex(
+  r: DailyTokenSginiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-sgini-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    delta: ${r.delta}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-sgini: ${r.minSgini}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinSgini)} below min-sgini, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source S-Gini at delta=${r.delta}: 1 - (1/mu) * sum_i x_(i) * w_i where w_i = ((n-i+1)/n)^delta - ((n-i)/n)^delta. Donaldson-Weymark / Yitzhaki rank-power generalization of Gini; delta=2 reproduces standard Gini, delta>2 puts MORE weight on the bottom of the distribution.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source S-Gini(delta=${r.delta}) of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'sgini',
+    'gini',
+    'meanDaily',
+    'medianDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.sgini.toFixed(4),
+    s.gini.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.medianDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.bottomWeightExcess !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `bottom-weight refinement: S(${r.delta}) - G (Donaldson-Weymark identity gap; >= 0 for delta >= 2)`,
+      ),
+    );
+    const aHeaders = ['source', 'sgini', 'gini', 'sgini-gini', 'sgini/gini'];
+    const aRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.sgini.toFixed(4),
+      s.gini.toFixed(4),
+      s.bottomWeightExcess === undefined
+        ? 'n/a'
+        : ((s.bottomWeightExcess as number) >= 0 ? '+' : '') +
+          (s.bottomWeightExcess as number).toFixed(4),
+      s.sginiOverGini === undefined || Number.isNaN(s.sginiOverGini)
+        ? 'n/a'
+        : (s.sginiOverGini as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(aHeaders, aRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 
 import type {
   SourceRowTokenMadReport,
