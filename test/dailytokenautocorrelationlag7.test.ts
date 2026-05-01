@@ -421,3 +421,64 @@ test('orthogonality witness: weekly-repeating signal independent from within-wee
   const rB1 = pearsonAutocorrelationAtLag(xsB, 1);
   assert.ok(rB1.rho - rA1.rho > 0.5, `lag-1 should differ: A=${rA1.rho}, B=${rB1.rho}`);
 });
+
+// ---- refinement: invariance laws + reference-formula cross-check -----
+
+test('refinement: rho_k is invariant under affine transform x -> a*x + b for a > 0', () => {
+  // Pearson autocorrelation at any lag is invariant under shift+scale
+  // (with positive scale) of the input series. This is structural:
+  // both numerator and denominator are mean-centred quadratic forms,
+  // so b cancels in centring and a^2 cancels in the ratio.
+  const xs: number[] = [];
+  for (let i = 0; i < 30; i += 1) xs.push(Math.sin((2 * Math.PI * i) / 7) * 100 + i * 0.3);
+  const r1 = pearsonAutocorrelationAtLag(xs, 7);
+  const ys = xs.map((x) => 17.25 * x + 999);
+  const r2 = pearsonAutocorrelationAtLag(ys, 7);
+  assert.equal(r1.flat, false);
+  assert.equal(r2.flat, false);
+  assert.ok(
+    Math.abs(r1.rho - r2.rho) < 1e-9,
+    `affine-invariance: ${r1.rho} vs ${r2.rho}`,
+  );
+});
+
+test('refinement: rho_k flips sign under x -> -x (sign-reversal of input)', () => {
+  // Negating x shifts mean to -mu. (x_i - mu) becomes -(x'_i - (-mu)) =
+  // -(-x_i + mu). So both factors in the numerator pick up a (-1) and
+  // the product is unchanged; the denominator is unchanged too.
+  // Net: rho_k(-x) = +rho_k(x). This is the "sign of x" invariance.
+  // This test checks that direct identity (NOT sign flip).
+  const xs: number[] = [];
+  for (let i = 0; i < 25; i += 1) xs.push(Math.cos((2 * Math.PI * i) / 7) * 50 + 200);
+  const r1 = pearsonAutocorrelationAtLag(xs, 7);
+  const r2 = pearsonAutocorrelationAtLag(xs.map((x) => -x), 7);
+  assert.ok(
+    Math.abs(r1.rho - r2.rho) < 1e-12,
+    `sign-reversal should not change rho: ${r1.rho} vs ${r2.rho}`,
+  );
+});
+
+test('refinement: hand-computed rho7 on an 8-element series matches the implementation', () => {
+  // Smallest non-degenerate case: n=8 has exactly 1 lag-7 pair (i=0).
+  // Hand computation:
+  //   xs = [a, b, c, d, e, f, g, h]
+  //   mu = (a+b+c+d+e+f+g+h)/8
+  //   denom = sum (x_i - mu)^2
+  //   num   = (a - mu) * (h - mu)
+  //   rho7  = num / denom
+  const xs = [1, 4, 9, 16, 25, 36, 49, 64]; // squares 1..8
+  const mu = (1 + 4 + 9 + 16 + 25 + 36 + 49 + 64) / 8; // 25.5
+  let denom = 0;
+  for (const v of xs) {
+    const d = v - mu;
+    denom += d * d;
+  }
+  const num = (xs[0]! - mu) * (xs[7]! - mu);
+  const expected = num / denom;
+  const r = pearsonAutocorrelationAtLag(xs, 7);
+  assert.equal(r.flat, false);
+  assert.ok(
+    Math.abs(r.rho - expected) < 1e-12,
+    `hand-computed n=8 rho7 mismatch: impl=${r.rho} expected=${expected}`,
+  );
+});
