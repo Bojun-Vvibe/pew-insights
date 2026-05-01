@@ -130,6 +130,18 @@ All notable changes to this project will be documented in this file.
   / top cap / invalid sort / minDays<2 / invalid since). Full suite
   green: 8483 / 8483 pass.
 
+  POST-SHIP REFINEMENT (sha-pending). Added 7 supplementary tests
+  exercising small-n boundary behaviour (n=2,3,4 reduces to single-
+  element max/min ratio because the body has size 0/1/2), Palma
+  reduction on n=3 (palma = max / (sum of two smallest)),
+  --sort=tokens secondary ordering, since/until window trimming
+  (verified by independent re-derivation 70/30 on a five-day slice
+  of [10..100]), and the top=0 sentinel meaning "no cap". Source
+  docstring now explicitly documents the n in [2,4] formula
+  reduction and explains why --min-days defaults to 5 (the body
+  becomes large enough that QSR responds to mass aggregation, not
+  just single-day extremes).
+
 ## 0.6.305 — 2026-05-01
 
 ### Added
