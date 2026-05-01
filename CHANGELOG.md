@@ -2,6 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.310 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-SIXTH):
+  `pew-insights daily-token-medcouple-skewness`.
+
+  Per-source MEDCOUPLE (Brys, Hubert, Struyf 2004) of the per-day
+  total_tokens vector:
+
+      m  = median(X)
+      MC = median over (x_i, x_j) with x_i <= m <= x_j and not
+           both equal to m, of the kernel
+
+                          (x_j - m) - (m - x_i)
+                h(x_i, x_j) = -----------------------
+                                   x_j - x_i
+
+  Range: MC in [-1, +1].
+
+      MC > 0 : right-skewed (heavy days FAR ABOVE the median while
+               light days cluster JUST BELOW the median)
+      MC < 0 : left-skewed
+      MC = 0 : symmetric around the median
+
+  Properties: ROBUST (~25% breakdown point), SCALE-FREE
+  (MC(c*X) = MC(X) for c > 0), SIGNED (MC(2m - X) = -MC(X)),
+  BOUNDED. Ties at the median are handled by the standard
+  Brys-Hubert-Struyf discrete kernel
+  h(p, q) = sign(p + q - (k - 1)) on the k tied indices, so
+  all-equal-medians vectors are deterministic.
+
+  HEADLINE QUESTION: "For each source, is the per-day total_tokens
+  distribution ASYMMETRIC around its MEDIAN -- and IN WHICH
+  DIRECTION -- measured ROBUSTLY (insensitive to outliers, no
+  moments required, scale-free, bounded)?"
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..65):
+
+  - Axes 32..63 (Gini, S-Gini, Atkinson, Theil-L/T, GE family,
+    Hoover, Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson,
+    Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+    Var-of-Logs, Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM)
+    are NON-NEGATIVE inequality / dispersion functionals. Every
+    one of them is INVARIANT under reflection of X around its
+    mean (or around any anchor point depending on definition):
+    they cannot distinguish a left-skewed from a right-skewed
+    distribution AT ALL. MC is the FIRST signed shape descriptor
+    on the axis-32..65 family. The reflection witness in
+    `test/dailytokenmedcoupleskewness.test.ts` shows two vectors
+    with identical Gini / Theil / Atkinson / Wolfson / etc. but
+    OPPOSITE-SIGN MC.
+
+  - vs axes 60 (MSR, monotone-run length) and 64 (RTZ,
+    runs-test-z): both are CALENDAR-ORDER trace statistics on
+    the binary above/below-median sign sequence; they ignore
+    magnitude entirely. MC is PERMUTATION-INVARIANT (sort the
+    days first and MC is unchanged) and depends only on
+    magnitudes. A perfect square-wave gives RTZ extreme positive
+    while MC = 0 (the magnitudes are still symmetric around the
+    median).
+
+  - vs axis 65 (Hill tail-index): Hill is TAIL-ONLY (top-k
+    order statistics) and unbounded in (0, +inf); MC is a
+    THREE-REGION functional (lower half / median ties / upper
+    half) and bounded in [-1, 1]. A perfectly symmetric
+    heavy-tailed sample has Hill alpha low while MC = 0; a
+    strongly right-skewed light-tail sample has MC > 0 while
+    Hill alpha is very large. The two axes can take any joint
+    value in (alpha, MC) -- they measure independent slices of
+    distribution shape.
+
+  - vs axis 56 (Foster-Wolfson signed bipolarisation): FW is
+    signed but is a BIPOLARISATION measure built from the
+    distance of each half from the median; it grows whenever
+    BOTH halves are far from m. MC is a normalised RATIO
+    (upper-half spread minus lower-half spread, scaled per
+    pair). A symmetric bipolar distribution has |FW| > 0
+    but MC = 0.
+
+  - vs `source-row-token-bowley-skewness` (row-level Bowley
+    quartile skewness): Bowley uses exactly THREE quantiles
+    (Q1, Q2, Q3); MC takes a MEDIAN over an O(n^2) family of
+    pairwise asymmetries. Bowley uses 2 pairs; MC uses up to
+    (n/2)^2 pairs and has ~25% breakdown point.
+
+  RANGE AND DEGENERACY. MC is degenerate when n < 2 or when
+  ALL values are equal (no comparable pair). In both cases we
+  return mc = 0 with `degenerate: true`. The all-equal-median
+  case (some values strictly below or above m, but with several
+  ties at m) is NOT degenerate: the Brys-Hubert-Struyf kernel
+  extension supplies the {-1, 0, +1} kernel values for tie pairs.
+
+  CLI knobs: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 5; MC needs at least one
+  element on each side of the median), `--top` (default 0 = no
+  cap), `--sort` (default `absMc`; also `mc` | `mcAsc` | `tokens`
+  | `days` | `source`), `--min-abs-mc` (display filter, hides
+  near-symmetric rows), `--json`.
+
+  LIVE SMOKE against `~/.config/pew/queue.jsonl`
+  (default sort=absMc, three of six rows shown verbatim;
+  the full default output ranks codex, vscode-copilot, openclaw,
+  hermes, claude-code, opencode):
+
+      pew-insights daily-token-medcouple-skewness
+      as of: 2026-05-01T14:17:09.551Z    sources: 6 (shown 6)    tokens: 12,091,239,250    min-tokens: 1,000    min-days: 5    min-abs-mc: -    top: -    sort: absMc
+
+      per-source medcouple (sorted by absMc; ties: source asc)
+      source       firstDay    lastDay     days  median       nLow  nUp  nTie  mc      tokens
+      -----------  ----------  ----------  ----  -----------  ----  ---  ----  ------  -------------
+      codex        2026-04-13  2026-04-20  8     41,235,207   4     4    0     0.6492    809,624,660
+      openclaw     2026-04-17  2026-05-01  15    99,150,451   7     7    1     0.5423  2,119,043,187
+      opencode     2026-04-20  2026-05-01  12    474,051,843  6     6    0     0.0144  5,459,928,794
+
+  READING. `codex` shows MC = 0.6492 -- a strongly right-skewed
+  per-day total_tokens distribution: a small number of days
+  account for most of the mass and the lower half of days
+  clusters tight just below the 41M-token median. `openclaw`
+  is similarly right-skewed (MC = 0.5423) over a longer 15-day
+  window with a much higher 99M-token median. `opencode` is
+  near-perfectly symmetric (MC = 0.0144) around its 474M-token
+  median over 12 days -- the heavy-day mass is balanced by an
+  equally-spread lower half. None of these readings can be
+  recovered from any axis 32..65 (all of them would simply
+  report "this source has high dispersion" without indicating
+  WHICH SIDE of the median the dispersion lives on).
+
 ## 0.6.309 — 2026-05-01
 
 ### Added
