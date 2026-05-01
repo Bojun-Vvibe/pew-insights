@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.316 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-SECOND):
+  `pew-insights daily-token-dfa-alpha`.
+
+  Per-source DFA-1 alpha exponent (Peng, Buldyrev, Havlin, Simons,
+  Stanley, Goldberger, Phys. Rev. E 49(2):1685-1689, 1994) on the
+  gap-filled daily `total_tokens` series.
+
+  1. Aggregate per UTC calendar day across all rows; build the
+     dense series across the source's tenure
+     `[firstActiveDay, lastActiveDay]` with missing days filled
+     as 0 tokens (same gap-fill convention as axes 67-71).
+  2. Compute the integrated profile `Y[i] = sum_{j<=i}(x[j]-mu)`
+     (cumulative deviation from the global mean — DFA's defining
+     transform that converts stationary noise into a random walk
+     whose roughness reveals correlation structure).
+  3. Build a log-spaced grid of window sizes
+     `s in [min-window, floor(N/4)]` capped at `--max-scales`
+     distinct integers (the floor(N/4) cap is conservative: at
+     least 4 non-overlapping windows per scale).
+  4. For each scale `s`, partition `Y` into `k = floor(N/s)`
+     non-overlapping windows of length `s`; in each window
+     OLS-fit a LINEAR trend `Y_hat = a + b*t` and accumulate
+     residual sum-of-squares; `F^2(s) = (1/(k*s))*sum_w ssr_w`,
+     `F(s) = sqrt(F^2(s))`. Windows whose residual variance is
+     exactly 0 (perfect-fit degenerate windows from all-zero
+     gap-fill stretches) are surfaced in `degenerateWindows`;
+     scales whose F(s) reduces to 0 are surfaced in
+     `scalesDroppedZeroF`.
+  5. `alpha` = OLS slope of `log(F(s))` vs `log(s)` across the
+     surviving scales, with `r^2` of the log-log fit reported
+     alongside. The reported `alpha` is clamped to `[0, 2]`;
+     `alphaRaw` preserves the un-clamped fit and per-source
+     `clampedBelow0` / `clampedAbove2` flags surface boundary
+     hits.
+
+  - `alpha ~ 0.5` : uncorrelated white-noise-like increments.
+  - `alpha < 0.5` : anti-persistent / mean-reverting at multiple
+    horizons.
+  - `0.5 < alpha < 1` : long-range positive (persistent)
+    correlations.
+  - `alpha = 1` : 1/f (pink) noise.
+  - `alpha = 1.5` : Brownian motion (integrated white noise).
+  - `alpha > 1.5` : drift-dominated / smoother than Brownian.
+
+  MULTI-SCALE DETRENDED MEMORY EXPONENT — structurally orthogonal
+  to every shipped daily-token axis 32-71, in particular to
+  axis-71 Hurst R/S which uses NO detrending of the cumulative
+  deviation. The two estimators coincide only for ideal
+  fractional Brownian motion with no trend; on real gap-filled
+  daily-token series with even mild drift, R/S is biased upward
+  by the trend (reports H near 1) while DFA-1 absorbs the local
+  linear trend per window so alpha measures the scaling of
+  RESIDUALS — Peng's design choice for trend-robustness vs
+  Hurst 1951. The orthogonality-witness test `sorted-vs-shuffled
+  multiset` separates them: a sorted copy clamps alpha high while
+  a shuffled copy of the same multiset gives alpha near 0.5,
+  while every multiset statistic (mean, var, gini, atkinson,
+  theil, ...) is identical.
+
+  Versus other recently-shipped axes:
+
+  - vs `daily-token-autocorrelation-lag1` and
+    `daily-token-autocorrelation-lag7` (axes 67/68): rho_k is a
+    single-lag linear-correlation scalar; alpha is a multi-scale
+    exponent and is well-defined even when all finite-lag rho_k
+    = 0 (e.g. fGn with alpha != 0.5).
+  - vs `daily-token-spectral-entropy` (axis 69): spectral entropy
+    summarises FLATNESS of the periodogram; alpha summarises a
+    POWER-LAW EXPONENT linking window size to detrended residual
+    rms. Coincide only under stationary 1/f^beta with
+    alpha=(beta+1)/2; routinely disagree on real bounded data.
+  - vs `daily-token-permutation-entropy` (axis 70): PE is
+    ordinal-only on length-3 patterns and invariant under any
+    strictly monotone transform; alpha is fully metric and
+    invariant only under positive affine transforms.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (top by
+  `absAlphaDeviationDesc`, with editor-extension source-keys
+  scrubbed to `vscode-other`):
+
+  ```
+  source         tenure  active  alpha   r2
+  -------------  ------  ------  ------  ------
+  claude-code    72      35      0.6790  0.3024
+  vscode-other   265     73      0.5480  0.9586
+  ```
+
+  Reads: `claude-code` sits in the persistent / long-range
+  positive memory band (alpha = 0.679, > 0.5) over its 72-day
+  gap-filled tenure but with low log-log r^2 = 0.30 — the
+  scaling law is noisy, the persistence call is qualitative.
+  `vscode-other` sits very close to the white-noise-like band
+  (alpha = 0.548) over a much longer 265-day tenure with a
+  tight log-log r^2 = 0.96 — the scaling law fits cleanly and
+  the slight excess over 0.5 is consistent with the documented
+  small-sample upward bias of DFA-1 (Kantelhardt et al. 2001).
+  4 sources were dropped below the 32-day min-tenure floor.
+
+### Changed
+
+- `package.json` version bumped from 0.6.315 to 0.6.316.
+
 ## 0.6.315 — 2026-05-02
 
 ### Added
