@@ -125,7 +125,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Test count `8820 -> 8841` (+21 from `dailytokenpetrosianfd.test.ts`
+- Test count `8820 -> 8843` (+23 from `dailytokenpetrosianfd.test.ts`
   covering: primitive math (monotone ramp -> PFD = 1.0 exactly,
   constant -> PFD = 1.0, alternating Nyquist -> PFD near upper
   bound, closed-form match on a hand-checked sequence,

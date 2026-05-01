@@ -164,6 +164,39 @@ test('petrosianFd: clamp bounds reported but pfdRaw retained', () => {
   assert.equal(r.pfd, r.pfdRaw);
 });
 
+test('petrosianFd: property — random finite series always yield finite PFD in [1, 2]', () => {
+  // Defence-in-depth: 200 random seeds at varied lengths, magnitudes
+  // and value distributions. PFD must be finite, in [1, 2], with
+  // 0 <= Nd <= M-1 and flipRate matching exactly.
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const rng = mulberry32(seed * 7919 + 13);
+    const N = 5 + Math.floor(rng() * 200);
+    const scale = 10 ** (rng() * 8 - 2); // 1e-2 .. 1e6
+    const v = Array.from({ length: N }, () => rng() * scale - scale / 2);
+    const r = petrosianFd(v);
+    assert.ok(Number.isFinite(r.pfd), `seed=${seed} pfd not finite`);
+    assert.ok(Number.isFinite(r.pfdRaw), `seed=${seed} pfdRaw not finite`);
+    assert.ok(r.pfd >= 1 && r.pfd <= 2, `seed=${seed} pfd=${r.pfd} out of [1,2]`);
+    assert.ok(r.Nd >= 0 && r.Nd <= r.M - 1, `seed=${seed} Nd=${r.Nd} M=${r.M}`);
+    assert.equal(r.M, N - 1);
+    assert.ok(
+      Math.abs(r.flipRate - r.Nd / (r.M - 1)) < 1e-12,
+      `seed=${seed} flipRate mismatch`,
+    );
+  }
+});
+
+test('petrosianFd: monotone-increasing transform invariance (sign-of-diff preserved)', () => {
+  // f(x) = exp(x) is strictly monotone increasing -> sign(diff(f(v))) == sign(diff(v)).
+  const rng = mulberry32(0xa5a5);
+  const v = Array.from({ length: 80 }, () => rng() * 4 - 2); // bounded so exp doesn't overflow
+  const v2 = v.map((x) => Math.exp(x));
+  const a = petrosianFd(v);
+  const b = petrosianFd(v2);
+  assert.equal(a.Nd, b.Nd, 'monotone transform must preserve Nd');
+  assert.equal(a.pfdRaw, b.pfdRaw);
+});
+
 // ---- buildDailyTokenPetrosianFd builder -------------------------------
 
 test('build: gap-fills inside tenure and computes per-source PFD', () => {
