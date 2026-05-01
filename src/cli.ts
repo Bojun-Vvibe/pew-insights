@@ -103,6 +103,7 @@ import {
   renderDailyTokenGenEntropyNegOneIndex,
   renderDailyTokenAmatoIndex,
   renderDailyTokenEstebanRayPolarizationIndex,
+  renderDailyTokenFosterWolfsonIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -368,6 +369,7 @@ import { buildDailyTokenChakravartyIndex } from './dailytokenchakravartyindex.js
 import { buildDailyTokenGenEntropyNegOneIndex } from './dailytokengenentropynegoneindex.js';
 import { buildDailyTokenAmatoIndex } from './dailytokenamatoindex.js';
 import { buildDailyTokenEstebanRayPolarizationIndex } from './dailytokenestebanraypolarizationindex.js';
+import { buildDailyTokenFosterWolfsonIndex } from './dailytokenfosterwolfsonindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -14133,6 +14135,140 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenEstebanRayPolarizationIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-foster-wolfson-index')
+  .description(
+    "Per-source FOSTER-WOLFSON ABSOLUTE BIPOLARIZATION INDEX of the per-day total_tokens distribution (FIFTY-SECOND cross-source axis). FW = 2*mu*(2T - G) where T = 0.5 - L(0.5) is the half-Lorenz GAP at the median rank, G is Gini, mu is mean. Sign NOT constrained. FW > 0 = MORE bipolarized than the within-Gini baseline (mass pulled away from the median into two tails), in absolute token units; FW = 0 = bipolarization matches Gini's baseline; FW < 0 = ANTI-polarized (mass concentrated AROUND the median). Foster-Wolfson 1992 / 2010 (Foster & Wolfson, Journal of Economic Inequality 8:247-273) is the ABSOLUTE-units median-anchored bipolarization measure that fills the (median-anchor, scale-equivariant in tokens) corner of the polarization invariance cube empty in axes 32-51. Distinct from axis-46 Wolfson (relative form W = (mu/m)*(2T - G), dimensionless) by FW/W = 2*median -- ratio varies across sources whenever medians vary, so source rankings can diverge. Per-source columns: fw, halfLorenzGap (T), gini, meanDaily, medianDaily, minDay, maxDay. Refinement: --include-wolfson-anchor surfaces wolfson and the fw/wolfson identity (= 2*median at machine precision).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). FW degenerate for n<2; default 4 ensures meaningful median-anchored Lorenz reading.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: fw (default) | tokens | days | source | meanDaily | medianDaily | halfLorenzGap. Applied before --top.',
+    'fw',
+  )
+  .option(
+    '--min-fw <x>',
+    'display filter: hide non-degenerate rows whose fw is strictly below this signed value. Default null = no filter. FW can be negative; degenerate rows are kept regardless.',
+  )
+  .option(
+    '--include-wolfson-anchor',
+    'every row gains wolfson (axis-46) and fwOverWolfson (closed-form identity = 2*median).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minFw?: string;
+        includeWolfsonAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minFw: number | null = null;
+        if (opts.minFw !== undefined) {
+          const mf = Number.parseFloat(opts.minFw);
+          if (!Number.isFinite(mf)) {
+            throw new Error(
+              `--min-fw must be a finite number (got ${opts.minFw})`,
+            );
+          }
+          minFw = mf;
+        }
+        const validSorts = [
+          'fw',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'medianDaily',
+          'halfLorenzGap',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenFosterWolfsonIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minFw,
+          includeWolfsonAnchor: opts.includeWolfsonAnchor ?? false,
+          sort: opts.sort as
+            | 'fw'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'medianDaily'
+            | 'halfLorenzGap',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenFosterWolfsonIndex(report) + '\n',
           );
         }
       } catch (e) {
