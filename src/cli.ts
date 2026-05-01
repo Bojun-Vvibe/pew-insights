@@ -102,6 +102,7 @@ import {
   renderDailyTokenChakravartyIndex,
   renderDailyTokenGenEntropyNegOneIndex,
   renderDailyTokenAmatoIndex,
+  renderDailyTokenEstebanRayPolarizationIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -366,6 +367,7 @@ import { buildDailyTokenSginiIndex } from './dailytokensginiindex.js';
 import { buildDailyTokenChakravartyIndex } from './dailytokenchakravartyindex.js';
 import { buildDailyTokenGenEntropyNegOneIndex } from './dailytokengenentropynegoneindex.js';
 import { buildDailyTokenAmatoIndex } from './dailytokenamatoindex.js';
+import { buildDailyTokenEstebanRayPolarizationIndex } from './dailytokenestebanraypolarizationindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13989,6 +13991,148 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenAmatoIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-esteban-ray-polarization-index')
+  .description(
+    "Per-source ESTEBAN-RAY POLARIZATION INDEX of the per-day total_tokens distribution at sensitivity alpha (default 1) (FIFTY-FIRST cross-source axis). ER(alpha) = sum_i sum_j pi_i^(1+alpha) * pi_j * |y_i - y_j| with pi_i = 1/n. erNorm = er / mean is the scale-invariant normalization. Esteban-Ray is the canonical IDENTIFICATION-ALIENATION polarization measure (Esteban & Ray 1994, Econometrica 62:819-851): the super-linear identification weight pi_i^(1+alpha) is the axiomatic mark that separates POLARIZATION from inequality. Distinct from axis-32 Gini (LINEAR pair weights on the same |y_i - y_j| kernel), Pietra/Hoover (single-point Lorenz gaps), GE/Atkinson/Chakravarty (share-moment functionals), Bonferroni/Mehran/S-Gini/Zenga (rank-weighted partial-mean kernels), Wolfson (median-anchored bipolarization), Amato (Lorenz-curve arc length), Kolm-Pollak (CARA welfare-equivalent). Refinement: --include-gini-anchor surfaces Gini on the same vector and the erNorm/gini ratio (the IDENTIFICATION-POWER amplification factor over the linearly-weighted Gini baseline).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--alpha <a>',
+    'polarization sensitivity in [0, 1.6] (Esteban-Ray axiom range). Default 1 (canonical). Higher alpha amplifies large-mass identification.',
+    '1',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 3). ER is degenerate for n<2.',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: erNorm (default) | er | tokens | days | source | meanDaily. Applied before --top.',
+    'erNorm',
+  )
+  .option(
+    '--min-er-norm <x>',
+    'display filter: hide non-degenerate rows whose erNorm is strictly below this value. Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-gini-anchor',
+    'every row gains gini (axis-32 functional on the same per-day vector) and erNormOverGini ratio (the identification-power amplification of ER over linear-weighted Gini).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        alpha: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minErNorm: string;
+        includeGiniAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1.6) {
+          throw new Error(
+            `--alpha must be in [0, 1.6] (got ${opts.alpha})`,
+          );
+        }
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minErNorm = Number.parseFloat(opts.minErNorm);
+        if (!Number.isFinite(minErNorm) || minErNorm < 0) {
+          throw new Error(
+            `--min-er-norm must be a non-negative number (got ${opts.minErNorm})`,
+          );
+        }
+        const validSorts = [
+          'erNorm',
+          'er',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenEstebanRayPolarizationIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          alpha,
+          minTokens,
+          minDays,
+          top,
+          minErNorm,
+          includeGiniAnchor: opts.includeGiniAnchor ?? false,
+          sort: opts.sort as
+            | 'erNorm'
+            | 'er'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenEstebanRayPolarizationIndex(report) + '\n',
           );
         }
       } catch (e) {

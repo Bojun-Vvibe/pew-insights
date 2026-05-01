@@ -16492,3 +16492,97 @@ export function renderDailyTokenAmatoIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { DailyTokenEstebanRayReport } from './dailytokenestebanraypolarizationindex.js';
+
+export function renderDailyTokenEstebanRayPolarizationIndex(
+  r: DailyTokenEstebanRayReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-esteban-ray-polarization-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    alpha: ${r.alpha}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-er-norm: ${r.minErNorm}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinErNorm)} below min-er-norm, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ER(alpha) = sum_i sum_j pi_i^(1+alpha) * pi_j * |y_i - y_j|, pi_i = 1/n. IDENTIFICATION-ALIENATION POLARIZATION (Esteban-Ray 1994). erNorm = er / mean. Super-linear identification weight (alpha > 0) separates POLARIZATION from inequality. Distinct from Gini (linear pair weights), Pietra/Hoover (single-point gaps), GE/Atkinson (share moments), Bonferroni/Mehran/S-Gini/Zenga (rank kernels), Wolfson (median anchor), Amato (Lorenz arc length).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Esteban-Ray polarization at alpha=${r.alpha} (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'erNorm',
+    'er',
+    'meanDaily',
+    'medianDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.erNorm.toFixed(6),
+    s.degenerate ? '\u2014' : s.er.toFixed(2),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.medianDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.gini !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Gini cross-anchor (axis-32; LINEAR pair weighting vs ER's SUPER-LINEAR identification weighting on the same |y_i - y_j| kernel)`,
+      ),
+    );
+    const gHeaders = ['source', 'erNorm', 'gini', 'erNorm/gini'];
+    const gRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.erNorm.toFixed(6),
+      s.gini === undefined ? 'n/a' : (s.gini as number).toFixed(4),
+      s.erNormOverGini === undefined || Number.isNaN(s.erNormOverGini)
+        ? 'n/a'
+        : (s.erNormOverGini as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(gHeaders, gRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
