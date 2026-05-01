@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.317 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-THIRD):
+  `pew-insights daily-token-sample-entropy`.
+
+  Per-source Sample Entropy SampEn = -ln(A/B) at embedding `m`
+  and tolerance `r = r-factor * stddev` (Richman, J.S. & Moorman,
+  J.R., "Physiological time-series analysis using approximate
+  entropy and sample entropy", Am. J. Physiol. Heart Circ.
+  Physiol. 278:H2039-H2049, 2000) on the gap-filled daily
+  `total_tokens` series.
+
+  Defaults: `m = 2`, `r-factor = 0.2` (Richman & Moorman
+  canonical). `A` counts unique-pair length-`(m+1)` Chebyshev
+  matches; `B` counts unique-pair length-`m` matches; self-pairs
+  excluded (the Richman & Moorman correction over Pincus 1991
+  ApEn that biased ApEn low). Larger SampEn = more irregular /
+  less self-similar at length `m+1`; SampEn = 0 means every
+  length-`m` match also extends to length `m+1` (perfect
+  short-window predictability).
+
+  Edge cases surfaced as drop counters: `droppedZeroVariance`
+  (r would be 0), `droppedZeroBMatches` (no length-`m` matches),
+  `droppedZeroAMatches` (no length-`(m+1)` matches — series
+  "too irregular" at this `r`).
+
+  STRUCTURAL ORTHOGONALITY — short-window single-scale METRIC
+  complexity, fundamentally distinct from every shipped
+  daily-token axis 32..72:
+
+  - vs `daily-token-permutation-entropy` (axis 70): PE is
+    ORDINAL (categorises rank patterns) and invariant under any
+    strictly monotone transform. SampEn is METRIC and only
+    invariant under positive affine. Two series with identical
+    PE can have wildly different SampEn.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE summarises
+    the FLATNESS of the global periodogram (frequency-domain).
+    SampEn is purely TIME-DOMAIN template recurrence at one
+    embedding dimension. Rankings do not preserve.
+
+  - vs `daily-token-autocorrelation-lag1` / `lag7` (axes 67/68):
+    ACF is a SECOND-MOMENT linear scalar at one fixed lag.
+    SampEn is a NONLINEAR multi-point counting statistic.
+    Counter-example: a sinusoid `x[t] = sin(2 pi t / 7)` has
+    `rho_7 ~ 1` AND SampEn near 0 (deterministic); a
+    phase-randomised surrogate has the same `rho` and much
+    higher SampEn.
+
+  - vs `daily-token-hurst-rs` (axis 71) and `daily-token-dfa-
+    alpha` (axis 72): both are SCALING / multi-scale long-range
+    memory exponents (how cumulative-deviation spread or
+    detrended residual rms scales with window length). SampEn
+    is SHORT-WINDOW SINGLE-SCALE (one `m` + one `r`) and finite
+    even on series with no long-range memory.
+
+  - vs all permutation-invariant dispersion / shape axes 32..67
+    (Gini, Atkinson, Theil, GE, Hill, MC, L-skew, ...): those
+    are shuffle-invariant; SampEn is shuffle-sensitive (sorted-
+    vs-shuffled witness test ships in the test file).
+
+  Live-smoke (real `~/.config/pew/queue.jsonl`, default
+  `m=2 r-factor=0.2 min-tenure-days=32 min-tokens=1000`,
+  generated 2026-05-02; vscode-* product names scrubbed):
+
+  - claude-code: SampEn=0.2378 (tenure=72d, active=35d, A=879, B=1115, stddev=1.539e8)
+  - vscode-other: SampEn=0.1916 (tenure=265d, active=73d, A=16043, B=19432, stddev=27024.44)
+
+  4 other sources fell below the 32-day gap-filled-tenure floor
+  and surfaced as `droppedBelowMinTenure`. Both surviving
+  sources have SampEn well below the IID-asymptote (~2.2 at
+  m=2,r=0.2σ): both daily-token series carry strong short-window
+  predictability under the m=2 template, consistent with the
+  trend / persistence already surfaced by axes 71/72 on the same
+  data.
+
+  Tests: 8762 -> 8778 (+16). Includes a hand-computed determi-
+  nistic fixture, a periodic-sinusoid regularity check, and an
+  orthogonality witness (sorted-vs-shuffled multiset).
+
 ## 0.6.316 — 2026-05-02
 
 ### Added
