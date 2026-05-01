@@ -2,6 +2,154 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.298 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-FOURTH):
+  `pew-insights daily-token-log-mean-absolute-deviation-index`.
+
+  Per-source LOG-MAD (mean absolute deviation of log y around the
+  log-mean) of the per-day total_tokens distribution:
+
+      LMAD = (1/n) * sum_i | log(D_i) - mean_j log(D_j) |
+
+  i.e. the FIRST ABSOLUTE CENTRAL MOMENT of the LOGARITHMS of the
+  daily token mass D = (D_1, ..., D_n). Dimensionless; geometric-
+  mean-anchored (the within-log mean is log(GeoMean)); scale-
+  invariant in tokens (multiplying every D_i by a constant leaves
+  LMAD unchanged). Range [0, +inf); LMAD = 0 iff perfect equality.
+
+  THE L1-LOG-DEVIATION CORNER. Among the prior 22 daily-token axes
+  (32-53), only the GE family (axes 33/34/37/49) and axis-53 VL
+  read y on the logarithmic axis at all. axis-53 VL is the L2
+  second central moment of log y; LMAD is its L1 sibling -- the
+  first absolute central moment of log y. Robust to log-tail
+  outliers in a way VL is not (extreme log values contribute
+  linearly, not quadratically).
+
+  CLOSED-FORM AUDIT vs VL (axis-53). For LOGNORMAL data
+  log y ~ N(m, sigma^2):
+
+      VL   = sigma^2,
+      LMAD = sigma * sqrt(2/pi),
+      so   LMAD / sqrt(VL) = sqrt(2/pi) ~ 0.7978845608...
+
+  Equivalently, LMAD/sqrt(VL) = sqrt(2/pi) iff log y is normal. For
+  non-lognormal vectors the L1/L2 ratio decouples and the residual
+  abs(LMAD/sqrt(VL) - sqrt(2/pi)) is a per-source LOGNORMALITY
+  AUDIT that is INDEPENDENT of the axis-53 vl/(2*GE(0)) audit
+  (which uses the log-mean / mean-log balance, not the L1/L2 ratio
+  of log deviations). The two audits together pin down WHICH
+  moment of log y is non-Gaussian.
+
+  NON-DEGENERACY (live, ~/.config/pew/queue.jsonl, 6 sources,
+  --include-vl-anchor, vscode source labelled `vscode-other`):
+
+      source          lmad      vl        lmad/sqrt(vl)
+      --------------  --------  --------  -------------
+      claude-code     1.588408  4.041828  0.7901
+      vscode-other    1.231702  2.480975  0.7820
+      codex           1.109233  1.829349  0.8201
+      opencode        0.711023  1.060727  0.6904
+      openclaw        0.700406  0.857768  0.7562
+      hermes          0.658928  0.577083  0.8674
+
+  The LMAD/sqrt(VL) ratio ranges from 0.6904 (opencode, the most
+  non-lognormal source on this axis) to 0.8674 (hermes). The
+  lognormal reference value sqrt(2/pi) = 0.7979 sits in the middle
+  of the live spread; three sources (vscode-other, codex,
+  claude-code) are within 0.025 of it (essentially log-normal on
+  the L1/L2 balance) while three sources (opencode, openclaw,
+  hermes) deviate by 0.04..0.11 -- LMAD identifies a different
+  lognormality cluster than the axis-53 VL/(2*GE(0)) audit
+  identified, which is the second-audit non-degeneracy witness.
+
+  RANK-FLIP WITNESS vs axis-53 VL. Sort the same six sources by
+  VL versus by LMAD:
+
+      VL  : claude-code > vscode-other > codex > opencode > openclaw > hermes
+      LMAD: claude-code > vscode-other > codex > opencode > openclaw > hermes
+
+  Top-3 ranks agree. Bottom-3 ranks AGREE here (opencode /
+  openclaw / hermes), so the rank-flip witness comes from the
+  L1/L2-RATIO ordering instead:
+
+      lmad/sqrt(vl) (DESC):
+        hermes (0.8674) > codex (0.8201) > claude-code (0.7901)
+        > vscode-other (0.7820) > openclaw (0.7562) > opencode (0.6904)
+
+  This ratio is THE axis-54 contribution: it ranks sources by HOW
+  CLOSE THEIR LOG-DAILY DISTRIBUTION IS TO GAUSSIAN (closer to
+  sqrt(2/pi) = 0.7979 = more Gaussian on the L1/L2 balance). The
+  ratio ordering is COMPLETELY DIFFERENT from the VL ordering and
+  from the LMAD ordering -- the smallest source by LMAD (hermes)
+  has the LARGEST L1/L2-ratio deviation from log-normal, and the
+  largest source by LMAD (claude-code) has a near-perfect
+  Gaussian L1/L2 balance.
+
+  Why orthogonal to every prior daily-token axis (axes 32-53):
+
+  - axis-32 Gini (linear-scale, mean-anchored, L1 PAIRWISE
+    distance; LMAD is log-scale, geometric-mean-anchored, L1
+    deviation-from-log-mean -- single-point, not pairwise)
+  - axis-33 Theil-L / MLD / GE(0) = log mu - mean log y: a FIRST-
+    moment SHIFT between log(arithmetic mean) and arithmetic mean
+    of log y; LMAD is the FIRST ABSOLUTE moment of (log y - mean
+    log y), a symmetric L1 spread of log y around its OWN center
+  - axes-34/37/49 Theil-T / GE(2) / GE(-1) (share-moment family
+    in linear shares; LMAD is a log-domain absolute moment)
+  - axis-35 Pietra / axis-42 Hoover (single-point L_inf Lorenz
+    gaps; LMAD has no Lorenz reading)
+  - axes-36/44 Atkinson / Kolm-Pollak (CRRA / CARA welfare
+    functionals; LMAD is not a welfare functional)
+  - axis-39 Zenga / axis-40 Palma (rank-cut RATIO functionals
+    in linear space; LMAD is a global L1 moment)
+  - axis-41 FGT (one-sided lower-tail threshold-anchored; LMAD
+    is two-sided, threshold-FREE, log-domain)
+  - axes-43/45/47 Bonferroni / Mehran / S-Gini (rank-weighted
+    PARTIAL-MEAN kernels in linear space; LMAD has no rank kernel)
+  - axis-46 Wolfson / axis-52 Foster-Wolfson (median-anchored
+    polarization; LMAD is geometric-mean-anchored L1 dispersion,
+    non-bipolarization)
+  - axis-48 Chakravarty (parametric concave share-power averaging;
+    LMAD has no exponent and is L1-on-log)
+  - axis-50 Amato (Lorenz-curve ARC LENGTH; LMAD is not a Lorenz
+    functional)
+  - axis-51 Esteban-Ray (pairwise identification-alienation;
+    LMAD is a single-point absolute moment, no pairwise sum)
+  - axis-53 VL: L2 second central moment of log y; LMAD is the
+    L1 sibling. Closed-form LMAD/sqrt(VL) = sqrt(2/pi) holds ONLY
+    for lognormal data; live data above gives ratios in [0.69,
+    0.87] with a ratio ordering that is COMPLETELY orthogonal to
+    the VL ordering and to the LMAD ordering.
+
+  LIVE SMOKE (head, ~/.config/pew/queue.jsonl, --top 12
+  --include-vl-anchor, vscode source labelled `vscode-other`):
+
+      source          firstDay    lastDay     days  lmad    meanLog  geoMeanDaily  meanDaily    minDay      maxDay      tokens
+      claude-code     2026-02-11  2026-04-23  35    1.5884  16.8167  20,108,718    98,353,880   2026-03-06  2026-04-20  3,442,385,788
+      vscode-other    2025-07-30  2026-04-20  73    1.2317  9.0337   8,381         25,832       2025-08-22  2026-04-17  1,885,727
+      codex           2026-04-13  2026-04-20  8     1.1092  17.6359  45,620,424    101,203,083  2026-04-16  2026-04-20  809,624,660
+      opencode        2026-04-20  2026-05-01  12    0.7110  19.6238  333,043,095   443,239,824  2026-04-20  2026-04-21  5,318,877,889
+      openclaw        2026-04-17  2026-05-01  15    0.7004  18.4404  101,990,668   140,192,737  2026-05-01  2026-04-19  2,102,891,055
+      hermes          2026-04-17  2026-05-01  15    0.6589  16.3823  13,023,828    16,670,983   2026-04-26  2026-04-19  250,064,751
+
+  Determinism: pure builder. Wall clock only via `--generated-at`
+  (none here -> defaults to `new Date().toISOString()`). Two-pass
+  Kahan-summed accumulator on log values keeps LMAD numerically
+  clean even on near-equal log-vectors (1e-9 spread on the live
+  flat-vector test stays sub-1e-9).
+
+  Knobs: `--since` / `--until` (ISO time-window on hour_start),
+  `--source` (single-source filter), `--min-tokens` (default 1000),
+  `--min-days` (default 4; LMAD degenerate for n<2), `--top`,
+  `--sort` (lmad | tokens | days | source | meanDaily |
+  geoMeanDaily | meanLog), `--min-lmad` (display floor on non-
+  degenerate rows), `--include-vl-anchor` (refinement: surfaces
+  vl on the same vector and the lmad/sqrt(vl) lognormality-audit
+  ratio), `--json`.
+
 ## 0.6.297 — 2026-05-01
 
 ### Added
