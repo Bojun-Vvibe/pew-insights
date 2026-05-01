@@ -392,3 +392,69 @@ test('build: sfdDesc sort orders by SFD descending', () => {
   assert.ok(r.sources[0]!.sfd >= r.sources[1]!.sfd);
   assert.equal(r.sources[0]!.source, 'rough');
 });
+
+test('sevcikFd: property — SFD strictly increases with shuffle-induced roughness (within seed)', () => {
+  // Defence-in-depth: for each seed, sort and shuffle the same
+  // multiset; assert SFD(shuffled) > SFD(sorted) for every seed.
+  // This pins the single-direction "shuffle inflates roughness"
+  // claim made in the orthogonality block.
+  for (let seed = 1; seed <= 30; seed += 1) {
+    const rng = mulberry32(seed * 104729 + 7);
+    const N = 60 + Math.floor(rng() * 80);
+    const base = Array.from({ length: N }, () =>
+      Math.floor(rng() * 1_000_000),
+    );
+    const sorted = [...base].sort((a, b) => a - b);
+    const shuffled = [...base];
+    const r2 = mulberry32(seed * 1009 + 17);
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(r2() * (i + 1));
+      [shuffled[i]!, shuffled[j]!] = [shuffled[j]!, shuffled[i]!];
+    }
+    // Skip degenerate (all-equal) draws.
+    if (Math.min(...sorted) === Math.max(...sorted)) continue;
+    const a = sevcikFd(sorted);
+    const b = sevcikFd(shuffled);
+    assert.ok(
+      b.sfdRaw > a.sfdRaw,
+      `seed=${seed} expected shuffled SFD ${b.sfdRaw} > sorted SFD ${a.sfdRaw}`,
+    );
+    assert.ok(
+      b.pathLength > a.pathLength,
+      `seed=${seed} expected shuffled L ${b.pathLength} > sorted L ${a.pathLength}`,
+    );
+  }
+});
+
+test('sevcikFd: numerical-stability — tiny y-range relative to typical magnitudes', () => {
+  // y values clustered tightly around 1e9 with range ~ 10. Ratio
+  // dy / yRange should be well-conditioned because we compute
+  // (values[i] - values[i-1]) BEFORE dividing by yRange (so the
+  // catastrophic cancellation is contained to a single subtraction).
+  const base = 1_000_000_000;
+  const v = [
+    base + 0,
+    base + 7,
+    base + 2,
+    base + 9,
+    base + 1,
+    base + 5,
+    base + 8,
+    base + 3,
+    base + 6,
+    base + 4,
+  ];
+  const r = sevcikFd(v);
+  assert.ok(Number.isFinite(r.sfd));
+  assert.ok(r.sfd > 1 && r.sfd <= 2);
+  assert.ok(r.pathLength > 0);
+  assert.ok(r.yRange === 9);
+  // Compare against the same shape with base subtracted; should
+  // be bit-identical (affine invariance — already covered, but
+  // here the magnitudes differ by 9 orders, validating the
+  // numerical path).
+  const v2 = v.map((x) => x - base);
+  const r2 = sevcikFd(v2);
+  assert.ok(Math.abs(r.sfdRaw - r2.sfdRaw) < 1e-12);
+  assert.ok(Math.abs(r.pathLength - r2.pathLength) < 1e-12);
+});
