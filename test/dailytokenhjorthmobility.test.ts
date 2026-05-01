@@ -251,3 +251,71 @@ test('buildDailyTokenHjorthMobility: input validation', () => {
   );
   assert.throws(() => buildDailyTokenHjorthMobility([], { since: 'bad-date' }));
 });
+
+// ---- refinement: extra property tests ------------------------------
+
+test('hjorthMobility: monotone-transform sensitivity witness (sqrt vs identity diverge)', () => {
+  // Non-affine monotone transform y' = sqrt(y) reshapes both
+  // variances differently and so produces a different mobility.
+  // This documents that mobility is NOT a rank statistic.
+  const N = 200;
+  const v = Array.from({ length: N }, (_, i) => (i + 1) ** 2); // 1, 4, 9, ...
+  const a = hjorthMobility(v);
+  const b = hjorthMobility(v.map((x) => Math.sqrt(x))); // -> 1, 2, 3, ...
+  // Pure ramps -> both have var_dv = 0 in the limit, but the
+  // sqrt-transformed series is exactly a ramp (mobility = 0)
+  // while the squared series has growing diffs (var_dv > 0).
+  assert.equal(b.mobility, 0);
+  assert.ok(a.mobility > 0, `expected nonzero mobility on x^2 ramp, got ${a.mobility}`);
+  assert.ok(
+    Math.abs(a.mobility - b.mobility) > 1e-3,
+    `mobilities should diverge under non-affine transform, got a=${a.mobility} b=${b.mobility}`,
+  );
+});
+
+test('hjorthMobility: outlier-amplification witness (one big spike sharply increases mobility)', () => {
+  // Two series with identical mean and identical max-min range
+  // but different outlier structure. Mobility should react more
+  // strongly to the concentrated spike than to the smooth ramp.
+  const N = 100;
+  const ramp = Array.from({ length: N }, (_, i) => i / (N - 1));
+  const spike = Array.from({ length: N }, () => 0);
+  spike[Math.floor(N / 2)] = 1; // single delta in middle
+  const a = hjorthMobility(ramp);
+  const b = hjorthMobility(spike);
+  // Spike series has huge var_dv vs var_v; ramp has tiny var_dv.
+  assert.ok(
+    b.mobility > 5 * a.mobility,
+    `spike mobility ${b.mobility} should be >> ramp mobility ${a.mobility}`,
+  );
+});
+
+test('hjorthMobility: numerical stability on large-magnitude series (1e12)', () => {
+  // Real token series can hit 1e8+ per day; a Hjorth mobility
+  // computed without care can lose precision via catastrophic
+  // cancellation in the population variance. Verify stability.
+  const N = 200;
+  const rng = mulberry32(13);
+  const small = Array.from({ length: N }, () => rng());
+  const large = small.map((x) => x * 1e12);
+  const a = hjorthMobility(small);
+  const b = hjorthMobility(large);
+  assert.ok(
+    Math.abs(a.mobility - b.mobility) < 1e-6,
+    `mobility should be invariant under 1e12 scale, got delta=${a.mobility - b.mobility}`,
+  );
+});
+
+test('buildDailyTokenHjorthMobility: --sort source orders alphabetically', () => {
+  const queue: QueueLine[] = [];
+  for (const src of ['zebra', 'apple', 'mango']) {
+    for (let i = 0; i < 40; i += 1) {
+      queue.push(ql(dayN(i), src, 1000 + i * 100 + src.charCodeAt(0)));
+    }
+  }
+  const r = buildDailyTokenHjorthMobility(queue, { generatedAt: GEN, sort: 'source' });
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['apple', 'mango', 'zebra'],
+  );
+});
