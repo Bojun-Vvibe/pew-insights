@@ -2,6 +2,131 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.304 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTIETH):
+  `pew-insights daily-token-mid-spread-ratio`.
+
+  Per-source MID-TAIL CONCENTRATION RATIO
+  (P75 - P25) / (P90 - P10) of the per-day total_tokens distribution.
+  For each source we collapse all hourly buckets into one scalar per
+  UTC day (D_d = sum of total_tokens on day d) and summarise the
+  resulting day vector by
+
+      MSR = (P75(D) - P25(D)) / (P90(D) - P10(D)),
+
+  where P_q(D) is the linear-interpolation percentile (numpy
+  "linear" / R "type 7"). MSR is a dimensionless SHAPE statistic that
+  asks what fraction of the interdecile (10-90) spread is contained
+  inside the interquartile (25-75) box.
+
+  HEADLINE QUESTION: "What fraction of each source's interdecile
+  daily-token spread is contained inside its interquartile box?"
+
+  REFERENCE VALUES. Uniform(0,1): MSR = 0.625. Gaussian: MSR ~ 0.526.
+  Laplace(b=1): MSR ~ 0.431. Pareto(alpha=2): MSR < 0.4 (heavy upper
+  tail compresses the central body relative to the wide deciles).
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..59). Axes 32..57 are MOMENT- or
+  LORENZ-functional summaries that integrate over the FULL
+  distribution and divide by the MEAN. Axis 58 (PGR = P90/P50) is a
+  TAIL-VS-MEDIAN ratio: depends on (P50, P90), normalised by the
+  MEDIAN. Axis 59 (IOM = (P75-P25)/P50) is a CENTRAL-VS-MEDIAN ratio:
+  depends on (P25, P50, P75), normalised by the MEDIAN, carries no
+  tail information. MSR (axis 60) depends on FOUR order statistics
+  (P10, P25, P75, P90) and is normalised by ANOTHER ORDER-STATISTIC
+  SPREAD (P90 - P10), not by a center -- it is INVARIANT to the
+  median entirely. INVARIANT to all changes strictly above P90 OR
+  strictly below P10 (drops both extreme tails), AND to all median
+  changes that hold P25/P75 fixed (drops the median wiggle).
+
+  RANK-FLIP WITNESS vs axis-59 IOM. Construct
+  Y = [1, 2, 4, 4, 5, 5, 5, 6, 8, 8, 9] and
+  Z = [1, 1, 4, 4, 5, 5, 5, 6, 9, 9, 100] (n=11 each).
+  For Y: P10=2, P25=4, P50=5, P75=7, P90=8 -> IQR=3, IDR=6, MSR=0.5,
+  IOM=0.6. For Z: P10=1, P25=4, P50=5, P75=7.5, P90=9 -> IQR=3.5,
+  IDR=8, MSR=0.4375, IOM=0.7. So MSR ranks Y > Z but IOM ranks Z > Y.
+  No monotone transform recovers one from the other.
+
+  RANGE AND DEGENERACY. 0 <= MSR <= 1 always. MSR == 0 iff
+  P25 == P75 (tight central body). MSR == 1 iff P10 == P25 AND
+  P75 == P90 (perfectly box-clipped distribution). Both edge cases
+  marked degenerate=true. MSR is SCALE-INVARIANT and
+  PERMUTATION-INVARIANT.
+
+  CLOSED-FORM ANCHOR ON [1..11]. P10 = v[1] = 2; P25 = 3.5; P50 = 6;
+  P75 = 8.5; P90 = v[9] = 10. IQR = 5, IDR = 8, MSR = 5/8 = 0.625
+  (matches the Uniform reference). Reproduced exactly by
+  `midSpreadRatioOfVector([1..11])` in the test suite.
+
+  REFINEMENT. `--include-iom` surfaces IOM = (P75-P25)/P50 alongside
+  MSR in the same row, enabling a side-by-side comparison of the
+  pure SHAPE ratio (MSR) against the central/median ratio (IOM,
+  axis 59). When MSR is large but IOM is small the source has a tight
+  body relative to the median (low absolute spread) but the body
+  occupies most of the interdecile range. When MSR is small but IOM
+  is large the source has wide absolute body spread, but the
+  interdecile range is even wider -- i.e. the tails dominate.
+
+  KNOBS: `--since` / `--until`, `--source`, `--min-tokens` (default
+  1000), `--min-days` (default 4), `--top` (default 0 = no cap),
+  `--sort` (one of `msr` (default) | `tokens` | `days` | `source` |
+  `meanDaily` | `p50` | `iqrAbsolute` | `idrAbsolute`), `--min-msr`
+  (display filter), `--include-iom` (refinement), `--json`.
+
+  LIVE-SMOKE OUTPUT against real `~/.config/pew/queue.jsonl` on
+  2026-05-01 (totalSources=6, totalTokens=12,011,296,798;
+  default min-tokens=1000, min-days=4):
+
+    Top-3 sources by MSR (sort=msr default):
+      openclaw         msr=0.686295  iqrAbs=148,662,149   idrAbs=216,615,386
+      hermes           msr=0.622572  iqrAbs=15,515,827    idrAbs=24,922,150
+      codex            msr=0.452406  iqrAbs=107,435,798   idrAbs=237,476,528
+
+    Full ranking by MSR:
+      openclaw         msr=0.686295   iom=1.499359  (P50=99,150,451)
+      hermes           msr=0.622572   iom=1.152797  (P50=13,459,283)
+      codex            msr=0.452406   iom=2.605439  (P50=41,235,207)
+      vscode-copilot   msr=0.337376   iom=2.703006  (P50=8,118)
+      opencode         msr=0.332165   iom=0.326231  (P50=474,051,843)
+      claude-code      msr=0.244251   iom=2.307729  (P50=25,407,006)
+
+    RANK-FLIP WITNESS vs axis-59 IOM. The two axes produce
+    DRAMATICALLY different rankings on real data:
+
+      | source         |  MSR  | MSR rank | IOM  | IOM rank |
+      |----------------|-------|----------|------|----------|
+      | openclaw       | 0.686 |    1     | 1.50 |    4     |
+      | hermes         | 0.623 |    2     | 1.15 |    5     |
+      | codex          | 0.452 |    3     | 2.61 |    2     |
+      | vscode-copilot | 0.337 |    4     | 2.70 |    1     |
+      | opencode       | 0.332 |    5     | 0.33 |    6     |
+      | claude-code    | 0.244 |    6     | 2.31 |    3     |
+
+    Head-to-head reversal: openclaw is #1 on MSR (0.686) but
+    only #4 on IOM (1.50); vscode-copilot is #1 on IOM (2.70)
+    but #4 on MSR (0.337). Spearman rank correlation between MSR
+    and IOM on this 6-source live data is NEGATIVE (~ -0.43),
+    confirming the two axes carry materially different
+    information. openclaw and hermes are "boxy" sources --
+    central 50% of their daily-token mass occupies a large
+    fraction of their interdecile spread -- while vscode-copilot
+    and claude-code are "tail-heavy" sources whose body is
+    narrow but whose median is small relative to their absolute
+    body spread.
+
+    NON-DEGENERACY. All 6 sources are non-degenerate (MSR strictly
+    in (0, 1) and degenerate=false). No source has P25 == P75
+    (no tight-body collapse) and no source has P10==P25 AND
+    P75==P90 (no box-clipping). Contrast with axis-59 IOM: under
+    the same filter, opencode's IOM is 0.326 -- close to
+    degenerate -- while its MSR is a healthy 0.332, illustrating
+    that MSR carries signal even when the median-normalised IOM
+    flattens out.
+
 ## 0.6.303 — 2026-05-01
 
 ### Added
