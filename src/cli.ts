@@ -118,6 +118,7 @@ import {
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
   renderDailyTokenMedcoupleSkewness,
+  renderDailyTokenLSkewness,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -398,6 +399,7 @@ import { buildDailyTokenMadOverMedian } from './dailytokenmadovermedian.js';
 import { buildDailyTokenRunsTestZ } from './dailytokenrunstestz.js';
 import { buildDailyTokenHillTailIndex } from './dailytokenhilltailindex.js';
 import { buildDailyTokenMedcoupleSkewness } from './dailytokenmedcoupleskewness.js';
+import { buildDailyTokenLSkewness } from './dailytokenlskewness.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16144,6 +16146,123 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenMedcoupleSkewness(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-l-skewness')
+  .description(
+    "Per-source L-SKEWNESS tau_3 = lambda_3 / lambda_2 (Hosking 1990 probability-weighted moments) of the per-day total_tokens vector (SIXTY-SEVENTH cross-source axis). l_1=b_0, l_2=2 b_1 - b_0, l_3=6 b_2 - 6 b_1 + b_0 with b_r = (1/n) sum_{j=r+1..n} prod_{k=1..r} (j-k)/(n-k) * x_(j:n). tau_3 in (-1, +1): positive = right-skew (heavy upper tail), negative = left-skew, 0 = symmetric. STRUCTURALLY ORTHOGONAL to all axes 32-66: linear order-statistic primitive (PWM, smooth polynomial weights on ALL ranks) is fundamentally different from medcouple's pairwise-quartile median (axis 66), from unsigned dispersion functionals (axes 32-63), from calendar-order trace statistics (60, 64), and from tail-only Hill (65). Bounded, signed, no second moment required.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 5; the unbiased sample tau_3 requires n >= 4 because b_2 needs >=3 nonzero-weight order statistics).',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absTau3 (default, most-asymmetric first; |tau_3| descending) | tau3 (most right-skewed first) | tau3Asc (most left-skewed first) | tokens | days | source. Applied before --top.',
+    'absTau3',
+  )
+  .option(
+    '--min-abs-tau3 <x>',
+    'display filter: hide non-degenerate rows whose |tau_3| is strictly below x (in [0, 1]). Useful for surfacing only strongly-asymmetric sources.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minAbsTau3?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 4) {
+          throw new Error(
+            `--min-days must be an integer >= 4 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minAbsTau3: number | null = null;
+        if (opts.minAbsTau3 !== undefined) {
+          const mv = Number.parseFloat(opts.minAbsTau3);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-abs-tau3 must be a finite number in [0, 1] (got ${opts.minAbsTau3})`,
+            );
+          }
+          minAbsTau3 = mv;
+        }
+        const validSorts = ['absTau3', 'tau3', 'tau3Asc', 'tokens', 'days', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minAbsTau3,
+          sort: opts.sort as
+            | 'absTau3'
+            | 'tau3'
+            | 'tau3Asc'
+            | 'tokens'
+            | 'days'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenLSkewness(report) + '\n');
         }
       } catch (e) {
         die(e);

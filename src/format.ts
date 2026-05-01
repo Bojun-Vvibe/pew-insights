@@ -17076,6 +17076,7 @@ import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
 import type { DailyTokenMedcoupleSkewnessReport } from './dailytokenmedcoupleskewness.js';
+import type { DailyTokenLSkewnessReport } from './dailytokenlskewness.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17919,6 +17920,73 @@ export function renderDailyTokenMedcoupleSkewness(
     formatNumber(s.nUpper),
     formatNumber(s.nTies),
     s.degenerate ? '\u2014' : s.mc.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenLSkewness(
+  r: DailyTokenLSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-l-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-abs-tau3: ${r.minAbsTau3 === null ? '\u2014' : r.minAbsTau3}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinAbsTau3)} below min-abs-tau3, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source L-SKEWNESS tau_3 = l_3 / l_2 (Hosking 1990 PWM estimator: l_1=b_0, l_2=2 b_1 - b_0, l_3=6 b_2 - 6 b_1 + b_0). tau_3 in (-1, +1): positive = right-skew (heavy upper tail), negative = left-skew, 0 = symmetric. SIXTY-SEVENTH cross-source axis. Linear order-statistic primitive -- structurally orthogonal to MC pairwise-quartile axis 66, to all unsigned dispersion axes 32-65, and to calendar-order axes 60/64.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source L-skewness (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'distinct',
+    'l1',
+    'l2',
+    'l3',
+    'tau3',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.nDistinct),
+    formatNumber(Math.round(s.l1)),
+    formatNumber(Math.round(s.l2)),
+    formatNumber(Math.round(s.l3)),
+    s.degenerate ? '\u2014' : s.tau3.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
