@@ -2,6 +2,129 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.313 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SIXTY-NINTH):
+  `pew-insights daily-token-spectral-entropy`.
+
+  Per-source normalised Shannon entropy of the periodogram of the
+  gap-filled daily `total_tokens` series. For each source:
+
+  1. Aggregate per UTC calendar day across all rows; build the
+     dense series across the source's tenure
+     `[firstActiveDay, lastActiveDay]` with missing days filled
+     as 0 tokens.
+  2. Mean-centre, then compute the one-sided periodogram via
+     direct DFT at the K = floor(N/2) strictly-positive Fourier
+     bins:
+
+         P[k] = (1/N) * |sum_n y[n] exp(-2pi i k n / N)|^2
+
+  3. Normalise into a probability distribution over the K bins
+     and report the Shannon entropy normalised by ln(K) into
+     `[0, 1]`:
+
+         H_norm = -sum_k p[k] ln p[k] / ln(K)
+
+       - `H_norm = 0`  : single-frequency pure sinusoid
+                         (maximally non-white)
+       - `H_norm = 1`  : white spectrum (no preferred period)
+       - in between    : partial periodicity / coloured noise
+
+  4. `flat: true` marks sources with `var(x) = 0` across the
+     gap-filled tenure (entropy reported as 0 to distinguish
+     "literally undefined" from "noisy zero").
+
+  Headline question: **how spread out is this source's daily
+  spectral mass across all Fourier frequencies, vs concentrated
+  in a few periodic components?**
+
+  STRUCTURAL ORTHOGONALITY -- this is a fundamentally new
+  primitive not covered by any axis 32..68:
+
+    - vs `daily-token-autocorrelation-lag1` (axis 67) and
+      `daily-token-autocorrelation-lag7` (axis 68): those are
+      single-lag time-domain scalars. Spectral entropy
+      summarises the entire ACF via the Wiener-Khinchin dual
+      and sees periods (5 days, 11 days, ...) that fixed-lag
+      scalars are blind to. A 30-day pure 5-day cosine has
+      `rho1 = cos(2pi/5) = +0.309`, `rho7 = cos(14pi/5) = -0.809`,
+      yet H_norm < 0.05 -- spectral entropy correctly identifies
+      it as nearly pure-tone, no fixed-lag scalar can.
+
+    - vs `weekday-share` HHI: calendar-aligned 7-bucket
+      aggregation. Spectral entropy is calendar-AGNOSTIC -- a
+      5-day cycle has no special weekday alignment but produces
+      a sharp spectral peak; and it sees ALL frequency bins,
+      not just k = N/7.
+
+    - vs ALL permutation-invariant dispersion / shape axes
+      32..67 (Gini, Atkinson, Theil, GE, Hoover, Pietra,
+      Bonferroni, Mehran, Wolfson, Palma, Kolm-Pollak,
+      Chakravarty, Amato, Esteban-Ray, Var-of-Logs, Log-MAD,
+      FGT, PGR, IOM, MSR, DSG, QSR, MADM, Zenga, Hill, MC,
+      L-skew): a permuted series collapses to ~white spectrum
+      (H_norm -> 1) but those statistics are unchanged.
+
+    - vs calendar-order axes 60 (MSR), 64 (RTZ),
+      monotone-run-length, second-diff-sign-runs, runs-test-z:
+      sign-trace / run statistics that ignore both magnitude
+      AND specific frequency content. A flat sign trace
+      (alternating up/down) produces a sharp Nyquist-frequency
+      peak in the periodogram.
+
+    - vs `trend` / `forecast` /
+      `source-daily-token-trend-slope`: linear drift loads onto
+      the lowest frequency bins, the correct treatment.
+
+    - vs `source-row-token-spectral-entropy` (row grain): row-
+      grain lives on a sampling-rate-dependent grid where
+      "frequency" indexes per-row positions and rows-per-day
+      varies wildly. This DAY-grain spectral entropy lives on
+      a uniformly-spaced 1-sample-per-day grid, so frequency
+      bin k corresponds to period N/k DAYS exactly. The two
+      measure spectral concentration on incompatible time
+      grids.
+
+  `peakBin` reports the argmax Fourier bin in `{1..K}`. The
+  corresponding strongest periodic component has period
+  `nTenureDays / peakBin` days.
+
+  Bound: `H_norm in [0, 1]` by Jensen's inequality on Shannon
+  entropy normalised by `ln(K)`. Reaches the upper bound iff
+  the periodogram is uniform across all K bins; reaches the
+  lower bound iff a single bin carries 100% of the power.
+
+#### Live smoke output (against real `~/.config/pew/queue.jsonl`)
+
+Sorted by `H_norm` ascending (most spectrally-concentrated first;
+`vscode-copilot` source key renamed to `vscode-other` for the
+public log):
+
+```
+source          firstDay    lastDay     tenure  active  bins  mean         stddev       peakBin  peakShare  H_norm  tokens
+--------------  ----------  ----------  ------  ------  ----  -----------  -----------  -------  ---------  ------  -------------
+openclaw        2026-04-17  2026-05-01  15      15      7     141,542,440  96,035,101   1        0.5727     0.7007  2,123,136,603
+hermes          2026-04-17  2026-05-01  15      15      7     17,348,210   9,724,357    2        0.4197     0.8175  260,223,149
+claude-code     2026-02-11  2026-04-23  72      35      36    47,810,914   153,856,936  1        0.1090     0.8974  3,442,385,788
+vscode-other    2025-07-30  2026-04-20  265     73      132   7,116        27,024       7        0.0313     0.9149  1,885,727
+```
+
+Reading: `openclaw` has the SHARPEST spectrum (H_norm = 0.7007
+out of [0,1], peakBin = 1 means a single period-N drift dominates,
+57% of mass in that bin -- consistent with its very recent 15-day
+tenure showing strong onset trajectory). `vscode-other`, despite
+the broadest tenure (265 days, 132 frequency bins), has the
+WHITEST spectrum (H_norm = 0.9149) -- its weak periodicity is
+spread across the whole frequency axis, with the largest single
+bin (peakBin = 7, period ~ 38 days) carrying only 3.1% of the
+total spectral mass. This pattern is invisible to any single-lag
+autocorrelation axis -- spectral entropy is the first axis that
+distinguishes "concentrated near one periodic component" from
+"diffuse across all periods" for this corpus.
+
 ## 0.6.312 — 2026-05-01
 
 ### Added
