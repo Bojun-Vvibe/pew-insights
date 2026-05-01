@@ -2,6 +2,161 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.321 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-SEVENTH):
+  `pew-insights daily-token-sevcik-fd`.
+
+  Per-source Sevcik 1998 Fractal Dimension (Sevcik, C., "A
+  procedure to estimate the fractal dimension of waveforms",
+  Complexity International 5, 1998; also arXiv:1003.5266) on
+  the gap-filled daily `total_tokens` series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`. Closed-
+  form single-scale ratio on the DOUBLE-NORMALIZED waveform:
+
+      x*[i] = i / (N - 1)               (uniform, dx = 1/(N-1))
+      y*[i] = (y[i] - ymin) / (ymax - ymin)
+      L     = sum_{i=1..N-1} sqrt(dx^2 + (y*[i] - y*[i-1])^2)
+      SFD   = 1 + ln(L) / ln(2 * (N - 1))
+
+  Both axes are mapped onto the unit square `[0, 1]^2` before
+  computing the Euclidean path length. The reported `sfd` is
+  clamped to `[1, 2]` for symmetry with axes 74 (HFD), 75 (KFD),
+  and 76 (PFD); un-clamped `sfdRaw`, `clampedBelow1`,
+  `clampedAbove2` counters surfaced for operators. Also reports
+  `pathLength` (`L` on the unit square), `yRange = ymax - ymin`
+  (raw, informational), and `dxStep = 1 / (N - 1)`
+  (informational).
+
+  Reading `sfd`:
+
+  - `sfd ~ 1.0`   = near-straight on the unit square (tiny
+                    vertical excursions; `L ~ sqrt(2)` for an
+                    ascending ramp).
+  - `sfd ~ 1.3`   = moderately rough waveform (`L` a few units
+                    on the unit square).
+  - `sfd -> 2`    = highly rough / near-space-filling.
+
+  Edge cases surfaced as drop counters: `droppedZeroVariance`
+  (perfectly flat tenure — `ymin === ymax`; range-norm
+  degenerate), `droppedNonFiniteSfd` (degenerate collapse;
+  defensive — does not fire on well-formed gap-filled token
+  series).
+
+  STRUCTURAL ORTHOGONALITY -- single-scale CLOSED-FORM RATIO
+  on the DOUBLE-NORMALIZED waveform, fundamentally distinct
+  from every shipped daily-token axis 32..76:
+
+  - vs `daily-token-petrosian-fd` (axis 76): PFD is purely
+    BINARY post-sign-mapping; magnitudes drop out completely
+    (multiply values by 13 -> `Nd` unchanged -> PFD unchanged).
+    SFD operates on range-normalized magnitudes through
+    `dy*[i] = dy[i] / (ymax - ymin)`. Two series with identical
+    sign-of-diff sequences but different magnitude profiles
+    (small wiggles vs large wiggles relative to range) share
+    the same PFD but typically diverge on SFD because the
+    `dy*[i]` distributions differ. Conversely, both are
+    invariant under positive AFFINE rescale of `y` — but SFD is
+    sensitive to non-affine monotone transforms (e.g.
+    `y' = sqrt(y)` reshapes `dy*[i]` and changes `L`) that PFD
+    ignores entirely. The test file ships a `sqrt`-witness
+    asserting `|SFD(v) - SFD(sqrt(v))| > 1e-6`.
+
+  - vs `daily-token-katz-fd` (axis 75): KFD =
+    `log10(N - 1) / (log10(N - 1) + log10(d / L_katz))` where
+    `L_katz` is path length on the RAW series (no normalization)
+    and `d` is the maximal RAW chord from the first day. KFD is
+    dimensionally inconsistent in the original Katz formulation
+    (mixes unit x-spacing with raw-magnitude y); SFD fixes the
+    dimensional issue via double normalization. Both use
+    different denominator bases (`log10(N - 1)` vs
+    `ln(2*(N - 1))`) and KFD's ratio uses the maximal chord `d`
+    as a normalizer while SFD's ratio uses `2*(N - 1)` (the
+    theoretical maximum `L` on the unit square). Both are
+    invariant under positive affine rescales of `y`, but they
+    diverge on series where the maximal chord `d` is far from
+    the typical step magnitude (e.g. one extreme outlier
+    inflates `d` and pulls KFD down via the `d / L` ratio,
+    while SFD is bounded by the range-normalized step
+    distribution).
+
+  - vs `daily-token-higuchi-fd` (axis 74): HFD is a MULTI-SCALE
+    OLS power-law exponent across stride `k = 1..kMax`. SFD is
+    single-scale, closed-form, with a hard-coded denominator
+    `2*(N - 1)`. They probe different complexity facets
+    (multi-scale magnitude scaling vs single-scale double-
+    normalized geometric ratio).
+
+  - vs `daily-token-hurst-rs` (axis 71) and `daily-token-dfa-
+    alpha` (axis 72): R/S and DFA are VARIANCE-scaling
+    estimators on cumulative deviations (DFA additionally
+    detrends each window). SFD has no cumulative profile and no
+    multi-scale fit.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE summarises
+    flatness of the global periodogram (frequency-domain). SFD
+    is a single time-domain geometric scalar with no frequency
+    decomposition.
+
+  - vs `daily-token-permutation-entropy` (axis 70) and `daily-
+    token-sample-entropy` (axis 73): both are pattern /
+    template statistics; SFD is a pure path-length geometric
+    ratio with no embedding window or template matching.
+
+  - vs `daily-token-autocorrelation-lag1` / `lag7` (axes 67/68):
+    ACF is a SECOND-MOMENT linear scalar at one fixed lag; SFD
+    is a path-length ratio with no second-moment interpretation.
+
+  - vs all permutation-invariant dispersion / shape axes 32..67:
+    those are shuffle-invariant; SFD is shuffle-sensitive (the
+    test file ships a sorted-vs-shuffled witness: sorted `L` is
+    bounded above by 2 on the unit square via the triangle
+    inequality, while shuffled `L` is substantially larger and
+    `sfd` jumps by `> 0.05`).
+
+  Live-smoke (real `~/.config/pew/queue.jsonl`,
+  `daily-token-sevcik-fd --top 5`, defaults otherwise):
+
+      sources: 6 (shown 2)    tokens: 3,444,271,515
+      min-tokens: 1,000    min-tenure-days: 32
+
+      source          tenure  active  sfd     sfdRaw  L        yRange         tokens
+      vscode-copilot  265     73      1.3991  1.3991  12.2045    240,730     1,885,727
+      claude-code     72      35      1.3225  1.3225   4.9448  1,052,011,841 3,442,385,788
+
+  Both reporting sources show SFD in the 1.32-1.40 band — well
+  above the smooth `sfd ~ 1` baseline (where `L ~ sqrt(2)` for
+  a monotone ramp on the unit square) but well below the
+  near-space-filling ceiling near 2, indicating moderate
+  daily-roughness on the double-normalized waveform. The two
+  rankings shift relative to PFD (axis 76, which ranked
+  `claude-code > vscode-copilot` at PFD 1.0331 vs 1.0222): SFD
+  picks up the `vscode-copilot` series as rougher because the
+  range-normalized step magnitudes contribute through `L`,
+  whereas PFD's binary sign-flip count weights the two sources
+  similarly. Other 4 sources dropped: `droppedBelowMinTenure`
+  (gap-filled tenure under the 32-day floor).
+
+### Changed
+
+- Test count `8843 -> 8866` (+23 from `dailytokensevcikfd.test.ts`
+  covering: primitive math (monotone ramp -> closed-form
+  `L = sqrt(2)`, ascending vs descending identity, hand-checked
+  closed-form on `[0, 1, 0, 1, 0]`, positive-affine invariance,
+  negative-affine identity via range-norm sign absorption,
+  NON-invariance under non-affine monotone `sqrt` witness,
+  sorted-vs-shuffled multiset-invariance violation, clamp-bounds
+  wiring, `dxStep = 1 / (N - 1)` check, 200-seed property test
+  for finiteness + bounds + `L > 0` + `yRange > 0`), input
+  validation (NaN / Inf / `N < 3` / zero-range / bad options /
+  bad ISO), and builder integration (gap-fill correctness,
+  min-tenure / min-tokens drop counters, source filter, top cap,
+  zero-variance drop counter, sort modes, since/until window,
+  `sfdDesc` rough-above-smooth witness).
+
 ## 0.6.320 — 2026-05-02
 
 ### Added
