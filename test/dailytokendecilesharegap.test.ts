@@ -340,3 +340,83 @@ test('buildDailyTokenDecileShareGap: deterministic given fixed input + generated
   const r2 = buildDailyTokenDecileShareGap(queue, { generatedAt: GEN, minTokens: 100 });
   assert.deepEqual(r1, r2);
 });
+
+// ---- structural edge cases (refinement) -----------------------------
+
+test('decileShareGapOfVector: small-n (k may exceed floor(n/2)) still yields finite dsg', () => {
+  // n=2: k = ceil(0.10*2) = 1. bottom=1, top=2, total=3, dsg=1/3.
+  const r = decileShareGapOfVector([1, 2]);
+  assert.equal(r.k, 1);
+  assert.ok(Math.abs(r.dsg - 1 / 3) < 1e-12);
+  assert.equal(r.degenerate, false);
+});
+
+test('decileShareGapOfVector: small-n with duplicate extremes -> dsg=0 degenerate', () => {
+  // n=2 both equal: bottom=top -> dsg=0 degenerate.
+  const r = decileShareGapOfVector([5, 5]);
+  assert.equal(r.dsg, 0);
+  assert.equal(r.degenerate, true);
+});
+
+test('decileShareGapOfVector: dsg upper-bound asymptote (heavy tail)', () => {
+  // n=10, single huge spike: dsg -> close to 1 - 2*minDay/total
+  const v = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1_000_000];
+  const r = decileShareGapOfVector(v);
+  // bottom=1, top=1_000_000, total=1_000_009
+  // dsg = (1_000_000 - 1) / 1_000_009 ~= 0.99999...
+  assert.ok(r.dsg > 0.9999);
+  assert.ok(r.dsg < 1);
+});
+
+test('decileShareGapOfVector: changing the central body without changing total preserves dsg', () => {
+  // n=10, k=1; central 80% = positions 1..8 (sorted, 0-indexed).
+  // Swap two interior values in a way that does NOT change which
+  // value is the min/max: dsg unchanged.
+  const a = [1, 3, 5, 5, 5, 5, 5, 5, 7, 100];
+  const b = [1, 5, 3, 7, 5, 5, 5, 5, 5, 100]; // same multiset
+  const ra = decileShareGapOfVector(a);
+  const rb = decileShareGapOfVector(b);
+  assert.equal(ra.dsg, rb.dsg);
+  assert.equal(ra.bottomMass, rb.bottomMass);
+  assert.equal(ra.topMass, rb.topMass);
+});
+
+test('decileShareGapOfVector: k = ceil(0.10*n) jumps at n=11 (k=2)', () => {
+  // For n=10 -> k=1; for n=11 -> k = ceil(1.1) = 2.
+  const r10 = decileShareGapOfVector([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(r10.k, 1);
+  const r11 = decileShareGapOfVector([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(r11.k, 2);
+  // r11 bottom = 1+2 = 3; top = 10+11 = 21; total = 66; dsg = 18/66 = 3/11
+  assert.equal(r11.bottomMass, 3);
+  assert.equal(r11.topMass, 21);
+  assert.ok(Math.abs(r11.dsg - 18 / 66) < 1e-12);
+});
+
+test('decileShareGapOfVector: closed-cone identity DSG = topShare - bottomShare', () => {
+  // The numerator and denominator are both linear in the day vector,
+  // so DSG is exactly topShare - bottomShare. Verify on a non-trivial
+  // sample.
+  const v = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9];
+  const r = decileShareGapOfVector(v);
+  assert.ok(Math.abs(r.dsg - (r.topShare - r.bottomShare)) < 1e-12);
+});
+
+test('buildDailyTokenDecileShareGap: minDsg keeps degenerate rows regardless of threshold', () => {
+  const queue: QueueLine[] = [];
+  // FLAT source: degenerate (all same) -> dsg=0
+  for (let d = 1; d <= 10; d += 1) {
+    const day = `2026-04-${String(d).padStart(2, '0')}T00:00:00Z`;
+    queue.push(ql(day, 'FLAT', 5000));
+  }
+  const r = buildDailyTokenDecileShareGap(queue, {
+    minDsg: 0.99, // very strict
+    minTokens: 1000,
+    minDays: 4,
+    generatedAt: GEN,
+  });
+  // Degenerate kept, no drops.
+  assert.equal(r.droppedBelowMinDsg, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.degenerate, true);
+});
