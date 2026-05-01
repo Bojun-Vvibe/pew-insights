@@ -63,6 +63,7 @@ import type { DailyTokenHooverReport } from './dailytokenhooverindex.js';
 import type { DailyTokenBonferroniReport } from './dailytokenbonferroniindex.js';
 import type { DailyTokenKolmPollakReport } from './dailytokenkolmpollakindex.js';
 import type { DailyTokenMehranReport } from './dailytokenmehranindex.js';
+import type { DailyTokenWolfsonReport } from './dailytokenwolfsonpolarizationindex.js';
 import type { SourceHourTopKMassShareReport } from './sourcehourofdaytopkmassshare.js';
 import type { SourceColdWarmRowRatioReport } from './sourcecoldwarmrowratio.js';
 import type {
@@ -15958,6 +15959,107 @@ export function renderDailyTokenMehranIndex(
         : s.equalityIdentityResidual.toExponential(2),
     ]);
     lines.push(renderTableLocal(eHeaders, eRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWolfsonPolarizationIndex(
+  r: DailyTokenWolfsonReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-wolfson-polarization-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-wolfson: ${r.minWolfson === null ? '\u2014' : r.minWolfson}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinWolfson)} below min-wolfson, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WOLFSON = (mu/m) * (2*T - G) of per-day total_tokens; T = 0.5 - L(0.5) is the half-Lorenz gap at the median; bipolarization = concentration AWAY from the median, distinct from inequality from the mean)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Wolfson polarization of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'wolfson',
+    'gini',
+    'T',
+    'meanDaily',
+    'medianDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate
+      ? '\u2014'
+      : (s.wolfson >= 0 ? '+' : '') + s.wolfson.toFixed(4),
+    s.gini.toFixed(4),
+    s.halfLorenzGap.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.medianDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.meanOverMedian !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `mean-over-median refinement: mu/m amplifier (right-skew multiplier component of W, independent of the (2T - G) bipolarization core)`,
+      ),
+    );
+    const aHeaders = ['source', 'wolfson', '2T-G', 'mu/m'];
+    const aRows: string[][] = r.sources.map((s) => {
+      const core = 2 * s.halfLorenzGap - s.gini;
+      return [
+        s.source,
+        s.degenerate
+          ? '\u2014'
+          : (s.wolfson >= 0 ? '+' : '') + s.wolfson.toFixed(4),
+        (core >= 0 ? '+' : '') + core.toFixed(4),
+        s.meanOverMedian === undefined || Number.isNaN(s.meanOverMedian)
+          ? 'n/a'
+          : s.meanOverMedian.toFixed(4),
+      ];
+    });
+    lines.push(renderTableLocal(aHeaders, aRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');

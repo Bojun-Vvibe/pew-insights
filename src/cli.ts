@@ -97,6 +97,7 @@ import {
   renderDailyTokenBonferroniIndex,
   renderDailyTokenKolmPollakIndex,
   renderDailyTokenMehranIndex,
+  renderDailyTokenWolfsonPolarizationIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -356,6 +357,7 @@ import { buildDailyTokenHooverIndex } from './dailytokenhooverindex.js';
 import { buildDailyTokenBonferroniIndex } from './dailytokenbonferroniindex.js';
 import { buildDailyTokenKolmPollakIndex } from './dailytokenkolmpollakindex.js';
 import { buildDailyTokenMehranIndex } from './dailytokenmehranindex.js';
+import { buildDailyTokenWolfsonPolarizationIndex } from './dailytokenwolfsonpolarizationindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13280,7 +13282,141 @@ program
         if (opts.json || common.json) {
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
-          process.stdout.write(renderDailyTokenMehranIndex(report) + '\n');
+           process.stdout.write(renderDailyTokenMehranIndex(report) + '\n');
+         }
+       } catch (e) {
+         die(e);
+       }
+     },
+   );
+
+
+program
+  .command('daily-token-wolfson-polarization-index')
+  .description(
+    "Per-source WOLFSON BIPOLARIZATION INDEX of the per-day total_tokens distribution (FORTY-SIXTH cross-source axis). W = (mu/m) * (2*T - G) where T = 0.5 - L(0.5) is the half-Lorenz GAP at the median rank, G is Gini, mu is mean, m is median. Sign NOT constrained. W > 0 = MORE bipolarized than the within-Gini baseline (mass pulled away from the median into two tails); W = 0 = bipolarization matches Gini's baseline; W < 0 = ANTI-polarized (mass concentrated AROUND the median). Wolfson is FUNDAMENTALLY DISTINCT from every prior daily-token inequality axis (axes 32-45 all measure dispersion from the MEAN or single-point Lorenz gaps); Wolfson measures CONCENTRATION AWAY FROM THE MEDIAN. Two equal-Gini vectors can have opposite-sign Wolfson when bulk mass shifts between 'around the median' and 'split into tails'. Per-source columns: wolfson, gini, halfLorenzGap (T), meanDaily, medianDaily, mu/m amplifier, minDay, maxDay. Refinement: --include-mean-over-median surfaces the right-skew multiplier mu/m independent of the (2T - G) bipolarization core.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). Wolfson degenerate for n<2; default 4 ensures meaningful median-anchored Lorenz reading.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: wolfson (default) | tokens | days | source | meanDaily | meanOverMedian | halfLorenzGap. Applied before --top.',
+    'wolfson',
+  )
+  .option(
+    '--min-wolfson <w>',
+    'display filter: hide non-degenerate rows whose wolfson is strictly below this signed value. Default null = no filter. Wolfson can be negative; degenerate rows are kept regardless.',
+  )
+  .option(
+    '--include-mean-over-median',
+    'every row gains a meanOverMedian field (mu / m). Surfaces the right-skew multiplier component of Wolfson independent of the (2T - G) bipolarization core.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minWolfson?: string;
+        includeMeanOverMedian?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minWolfson: number | null = null;
+        if (opts.minWolfson !== undefined) {
+          const mw = Number.parseFloat(opts.minWolfson);
+          if (!Number.isFinite(mw)) {
+            throw new Error(
+              `--min-wolfson must be a finite number (got ${opts.minWolfson})`,
+            );
+          }
+          minWolfson = mw;
+        }
+        const validSorts = [
+          'wolfson',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'meanOverMedian',
+          'halfLorenzGap',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWolfsonPolarizationIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minWolfson,
+          includeMeanOverMedian: opts.includeMeanOverMedian ?? false,
+          sort: opts.sort as
+            | 'wolfson'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'meanOverMedian'
+            | 'halfLorenzGap',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWolfsonPolarizationIndex(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
