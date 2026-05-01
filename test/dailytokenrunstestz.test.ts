@@ -463,3 +463,106 @@ test('orthogonality witness: long monotone ramp has low monotone-run-count BUT e
   // z = (2 - 9)/sqrt(3.733) = -7/1.9322 = -3.6228
   assert.ok(r.z < -3.6 && r.z > -3.7);
 });
+
+// ---- Refinement (v0.6.308): tightened boundary and degeneracy edge cases
+
+test('refinement: minimum non-degenerate boundary n+=1, n-=7 closed-form anchor', () => {
+  // sequence [1, 5, 5, 5, 5, 5, 5, 5, 100] -- 7 below median (=5,
+  // dropped via tie? no -- 5 IS the median so all the 5s drop).
+  // Take instead [1, 2, 3, 4, 6, 7, 8, 9, 100]:
+  //   sorted=[1,2,3,4,6,7,8,9,100]; median=6 (5th of 9). |D|=9 distinct.
+  //   In sorted vector [1,2,3,4,6,7,8,9,100] median is sorted[4]=6.
+  //   sequence in calendar order = same ascending list.
+  //   signs: -,-,-,-,(tied at 6 dropped),+,+,+,+ -> n-=4, n+=4, n=8, runs=2
+  // Pick instead [100, 2, 3, 4, 5, 6, 7, 8, 9]:
+  //   sorted=[2,3,4,5,6,7,8,9,100]; median=6.
+  //   calendar signs: +,-,-,-,-,(6 dropped),+,+,+ -> +,-,-,-,-,+,+,+
+  //   n+=4, n-=4, n=8; runs: +(1), ----(2), +++(3) = 3
+  //   mu = 2*4*4/8 + 1 = 5; var = 2*4*4*(32-8)/(64*7) = 768/448 = 12/7
+  //   z = (3-5)/sqrt(12/7) = -2/1.30931 = -1.5275
+  const v = [100, 2, 3, 4, 5, 6, 7, 8, 9];
+  const r = runsTestZOfVector(v);
+  assert.equal(r.median, 6);
+  assert.equal(r.nPlus, 4);
+  assert.equal(r.nMinus, 4);
+  assert.equal(r.runs, 3);
+  assert.ok(Math.abs(r.z + 2 / Math.sqrt(12 / 7)) < 1e-12);
+});
+
+test('refinement: tightened edge case -- n+=1 sentinel preserves degenerate-guard rather than dividing by zero', () => {
+  // Build a vector where only ONE day strays above the median.
+  // [1, 2, 3, 4, 5, 5, 5, 5, 5, 100]: sorted=[1,2,3,4,5,5,5,5,5,100]
+  //   median = (5+5)/2 = 5 (linear-interp index (10-1)*0.5 = 4.5 -> avg sorted[4]=5, sorted[5]=5)
+  //   signs: -,-,-,-,(5 dropped x5),+ -> n-=4, n+=1, n=5
+  //   runs: ----,+ = 2
+  //   mu = 2*1*4/5 + 1 = 1.6 + 1 = 2.6; var = 2*1*4*(8-5)/(25*4) = 24/100 = 0.24
+  //   z = (2 - 2.6)/sqrt(0.24) = -0.6/0.4899 = -1.22474...
+  const v = [1, 2, 3, 4, 5, 5, 5, 5, 5, 100];
+  const r = runsTestZOfVector(v);
+  assert.equal(r.median, 5);
+  assert.equal(r.nPlus, 1);
+  assert.equal(r.nMinus, 4);
+  assert.equal(r.runs, 2);
+  assert.equal(r.degenerate, false);
+  assert.ok(Math.abs(r.meanRuns - 2.6) < 1e-12);
+  assert.ok(Math.abs(r.varRuns - 0.24) < 1e-12);
+  assert.ok(Math.abs(r.z + 0.6 / Math.sqrt(0.24)) < 1e-12);
+});
+
+test('refinement: degenerate guard -- n+ = 0 (everything below or tied with median) returns z=0 not NaN', () => {
+  // [3, 3, 3, 3, 3, 3, 3, 7]: sorted=[3,3,3,3,3,3,3,7]; n=8.
+  // median = (sorted[3] + sorted[4])/2 = 3. signs: tied x7, +x1
+  // -> nKept=1, nPlus=1, nMinus=0 -- degenerate, z must be 0 not NaN.
+  const v = [3, 3, 3, 3, 3, 3, 3, 7];
+  const r = runsTestZOfVector(v);
+  assert.equal(r.median, 3);
+  assert.equal(r.nPlus, 1);
+  assert.equal(r.nMinus, 0);
+  assert.equal(r.degenerate, true);
+  assert.equal(r.z, 0);
+  assert.ok(Number.isFinite(r.z));
+});
+
+test('refinement: square-wave witness -- z is positive (anti-clustering) for [low,high,low,high,...]', () => {
+  // 12-point square wave: [10,90,10,90,10,90,10,90,10,90,10,90]
+  // median = 50 (linear-interp on sorted [10,10,10,10,10,10,90,90,90,90,90,90])
+  // = (sorted[5]+sorted[6])/2 = (10+90)/2 = 50
+  // Signs: -,+,-,+,-,+,-,+,-,+,-,+ ; runs=12; n+=6, n-=6, n=12
+  // mu = 2*6*6/12 + 1 = 6 + 1 = 7; var = 2*6*6*(72-12)/(144*11) = 4320/1584 = 30/11
+  // z = (12 - 7)/sqrt(30/11) = 5/1.6514... = +3.0277...
+  const v = [10, 90, 10, 90, 10, 90, 10, 90, 10, 90, 10, 90];
+  const r = runsTestZOfVector(v);
+  assert.equal(r.median, 50);
+  assert.equal(r.nPlus, 6);
+  assert.equal(r.nMinus, 6);
+  assert.equal(r.runs, 12);
+  assert.ok(Math.abs(r.z - 5 / Math.sqrt(30 / 11)) < 1e-12);
+  // Strictly positive -- the SIGN convention for hyper-alternation
+  // is consistent with the documented contract.
+  assert.ok(r.z > 3.02 && r.z < 3.03);
+});
+
+test('refinement: build pipeline preserves degenerate-guard for n+ = 0 vector (no NaN leaks to JSON)', () => {
+  // 8 days: 7 days at 1000 tokens, 1 day at 5000. median=1000;
+  // tied x7, +x1; degenerate=true; z must serialise as 0.
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 7; i += 1) {
+    const day = i.toString().padStart(2, '0');
+    queue.push(ql(`2026-04-${day}T05:00:00.000Z`, 'a', 1000));
+  }
+  queue.push(ql('2026-04-08T05:00:00.000Z', 'a', 5000));
+  const r = buildDailyTokenRunsTestZ(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minDays: 4,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.degenerate, true);
+  assert.equal(row.z, 0);
+  assert.equal(row.nPlus, 1);
+  assert.equal(row.nMinus, 0);
+  assert.equal(row.nDaysTied, 7);
+  // JSON round-trip must not produce NaN.
+  const j = JSON.parse(JSON.stringify(r));
+  assert.equal(j.sources[0].z, 0);
+});
