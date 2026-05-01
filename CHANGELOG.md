@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.302 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-EIGHTH):
+  `pew-insights daily-token-percentile-gap-ratio`.
+
+  Per-source PERCENTILE GAP RATIO P90 / P50 of the per-day
+  total_tokens distribution. For each source we collapse all hourly
+  buckets into one scalar per UTC day (D_d = sum of total_tokens on
+  day d) and summarise the resulting day vector by
+
+      PGR = P90(D) / P50(D),
+
+  where P_q(D) is the linear-interpolation percentile (numpy
+  "linear" / R "type 7"): given sorted D with length n, h = q*(n-1),
+  k = floor(h), f = h - k, then P_q = D_sorted[k] + f *
+  (D_sorted[k+1] - D_sorted[k]).
+
+  HEADLINE QUESTION: "How many times larger is each source's
+  90th-percentile day than its median day?"
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..57). Every prior daily-token axis
+  is a MOMENT- or LORENZ-functional summary that integrates over
+  the FULL distribution: GE family at alpha in {-1, 0, 1/2, 1, 2,
+  3, 4} (axes 49/33/55/34/37/56/57) raises shares to a power and
+  averages; Gini, S-Gini, Bonferroni, Mehran, Pietra, Hoover, Zenga,
+  Wolfson, Foster-Wolfson, Palma, Atkinson, Kolm-Pollak,
+  Chakravarty, Amato, Esteban-Ray, Var-of-Logs, Log-MAD, FGT (axes
+  32, 35, 36, 38-48, 50-54) integrate over the Lorenz curve or
+  apply a CARA / median-anchored / log-domain functional. PGR
+  depends on only TWO ORDER STATISTICS (P50 and P90) and is
+  STRUCTURALLY INVARIANT to changes strictly above P90 -- in an
+  n=11 vector, ANY change to the maximum (the value at sorted
+  index 10, which sits strictly above the q=0.9 interpolation
+  point at index 9) leaves PGR unchanged, whereas every shipped
+  GE / Atkinson / Theil / Var-of-Logs / Hoover / Gini / Pietra /
+  Bonferroni / S-Gini / Kolm-Pollak / Chakravarty / Amato / FGT /
+  Esteban-Ray index strictly increases (verified by a unit test
+  showing GE(2) jumps ~36x and GE(4) jumps ~95x while PGR stays
+  exactly unchanged when the maximum is replaced by a value 1e9
+  times larger).
+
+  RANK-FLIP WITNESS vs GE(2) (the genuine orthogonality test).
+  Construct A = [1,1,1,1,1,1,3,3,3,3,3] and
+  B = [1,1,1,1,1,1,1,1,1,1,1000]. Then PGR(A) = 3 > PGR(B) = 1
+  (B's median and 90th percentile both equal 1, so its top decile
+  is "invisible" to PGR), but GE(2)(B) ~ 8.26 >> GE(2)(A) ~ 0.139
+  -- a clean rank flip. So the two axes carry materially different
+  information; one cannot recover one from the other under any
+  monotone transform.
+
+  RANGE AND DEGENERACY. PGR >= 1 always (P90 >= P50 by monotonicity
+  of percentiles). PGR == 1 iff P50 == P90 (e.g. all days equal, or
+  the top half of the daily distribution is constant). PGR is
+  SCALE-INVARIANT (multiply every day by k > 0; ratio unchanged)
+  and PERMUTATION-INVARIANT (depends on sorted vector only). PGR
+  is FINITE whenever P50 > 0; we filter on minTokens to ensure
+  positive median in production use.
+
+  CLOSED-FORM ANCHOR ON [1..10]. For D = [1,2,3,4,5,6,7,8,9,10]:
+  P50 (h = 0.5*9 = 4.5) = 5 + 0.5 * (6 - 5) = 5.5; P90 (h = 0.9*9
+  = 8.1) = 9 + 0.1 * (10 - 9) = 9.1. So PGR = 9.1 / 5.5 ~= 1.6545.
+  This value is reproduced exactly by the implementation in unit
+  tests.
+
+  REFINEMENT. `--include-p75-p25` surfaces P25, P75, and the
+  central interquartile ratio iqrRatio = P75/P25. The pair (PGR,
+  iqrRatio) lets the operator distinguish "moderate-upper-tail
+  spread" (PGR) from "central spread" (iqrRatio): when iqrRatio is
+  small but PGR is large the source has a tight central body with
+  a stretched upper-decile tail; when iqrRatio and PGR are similar
+  the spread is uniform across the body and tail.
+
+  KNOBS: `--since` / `--until`, `--source`, `--min-tokens` (default
+  1000), `--min-days` (default 4; PGR degenerate for n<2), `--top`
+  (default 0 = no cap), `--sort` (one of `pgr` (default) | `tokens`
+  | `days` | `source` | `meanDaily` | `p50` | `p90`), `--min-pgr`
+  (display filter; must be >= 1), `--include-p75-p25`, `--json`.
+  Every dropped row is counted: droppedInvalidHourStart,
+  droppedNonPositiveTokens, droppedSourceFilter,
+  droppedSparseSources, droppedBelowMinDays, droppedBelowMinPgr,
+  droppedTopSources.
+
+  LIVE SMOKE on `~/.config/pew/queue.jsonl` (2,222 rows,
+  11,981,937,390 total_tokens, 6 sources after the default
+  min-tokens=1000 / min-days=4 filter):
+
+      source           days   pgr        p50               p90
+      claude-code        35   9.519324      25,407,006       241,857,530
+      vscode-other       73   8.228357           8,118            66,798
+      codex               8   5.949360      41,235,207       245,323,080
+      openclaw           15   2.760438      99,150,451       273,698,708
+      hermes             15   2.226028      13,459,283        29,960,739
+      opencode           12   1.372282     474,051,843       650,532,802
+
+  TOP-3 sources by PGR: claude-code (9.52), vscode-other (8.23),
+  codex (5.95). NON-DEGENERACY witness vs axis-57 GE(4) on this
+  same data: GE(4) ranks claude-code (37.6) >> vscode-other (17.7)
+  >> codex (2.34) -- the GE(4) ratio claude-code/codex is ~16.1x
+  while the PGR ratio is only 1.60x, a 10x compression. PGR also
+  ranks the lower three sources very differently from GE(4)
+  proportionally: openclaw/hermes ratio is 1.24 in PGR vs 1.76 in
+  GE(4); opencode is dead last in PGR (1.37, near degenerate) but
+  has a non-trivial GE(4) (0.080). The two axes describe different
+  shape features and cannot be recovered from one another.
+
+  IQR-RATIO REFINEMENT (live smoke):
+
+      source           pgr        iqrRatio   p25               p75
+      claude-code      9.519324   10.784825      5,992,185        64,624,670
+      vscode-other     8.228357    8.435784          2,951            24,894
+      codex            5.949360    5.752177     22,607,703       130,043,500
+      openclaw         2.760438    3.282687     65,125,944       213,788,093
+      hermes           2.226028    3.045069      7,912,639        24,094,529
+      opencode         1.372282    1.381548    405,322,952       559,973,166
+
+  For these sources iqrRatio tracks PGR closely, indicating the
+  upper-decile spread is roughly proportional to the central
+  spread; the operator can use the (PGR, iqrRatio) pair to flag
+  any future source whose upper-decile tail decouples from its
+  central body.
+
+  NUMERICAL CAUTION. Computation is via a single sort + four O(1)
+  linear interpolations. Stable on production-scale day totals
+  (1e9+ tokens with 10x spike days; verified by a unit test that
+  the resulting PGR is finite and bounded). No power kernels, no
+  log domain, no moment accumulation -- the simplest dispersion
+  axis in the daily-token family by construction, but
+  STRUCTURALLY orthogonal to every shipped sibling because of
+  what it ignores (everything outside the P50/P90 neighbourhoods),
+  not because of what it sees.
+
 ## 0.6.301 — 2026-05-01
 
 ### Added
