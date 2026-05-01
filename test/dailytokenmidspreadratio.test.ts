@@ -437,3 +437,64 @@ test('buildDailyTokenMidSpreadRatio: sort by idrAbsolute orders rows by interdec
   assert.equal(r.sources[1]!.source, 'narrow');
   assert.ok(r.sources[0]!.idrAbsolute > r.sources[1]!.idrAbsolute);
 });
+
+// ---- Edge-case refinement (post-release tightening) -----------------
+
+test('midSpreadRatioOfVector: identity MSR = QCD * 2 * P50 / IDR (formal cross-check)', () => {
+  // QCD = (P75-P25)/(P75+P25) = "Quartile Coefficient of Dispersion".
+  // Identity: MSR = (P75-P25)/(P90-P10) = QCD * (P75+P25) / (P90-P10).
+  // Verify under fp arithmetic for [1..100].
+  const v: number[] = [];
+  for (let i = 1; i <= 100; i++) v.push(i);
+  const r = midSpreadRatioOfVector(v);
+  const qcd = (r.p75 - r.p25) / (r.p75 + r.p25);
+  const lhs = r.msr;
+  const rhs = (qcd * (r.p75 + r.p25)) / (r.p90 - r.p10);
+  assert.ok(
+    Math.abs(lhs - rhs) < 1e-12,
+    `Identity MSR = QCD*(P75+P25)/(P90-P10) should hold; got ${lhs} vs ${rhs}`,
+  );
+});
+
+test('midSpreadRatioOfVector: Uniform-shape reference -- MSR ~ 0.625 on linear [1..N]', () => {
+  // Sample of length N drawn from arithmetic progression has MSR
+  // approaching 0.5/0.8 = 0.625 as N grows (the Uniform asymptote).
+  for (const N of [21, 51, 101, 201]) {
+    const v: number[] = [];
+    for (let i = 1; i <= N; i++) v.push(i);
+    const m = midSpreadRatioOfVector(v).msr;
+    assert.ok(
+      Math.abs(m - 0.625) < 0.05,
+      `Uniform [1..${N}] should give MSR ~ 0.625, got ${m}`,
+    );
+  }
+});
+
+test('midSpreadRatioOfVector: degenerate-box-clipped row remains kept under minMsr filter', () => {
+  // A box-clipped vector has MSR=1 AND degenerate=true. The minMsr
+  // display filter must KEEP all degenerate rows (consistent with the
+  // axis-59 minIom semantics).
+  const queue: QueueLine[] = [];
+  // 'box' -> [3,3,3,3,5,5,5,7,7,7,7] sorted -> P10=v[1]=3, P25=3, P50=5,
+  // P75=7, P90=v[9]=7 -> MSR=4/4=1, degenerate=true.
+  const box = [3, 3, 3, 3, 5, 5, 5, 7, 7, 7, 7];
+  for (let i = 0; i < box.length; i++) {
+    queue.push(
+      ql(
+        `2026-04-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+        'box',
+        box[i]! * 1000,
+      ),
+    );
+  }
+  const r = buildDailyTokenMidSpreadRatio(queue, {
+    minTokens: 0,
+    minDays: 2,
+    minMsr: 0.99, // would normally exclude all but msr >= 0.99
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.degenerate, true);
+  assert.ok(Math.abs(r.sources[0]!.msr - 1.0) < 1e-12);
+  assert.equal(r.droppedBelowMinMsr, 0);
+});
