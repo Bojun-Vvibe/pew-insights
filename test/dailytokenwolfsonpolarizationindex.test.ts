@@ -130,6 +130,62 @@ test('wolfsonOfVector: gini matches axis-32 giniOfVector', () => {
   }
 });
 
+// ---- additional structural invariants (refinement) -------------------
+
+test('wolfsonOfVector: half-Lorenz gap T is in [0, 0.5] for any non-negative vector', () => {
+  for (const v of [
+    [1, 2, 3, 4, 5],
+    [1, 1, 9, 9],
+    [1, 5, 5, 9],
+    [3, 7, 1, 11, 4, 9],
+    [10, 20, 30, 40, 50, 60],
+    [0, 1, 2, 3, 100],
+    [1, 1, 1, 1, 1, 100],
+    [50, 50, 50, 50],
+  ]) {
+    const r = wolfsonOfVector(v);
+    if (r.degenerate) continue;
+    assert.ok(r.halfLorenzGap >= -1e-15, `v=${v} T=${r.halfLorenzGap} should be >=0`);
+    assert.ok(
+      r.halfLorenzGap <= 0.5 + 1e-15,
+      `v=${v} T=${r.halfLorenzGap} should be <=0.5`,
+    );
+  }
+});
+
+test('wolfsonOfVector: cross-axis sanity W = (mu/m)*(2T - G) reproducible from primitives', () => {
+  for (const v of [
+    [1, 1, 9, 9],
+    [1, 5, 5, 9],
+    [3, 7, 1, 11, 4, 9],
+    [10, 20, 30, 40, 50, 60, 100, 200],
+  ]) {
+    const r = wolfsonOfVector(v);
+    if (r.degenerate) continue;
+    const reconstructed =
+      (r.mean / r.median) * (2 * r.halfLorenzGap - r.gini);
+    assert.ok(
+      Math.abs(r.wolfson - reconstructed) < 1e-12,
+      `v=${v} W=${r.wolfson} reconstructed=${reconstructed}`,
+    );
+  }
+});
+
+test('wolfsonOfVector: equal-vector identity W(c * 1_n) = 0 for any constant c', () => {
+  // The defining baseline: when every entry equals the same constant,
+  // bipolarization is trivially 0 (mean == median, T == 0, G == 0).
+  for (const c of [1, 5, 100, 12345.6789]) {
+    for (const n of [2, 3, 4, 5, 7, 10, 50]) {
+      const v = new Array<number>(n).fill(c);
+      const r = wolfsonOfVector(v);
+      assert.ok(
+        Math.abs(r.wolfson) < 1e-12,
+        `c=${c} n=${n} W=${r.wolfson} should be 0`,
+      );
+    }
+  }
+});
+
 // ---- buildDailyTokenWolfsonPolarizationIndex ----------------------------
 
 test('builder: empty queue -> no rows, totals zero', () => {
