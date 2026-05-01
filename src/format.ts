@@ -16873,3 +16873,92 @@ export function renderDailyTokenLogMeanAbsoluteDeviationIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { DailyTokenGeHalfIndexReport } from './dailytokengehalfindex.js';
+export function renderDailyTokenGeHalfIndex(
+  r: DailyTokenGeHalfIndexReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-ge-half-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-gehalf: ${r.minGeHalf === null ? '\u2014' : r.minGeHalf}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinGeHalf)} below min-gehalf, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source GE(1/2) = 4*(1 - sqrt(M_{1/2}(D)/mean(D))). Sqrt-share generalised entropy; the unique half-power member of the GE family. Range [0, +inf); GE(1/2) = 0 iff perfect equality. Closed-form bridge: GE(1/2) = 4*(1 - sqrt(1 - Atkinson(eps=1/2))) on every positive vector; the GE(1/2)/atkHalf ratio lives in [2,4) -> 2 near equality, -> 4 in the heavy-tail limit.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source GE(1/2) (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'gehalf',
+    'sqrtMeanDaily',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.gehalf.toFixed(6),
+    formatNumber(Math.round(s.sqrtMeanDaily)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.atkHalf !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Atkinson(eps=1/2) cross-anchor (functional bridge GE(1/2) = 4*(1 - sqrt(1 - Atkinson(eps=1/2))); ratio in [2, 4) ranges from near-equality to heavy-tail-spike).`,
+      ),
+    );
+    const wHeaders = ['source', 'gehalf', 'atkHalf', 'gehalf/atkHalf'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.gehalf.toFixed(6),
+      s.atkHalf === undefined ? 'n/a' : (s.atkHalf as number).toFixed(6),
+      s.geHalfOverAtkHalf === undefined || Number.isNaN(s.geHalfOverAtkHalf)
+        ? 'n/a'
+        : (s.geHalfOverAtkHalf as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
