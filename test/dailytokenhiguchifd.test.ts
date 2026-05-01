@@ -368,3 +368,63 @@ test('buildDailyTokenHiguchiFd: counts non-positive tokens and bad hour_start', 
   assert.equal(r.droppedInvalidHourStart, 1);
   assert.equal(r.droppedNonPositiveTokens, 2);
 });
+
+// ---- finite-output property guard -------------------------------------
+
+test('higuchiFd: finite outputs across diverse non-constant inputs (property test)', () => {
+  // Defensive: across a deterministic battery of non-constant
+  // inputs, every reported field must be finite and r2 in [0, 1]
+  // and hfd in [1, 2]. This guards against IEEE-754 sub-normals
+  // turning into +/-Infinity inside Math.log on extreme L(k)
+  // ratios -- the same defence-in-depth ladder added to axis-72
+  // (DFA-1) in v0.6.317.
+  const n = 256;
+  const cases: number[][] = [];
+  // Deterministic ramp.
+  const ramp: number[] = [];
+  for (let i = 0; i < n; i += 1) ramp.push(i + 1);
+  cases.push(ramp);
+  // Constant + tiny deterministic jitter (very low roughness).
+  const flat: number[] = [];
+  for (let i = 0; i < n; i += 1) flat.push(1000 + (i % 3 === 0 ? 1 : 0));
+  cases.push(flat);
+  // Pure pseudo-random uniform.
+  const rng = mulberry32(2027);
+  const noise: number[] = [];
+  for (let i = 0; i < n; i += 1) noise.push(rng());
+  cases.push(noise);
+  // Ramp + noise.
+  const rampNoisy: number[] = [];
+  const rng2 = mulberry32(13);
+  for (let i = 0; i < n; i += 1) rampNoisy.push(i + rng2() * 5);
+  cases.push(rampNoisy);
+  // Alternation + tiny jitter.
+  const altr: number[] = [];
+  const rng3 = mulberry32(17);
+  for (let i = 0; i < n; i += 1) altr.push((i % 2 === 0 ? 100 : 200) + rng3());
+  cases.push(altr);
+  // Heavy-tailed positive series.
+  const heavy: number[] = [];
+  const rng4 = mulberry32(19);
+  for (let i = 0; i < n; i += 1) heavy.push(Math.floor(Math.exp(rng4() * 10)));
+  cases.push(heavy);
+  // Sub-normal-adjacent extremes: very small positive jitter that
+  // pushes L(k) toward IEEE-754 sub-normal territory.
+  const tiny: number[] = [];
+  const rng5 = mulberry32(23);
+  for (let i = 0; i < n; i += 1) tiny.push(rng5() * 1e-300);
+  cases.push(tiny);
+
+  for (const x of cases) {
+    const r = higuchiFd(x);
+    assert.ok(Number.isFinite(r.hfd), `hfd not finite: ${r.hfd}`);
+    assert.ok(Number.isFinite(r.hfdRaw), `hfdRaw not finite: ${r.hfdRaw}`);
+    assert.ok(
+      Number.isFinite(r.intercept),
+      `intercept not finite: ${r.intercept}`,
+    );
+    assert.ok(Number.isFinite(r.r2), `r2 not finite: ${r.r2}`);
+    assert.ok(r.hfd >= 1 && r.hfd <= 2, `hfd out of [1,2]: ${r.hfd}`);
+    assert.ok(r.r2 >= 0 && r.r2 <= 1, `r2 out of [0,1]: ${r.r2}`);
+  }
+});
