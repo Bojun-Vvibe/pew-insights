@@ -99,6 +99,7 @@ import {
   renderDailyTokenMehranIndex,
   renderDailyTokenWolfsonPolarizationIndex,
   renderDailyTokenSginiIndex,
+  renderDailyTokenChakravartyIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -360,6 +361,7 @@ import { buildDailyTokenKolmPollakIndex } from './dailytokenkolmpollakindex.js';
 import { buildDailyTokenMehranIndex } from './dailytokenmehranindex.js';
 import { buildDailyTokenWolfsonPolarizationIndex } from './dailytokenwolfsonpolarizationindex.js';
 import { buildDailyTokenSginiIndex } from './dailytokensginiindex.js';
+import { buildDailyTokenChakravartyIndex } from './dailytokenchakravartyindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -13567,6 +13569,152 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSginiIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-chakravarty-index')
+  .description(
+    "Per-source CHAKRAVARTY (1988) generalized inequality index of the per-day total_tokens distribution at concavity parameter alpha in (0, 1) (default 0.5) (FORTY-EIGHTH cross-source axis). C(alpha) = 1 - (1/n) * sum_i (x_i / mu)^alpha. Range [0, 1]. C = 0 iff every day carries equal mass. Distinct functional family from Atkinson (axis-36): Atkinson wraps the share-power mean in an outer (1/(1-eps)) power to produce a welfare-equivalent-mean (1 - EDE/mu); Chakravarty drops that outer wrapper and reads inequality directly off the AVERAGE concave normalised share-deficit. The two are NOT a monotone transformation of each other in general; ordering between distributions can flip. Per-source columns: chakravarty, alpha, meanDaily, medianDaily, minDay, maxDay. Refinement: --include-atkinson-anchor surfaces atkinson at eps=1-alpha on the same vector plus chakravarty - atkinson and the ratio chakravarty/atkinson.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 3). Chakravarty degenerate for n<2; default 3 avoids two-point trivialities.',
+    '3',
+  )
+  .option(
+    '--alpha <a>',
+    'Chakravarty concavity parameter (default 0.5). Must be in the open interval (0, 1). alpha=1 is the degenerate identity (C=0 for any vector); alpha<=0 loses concavity and is no longer an inequality index in Chakravarty 1988 axiomatic sense.',
+    '0.5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: chakravarty (default) | tokens | days | source | meanDaily | atkinsonGap. Applied before --top.',
+    'chakravarty',
+  )
+  .option(
+    '--min-chakravarty <c>',
+    'display filter: hide non-degenerate rows whose chakravarty is strictly below this value. c in [0, 1). Default 0 = no filter.',
+    '0',
+  )
+  .option(
+    '--include-atkinson-anchor',
+    'every row gains atkinson (Atkinson at eps = 1 - alpha on the same per-day vector), atkinsonGap (chakravarty - atkinson), and chakravartyOverAtkinson (chakravarty / atkinson). Lets the reader compare the two inequality functionals side-by-side at matched concavity.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        alpha: string;
+        top: string;
+        sort: string;
+        minChakravarty: string;
+        includeAtkinsonAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha <= 0 || alpha >= 1) {
+          throw new Error(
+            `--alpha must be a finite number in the open interval (0, 1) (got ${opts.alpha})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const minChakravarty = Number.parseFloat(opts.minChakravarty);
+        if (
+          !Number.isFinite(minChakravarty) ||
+          minChakravarty < 0 ||
+          minChakravarty >= 1
+        ) {
+          throw new Error(
+            `--min-chakravarty must be a number in [0, 1) (got ${opts.minChakravarty})`,
+          );
+        }
+        const validSorts = [
+          'chakravarty',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'atkinsonGap',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenChakravartyIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          alpha,
+          top,
+          minChakravarty,
+          includeAtkinsonAnchor: opts.includeAtkinsonAnchor ?? false,
+          sort: opts.sort as
+            | 'chakravarty'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'atkinsonGap',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenChakravartyIndex(report) + '\n',
           );
         }
       } catch (e) {

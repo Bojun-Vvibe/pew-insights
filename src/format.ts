@@ -16161,3 +16161,107 @@ export function renderDailyTokenWolfsonPolarizationIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+
+import type { DailyTokenChakravartyReport } from './dailytokenchakravartyindex.js';
+
+export function renderDailyTokenChakravartyIndex(
+  r: DailyTokenChakravartyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-chakravarty-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    alpha: ${r.alpha}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-chakravarty: ${r.minChakravarty}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinChakravarty)} below min-chakravarty, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Chakravarty 1988 at alpha=${r.alpha}: C = 1 - (1/n) * sum_i (x_i / mu)^alpha. Average concave normalised share-deficit. Share-value functional, NOT a rank functional. Distinct from Atkinson which wraps the share-power mean in an outer (1/(1-eps)) power.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source C(alpha=${r.alpha}) of per-day total_tokens (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'chakravarty',
+    'meanDaily',
+    'medianDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.chakravarty.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(Math.round(s.medianDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.atkinson !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Atkinson cross-anchor at eps=${(1 - r.alpha).toFixed(4)} (matched share-power exponent)`,
+      ),
+    );
+    const aHeaders = [
+      'source',
+      'chakravarty',
+      'atkinson',
+      'C-A',
+      'C/A',
+    ];
+    const aRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.chakravarty.toFixed(4),
+      s.atkinson === undefined ? 'n/a' : (s.atkinson as number).toFixed(4),
+      s.atkinsonGap === undefined
+        ? 'n/a'
+        : ((s.atkinsonGap as number) >= 0 ? '+' : '') +
+          (s.atkinsonGap as number).toFixed(4),
+      s.chakravartyOverAtkinson === undefined ||
+      Number.isNaN(s.chakravartyOverAtkinson)
+        ? 'n/a'
+        : (s.chakravartyOverAtkinson as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(aHeaders, aRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
