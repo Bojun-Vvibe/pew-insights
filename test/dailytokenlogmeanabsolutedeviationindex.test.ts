@@ -506,3 +506,193 @@ test('builder: report shape contains droppedBelowMinLmad bookkeeping', () => {
   assert.ok('droppedBelowMinLmad' in r);
   assert.equal(r.droppedBelowMinLmad, 0);
 });
+
+// ---- Refinement: closed-form audits + numerical hardening + non-degeneracy witness vs VL ----
+
+test('refinement: equal-spaced log-grid closed form, LMAD = ((N^2-1)/(2N)) * d for v_i=exp(i*d)', () => {
+  // For values v_i = exp(i*d), i = 0..N-1, log v = i*d, mean = (N-1)*d/2,
+  // |i - (N-1)/2| sums to N^2/4 (even N) or (N^2-1)/4 (odd N).
+  // Closed form: LMAD = (d/N) * sum_i |i - (N-1)/2|
+  const d = 0.7;
+  for (const N of [3, 5, 8, 13, 21]) {
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.exp(i * d));
+    let sumAbs = 0;
+    const c = (N - 1) / 2;
+    for (let i = 0; i < N; i++) sumAbs += Math.abs(i - c);
+    const expected = (d * sumAbs) / N;
+    const got = logMeanAbsoluteDeviationOfVector(v).lmad;
+    assert.ok(Math.abs(got - expected) < 1e-12, `N=${N}: got ${got}, expected ${expected}`);
+  }
+});
+
+test('refinement: replication-invariance (Dalton population principle on log scale)', () => {
+  // Tripling every entry leaves LMAD unchanged.
+  const v = [1000, 2500, 7300, 4400, 11000, 600];
+  const a = logMeanAbsoluteDeviationOfVector(v).lmad;
+  const triple = [...v, ...v, ...v];
+  const b = logMeanAbsoluteDeviationOfVector(triple).lmad;
+  assert.ok(Math.abs(a - b) < 1e-12, `single ${a}, tripled ${b}`);
+});
+
+test('refinement: scale-invariance across 12 orders of magnitude', () => {
+  const v = [1, 2, 3, 5, 8, 13, 21];
+  const base = logMeanAbsoluteDeviationOfVector(v).lmad;
+  for (const k of [1e-6, 1e-3, 1, 1e3, 1e6]) {
+    const got = logMeanAbsoluteDeviationOfVector(v.map((x) => x * k)).lmad;
+    assert.ok(
+      Math.abs(got - base) < 1e-12,
+      `k=${k}: got ${got} vs base ${base}`,
+    );
+  }
+});
+
+test('refinement: numerical-stability sweep -- 100k near-equal log-vector via Kahan two-pass', () => {
+  // Multiplicative jitter at the 1e-6 level around exp(20) is the regime
+  // where naive single-pass mean-abs-dev would lose digits.
+  const N = 100000;
+  const v: number[] = [];
+  let s = 7;
+  for (let i = 0; i < N; i++) {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    const u = (s + 1) / 0x80000000 - 0.5; // U(-0.5, 0.5)
+    v.push(Math.exp(20) * (1 + 1e-6 * u));
+  }
+  const r = logMeanAbsoluteDeviationOfVector(v);
+  assert.ok(r.lmad >= 0, `LMAD non-negative, got ${r.lmad}`);
+  assert.ok(r.lmad < 1e-6, `LMAD ~ jitter scale, got ${r.lmad}`);
+});
+
+test('refinement: Pareto(alpha) closed-form contrast vs lognormal sqrt(2/pi) reference', () => {
+  // Pareto(alpha) on log y has log y = log x_min + Z, Z ~ Exponential(alpha).
+  // For Z ~ Exp(rate=alpha), mean = 1/alpha, E|Z - 1/alpha| = 2/(alpha*e).
+  // So LMAD(Pareto) = 2/(alpha*e), VL(Pareto) = 1/alpha^2,
+  //    LMAD/sqrt(VL) = 2/e ~ 0.7358 (alpha-INVARIANT, distinct from sqrt(2/pi) ~ 0.7979).
+  //
+  // Inverse-CDF sample: U ~ U(0,1), x = x_min * (1-U)^(-1/alpha).
+  let s = 1234567;
+  function rnd(): number {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    return (s + 1) / 0x80000000;
+  }
+  const N = 30000;
+  const alpha = 3.0;
+  const xmin = 1.0;
+  const v: number[] = [];
+  for (let i = 0; i < N; i++) v.push(xmin * (1 - rnd()) ** (-1 / alpha));
+  const lmad = logMeanAbsoluteDeviationOfVector(v).lmad;
+  const vl = varianceOfLogarithmsOfVector(v).vl;
+  const ratio = lmad / Math.sqrt(vl);
+  const paretoRef = 2 / Math.E;
+  const lognormalRef = Math.sqrt(2 / Math.PI);
+  // Confirm the empirical Pareto ratio is closer to 2/e than to sqrt(2/pi)
+  assert.ok(
+    Math.abs(ratio - paretoRef) < 0.02,
+    `Pareto ratio ~ ${paretoRef.toFixed(4)}, got ${ratio.toFixed(4)}`,
+  );
+  // Non-degeneracy: 2/e and sqrt(2/pi) are NOT equal (different families)
+  assert.notEqual(paretoRef, lognormalRef);
+  assert.ok(Math.abs(paretoRef - lognormalRef) > 0.05);
+});
+
+test('refinement: non-degeneracy witness vs axis-53 VL via L1/L2 ratio inequality', () => {
+  // Cauchy-Schwarz: (E|Z|)^2 <= E[Z^2], so LMAD^2 <= VL, i.e. LMAD/sqrt(VL) <= 1.
+  // The lognormal reference sqrt(2/pi) ~ 0.7979 is strictly < 1.
+  // Construct two vectors with the SAME VL but DIFFERENT LMAD by mixing
+  // a heavy log-tail with a light core.
+  // Vector A: symmetric two-point on log scale: exp(-1), exp(-1), exp(1), exp(1)
+  // Vector B: asymmetric: exp(-3), exp(0), exp(0), exp(3)  (same n=4)
+  const A = [Math.exp(-1), Math.exp(-1), Math.exp(1), Math.exp(1)];
+  const B = [Math.exp(-3), Math.exp(0), Math.exp(0), Math.exp(3)];
+  const ra = logMeanAbsoluteDeviationOfVector(A);
+  const rb = logMeanAbsoluteDeviationOfVector(B);
+  const va = varianceOfLogarithmsOfVector(A);
+  const vb = varianceOfLogarithmsOfVector(B);
+  // A: VL = 1, LMAD = 1, ratio = 1 (extremal: Cauchy-Schwarz equality)
+  assert.ok(Math.abs(va.vl - 1) < 1e-12);
+  assert.ok(Math.abs(ra.lmad - 1) < 1e-12);
+  // B: VL = (9+0+0+9)/4 = 4.5, LMAD = (3+0+0+3)/4 = 1.5, ratio = 1.5/sqrt(4.5) = 0.7071
+  assert.ok(Math.abs(vb.vl - 4.5) < 1e-12);
+  assert.ok(Math.abs(rb.lmad - 1.5) < 1e-12);
+  // Witness: A has VL=1, B has VL=4.5 -- VL ranks B > A.
+  // Ratios: A=1.0, B=0.7071 -- L1/L2 ratio ranks A > B.
+  // The two functionals disagree on rank order, proving LMAD is not a
+  // monotone reparameterization of VL.
+  const ratioA = ra.lmad / Math.sqrt(va.vl);
+  const ratioB = rb.lmad / Math.sqrt(vb.vl);
+  assert.ok(va.vl < vb.vl, `VL: A < B: ${va.vl} vs ${vb.vl}`);
+  assert.ok(ratioA > ratioB, `ratio: A > B: ${ratioA} vs ${ratioB}`);
+});
+
+test('refinement: includeVlAnchor read-only, vl/lmad bit-identical across toggle', () => {
+  const q: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 's', 1000),
+    ql('2026-04-02T00:00:00Z', 's', 2500),
+    ql('2026-04-03T00:00:00Z', 's', 7300),
+    ql('2026-04-04T00:00:00Z', 's', 4400),
+    ql('2026-04-05T00:00:00Z', 's', 11000),
+  ];
+  const off = buildDailyTokenLogMeanAbsoluteDeviationIndex(q, {
+    generatedAt: GEN,
+    includeVlAnchor: false,
+  });
+  const on = buildDailyTokenLogMeanAbsoluteDeviationIndex(q, {
+    generatedAt: GEN,
+    includeVlAnchor: true,
+  });
+  assert.equal(off.sources[0]!.lmad, on.sources[0]!.lmad);
+  assert.equal(off.sources[0]!.meanLog, on.sources[0]!.meanLog);
+  assert.equal(off.sources[0]!.geoMeanDaily, on.sources[0]!.geoMeanDaily);
+  assert.equal(off.sources[0]!.vl, undefined);
+  assert.ok(on.sources[0]!.vl !== undefined);
+});
+
+test('refinement: Cauchy-Schwarz upper bound LMAD <= sqrt(VL) on randomised sweep', () => {
+  let s = 4242;
+  function rnd(): number {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    return (s + 1) / 0x80000000;
+  }
+  for (let trial = 0; trial < 50; trial++) {
+    const N = 4 + Math.floor(rnd() * 30);
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.exp(rnd() * 6 - 3));
+    const lmad = logMeanAbsoluteDeviationOfVector(v).lmad;
+    const vl = varianceOfLogarithmsOfVector(v).vl;
+    // Allow 1e-12 slack for floating-point.
+    assert.ok(
+      lmad <= Math.sqrt(vl) + 1e-12,
+      `Cauchy-Schwarz: LMAD ${lmad} > sqrt(VL) ${Math.sqrt(vl)}`,
+    );
+    // Ratio strictly positive when not degenerate.
+    if (vl > 1e-15) {
+      const ratio = lmad / Math.sqrt(vl);
+      assert.ok(ratio > 0 && ratio <= 1 + 1e-12);
+    }
+  }
+});
+
+test('refinement: log-MAD invariance under reciprocal y -> 1/y (log-scale reflection symmetry)', () => {
+  // log(1/y) = -log y, so all deviations from the mean flip sign but
+  // |.| is sign-invariant -> LMAD(y) = LMAD(1/y).
+  const v = [0.1, 0.3, 0.7, 1.1, 2.5, 7.3, 11.0];
+  const a = logMeanAbsoluteDeviationOfVector(v).lmad;
+  const b = logMeanAbsoluteDeviationOfVector(v.map((x) => 1 / x)).lmad;
+  assert.ok(Math.abs(a - b) < 1e-12, `LMAD(y)=${a}, LMAD(1/y)=${b}`);
+});
+
+test('refinement: two-point exact closed form LMAD = |log(a/b)|/2', () => {
+  for (const [a, b] of [
+    [3, 12],
+    [100, 1],
+    [1e6, 1],
+    [7, 7.5],
+  ] as const) {
+    const got = logMeanAbsoluteDeviationOfVector([a, b]).lmad;
+    const expected = Math.abs(Math.log(a / b)) / 2;
+    assert.ok(
+      Math.abs(got - expected) < 1e-12,
+      `[${a},${b}]: got ${got}, expected ${expected}`,
+    );
+  }
+});

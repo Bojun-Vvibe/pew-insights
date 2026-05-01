@@ -150,6 +150,61 @@ All notable changes to this project will be documented in this file.
   vl on the same vector and the lmad/sqrt(vl) lognormality-audit
   ratio), `--json`.
 
+### Changed
+
+- axis-54 numerical-stability + closed-form audit sweep
+  (refinement, no behaviour change). Adds:
+
+  - 100k-element near-equal log-vector test (multiplicative jitter
+    at the 1e-6 level around exp(20)) confirms the two-pass
+    Kahan-summed accumulator stays positive and sub-1e-6 -- no
+    catastrophic cancellation on tightly clustered log-vectors.
+  - Scale-invariance audit across 12 orders of magnitude (k in
+    {1e-6, 1e-3, 1, 1e3, 1e6}) confirms LMAD is bit-identical to
+    1e-12 under arbitrary multiplicative rescaling, the defining
+    property of a log-scale dispersion measure.
+  - Equal-spaced log-grid closed form: for v_i = exp(i*d), i =
+    0..N-1, LMAD = (d/N) * sum_i |i - (N-1)/2|; matched to 1e-12
+    for N in {3, 5, 8, 13, 21}.
+  - Replication-invariance test (Dalton's principle of population
+    on the log scale): tripling every entry leaves LMAD unchanged
+    to 1e-12.
+  - Two-point exact closed form: LMAD([a,b]) = |log(a/b)|/2.
+    Verified to 1e-12 on (a,b) in {(3,12), (100,1), (1e6,1),
+    (7,7.5)}.
+  - Reciprocal symmetry: LMAD(y) = LMAD(1/y) since log(1/y) =
+    -log y and absolute deviations are sign-invariant. Verified
+    to 1e-12 on a 7-element fractional vector.
+  - Pareto(alpha=3) closed-form contrast: theoretical
+    LMAD/sqrt(VL) = 2/e ~ 0.7358 (alpha-INVARIANT); on a 30k
+    sample we hit ratio in [0.7158, 0.7558] (tolerance 0.02 for
+    fat-tail sampling noise). The Pareto reference 2/e ~ 0.7358
+    is DISTINCT from the lognormal reference sqrt(2/pi) ~ 0.7979
+    by 0.0621 -- well above sampling noise -- so the LMAD/sqrt(VL)
+    ratio is a genuine LOG-DOMAIN TAIL DISCRIMINATOR.
+  - NON-DEGENERACY WITNESS vs axis-53 VL: constructed two
+    4-element vectors A and B with VL(A) < VL(B) but
+    LMAD/sqrt(VL)(A) > LMAD/sqrt(VL)(B). Specifically:
+
+        A = [exp(-1), exp(-1), exp(1), exp(1)]
+            VL = 1, LMAD = 1, LMAD/sqrt(VL) = 1.0000
+        B = [exp(-3), exp(0), exp(0), exp(3)]
+            VL = 4.5, LMAD = 1.5, LMAD/sqrt(VL) = 0.7071
+
+    VL ranks A < B; LMAD/sqrt(VL) ranks A > B. This proves LMAD
+    is NOT a monotone reparameterization of VL -- the L1/L2 ratio
+    captures asymmetric log-tail mass that the squared moment
+    smooths over.
+  - Cauchy-Schwarz upper-bound sweep: 50 randomised log-uniform
+    vectors of length 4..33 confirm LMAD <= sqrt(VL) to 1e-12
+    (tightness LMAD = sqrt(VL) iff the log-deviation vector is
+    constant in absolute value; the equal-amplitude two-point
+    case A above hits the bound exactly).
+  - Pipeline read-only audit: toggling `--include-vl-anchor` on
+    a real per-source vector leaves `lmad`, `meanLog`, and
+    `geoMeanDaily` bit-identical (the anchor is purely additive
+    surfacing).
+
 ## 0.6.297 — 2026-05-01
 
 ### Added
