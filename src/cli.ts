@@ -109,6 +109,7 @@ import {
   renderDailyTokenGeHalfIndex,
   renderDailyTokenGeThreeIndex,
   renderDailyTokenGeFourIndex,
+  renderDailyTokenPercentileGapRatio,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -380,6 +381,7 @@ import { buildDailyTokenLogMeanAbsoluteDeviationIndex } from './dailytokenlogmea
 import { buildDailyTokenGeHalfIndex } from './dailytokengehalfindex.js';
 import { buildDailyTokenGeThreeIndex } from './dailytokengethreeindex.js';
 import { buildDailyTokenGeFourIndex } from './dailytokengefourindex.js';
+import { buildDailyTokenPercentileGapRatio } from './dailytokenpercentilegapratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -14946,6 +14948,140 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenGeFourIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-percentile-gap-ratio')
+  .description(
+    "Per-source PERCENTILE GAP RATIO P90/P50 of the per-day total_tokens distribution (FIFTY-EIGHTH cross-source axis). PGR = P90(D) / P50(D) under linear-interpolation percentiles (numpy 'linear' / R type 7). Range [1, +inf); PGR = 1 iff P50 = P90. STRUCTURALLY ORTHOGONAL to every shipped daily-token axis (32-57): all of those are moment- or Lorenz-functional summaries that integrate over the full distribution; PGR depends only on TWO ORDER STATISTICS and is INVARIANT to changes strictly above P90, while every GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini/Pietra index strictly increases under such changes. PGR is therefore a complementary 'moderate-upper-tail' diagnostic. Refinement: --include-p75-p25 also surfaces P25, P75, and the central interquartile ratio P75/P25.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). PGR degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: pgr (default) | tokens | days | source | meanDaily | p50 | p90. Applied before --top.',
+    'pgr',
+  )
+  .option(
+    '--min-pgr <x>',
+    'display filter: hide non-degenerate rows whose pgr is strictly below this value (must be >= 1). Default null = no filter.',
+  )
+  .option(
+    '--include-p75-p25',
+    'every row gains p25, p75, and iqrRatio (= P75/P25), enabling a side-by-side comparison of the moderate-upper-tail gap (PGR = P90/P50) against the central spread gap (P75/P25).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minPgr?: string;
+        includeP75P25?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minPgr: number | null = null;
+        if (opts.minPgr !== undefined) {
+          const mv = Number.parseFloat(opts.minPgr);
+          if (!Number.isFinite(mv) || mv < 1) {
+            throw new Error(
+              `--min-pgr must be a finite number >= 1 (got ${opts.minPgr})`,
+            );
+          }
+          minPgr = mv;
+        }
+        const validSorts = [
+          'pgr',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'p50',
+          'p90',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPercentileGapRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minPgr,
+          includeP75P25: opts.includeP75P25 ?? false,
+          sort: opts.sort as
+            | 'pgr'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'p50'
+            | 'p90',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPercentileGapRatio(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

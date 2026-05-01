@@ -17067,6 +17067,7 @@ export function renderDailyTokenGeThreeIndex(
 
 
 import type { DailyTokenGeFourIndexReport } from './dailytokengefourindex.js';
+import type { DailyTokenPercentileGapRatioReport } from './dailytokenpercentilegapratio.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17160,6 +17161,95 @@ export function renderDailyTokenGeFourIndex(
       s.cv === undefined ? 'n/a' : (s.cv as number).toFixed(4),
       s.skewness === undefined ? 'n/a' : (s.skewness as number).toFixed(4),
       s.kurtosis === undefined ? 'n/a' : (s.kurtosis as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPercentileGapRatio(
+  r: DailyTokenPercentileGapRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-percentile-gap-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-pgr: ${r.minPgr === null ? '\u2014' : r.minPgr}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinPgr)} below min-pgr, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PGR = P90(D) / P50(D) under linear-interpolation percentiles. Range [1, +inf); PGR = 1 iff P50 = P90. Quantile-ratio observable; depends on only TWO order statistics, hence INVARIANT to changes strictly above P90 -- structurally orthogonal to every shipped GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini index.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source PGR (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'pgr',
+    'p50',
+    'p90',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.pgr.toFixed(6),
+    formatNumber(Math.round(s.p50)),
+    formatNumber(Math.round(s.p90)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.p25 !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `IQR-ratio refinement: central spread (P75/P25) vs upper-tail gap (P90/P50).`,
+      ),
+    );
+    const wHeaders = ['source', 'pgr', 'iqrRatio', 'p25', 'p75'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.pgr.toFixed(6),
+      s.iqrRatio === undefined ? 'n/a' : (s.iqrRatio as number).toFixed(6),
+      s.p25 === undefined ? 'n/a' : formatNumber(Math.round(s.p25 as number)),
+      s.p75 === undefined ? 'n/a' : formatNumber(Math.round(s.p75 as number)),
     ]);
     lines.push(renderTableLocal(wHeaders, wRows));
   }
