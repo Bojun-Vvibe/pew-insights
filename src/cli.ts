@@ -121,6 +121,7 @@ import {
   renderDailyTokenLSkewness,
   renderDailyTokenAutocorrelationLag7,
   renderDailyTokenSpectralEntropy,
+  renderDailyTokenPermutationEntropy,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -404,6 +405,7 @@ import { buildDailyTokenMedcoupleSkewness } from './dailytokenmedcoupleskewness.
 import { buildDailyTokenLSkewness } from './dailytokenlskewness.js';
 import { buildDailyTokenAutocorrelationLag7 } from './dailytokenautocorrelationlag7.js';
 import { buildDailyTokenSpectralEntropy } from './dailytokenspectralentropy.js';
+import { buildDailyTokenPermutationEntropy } from './dailytokenpermutationentropy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16500,6 +16502,122 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralEntropy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-permutation-entropy')
+  .description(
+    "Per-source Bandt-Pompe 2002 normalised permutation entropy H_PE of the gap-filled daily total_tokens series at embedding m=3, lag=1 (SEVENTIETH cross-source axis). For each source, build the dense [firstActiveDay, lastActiveDay] series with missing days filled as 0 tokens, slide a length-3 window across the W = N - 2 starting positions, encode each window into one of m! = 6 ordinal patterns {012, 021, 102, 120, 201, 210} with EARLIER-INDEX-WINS tie-break (Cao et al. 2004), then H_PE = -sum p_pi ln p_pi / ln(6) in [0, 1]. H_PE = 0 = a single ordinal pattern carries 100% of the windows (e.g. strictly monotone series produces only 012 or 210). H_PE = 1 = all 6 patterns equiprobable (maximally complex local micro-trajectories). ORDINAL/RANK-BASED primitive, structurally orthogonal to (a) spectral entropy axis 69 (Shannon on the periodogram -- the two coincide at extremes but disagree on the canonical Rosso et al. 2007 complexity-entropy plane: a pure cosine has H_spec near 0 yet H_PE > 0); (b) lag-1 / lag-7 Pearson autocorrelation -- linear-correlation scalars at fixed lags, INVARIANT only under affine transforms with positive slope, whereas H_PE is invariant under any STRICTLY MONOTONE transform; (c) all permutation-invariant dispersion / shape axes 32-67 (a sorted and a shuffled copy of the same multiset produce H_PE = 0 vs H_PE near 1 while every multiset statistic is identical); (d) sign-trace / runs-test / monotone-run-length axes (the m=2 sign alphabet collapses peak shapes 021/120 onto the same up-down sign pair); (e) trend / forecast linear slope (a non-linear monotone curve has H_PE = 0 but a least-squares slope alone does not characterise the shape). peakPattern is the most-frequent ordinal code; peakShare is its proportion of the W windows.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure (lastActive - firstActive + 1) is below n. Hard floor 4 (m+1 with embedding m=3, need at least one sliding window). Default 14 matches the spectral-entropy axis floor and yields W = 12 windows.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: entropy (default, most-ordinally-concentrated first; H_PE ascending) | entropyDesc (most ordinally-complex first) | tokens | tenure | source. Applied before --top.',
+    'entropy',
+  )
+  .option(
+    '--max-entropy <x>',
+    'display filter: hide non-flat rows whose H_PE is strictly above x (in [0, 1]). Useful for surfacing only the most ordinally-regular sources.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        maxEntropy?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let maxEntropy: number | null = null;
+        if (opts.maxEntropy !== undefined) {
+          const mv = Number.parseFloat(opts.maxEntropy);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--max-entropy must be a finite number in [0, 1] (got ${opts.maxEntropy})`,
+            );
+          }
+          maxEntropy = mv;
+        }
+        const validSorts = ['entropy', 'entropyDesc', 'tokens', 'tenure', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPermutationEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          maxEntropy,
+          sort: opts.sort as
+            | 'entropy'
+            | 'entropyDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenPermutationEntropy(report) + '\n');
         }
       } catch (e) {
         die(e);

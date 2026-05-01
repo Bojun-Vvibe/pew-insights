@@ -17079,6 +17079,7 @@ import type { DailyTokenMedcoupleSkewnessReport } from './dailytokenmedcoupleske
 import type { DailyTokenLSkewnessReport } from './dailytokenlskewness.js';
 import type { DailyTokenAutocorrelationLag7Report } from './dailytokenautocorrelationlag7.js';
 import type { DailyTokenSpectralEntropyReport } from './dailytokenspectralentropy.js';
+import type { DailyTokenPermutationEntropyReport } from './dailytokenpermutationentropy.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18125,6 +18126,79 @@ export function renderDailyTokenSpectralEntropy(
     formatNumber(Math.round(s.mean)),
     formatNumber(Math.round(s.stddev)),
     s.flat ? '\u2014' : String(s.peakBin),
+    s.flat ? '\u2014' : s.peakShare.toFixed(4),
+    s.flat ? '\u2014' : s.entropyNorm.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+const PE_PATTERN_LABELS = ['012', '021', '102', '120', '201', '210'];
+
+export function renderDailyTokenPermutationEntropy(
+  r: DailyTokenPermutationEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-permutation-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    embedding-m: ${r.embeddingM}    patterns: ${r.patternCount}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    max-entropy: ${r.maxEntropy === null ? '\u2014' : r.maxEntropy}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedAboveMaxEntropy)} above max-entropy, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Bandt-Pompe 2002 normalised permutation entropy of the gap-filled daily total_tokens series at embedding m=${r.embeddingM}, lag=1. H_PE in [0, 1]: 0 = single ordinal pattern carries 100% of the W=N-2 windows (e.g. strictly monotone series), 1 = all ${r.patternCount} ordinal patterns equiprobable (maximally complex micro-trajectories). SEVENTIETH cross-source axis. ORDINAL/RANK-BASED primitive -- structurally orthogonal to (a) spectral entropy axis 69 (Shannon on the periodogram; coincides at extremes but disagrees on the complexity-randomness plane: pure cosine has H_spec ~0 and H_PE > 0, iid-uniform has both ~1, monotone ramp has both 0); (b) lag-1 / lag-7 Pearson autocorrelation 67/68 (linear-correlation scalars at fixed lags; H_PE is invariant under any STRICTLY MONOTONE transform, not just affine); (c) all permutation-invariant dispersion / shape axes 32-67 (Gini, Atkinson, Theil, Hill, MC, L-skew, ...); (d) sign-trace / runs-test axes (m=2 sign alphabet collapses peak/valley shapes that m=3 resolves); (e) trend / forecast linear slope (a non-linear monotone curve has H_PE=0 but non-zero trend residual). peakPattern is the most-frequent ordinal code in {012, 021, 102, 120, 201, 210}; ties broken by EARLIER-INDEX-WINS in the underlying triple comparison (Cao et al. 2004).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source permutation entropy (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'windows',
+    'mean',
+    'stddev',
+    'peakPat',
+    'peakShare',
+    'H_PE',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nWindows),
+    formatNumber(Math.round(s.mean)),
+    formatNumber(Math.round(s.stddev)),
+    s.flat ? '\u2014' : (PE_PATTERN_LABELS[s.peakPattern] ?? String(s.peakPattern)),
     s.flat ? '\u2014' : s.peakShare.toFixed(4),
     s.flat ? '\u2014' : s.entropyNorm.toFixed(4),
     formatNumber(s.totalTokens),
