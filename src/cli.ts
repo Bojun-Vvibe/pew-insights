@@ -120,6 +120,7 @@ import {
   renderDailyTokenMedcoupleSkewness,
   renderDailyTokenLSkewness,
   renderDailyTokenAutocorrelationLag7,
+  renderDailyTokenSpectralEntropy,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -402,6 +403,7 @@ import { buildDailyTokenHillTailIndex } from './dailytokenhilltailindex.js';
 import { buildDailyTokenMedcoupleSkewness } from './dailytokenmedcoupleskewness.js';
 import { buildDailyTokenLSkewness } from './dailytokenlskewness.js';
 import { buildDailyTokenAutocorrelationLag7 } from './dailytokenautocorrelationlag7.js';
+import { buildDailyTokenSpectralEntropy } from './dailytokenspectralentropy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16382,6 +16384,122 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenAutocorrelationLag7(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-entropy')
+  .description(
+    "Per-source normalised Shannon entropy H_norm of the periodogram of the gap-filled daily total_tokens series (SIXTY-NINTH cross-source axis). For each source, build the dense [firstActiveDay, lastActiveDay] series with missing days filled as 0 tokens, mean-centre, compute the one-sided periodogram via direct DFT at K = floor(N/2) strictly-positive Fourier bins, normalise into a probability distribution p[k], then H_norm = -sum p[k] ln p[k] / ln(K) in [0, 1]. H_norm = 0 = single-frequency pure sinusoid (maximally non-white). H_norm = 1 = white spectrum (no preferred period). FREQUENCY-DOMAIN primitive, structurally orthogonal to (a) lag-1 / lag-7 Pearson autocorrelation -- those are single-lag scalars; spectral entropy summarises the entire ACF via the Wiener-Khinchin dual and sees periods like 5 or 11 days that single-lag scalars are blind to; (b) weekday-share HHI -- calendar-aligned 7-bucket aggregation, whereas spectral entropy is calendar-agnostic and sees ALL frequency bins; (c) all permutation-invariant dispersion / shape axes 32-67 (Gini, Atkinson, Theil, GE, Hoover, Pietra, Bonferroni, Mehran, Wolfson, Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, Var-of-Logs, Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM, Zenga, Hill, MC, L-skew) -- a permuted series collapses to ~white spectrum (H_norm -> 1) but those statistics are unchanged; (d) calendar-order axes 60/64 and run-length / sign-trace axes (sign primitives, not value spectrum); (e) trend / forecast / source-daily-token-trend-slope (linear drift; spectral entropy contributes drift to low-freq bins, the correct treatment). flat=true marks sources with var(x)=0 across the gap-filled tenure. peakBin = argmax Fourier bin in {1..K}; corresponding period = N/peakBin days.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure (lastActive - firstActive + 1) is below n. Hard floor 4 (entropy normalisation by ln(K) requires K = floor(N/2) >= 2). Default 14 so the periodogram has K >= 7 bins.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: entropy (default, most spectrally-concentrated first; H_norm ascending) | entropyDesc (whitest first) | tokens | tenure | source. Applied before --top.',
+    'entropy',
+  )
+  .option(
+    '--max-entropy <x>',
+    'display filter: hide non-flat rows whose H_norm is strictly above x (in [0, 1]). Useful for surfacing only the most spectrally-concentrated sources.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        maxEntropy?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let maxEntropy: number | null = null;
+        if (opts.maxEntropy !== undefined) {
+          const mv = Number.parseFloat(opts.maxEntropy);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--max-entropy must be a finite number in [0, 1] (got ${opts.maxEntropy})`,
+            );
+          }
+          maxEntropy = mv;
+        }
+        const validSorts = ['entropy', 'entropyDesc', 'tokens', 'tenure', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          maxEntropy,
+          sort: opts.sort as
+            | 'entropy'
+            | 'entropyDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralEntropy(report) + '\n');
         }
       } catch (e) {
         die(e);

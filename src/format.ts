@@ -17078,6 +17078,7 @@ import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js
 import type { DailyTokenMedcoupleSkewnessReport } from './dailytokenmedcoupleskewness.js';
 import type { DailyTokenLSkewnessReport } from './dailytokenlskewness.js';
 import type { DailyTokenAutocorrelationLag7Report } from './dailytokenautocorrelationlag7.js';
+import type { DailyTokenSpectralEntropyReport } from './dailytokenspectralentropy.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18055,6 +18056,77 @@ export function renderDailyTokenAutocorrelationLag7(
     formatNumber(Math.round(s.mean)),
     formatNumber(Math.round(s.stddev)),
     s.flat ? '\u2014' : s.rho7.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralEntropy(
+  r: DailyTokenSpectralEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    max-entropy: ${r.maxEntropy === null ? '\u2014' : r.maxEntropy}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedAboveMaxEntropy)} above max-entropy, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source normalised Shannon entropy of the periodogram of the gap-filled daily total_tokens series. H_norm in [0, 1]: 0 = single-frequency pure sinusoid (maximally non-white), 1 = white spectrum (no preferred period), in between = partial periodicity. SIXTY-NINTH cross-source axis. Frequency-domain primitive -- structurally orthogonal to lag-1 / lag-7 Pearson autocorrelation (single-lag scalars, blind to all other lags), to weekday-share HHI (calendar-aligned 7-bucket aggregation), and to all permutation-invariant dispersion / shape axes 32-67 (which collapse a permuted series to ~white but produce identical statistic). peakBin = argmax Fourier bin in {1..K}, period = N/peakBin days. flat=true marks sources with var(x)=0 across the gap-filled tenure.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source spectral entropy (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'peakBin',
+    'peakShare',
+    'H_norm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(Math.round(s.mean)),
+    formatNumber(Math.round(s.stddev)),
+    s.flat ? '\u2014' : String(s.peakBin),
+    s.flat ? '\u2014' : s.peakShare.toFixed(4),
+    s.flat ? '\u2014' : s.entropyNorm.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
