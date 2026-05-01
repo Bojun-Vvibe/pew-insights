@@ -17085,6 +17085,7 @@ import type { DailyTokenDfaAlphaReport } from './dailytokendfaalpha.js';
 import type { DailyTokenSampleEntropyReport } from './dailytokensampleentropy.js';
 import type { DailyTokenHiguchiFdReport } from './dailytokenhiguchifd.js';
 import type { DailyTokenKatzFdReport } from './dailytokenkatzfd.js';
+import type { DailyTokenPetrosianFdReport } from './dailytokenpetrosianfd.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18547,6 +18548,75 @@ export function renderDailyTokenKatzFd(
     s.pathLength.toFixed(0),
     s.maxChord.toFixed(0),
     formatNumber(s.maxChordIndex),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPetrosianFd(
+  r: DailyTokenPetrosianFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-petrosian-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFinitePfd)} non-finite-pfd, ${formatNumber(r.droppedTopSources)} below top cap; clamped: ${formatNumber(r.clampedBelow1)} below 1, ${formatNumber(r.clampedAbove2)} above 2`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Petrosian Fractal Dimension (Petrosian 1995, Proc. 8th IEEE Symp. CBMS, pp. 212-217) on the gap-filled daily total_tokens series. SEVENTY-SIXTH cross-source axis. PFD = log10(M) / (log10(M) + log10(M / (M + 0.4 * Nd))) where M = N - 1 and Nd = number of adjacent sign flips in diff(x) (zero diffs treated as +1, Esteller 2001 convention). Bounded in [1, 2]; ~1 = near-monotone; ~1.18 = Nyquist alternation. Single-scale CLOSED-FORM BINARY sign-flip statistic -- structurally orthogonal to (a) Katz FD axis 75 -- KFD is metric (uses magnitudes via L and d); PFD is binary post-sign-mapping (multiply by 13 -> Nd unchanged); (b) Higuchi FD axis 74 -- multi-scale OLS exponent vs single-scale closed-form binary; (c) Hurst R/S axis 71 / DFA-alpha axis 72 -- variance-scaling on cumulative deviations vs raw binary sign flips; (d) lag-1 / lag-7 ACF axes 67/68 -- linear second-moment scalars vs binary statistic; (e) spectral entropy axis 69 -- frequency-domain flatness vs time-domain binary; (f) permutation entropy axis 70 -- ordinal length-3 alphabet (size 6) vs binary length-2 alphabet (size 2); (g) sample entropy axis 73 -- template recurrence vs sign-flip density; (h) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; PFD is shuffle-sensitive (sorted -> ~1.0, shuffled inflates Nd / PFD). pfdRaw is the un-clamped fit; pfd is clamped to [1, 2].)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source PFD (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pfd',
+    'pfdRaw',
+    'Nd',
+    'M',
+    'flipRate',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.pfd.toFixed(4),
+    s.pfdRaw.toFixed(4),
+    formatNumber(s.Nd),
+    formatNumber(s.M),
+    s.flipRate.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

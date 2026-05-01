@@ -127,6 +127,7 @@ import {
   renderDailyTokenSampleEntropy,
   renderDailyTokenHiguchiFd,
   renderDailyTokenKatzFd,
+  renderDailyTokenPetrosianFd,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -416,6 +417,7 @@ import { buildDailyTokenDfaAlpha } from './dailytokendfaalpha.js';
 import { buildDailyTokenSampleEntropy } from './dailytokensampleentropy.js';
 import { buildDailyTokenHiguchiFd } from './dailytokenhiguchifd.js';
 import { buildDailyTokenKatzFd } from './dailytokenkatzfd.js';
+import { buildDailyTokenPetrosianFd } from './dailytokenpetrosianfd.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17289,6 +17291,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenKatzFd(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-petrosian-fd')
+  .description(
+    "Per-source Petrosian Fractal Dimension (Petrosian 1995, Proc. 8th IEEE Symp. CBMS, pp. 212-217) on the gap-filled daily total_tokens series (SEVENTY-SIXTH cross-source axis). PFD = log10(M) / (log10(M) + log10(M / (M + 0.4 * Nd))) where M = N - 1 and Nd = number of adjacent sign flips in diff(x) (zero diffs treated as +1, Esteller 2001 convention). Bounded in [1, 2]; ~1 = near-monotone; ~1.18 = Nyquist alternation. Single-scale CLOSED-FORM BINARY sign-flip statistic: structurally orthogonal to (a) Katz FD axis 75 (KFD is metric via L and d; PFD is binary post-sign-mapping -- multiply values by 13 and Nd is bit-identical); (b) Higuchi FD axis 74 (multi-scale OLS exponent vs single-scale closed-form binary); (c) Hurst R/S axis 71 / DFA-alpha axis 72 (variance-scaling on cumulative deviations vs raw binary sign flips); (d) lag-1 / lag-7 ACF axes 67/68 (linear second-moment scalars vs binary statistic); (e) spectral entropy axis 69 (frequency-domain flatness vs time-domain binary); (f) permutation entropy axis 70 (ordinal length-3 alphabet of size 6 vs binary length-2 alphabet of size 2); (g) sample entropy axis 73 (template recurrence vs sign-flip density); (h) all permutation-invariant dispersion / shape axes 32-67 (shuffle-invariant; PFD is shuffle-sensitive: sorted -> ~1.0, shuffled inflates Nd / PFD).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absPfdDeviationDesc (default, PFD desc -- furthest from the smooth lower edge first) | pfd | pfdDesc | tokens | tenure | source.',
+    'absPfdDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absPfdDeviationDesc',
+          'pfd',
+          'pfdDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPetrosianFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absPfdDeviationDesc'
+            | 'pfd'
+            | 'pfdDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenPetrosianFd(report) + '\n');
         }
       } catch (e) {
         die(e);
