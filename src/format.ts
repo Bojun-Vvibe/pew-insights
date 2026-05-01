@@ -17072,6 +17072,7 @@ import type { DailyTokenIqrOverMedianReport } from './dailytokeniqrovermedian.js
 import type { DailyTokenMidSpreadRatioReport } from './dailytokenmidspreadratio.js';
 import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.js';
 import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintileshareratio.js';
+import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17613,6 +17614,88 @@ export function renderDailyTokenQuintileShareRatio(
       formatNumber(Math.round(s.meanDailyTokens)),
     ]);
     lines.push(renderTableLocal(wHeaders2, wRows2));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMadOverMedian(
+  r: DailyTokenMadOverMedianReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-mad-over-median'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-madm: ${r.minMadm === null ? '\u2014' : r.minMadm}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinMadm)} below min-madm, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MADM = MAD / median of per-day total_tokens. MAD = median_i |D_i - median(D)|. Range [0, +inf); MADM = 0 iff > n/2 days carry the median value. Robust scale-shape statistic with BREAKDOWN POINT 0.5 -- structurally orthogonal to mean-normalised inequality axes (32-57), to percentile-VALUE ratios PGR/IOM/MSR (58-60), and to mass-sum ratios DSG/QSR (61-62). Doubly robust to extreme tails by construction.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source MADM (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'madm',
+    'mad',
+    'medianDaily',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.madm.toFixed(6),
+    formatNumber(Math.round(s.mad)),
+    formatNumber(Math.round(s.medianDaily)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.iom !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `IOM refinement: dual-scale ratio MAD/median (axis 63) vs IQR/median (axis 59). Symmetric Gaussian witness: iomOverMadm ~ 1.349.`,
+      ),
+    );
+    const wHeaders = ['source', 'madm', 'iom', 'iomOverMadm'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.madm.toFixed(6),
+      s.iom === undefined ? 'n/a' : (s.iom as number).toFixed(6),
+      s.iomOverMadm === undefined ? 'n/a' : (s.iomOverMadm as number).toFixed(6),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');

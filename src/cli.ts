@@ -114,6 +114,7 @@ import {
   renderDailyTokenMidSpreadRatio,
   renderDailyTokenDecileShareGap,
   renderDailyTokenQuintileShareRatio,
+  renderDailyTokenMadOverMedian,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -390,6 +391,7 @@ import { buildDailyTokenIqrOverMedian } from './dailytokeniqrovermedian.js';
 import { buildDailyTokenMidSpreadRatio } from './dailytokenmidspreadratio.js';
 import { buildDailyTokenDecileShareGap } from './dailytokendecilesharegap.js';
 import { buildDailyTokenQuintileShareRatio } from './dailytokenquintileshareratio.js';
+import { buildDailyTokenMadOverMedian } from './dailytokenmadovermedian.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -15631,6 +15633,140 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenQuintileShareRatio(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-mad-over-median')
+  .description(
+    "Per-source MEDIAN-ABSOLUTE-DEVIATION / MEDIAN of per-day total_tokens (SIXTY-THIRD cross-source axis). MADM = median_i |D_i - median(D)| / median(D) under linear-interpolation percentiles. Range [0, +inf); MADM = 0 iff > n/2 days carry the median value. Robust scale-shape statistic with BREAKDOWN POINT 0.5 (Hampel): up to floor((n-1)/2) days can be replaced by arbitrary outliers without moving MADM. STRUCTURALLY ORTHOGONAL to every shipped daily-token axis (32-62): the GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini/Pietra/Bonferroni/Mehran/Wolfson/Foster-Wolfson/Palma/Kolm-Pollak/Chakravarty/Amato/Esteban-Ray/FGT/S-Gini/Log-MAD axes (32-57) all integrate the FULL distribution and divide by the MEAN with breakdown point 1/n; PGR/IOM/MSR (58/59/60) are percentile-VALUE ratios with breakdown point at most 0.25; DSG/QSR (61/62) are mass-sum functionals on the EXTREME deciles/quintiles -- exactly the region MADM ignores. Closest cousin is IOM (axis 59 = (P75-P25)/P50) but IQR has breakdown 0.25 vs MAD's 0.5; the dimensionless ratio iom/madm ~ 1.349 under symmetric Gaussian and diverges under asymmetric / heavy-tailed shape. Refinement: --include-iom surfaces IOM and iom/madm per row.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 5). MAD is degenerate for n<2; default 5 keeps the inner median nontrivial.',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: madm (default) | tokens | days | source | meanDaily | medianDaily | mad. Applied before --top.',
+    'madm',
+  )
+  .option(
+    '--min-madm <x>',
+    'display filter: hide non-degenerate rows whose madm is strictly below this value (>= 0). Default null = no filter.',
+  )
+  .option(
+    '--include-iom',
+    'every row gains iom (= (P75-P25)/median, axis 59) and the dimensionless ratio iomOverMadm = iom/madm. Symmetric Gaussian witness ~ 1.349; deviations witness asymmetric / heavy-tailed shape.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minMadm?: string;
+        includeIom?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minMadm: number | null = null;
+        if (opts.minMadm !== undefined) {
+          const mv = Number.parseFloat(opts.minMadm);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-madm must be a non-negative finite number (got ${opts.minMadm})`,
+            );
+          }
+          minMadm = mv;
+        }
+        const validSorts = [
+          'madm',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'medianDaily',
+          'mad',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMadOverMedian(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minMadm,
+          includeIom: opts.includeIom ?? false,
+          sort: opts.sort as
+            | 'madm'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'medianDaily'
+            | 'mad',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMadOverMedian(report) + '\n',
           );
         }
       } catch (e) {
