@@ -288,3 +288,42 @@ test('witness: medcouple disagrees with Hill-tail under symmetric heavy tail', (
   // Symmetric uniform discrete -> MC should be 0 to floating precision.
   assert.ok(Math.abs(r.mc) < 1e-12, `expected MC ~ 0 for symmetric uniform, got ${r.mc}`);
 });
+
+// ---- additional refinement witnesses (commit 4) -----------------------
+
+test('refine-witness: bipolar symmetric distribution -> MC=0 even though dispersion is huge', () => {
+  // Half the days at 100, half at 10000, plus the median.
+  // This is symmetric around the median in shape -- Foster-Wolfson-style
+  // bipolarisation axes would flag this as extreme; MC must report 0.
+  const X = [100, 100, 100, 100, 5050, 10000, 10000, 10000, 10000];
+  // m = 5050 (the middle order-stat for n=9).
+  const r = medcoupleOfVector(X);
+  assert.equal(r.median, 5050);
+  // lower={100,100,100,100}, upper={10000,10000,10000,10000}, ties={5050}
+  // For each (low, up) pair the kernel = ((up - 5050) - (5050 - low)) / (up - low)
+  //   = (4950 - 4950) / 9900 = 0
+  // For (low, m) and (m, up) pairs the kernel is +/- 1 by symmetry of count.
+  // The medcouple is therefore exactly 0.
+  assert.ok(Math.abs(r.mc) < 1e-12, `expected MC ~ 0 for symmetric bipolar, got ${r.mc}`);
+});
+
+test('refine-boundary: minDays=3 admits the smallest valid sample', () => {
+  const queue: QueueLine[] = [];
+  // Exactly 3 days; per-day vector [1000, 5000, 50000] -> right-skewed.
+  queue.push(ql(`2026-04-01T00:00:00.000Z`, 'TINY3', 1000));
+  queue.push(ql(`2026-04-02T00:00:00.000Z`, 'TINY3', 5000));
+  queue.push(ql(`2026-04-03T00:00:00.000Z`, 'TINY3', 50000));
+  const r = buildDailyTokenMedcoupleSkewness(queue, {
+    generatedAt: GEN,
+    minDays: 3,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.nDays, 3);
+  // m=5000, lower={1000}, upper={50000}, ties={5000}.
+  // pairs: (1000, 5000), (1000, 50000), (5000, 50000).
+  //   (1000, 5000):  ((5000-5000)-(5000-1000))/(5000-1000) = -1
+  //   (1000, 50000): ((50000-5000)-(5000-1000))/(50000-1000) = (45000-4000)/49000 = 41/49
+  //   (5000, 50000): ((50000-5000)-(5000-5000))/(50000-5000) = 1
+  // Sorted: [-1, 41/49, 1]; median = 41/49 ~= 0.8367
+  assert.ok(Math.abs(r.sources[0]!.mc - 41/49) < 1e-12);
+});
