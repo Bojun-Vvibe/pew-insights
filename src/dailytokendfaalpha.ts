@@ -409,8 +409,16 @@ export function dfaAlpha(
       continue;
     }
     const f = Math.sqrt(f2);
+    const lf = Math.log(f);
+    if (!Number.isFinite(lf)) {
+      // Defence-in-depth: extremely small F(s) (sub-normal floats) can
+      // produce -Infinity from Math.log even when f2 > 0 in IEEE-754.
+      // Treat such scales as numerically degenerate.
+      scalesDroppedZeroF += 1;
+      continue;
+    }
     logS.push(Math.log(s));
-    logF.push(Math.log(f));
+    logF.push(lf);
     survivingScales.push(s);
   }
 

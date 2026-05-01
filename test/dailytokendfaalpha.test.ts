@@ -415,3 +415,53 @@ test('buildDailyTokenDfaAlpha: clamps alpha into [0, 2] and surfaces clamp count
   assert.ok(Number.isInteger(r.clampedAbove2));
   assert.ok(Number.isInteger(r.clampedBelow0));
 });
+
+// ---- numerical-stability property: alpha and r2 always finite --------
+
+test('dfaAlpha: alpha, alphaRaw, intercept, r2 are always finite numbers across diverse inputs', () => {
+  // Property guard: regardless of input shape (constant-ish series,
+  // pure noise, ramp-with-noise, alternation), the returned scalars
+  // must be finite — never NaN or +/-Infinity. Catches accidental
+  // log(0), 0/0, or unbounded OLS slopes from sub-normal F(s) values.
+  function mulberry32(seed: number) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const n = 256;
+  const cases: number[][] = [];
+  // Pure noise
+  const rng = mulberry32(11);
+  const noise: number[] = [];
+  for (let i = 0; i < n; i += 1) noise.push(rng());
+  cases.push(noise);
+  // Ramp + noise
+  const rampNoisy: number[] = [];
+  const rng2 = mulberry32(13);
+  for (let i = 0; i < n; i += 1) rampNoisy.push(i + rng2() * 5);
+  cases.push(rampNoisy);
+  // Alternation + tiny jitter
+  const altr: number[] = [];
+  const rng3 = mulberry32(17);
+  for (let i = 0; i < n; i += 1) altr.push((i % 2 === 0 ? 100 : 200) + rng3());
+  cases.push(altr);
+  // Heavy-tailed positive series
+  const heavy: number[] = [];
+  const rng4 = mulberry32(19);
+  for (let i = 0; i < n; i += 1) heavy.push(Math.floor(Math.exp(rng4() * 10)));
+  cases.push(heavy);
+  for (const x of cases) {
+    const r = dfaAlpha(x);
+    assert.ok(Number.isFinite(r.alpha), `alpha not finite: ${r.alpha}`);
+    assert.ok(Number.isFinite(r.alphaRaw), `alphaRaw not finite: ${r.alphaRaw}`);
+    assert.ok(Number.isFinite(r.intercept), `intercept not finite: ${r.intercept}`);
+    assert.ok(Number.isFinite(r.r2), `r2 not finite: ${r.r2}`);
+    assert.ok(r.alpha >= 0 && r.alpha <= 2, `alpha out of [0,2]: ${r.alpha}`);
+    assert.ok(r.r2 >= 0 && r.r2 <= 1, `r2 out of [0,1]: ${r.r2}`);
+  }
+});
