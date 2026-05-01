@@ -2,6 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.323 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-NINTH):
+  `pew-insights daily-token-hjorth-mobility`.
+
+  Per-source **Hjorth Mobility parameter** (Hjorth, B., "EEG
+  analysis based on time domain properties",
+  Electroencephalography and Clinical Neurophysiology
+  29(3):306-310, 1970) on the gap-filled daily `total_tokens`
+  series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`.
+  Algorithm:
+
+      1. Compute first differences:
+           d[i] = y[i+1] - y[i]   for i = 0..N-2
+
+      2. Compute population variances (Hjorth's 1970 convention --
+         not Bessel-corrected):
+           var_v  = (1/N)     * sum (y[i] - mean(y))^2
+           var_dv = (1/(N-1)) * sum (d[i] - mean(d))^2
+
+      3. mobility = sqrt(var_dv / var_v)
+
+  Reading `mobility`:
+
+  - `mobility ~ 0`           = step-to-step changes negligible
+                                vs the overall variance (slowly
+                                varying / DC-like series).
+  - `mobility ~ 1`           = consecutive samples share roughly
+                                half their variance with a one-
+                                step neighbour (rho_1 ~ 0.5 under
+                                the large-N stationarity link
+                                mobility^2 ~ 2*(1 - rho_1)).
+  - `mobility ~ sqrt(2) ~ 1.414` = pure white noise (consecutive
+                                samples uncorrelated; rho_1 ~ 0).
+  - `mobility > sqrt(2)`     = anti-correlated / oscillatory at
+                                the one-step scale (rho_1 < 0).
+
+  Default sort `absMobilityDeviationDesc` ranks by distance from
+  the white-noise reference `sqrt(2)`, so both unusually-smooth
+  and unusually-oscillatory series rise to the top. Other sort
+  keys: `mobility`, `mobilityDesc`, `tokens`, `tenure`, `source`.
+
+  Surfaces `varV`, `varDv`, `meanV`, `meanDv` for traceability
+  (mobility is dimensionless via the variance ratio, but the
+  absolute variances expose the underlying amplitude scale that
+  rho_1 alone cannot communicate).
+
+  Edge cases as drop counters: `droppedZeroVariance` (constant
+  series after gap-fill -- `var_v = 0`), `droppedNonFiniteMobility`
+  (degenerate quotient).
+
+  STRUCTURAL ORTHOGONALITY -- SINGLE-SCALE VARIANCE RATIO BETWEEN
+  THE SERIES AND ITS FIRST DIFFERENCE, fundamentally distinct
+  from every shipped daily-token axis 32..78:
+
+  - vs `daily-token-box-count-fd` (axis 78): BFD is a MULTI-SCALE
+    OLS log-log slope on 2D box coverage; mobility is a SINGLE-
+    SCALE variance ratio. They diverge sharply on series with one
+    extreme outlier (BFD essentially unchanged because coverage
+    at coarse m sees one extra column; mobility rises because the
+    one big jump dominates `var_dv`).
+
+  - vs `daily-token-sevcik-fd` (axis 77): SFD is a single-scale
+    LOG-DOMAIN path-length ratio on the double-normalised
+    waveform; mobility is a single-scale LINEAR-DOMAIN second-
+    moment ratio on the RAW series. Both are single-scale but
+    probe different statistics.
+
+  - vs `daily-token-petrosian-fd` (axis 76): PFD counts SIGN
+    CHANGES in the diff sequence; mobility uses the MAGNITUDE
+    of those diffs. A uniform-step zigzag and an amplitude-
+    modulated zigzag share PFD exactly but mobility is dominated
+    by the amplitude envelope.
+
+  - vs `daily-token-katz-fd` / `daily-token-higuchi-fd` (axes
+    75 / 74): path-length geometries vs second-moment ratio.
+
+  - vs `daily-token-hurst-rs` (axis 71) / `daily-token-dfa-alpha`
+    (axis 72): both are MULTI-SCALE variance-scaling estimators
+    on cumulative deviations; mobility is SINGLE-SCALE on raw
+    diffs with no cumulative transform.
+
+  - vs `daily-token-autocorrelation-lag1` (axis 67): mobility and
+    rho_1 are linked by the large-N stationarity approximation
+    `mobility^2 ~ 2 * (1 - rho_1)` but use distinct empirical
+    estimators (population variance of diffs vs lag-1 covariance
+    over variance) and diverge under drift / non-stationarity /
+    heavy-tailed step distributions. Mobility additionally
+    surfaces an absolute-amplitude reading via `varV` / `varDv`.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE is a
+    flatness summary across all spectral moments; mobility is
+    proportional to the spectral CENTROID (Hjorth 1970 Eq. 3) --
+    one specific spectral moment. Independent in general.
+
+  - vs all permutation-invariant dispersion / shape axes 32-67:
+    they are SHUFFLE-INVARIANT (Gini, Theil, Atkinson, etc.);
+    mobility is SHUFFLE-SENSITIVE because shuffling typically
+    inflates `var_dv` while leaving `var_v` unchanged.
+
+  Invariances: SHIFT (y' = y + c), POSITIVE SCALE (y' = a*y,
+  a > 0), SIGN FLIP (y' = -y), TIME REVERSAL. Not invariant
+  under non-affine monotone transforms.
+
+  Tests: 19 tests covering input validation, hand-checked closed
+  form on `[0,1,0,1,0]` (mobility = sqrt(25/6) ~ 2.04124), all
+  four invariances, white-noise convergence to sqrt(2), AR(1)
+  link `mobility^2 ~ 2*(1 - rho_1)` for rho = 0.7
+  (mobility -> sqrt(0.6) ~ 0.7746 within 0.05 over N=8000),
+  shuffle-inflates-mobility witness on a sinusoid (shuffled
+  mobility >= 1.5x sorted-by-time mobility), gap-fill
+  correctness, drop counters, `--source` filter,
+  `--top` cap.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (`daily-token-hjorth-mobility --top 5`):
+
+  - 2 source rows survive (4 below min-tenure-days; 6 sources
+    total over 3,444,271,515 tokens):
+    - `claude-code`: mobility = **1.1628**
+      (varV = 2.367e+16, varDv = 3.200e+16, tenure = 72d,
+      35 active days, 3.44B tokens) -- moderately autocorrelated
+      day-to-day (rho_1 ~ 0.32 by the link approximation,
+      consistent with a noticeable but sub-white step structure).
+    - `vscode-copilot`: mobility = **1.3103**
+      (varV = 7.303e+8, varDv = 1.254e+9, tenure = 265d,
+      73 active days, 1.89M tokens) -- closer to white noise
+      (rho_1 ~ 0.14), reflecting the sparse-and-spiky tenure
+      with many gap-filled zero days.
+
+  Both rows sit in (1, sqrt(2)), i.e. between "modestly
+  autocorrelated" and "white-noise" -- the daily token series
+  is rough but not yet anti-correlated.
+
 ## 0.6.322 — 2026-05-02
 
 ### Added
