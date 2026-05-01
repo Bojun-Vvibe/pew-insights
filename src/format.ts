@@ -17064,3 +17064,105 @@ export function renderDailyTokenGeThreeIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+
+import type { DailyTokenGeFourIndexReport } from './dailytokengefourindex.js';
+
+export function renderDailyTokenGeFourIndex(
+  r: DailyTokenGeFourIndexReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-ge-four-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-gefour: ${r.minGeFour === null ? '\u2014' : r.minGeFour}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinGeFour)} below min-gefour, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source GE(4) = (1/12) * (mean((D/mean(D))^4) - 1). Quartic-share generalised entropy; the unique quartic-share member of the GE family. Range [0, +inf); GE(4) = 0 iff perfect equality. Closed form: GE(4) = (1/2)*CV^2 + (1/3)*skewness*CV^3 + (1/12)*kurtosis*CV^4 = GE(3) + (1/6)*skewness*CV^3 + (1/12)*kurtosis*CV^4.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source GE(4) (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'gefour',
+    'quarticShareMean',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.gefour.toFixed(6),
+    s.quarticShareMean.toFixed(6),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.cv !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `moment decomposition (closed form: GE(4) = (1/2)*CV^2 + (1/3)*skew*CV^3 + (1/12)*kurt*CV^4 = GE(3) + (1/6)*skew*CV^3 + (1/12)*kurt*CV^4).`,
+      ),
+    );
+    const wHeaders = [
+      'source',
+      'gefour',
+      'ge3',
+      'gefour-ge3',
+      'cv',
+      'skewness',
+      'kurtosis',
+    ];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.gefour.toFixed(6),
+      s.ge3 === undefined ? 'n/a' : (s.ge3 as number).toFixed(6),
+      s.geFourMinusGeThree === undefined
+        ? 'n/a'
+        : (s.geFourMinusGeThree as number).toFixed(6),
+      s.cv === undefined ? 'n/a' : (s.cv as number).toFixed(4),
+      s.skewness === undefined ? 'n/a' : (s.skewness as number).toFixed(4),
+      s.kurtosis === undefined ? 'n/a' : (s.kurtosis as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

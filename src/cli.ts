@@ -108,6 +108,7 @@ import {
   renderDailyTokenLogMeanAbsoluteDeviationIndex,
   renderDailyTokenGeHalfIndex,
   renderDailyTokenGeThreeIndex,
+  renderDailyTokenGeFourIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -378,6 +379,7 @@ import { buildDailyTokenVarianceOfLogarithms } from './dailytokenvarianceoflogar
 import { buildDailyTokenLogMeanAbsoluteDeviationIndex } from './dailytokenlogmeanabsolutedeviationindex.js';
 import { buildDailyTokenGeHalfIndex } from './dailytokengehalfindex.js';
 import { buildDailyTokenGeThreeIndex } from './dailytokengethreeindex.js';
+import { buildDailyTokenGeFourIndex } from './dailytokengefourindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -14811,6 +14813,139 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenGeThreeIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-ge-four-index')
+  .description(
+    "Per-source GENERALIZED ENTROPY index at parameter alpha = 4 (GE(4)) of the per-day total_tokens distribution (FIFTY-SEVENTH cross-source axis). GE(4) = (1/12) * (mean((D_i/mean(D))^4) - 1). Range [0, +inf); GE(4) = 0 iff perfect equality. The unique QUARTIC-SHARE member of the GE family and the next standard heavy-tail GE point above alpha=3; orthogonal to GE(-1)/GE(0)/GE(1/2)/GE(1)/GE(2)/GE(3) shipped in axes-49/33/55/34/37/56. Closed-form moment decomposition: GE(4) = (1/2)*CV^2 + (1/3)*skewness*CV^3 + (1/12)*kurtosis*CV^4 = GE(3) + (1/6)*skewness*CV^3 + (1/12)*kurtosis*CV^4, so GE(4) - GE(3) isolates the second-half-skewness + kurtosis-weighted-by-CV^4 contribution that GE(3) cannot fully see. Refinement: --include-moment-decomposition surfaces cv, skewness, kurtosis, ge2, ge3, geFourMinusGeThree.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). GE(4) degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: gefour (default) | tokens | days | source | meanDaily | cv | ge3. Applied before --top.',
+    'gefour',
+  )
+  .option(
+    '--min-gefour <x>',
+    'display filter: hide non-degenerate rows whose gefour is strictly below this non-negative value. Default null = no filter.',
+  )
+  .option(
+    '--include-moment-decomposition',
+    'every row gains cv (sigma_D/mu), skewness (standardized 3rd moment), kurtosis (standardized 4th moment, raw not excess), ge2 (= (1/2)*CV^2), ge3 (= GE(2) + (1/6)*skew*CV^3), and geFourMinusGeThree (= (1/6)*skew*CV^3 + (1/12)*kurt*CV^4 = GE(4) - GE(3) by closed form).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minGefour?: string;
+        includeMomentDecomposition?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minGeFour: number | null = null;
+        if (opts.minGefour !== undefined) {
+          const mv = Number.parseFloat(opts.minGefour);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-gefour must be a non-negative finite number (got ${opts.minGefour})`,
+            );
+          }
+          minGeFour = mv;
+        }
+        const validSorts = [
+          'gefour',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'cv',
+          'ge3',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenGeFourIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minGeFour,
+          includeMomentDecomposition:
+            opts.includeMomentDecomposition ?? false,
+          sort: opts.sort as
+            | 'gefour'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'cv'
+            | 'ge3',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenGeFourIndex(report) + '\n');
         }
       } catch (e) {
         die(e);
