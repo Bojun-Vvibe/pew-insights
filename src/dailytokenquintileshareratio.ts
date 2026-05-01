@@ -133,6 +133,15 @@
  *   bottomMass = 1+2 = 3; topMass = 9+10 = 19; total = 55
  *   QSR = 19 / 3 = 6.3333333...
  * Reproduced exactly by `quintileShareRatioOfVector([1..10])` in tests.
+ *
+ * SMALL-N BEHAVIOUR (refinement, v0.6.307+ tests). For n=2,3,4 the
+ * formula reduces to ratio of single-element extremes:
+ *   n=2: k=1, QSR = max / min
+ *   n=3: k=1, QSR = max / min (middle element ignored, body size 1)
+ *   n=4: k=1, QSR = max / min (body size 2)
+ * For n>=5 the body becomes large enough that QSR is sensitive to
+ * mass aggregation in the extreme quintiles rather than just the
+ * single most-extreme days; this is why `--min-days` defaults to 5.
  */
 import type { QueueLine } from './types.js';
 

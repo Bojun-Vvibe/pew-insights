@@ -375,3 +375,91 @@ test('build: invalid since rejected', () => {
     /invalid since/,
   );
 });
+
+// ---- Refinement edge cases (v0.6.307+) ---------------------------------
+
+test('quintileShareRatioOfVector: n=2 -> k=1, qsr=top/bot exactly', () => {
+  // Algebraic minimum: n=2, k=ceil(0.4)=1. bottomMass=min, topMass=max.
+  const r = quintileShareRatioOfVector([3, 11]);
+  assert.equal(r.k, 1);
+  assert.equal(r.bottomMass, 3);
+  assert.equal(r.topMass, 11);
+  assert.ok(Math.abs(r.qsr - 11 / 3) < 1e-12);
+  assert.equal(r.degenerate, false);
+});
+
+test('quintileShareRatioOfVector: n=3, k=1; non-overlapping body of size 1', () => {
+  const r = quintileShareRatioOfVector([2, 5, 9]);
+  assert.equal(r.k, 1);
+  assert.equal(r.bottomMass, 2);
+  assert.equal(r.topMass, 9);
+  assert.ok(Math.abs(r.qsr - 9 / 2) < 1e-12);
+});
+
+test('quintileShareRatioOfVector: n=4, k=1; central body of size 2', () => {
+  const r = quintileShareRatioOfVector([1, 5, 5, 10]);
+  assert.equal(r.k, 1);
+  assert.ok(Math.abs(r.qsr - 10) < 1e-12);
+});
+
+test('quintileShareRatioOfVector: palma reduces to qsr-style ratio when n in [3,4]', () => {
+  // n=3: k10=1, k40=2 -> palma = max / (two smallest)
+  const r = quintileShareRatioOfVector([2, 5, 9]);
+  // palma = 9 / (2+5) = 9/7
+  assert.ok(Math.abs(r.palma - 9 / 7) < 1e-12);
+});
+
+test('build: --sort=tokens orders by tokens descending', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 5; i += 1) {
+    queue.push(ql(`2026-05-0${i}T00:00:00.000Z`, 'small', 1));
+  }
+  for (let i = 1; i <= 5; i += 1) {
+    queue.push(ql(`2026-05-0${i}T00:00:00.000Z`, 'large', 1000));
+  }
+  const r = buildDailyTokenQuintileShareRatio(queue, {
+    generatedAt: GEN,
+    minTokens: 1,
+    minDays: 5,
+    sort: 'tokens',
+  });
+  assert.equal(r.sources[0]!.source, 'large');
+  assert.equal(r.sources[1]!.source, 'small');
+});
+
+test('build: window filter (since/until) trims the day vector', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 10; i += 1) {
+    const day = i.toString().padStart(2, '0');
+    queue.push(ql(`2026-05-${day}T00:00:00.000Z`, 'a', i * 10));
+  }
+  // window: keep days 03..07 inclusive (5 days)
+  const r = buildDailyTokenQuintileShareRatio(queue, {
+    generatedAt: GEN,
+    minTokens: 1,
+    minDays: 5,
+    since: '2026-05-03T00:00:00.000Z',
+    until: '2026-05-08T00:00:00.000Z',
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.nDays, 5);
+  // values [30,40,50,60,70]; k=1 -> qsr=70/30
+  assert.ok(Math.abs(r.sources[0]!.qsr - 70 / 30) < 1e-12);
+});
+
+test('build: top=0 sentinel means no cap (all rows surface)', () => {
+  const queue: QueueLine[] = [];
+  for (const src of ['a', 'b', 'c', 'd', 'e']) {
+    for (let i = 1; i <= 5; i += 1) {
+      queue.push(ql(`2026-05-0${i}T00:00:00.000Z`, src, i * 100));
+    }
+  }
+  const r = buildDailyTokenQuintileShareRatio(queue, {
+    generatedAt: GEN,
+    minTokens: 1,
+    minDays: 5,
+    top: 0,
+  });
+  assert.equal(r.sources.length, 5);
+  assert.equal(r.droppedTopSources, 0);
+});
