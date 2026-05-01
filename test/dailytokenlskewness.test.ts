@@ -383,3 +383,88 @@ test('orthogonality witness: tau3 detects single-outlier asymmetry that MC barel
   const r = lSkewnessOfVector(xs);
   assert.ok(r.tau3 > 0.5, `tau3 should be strongly positive, got ${r.tau3}`);
 });
+
+// ---- refinement: Gaussian-baseline + closed-form n=5 anchor +
+// ----             builder consistency witness vs primitive ------------
+
+test('refinement: tau_3 of a roughly Gaussian sample is small (|tau_3| < 0.1)', () => {
+  // Deterministic pseudo-Gaussian via Box-Muller on a fixed LCG seed.
+  // (No Math.random in tests.)
+  let state = 12345;
+  function lcg(): number {
+    // Numerical Recipes LCG.
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return (state + 1) / 0x100000001;
+  }
+  function boxMuller(): number {
+    const u = lcg();
+    const v = lcg();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  const xs: number[] = [];
+  for (let i = 0; i < 500; i += 1) xs.push(boxMuller());
+  const r = lSkewnessOfVector(xs);
+  assert.equal(r.degenerate, false);
+  // True N(0,1) has tau_3 = 0; with n=500 our deterministic seed
+  // should land well within 0.1.
+  assert.ok(
+    Math.abs(r.tau3) < 0.1,
+    `Gaussian-baseline expects |tau_3| < 0.1, got ${r.tau3}`,
+  );
+  // And l_2 should be close to the Gaussian L-scale 1/sqrt(pi) ~= 0.5642.
+  assert.ok(
+    Math.abs(r.l2 - 1 / Math.sqrt(Math.PI)) < 0.1,
+    `l_2 expected ~ 1/sqrt(pi) ~= 0.5642 for N(0,1), got ${r.l2}`,
+  );
+});
+
+test('refinement: closed-form n=5 anchor against hand-computed PWM', () => {
+  // n=5 unbiased PWM:
+  //   b_0 = mean
+  //   b_1 = (1/5) * sum_{j=2..5} (j-1)/4 * x_(j)
+  //       = (1/20) * (x2 + 2 x3 + 3 x4 + 4 x5)
+  //   b_2 = (1/5) * sum_{j=3..5} (j-1)(j-2)/(4*3) * x_(j)
+  //       = (1/60) * (2 x3 + 6 x4 + 12 x5)
+  //       = (x3 + 3 x4 + 6 x5) / 30
+  const xs = [2, 3, 5, 7, 11];
+  const r = lSkewnessOfVector(xs);
+  const b0 = (2 + 3 + 5 + 7 + 11) / 5;
+  const b1 = (3 + 2 * 5 + 3 * 7 + 4 * 11) / 20;
+  const b2 = (5 + 3 * 7 + 6 * 11) / 30;
+  const l2 = 2 * b1 - b0;
+  const l3 = 6 * b2 - 6 * b1 + b0;
+  assert.ok(Math.abs(r.l1 - b0) < 1e-12);
+  assert.ok(Math.abs(r.l2 - l2) < 1e-12, `n=5 l2: ${r.l2} vs ${l2}`);
+  assert.ok(Math.abs(r.l3 - l3) < 1e-12, `n=5 l3: ${r.l3} vs ${l3}`);
+  assert.ok(Math.abs(r.tau3 - l3 / l2) < 1e-12);
+});
+
+test('refinement: builder row matches primitive on the per-day vector', () => {
+  // Builder/primitive consistency witness: take a controlled queue,
+  // recompute the per-day vector by hand, and assert the builder's
+  // l_1, l_2, l_3, tau_3 exactly match lSkewnessOfVector(days).
+  const lines: QueueLine[] = [
+    ql('2026-04-01T00:00:00Z', 'X', 100),
+    ql('2026-04-01T05:00:00Z', 'X', 200), // day 1 total = 300
+    ql('2026-04-02T00:00:00Z', 'X', 50),
+    ql('2026-04-03T00:00:00Z', 'X', 1000),
+    ql('2026-04-04T00:00:00Z', 'X', 75),
+    ql('2026-04-05T00:00:00Z', 'X', 60),
+    ql('2026-04-06T00:00:00Z', 'X', 90),
+  ];
+  const days = [300, 50, 1000, 75, 60, 90];
+  const direct = lSkewnessOfVector(days);
+
+  const r = buildDailyTokenLSkewness(lines, {
+    minTokens: 1,
+    minDays: 4,
+    generatedAt: GEN,
+  });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  assert.equal(row.nDays, 6);
+  assert.ok(Math.abs(row.l1 - direct.l1) < 1e-9);
+  assert.ok(Math.abs(row.l2 - direct.l2) < 1e-9);
+  assert.ok(Math.abs(row.l3 - direct.l3) < 1e-9);
+  assert.ok(Math.abs(row.tau3 - direct.tau3) < 1e-12);
+});
