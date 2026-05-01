@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.291 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-SEVENTH):
+  `pew-insights daily-token-sgini-index`.
+
+  Per-source DONALDSON-WEYMARK / YITZHAKI single-parameter S-GINI
+  (Donaldson & Weymark 1980, "A single-parameter generalization of
+  the Gini index"; Yitzhaki 1983, "On an extension of the Gini
+  inequality index") of the per-day total_tokens distribution at
+  aversion parameter delta (default 3):
+
+      S(delta) = 1 - (1 / mu) * sum_{i=1..n} x_(i) * w_i^(delta)
+      w_i^(delta) = ((n - i + 1) / n)^delta - ((n - i) / n)^delta
+
+  with x_(i) the i-th ASCENDING order statistic. Range [0, 1).
+  S = 0 iff every day carries equal mass. The order weights
+  satisfy sum_i w_i = 1 for every delta > 0, so S(delta) is a
+  proper Lorenz-area generalization.
+
+  delta is a DISTRIBUTIONAL-AVERSION KNOB:
+
+      delta = 1   degenerate identity, S = 0 for any vector. We
+                  reject this at parse time.
+      delta = 2   reproduces standard Gini (axis-32) exactly.
+                  Identity-checked in the test suite.
+      delta > 2   places STRICTLY MORE weight on the BOTTOM of the
+                  distribution. The textbook Donaldson-Weymark
+                  identity S(delta >= 2) >= G holds for every
+                  non-negative vector with equality only at perfect
+                  equality / two-point.
+
+  We ship at delta = 3 by default — the canonical "high-aversion"
+  extended Gini used in welfare economics for bottom-tail-sensitive
+  inequality readings.
+
+  THE DEFINING CONTRAST. Every prior daily-token inequality axis
+  uses a FIXED kernel: standard Gini (axis-32) is uniform Lorenz
+  weighting; Bonferroni (axis-43) is harmonic bottom-rank-weighted
+  (1/k cumulative-mean kernel); Mehran (axis-45) is linear partial-
+  mean kernel; Atkinson (axis-36) is CRRA welfare loss anchored on
+  VALUES via a power-mean. S-Gini is the FIRST axis with a
+  PARAMETRIC RANK kernel: a single tunable knob delta that smoothly
+  interpolates from "uniform Lorenz weighting" (delta=2) to
+  "extreme bottom-rank-weighting" (delta -> infinity). Two
+  distributions can have IDENTICAL Gini and yet wildly different
+  S(3) values when the bottom-rank order statistics differ in
+  position even though their MEAN-anchored Lorenz integrals match.
+
+  Genuinely orthogonal to every prior daily-token axis. Distinct
+  from axis-32 Gini (uniform Lorenz weighting = S(2); we surface
+  S(3) which is strictly bottom-weighted), axes 33/34/37 Theil-L /
+  Theil-T / GE2 (moment-based on shares, no order kernel), axis-35
+  Pietra / axis-42 Hoover (single-point L_infinity Lorenz gaps),
+  axis-36 Atkinson (CRRA welfare loss with power-mean penalty
+  applied on VALUES not RANKS), axis-39 Zenga (lower-mean / upper-
+  mean shortfall functional), axis-40 Palma (two-point ratio,
+  different rank cuts), axis-41 FGT (one-sided lower-tail
+  threshold-anchored), axis-43 Bonferroni (HARMONIC bottom-rank
+  kernel; S-Gini is POLYNOMIAL bottom-rank kernel — distinct
+  kernel families), axis-44 Kolm-Pollak (translation-invariant
+  absolute, not relative), axis-45 Mehran (linear partial-mean
+  kernel), axis-46 Wolfson (median-anchored bipolarization).
+  Permutation-invariant by construction (depends only on order
+  statistics), so orthogonal to every time-ordered axis.
+
+  Refinement shipped together:
+
+  - `--include-bottom-weight-excess`: per-row `bottomWeightExcess`
+    = sgini - gini, plus `sginiOverGini` = sgini / gini. Surfaces
+    the textbook Donaldson-Weymark identity S(delta >= 2) >= G:
+    the gap is the bottom-rank weighting EXCESS the parametric
+    kernel extracts beyond the standard Gini baseline. A two-point
+    or near-uniform vector reads excess ~ 0; a heavy bottom-tail
+    vector reads excess >> 0.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (vscode-other
+  token scrubbed for changelog policy):
+
+      pew-insights daily-token-sgini-index --include-bottom-weight-excess
+
+      per-source S-Gini(delta=3) (sorted by sgini):
+      source        days  sgini   gini    excess   s/g
+      claude-code    35   0.8879  0.7590  +0.1289  1.1698
+      vscode-other   73   0.8359  0.7000  +0.1359  1.1941
+      codex           8   0.7605  0.5892  +0.1713  1.2907
+      hermes         15   0.5425  0.3672  +0.1753  1.4775
+      openclaw       15   0.5375  0.3856  +0.1519  1.3939
+      opencode       12   0.4121  0.2578  +0.1543  1.5988
+
+  Every source reads STRICTLY positive bottom-weight excess on this
+  corpus — confirming the Donaldson-Weymark identity S(3) >= G
+  empirically across the full multi-source family. The headline
+  S(3) ordering inherits the Gini ordering (claude-code largest,
+  opencode smallest), but the EXCESS ordering and the s/g RATIO
+  ordering tell a structurally different story:
+
+  - Hermes carries the LARGEST absolute excess (+0.1753) — its
+    per-day mass distribution has the heaviest bottom-rank pull
+    relative to its mean-anchored Gini reading. The bottom days
+    are pulling the bottom-weighted reading far above the uniform-
+    Lorenz baseline.
+  - Opencode carries the LARGEST s/g RATIO (1.5988) — its S(3) is
+    nearly 60% larger than its standard Gini. This is the
+    structural signal S-Gini exposes that no prior axis surfaces:
+    even when raw inequality looks modest (Gini = 0.2578), the
+    bottom-weighted reading inflates dramatically because what
+    little inequality exists is concentrated on the bottom-rank
+    days, not spread uniformly across the Lorenz curve.
+  - Claude-code, conversely, has the LOWEST s/g ratio (1.1698)
+    despite the highest absolute Gini — its inequality is more
+    UNIFORMLY distributed across the Lorenz curve, so the bottom-
+    weighted reading inflates only modestly above the standard
+    reading.
+
+  This per-source decomposition into "raw inequality magnitude
+  (Gini)" vs "bottom-rank concentration multiplier (s/g)" is the
+  structural value S-Gini adds beyond every prior daily-token axis.
+
+  All 25 axis-47 unit tests pass:
+    - 17 wolfson-style primitive identity tests (empty, n=1,
+      all-zero, perfect equality, scale-invariance, permutation-
+      invariance, throws on negative / non-finite / delta<=0 /
+      delta=1, delta=2 reproduces Gini exactly, weights-sum-to-1
+      identity at delta in {0.5, 2, 3, 5, 10}, monotonicity in
+      delta for delta>=2, S(3)>=G identity, range bounded in [0,1),
+      known-value [1,1,9,9] at delta=3 = 0.6 closed-form).
+    - 8 builder integration tests (empty queue, single source
+      computation, refinement bottomWeightExcess = sgini - gini
+      exactly, filters min-tokens / min-days, throws on delta=1
+      and delta<=0, delta=2 reproduces gini for every row,
+      time-window since/until, sort by bottomWeightExcess).
+
 ## 0.6.290 — 2026-05-01
 
 ### Added
