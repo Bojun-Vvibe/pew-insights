@@ -17068,6 +17068,7 @@ export function renderDailyTokenGeThreeIndex(
 
 import type { DailyTokenGeFourIndexReport } from './dailytokengefourindex.js';
 import type { DailyTokenPercentileGapRatioReport } from './dailytokenpercentilegapratio.js';
+import type { DailyTokenIqrOverMedianReport } from './dailytokeniqrovermedian.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17250,6 +17251,95 @@ export function renderDailyTokenPercentileGapRatio(
       s.iqrRatio === undefined ? 'n/a' : (s.iqrRatio as number).toFixed(6),
       s.p25 === undefined ? 'n/a' : formatNumber(Math.round(s.p25 as number)),
       s.p75 === undefined ? 'n/a' : formatNumber(Math.round(s.p75 as number)),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenIqrOverMedian(
+  r: DailyTokenIqrOverMedianReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-iqr-over-median'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-iom: ${r.minIom === null ? '\u2014' : r.minIom}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinIom)} below min-iom, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source IOM = (P75 - P25) / P50 of the per-day total_tokens distribution under linear-interpolation percentiles. Range [0, +inf); IOM = 0 iff P25 = P75. Depends on THREE central order statistics; INVARIANT to changes strictly above P75 or strictly below P25 -- complementary to PGR (axis 58, upper-tail gap) and to every shipped GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini/Pietra index.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source IOM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'iom',
+    'iqrAbs',
+    'p25',
+    'p50',
+    'p75',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.iom.toFixed(6),
+    formatNumber(Math.round(s.iqrAbsolute)),
+    formatNumber(Math.round(s.p25)),
+    formatNumber(Math.round(s.p50)),
+    formatNumber(Math.round(s.p75)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.pgr !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `PGR refinement: central-body spread (IOM = (P75-P25)/P50) vs upper-tail gap (PGR = P90/P50).`,
+      ),
+    );
+    const wHeaders = ['source', 'iom', 'pgr', 'p50', 'p90'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.iom.toFixed(6),
+      s.pgr === undefined ? 'n/a' : (s.pgr as number).toFixed(6),
+      formatNumber(Math.round(s.p50)),
+      s.p90 === undefined ? 'n/a' : formatNumber(Math.round(s.p90 as number)),
     ]);
     lines.push(renderTableLocal(wHeaders, wRows));
   }
