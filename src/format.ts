@@ -17082,6 +17082,7 @@ import type { DailyTokenSpectralEntropyReport } from './dailytokenspectralentrop
 import type { DailyTokenPermutationEntropyReport } from './dailytokenpermutationentropy.js';
 import type { DailyTokenHurstRsReport } from './dailytokenhurstrs.js';
 import type { DailyTokenDfaAlphaReport } from './dailytokendfaalpha.js';
+import type { DailyTokenSampleEntropyReport } from './dailytokensampleentropy.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18337,6 +18338,75 @@ export function renderDailyTokenDfaAlpha(r: DailyTokenDfaAlphaReport): string {
     formatNumber(s.scalesUsed),
     s.alpha.toFixed(4),
     s.r2.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSampleEntropy(
+  r: DailyTokenSampleEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-sample-entropy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    m: ${formatNumber(r.m)}    r-factor: ${r.rFactor}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroBMatches)} zero length-m matches, ${formatNumber(r.droppedZeroAMatches)} zero length-(m+1) matches, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Sample Entropy SampEn = -ln(A/B) at embedding m and tolerance r = r-factor * stddev (Richman & Moorman 2000) on the gap-filled daily total_tokens series. SEVENTY-THIRD cross-source axis. A = unique-pair length-(m+1) Chebyshev matches; B = unique-pair length-m matches; self-pairs excluded. Larger SampEn = more irregular / less self-similar at length m+1. Short-window single-scale METRIC complexity -- structurally orthogonal to (a) permutation entropy axis 70 (ordinal/rank, monotone-invariant) -- SampEn is metric/affine-invariant; (b) spectral entropy axis 69 (frequency-domain flatness) vs time-domain template recurrence; (c) ACF lag-1/lag-7 axes 67/68 (linear second-moment scalars) -- SampEn is nonlinear multi-point; (d) Hurst R/S axis 71 and DFA-alpha axis 72 (multi-scale long-range exponents) -- SampEn is short-window single-scale; (e) all permutation-invariant dispersion axes 32-67 -- shuffle-invariant whereas SampEn is shuffle-sensitive.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SampEn (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'sampEn',
+    'stddev',
+    'rAbs',
+    'A',
+    'B',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.sampEn.toFixed(4),
+    s.stddev.toFixed(2),
+    s.rAbsolute.toFixed(2),
+    formatNumber(s.matchesAplusone),
+    formatNumber(s.matchesB),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

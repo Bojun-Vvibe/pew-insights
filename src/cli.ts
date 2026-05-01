@@ -124,6 +124,7 @@ import {
   renderDailyTokenPermutationEntropy,
   renderDailyTokenHurstRs,
   renderDailyTokenDfaAlpha,
+  renderDailyTokenSampleEntropy,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -410,6 +411,7 @@ import { buildDailyTokenSpectralEntropy } from './dailytokenspectralentropy.js';
 import { buildDailyTokenPermutationEntropy } from './dailytokenpermutationentropy.js';
 import { buildDailyTokenHurstRs } from './dailytokenhurstrs.js';
 import { buildDailyTokenDfaAlpha } from './dailytokendfaalpha.js';
+import { buildDailyTokenSampleEntropy } from './dailytokensampleentropy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16922,6 +16924,128 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenDfaAlpha(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-sample-entropy')
+  .description(
+    "Per-source Sample Entropy SampEn = -ln(A/B) at embedding m and tolerance r = r-factor * stddev (Richman & Moorman 2000, Am. J. Physiol. Heart Circ. Physiol. 278:H2039-H2049) on the gap-filled daily total_tokens series (SEVENTY-THIRD cross-source axis). A = unique-pair length-(m+1) Chebyshev matches; B = unique-pair length-m matches; self-pairs excluded (Richman & Moorman correction over Pincus 1991 ApEn). Larger SampEn = more irregular / less self-similar at length m+1; SampEn = 0 means every length-m match also extends to length m+1 (perfect short-window predictability). Short-window single-scale METRIC complexity: orthogonal to (a) permutation entropy axis 70 (ordinal/rank, monotone-invariant) -- SampEn is metric/affine-invariant; (b) spectral entropy axis 69 (frequency-domain flatness) vs time-domain template recurrence; (c) ACF lag-1/lag-7 axes 67/68 (linear second-moment scalars) -- SampEn is nonlinear multi-point (sinusoid: rho_7~1, SampEn~0; phase-randomised surrogate: same rho, much higher SampEn); (d) Hurst R/S axis 71 and DFA-alpha axis 72 (multi-scale long-range exponents) -- SampEn is short-window single-scale (IID uniform: alpha,H~0.5 vs SampEn~2.2; periodic: alpha clamps high vs SampEn~0); (e) all permutation-invariant dispersion axes 32-67 -- shuffle-invariant whereas SampEn is shuffle-sensitive (sorted-vs-shuffled witness test).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor m+30 so we always have at least 30 length-(m+1) templates. Default 32.',
+    '32',
+  )
+  .option(
+    '--m <n>',
+    'embedding dimension m (Richman & Moorman canonical 2). Hard floor 1.',
+    '2',
+  )
+  .option(
+    '--r-factor <x>',
+    'tolerance multiplier r = r-factor * stddev (Richman & Moorman canonical 0.2).',
+    '0.2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: sampEnDesc (default) | sampEn | tokens | tenure | source.',
+    'sampEnDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        m: string;
+        rFactor: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const m = Number.parseInt(opts.m, 10);
+        if (!Number.isInteger(m) || m < 1) {
+          throw new Error(`--m must be a positive integer (got ${opts.m})`);
+        }
+        const rFactor = Number.parseFloat(opts.rFactor);
+        if (!Number.isFinite(rFactor) || rFactor <= 0) {
+          throw new Error(
+            `--r-factor must be a positive finite number (got ${opts.rFactor})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < m + 30) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= m+30 = ${m + 30} (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['sampEnDesc', 'sampEn', 'tokens', 'tenure', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSampleEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          m,
+          rFactor,
+          top,
+          sort: opts.sort as
+            | 'sampEnDesc'
+            | 'sampEn'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSampleEntropy(report) + '\n');
         }
       } catch (e) {
         die(e);
