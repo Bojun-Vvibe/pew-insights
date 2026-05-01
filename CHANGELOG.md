@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.303 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-NINTH):
+  `pew-insights daily-token-iqr-over-median`.
+
+  Per-source MEDIAN-NORMALIZED INTERQUARTILE SPREAD
+  (P75 - P25) / P50 of the per-day total_tokens distribution. For
+  each source we collapse all hourly buckets into one scalar per
+  UTC day (D_d = sum of total_tokens on day d) and summarise the
+  resulting day vector by
+
+      IOM = (P75(D) - P25(D)) / P50(D),
+
+  where P_q(D) is the linear-interpolation percentile (numpy
+  "linear" / R "type 7"): given sorted D with length n, h = q*(n-1),
+  k = floor(h), f = h - k, then P_q = D_sorted[k] + f *
+  (D_sorted[k+1] - D_sorted[k]).
+
+  HEADLINE QUESTION: "How wide is each source's central-50% daily-
+  token band, as a fraction of its median day?"
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..58). axes 32..57 are MOMENT- or
+  LORENZ-functional summaries that integrate over the FULL
+  distribution (GE family at alpha in {-1,0,1/2,1,2,3,4} = axes
+  49/33/55/34/37/56/57; Gini, S-Gini, Bonferroni, Mehran, Pietra,
+  Hoover, Zenga, Wolfson, Foster-Wolfson, Palma, Atkinson,
+  Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, Var-of-Logs, Log-MAD,
+  FGT = axes 32/35/36/38..48/50..54). Axis 58 (PGR = P90/P50)
+  depends on TWO upper-half order statistics and is invariant to
+  changes strictly above P90. IOM (axis 59) depends on THREE
+  CENTRAL order statistics (P25, P50, P75) and is INVARIANT to
+  changes strictly above P75 OR strictly below P25 -- it carries
+  NO information about either tail. This is the structural
+  COMPLEMENT of PGR's information geometry: PGR sees only the upper
+  decile gap, IOM sees only the central body. No shipped axis
+  reproduces IOM as a monotone function (verified by unit tests
+  showing GE(2) jumps under a 1e9 tail spike while IOM stays
+  exactly unchanged; and a clean P25/P50/P75-fixed construction
+  where IOM ranks U > V but PGR ranks V > U).
+
+  RANK-FLIP WITNESS vs axis-58 PGR (the genuine orthogonality test).
+  Construct U = [1,2,4,4,5,5,5,6,6,8,9] and
+  V = [5,5,5,5,5,5,5,5,5,15,100] (n=11 each). For U: P25=4, P50=5,
+  P75=7, P90=9 -> IOM(U) = 0.6, PGR(U) = 1.8. For V: P25=P50=P75=5
+  (degenerate central body), P90=15 -> IOM(V) = 0, PGR(V) = 3. So
+  IOM ranks U > V (0.6 vs 0) but PGR ranks V > U (3 vs 1.8) -- a
+  clean rank flip on a hand-built example. The two axes carry
+  materially different information; one cannot recover one from the
+  other under any monotone transform.
+
+  RANGE AND DEGENERACY. IOM >= 0 always (P75 >= P25 by monotonicity).
+  IOM == 0 iff P25 == P75 (the central 50% of days is constant). IOM
+  is unbounded above. IOM is SCALE-INVARIANT (multiply every day by
+  k > 0; ratio unchanged) and PERMUTATION-INVARIANT (depends on
+  sorted vector only). IOM is finite whenever P50 > 0; we filter on
+  minTokens to ensure positive median in production use.
+
+  CLOSED-FORM ANCHOR ON [1..10]. P25 = 3 + 0.25 = 3.25; P50 = 5 +
+  0.5 = 5.5; P75 = 7 + 0.75 = 7.75; IOM = (7.75 - 3.25) / 5.5 =
+  4.5 / 5.5 ~= 0.818182. Reproduced exactly by
+  `iqrOverMedianOfVector([1..10])` in the test suite.
+
+  REFINEMENT. `--include-pgr` surfaces P90 and PGR = P90/P50 in the
+  same row, enabling a side-by-side comparison of the central-body
+  spread (IOM) against the upper-tail gap (PGR, axis 58). When IOM
+  is small but PGR is large the source has a tight central body
+  with a stretched upper-decile tail; when IOM is large but PGR is
+  similar the spread is concentrated in the body with no tail
+  amplification.
+
+  KNOBS: `--since` / `--until`, `--source`, `--min-tokens` (default
+  1000), `--min-days` (default 4), `--top` (default 0 = no cap),
+  `--sort` (one of `iom` (default) | `tokens` | `days` | `source` |
+  `meanDaily` | `p50` | `iqrAbsolute`), `--min-iom` (display filter;
+  must be >= 0), `--include-pgr`, `--json`. Every dropped row is
+  counted: droppedInvalidHourStart, droppedNonPositiveTokens,
+  droppedSourceFilter, droppedSparseSources, droppedBelowMinDays,
+  droppedBelowMinIom, droppedTopSources.
+
+  LIVE SMOKE on `~/.config/pew/queue.jsonl` (11,998,183,234 total
+  tokens, 6 sources after the default min-tokens=1000 / min-days=4
+  filter):
+
+      source           days   iom        iqrAbsolute        p50               p75
+      vscode-other       73   2.703006           21,943            8,118            24,894
+      codex               8   2.605439      107,435,798       41,235,207       130,043,500
+      claude-code        35   2.307729       58,632,485       25,407,006        64,624,670
+      openclaw           15   1.499359      148,662,149       99,150,451       213,788,093
+      hermes             15   1.180142       15,883,861       13,459,283        24,094,529
+      opencode           12   0.326231      154,650,214      474,051,843       559,973,166
+
+  TOP-3 sources by IOM: vscode-other (2.7030), codex (2.6054),
+  claude-code (2.3077). NON-DEGENERACY witness vs axis-58 PGR on
+  this same data: PGR ranked the top three as claude-code (9.52),
+  vscode-other (8.23), codex (5.95) -- IOM REORDERS the top: it
+  promotes vscode-other to #1 and DEMOTES claude-code from #1 to
+  #3, while codex jumps from #3 to #2. Cross-axis comparison via
+  `--include-pgr`:
+
+      source           iom        pgr        p50               p90
+      vscode-other     2.703006   8.228357           8,118            66,798
+      codex            2.605439   5.949360      41,235,207       245,323,080
+      claude-code      2.307729   9.519324      25,407,006       241,857,530
+      openclaw         1.499359   2.760438      99,150,451       273,698,708
+      hermes           1.180142   2.226028      13,459,283        29,960,739
+      opencode         0.326231   1.372282     474,051,843       650,532,802
+
+  The (IOM, PGR) pair is illuminating per source:
+    - vscode-other: high on BOTH axes -> central body spread AND
+      stretched upper tail. A genuinely heterogeneous workload.
+    - claude-code: moderate IOM (2.31) but extreme PGR (9.52) ->
+      tight central body relative to its huge upper-decile spike
+      days (P90 ~ 9.5x its median day, but P75 only 2.5x its P25).
+    - codex: balanced (IOM 2.60, PGR 5.95) but only 8 days, so
+      both estimates are noisy.
+    - opencode: dead last on BOTH (IOM 0.33, PGR 1.37) -- highly
+      consistent daily volume, no significant central spread and
+      no upper-decile spike.
+    - hermes: moderate central spread (1.18) with a fairly capped
+      tail (PGR 2.23) -- a "balanced" workload.
+
+  axis-58 PGR / claude-code IOM ratio: 9.519/2.308 ~= 4.13. axis-58
+  PGR / vscode-other IOM ratio: 8.228/2.703 ~= 3.04. axis-58 PGR /
+  opencode IOM ratio: 1.372/0.326 ~= 4.21. The IOM/PGR ratios
+  themselves vary from 3 to 4.2 across sources, confirming that
+  neither axis is a monotone function of the other.
+
 ## 0.6.302 — 2026-05-01
 
 ### Added
