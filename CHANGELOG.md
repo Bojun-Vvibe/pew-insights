@@ -2,6 +2,121 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.296 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-SECOND):
+  `pew-insights daily-token-foster-wolfson-index`.
+
+  Per-source FOSTER-WOLFSON ABSOLUTE BIPOLARIZATION INDEX
+  (Foster & Wolfson 1992 / 2010, Journal of Economic Inequality
+  8:247-273) of the per-day total_tokens distribution:
+
+      FW = 2 * mu * (2 * T - G)
+      T  = 0.5 - L(0.5)        (half-Lorenz GAP at the median)
+      G  = Gini(D)             (axis-32 functional)
+
+  In ABSOLUTE TOKEN UNITS. Sign of FW inherits from (2T - G):
+  positive = MORE bipolarized than the within-Gini baseline (mass
+  pulled away from the median into the two tails); zero =
+  bipolarization matches Gini's baseline; negative = ANTI-polarized
+  (mass concentrated AROUND the median relative to overall Gini).
+
+  THE INVARIANCE-CUBE CORNER. The 2x2 (rank-anchor x scale-class)
+  cross-classification of polarization measures is
+
+                        scale-INVARIANT          scale-EQUIVARIANT
+                        (dimensionless)          (token units)
+      mean-anchor   |   Gini-family (axis-32)    Kolm-Pollak (axis-44)
+      median-anchor |   Wolfson    (axis-46)     <EMPTY>            <-- FW
+
+  Foster-Wolfson (axis-52) fills the empty corner. It is the only
+  axis we ship that is BOTH median-anchored AND denominated in real
+  token units. The closed-form identity to Wolfson (axis-46) is
+
+      FW / W = 2 * m       (m = median, exact at machine precision)
+
+  so the two indices are NOT a constant reparameterization of each
+  other across sources -- they decouple whenever median spreads
+  diverge from bipolarization-strength spreads. Source rankings can
+  and DO differ between FW and W in the live data: at fixed Wolfson,
+  the source with the larger median scores higher on FW. This is the
+  cross-source decoupling axis-52 surfaces; the closed-form 2*m
+  identity is the audit that the ratio is mathematically captured
+  (no numerical drift) and the source-by-source variation in m is
+  the empirical witness that FW carries a signal Wolfson alone cannot.
+
+  Why orthogonal to every prior daily-token axis (axes 32-51):
+
+  - axis-32 Gini (dimensionless, dispersion-from-MEAN; FW is
+    median-anchored and in absolute units; uses Gini as one of two
+    inputs but corrects against the half-Lorenz median gap)
+  - axes-33/34/37/49 GE(0)/GE(1)/GE(2)/GE(-1) (SHARE-MOMENT family,
+    dimensionless, no median anchor; FW is median-anchored in
+    absolute units)
+  - axes-35/42 Pietra/Hoover (single-point L_inf Lorenz gaps at the
+    MEAN-rank cut, dimensionless; FW reads at the MEDIAN-rank cut
+    with a Gini correction, in tokens)
+  - axes-36/44 Atkinson/Kolm-Pollak (CRRA/CARA welfare-equivalent
+    losses; FW has no welfare functional)
+  - axis-39 Zenga (lower-mean / upper-mean ratio, dimensionless; FW
+    is a Lorenz two-input functional in tokens)
+  - axis-40 Palma (top-decile / bottom-four-decile ratio,
+    dimensionless; different rank cuts, no Gini correction)
+  - axis-41 FGT (one-sided lower-tail threshold-anchored; FW is
+    two-sided, threshold-FREE, median-anchored)
+  - axes-43/45/47 Bonferroni/Mehran/S-Gini (rank-weighted PARTIAL-
+    MEAN kernels, dimensionless; FW is a single-point Lorenz reading
+    at the median anchored against Gini, in token units)
+  - axis-46 Wolfson (RELATIVE form W = (mu/m)*(2T - G), dimensionless;
+    FW is the ABSOLUTE form FW = 2*mu*(2T - G), in tokens; ratio
+    FW/W = 2*m varies across sources)
+  - axis-48 Chakravarty (parametric concave share-power averaging,
+    dimensionless; FW has no power exponent, is in absolute units)
+  - axis-50 Amato (Lorenz-curve ARC LENGTH, dimensionless and
+    translation-INVARIANT in shares; FW is a two-point Lorenz
+    reading anchored at the median, in token units)
+  - axis-51 Esteban-Ray (identification-alienation pairwise-distance
+    polarization with super-linear identification weight; FW is a
+    single-point Lorenz reading at the median, no pairwise sum, no
+    identification weighting)
+
+  Live-smoke (against `~/.config/pew/queue.jsonl`,
+  --include-wolfson-anchor --min-tokens 1000 --min-days 4):
+
+      source          days  fw            wolfson    fw/wolfson    2*median
+      --------------  ----  ------------  ---------  ------------  -----------
+      opencode        12    80,884,665.93  0.085312   948,103,685   948,103,685
+      openclaw        15    51,412,710.85  0.259266   198,300,902   198,300,902
+      codex           8     41,719,791.37  0.505876    82,470,413    82,470,413
+      claude-code     35    32,170,943.79  0.633112    50,814,012    50,814,012
+      hermes          15     6,632,693.38  0.246398    26,918,566    26,918,566
+      vscode-copilot  73         8,688.73  0.535152        16,236        16,236
+
+  Empirical audit:
+    - The fw/wolfson identity equals 2 * median_daily_tokens at
+      machine precision for every source (no drift).
+    - Source rankings DIVERGE between FW and Wolfson:
+        Wolfson order:   claude-code > vscode-copilot > codex > openclaw > hermes > opencode
+        FW order:        opencode    > openclaw       > codex > claude-code > hermes > vscode-copilot
+      The two orders are NEARLY REVERSED. FW promotes high-volume
+      sources (opencode, openclaw) whose absolute token-mass spread
+      is large; Wolfson promotes sources whose RELATIVE bipolarization
+      is large but whose tokens are small (vscode-copilot has the
+      most days but the smallest median, ~8k vs opencode's ~474M).
+      This is empirical proof that FW carries a signal Wolfson alone
+      cannot recover -- not a reparameterization.
+    - vscode-copilot has the highest absolute (2T - G) at 0.5351, but
+      its mu = 25,832 tokens/day yields fw = 8,689 -- five orders of
+      magnitude below opencode. The "absolute volume of bipolarized
+      mass" rank is not the "fraction of mass that is bipolarized"
+      rank.
+
+  Refinement shipped together: `--include-wolfson-anchor` surfaces
+  per-row `wolfson` and `fwOverWolfson` so the closed-form 2*m
+  identity is auditable inline (the non-degeneracy proof).
+
 ## 0.6.295 — 2026-05-01
 
 ### Added
