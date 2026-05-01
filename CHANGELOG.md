@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.319 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-FIFTH):
+  `pew-insights daily-token-katz-fd`.
+
+  Per-source Katz Fractal Dimension (Katz, M. J., "Fractals and the
+  analysis of waveforms", Computers in Biology and Medicine
+  18(3):145-156, 1988) on the gap-filled daily `total_tokens`
+  series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`. Closed-
+  form single-scale geometric ratio:
+
+      L = sum_{i=1..N-1} sqrt(1 + (x[i] - x[i-1])^2)
+      d = max_{i=1..N-1} sqrt(i^2 + (x[i] - x[0])^2)
+      KFD = log10(N - 1) / (log10(N - 1) + log10(d / L))
+
+  Treats the gap-filled daily series as a planar curve {(i, x[i])}
+  with unit x-spacing, where `L` is total Euclidean path length and
+  `d` is the maximal Euclidean chord from the first day. The
+  reported `kfd` is clamped to `[1, 2]` for symmetry with axis-74
+  HFD reporting; un-clamped `kfdRaw`, `clampedBelow1`,
+  `clampedAbove2` counters are surfaced for operators. Also reports
+  `L`, `d`, `maxChordIndex` (where `d` is achieved), and `avgStep =
+  L / (N - 1)`.
+
+  Reading `kfd`:
+
+  - `kfd` ~ 1.0  = near-straight curve (`d ~ L`; the curve is close
+    to its own start-to-furthest chord).
+  - `kfd` ~ 1.3-1.5 = moderate roughness (`d << L`; total path much
+    longer than the maximal chord).
+  - `kfd` -> 2  = heavily oscillating / space-filling.
+
+  Edge cases surfaced as drop counters: `droppedZeroVariance`
+  (perfectly flat tenure — `mn === mx` after gap-fill),
+  `droppedNonFiniteKfd` (degenerate denominator collapse from the
+  closed-form ratio; defensive — does not fire on well-formed
+  gap-filled token series).
+
+  STRUCTURAL ORTHOGONALITY -- single-scale CLOSED-FORM geometric
+  ratio, fundamentally distinct from every shipped daily-token
+  axis 32..74:
+
+  - vs `daily-token-higuchi-fd` (axis 74): HFD is a MULTI-SCALE
+    POWER-LAW EXPONENT — the negated OLS slope of `log(L(k))` vs
+    `log(k)` across stride `k = 1..kMax`. KFD is a SINGLE-SCALE
+    CLOSED-FORM RATIO of total arc length to maximal chord, in
+    units of average step length, with no scaling hierarchy at
+    all. Coincide only on ideal self-similar planar curves; on
+    real bounded gap-filled token series they routinely disagree
+    and rankings do not preserve. The disagreement zone is the
+    middle of the roughness spectrum: a long-flat-then-spike
+    series can have HFD near 1 (most strides see 0 increments,
+    fit pulled toward smooth) but KFD substantially above 1 (the
+    spike pumps `L` while leaving `d ~ chord-from-start`).
+
+  - vs `daily-token-hurst-rs` (axis 71) and `daily-token-dfa-
+    alpha` (axis 72): R/S and DFA are VARIANCE-scaling estimators
+    on cumulative deviations (DFA additionally detrends each
+    window). KFD is a closed-form GEOMETRIC ratio on the raw
+    series with no integration, no detrending, and no scaling
+    hierarchy. The integration-ladder argument that applies to
+    HFD vs DFA applies a fortiori to KFD.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE summarises
+    flatness of the global periodogram. KFD is a single
+    time-domain geometric scalar with no frequency decomposition.
+    Two series with identical periodograms (same multiset of
+    `|X[k]|^2`) can have very different KFD because phase
+    reordering changes `L` while preserving SE.
+
+  - vs `daily-token-permutation-entropy` (axis 70): PE is
+    ORDINAL on length-3 windows, monotone-invariant. KFD is
+    METRIC and invariant only under positive multiplicative
+    rescale of the value axis. A linear ramp has PE = 0 AND
+    KFD = 1.0 exactly; a noisy bounded oscillation can have PE
+    near 1 and KFD substantially above 1.
+
+  - vs `daily-token-sample-entropy` (axis 73): SampEn is a
+    SHORT-WINDOW SINGLE-SCALE conditional irregularity at one
+    `(m, r)` on TEMPLATE recurrence. KFD is a SINGLE-SCALE
+    GEOMETRIC ratio with no template matching at all. They
+    measure orthogonal facets of complexity (template recurrence
+    vs curve geometry).
+
+  - vs `daily-token-autocorrelation-lag1` / `lag7`
+    (axes 67/68): ACF is a SECOND-MOMENT linear scalar at one
+    fixed lag. KFD is a deterministic geometric ratio and is
+    well-defined even when all finite-lag `rho_k = 0`.
+
+  - vs all permutation-invariant dispersion / shape axes 32..67
+    (Gini, Atkinson, Theil, GE, Hill, MC, L-skew, ...): those
+    are shuffle-invariant; KFD is shuffle-sensitive
+    (sorted-vs-shuffled witness ships in the test file: same
+    multiset sorted -> KFD ~ 1.0, shuffled -> KFD strictly above
+    sorted by >= 0.02 on the heavy-tailed fixture).
+
+  Live-smoke (real `~/.config/pew/queue.jsonl`, default
+  `min-tenure-days=32 min-tokens=1000 sort=absKfdDeviationDesc`,
+  generated 2026-05-01T20:38:41Z; vscode-* product names scrubbed):
+
+  - vscode-other: kfd=1.8146 (kfdRaw=1.8146, tenure=265d, active=73d, L=2781707, d=227613, dIdx=261)
+  - claude-code: kfd=1.5193 (kfdRaw=1.5193, tenure=72d, active=35d, L=4509846521, d=1050541118, dIdx=68)
+
+  4 other sources fell below the 32-day gap-filled-tenure floor
+  and surfaced as `droppedBelowMinTenure`. Both surviving sources
+  land in the operator-meaningful KFD interior (`> 1.5`),
+  signalling that NEITHER curve is close to its own start-to-
+  furthest chord — both have substantial path length above the
+  diagonal. Cross-axis: this disagrees materially with axis-74
+  HFD on the same data, where vscode-other clamped to `hfd = 1`
+  (smooth under multi-scale arc-length scaling) while sitting at
+  KFD = 1.81 (rough under single-scale total-path-vs-chord
+  ratio) — exactly the "long-flat-then-spike" disagreement zone
+  predicted in the orthogonality argument: the 73 active days
+  spread over 265 calendar days produce many gap-fill zeros
+  between sparse spikes, so multi-scale Higuchi sees most
+  strides as smooth-zero while Katz's total path length is
+  dominated by the spike round-trips.
+
+  Tests: 8798 -> 8818 (+20). Includes hand-computed flat-series
+  (`d/L = 1` -> KFD = 1.0 cleanly), 3-point straight ramp
+  (canonical Katz line; `d/L = 1` -> KFD = 1.0), 4-point
+  perturbed ramp with full closed-form L / d / KFD verification,
+  noisy-bounded relative bound, an orthogonality witness
+  (sorted-vs-shuffled heavy-tailed multiset), and a finite-
+  output property test across 5 deterministic non-constant
+  fixtures.
+
 ## 0.6.318 — 2026-05-02
 
 ### Added
