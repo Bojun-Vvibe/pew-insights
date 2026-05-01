@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.320 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-SIXTH):
+  `pew-insights daily-token-petrosian-fd`.
+
+  Per-source Petrosian Fractal Dimension (Petrosian, A.,
+  "Kolmogorov complexity of finite sequences and recognition of
+  different preictal EEG patterns", Proc. 8th IEEE Symp. CBMS,
+  pp. 212-217, 1995) on the gap-filled daily `total_tokens`
+  series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`. Closed-
+  form single-scale binary sign-flip statistic:
+
+      M  = N - 1
+      Nd = #{ i : sign(x[i+1]-x[i]) != sign(x[i]-x[i-1]) }
+      PFD = log10(M) / (log10(M) + log10(M / (M + 0.4 * Nd)))
+
+  with the Esteller-Vachtsevanos-Echauz-Litt 2001 zero-rule:
+  `dv[i] == 0` maps to `+1` (matches the ZCR convention). The
+  reported `pfd` is clamped to `[1, 2]`; un-clamped `pfdRaw`,
+  `clampedBelow1`, `clampedAbove2` counters surfaced for
+  operators. Also reports `Nd`, `M = N - 1`, `flipRate = Nd /
+  (M - 1)` (length-normalised raw flip density in `[0, 1]`),
+  and `zeroDiffs` (informational; how many gap-filled diffs were
+  exactly 0).
+
+  Reading `pfd`:
+
+  - `pfd ~ 1.0`     = near-monotone trajectory (few sign flips
+                      in the daily diff series).
+  - `pfd ~ 1.05`    = moderate roughness; some sign flips well
+                      below Nyquist alternation.
+  - `pfd ~ 1.18`    = near-maximum (Nyquist alternation; nearly
+                      every daily diff flips sign).
+
+  Edge cases surfaced as drop counters: `droppedZeroVariance`
+  (perfectly flat tenure — `mn === mx` after gap-fill, all diffs
+  = 0, sign sequence collapses), `droppedNonFinitePfd`
+  (degenerate denominator collapse from the closed-form ratio;
+  defensive — does not fire on well-formed gap-filled token
+  series).
+
+  STRUCTURAL ORTHOGONALITY -- single-scale CLOSED-FORM BINARY
+  sign-flip statistic, fundamentally distinct from every shipped
+  daily-token axis 32..75:
+
+  - vs `daily-token-katz-fd` (axis 75): KFD is a METRIC quantity
+    using actual numeric magnitudes through `L` (Euclidean path
+    length) and `d` (max chord). PFD is purely BINARY after the
+    sign mapping; magnitudes drop out completely. Multiply every
+    value by 13 and `Nd` is bit-identical (the test file ships a
+    positive-rescale invariance assertion); KFD typically moves
+    under the same operation. Two series with identical
+    sign-of-diff sequences and wildly different amplitudes share
+    the same PFD but diverge sharply on KFD.
+
+  - vs `daily-token-higuchi-fd` (axis 74): HFD is a MULTI-SCALE
+    OLS power-law exponent across stride `k = 1..kMax`,
+    sensitive to magnitudes through `L(k)`. PFD is single-scale,
+    closed-form, binary post-sign-mapping. They probe different
+    complexity facets (multi-scale magnitude scaling vs
+    single-scale binary sign-flip density).
+
+  - vs `daily-token-hurst-rs` (axis 71) and `daily-token-dfa-
+    alpha` (axis 72): R/S and DFA are VARIANCE-scaling
+    estimators on cumulative deviations (DFA additionally
+    detrends each window) — magnitude-sensitive. PFD has no
+    cumulative profile and is binary post-sign-mapping.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE summarises
+    flatness of the global periodogram. PFD is a single
+    time-domain binary scalar with no frequency decomposition.
+    Two series with identical periodograms can have very
+    different PFD because phase reordering changes the diff sign
+    sequence.
+
+  - vs `daily-token-permutation-entropy` (axis 70): PE is
+    ORDINAL on length-3 windows (alphabet size 6); PFD is BINARY
+    on the diff sign (alphabet size 2). PE counts ordinal
+    pattern frequencies; PFD counts adjacent sign-flips in a
+    single binary stream. A monotone ramp has PE = 0 AND
+    PFD ~ 1.0 exactly; the disagreement zone is real (a
+    monotone-up-with-rare-pauses series can have PE > 0 yet
+    PFD ~ 1).
+
+  - vs `daily-token-sample-entropy` (axis 73): SampEn is a
+    TEMPLATE-matching conditional irregularity at one `(m, r)`;
+    PFD has no template matching. Orthogonal facets (template
+    recurrence vs sign-flip density).
+
+  - vs `daily-token-autocorrelation-lag1` / `lag7` (axes 67/68):
+    ACF is a SECOND-MOMENT linear scalar at one fixed lag,
+    magnitude-sensitive. PFD is a deterministic binary statistic
+    and is well-defined even when all finite-lag `rho_k = 0`.
+
+  - vs all permutation-invariant dispersion / shape axes 32..67:
+    those are shuffle-invariant; PFD is shuffle-sensitive. The
+    sorted-vs-shuffled witness ships in the test file (same
+    multiset sorted gives `Nd <= 1` / `pfd < 1.005`; shuffled
+    gives `Nd > 50` / `pfd` substantially higher).
+
+  Live-smoke (real `~/.config/pew/queue.jsonl`,
+  `daily-token-petrosian-fd --top 5`, defaults otherwise):
+
+      sources: 6 (shown 2)    tokens: 3,444,271,515
+      min-tokens: 1,000    min-tenure-days: 32
+
+      source          tenure  active  pfd     pfdRaw  Nd  M    flipRate  tokens
+      claude-code     72      35      1.0331  1.0331  26  71   0.3714    3,442,385,788
+      vscode-copilot  265     73      1.0222  1.0222  85  264  0.3232    1,885,727
+
+  Both reporting sources show PFD ~ 1.02-1.03 — well above
+  the smooth `pfd ~ 1` baseline but well below the Nyquist
+  ceiling near 1.18, indicating moderate daily-direction-flip
+  density (`flipRate ~ 0.32-0.37` of inter-day diffs flip sign).
+  Other 4 sources dropped: `droppedBelowMinTenure` (gap-filled
+  tenure under the 32-day floor).
+
+### Changed
+
+- Test count `8820 -> 8841` (+21 from `dailytokenpetrosianfd.test.ts`
+  covering: primitive math (monotone ramp -> PFD = 1.0 exactly,
+  constant -> PFD = 1.0, alternating Nyquist -> PFD near upper
+  bound, closed-form match on a hand-checked sequence,
+  positive-rescale invariance, additive-shift invariance,
+  sorted-vs-shuffled witness, flipRate identity, clamp-bounds
+  wiring), input validation (NaN / Inf / N < 3 / bad options /
+  bad ISO), and builder integration (gap-fill correctness,
+  min-tenure / min-tokens drop counters, source filter, top cap,
+  zero-variance drop counter, sort modes, since/until window).
+
 ## 0.6.319 — 2026-05-02
 
 ### Added
