@@ -230,3 +230,64 @@ test('build: respects --since/--until window', () => {
   assert.equal(r.sources.length, 1);
   assert.equal(r.sources[0]!.nDays, 10);
 });
+
+// ---- refinement: end-to-end scale invariance + extra edge cases --------
+
+test('build: end-to-end scale invariance -- multiplying every queue row by c > 0 leaves alpha unchanged', () => {
+  const baseVals = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 512000];
+  const queueA: QueueLine[] = [];
+  const queueB: QueueLine[] = [];
+  const C = 137.5;
+  for (let i = 0; i < baseVals.length; i += 1) {
+    const day = String(i + 1).padStart(2, '0');
+    queueA.push(ql(`2026-04-${day}T00:00:00.000Z`, 'X', baseVals[i]!));
+    queueB.push(ql(`2026-04-${day}T00:00:00.000Z`, 'X', baseVals[i]! * C));
+  }
+  const a = buildDailyTokenHillTailIndex(queueA, { generatedAt: GEN });
+  const b = buildDailyTokenHillTailIndex(queueB, { generatedAt: GEN });
+  assert.equal(a.sources.length, 1);
+  assert.equal(b.sources.length, 1);
+  // alpha and gamma identical to machine precision.
+  assert.ok(Math.abs(a.sources[0]!.alpha - b.sources[0]!.alpha) < 1e-12);
+  assert.ok(Math.abs(a.sources[0]!.gamma - b.sources[0]!.gamma) < 1e-12);
+  // Threshold scales linearly.
+  assert.ok(Math.abs(b.sources[0]!.threshold - a.sources[0]!.threshold * C) < 1e-6);
+});
+
+test('build: min-tokens=0 admits even tiny-mass sources (boundary)', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 10; i += 1) {
+    queue.push(ql(`2026-04-${String(i).padStart(2, '0')}T00:00:00.000Z`, 'TINY', i));
+  }
+  const r = buildDailyTokenHillTailIndex(queue, { generatedAt: GEN, minTokens: 0 });
+  assert.equal(r.droppedSparseSources, 0);
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.totalTokens, 55);
+});
+
+test('build: degenerate (all-equal day vector) -> alpha=Infinity, sorted to front under --sort alpha', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 1; i <= 12; i += 1) {
+    queue.push(ql(`2026-04-${String(i).padStart(2, '0')}T00:00:00.000Z`, 'FLAT', 5000));
+  }
+  const r = buildDailyTokenHillTailIndex(queue, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.degenerate, true);
+  assert.equal(r.sources[0]!.alpha, Infinity);
+  assert.equal(r.sources[0]!.gammaStdErr, 0);
+});
+
+test('build: hourly buckets correctly collapse into per-day totals', () => {
+  const queue: QueueLine[] = [];
+  // Same day, two hourly buckets each
+  for (let i = 1; i <= 10; i += 1) {
+    const day = String(i).padStart(2, '0');
+    queue.push(ql(`2026-04-${day}T00:00:00.000Z`, 'COLL', 500 * i));
+    queue.push(ql(`2026-04-${day}T01:00:00.000Z`, 'COLL', 500 * i));
+  }
+  const r = buildDailyTokenHillTailIndex(queue, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.nDays, 10);
+  // largest day = day 10 = 1000 * 10 = 10000; threshold (3rd largest) = 1000 * 8 = 8000
+  assert.equal(r.sources[0]!.threshold, 8000);
+});
