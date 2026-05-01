@@ -112,6 +112,7 @@ import {
   renderDailyTokenPercentileGapRatio,
   renderDailyTokenIqrOverMedian,
   renderDailyTokenMidSpreadRatio,
+  renderDailyTokenDecileShareGap,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -386,6 +387,7 @@ import { buildDailyTokenGeFourIndex } from './dailytokengefourindex.js';
 import { buildDailyTokenPercentileGapRatio } from './dailytokenpercentilegapratio.js';
 import { buildDailyTokenIqrOverMedian } from './dailytokeniqrovermedian.js';
 import { buildDailyTokenMidSpreadRatio } from './dailytokenmidspreadratio.js';
+import { buildDailyTokenDecileShareGap } from './dailytokendecilesharegap.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -15355,6 +15357,142 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMidSpreadRatio(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-decile-share-gap')
+  .description(
+    "Per-source DECILE-SHARE GAP DSG = (sum of largest ceil(0.10*n) days - sum of smallest ceil(0.10*n) days) / sum of all days, where n is nDays of per-day total_tokens (SIXTY-FIRST cross-source axis). DSG is the ANTI-LORENZ DECILE PRIMITIVE: a sparse linear functional of the sorted day vector, normalised by total mass not by the mean. Range [0, 1]; DSG = 0 iff the two extreme deciles' mass is balanced. STRUCTURALLY ORTHOGONAL to every shipped daily-token axis (32-60): the GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini/Pietra/Bonferroni/Mehran/Wolfson/Foster-Wolfson/Palma/Kolm-Pollak/Chakravarty/Amato/Esteban-Ray/FGT/S-Gini/Log-MAD axes (32-57) integrate over the FULL distribution and divide by the MEAN; PGR/IOM/MSR (axes 58/59/60) are RATIOS OF PERCENTILE VALUES. DSG is built from MASS SUMS of the two extreme deciles, with no division between order statistics, and is INVARIANT to any rearrangement of the central 80% of days that preserves total. Refinement: --include-hoover surfaces Hoover index alongside DSG for cross-axis comparison vs axis 36.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). DSG degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: dsg (default) | tokens | days | source | meanDaily | topMass | bottomMass | k. Applied before --top.',
+    'dsg',
+  )
+  .option(
+    '--min-dsg <x>',
+    'display filter: hide non-degenerate rows whose dsg is strictly below this value (must be >= 0). Default null = no filter.',
+  )
+  .option(
+    '--include-hoover',
+    'every row gains hoover (= 0.5 * sum |D - mean| / total, axis 36), enabling a side-by-side comparison of the anti-Lorenz decile primitive (DSG) vs the mean-deviation index (Hoover).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minDsg?: string;
+        includeHoover?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minDsg: number | null = null;
+        if (opts.minDsg !== undefined) {
+          const mv = Number.parseFloat(opts.minDsg);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-dsg must be a finite number >= 0 (got ${opts.minDsg})`,
+            );
+          }
+          minDsg = mv;
+        }
+        const validSorts = [
+          'dsg',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'topMass',
+          'bottomMass',
+          'k',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDecileShareGap(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minDsg,
+          includeHoover: opts.includeHoover ?? false,
+          sort: opts.sort as
+            | 'dsg'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'topMass'
+            | 'bottomMass'
+            | 'k',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenDecileShareGap(report) + '\n',
           );
         }
       } catch (e) {

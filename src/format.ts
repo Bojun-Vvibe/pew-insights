@@ -17070,6 +17070,7 @@ import type { DailyTokenGeFourIndexReport } from './dailytokengefourindex.js';
 import type { DailyTokenPercentileGapRatioReport } from './dailytokenpercentilegapratio.js';
 import type { DailyTokenIqrOverMedianReport } from './dailytokeniqrovermedian.js';
 import type { DailyTokenMidSpreadRatioReport } from './dailytokenmidspreadratio.js';
+import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17433,6 +17434,94 @@ export function renderDailyTokenMidSpreadRatio(
       s.degenerate ? '\u2014' : s.msr.toFixed(6),
       s.iom === undefined ? 'n/a' : (s.iom as number).toFixed(6),
       formatNumber(Math.round(s.p50)),
+    ]);
+    lines.push(renderTableLocal(wHeaders2, wRows2));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenDecileShareGap(
+  r: DailyTokenDecileShareGapReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-decile-share-gap'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-dsg: ${r.minDsg === null ? '\u2014' : r.minDsg}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinDsg)} below min-dsg, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DSG = (sum of largest ceil(0.10*n) days - sum of smallest ceil(0.10*n) days) / sum of all days. Range [0, 1]; DSG = 0 iff the two extreme deciles' mass is balanced. Pure ANTI-LORENZ DECILE PRIMITIVE: a sparse linear functional of the sorted day vector, normalised by total mass not by the mean -- structurally orthogonal to PGR/IOM/MSR (axes 58/59/60, percentile-VALUE ratios) and to the full-Lorenz GE/Atkinson/Theil/Gini/Hoover family (axes 32-57, mean-normalised integrals).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source DSG (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'k',
+    'dsg',
+    'topShare',
+    'botShare',
+    'topMass',
+    'botMass',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.k),
+    s.degenerate ? '\u2014' : s.dsg.toFixed(6),
+    s.topShare.toFixed(6),
+    s.bottomShare.toFixed(6),
+    formatNumber(Math.round(s.topMass)),
+    formatNumber(Math.round(s.bottomMass)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.hoover !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Hoover refinement: anti-Lorenz decile primitive (DSG, mass-of-extreme-deciles / total) vs Hoover index (axis 36, 0.5 * sum |D - mean| / total).`,
+      ),
+    );
+    const wHeaders2 = ['source', 'dsg', 'hoover', 'meanDaily'];
+    const wRows2: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.dsg.toFixed(6),
+      s.hoover === undefined ? 'n/a' : (s.hoover as number).toFixed(6),
+      formatNumber(Math.round(s.meanDailyTokens)),
     ]);
     lines.push(renderTableLocal(wHeaders2, wRows2));
   }
