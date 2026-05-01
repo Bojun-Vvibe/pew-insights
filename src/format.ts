@@ -16685,3 +16685,97 @@ export function renderDailyTokenFosterWolfsonIndex(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { DailyTokenVarianceOfLogarithmsReport } from './dailytokenvarianceoflogarithms.js';
+
+export function renderDailyTokenVarianceOfLogarithms(
+  r: DailyTokenVarianceOfLogarithmsReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-variance-of-logarithms'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-vl: ${r.minVl === null ? '\u2014' : r.minVl}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinVl)} below min-vl, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source VL = (1/n) * sum_i (log D_i - mean_j log D_j)^2. SECOND CENTRAL MOMENT of LOG y, dimensionless, geometric-mean-anchored. Aitchison-Brown 1957 / Sen 1973. Identity VL = 2 * GE(0) holds iff log y is normal; the residual is a per-source LOGNORMALITY audit.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source variance of logarithms (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'vl',
+    'meanLog',
+    'geoMeanDaily',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.vl.toFixed(4),
+    s.degenerate ? '\u2014' : s.meanLog.toFixed(4),
+    formatNumber(Math.round(s.geoMeanDaily)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.theilL !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `GE(0) cross-anchor (axis-33; Theil-L / MLD on the same vector. Lognormality identity: vl/(2*GE(0)) = 1 iff log y is normal.)`,
+      ),
+    );
+    const wHeaders = ['source', 'vl', 'theilL', 'vl/(2*theilL)'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.vl.toFixed(6),
+      s.theilL === undefined ? 'n/a' : (s.theilL as number).toFixed(6),
+      s.vlOverTwoGe0 === undefined || Number.isNaN(s.vlOverTwoGe0)
+        ? 'n/a'
+        : (s.vlOverTwoGe0 as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

@@ -104,6 +104,7 @@ import {
   renderDailyTokenAmatoIndex,
   renderDailyTokenEstebanRayPolarizationIndex,
   renderDailyTokenFosterWolfsonIndex,
+  renderDailyTokenVarianceOfLogarithms,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -370,6 +371,7 @@ import { buildDailyTokenGenEntropyNegOneIndex } from './dailytokengenentropynego
 import { buildDailyTokenAmatoIndex } from './dailytokenamatoindex.js';
 import { buildDailyTokenEstebanRayPolarizationIndex } from './dailytokenestebanraypolarizationindex.js';
 import { buildDailyTokenFosterWolfsonIndex } from './dailytokenfosterwolfsonindex.js';
+import { buildDailyTokenVarianceOfLogarithms } from './dailytokenvarianceoflogarithms.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -14269,6 +14271,140 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenFosterWolfsonIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-variance-of-logarithms')
+  .description(
+    "Per-source VARIANCE OF LOGARITHMS of the per-day total_tokens distribution (FIFTY-THIRD cross-source axis). VL = (1/n) * sum_i (log D_i - mean_j log D_j)^2: SECOND CENTRAL MOMENT of LOG y, dimensionless, geometric-mean-anchored, scale-invariant in tokens. Range [0, +inf); VL = 0 iff perfect equality. Aitchison-Brown 1957 (lognormal distribution) / Sen 1973 (On Economic Inequality, ch.2.5). Closed-form identity to GE(0) (axis-33): VL = sigma^2, GE(0) = sigma^2/2 for a lognormal log y, so VL = 2 * GE(0) FOR LOGNORMAL ONLY -- the residual on a real source measures non-lognormality. Per-source columns: vl, meanLog, geoMeanDaily, meanDaily, minDay, maxDay. Refinement: --include-ge0-anchor surfaces theilL (axis-33 / GE(0) / MLD) and the vl/(2*GE(0)) lognormality audit on the same vector.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). VL degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: vl (default) | tokens | days | source | meanDaily | geoMeanDaily | meanLog. Applied before --top.',
+    'vl',
+  )
+  .option(
+    '--min-vl <x>',
+    'display filter: hide non-degenerate rows whose vl is strictly below this non-negative value. Default null = no filter.',
+  )
+  .option(
+    '--include-ge0-anchor',
+    'every row gains theilL (axis-33 / GE(0) / MLD) and vlOverTwoGe0 (lognormality audit; equals 1 iff log y is normal).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minVl?: string;
+        includeGe0Anchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minVl: number | null = null;
+        if (opts.minVl !== undefined) {
+          const mv = Number.parseFloat(opts.minVl);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-vl must be a non-negative finite number (got ${opts.minVl})`,
+            );
+          }
+          minVl = mv;
+        }
+        const validSorts = [
+          'vl',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'geoMeanDaily',
+          'meanLog',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenVarianceOfLogarithms(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minVl,
+          includeGe0Anchor: opts.includeGe0Anchor ?? false,
+          sort: opts.sort as
+            | 'vl'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'geoMeanDaily'
+            | 'meanLog',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenVarianceOfLogarithms(report) + '\n',
           );
         }
       } catch (e) {
