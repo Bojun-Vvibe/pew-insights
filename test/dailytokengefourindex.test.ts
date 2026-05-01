@@ -447,3 +447,91 @@ test('geFourOfVector: GE(4) >= GE(3) by closed form (Jensen on x^4 vs x^3 in sha
     );
   }
 });
+
+// ---- Refinement (post-release): closed-form rational anchors and bridge identities ----
+
+test('geFourOfVector: Pareto(alpha=6) closed-form anchor (GE(4) = 193/5184)', () => {
+  // For Pareto(alpha=6, x_min=1):
+  //   c_4 = (6-1)^4 / (6^3 * (6-4)) = 625 / 432
+  //   GE(4) = (625/432 - 1) / 12 = (193/432) / 12 = 193/5184 = 0.037229...
+  let s = 24681;
+  function rnd(): number {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    return (s + 1) / 0x80000000;
+  }
+  const N = 200000;
+  const v: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const u = rnd();
+    v.push(Math.pow(1 - u, -1 / 6));
+  }
+  const r = geFourOfVector(v);
+  const expected = 193 / 5184;
+  // Lighter tail than alpha=5 -> tighter MC convergence.
+  assert.ok(
+    r.gefour > expected / 2 && r.gefour < expected * 2.5,
+    `Pareto(alpha=6) GE(4) ~ ${expected.toFixed(5)} (=193/5184), got ${r.gefour.toFixed(5)}`,
+  );
+});
+
+test('geFourOfVector: GE(3) and GE(4) Pareto closed forms agree on shared algebra (alpha=6)', () => {
+  // The GE(k) Pareto(alpha) closed form is
+  //   GE(k)(Pareto(alpha)) = ((alpha - 1)^k / (alpha^(k-1) * (alpha - k)) - 1) / (k * (k - 1))
+  // for alpha > k. Verify k=3 and k=4 give the documented exact
+  // rationals at alpha=6 without resorting to MC.
+  const alpha = 6;
+  const ge3Closed =
+    (Math.pow(alpha - 1, 3) / (alpha * alpha * (alpha - 3)) - 1) / 6;
+  const ge4Closed =
+    (Math.pow(alpha - 1, 4) / (alpha * alpha * alpha * (alpha - 4)) - 1) / 12;
+  // alpha=6: GE(3) = (125/108 - 1)/6 = 17/648 = 0.02623...
+  // alpha=6: GE(4) = (625/432 - 1)/12 = 193/5184 = 0.03723...
+  assert.ok(Math.abs(ge3Closed - 17 / 648) < 1e-15, `GE(3) ${ge3Closed}`);
+  assert.ok(Math.abs(ge4Closed - 193 / 5184) < 1e-15, `GE(4) ${ge4Closed}`);
+  // GE(4) > GE(3) at alpha=6 (heavier weighting in the higher kernel).
+  assert.ok(ge4Closed > ge3Closed);
+});
+
+test('geFourOfVector: lognormal closed-form bridge GE(4)/GE(3) = (exp(6s2)-1)/(2*(exp(3s2)-1))', () => {
+  // For log Y ~ N(m, sigma^2):
+  //   GE(k)(lognormal) = (exp(k*(k-1)/2 * sigma^2) - 1) / (k*(k-1))
+  // so the exact ratio
+  //   GE(4)/GE(3) = (exp(6*s2) - 1) / (2 * (exp(3*s2) - 1)).
+  // Verify the ratio is monotone increasing in sigma^2 and -> 1 as
+  // sigma^2 -> 0+ (the both-axes-agree limit).
+  function ratio(s2: number): number {
+    return (Math.exp(6 * s2) - 1) / (2 * (Math.exp(3 * s2) - 1));
+  }
+  // limit at 0: l'Hopital -> 6 / (2*3) = 1. We probe near 0.
+  assert.ok(Math.abs(ratio(1e-6) - 1) < 1e-3);
+  // Strictly increasing.
+  assert.ok(ratio(0.01) < ratio(0.1));
+  assert.ok(ratio(0.1) < ratio(0.5));
+  assert.ok(ratio(0.5) < ratio(1.0));
+  // Closed-form numeric anchor: at sigma^2 = 0.5,
+  // ratio = (e^3 - 1)/(2*(e^1.5 - 1)) ~= 19.0855/(2*3.4817) ~= 2.741.
+  const r05 = ratio(0.5);
+  assert.ok(r05 > 2.7 && r05 < 2.8, `ratio(0.5) ~ 2.74, got ${r05}`);
+});
+
+test('geFourOfVector: kurtosis is RAW (Jensen >= 1), not excess', () => {
+  // For ANY non-degenerate positive vector, the standardized 4th
+  // moment k = E[((D-mu)/sigma)^4] >= 1 (Jensen on x^2 applied to
+  // standardized squared deviations). This is the *raw* kurtosis;
+  // the excess kurtosis k - 3 can be negative. Our refinement
+  // surfaces the RAW form so the closed-form
+  // GE(4) = (1/2)*CV^2 + (1/3)*s*CV^3 + (1/12)*k*CV^4 holds
+  // verbatim. Sanity-check on a uniform-discrete vector.
+  const uniform = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const r = geFourOfVector(uniform);
+  // Discrete uniform on [1..n] has raw kurtosis = (3/5) * (3*n^2 - 7) / (n^2 - 1).
+  // n=10: (3/5) * (300 - 7) / 99 = (3/5) * 293/99 = 879/495 = 1.7757...
+  // (Excess kurtosis would be ~ -1.224.)
+  const expected = ((3 / 5) * (3 * 100 - 7)) / (100 - 1);
+  assert.ok(
+    Math.abs(r.kurtosis - expected) < 1e-9,
+    `discrete uniform raw kurtosis ${expected} vs got ${r.kurtosis}`,
+  );
+  // Raw kurtosis is >= 1 always.
+  assert.ok(r.kurtosis >= 1);
+});
