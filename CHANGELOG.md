@@ -2,6 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.301 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-SEVENTH):
+  `pew-insights daily-token-ge-four-index`.
+
+  Per-source GENERALIZED ENTROPY index at parameter alpha = 4
+  (GE(4)) of the per-day total_tokens distribution:
+
+      GE(4) = (1 / (4 * 3 * n)) * sum_i [ (D_i/mu)^4 - 1 ]
+            = (1/12) * ( (1/n) * sum_i (D_i/mu)^4 - 1 )
+            = (1/12) * ( m_4(D) / mu^4 - 1 ),
+
+      where m_4(D) = (1/n) * sum_i D_i^4 is the raw fourth moment and
+      c_4 = m_4 / mu^4 is the dimensionless quartic-share moment.
+
+  THE UNIQUE QUARTIC-SHARE GE MEMBER and the next standard heavy-tail
+  GE point above alpha=3 (axis-56). Among the prior GE-family
+  daily-token axes (33/34/37/49/55/56) the kernel exponents are
+  alpha in {-1, 0, 1/2, 1, 2, 3}; alpha=4 is the unique
+  quartic-share kernel. Range [0, +inf); GE(4) = 0 iff perfect
+  equality (Jensen on the convex x^4). Dimensionless;
+  scale-invariant in tokens.
+
+  CLOSED-FORM MOMENT DECOMPOSITION (refinement diagnostic). For ANY
+  positive vector with coefficient of variation CV = sigma/mu,
+  standardized skewness s = E[((D-mu)/sigma)^3], and standardized
+  kurtosis k = E[((D-mu)/sigma)^4] (raw, NOT excess; k = 3 for
+  normal):
+
+      m_4 = mu^4 + 6*mu^2*sigma^2 + 4*mu*m_3c + m_4c
+          = mu^4 * (1 + 6*CV^2 + 4*s*CV^3 + k*CV^4),
+
+  giving
+
+      GE(4) = (1/12) * (6*CV^2 + 4*s*CV^3 + k*CV^4)
+            = (1/2)*CV^2 + (1/3)*s*CV^3 + (1/12)*k*CV^4
+            = GE(2) + (1/3)*s*CV^3 + (1/12)*k*CV^4
+            = GE(3) + (1/6)*s*CV^3 + (1/12)*k*CV^4.
+
+  So GE(4) - GE(3) = (1/6)*s*CV^3 + (1/12)*k*CV^4 EXACTLY (closed
+  form), which isolates the SECOND-HALF skewness contribution PLUS
+  the KURTOSIS-WEIGHTED-BY-CV^4 term that NEITHER GE(2) NOR GE(3)
+  can see -- a per-source heavy-upper-tail diagnostic that grows
+  with CV^4 and is always strictly positive whenever k > 0 (true
+  for every non-degenerate vector, since k >= 1 by Jensen on x^2).
+
+  CLOSED-FORM PARETO ANCHORS. For Pareto(alpha) with x_min = 1,
+  alpha > 4:
+
+      GE(4)(Pareto(alpha)) =
+          ((alpha - 1)^4 / (alpha^3 * (alpha - 4)) - 1) / 12.
+
+  At alpha=5: GE(4) = (256/125 - 1)/12 = 131/1500 = 0.08733... At
+  alpha=6: GE(4) = (625/432 - 1)/12 = 193/5184 = 0.03723... As
+  alpha -> 4+, GE(4) -> +inf (fourth moment diverges); as
+  alpha -> +inf, GE(4) -> 0.
+
+  CLOSED-FORM LOGNORMAL ANCHOR. For log Y ~ N(m, sigma^2):
+
+      GE(4)        = (exp(6*sigma^2) - 1) / 12,
+      GE(3)        = (exp(3*sigma^2) - 1) / 6,
+      GE(4)/GE(3)  = (exp(6*sigma^2) - 1) / (2*(exp(3*sigma^2) - 1)).
+
+  Ratio -> 1 as sigma -> 0; diverges super-exponentially as
+  sigma -> +inf. So GE(4) and GE(3) cannot rank lognormal sources
+  identically when sigma differs across sources -- the family of
+  GE alphas at {2,3,4} together gives a three-point spectrum on
+  the heavy-tail kernel.
+
+  NUMERICAL STABILITY. We compute via the SHARE form (D_i/mu)^4 in
+  Kahan-summed passes (one for mu, one for quartic-share mean and
+  central moments through the 4th). The share form keeps numerator
+  values bounded by O(n^4) where n is the spike multiplier rather
+  than raising raw 1e9-scale token counts to the fourth power
+  (~1e36; still in fp64 range but precision-degrading). This keeps
+  GE(4) numerically stable on production-scale inputs.
+
+  Knobs: `--since` / `--until` time-window, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 4; >=2 required), `--top`,
+  `--sort` (gefour | tokens | days | source | meanDaily | cv | ge3),
+  `--min-gefour`. Refinement: `--include-moment-decomposition`
+  surfaces per-row `cv`, `skewness`, `kurtosis`, `ge2`
+  (= (1/2)*CV^2), `ge3` (= GE(2) + (1/6)*s*CV^3), and
+  `geFourMinusGeThree` (= (1/6)*s*CV^3 + (1/12)*k*CV^4 = GE(4) -
+  GE(3) by closed form).
+
+  LIVE SMOKE on `~/.config/pew/queue.jsonl`
+  (`node ./dist/cli.js daily-token-ge-four-index --json`),
+  one IDE-extension source label scrubbed to `vscode-other` per
+  repo hygiene rules; numeric values verbatim:
+
+      generatedAt: 2026-05-01T07:40:13Z
+      totalTokens: 11,967,721,798    totalSources: 6
+      minTokens: 1000   minDays: 4   sort: gefour
+
+      source        nDays  meanDaily          quarticShareMean    gefour
+      claude-code     35   98,353,879.66      452.15792683        37.59649390
+      vscode-other    73       25,831.88      212.89630921        17.65802577
+      codex            8  101,203,082.50       29.03529395         2.33627450
+      openclaw        15  140,424,179.53        5.44376395         0.37031366
+      hermes          15   16,801,753.40        3.58963864         0.21580322
+      opencode        12  446,286,385.75        1.97348891         0.08112408
+
+  RANK-FLIP / NON-DEGENERACY WITNESS vs prior axis.
+
+  Vs `daily-token-ge-three-index` (axis-56, cubic-share GE) the
+  RANK ORDER of the six sources is preserved (claude-code,
+  vscode-other, codex, openclaw, hermes, opencode), but the
+  AMPLIFICATION RATIO GE(4)/GE(3) per source varies sharply --
+  this is the non-degeneracy witness:
+
+      source         GE(3)          GE(4)         GE(4)/GE(3)
+      claude-code    7.68842650    37.59649390    4.89
+      vscode-other   4.52466990    17.65802577    3.90
+      codex          1.17879474     2.33627450    1.98
+      openclaw       0.28288901     0.37031366    1.31
+      hermes         0.19081902     0.21580322    1.13
+      opencode       0.08548062     0.08112408    0.95
+
+  Amplification spans 0.95x (opencode; near-uniform daily mass --
+  raising shares to the 4th power barely changes anything) to
+  4.89x (claude-code; the 1.05B-token spike day on a 98M-token
+  baseline gets MASSIVELY emphasised by the quartic kernel). The
+  contrast claude-code vs opencode widens from a 90x ratio at GE(3)
+  to a 463x ratio at GE(4) -- a five-fold sharpening of the
+  inequality-cube ranking signal. Even more telling: opencode's
+  GE(4) is STRICTLY LESS than its GE(3), which the closed-form
+  decomposition predicts cannot happen unless (1/6)*s*CV^3 is
+  negative AND its magnitude exceeds (1/12)*k*CV^4 -- i.e., a
+  LEFT-skewed daily-mass distribution with low CV. This is a
+  single-bit per-source diagnostic that GE(3) alone cannot
+  surface (GE(3) - GE(2) gives the same sign information at one
+  power lower, but GE(4) - GE(3) at fourth power confirms /
+  inverts it independently). The five other sources are
+  right-skewed (s > 0), so their GE(4) > GE(3) as predicted.
+
 ## 0.6.300 — 2026-05-01
 
 ### Added
