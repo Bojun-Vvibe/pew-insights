@@ -117,6 +117,7 @@ import {
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
+  renderDailyTokenMedcoupleSkewness,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -396,6 +397,7 @@ import { buildDailyTokenQuintileShareRatio } from './dailytokenquintilesharerati
 import { buildDailyTokenMadOverMedian } from './dailytokenmadovermedian.js';
 import { buildDailyTokenRunsTestZ } from './dailytokenrunstestz.js';
 import { buildDailyTokenHillTailIndex } from './dailytokenhilltailindex.js';
+import { buildDailyTokenMedcoupleSkewness } from './dailytokenmedcoupleskewness.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16025,6 +16027,123 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHillTailIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-medcouple-skewness')
+  .description(
+    "Per-source MEDCOUPLE (Brys, Hubert, Struyf 2004) of the per-day total_tokens vector (SIXTY-SIXTH cross-source axis). MC = median over (x_i, x_j) with x_i <= m <= x_j (not both = m) of [(x_j - m) - (m - x_i)] / (x_j - x_i), where m = median(X). MC in [-1, +1]: positive = right-skew (heavy days far above median, light days clustered just below), negative = left-skew, 0 = symmetric. STRUCTURALLY ORTHOGONAL to all axes 32-65: every shipped daily-token dispersion/inequality axis (Gini, Atkinson, Theil, GE, Hoover, Wolfson, Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, Var-of-Logs, FGT, PGR, IOM, MSR, DSG, QSR, MADM) is invariant under reflection around the mean and cannot detect skew sign; RTZ/MSR are calendar-order, not magnitude; Hill is tail-only and unsigned. MC is signed, magnitude-only, robust (~25% breakdown), bounded.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 5). MC needs at least one element on each side of the median.',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absMc (default, most-asymmetric first; |MC| descending) | mc (most right-skewed first) | mcAsc (most left-skewed first) | tokens | days | source. Applied before --top.',
+    'absMc',
+  )
+  .option(
+    '--min-abs-mc <x>',
+    'display filter: hide non-degenerate rows whose |MC| is strictly below x (in [0, 1]). Useful for surfacing only strongly-asymmetric sources.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minAbsMc?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 3) {
+          throw new Error(
+            `--min-days must be an integer >= 3 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minAbsMc: number | null = null;
+        if (opts.minAbsMc !== undefined) {
+          const mv = Number.parseFloat(opts.minAbsMc);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-abs-mc must be a finite number in [0, 1] (got ${opts.minAbsMc})`,
+            );
+          }
+          minAbsMc = mv;
+        }
+        const validSorts = ['absMc', 'mc', 'mcAsc', 'tokens', 'days', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMedcoupleSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minAbsMc,
+          sort: opts.sort as
+            | 'absMc'
+            | 'mc'
+            | 'mcAsc'
+            | 'tokens'
+            | 'days'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenMedcoupleSkewness(report) + '\n');
         }
       } catch (e) {
         die(e);

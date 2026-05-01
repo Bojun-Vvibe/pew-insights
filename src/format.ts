@@ -17075,6 +17075,7 @@ import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintilesha
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
+import type { DailyTokenMedcoupleSkewnessReport } from './dailytokenmedcoupleskewness.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17851,6 +17852,73 @@ export function renderDailyTokenHillTailIndex(
     s.degenerate || !Number.isFinite(s.alpha) ? '\u2014' : s.alpha.toFixed(4),
     s.degenerate ? '\u2014' : s.gamma.toFixed(4),
     s.gammaStdErr === 0 ? '\u2014' : s.gammaStdErr.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMedcoupleSkewness(
+  r: DailyTokenMedcoupleSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-medcouple-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-abs-mc: ${r.minAbsMc === null ? '\u2014' : r.minAbsMc}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinAbsMc)} below min-abs-mc, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MEDCOUPLE: MC = median over (x_i, x_j) with x_i <= m <= x_j (not both = m) of [(x_j - m) - (m - x_i)] / (x_j - x_i). MC in [-1, +1]: positive = right-skew (heavy days far above median), negative = left-skew, 0 = symmetric. SIXTY-SIXTH cross-source axis. Robust (~25% breakdown), scale-free, signed -- orthogonal to all unsigned dispersion axes 32-65.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source medcouple (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'median',
+    'nLow',
+    'nUp',
+    'nTie',
+    'mc',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(Math.round(s.median)),
+    formatNumber(s.nLower),
+    formatNumber(s.nUpper),
+    formatNumber(s.nTies),
+    s.degenerate ? '\u2014' : s.mc.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
