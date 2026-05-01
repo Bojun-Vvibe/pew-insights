@@ -319,3 +319,93 @@ test('structural: at alpha > 0, ER amplifies super-linearly with n compared to G
     );
   }
 });
+
+// ---- refinement (axis-51 follow-up): closed-form identity audit
+// across an alpha grid + numerical stability on long vectors --------
+
+test('refinement: closed-form ER(alpha)/Gini = 2*n^{-alpha} holds across full alpha axiom range', () => {
+  // The full Esteban-Ray axiom range is alpha in [1, 1.6]; we audit
+  // [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.6] across multiple shapes
+  // to verify the closed-form identity holds at machine precision
+  // for every (vector, alpha) pair.
+  const shapes = [
+    [1, 2, 3, 4, 5],
+    [10, 10, 10, 100],
+    [3, 7, 1, 11, 4, 9],
+    [1, 1, 1, 1, 1, 1, 1000],
+    [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5],
+  ];
+  const alphas = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.6];
+  for (const v of shapes) {
+    const g = giniOfVector(v);
+    if (g === 0) continue;
+    for (const a of alphas) {
+      const e = estebanRayOfVector(v, a).erNorm;
+      const ratio = e / g;
+      const expected = 2 * Math.pow(v.length, -a);
+      assert.ok(
+        Math.abs(ratio - expected) < 1e-9,
+        `closed-form ER(alpha)/Gini = 2*n^{-alpha} broken on ` +
+          `${JSON.stringify(v)} at alpha=${a}: got ${ratio}, expected ${expected}`,
+      );
+    }
+  }
+});
+
+test('refinement: numerical stability on long vectors (n=1000) -- no NaN, no inf, monotone in alpha-power', () => {
+  // Build a long heavy-tailed vector and confirm the O(n log n)
+  // sorted-form pair-sum stays in finite range and behaves
+  // continuously as alpha varies.
+  const n = 1000;
+  const v: number[] = [];
+  for (let i = 1; i <= n; i += 1) {
+    // Pareto-ish: one small spike, mostly small values.
+    v.push(i % 50 === 0 ? i * 100 : i);
+  }
+  for (const a of [0, 0.5, 1, 1.5]) {
+    const r = estebanRayOfVector(v, a);
+    assert.ok(Number.isFinite(r.er), `er not finite at alpha=${a}: ${r.er}`);
+    assert.ok(Number.isFinite(r.erNorm), `erNorm not finite at alpha=${a}`);
+    assert.ok(r.er >= 0);
+    assert.ok(r.erNorm >= 0);
+  }
+  // Closed-form check at scale: erNorm/gini should equal 2*n^{-alpha}
+  // even at n=1000 (numerical-stability assertion).
+  const g = giniOfVector(v);
+  for (const a of [0, 0.5, 1, 1.5]) {
+    const e = estebanRayOfVector(v, a).erNorm;
+    const expected = 2 * Math.pow(n, -a);
+    assert.ok(
+      Math.abs(e / g - expected) < 1e-9,
+      `n=1000 closed-form broken at alpha=${a}: ${e / g} vs ${expected}`,
+    );
+  }
+});
+
+test('refinement: defensive guard -- ER(0) = 2*mu*Gini exactly on a 50-trial random sweep', () => {
+  // The alpha=0 -> 2*mu*Gini identity is the most-cited cross-anchor
+  // for ER. Audit it on 50 random vectors to catch any numerical
+  // drift in the sorted-form pairwise-distance reduction.
+  const rand = (seed: number) => {
+    let s = seed;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 0xffffffff;
+    };
+  };
+  const r = rand(20260502);
+  for (let trial = 0; trial < 50; trial += 1) {
+    const len = 3 + Math.floor(r() * 10);
+    const v: number[] = [];
+    for (let i = 0; i < len; i += 1) v.push(Math.floor(r() * 1000) + 1);
+    const er0 = estebanRayOfVector(v, 0).er;
+    const mu = v.reduce((s, x) => s + x, 0) / v.length;
+    const g = giniOfVector(v);
+    const expected = 2 * mu * g;
+    assert.ok(
+      Math.abs(er0 - expected) < 1e-7,
+      `ER(0) = 2*mu*Gini drift on ${JSON.stringify(v)}: ` +
+        `got ${er0}, expected ${expected}`,
+    );
+  }
+});
