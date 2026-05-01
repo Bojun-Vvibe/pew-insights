@@ -2,6 +2,133 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.294 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTIETH):
+  `pew-insights daily-token-amato-index`.
+
+  Per-source AMATO INDEX (Amato 1968; Kakwani 1980 §4; Arnold 1987)
+  of the per-day total_tokens distribution: the EUCLIDEAN ARC LENGTH
+  of the Lorenz curve from (0,0) to (1,1).
+
+  For a non-negative vector sorted ascending into x_(1) <= ... <=
+  x_(n) with total S = sum x_i, the Lorenz curve is piecewise-linear
+  on segments connecting (i/n, S_i/S) and ((i+1)/n, S_{i+1}/S). Each
+  segment has horizontal length 1/n and vertical length x_(i+1)/S, so
+
+      A(L) = sum_{i=1..n} sqrt( (1/n)^2 + (x_(i)/S)^2 )
+
+  Range: A(L) in [sqrt(2), 2].
+    - LOWER BOUND sqrt(2) attained iff every D_i = mu (perfect
+      equality; the Lorenz curve is the diagonal y = x of length
+      sqrt(2) on the unit square).
+    - UPPER BOUND 2 approached (never attained for finite n) when a
+      single day holds all the mass: the curve is the L-shape of two
+      unit segments, total length 2.
+
+  Strictly increasing in any rank-preserving Pigou-Dalton spread by
+  the convexity of sqrt() composed with the L^2 norm of the share
+  vector at fixed horizontal pitch.
+
+  THE STRUCTURAL DISTINCTION FROM EVERY PRIOR INEQUALITY AXIS.
+  Amato's index is a SHAPE functional of the Lorenz curve. It is
+  orthogonal in functional class to:
+
+  - AREA functionals (Gini = 2 * area between Lorenz and diagonal)
+  - SINGLE-POINT functionals (Pietra/Hoover = max gap; Wolfson/
+    Palma = single rank cuts)
+  - SHARE-MOMENT functionals (Theil-L=GE(0), Theil-T=GE(1), GE(2),
+    GE(-1), Atkinson, Chakravarty)
+  - RANK-WEIGHTED PARTIAL-MEAN functionals (Bonferroni, Mehran,
+    S-Gini, Zenga)
+  - TRANSLATION-INVARIANT functionals (Kolm-Pollak)
+
+  Two distributions can have IDENTICAL Gini and DIFFERENT Amato (the
+  Lorenz curve can have the same area between it and the diagonal
+  but a different total path length). The randomized orthogonality
+  witness in the test suite finds such a pair within 500 trials of
+  random 6-vectors.
+
+  TAIL-BIAS PROFILE. Amato weights each Lorenz segment by
+  sqrt(1/n^2 + s_i^2) where s_i = x_(i)/S is the share at rank i.
+  Small shares contribute ~ 1/n each (uniform floor); large shares
+  contribute ~ s_i (linear in the share). So Amato is dominated by
+  the LARGEST shares but with sqrt() compression -- a strictly
+  weaker top-tail compression than GE(2)'s squared compression. This
+  is a structurally distinct slot from every prior axis.
+
+  Refinements shipped together:
+
+  - `--include-kakwani`: per-row `kakwani` (Kakwani's normalized
+    arc-length index K = (A - sqrt(2)) / (2 - sqrt(2)) in [0, 1])
+    and `amatoExcessOverEquality` = A - sqrt(2). Surfaces both the
+    raw geometric units AND the [0, 1] normalisation simultaneously.
+  - `--include-gini-anchor`: per-row `gini` (axis-32 functional on
+    the same per-day vector) and `amatoOverGini` ratio. Surfaces the
+    area-vs-arc-length functional decoupling -- this ratio is NOT
+    constant across distributions and varies from ~2.2 (top-tail-
+    skewed sources) to ~5.8 (lower-Gini, more-uniform sources) on
+    the live data.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (one editor source
+  token scrubbed for changelog policy):
+
+      pew-insights daily-token-amato-index --include-kakwani --include-gini-anchor
+
+      per-source AMATO of per-day total_tokens (sorted by amato):
+      source       days  amato     meanDaily    medianDaily  tokens
+      claude-code  35    1.691571  98,353,880   25,407,006   3,442,385,788
+      [editor]     73    1.650320     25,832         8,118       1,885,727
+      codex         8    1.592835  101,203,083  41,235,207     809,624,660
+      openclaw     15    1.493467  139,973,963  99,150,451   2,099,609,439
+      hermes       15    1.486959   16,538,772  13,459,283     248,081,573
+      opencode     12    1.466229  439,519,748  474,051,843  5,274,236,970
+
+      Kakwani normalized K = (A - sqrt(2)) / (2 - sqrt(2)) in [0, 1]:
+      source       amato     amato-sqrt(2)  kakwani
+      claude-code  1.691571  0.277358       0.473479
+      [editor]     1.650320  0.236107       0.403060
+      codex        1.592835  0.178621       0.304925
+      openclaw     1.493467  0.079253       0.135293
+      hermes       1.486959  0.072746       0.124184
+      opencode     1.466229  0.052016       0.088796
+
+      Gini cross-anchor (axis-32; AREA functional, polar to Amato's
+      ARC-LENGTH functional on the same Lorenz curve):
+      source       amato     gini    amato/gini
+      claude-code  1.691571  0.7590  2.2286
+      [editor]     1.650320  0.7000  2.3576
+      codex        1.592835  0.5892  2.7033
+      openclaw     1.493467  0.3835  3.8942
+      hermes       1.486959  0.3571  4.1638
+      opencode     1.466229  0.2511  5.8400
+
+  The amato/gini ratio is the cleanest visible signal of the
+  area-vs-arc-length functional decoupling: the most concentrated
+  source (`claude-code`, Gini 0.759) has the LOWEST amato/gini ratio
+  (2.23), while the most uniform source (`opencode`, Gini 0.251) has
+  the HIGHEST amato/gini ratio (5.84). The two functionals do not
+  scale with each other -- as the Lorenz curve flattens toward the
+  diagonal, its arc length only shrinks toward sqrt(2) ~= 1.4142
+  while its area shrinks all the way to 0. That divergent behaviour
+  near the equality limit is what makes Amato a genuinely distinct
+  functional rather than a Gini reparameterisation.
+
+  Tests: 30 total, including thirteen primitive invariants
+  (degeneracy, perfect-equality lower bound, scale-invariance,
+  permutation-invariance, closed-form check on [1,3], range
+  membership, Pigou-Dalton monotonicity, single-entry concentration
+  monotonicity, zero-entry handling, error paths), three Kakwani
+  identity checks, ten builder integration checks (window filter,
+  minTokens/minDays filters, refinement surfacing, sort key
+  validation, minAmato display filter), and three property-based
+  randomized invariants (range membership over 50 random vectors,
+  Pigou-Dalton monotonicity over 30 random vectors, and a
+  randomized Gini/Amato ordering-disagreement witness over up to
+  500 trials).
+
 ## 0.6.293 — 2026-05-01
 
 ### Added
