@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert';
 import {
   buildDailyTokenGenEntropyNegOneIndex,
   genEntropyNegOneOfVector,
+  atkinsonEps2OfVector,
 } from '../src/dailytokengenentropynegoneindex.js';
 import type { QueueLine } from '../src/types.js';
 
@@ -63,12 +64,11 @@ test('genEntropyNegOneOfVector: permutation-invariant', () => {
 });
 
 test('genEntropyNegOneOfVector: known closed-form on [1,4]', () => {
-  // mu = 2.5; (mu/x)^2 = (2.5)^2 = 6.25 and (2.5/4)^2 = 0.390625
-  // mean = (6.25 + 0.390625) / 2 = 3.3203125
-  // GE(-1) = 0.5 * (3.3203125 - 1) = 1.16015625
+  // mu = 2.5; mu/x = 2.5 and 0.625; mean = 1.5625
+  // GE(-1) = 0.5 * (1.5625 - 1) = 0.28125
   const r = genEntropyNegOneOfVector([1, 4]);
   assert.ok(
-    Math.abs(r.genEntropy - 1.16015625) < 1e-12,
+    Math.abs(r.genEntropy - 0.28125) < 1e-12,
     `closed-form mismatch: ${r.genEntropy}`,
   );
 });
@@ -313,4 +313,48 @@ test('property: GE(-1) and GE(2) are NOT proportional (orthogonality witness)', 
   // A has higher GE(-1), B has higher GE(2): demonstrates non-monotone relation.
   assert.ok(ra.genEntropy > rb.genEntropy, `A.GE(-1)=${ra.genEntropy} <= B.GE(-1)=${rb.genEntropy}`);
   assert.ok(rb.ge2! > ra.ge2!, `B.GE(2)=${rb.ge2} <= A.GE(2)=${ra.ge2}`);
+});
+
+// ---- atkinson(eps=2) <-> GE(-1) textbook identity audit ------------
+
+test('property: A(2) = 1 - 1/(1 + 2*GE(-1)) holds across random positive vectors', () => {
+  const r = rng(99);
+  for (let trial = 0; trial < 50; trial++) {
+    const n = 3 + Math.floor(r() * 20);
+    const v: number[] = [];
+    for (let i = 0; i < n; i++) v.push(1 + r() * 1000);
+    const ge = genEntropyNegOneOfVector(v).genEntropy;
+    const a2 = atkinsonEps2OfVector(v);
+    const predicted = 1 - 1 / (1 + 2 * ge);
+    assert.ok(
+      Math.abs(a2 - predicted) < 1e-9,
+      `Identity violation: A(2)=${a2} vs predicted=${predicted}, diff=${Math.abs(a2 - predicted)}`,
+    );
+  }
+});
+
+test('builder: --include-atkinson2-identity surfaces residual on every non-degenerate row', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-25T00:00:00.000Z', 'a', 1000),
+    ql('2026-04-26T00:00:00.000Z', 'a', 4000),
+    ql('2026-04-27T00:00:00.000Z', 'a', 9000),
+    ql('2026-04-28T00:00:00.000Z', 'a', 16000),
+  ];
+  const r = buildDailyTokenGenEntropyNegOneIndex(queue, {
+    generatedAt: GEN,
+    includeAtkinson2Identity: true,
+  });
+  const s = r.sources[0]!;
+  assert.ok(s.atkinson2 !== undefined);
+  assert.ok(s.atkinsonIdentityResidual !== undefined);
+  assert.ok(
+    (s.atkinsonIdentityResidual as number) < 1e-9,
+    `identity residual too large: ${s.atkinsonIdentityResidual}`,
+  );
+});
+
+test('atkinsonEps2OfVector: closed form on [1, 4]', () => {
+  // mu = 2.5; HM = 2 / (1 + 0.25) = 2 / 1.25 = 1.6; A(2) = 1 - 1.6/2.5 = 0.36
+  const a = atkinsonEps2OfVector([1, 4]);
+  assert.ok(Math.abs(a - 0.36) < 1e-12, `closed form mismatch: ${a}`);
 });

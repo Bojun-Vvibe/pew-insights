@@ -16295,7 +16295,7 @@ export function renderDailyTokenGenEntropyNegOneIndex(
   }
   lines.push(
     chalk.dim(
-      `(per-source GE(-1) = (1/2) * (mean_i (mu / x_i)^2 - 1). BOTTOM-tail-sensitive moment functional. Polar to GE(2) which is TOP-tail-sensitive. Diverges as any x_i -> 0+.)`,
+      `(per-source GE(-1) = (1/2) * (mean_i (mu / x_i) - 1). BOTTOM-tail-sensitive moment functional. Polar to GE(2) which is TOP-tail-sensitive. Diverges as any x_i -> 0+.)`,
     ),
   );
   lines.push('');
@@ -16358,6 +16358,25 @@ export function renderDailyTokenGenEntropyNegOneIndex(
         : (s.genEntropyOverGe2 as number).toFixed(4),
     ]);
     lines.push(renderTableLocal(aHeaders, aRows));
+  }
+
+  if (r.sources.some((s) => s.atkinson2 !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Atkinson(eps=2) cross-anchor + textbook identity audit (A(2) = 1 - 1/(1 + 2*GE(-1)))`,
+      ),
+    );
+    const bHeaders = ['source', 'genEntropy', 'atkinson2', '|A(2)-predicted|'];
+    const bRows: string[][] = r.sources
+      .filter((s) => s.atkinson2 !== undefined)
+      .map((s) => [
+        s.source,
+        s.genEntropy.toFixed(4),
+        (s.atkinson2 as number).toFixed(6),
+        (s.atkinsonIdentityResidual as number).toExponential(2),
+      ]);
+    lines.push(renderTableLocal(bHeaders, bRows));
   }
 
   return lines.join('\n').replace(/\n+$/, '');

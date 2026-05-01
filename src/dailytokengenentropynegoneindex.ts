@@ -9,8 +9,8 @@
  * element of the Generalised-Entropy GE(alpha) family
  * (Bourguignon 1979; Shorrocks 1980; Cowell 2011):
  *
- *     GE(-1) = (1 / 2) * ((1/n) * sum_i (mu / D_i)^2  -  1)
- *            = (1 / 2) * ( mean_i (mu / D_i)^2  -  1 )
+ *     GE(-1) = (1 / 2) * ((1/n) * sum_i (mu / D_i)  -  1)
+ *            = (1 / 2) * ( mean_i (mu / D_i)  -  1 )
  *
  *   where mu = mean(D). Range [0, +inf). GE(-1) = 0 iff every D_i =
  *   mu (perfect equality). Strictly increasing in any rank-preserving
@@ -22,9 +22,9 @@
  *
  *   GE(-1) is the canonical BOTTOM-TAIL inequality functional in the
  *   Cowell-Kuga moment family. Its share-power exponent is -1, which
- *   means each share's contribution is 1 / share^2. A single small day
+ *   means each share's contribution is mu/x. A single small day
  *   (share -> 0) drives GE(-1) -> +inf, while a single mega-day
- *   (share -> +inf) contributes (mu/D)^2 -> 0. This is the OPPOSITE
+ *   (share -> +inf) contributes mu/x -> 0. This is the OPPOSITE
  *   tail bias from GE(2) (axis-37; CV^2 / 2; quadratic in the LARGE
  *   shares). The two anchor the moment family at polar-opposite
  *   tail-sensitivities.
@@ -35,15 +35,19 @@
  *
  *   GE(-1) reads
  *
- *     GE(-1) = (1/2) * ( (1/n) * sum_i (mu / D_i)^2  -  1 )
+ *     GE(-1) = (1/2) * ( (1/n) * sum_i (mu / D_i)    -  1 )
  *
- *   They differ by INVERTING the share inside the squared term. GE(2)
- *   is dominated by large D_i; GE(-1) is dominated by small D_i. For
- *   any non-degenerate distribution the two are NOT proportional and
- *   NOT a monotone transformation of each other; the ordering of two
- *   sources can flip. The cross-anchor refinement below surfaces both
- *   side-by-side along with their ratio so the reader can SEE the
- *   tail-bias asymmetry directly.
+ *   Both come from the unified family
+ *
+ *     GE(alpha) = 1 / (alpha * (alpha - 1)) * (mean (x/mu)^alpha - 1)
+ *
+ *   evaluated at alpha = +2 and alpha = -1 respectively (the
+ *   prefactor 1 / (alpha * (alpha - 1)) is 1/2 in both cases). They
+ *   are NOT proportional and NOT a monotone transformation of each
+ *   other; the ordering of two distributions can flip. The
+ *   cross-anchor refinement below surfaces both side-by-side along
+ *   with their ratio so the reader can SEE the tail-bias asymmetry
+ *   directly.
  *
  *   Headline question:
  *   **"For each source, how unequal is the per-day token mass when
@@ -147,6 +151,18 @@ export interface DailyTokenGenEntropyNegOneOptions {
    * `genEntropyOverGe2` (ratio, or null if ge2 = 0).
    */
   includeGe2Anchor?: boolean;
+  /**
+   * Refinement: when true, every emitted row gains `atkinson2`
+   * (Atkinson at eps = 2 on the same vector) and
+   * `atkinsonIdentityResidual` -- the absolute deviation from the
+   * textbook Cowell 2011 eq. 4.32 identity
+   *   A(2) = 1 - 1 / sqrt(1 + 2 * GE(-1)).
+   * The residual must be < 1e-9 on every non-degenerate row; we
+   * surface it as a numerical-invariant audit so a downstream
+   * reader can verify the GE(-1) computation against an entirely
+   * independent functional path.
+   */
+  includeAtkinson2Identity?: boolean;
   generatedAt?: string;
 }
 
@@ -173,6 +189,17 @@ export interface DailyTokenGenEntropyNegOneSourceRow {
   ge2Gap?: number;
   /** Refinement: genEntropy / ge2 (NaN if ge2 = 0). */
   genEntropyOverGe2?: number;
+  /** Refinement: Atkinson at eps = 2 on the same vector. */
+  atkinson2?: number;
+  /**
+   * Refinement: |A(2) - (1 - 1/(1 + 2*GE(-1)))|. The textbook
+   * identity (derivable directly: GE(-1) = (1/2)(mean(mu/x) - 1)
+   * implies mean(mu/x) = 2*GE(-1) + 1, and A(2) = 1 - HM/mu = 1 -
+   * 1/mean(mu/x) = 1 - 1/(1 + 2*GE(-1))). Should be < 1e-9 on
+   * every non-degenerate row; surfaced as a numerical-invariant
+   * audit.
+   */
+  atkinsonIdentityResidual?: number;
 }
 
 export interface DailyTokenGenEntropyNegOneReport {
@@ -209,7 +236,10 @@ function medianOfSorted(sorted: number[]): number {
 /**
  * Generalised Entropy GE(-1) of a strictly-positive vector:
  *
- *     GE(-1) = (1/2) * ( (1/n) * sum_i (mu / x_i)^2  -  1 )
+ *     GE(-1) = (1/2) * ( (1/n) * sum_i (mu / x_i)  -  1 )
+ *
+ * (the alpha=-1 element of GE(alpha) = 1/(alpha*(alpha-1)) *
+ * (mean (x/mu)^alpha - 1); the prefactor at alpha=-1 is 1/2.)
  *
  * Returns {genEntropy: 0, degenerate: true} for n < 2, empty input,
  * or all-zero vector. Throws on negative or non-finite input. Throws
@@ -268,11 +298,13 @@ export function genEntropyNegOneOfVector(values: number[]): {
   const median = medianOfSorted(sorted);
   let acc = 0;
   for (const v of values) {
-    const r = mu / v;
-    acc += r * r;
+    acc += mu / v;
   }
-  const meanRsq = acc / n;
-  const genEntropy = 0.5 * (meanRsq - 1);
+  const meanInvShare = acc / n;
+  // GE(-1) = 1 / (alpha * (alpha - 1)) * (mean (x/mu)^alpha - 1)
+  //        = 1 / ((-1) * (-2)) * (mean (mu/x) - 1)
+  //        = (1/2) * (mean(mu/x) - 1)
+  const genEntropy = 0.5 * (meanInvShare - 1);
   return {
     genEntropy,
     mean: mu,
@@ -308,6 +340,39 @@ function ge2OfVector(values: number[]): number {
     acc += r * r;
   }
   return 0.5 * (acc / n - 1);
+}
+
+/**
+ * Atkinson (1970) index at eps = 2 on a strictly positive vector.
+ * The eps = 2 case has the closed form
+ *
+ *     A(2) = 1 - n * (sum_i 1/x_i)^(-1) / mu
+ *          = 1 - HM(x) / mu
+ *
+ * where HM is the harmonic mean. Used here purely to audit the
+ * textbook identity A(2) = 1 - 1 / (1 + 2*GE(-1)).
+ * Returns 0 on degenerate input.
+ */
+export function atkinsonEps2OfVector(values: number[]): number {
+  const n = values.length;
+  if (n < 2) return 0;
+  let total = 0;
+  for (const v of values) {
+    if (!Number.isFinite(v) || v < 0) {
+      throw new Error(`atkinsonEps2 requires non-negative finite values`);
+    }
+    total += v;
+  }
+  if (total <= 0) return 0;
+  // Any zero entry: A(2) is degenerate (HM = 0), surface 1.
+  for (const v of values) {
+    if (v === 0) return 1;
+  }
+  const mu = total / n;
+  let invSum = 0;
+  for (const v of values) invSum += 1 / v;
+  const hm = n / invSum;
+  return 1 - hm / mu;
 }
 
 export function buildDailyTokenGenEntropyNegOneIndex(
@@ -463,6 +528,16 @@ export function buildDailyTokenGenEntropyNegOneIndex(
       row.ge2 = g2;
       row.ge2Gap = g.genEntropy - g2;
       row.genEntropyOverGe2 = g2 > 0 ? g.genEntropy / g2 : Number.NaN;
+    }
+    if (opts.includeAtkinson2Identity && !g.degenerate) {
+      const a2 = atkinsonEps2OfVector(values);
+      row.atkinson2 = a2;
+      // Textbook identity (Cowell 2011, derivable directly): A(2) =
+      // 1 - 1 / (1 + 2 * GE(-1)). Proof: GE(-1) = (1/2)(mean(mu/x)
+      // - 1) so mean(mu/x) = 2*GE(-1) + 1. A(2) = 1 - HM/mu = 1 -
+      // 1/(mean(mu/x)) = 1 - 1/(2*GE(-1) + 1).
+      const predicted = 1 - 1 / (1 + 2 * g.genEntropy);
+      row.atkinsonIdentityResidual = Math.abs(a2 - predicted);
     }
     rows.push(row);
     totalTokensSum += acc.totalTokens;

@@ -12,7 +12,11 @@ All notable changes to this project will be documented in this file.
   Per-source GENERALISED ENTROPY GE(-1) of the per-day total_tokens
   distribution (Bourguignon 1979; Shorrocks 1980; Cowell 2011):
 
-      GE(-1) = (1/2) * ( (1/n) * sum_i (mu / x_i)^2  -  1 )
+      GE(-1) = (1/2) * ( (1/n) * sum_i (mu / x_i)  -  1 )
+
+  the alpha=-1 element of the unified family GE(alpha) =
+  1/(alpha*(alpha-1)) * (mean (x/mu)^alpha - 1); the prefactor
+  1/(alpha*(alpha-1)) is exactly 1/2 at both alpha=-1 and alpha=2.
 
   Range [0, +inf). GE(-1) = 0 iff every D_i = mu (perfect equality).
   Strictly increasing in any rank-preserving Pigou-Dalton spread.
@@ -69,32 +73,43 @@ All notable changes to this project will be documented in this file.
   Live-smoke against `~/.config/pew/queue.jsonl` (one editor source
   token scrubbed for changelog policy):
 
-      pew-insights daily-token-genentropy-negone-index --include-ge2-anchor
+      pew-insights daily-token-genentropy-negone-index --include-ge2-anchor --include-atkinson2-identity
 
       per-source GE(-1) of per-day total_tokens (sorted by genEntropy):
-      source       days  genEntropy   meanDaily    tokens
-      claude-code   35   23730.7268   98,353,880   3,442,385,788
-      [editor]      73    1024.7669       25,832       1,885,727
-      openclaw      15      68.1150  139,909,900   2,098,648,502
-      opencode      12      33.6844  438,579,488   5,262,953,851
-      codex          8      28.7268  101,203,083     809,624,660
-      hermes        15       3.8590   16,491,374     247,370,609
+      source       days  genEntropy  meanDaily    tokens
+      claude-code   35    26.2959    98,353,880   3,442,385,788
+      [editor]      73     5.8873        25,832       1,885,727
+      codex          8     1.9643   101,203,083     809,624,660
+      openclaw      15     1.6334   139,909,900   2,098,648,502
+      opencode      12     1.4126   438,846,296   5,266,155,555
+      hermes        15     0.4898    16,505,777     247,586,648
 
-      GE(2) cross-anchor (polar TOP-tail companion in the moment family):
+      GE(2) cross-anchor (polar TOP-tail companion):
       source       genEntropy  ge2     GE(-1)-GE(2)  GE(-1)/GE(2)
-      claude-code  23730.7268  2.2601  +23728.4667    10499.9986
-      [editor]      1024.7669  1.6243   +1023.1426      630.9117
-      openclaw        68.1150  0.2460     +67.8690      276.8529
-      opencode        33.6844  0.1136     +33.5708      296.5402
-      codex           28.7268  0.7350     +27.9918       39.0835
-      hermes           3.8590  0.2007      +3.6583       19.2246
+      claude-code  26.2959     2.2601  +24.0358      11.6350
+      [editor]      5.8873     1.6243   +4.2631       3.6246
+      codex         1.9643     0.7350   +1.2293       2.6725
+      openclaw      1.6334     0.2460   +1.3874       6.6390
+      opencode      1.4126     0.1129   +1.2997      12.5122
+      hermes        0.4898     0.1996   +0.2902       2.4538
 
-  Numerically: GE(-1) values explode relative to GE(2) precisely
-  because both sources have at least one near-zero day (the very
-  first or last day in the window with only minutes of activity);
-  the GE(-1)/GE(2) ratio of ~10500 on `claude-code` is the
-  bottom-tail-bias signature of the negative-alpha moment exponent
-  doing what the family axiomatically guarantees it should.
+      Atkinson(eps=2) cross-anchor + textbook identity audit
+      (A(2) = 1 - 1/(1 + 2*GE(-1))):
+      source       genEntropy  atkinson2  |A(2)-predicted|
+      claude-code  26.2959     0.981340   0.00e+0
+      [editor]      5.8873     0.921720   0.00e+0
+      codex         1.9643     0.797101   0.00e+0
+      openclaw      1.6334     0.765634   1.11e-16
+      opencode      1.4126     0.738573   0.00e+0
+      hermes        0.4898     0.494869   0.00e+0
+
+  Numerically: every Atkinson(2) identity residual is at machine
+  epsilon, confirming the GE(-1) computation matches the
+  independent harmonic-mean path through Atkinson(2) to within
+  floating-point precision. The GE(-1)/GE(2) ratio of ~11.6 on
+  `claude-code` is the bottom-tail-bias signature of the
+  negative-alpha moment exponent doing what the family
+  axiomatically guarantees it should.
 
   Tests: 25 total, including ten primitive invariants
   (degeneracy, perfect-equality zero, scale-invariance, permutation-

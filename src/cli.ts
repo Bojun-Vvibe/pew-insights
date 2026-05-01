@@ -13766,6 +13766,10 @@ program
     '--include-ge2-anchor',
     'every row gains ge2 (GE(2) on the same per-day vector), ge2Gap (genEntropy - ge2), and genEntropyOverGe2 (genEntropy / ge2). Surfaces moment-family tail-bias asymmetry at alpha=-1 vs alpha=+2.',
   )
+  .option(
+    '--include-atkinson2-identity',
+    'every non-degenerate row gains atkinson2 (Atkinson at eps=2 on the same vector via the harmonic-mean closed form 1 - HM/mu) and atkinsonIdentityResidual = |A(2) - (1 - 1/(1 + 2*GE(-1)))| -- the textbook identity, surfaced as a numerical-invariant audit (residual must be < 1e-9).',
+  )
   .option('--json', 'emit JSON instead of a pretty report')
   .action(
     async (
@@ -13779,6 +13783,7 @@ program
         sort: string;
         minGenentropy: string;
         includeGe2Anchor?: boolean;
+        includeAtkinson2Identity?: boolean;
         json?: boolean;
       },
       cmd,
@@ -13833,6 +13838,7 @@ program
           top,
           minGenEntropy,
           includeGe2Anchor: opts.includeGe2Anchor ?? false,
+          includeAtkinson2Identity: opts.includeAtkinson2Identity ?? false,
           sort: opts.sort as
             | 'genEntropy'
             | 'tokens'
