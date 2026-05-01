@@ -123,6 +123,7 @@ import {
   renderDailyTokenSpectralEntropy,
   renderDailyTokenPermutationEntropy,
   renderDailyTokenHurstRs,
+  renderDailyTokenDfaAlpha,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -408,6 +409,7 @@ import { buildDailyTokenAutocorrelationLag7 } from './dailytokenautocorrelationl
 import { buildDailyTokenSpectralEntropy } from './dailytokenspectralentropy.js';
 import { buildDailyTokenPermutationEntropy } from './dailytokenpermutationentropy.js';
 import { buildDailyTokenHurstRs } from './dailytokenhurstrs.js';
+import { buildDailyTokenDfaAlpha } from './dailytokendfaalpha.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16773,6 +16775,153 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHurstRs(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-dfa-alpha')
+  .description(
+    "Per-source DFA-1 alpha exponent (Detrended Fluctuation Analysis; Peng et al. 1994, Phys. Rev. E 49:1685-1689) on the gap-filled daily total_tokens series (SEVENTY-SECOND cross-source axis). alpha = OLS slope of log(F(s)) vs log(s) where F(s) = rms of LOCAL-LINEAR-DETRENDED residuals of the cumulative-deviation profile Y[i] = sum_{j<=i}(x[j]-mu) inside non-overlapping windows of size s, averaged across floor(N/s) windows. Scales s span a log-spaced grid in [min-window, floor(N/4)]. alpha ~ 0.5 = uncorrelated white-noise-like; alpha < 0.5 = anti-persistent / mean-reverting; 0.5 < alpha < 1 = persistent / long-range positive memory; alpha = 1 = 1/f noise; alpha = 1.5 = Brownian; alpha > 1.5 = drift-dominated. Multi-scale DETRENDED memory exponent: orthogonal to (a) Hurst R/S axis 71 -- R/S uses NO detrending of cumulative deviations and is biased upward by trends (reports H near 1 on a ramp), DFA-1 absorbs the local linear trend per window so alpha measures the scaling of RESIDUALS; sorted vs shuffled multiset gives alpha clamping high vs ~0.5 with the witness test, while every multiset statistic agrees; (b) lag-1 / lag-7 ACF axes 67/68 -- single-lag linear scalars vs multi-scale exponent; (c) spectral entropy axis 69 -- flatness of the periodogram vs scaling exponent linking window size to detrended rms (related only under stationary 1/f^beta with alpha=(beta+1)/2; routinely disagree on real data); (d) permutation entropy axis 70 -- ordinal-only length-3 patterns vs fully metric multi-scale; (e) all permutation-invariant dispersion / shape axes 32-67 (gini, atkinson, theil, ge, hill, mc, l-skew, ...) -- shuffle-invariant; alpha is shuffle-sensitive; (f) trend-slope axes -- the local linear detrending is precisely Peng's design choice for trend-robustness vs Hurst 1951.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4*minWindow so floor(N/m) >= 4. Default 32.',
+    '32',
+  )
+  .option(
+    '--min-window <n>',
+    'smallest window size in days. Hard floor 4. Default 4.',
+    '4',
+  )
+  .option(
+    '--max-scales <n>',
+    'cap on the number of distinct log-spaced scales used in the OLS. Default 12.',
+    '12',
+  )
+  .option(
+    '--min-scales <n>',
+    'minimum surviving scales required to fit the log-log OLS. Default 4.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absAlphaDeviationDesc (default, sources furthest from alpha=0.5 first) | alpha | alphaDesc | r2Desc | tokens | tenure | source.',
+    'absAlphaDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        minWindow: string;
+        maxScales: string;
+        minScales: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minWindow = Number.parseInt(opts.minWindow, 10);
+        if (!Number.isInteger(minWindow) || minWindow < 4) {
+          throw new Error(
+            `--min-window must be an integer >= 4 (got ${opts.minWindow})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4 * minWindow) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4*min-window=${4 * minWindow} (got ${opts.minTenureDays})`,
+          );
+        }
+        const maxScales = Number.parseInt(opts.maxScales, 10);
+        if (!Number.isInteger(maxScales) || maxScales < 3) {
+          throw new Error(
+            `--max-scales must be an integer >= 3 (got ${opts.maxScales})`,
+          );
+        }
+        const minScales = Number.parseInt(opts.minScales, 10);
+        if (!Number.isInteger(minScales) || minScales < 3) {
+          throw new Error(
+            `--min-scales must be an integer >= 3 (got ${opts.minScales})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absAlphaDeviationDesc',
+          'alpha',
+          'alphaDesc',
+          'r2Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDfaAlpha(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          minWindow,
+          maxScales,
+          minScales,
+          top,
+          sort: opts.sort as
+            | 'absAlphaDeviationDesc'
+            | 'alpha'
+            | 'alphaDesc'
+            | 'r2Desc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenDfaAlpha(report) + '\n');
         }
       } catch (e) {
         die(e);

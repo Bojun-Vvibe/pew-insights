@@ -17081,6 +17081,7 @@ import type { DailyTokenAutocorrelationLag7Report } from './dailytokenautocorrel
 import type { DailyTokenSpectralEntropyReport } from './dailytokenspectralentropy.js';
 import type { DailyTokenPermutationEntropyReport } from './dailytokenpermutationentropy.js';
 import type { DailyTokenHurstRsReport } from './dailytokenhurstrs.js';
+import type { DailyTokenDfaAlphaReport } from './dailytokendfaalpha.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18268,6 +18269,73 @@ export function renderDailyTokenHurstRs(r: DailyTokenHurstRsReport): string {
     formatNumber(s.maxScaleUsed),
     formatNumber(s.scalesUsed),
     s.hurst.toFixed(4),
+    s.r2.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenDfaAlpha(r: DailyTokenDfaAlphaReport): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-dfa-alpha'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    min-window: ${formatNumber(r.minWindow)}    max-scales: ${formatNumber(r.maxScales)}    min-scales: ${formatNumber(r.minScales)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedBelowMinScales)} below min-scales tenure, ${formatNumber(r.droppedTooFewScales)} too-few-scales-after-degeneracy, ${formatNumber(r.droppedTopSources)} below top cap; clamped: ${formatNumber(r.clampedBelow0)} below 0, ${formatNumber(r.clampedAbove2)} above 2`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DFA-1 alpha exponent (Peng et al. 1994) on the gap-filled daily total_tokens series. SEVENTY-SECOND cross-source axis. alpha = OLS slope of log(F(s)) vs log(s) where F(s) = rms of LOCAL-LINEAR-DETRENDED residuals of the cumulative-deviation profile in non-overlapping windows of size s. alpha ~ 0.5 = uncorrelated; alpha < 0.5 = anti-persistent; 0.5 < alpha < 1 = persistent / long-range positive memory; alpha = 1 = 1/f noise; alpha = 1.5 = Brownian; alpha > 1.5 = drift-dominated. Multi-scale DETRENDED memory exponent -- structurally orthogonal to (a) Hurst R/S axis 71 -- R/S uses NO detrending of the cumulative deviation, DFA detrends each window by its local linear fit; sorted vs shuffled multiset gives alpha-high vs ~0.5 with the witness test; (b) lag-1 / lag-7 ACF axes 67/68 -- single-lag linear scalars vs multi-scale exponent; (c) spectral entropy axis 69 -- flatness vs scaling exponent; (d) permutation entropy axis 70 -- ordinal alphabet vs metric; (e) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; alpha is shuffle-sensitive; (f) trend-slope axes -- the local linear detrending is precisely what makes alpha trend-robust (Peng's design choice over Hurst). alphaRaw is the un-clamped fit; alpha is clamped to [0, 2].)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source DFA-1 alpha (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'minScale',
+    'maxScale',
+    'scales',
+    'alpha',
+    'r2',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.minScaleUsed),
+    formatNumber(s.maxScaleUsed),
+    formatNumber(s.scalesUsed),
+    s.alpha.toFixed(4),
     s.r2.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
