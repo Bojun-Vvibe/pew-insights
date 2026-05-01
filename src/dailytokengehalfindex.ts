@@ -107,6 +107,22 @@
  * REGIME diagnostic: closer to 2 = near-equality, closer to 4 =
  * heavy-tail dominated).
  *
+ * CLOSED-FORM PARETO IDENTITY. For a Pareto(alpha) distribution
+ * with shape alpha > 1/2 (so that the half-th moment exists),
+ *     E[D]      = alpha / (alpha - 1)        for alpha > 1,
+ *     E[sqrt D] = alpha / (alpha - 1/2)      for alpha > 1/2,
+ * so on the lower-truncated Pareto with scale x_min = 1,
+ *     M_{1/2}(D) / mu = (E[sqrt D])^2 / E[D]
+ *                     = (alpha - 1) * alpha / (alpha - 1/2)^2,
+ * giving
+ *     GE(1/2)(Pareto(alpha)) = 4 * (1 - sqrt((alpha-1)*alpha) / (alpha-1/2)).
+ * As alpha -> +inf (Pareto -> Dirac), GE(1/2) -> 0; as alpha -> 1+
+ * (heavy upper tail, mean barely defined), the inner sqrt -> 0 and
+ * GE(1/2) -> 4. For alpha = 2 (the canonical heavy-tail case),
+ * GE(1/2) = 4 * (1 - sqrt(2)/1.5) = 4 * (1 - 0.9428) = 0.2287.
+ * This pairs with the lognormal closed form GE(1/2) =
+ * 4*(1 - exp(-sigma^2/8)) above as a second analytic anchor.
+ *
  * NON-DEGENERACY WITNESS vs axes 33/34/37/49 (other GE alphas): for
  * lognormal log y ~ N(m, sigma^2), GE(alpha) =
  * (exp(alpha*(alpha-1)*sigma^2/2) - 1) / (alpha*(alpha-1)). At
@@ -194,6 +210,14 @@ export interface DailyTokenGeHalfIndexSourceRow {
   geHalfOverAtkHalf?: number;
   /** Refinement: gehalf - 4*(1 - sqrt(1 - atkHalf)); ~0 to fp by construction. */
   geHalfBridgeResidual?: number;
+  /**
+   * Refinement: lognormal-implied sigma^2 such that GE(1/2) =
+   * 4*(1 - exp(-sigma^2/8)) on lognormal data. Inverting gives
+   * sigma^2 = -8 * log(1 - gehalf/4). Compare against axis-53 VL
+   * (which IS sigma^2 on truly lognormal data) for an INDEPENDENT
+   * lognormality audit.
+   */
+  lognormalImpliedSigmaSq?: number;
 }
 
 export interface DailyTokenGeHalfIndexReport {
@@ -304,6 +328,12 @@ export function geHalfOfVector(values: number[]): {
   // sqrt(mu), so GE(1/2) >= 0; equality iff all D_i equal.
   let gehalf = 4 * (1 - meanSqrt / Math.sqrt(mu));
   if (gehalf < 0) gehalf = 0; // Kahan / fp clamp on near-uniform data.
+  // Hard mathematical upper bound: meanSqrt > 0 strictly (we threw on
+  // non-positive input above), so meanSqrt/sqrt(mu) > 0 strictly and
+  // gehalf < 4 strictly. Clamp at 4 - 4*eps as a defensive bound
+  // against pathological fp paths (cannot trigger on normal inputs).
+  const HARD_UPPER = 4 * (1 - Number.EPSILON);
+  if (gehalf > HARD_UPPER) gehalf = HARD_UPPER;
   return {
     gehalf,
     mean: mu,
@@ -471,6 +501,11 @@ export function buildDailyTokenGeHalfIndex(
       row.geHalfBridgeResidual = r.gehalf - expectedFromAtk;
       row.geHalfOverAtkHalf =
         atkHalf > 1e-15 ? r.gehalf / atkHalf : Number.NaN;
+      // Lognormal-implied sigma^2 = -8 * log(1 - gehalf/4). Defined
+      // only when gehalf < 4; clamped above so always defined.
+      const oneMinusQuarter = 1 - r.gehalf / 4;
+      row.lognormalImpliedSigmaSq =
+        oneMinusQuarter > 0 ? -8 * Math.log(oneMinusQuarter) : Number.POSITIVE_INFINITY;
     }
     rows.push(row);
     totalTokensSum += acc.totalTokens;

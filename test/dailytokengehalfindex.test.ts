@@ -380,3 +380,82 @@ test('GE_HALF_ATK_HALF_RATIO_LIMITS constant', () => {
   assert.equal(GE_HALF_ATK_HALF_RATIO_LIMITS.atEquality, 2);
   assert.equal(GE_HALF_ATK_HALF_RATIO_LIMITS.atSpike, 4);
 });
+
+// ---- refinement: pareto closed form + lognormal-implied sigma^2 + clamp ----
+
+test('geHalfOfVector: Pareto(alpha=2) closed form 4*(1 - sqrt(2)/1.5)', () => {
+  // Sample inverse-CDF Pareto(alpha=2, x_min=1): D = (1-U)^(-1/2),
+  // deterministic LCG so the test is reproducible.
+  let s = 67890;
+  function rnd(): number {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    return (s + 1) / 0x80000000;
+  }
+  const N = 100000;
+  const v: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const u = rnd();
+    v.push(Math.pow(1 - u, -1 / 2));
+  }
+  const r = geHalfOfVector(v);
+  const expected = 4 * (1 - Math.sqrt(1 * 2) / 1.5); // ~ 0.2287
+  // Tolerance loose (Pareto MC convergence is slow due to heavy tail).
+  assert.ok(
+    Math.abs(r.gehalf - expected) < 0.04,
+    `Pareto(2) GE(1/2) ~ ${expected.toFixed(4)}, got ${r.gehalf.toFixed(4)}`,
+  );
+});
+
+test('buildDailyTokenGeHalfIndex: lognormal-implied sigma^2 round-trips on lognormal data', () => {
+  // For lognormal data: GE(1/2) = 4*(1 - exp(-sigma^2/8)),
+  // inverted: sigma^2 = -8*log(1 - gehalf/4). The audit field
+  // lognormalImpliedSigmaSq should match the empirical VL within MC
+  // tolerance.
+  let s = 24681;
+  function rnd(): number {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    return (s + 1) / 0x80000000;
+  }
+  function rnorm(): number {
+    return (
+      Math.sqrt(-2 * Math.log(rnd())) * Math.cos(2 * Math.PI * rnd())
+    );
+  }
+  const sigma = 0.8;
+  const N = 30000;
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < N; i++) {
+    const v = Math.exp(5 + sigma * rnorm());
+    const day = new Date(Date.UTC(2026, 0, 1) + i * 86400_000)
+      .toISOString()
+      .slice(0, 10);
+    queue.push(ql(day + 'T00:00:00Z', 'logn', v));
+  }
+  const r = buildDailyTokenGeHalfIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minDays: 4,
+    includeAtkAnchor: true,
+  });
+  const row = r.sources[0]!;
+  const sigmaSq = sigma * sigma;
+  assert.ok(
+    row.lognormalImpliedSigmaSq !== undefined,
+    'lognormalImpliedSigmaSq missing',
+  );
+  // Within 5% of true sigma^2.
+  assert.ok(
+    Math.abs((row.lognormalImpliedSigmaSq as number) - sigmaSq) < 0.05 * sigmaSq + 0.02,
+    `lognormalImpliedSigmaSq ${(row.lognormalImpliedSigmaSq as number).toFixed(4)} vs true ${sigmaSq.toFixed(4)}`,
+  );
+});
+
+test('geHalfOfVector: gehalf strictly bounded above by 4 even on extreme spike', () => {
+  // 999 ones + one huge spike. M_{1/2} approaches 1, sqrt(mu) blows
+  // up, ratio -> 0, gehalf -> 4 but never reaches it.
+  const v = new Array(999).fill(1);
+  v.push(1e18);
+  const r = geHalfOfVector(v);
+  assert.ok(r.gehalf < 4, `gehalf must be < 4, got ${r.gehalf}`);
+  assert.ok(r.gehalf > 3, `extreme spike should drive gehalf > 3, got ${r.gehalf}`);
+});

@@ -16948,7 +16948,7 @@ export function renderDailyTokenGeHalfIndex(
         `Atkinson(eps=1/2) cross-anchor (functional bridge GE(1/2) = 4*(1 - sqrt(1 - Atkinson(eps=1/2))); ratio in [2, 4) ranges from near-equality to heavy-tail-spike).`,
       ),
     );
-    const wHeaders = ['source', 'gehalf', 'atkHalf', 'gehalf/atkHalf'];
+    const wHeaders = ['source', 'gehalf', 'atkHalf', 'gehalf/atkHalf', 'lnSigma^2'];
     const wRows: string[][] = r.sources.map((s) => [
       s.source,
       s.degenerate ? '\u2014' : s.gehalf.toFixed(6),
@@ -16956,6 +16956,10 @@ export function renderDailyTokenGeHalfIndex(
       s.geHalfOverAtkHalf === undefined || Number.isNaN(s.geHalfOverAtkHalf)
         ? 'n/a'
         : (s.geHalfOverAtkHalf as number).toFixed(4),
+      s.lognormalImpliedSigmaSq === undefined ||
+      !Number.isFinite(s.lognormalImpliedSigmaSq as number)
+        ? 'n/a'
+        : (s.lognormalImpliedSigmaSq as number).toFixed(4),
     ]);
     lines.push(renderTableLocal(wHeaders, wRows));
   }
