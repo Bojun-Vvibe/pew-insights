@@ -2,6 +2,149 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.297 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-THIRD):
+  `pew-insights daily-token-variance-of-logarithms`.
+
+  Per-source VARIANCE OF LOGARITHMS of the per-day total_tokens
+  distribution (Aitchison & Brown 1957, "The Lognormal Distribution",
+  CUP; Sen 1973, "On Economic Inequality", OUP, ch.2.5):
+
+      VL = (1/n) * sum_i ( log(D_i) - mean_j log(D_j) )^2
+
+  i.e. the SECOND CENTRAL MOMENT of the LOGARITHMS of the daily
+  token mass D = (D_1, ..., D_n). Dimensionless; geometric-mean-
+  anchored (the within-log mean is log(GeoMean)); scale-invariant in
+  tokens (multiplying every D_i by a constant leaves VL unchanged).
+  Range [0, +inf); VL = 0 iff perfect equality.
+
+  THE LOG-SCALE-DISPERSION CORNER. Among the prior 21 daily-token
+  axes (32-52), only the GE family (axes 33/34/37/49) reads y on the
+  logarithmic axis at all, and even those read it through a single
+  first-order log shift (GE(0) = log mu - mean log y) or through
+  linear-share moments (GE(1), GE(2), GE(-1)). VL is the only axis
+  that exposes the SECOND CENTRAL MOMENT of log y directly.
+
+  CLOSED-FORM AUDIT vs GE(0) (axis-33). For LOGNORMAL data
+  log y ~ N(m, sigma^2):
+
+      GE(0) = sigma^2 / 2,    VL = sigma^2,    so   VL = 2 * GE(0).
+
+  Equivalently, VL / (2 * GE(0)) = 1 iff log y is normal. For
+  non-lognormal vectors the two functionals decouple: rankings can
+  flip and the ratio is NOT identically 1. We surface that ratio
+  via `--include-ge0-anchor` as a per-source LOGNORMALITY AUDIT.
+
+  NON-DEGENERACY (live, ~/.config/pew/queue.jsonl, 6 sources):
+
+      source          vl        theilL    vl/(2*theilL)
+      --------------  --------  --------  -------------
+      claude-code     4.041828  1.587419  1.2731
+      vscode-copilot  2.480975  1.125692  1.1020
+      codex           1.829349  0.796774  1.1480
+      opencode        1.095621  0.296154  1.8497
+      openclaw        0.921269  0.329281  1.3989
+      hermes          0.590741  0.251555  1.1742
+
+  The VL/(2*GE(0)) ratio ranges from 1.10 (vscode-copilot, near-
+  lognormal) to 1.85 (opencode, the most non-lognormal source).
+  Every ratio is strictly > 1, indicating sub-lognormal lower tails
+  on every source's per-day token mass; the SPREAD of the ratios
+  (1.10 -> 1.85) is the first-order witness that VL is not a
+  constant reparameterization of GE(0).
+
+  RANK-FLIP WITNESS. Sort the same six sources by GE(0) versus by
+  VL:
+
+      GE(0): claude-code > vscode-copilot > codex > openclaw >
+             opencode    > hermes
+      VL  : claude-code > vscode-copilot > codex > opencode  >
+             openclaw    > hermes
+
+  openclaw and opencode SWAP between rank 4 and rank 5: openclaw
+  has the larger GE(0) (0.329 vs 0.296) but opencode has the larger
+  VL (1.096 vs 0.921). This is the cross-source decoupling axis-53
+  surfaces.
+
+  Why orthogonal to every prior daily-token axis (axes 32-52):
+
+  - axis-32 Gini (linear-scale, mean-anchored, L1 pairwise distance;
+    VL is log-scale, geometric-mean-anchored, L2 deviation-from-log-
+    mean)
+  - axis-33 Theil-L / MLD / GE(0) = log mu - mean log y: a FIRST-
+    moment log shift between log(arithmetic mean) and arithmetic
+    mean of log y; VL is the SECOND CENTRAL MOMENT of log y itself.
+    Closed-form VL = 2 * GE(0) holds ONLY for lognormal data; live
+    data above gives ratios in [1.10, 1.85] with rank flips.
+  - axes-34/37/49 Theil-T / GE(2) / GE(-1) (share-moment family in
+    linear shares; VL is the central log-second-moment, not a share
+    functional)
+  - axis-35 Pietra / axis-42 Hoover (single-point L_inf Lorenz gaps
+    at the MEAN-rank cut, dimensionless; VL is a global L2 log-
+    spread, no Lorenz reading)
+  - axes-36/44 Atkinson / Kolm-Pollak (CRRA / CARA welfare-
+    equivalent loss; VL is not a welfare functional)
+  - axis-39 Zenga (lower-mean / upper-mean ratio, linear scale;
+    VL is a single L2 statistic on log y)
+  - axis-40 Palma (top-decile / bottom-four-decile ratio in linear
+    space; VL is a global second log-moment)
+  - axis-41 FGT (one-sided lower-tail threshold-anchored; VL is
+    two-sided, threshold-FREE, log-scale)
+  - axes-43/45/47 Bonferroni / Mehran / S-Gini (rank-weighted
+    PARTIAL-MEAN kernels in linear space; VL is unweighted log-
+    scale)
+  - axis-46 Wolfson / axis-52 Foster-Wolfson (median-anchored
+    polarization measures; VL is geometric-mean-anchored DISPERSION,
+    not a polarization measure -- VL is a known Pigou-Dalton-
+    violator on extreme transfers, see Cowell 2011 sec.4.4)
+  - axis-48 Chakravarty (parametric concave share-power averaging;
+    VL has no power exponent)
+  - axis-50 Amato (Lorenz-curve ARC LENGTH; VL is not a Lorenz
+    functional at all)
+  - axis-51 Esteban-Ray (pairwise identification-alienation
+    polarization; VL is a single second moment, no pairwise sum)
+
+  WELL-KNOWN CAVEAT (declared up front). VL is famously NOT
+  Pigou-Dalton consistent: a regressive transfer between two values
+  on the SAME side of, but far from, the geometric mean can REDUCE
+  VL even though it widens inequality (Foster-Ok 1999, Econometrica
+  67:855-874 / Cowell 2011 sec.4.4). We ship VL anyway because the
+  log-scale dispersion signal it exposes is genuinely orthogonal to
+  every prior axis (per the audit above) and because the standard
+  practical use of VL is precisely as a multiplicative-spread
+  diagnostic rather than as a Pigou-Dalton inequality measure --
+  the per-source meanLog and geoMeanDaily columns make the
+  multiplicative interpretation explicit.
+
+  LIVE SMOKE (head, ~/.config/pew/queue.jsonl, --top 8 --include-
+  ge0-anchor):
+
+      source          firstDay    lastDay     days  vl      meanLog  geoMeanDaily  meanDaily    minDay      maxDay      tokens
+      claude-code     2026-02-11  2026-04-23  35    4.0418  16.8167  20,108,718    98,353,880   2026-03-06  2026-04-20  3,442,385,788
+      vscode-copilot  2025-07-30  2026-04-20  73    2.4810  9.0337   8,381         25,832       2025-08-22  2026-04-17  1,885,727
+      codex           2026-04-13  2026-04-20  8     1.8293  17.6359  45,620,424    101,203,083  2026-04-16  2026-04-20  809,624,660
+      opencode        2026-04-20  2026-05-01  12    1.0956  19.6110  328,828,027   442,167,469  2026-04-20  2026-04-21  5,306,009,626
+      openclaw        2026-04-17  2026-05-01  15    0.9213  18.4287  100,803,552   140,113,800  2026-05-01  2026-04-19  2,101,707,005
+      hermes          2026-04-17  2026-05-01  15    0.5907  16.3759  12,941,239    16,642,742   2026-04-26  2026-04-19  249,641,127
+
+  Determinism: pure builder. Wall clock only via `--generated-at`
+  (none here -> defaults to `new Date().toISOString()`). Welford's
+  online algorithm is used for the second-moment accumulation so
+  VL stays numerically clean even on near-equal log-vectors; the
+  test suite confirms agreement with a naive two-pass implementation
+  on a Fibonacci-spaced reference vector to 1e-12.
+
+  Knobs: `--since` / `--until` (ISO time-window on hour_start),
+  `--source` (single-source filter), `--min-tokens` (default 1000),
+  `--min-days` (default 4; VL degenerate for n<2), `--top`,
+  `--sort` (vl | tokens | days | source | meanDaily | geoMeanDaily
+  | meanLog), `--min-vl` (display floor on non-degenerate rows),
+  `--include-ge0-anchor` (refinement: surfaces theilL on the same
+  vector and the vl/(2*GE(0)) lognormality-audit ratio), `--json`.
+
 ## 0.6.296 — 2026-05-01
 
 ### Added
