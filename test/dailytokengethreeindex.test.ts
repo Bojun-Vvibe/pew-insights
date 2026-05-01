@@ -338,3 +338,69 @@ test('buildDailyTokenGeThreeIndex: rejects bad knobs', () => {
     }),
   );
 });
+
+// ---- refinement: Pareto closed-form anchor + production-scale fp stability ----
+
+test('geThreeOfVector: Pareto(alpha=4) closed-form anchor (GE(3) = 11/96)', () => {
+  // For Pareto(alpha=4, x_min=1):
+  //   E[D]   = 4/3,    E[D^3] = 4/1 = 4
+  //   m_3/mu^3 = 4 / (4/3)^3 = 4 * 27/64 = 27/16
+  //   GE(3) = (27/16 - 1) / 6 = (11/16) / 6 = 11/96 = 0.11458...
+  // Sample inverse-CDF deterministic LCG.
+  let s = 13579;
+  function rnd(): number {
+    s = (1103515245 * s + 12345) & 0x7fffffff;
+    return (s + 1) / 0x80000000;
+  }
+  const N = 200000;
+  const v: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const u = rnd();
+    v.push(Math.pow(1 - u, -1 / 4));
+  }
+  const r = geThreeOfVector(v);
+  const expected = 11 / 96;
+  // Heavy tail -> wide tolerance, but the anchor must be in the
+  // right neighbourhood (factor 2) for any MC of this size.
+  assert.ok(
+    r.gethree > expected / 2 && r.gethree < expected * 3,
+    `Pareto(alpha=4) GE(3) ~ ${expected.toFixed(4)} (=11/96), got ${r.gethree.toFixed(4)}`,
+  );
+});
+
+test('geThreeOfVector: production-scale day totals do not overflow fp', () => {
+  // Real production day totals are O(1e9). Cubing raw counts would
+  // give O(1e27), at the edge of fp53 precision. Using share-form
+  // (D/mu)^3 keeps things bounded in O(n) where n is the spike
+  // multiplier. This test asserts no Infinity or NaN on a 1e9-scale
+  // vector with a 10x spike day.
+  const v: number[] = [];
+  for (let i = 0; i < 30; i++) v.push(1e9 + i * 1e7); // baseline ~1e9
+  v.push(1e10); // 10x spike
+  const r = geThreeOfVector(v);
+  assert.ok(Number.isFinite(r.gethree), `gethree non-finite: ${r.gethree}`);
+  assert.ok(Number.isFinite(r.cubicShareMean));
+  assert.ok(r.gethree > 0);
+  // Sanity: cubicShareMean should be modest (single 10x spike on 30
+  // baseline days has bounded share^3 contribution).
+  assert.ok(
+    r.cubicShareMean > 1 && r.cubicShareMean < 100,
+    `cubicShareMean out of range: ${r.cubicShareMean}`,
+  );
+});
+
+test('geThreeOfVector: error message names the function and the bad value', () => {
+  // Refinement: error messages must point the operator at the
+  // failing input. Negative, zero, and NaN all share the same
+  // "strictly-positive finite" requirement.
+  try {
+    geThreeOfVector([1, 2, -5, 3]);
+    assert.fail('should have thrown');
+  } catch (e) {
+    const msg = (e as Error).message;
+    assert.ok(
+      msg.includes('geThreeOfVector') && msg.includes('-5'),
+      `error message must name function and bad value, got: ${msg}`,
+    );
+  }
+});
