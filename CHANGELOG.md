@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.300 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-SIXTH):
+  `pew-insights daily-token-ge-three-index`.
+
+  Per-source GENERALIZED ENTROPY index at parameter alpha = 3
+  (GE(3)) of the per-day total_tokens distribution:
+
+      GE(3) = (1 / (3 * 2 * n)) * sum_i [ (D_i/mu)^3 - 1 ]
+            = (1/6) * ( (1/n) * sum_i (D_i/mu)^3 - 1 )
+            = (1/6) * ( m_3(D) / mu^3 - 1 ),
+
+      where m_3(D) = (1/n) * sum_i D_i^3 is the raw third moment and
+      c_3 = m_3 / mu^3 is the dimensionless cubic-share moment.
+
+  THE UNIQUE CUBIC-SHARE GE MEMBER and the next standard heavy-tail
+  GE point above alpha=2. Among the prior GE-family daily-token axes
+  (33/34/37/49/55) the kernel exponents are alpha in
+  {-1, 0, 1/2, 1, 2}; alpha=3 is the unique cubic-share kernel.
+  Range [0, +inf); GE(3) = 0 iff perfect equality (Jensen on the
+  convex x^3). Dimensionless; scale-invariant in tokens.
+
+  CLOSED-FORM MOMENT DECOMPOSITION (refinement diagnostic). For ANY
+  positive vector with coefficient of variation CV = sigma/mu and
+  standardized skewness s = E[((D-mu)/sigma)^3]:
+
+      m_3 = mu^3 + 3*mu*sigma^2 + s*sigma^3
+          = mu^3 * (1 + 3*CV^2 + s*CV^3),
+
+  giving
+
+      GE(3) = (1/6) * (3*CV^2 + s*CV^3)
+            = (1/2)*CV^2 + (1/6)*s*CV^3
+            = GE(2) + (1/6)*s*CV^3.
+
+  So GE(3) - GE(2) = (1/6)*skewness*CV^3 EXACTLY (closed form),
+  which isolates the SKEWNESS-WEIGHTED-BY-CV^3 contribution that
+  GE(2) (= (1/2)*CV^2) cannot see -- a per-source heavy-upper-tail
+  diagnostic that is positive iff skewness > 0 and grows with CV^3.
+
+  CLOSED-FORM PARETO ANCHORS. For Pareto(alpha) with x_min = 1,
+  alpha > 3:
+
+      GE(3)(Pareto(alpha)) =
+          ((alpha - 1)^3 / (alpha^2 * (alpha - 3)) - 1) / 6.
+
+  At alpha=4: GE(3) = (27/16 - 1)/6 = 11/96 = 0.11458... At alpha=5:
+  GE(3) = (64/50 - 1)/6 = 0.04666... As alpha -> 3+, GE(3) -> +inf
+  (third moment diverges); as alpha -> +inf, GE(3) -> 0.
+
+  CLOSED-FORM LOGNORMAL ANCHOR. For log y ~ N(m, sigma^2):
+
+      GE(3)        = (exp(3*sigma^2) - 1) / 6,
+      GE(2)        = (exp(sigma^2) - 1) / 2,
+      GE(3)/GE(2)  = (exp(3*sigma^2) - 1) / (3*(exp(sigma^2) - 1)).
+
+  Ratio -> 1 as sigma -> 0; diverges super-exponentially as
+  sigma -> +inf. So GE(3) and GE(2) cannot rank lognormal sources
+  identically when sigma differs across sources.
+
+  NUMERICAL STABILITY. We compute via the SHARE form (D_i/mu)^3 in
+  Kahan-summed passes (one for mu, one for cubic-share mean and
+  central moments). This avoids cubing raw token counts (which would
+  overflow fp on day-totals of 1e9+ tokens cubed) and keeps GE(3)
+  numerically stable on production-scale inputs.
+
+  Knobs: `--since` / `--until` time-window, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 4; >=2 required), `--top`,
+  `--sort` (gethree | tokens | days | source | meanDaily | cv | ge2),
+  `--min-gethree`. Refinement: `--include-moment-decomposition`
+  surfaces per-row `cv`, `skewness`, `ge2` (= (1/2)*CV^2), and
+  `geThreeMinusGeTwo` (= (1/6)*skewness*CV^3 = GE(3) - GE(2) by
+  closed form).
+
+  LIVE SMOKE on `~/.config/pew/queue.jsonl`
+  (`node ./dist/cli.js daily-token-ge-three-index --json`),
+  source labels redacted to `s_1..s_6` for hygiene; numeric values
+  verbatim:
+
+      generatedAt: 2026-05-01T07:13:36Z
+      totalTokens: 11,953,883,414    totalSources: 6
+      minTokens: 1000   minDays: 4   sort: gethree
+
+      source  nDays  meanDaily        cubicShareMean    gethree
+      s_1       35   98,353,879.66    47.13055902       7.68842650
+      s_2       73       25,831.88    28.14801940       4.52466990
+      s_3        8  101,203,082.50     8.07276841       1.17879474
+      s_4       15  140,374,791.60     2.69733406       0.28288901
+      s_5       15   16,767,202.47     2.14491415       0.19081902
+      s_6       12  445,238,110.67     1.51288372       0.08548062
+
+  RANK-FLIP / NON-DEGENERACY WITNESS vs prior axes.
+
+  Vs `daily-token-foster-wolfson-index` (axis-52, median-anchored
+  POLARIZATION) on the same 6 sources, the rank order of the new GE(3)
+  inequality axis differs almost completely from the polarization
+  axis, confirming GE(3) is non-degenerate vs polarization:
+
+      source   GE(3) rank   FW rank   delta
+      s_1          1            4       -3   (top inequality, mid polarisation)
+      s_2          2            6       -4   (cube-share spike; tiny FW because medians dominate FW)
+      s_3          3            3        0
+      s_4          4            2       +2
+      s_5          5            5        0
+      s_6          6            1       +5   (top polarisation, lowest GE(3))
+
+  Spearman rank correlation across the 6 sources is well below 1;
+  only s_3 and s_5 keep their rank. s_2 in particular swings from
+  GE(3) rank #2 to FW rank #6, demonstrating that cube-share mass
+  inequality (GE(3)) is functionally distinct from median-anchored
+  polarization (Foster-Wolfson).
+
+  Vs `daily-token-ge2-index` (axis-37) on the same data the rank
+  order coincides (s_1 > s_2 > s_3 > s_4 > s_5 > s_6), but the
+  closed-form moment decomposition
+  GE(3) - GE(2) differs per source (cubic-skewness contribution):
+
+      source   GE(2)        GE(3)        GE(3) - GE(2)
+      s_1      2.26006953   7.68842650   5.42835697
+      s_2      1.62426356   4.52466990   2.90040634
+      s_3      0.73501247   1.17879474   0.44378227
+      s_4      0.24125564   0.28288901   0.04163337
+      s_5      0.18182300   0.19081902   0.00899602
+      s_6      0.09788878   0.08548062  -0.01240816
+
+  s_6 has GE(3) - GE(2) < 0, which under the closed form
+  GE(3) - GE(2) = (1/6) * skewness * CV^3 means s_6 has NEGATIVE
+  daily-token skewness (left-tailed days dominate); every other
+  source is right-skewed (s > 0). This sign flip is invisible to
+  GE(2) alone -- it is the new diagnostic surfaced by axis-56.
+
+
 ## 0.6.299 — 2026-05-01
 
 ### Added
