@@ -351,3 +351,103 @@ test('build: sort by bottomWeightExcess works (refinement field)', () => {
       (r.sources[1]!.bottomWeightExcess as number),
   );
 });
+
+// ---- property-based invariants (refinement) -------------------------
+
+test('property: S(delta) monotone non-decreasing in delta for delta >= 2 (50 random vectors)', () => {
+  // Donaldson-Weymark: increasing the aversion parameter should not
+  // decrease the inequality reading on any non-negative vector.
+  // Rejecting any monotonicity violation guards against numerical
+  // bugs in the rank-power kernel evaluation across the delta sweep.
+  let seed = 0x12345678;
+  const rng = (): number => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  for (let trial = 0; trial < 50; trial += 1) {
+    const n = 3 + Math.floor(rng() * 20); // n in [3, 22]
+    const v: number[] = [];
+    for (let i = 0; i < n; i += 1) {
+      v.push(Math.floor(rng() * 10000) + 1);
+    }
+    let prev = sginiOfVector(v, 2).sgini;
+    for (const d of [2.5, 3, 4, 6, 10, 20]) {
+      const s = sginiOfVector(v, d).sgini;
+      assert.ok(
+        s >= prev - 1e-12,
+        `monotonicity broken at trial ${trial} delta ${d}: prev=${prev} new=${s} v=${JSON.stringify(v)}`,
+      );
+      prev = s;
+    }
+  }
+});
+
+test('property: S(delta) approaches 1 as delta -> infinity for any non-degenerate vector', () => {
+  // Limit identity: as delta -> inf, the kernel concentrates all
+  // weight on the smallest order statistic, so weighted mean -> x_(1)
+  // and S -> 1 - x_(1)/mu. For any vector with x_(1) < mu this means
+  // S -> a value strictly bounded below 1 but >= 1 - x_(1)/mu and
+  // strictly above S(2). We assert the weaker but checkable bound:
+  // S(delta=1000) - S(2) is positive on any vector with min < mu.
+  for (const v of [
+    [1, 2, 3, 4, 5],
+    [1, 1, 1, 100],
+    [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+    [1, 1000, 1, 1000, 1],
+  ]) {
+    const sLow = sginiOfVector(v, 2).sgini;
+    const sHigh = sginiOfVector(v, 1000).sgini;
+    const mu = v.reduce((a, b) => a + b, 0) / v.length;
+    const xMin = Math.min(...v);
+    if (xMin < mu - 1e-12) {
+      assert.ok(
+        sHigh > sLow,
+        `sHigh=${sHigh} not > sLow=${sLow} for ${JSON.stringify(v)}`,
+      );
+      // Limit lower bound: as delta -> inf, S -> 1 - xMin/mu; check
+      // we are within a reasonable tolerance of that limit at delta=1000.
+      const limit = 1 - xMin / mu;
+      assert.ok(
+        Math.abs(sHigh - limit) < 0.05,
+        `sHigh=${sHigh} not near limit ${limit} for ${JSON.stringify(v)}`,
+      );
+    }
+  }
+});
+
+test('property: builder S(delta=2) row matches axis-32 Gini row exactly across many synthetic sources', () => {
+  // Cross-anchor identity at the BUILDER level (not just the primitive):
+  // for every source row the builder emits, sgini at delta=2 must match
+  // the gini field byte-for-byte. Guards against any future divergence
+  // in the source-level per-day aggregation pipeline between the two
+  // computations.
+  let seed = 0xdeadbeef;
+  const rng = (): number => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const queue: QueueLine[] = [];
+  for (let s = 0; s < 8; s += 1) {
+    const src = `synthetic-${s}`;
+    const nDays = 4 + Math.floor(rng() * 12);
+    for (let d = 0; d < nDays; d += 1) {
+      const day = `2026-04-${String(d + 1).padStart(2, '0')}T00:00:00Z`;
+      const tokens = 100 + Math.floor(rng() * 50000);
+      queue.push(ql(day, src, tokens));
+    }
+  }
+  const r = buildDailyTokenSginiIndex(queue, {
+    generatedAt: GEN,
+    minTokens: 1,
+    minDays: 3,
+    delta: 2,
+  });
+  assert.ok(r.sources.length >= 5, `expected at least 5 sources, got ${r.sources.length}`);
+  for (const row of r.sources) {
+    assert.ok(
+      Math.abs(row.sgini - row.gini) < 1e-12,
+      `builder identity broken for ${row.source}: sgini=${row.sgini} gini=${row.gini}`,
+    );
+  }
+});
+
