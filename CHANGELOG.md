@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.315 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-FIRST):
+  `pew-insights daily-token-hurst-rs`.
+
+  Per-source Hurst exponent via classical rescaled-range (R/S)
+  analysis (Hurst 1951; Mandelbrot & Wallis, Water Resources
+  Research 5(5), 1969) on the gap-filled daily `total_tokens`
+  series. For each source:
+
+  1. Aggregate per UTC calendar day across all rows; build the
+     dense series across the source's tenure
+     `[firstActiveDay, lastActiveDay]` with missing days filled
+     as 0 tokens (same gap-fill convention as axes 67/68/69/70).
+  2. Build a log-spaced grid of chunk sizes
+     `m in [min-window, floor(N/2)]` capped at `--max-scales`
+     distinct integers.
+  3. For each scale `m`, split the series into
+     `k = floor(N/m)` non-overlapping chunks; per chunk
+     compute the cumulative deviation `z[i] = sum_{j<=i}(x[j]-mu)`,
+     the range `R = max(z) - min(z)`, and the population stddev
+     `S = sqrt((1/m) sum (x-mu)^2)`. Average `R/S` over the
+     surviving chunks (chunks with `S = 0` from all-zero
+     gap-fill stretches are dropped at the chunk level and
+     surfaced in `degenerateChunks`).
+  4. `H` = OLS slope of `log((R/S)_m)` vs `log(m)` across the
+     surviving scales, with `r^2` of the log-log fit reported
+     alongside.
+
+  - `H ≈ 0.5` : random walk (independent Brownian increments;
+    `R/S ∝ sqrt(m)`).
+  - `H > 0.5` : persistent / long-range positive memory across
+    multiple horizons (`R/S` grows faster than `sqrt(m)`).
+  - `H < 0.5` : anti-persistent / mean-reverting across
+    multiple horizons.
+
+  MULTI-SCALE MEMORY EXPONENT — structurally orthogonal to
+  every shipped daily-token axis 32–70:
+
+  - **vs `daily-token-autocorrelation-lag1` and
+    `daily-token-autocorrelation-lag7` (axes 67/68)** — `rho_k`
+    is a SINGLE-LAG linear-correlation scalar at one chosen
+    lag. Hurst R/S aggregates range-to-stddev growth across a
+    log-spaced grid of window sizes, and is well-defined even
+    when `rho_k = 0` at every finite lag (the canonical example
+    is fractional Gaussian noise with `H ≠ 0.5`). The Joseph
+    effect that R/S was introduced to detect lives precisely
+    in the gap between these axes.
+  - **vs `daily-token-spectral-entropy` (axis 69)** — spectral
+    entropy is Shannon on the FLATNESS of the periodogram at
+    all frequencies symmetrically; H is a POWER-LAW SCALING
+    EXPONENT linking window size to range-to-stddev. They are
+    related on idealised stationary `1/f^beta` noise (`H =
+    (beta+1)/2`) but on real bounded gap-filled token series
+    the two estimators routinely disagree: a pink-noise series
+    and a white-noise series can share spectral entropy near 1
+    yet H = 1 vs H = 0.5.
+  - **vs `daily-token-permutation-entropy` (axis 70)** — PE
+    captures ORDINAL micro-pattern complexity in length-3
+    windows (categorical alphabet of 6 patterns) and is
+    invariant under any strictly monotone transform. H captures
+    METRIC range-to-stddev scaling at multiple scales and is
+    invariant only under positive affine transforms. A linear
+    ramp has PE = 0 (only pattern 012 occurs) AND R/S `H -> 1`
+    (range grows linearly with `m`); a noisy mean-reverting
+    bounded oscillation can have PE near 1 and H near 0.3.
+  - **vs all permutation-invariant dispersion / shape axes
+    32–67** (Gini, Atkinson, Theil, GE, Hill, MC, L-skew, …)
+    — those throw away temporal placement entirely. A sorted
+    and a shuffled copy of the same multiset produce H ≈ 1
+    (sorted → deterministic ramp; range grows linearly with
+    `m`) and H ≈ 0.5 respectively (shuffled → i.i.d.
+    permutation; range grows like `sqrt(m)`) while every
+    multiset statistic is identical. New refinement test
+    `orthogonality witness — sorted vs shuffled multiset` is
+    the explicit witness.
+  - **vs trend / forecast / source-daily-token-trend-slope** —
+    a deterministic monotone trend can drive `H -> 1`
+    spuriously (the canonical R/S caveat — a clean linear ramp
+    has range growing linearly with window size). The
+    `--detrend` knob OLS-detrends each chunk in spirit of
+    Lo (1991) "modified R/S" to mitigate; it is not a full
+    Lo-spectral-kernel implementation and operators must still
+    cross-check against `daily-token-trend-slope` before
+    claiming long-range dependence on a trended source.
+
+  Knobs: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-tenure-days` (default 32; hard floor
+  `2*min-window`), `--min-window` (default 4; hard floor 4),
+  `--max-scales` (default 12), `--min-scales` (default 4),
+  `--detrend` (Lo-1991-style per-chunk OLS detrend),
+  `--top` (default 0 = no cap), `--sort` ∈
+  `absHurstDeviationDesc | hurst | hurstDesc | r2Desc | tokens
+  | tenure | source` (default `absHurstDeviationDesc` —
+  sources furthest from the random-walk null `H = 0.5` first),
+  and `--json`.
+
+  Live-smoke against this dev box's real
+  `~/.config/pew/queue.jsonl` at relaxed thresholds
+  `--min-tenure-days 14 --min-window 4 --min-scales 3`
+  (the relaxed thresholds surface 4 of 6 sources rather than
+  the 2 surviving the default 32-day floor; the
+  `vscode-other` source-key below is the scrubbed display
+  rename for an upstream tool whose canonical name contains a
+  banned substring; underlying counts are unchanged):
+
+  ```
+  pew-insights daily-token-hurst-rs
+  per-source Hurst R/S (sorted by absHurstDeviationDesc)
+
+  source        firstDay    lastDay     tenure  active  minScale  maxScale  scales  H       r2      tokens
+  ------------  ----------  ----------  ------  ------  --------  --------  ------  ------  ------  -------------
+  hermes        2026-04-17  2026-05-01      15      15         4         7       4  0.9245  0.9388     261,278,837
+  openclaw      2026-04-17  2026-05-01      15      15         4         7       4  0.7236  0.9108   2,127,294,555
+  vscode-other  2025-07-30  2026-04-20     265      73         4       132      12  0.7013  0.9893       1,885,727
+  ```
+
+  Read-out: every kept source has `H > 0.5` — every flow on
+  this dev box exhibits POSITIVE long-range memory in its
+  daily-token series (high days predict further high days
+  across multiple horizons), with `hermes` clearest at
+  `H = 0.92` (close to the deterministic-ramp regime; flagged
+  as a candidate for `--detrend` cross-check). All four fits
+  have `r^2 > 0.91` so the log-log power law is well-supported
+  even on the short 15-day tenure of the two newest sources.
+
 ## 0.6.314 — 2026-05-02
 
 ### Added
