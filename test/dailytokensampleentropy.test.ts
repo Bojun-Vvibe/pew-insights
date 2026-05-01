@@ -301,3 +301,29 @@ test('buildDailyTokenSampleEntropy: JSON report carries every documented field',
     }
   }
 });
+
+test('sampleEntropy: m=1 works and uses N-1 templates', () => {
+  // m=1, simple 6-point series, r large enough so all match.
+  const x = [1, 2, 3, 4, 5, 6];
+  const r = sampleEntropy(x, { m: 1, rFactor: 5 });
+  // N-m = 5 templates, C(5,2) = 10 unique pairs.
+  // r = 5 * stddev ~ 5 * 1.708 = 8.54, so all length-1 pairs match.
+  // Length-2 pairs: max(|x[i]-x[j]|, |x[i+1]-x[j+1]|) <= 8.54 — all
+  // pairs of consecutive-indexed templates have differences <= 5,
+  // so all 10 pairs match at length 2 as well -> A=B=10, SampEn=0.
+  assert.equal(r.matchesB, 10);
+  assert.equal(r.matchesAplusone, 10);
+  assert.equal(Math.abs(r.sampEn), 0);
+});
+
+test('sampleEntropy: tighter rFactor on a noisy series can drop matches and surface a guarded throw', () => {
+  // All distinct values, so a very tight r relative to stddev forces
+  // either B=0 or A=0 -> the API contract is a guarded throw the
+  // caller routes to droppedZeroBMatches / droppedZeroAMatches at
+  // the source level.
+  const x = [0, 100, 5, 95, 10, 90, 15, 85, 20, 80, 25];
+  assert.throws(
+    () => sampleEntropy(x, { m: 2, rFactor: 0.001 }),
+    /B=0|A=0/,
+  );
+});
