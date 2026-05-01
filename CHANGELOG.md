@@ -114,8 +114,8 @@ All notable changes to this project will be documented in this file.
   axis: a different share distribution shape (bimodal, heavy
   left-tail, etc.) can flip the ordering.
 
-  SHAs: feat=d7fa867 test=2a5c783 release=PENDING_RELEASE
-  refinement=PENDING_REFINEMENT.
+  SHAs: feat=d7fa867 test=2a5c783 release=8d7b2a4
+  refinement=(this commit, see git log).
 
 ## 0.6.291 — 2026-05-01
 

@@ -275,3 +275,111 @@ test('builder: invalid sort rejected', () => {
     }),
   );
 });
+
+// ---- Refinement: property-based + numerical-stability witnesses -----
+
+/**
+ * Tiny seeded LCG so the property-based tests are DETERMINISTIC.
+ * Every CI run hits the exact same random vectors -> reproducible.
+ */
+function lcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+test('property: scale-invariance holds across 200 random vectors at alpha=0.5', () => {
+  const rng = lcg(0xc0ffee);
+  for (let trial = 0; trial < 200; trial += 1) {
+    const n = 3 + Math.floor(rng() * 30); // n in [3, 32]
+    const v: number[] = [];
+    for (let i = 0; i < n; i += 1) v.push(rng() * 1e6);
+    const scale = 1e-3 + rng() * 1e6;
+    const a = chakravartyOfVector(v, 0.5).chakravarty;
+    const b = chakravartyOfVector(
+      v.map((x) => x * scale),
+      0.5,
+    ).chakravarty;
+    assert.ok(
+      Math.abs(a - b) < 1e-10,
+      `scale-invariance broken at trial ${trial} (scale=${scale}): ${a} vs ${b}`,
+    );
+  }
+});
+
+test('property: C in [0, 1) across 200 random vectors at alpha in {0.1, 0.5, 0.9}', () => {
+  const rng = lcg(0xdeadbeef);
+  for (let trial = 0; trial < 200; trial += 1) {
+    const n = 2 + Math.floor(rng() * 40); // n in [2, 41]
+    const v: number[] = [];
+    for (let i = 0; i < n; i += 1) v.push(rng() * 1e9);
+    for (const alpha of [0.1, 0.5, 0.9]) {
+      const c = chakravartyOfVector(v, alpha).chakravarty;
+      assert.ok(
+        c >= 0 && c < 1,
+        `C out of [0, 1) at trial ${trial} alpha=${alpha}: ${c}`,
+      );
+    }
+  }
+});
+
+test('property: monotone Pigou-Dalton spread (200 random anchors, alpha=0.5)', () => {
+  // For each random base vector, build a "spread" version by pushing one
+  // randomly-chosen pair (i, j) further apart by a transfer of size t while
+  // keeping the sum constant. Spread must NEVER decrease C.
+  const rng = lcg(0xfeedface);
+  for (let trial = 0; trial < 200; trial += 1) {
+    const n = 4 + Math.floor(rng() * 20);
+    const v: number[] = [];
+    for (let i = 0; i < n; i += 1) v.push(100 + rng() * 1000);
+    // Pick i (low) and j (high) by sorting
+    const sorted = [...v].sort((a, b) => a - b);
+    const lo = 0;
+    const hi = n - 1;
+    const t = Math.min(sorted[lo] as number, 50) * rng();
+    if (t <= 0) continue;
+    const spread = [...sorted];
+    spread[lo] = (spread[lo] as number) - t;
+    spread[hi] = (spread[hi] as number) + t;
+    const cBase = chakravartyOfVector(sorted, 0.5).chakravarty;
+    const cSpread = chakravartyOfVector(spread, 0.5).chakravarty;
+    assert.ok(
+      cSpread >= cBase - 1e-12,
+      `Pigou-Dalton spread decreased C at trial ${trial}: ${cBase} -> ${cSpread}`,
+    );
+  }
+});
+
+test('numerical stability: tiny share values (1e-12 relative) do not produce NaN or negative C', () => {
+  // Mostly-zero vector with one heavy tail. Shares of zero contribute 0
+  // by the 0^alpha = 0 convention; tiny shares stress Math.pow precision.
+  const v = [1e-12, 1e-12, 1e-12, 1e-12, 1e12];
+  for (const alpha of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+    const c = chakravartyOfVector(v, alpha).chakravarty;
+    assert.ok(
+      Number.isFinite(c),
+      `non-finite C at alpha=${alpha} on heavy-tail vector: ${c}`,
+    );
+    assert.ok(c >= 0, `negative C at alpha=${alpha}: ${c}`);
+    assert.ok(c <= 1, `C > 1 at alpha=${alpha}: ${c}`);
+  }
+});
+
+test('numerical stability: huge values (1e15) do not overflow Math.pow path', () => {
+  const v = [1e15, 2e15, 3e15, 4e15, 5e15];
+  for (const alpha of [0.1, 0.5, 0.9]) {
+    const c = chakravartyOfVector(v, alpha).chakravarty;
+    assert.ok(Number.isFinite(c), `non-finite C at alpha=${alpha}: ${c}`);
+    assert.ok(c >= 0 && c < 1, `C out of [0, 1) at alpha=${alpha}: ${c}`);
+  }
+  // And the SAME shape at unit scale must give the same C (scale-invariance
+  // once more, as a stability witness across 15 orders of magnitude).
+  const cBig = chakravartyOfVector(v, 0.5).chakravarty;
+  const cUnit = chakravartyOfVector([1, 2, 3, 4, 5], 0.5).chakravarty;
+  assert.ok(
+    Math.abs(cBig - cUnit) < 1e-12,
+    `scale-invariance broken across 15 orders of magnitude: ${cBig} vs ${cUnit}`,
+  );
+});
