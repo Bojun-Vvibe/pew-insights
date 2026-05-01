@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.312 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-EIGHTH):
+  `pew-insights daily-token-autocorrelation-lag7`.
+
+  Per-source LAG-7 Pearson autocorrelation of the gap-filled daily
+  `total_tokens` series. For each source:
+
+  1. Aggregate per UTC calendar day across all rows; build the
+     dense series across the source's tenure
+     `[firstActiveDay, lastActiveDay]` with missing days filled as
+     0 tokens.
+  2. Compute
+
+         rho7 = sum_{i=0..n-8} (x[i] - mu) * (x[i+7] - mu)
+                / sum_{i=0..n-1} (x[i] - mu)^2
+
+     (biased 1/n divisor, matching `numpy.correlate` /
+     `statsmodels.acf` conventions). Range `[-1, +1]`.
+
+       - `rho7 > 0` : weekly echo (this Monday predicts next Monday)
+       - `rho7 < 0` : anti-periodic (week B inverts week A)
+       - `rho7 ~ 0` : no weekly cycle at lag 7
+
+  3. `flat: true` marks sources with `var(x) = 0` across the
+     gap-filled tenure (rho7 reported as 0 to distinguish
+     "literally undefined" from "noisy zero").
+
+  Headline question: **does this source's daily token mass repeat
+  on a 7-day cycle, separate from any same-weekday mass concentration
+  captured by `weekday-share` or any short-range stickiness captured
+  by lag-1 autocorrelation?**
+
+  STRUCTURAL ORTHOGONALITY -- this is a fundamentally new primitive
+  not covered by any axis 32..67:
+
+    - vs `daily-token-autocorrelation-lag1`: lag-1 captures
+      adjacency persistence (does today predict tomorrow?). lag-7
+      specifically captures the WEEKLY CYCLE -- a source with
+      `rho1 = 0` (i.i.d. day-to-day) can still have `rho7 = +0.99`
+      under a rigid weekly pattern, and the two are mathematically
+      independent at finite n. The autocorrelation function
+      evaluated at different lags is a separate scalar at each lag.
+
+    - vs `weekday-share` HHI: weekday-share aggregates ALL Mondays
+      into one bucket and reports the share. A source whose
+      Mondays alternate `0 / 50000 / 0 / 50000` across weeks has
+      the same Monday SHARE as one whose Mondays are flat `25000`
+      every week, but totally different rho7. weekday-share is
+      order-invariant across same-weekday observations; rho7 is
+      the order-SENSITIVE complement.
+
+    - vs ALL unsigned dispersion axes 32..63 (Gini, Atkinson,
+      Theil, GE, Hoover, Pietra, Bonferroni, Mehran, Wolfson,
+      Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+      Var-of-Logs, Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM,
+      Zenga): all permutation-INVARIANT. Shuffle the days,
+      dispersion is unchanged, rho7 collapses to ~0.
+
+    - vs calendar-order axes 60 (MSR), 64 (RTZ),
+      monotone-run-length, second-diff-sign-runs: SIGN-trace or
+      RUN statistics on order patterns; ignore magnitude. rho7
+      is a VALUE correlation at a specific lag.
+
+    - vs Hill (axis 65) tail-index, L-skewness (axis 67),
+      medcouple (axis 66): shape statistics on the marginal
+      distribution; permutation-invariant. rho7 sees the
+      temporal placement they explicitly throw away.
+
+    - vs `source-row-token-autocorrelation-lag1` (row-grain):
+      row-grain lag-1 captures within-hour stickiness across
+      consecutive queue ROWS. lag-7 here is at DAY grain and
+      captures specifically the 7-day cycle, which has no
+      analogue at row grain.
+
+    - vs `trend` / `forecast` / `source-daily-token-trend-slope`:
+      these fit a LINEAR drift. A source can have zero drift and
+      still have `rho7 = +0.9` (rigid weekly oscillation around a
+      flat mean). rho7 explicitly de-trends via mean-centring.
+
+  Knobs: `--since` / `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-tenure-days` (default 14; hard floor 8
+  since rho7 needs >= 1 (i, i+7) pair => n >= 8), `--top`,
+  `--sort` (`absRho7` / `rho7` / `rho7Asc` / `tokens` / `tenure` /
+  `source`), `--min-abs-rho7` display filter, `--json`.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (top-3 by
+  `absRho7`, `--min-tokens 1000 --min-tenure-days 14`):
+
+  ```
+  source       firstDay    lastDay     tenure  pairs  rho7     tokens
+  openclaw     2026-04-17  2026-05-01  15      8      -0.2976  2,121,769,898
+  hermes       2026-04-17  2026-05-01  15      8      -0.0932    259,600,264
+  claude-code  2026-02-11  2026-04-23  72      65     -0.0075  3,442,385,788
+  ```
+
+  All three top sources show NEGATIVE lag-7 autocorrelation,
+  i.e. mild anti-periodic weekly behaviour rather than a
+  Monday-echoes-Monday rhythm -- a finding that is invisible to
+  `weekday-share` (which would only show their per-weekday mass
+  shares) and to `daily-token-autocorrelation-lag1` (which
+  measures next-day stickiness, a different lag).
+
+### Tests
+
+- Test count grew from 8623 to 8647 (+24). New suite:
+  `dailytokenautocorrelationlag7` (24 tests). Coverage includes
+  the `pearsonAutocorrelationAtLag` primitive (rejection of bad
+  values / bad lag, exact closed-form rho7 = 21/28 = 0.75 on a
+  4-week perfect repeat under the biased divisor, sign-flipped
+  weekly pattern, lag-7 vs lag-1 separation), the builder
+  (option validation, empty queue, bad-hour/non-positive
+  drops, sparse-source / below-min-tenure drops, gap-fill on
+  weekly-only data, `--source` filter, since/until window,
+  `--top` cap, `--min-abs-rho7` display filter, flat
+  degenerate source, sort orderings), and orthogonality
+  witnesses against lag-1 and within-week shape.
+
 ## 0.6.311 — 2026-05-01
 
 ### Added
