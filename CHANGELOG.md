@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.306 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-SECOND):
+  `pew-insights daily-token-quintile-share-ratio`.
+
+  Per-source QUINTILE SHARE RATIO
+
+      QSR (S80/S20) = topMass / bottomMass
+
+  on the QUINTILE cut k = ceil(0.20 * n) of the per-day total_tokens
+  distribution. For each source we collapse all hourly buckets into
+  one scalar per UTC day (D_d = sum of total_tokens on day d), sort
+  the resulting day vector ascending, take k = ceil(0.20 * n), and
+  compute bottomMass (sum of the smallest k values) and topMass (sum
+  of the largest k values). QSR = topMass / bottomMass in [1, +inf).
+
+  HEADLINE QUESTION: "How many TIMES more total daily-token mass
+  lives in each source's busiest 20% of days than in its quietest
+  20% of days?"
+
+  This is the canonical EU-SILC inequality measure (Income Quintile
+  Share Ratio, sometimes written S80/S20). It is dimensionless,
+  scale-invariant, permutation-invariant, and HYPERBOLIC in the
+  bottomMass denominator.
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..61). Axes 32..57 are MOMENT- or
+  LORENZ-functional summaries (Gini, S-Gini, Atkinson, Theil, GE
+  family at alpha in {-1,0,1/2,1,2,3,4}, Hoover, Pietra, Bonferroni,
+  Mehran, Wolfson, Foster-Wolfson, Palma, Kolm-Pollak, Chakravarty,
+  Amato, Esteban-Ray, Var-of-Logs, Log-MAD, FGT). Each integrates
+  over the FULL Lorenz curve / FULL distribution and is normalised
+  by the MEAN. Palma (already shipped) is an ASYMMETRIC quintile-pair
+  contrast (top-10% mass / bottom-40% mass); QSR is the SYMMETRIC
+  quintile pair (top-20 vs bottom-20) -- different cuts, different
+  functional family. Axis 58 (PGR = P90/P50), axis 59
+  (IOM = (P75-P25)/P50), and axis 60 (MSR = (P75-P25)/(P90-P10))
+  are RATIOS OF PERCENTILE VALUES. Axis 61 (DSG, decile MASS
+  DIFFERENCE / total, k=ceil(0.10n), bounded in [0,1]) is a sparse
+  LINEAR functional. QSR (axis 62) is a RATIO-OF-MASSES (not a
+  difference) on the QUINTILE cut (k=ceil(0.20n), not 0.10n),
+  unbounded above ([1, +inf)), and is NORMALISED BY bottomMass (a
+  mass), not by total nor by mean. It is HYPERBOLIC in the sorted
+  day vector (degenerates as bottomMass -> 0). No shipped axis has
+  this structure.
+
+  RANK-FLIP WITNESS vs axis-61 DSG (closed-form, n=10):
+  - A = [1,1,4,4,4,4,4,4,9,9]
+        k_QSR=2: bottomMass=2, topMass=18, QSR(A) = 18/2 = 9.000000
+        k_DSG=1: DSG(A) = (9-1)/44 = 0.181818...
+  - B = [1,3,3,3,3,3,3,3,3,20]
+        k_QSR=2: bottomMass=4, topMass=23, QSR(B) = 23/4 = 5.750000
+        k_DSG=1: DSG(B) = (20-1)/45 = 0.422222...
+  QSR ranks A > B (9.0 > 5.75); DSG ranks B > A (0.422 > 0.182).
+  Real flip: QSR is multiplicative on the quintile cut (sensitive to
+  bottomMass via division), DSG is additive on the decile cut
+  (sensitive only to single-element extremes). No monotone transform
+  recovers DSG from QSR or vice-versa.
+
+  RANGE AND DEGENERACY. QSR >= 1 always on strictly-positive day
+  vectors. QSR == 1 iff topMass == bottomMass (extreme quintiles
+  balanced; in particular every constant vector). bottomMass == 0
+  is impossible on per-day totals (positivity), so QSR is finite in
+  practice; we still guard the denominator (degenerate=true).
+  QSR is SCALE-INVARIANT and PERMUTATION-INVARIANT.
+
+  CLOSED-FORM ANCHOR ON [1..10]. k=2, bottomMass=1+2=3,
+  topMass=9+10=19, QSR = 19/3 = 6.333333..., reproduced by
+  `quintileShareRatioOfVector([1..10])` in tests.
+
+  KNOBS. `--since` / `--until` (ISO time-window filter on
+  hour_start), `--source` (single-source restrict), `--min-tokens`
+  (default 1000; sparse-source filter), `--min-days` (default 5;
+  algebraic minimum is 2 but default 5 keeps the quintile cut
+  meaningful with k=1 and a non-overlapping body),
+  `--top` (display cap, default 0 = no cap),
+  `--sort` (`qsr`|`tokens`|`days`|`source`|`meanDaily`|`topMass`|`bottomMass`|`k`),
+  `--min-qsr` (display filter; degenerate rows always retained),
+  `--include-palma` (refinement: surface Palma ratio
+  (top-10% mass / bottom-40% mass) alongside QSR for cross-axis
+  comparison vs the asymmetric quintile-pair contrast),
+  `--json` (raw JSON output).
+
+  LIVE SMOKE (against `~/.config/pew/queue.jsonl`, 6 sources):
+  Top-3 by QSR (descending):
+
+      source          days  k   qsr         topShare  bottomShare
+      --------------  ----  --  ----------  --------  -----------
+      claude-code     35    7   208.699233  0.813740  0.003899
+      vscode-copilot  73    15  63.694700   0.752659  0.011817
+      codex           8     2   39.489990   0.707934  0.017927
+
+  RANK-FLIP WITNESS (live data) vs axis-61 DSG (v0.6.305 sha
+  refinement=e0cba05). DSG top-3 from prior release was
+  `claude-code=0.668 / vscode-copilot=0.591 / codex=0.474`. QSR
+  top-3 is `claude-code=208.7 / vscode-copilot=63.7 / codex=39.5`.
+  The relative ORDER claude-code > vscode-copilot > codex is
+  preserved on the live data, but the *ratios between adjacent
+  ranks* are dramatically different: under DSG the top-to-second
+  gap is 0.668/0.591 = 1.13x and second-to-third is 0.591/0.474 =
+  1.25x; under QSR those gaps are 208.7/63.7 = 3.28x and 63.7/39.5
+  = 1.61x. QSR's hyperbolic behaviour (small bottomMass amplifies
+  the ratio) compresses the bottom and stretches the top of the
+  ranking, whereas DSG's bounded [0,1] range compresses the top.
+  Numerical orthogonality argument: the rank-correlation is 1 on
+  this 3-source slice (same order), but the LOG-RATIO STRUCTURE is
+  incompatible -- there is no linear or monotone transform f with
+  f(DSG(s)) = QSR(s) across all sources, since the openclaw row
+  inverts on the ratio: openclaw QSR=6.78 with bottomShare=0.0625
+  sits between codex and hermes on QSR but carries a much smaller
+  decile gap on DSG. The closed-form A/B witness in the source
+  docstring exhibits a strict rank flip on synthetic data,
+  confirming structural (not merely numerical) orthogonality.
+
+  TESTS. 26 new tests in `test/dailytokenquintileshareratio.test.ts`
+  cover: empty/singleton degeneracy, closed-form anchors on [1..10]
+  and [1..20], all-equal -> qsr=1 degenerate, scale invariance,
+  permutation invariance, error handling on non-positive / non-finite
+  input, the closed-form rank-flip witness vs DSG (axis 61),
+  cross-check with MSR (axis 60), Palma refinement consistency,
+  topShare/bottomShare consistency with masses, and full pipeline
+  coverage (minDays / minTokens / source filter / invalid hour_start
+  / includePalma / minQsr filter retains degenerates / sort default
+  / top cap / invalid sort / minDays<2 / invalid since). Full suite
+  green: 8483 / 8483 pass.
+
 ## 0.6.305 — 2026-05-01
 
 ### Added
