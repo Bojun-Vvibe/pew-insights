@@ -2,6 +2,176 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.311 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-SEVENTH):
+  `pew-insights daily-token-l-skewness`.
+
+  Per-source L-SKEWNESS `tau_3 = lambda_3 / lambda_2` (Hosking
+  1990, "L-moments: analysis and estimation of distributions
+  using linear combinations of order statistics", JRSS-B
+  52(1):105-124) of the per-day total_tokens vector, computed
+  via the unbiased sample probability-weighted moments:
+
+      b_r = (1 / n) * sum_{j=r+1..n}
+              (prod_{k=1..r} (j-k) / prod_{k=1..r} (n-k)) * x_(j:n)
+
+      l_1 = b_0
+      l_2 = 2 b_1 - b_0
+      l_3 = 6 b_2 - 6 b_1 + b_0
+      tau_3 = l_3 / l_2
+
+  Range: tau_3 in (-1, +1).
+
+      tau_3 > 0 : right-skewed (heavy upper tail)
+      tau_3 < 0 : left-skewed
+      tau_3 = 0 : symmetric
+
+  Properties: SIGNED (tau_3(2m - X) = -tau_3(X)), SCALE-FREE,
+  LOCATION-INVARIANT, BOUNDED in (-1, +1), defined for any
+  distribution with finite FIRST moment (no second moment
+  required), and uses ALL n order statistics with smooth
+  polynomial weights (no k-cutoff, no median split).
+
+  HEADLINE QUESTION: "For each source, does the per-day
+  total_tokens distribution have a HEAVIER UPPER OR LOWER TAIL,
+  measured via the PROBABILITY-WEIGHTED-MOMENT (linear
+  order-statistic) estimator tau_3 -- bounded, signed, and
+  defined under finite mean only?"
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..66):
+
+  - vs all unsigned dispersion / inequality axes 32..63 (Gini,
+    S-Gini, Atkinson, Theil-L/T, GE family, Hoover, Pietra,
+    Bonferroni, Mehran, Wolfson, Foster-Wolfson, Palma,
+    Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, Var-of-Logs,
+    Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM): all are
+    reflection-INVARIANT and cannot detect SIGN of asymmetry.
+    tau_3 IS signed.
+
+  - vs axes 60 (MSR, monotone-run length) and 64 (RTZ,
+    runs-test-z): both are calendar-order trace statistics on
+    the binary above/below-median sign sequence and ignore
+    magnitude. tau_3 is permutation-INVARIANT and depends only
+    on order statistics; sorting the days first leaves tau_3
+    unchanged.
+
+  - vs axis 65 (Hill tail-index): Hill is TAIL-ONLY (top-k
+    order statistics, requires choosing k), unbounded in
+    (0, +inf), and unsigned. tau_3 uses the FULL ranked sample
+    with analytic linear weights, requires no k choice, is
+    bounded in (-1, +1), and is signed.
+
+  - vs axis 66 (medcouple, MC) -- THE KEY ORTHOGONALITY TO
+    DEFEND, since both MC and tau_3 are signed dimensionless
+    skewness measures bounded in [-1, +1]:
+
+      MEDCOUPLE -- PAIRWISE QUARTILE FUNCTIONAL.
+          MC = median over (x_i, x_j) with x_i <= m <= x_j of
+          [(x_j - m) - (m - x_i)] / (x_j - x_i). Builds an
+          O(n^2) family of pairwise asymmetry RATIOS then
+          takes their MEDIAN. Robust (~25% breakdown) but uses
+          ONLY pairs that straddle the sample median; the
+          contribution of any single point is bounded by the
+          [-1, +1] kernel.
+
+      L-SKEWNESS -- LINEAR ORDER-STATISTIC (PWM) FUNCTIONAL.
+          tau_3 = (6 b_2 - 6 b_1 + b_0) / (2 b_1 - b_0).
+          b_r is a polynomial-weighted MEAN over ALL ranked
+          order statistics; the weight on x_(j:n) in b_2 is
+          (j-1)(j-2)/((n-1)(n-2)), which grows quadratically
+          with rank and is largest (= 1) on the maximum.
+          Single extreme upper-tail values dominate l_3.
+
+    Concretely they DISAGREE on standard cases. The
+    `orthogonality witness` test in
+    `test/dailytokenlskewness.test.ts` constructs
+
+        xs = [10, 11, 12, 13, 14, 15, 16, 17, 100000]
+
+    where MC stays moderate (the median-straddle pair set is
+    only mildly asymmetric — the kernel is bounded and the
+    median-of-kernels resists the lone outlier) while tau_3
+    > 0.5 because b_2 weights the maximum order statistic by
+    1. Conversely, a vector with two clusters of equal mass
+    and one cluster's spread tightly above the median has
+    MC near +1 while tau_3 stays moderate (the smooth PWM
+    weights average out the cluster). MC and tau_3 thus
+    measure independent slices of the skew-shape plane and
+    can take any joint value in ([-1, +1] x (-1, +1)).
+
+  - vs `source-row-token-skewness` (3rd-moment skewness, row
+    level): classical g_1 = m_3 / m_2^(3/2) requires finite
+    THIRD moment, is unbounded, and has breakdown 0. tau_3
+    requires only finite FIRST moment, is bounded in (-1, +1),
+    and downweights extremes.
+
+  - vs `source-row-token-bowley-skewness` (Bowley quartile
+    skewness): Bowley uses exactly THREE quantiles (Q1, Q2,
+    Q3); tau_3 uses ALL n order statistics with smooth
+    polynomial weights. Bowley is piecewise-constant in the
+    underlying distribution (jumps when a quartile crosses an
+    observation); tau_3 is smooth.
+
+  RANGE AND DEGENERACY. tau_3 is degenerate when n < 4 (the
+  unbiased PWM b_2 needs >=3 nonzero-weight ranks) or when
+  l_2 == 0 (all values equal). In both cases we return tau_3 = 0
+  with `degenerate: true`. Numerical clamp into [-1, +1] is
+  applied; in finite samples the open theoretical bound
+  |tau_3| < 1 holds for any non-degenerate vector.
+
+  CLI knobs: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 5; minimum 4),
+  `--top` (default 0 = no cap), `--sort`
+  (`absTau3` default | `tau3` | `tau3Asc` | `tokens` | `days` |
+  `source`), `--min-abs-tau3` (display filter), `--json`.
+
+### Live smoke (against `~/.config/pew/queue.jsonl`)
+
+  pew-insights daily-token-l-skewness --min-tokens 1000 \
+                                      --min-days 5 \
+                                      --top 10 \
+                                      --sort absTau3
+
+Top-3 most-asymmetric sources by |tau_3|:
+
+  1. claude-code   :  tau_3 = +0.7005   (35 days, 3,442,385,788
+                                         tokens, l_1 ~= 98,353,880,
+                                         l_2 ~= 76,849,915,
+                                         l_3 ~= 53,831,156).
+                      Strong right-skew: a small number of very
+                      heavy days dominate the upper tail.
+  2. vscode-other  :  tau_3 = +0.6291   (73 days, 1,885,727 tokens,
+                                         l_1 ~=    25,832,
+                                         l_2 ~=    18,333,
+                                         l_3 ~=    11,533).
+                      Strong right-skew over the longest history
+                      window in the dataset.
+  3. codex         :  tau_3 = +0.5581   (8 days, 809,624,660 tokens,
+                                         l_1 ~= 101,203,083,
+                                         l_2 ~=  68,150,490,
+                                         l_3 ~=  38,034,485).
+                      Right-skewed even on a short window: a few
+                      heavy days are pulling the upper tail.
+
+  Counter-cases visible in the same run:
+  - opencode  : tau_3 = -0.1882 (mild LEFT-skew; the upper tail is
+                LIGHTER than the lower tail across the 12-day
+                window).
+  - hermes    : tau_3 = +0.0695 (near-symmetric).
+
+  Cross-axis sanity (compared with axis-66 medcouple on the same
+  window): claude-code is rank-1 here (tau_3 = +0.70) but only
+  rank-5 on MC (+0.43); hermes flips from MC = +0.50 (rank-4) to
+  tau_3 = +0.07 (near-zero); opencode flips SIGN (MC = +0.025,
+  tau_3 = -0.19). These are exactly the predicted disagreements
+  between the pairwise-quartile primitive (MC) and the
+  full-rank PWM primitive (tau_3) -- consistent with the
+  orthogonality witness in the unit tests.
+
 ## 0.6.310 — 2026-05-01
 
 ### Added
