@@ -128,6 +128,7 @@ import {
   renderDailyTokenHiguchiFd,
   renderDailyTokenKatzFd,
   renderDailyTokenPetrosianFd,
+  renderDailyTokenSevcikFd,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -418,6 +419,7 @@ import { buildDailyTokenSampleEntropy } from './dailytokensampleentropy.js';
 import { buildDailyTokenHiguchiFd } from './dailytokenhiguchifd.js';
 import { buildDailyTokenKatzFd } from './dailytokenkatzfd.js';
 import { buildDailyTokenPetrosianFd } from './dailytokenpetrosianfd.js';
+import { buildDailyTokenSevcikFd } from './dailytokensevcikfd.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17397,6 +17399,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenPetrosianFd(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-sevcik-fd')
+  .description(
+    "Per-source Sevcik 1998 Fractal Dimension (Sevcik, C., \"A procedure to estimate the fractal dimension of waveforms\", Complexity International 5, 1998) on the gap-filled daily total_tokens series (SEVENTY-SEVENTH cross-source axis). SFD = 1 + ln(L) / ln(2*(N-1)) where L is the Euclidean path length on the DOUBLE-NORMALIZED waveform (x to [0,1] uniformly with step 1/(N-1); y range-normalized to [0,1]). Single-scale CLOSED-FORM ratio on the double-normalized waveform: structurally orthogonal to (a) Petrosian FD axis 76 -- PFD is binary post-sign-mapping (multiply by 13 -> Nd unchanged); SFD operates on range-normalized magnitudes; (b) Katz FD axis 75 -- KFD uses raw L and raw max chord d as denominator; SFD uses double-normalized L and 2*(N-1) as denominator (theoretical max L on the unit square), fixing the dimensional inconsistency in the original Katz formulation; (c) Higuchi FD axis 74 -- multi-scale OLS exponent vs single-scale closed-form; (d) Hurst R/S axis 71 / DFA-alpha axis 72 -- variance-scaling on cumulative deviations vs path-length ratio; (e) lag-1 / lag-7 ACF axes 67/68 -- linear second-moment scalars vs path length; (f) spectral entropy axis 69 -- frequency-domain flatness vs time-domain geometric ratio; (g) permutation entropy axis 70 / sample entropy axis 73 -- pattern / template statistics; (h) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; SFD is shuffle-sensitive. Invariant under positive AFFINE transforms y' = a*y + b with a > 0; not invariant under non-affine monotone transforms.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absSfdDeviationDesc (default, SFD desc -- furthest from the smooth lower edge first) | sfd | sfdDesc | tokens | tenure | source.',
+    'absSfdDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absSfdDeviationDesc',
+          'sfd',
+          'sfdDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSevcikFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absSfdDeviationDesc'
+            | 'sfd'
+            | 'sfdDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSevcikFd(report) + '\n');
         }
       } catch (e) {
         die(e);

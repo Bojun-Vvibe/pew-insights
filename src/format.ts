@@ -17086,6 +17086,7 @@ import type { DailyTokenSampleEntropyReport } from './dailytokensampleentropy.js
 import type { DailyTokenHiguchiFdReport } from './dailytokenhiguchifd.js';
 import type { DailyTokenKatzFdReport } from './dailytokenkatzfd.js';
 import type { DailyTokenPetrosianFdReport } from './dailytokenpetrosianfd.js';
+import type { DailyTokenSevcikFdReport } from './dailytokensevcikfd.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18617,6 +18618,75 @@ export function renderDailyTokenPetrosianFd(
     formatNumber(s.Nd),
     formatNumber(s.M),
     s.flipRate.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSevcikFd(
+  r: DailyTokenSevcikFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-sevcik-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteSfd)} non-finite-sfd, ${formatNumber(r.droppedTopSources)} below top cap; clamped: ${formatNumber(r.clampedBelow1)} below 1, ${formatNumber(r.clampedAbove2)} above 2`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Sevcik 1998 Fractal Dimension (Sevcik, C., "A procedure to estimate the fractal dimension of waveforms", Complexity International 5, 1998) on the gap-filled daily total_tokens series. SEVENTY-SEVENTH cross-source axis. SFD = 1 + ln(L) / ln(2*(N-1)) where L is the Euclidean path length on the DOUBLE-NORMALIZED waveform: x mapped uniformly to [0, 1] with step dx = 1/(N-1), and y range-normalized to [0, 1] via y* = (y - ymin)/(ymax - ymin). Single-scale CLOSED-FORM RATIO ON THE DOUBLE-NORMALIZED WAVEFORM -- structurally orthogonal to (a) Petrosian FD axis 76 -- PFD is binary post-sign-mapping (magnitudes drop out); SFD operates on range-normalized magnitudes through dy*[i]; (b) Katz FD axis 75 -- KFD uses RAW path length and RAW max chord d as denominator; SFD double-normalizes both axes and uses 2*(N-1) as denominator (theoretical max L on the unit square), fixing the dimensional inconsistency in the original Katz formulation; (c) Higuchi FD axis 74 -- multi-scale OLS exponent vs single-scale closed-form; (d) Hurst R/S axis 71 / DFA-alpha axis 72 -- variance-scaling on cumulative deviations vs raw path-length ratio; (e) lag-1 / lag-7 ACF axes 67/68 -- linear second-moment scalars vs path length; (f) spectral entropy axis 69 -- frequency-domain flatness vs time-domain geometric ratio; (g) permutation entropy axis 70 / sample entropy axis 73 -- pattern / template statistics vs path-length ratio; (h) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; SFD is shuffle-sensitive (sorted -> small SFD, shuffled -> large SFD). sfdRaw is the un-clamped fit; sfd is clamped to [1, 2]. Invariant under positive AFFINE transforms y' = a*y + b with a > 0 (range-normalization absorbs both); NOT invariant under non-affine monotone transforms (e.g. sqrt) that PFD ignores entirely.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SFD (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'sfd',
+    'sfdRaw',
+    'L',
+    'yRange',
+    'dx',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.sfd.toFixed(4),
+    s.sfdRaw.toFixed(4),
+    s.pathLength.toFixed(4),
+    formatNumber(s.yRange),
+    s.dxStep.toFixed(6),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
