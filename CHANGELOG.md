@@ -2,6 +2,128 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.295 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-FIRST):
+  `pew-insights daily-token-esteban-ray-polarization-index`.
+
+  Per-source ESTEBAN-RAY POLARIZATION INDEX (Esteban & Ray 1994,
+  Econometrica 62:819-851) of the per-day total_tokens
+  distribution at sensitivity alpha (default 1, the canonical
+  axiom value):
+
+      ER(alpha) = sum_i sum_j pi_i^(1+alpha) * pi_j * |y_i - y_j|
+
+  with pi_i = 1/n (each UTC day is its own atomic pi-group).
+  We surface both the absolute er (token-units) and the
+  scale-invariant normalization erNorm = er / mean.
+
+  Range: er, erNorm >= 0. Both are zero iff every per-day value
+  is identical (perfect equality).
+
+  THE STRUCTURAL DISTINCTION FROM EVERY PRIOR INEQUALITY AXIS.
+  Esteban-Ray is the canonical IDENTIFICATION-ALIENATION
+  polarization measure: each pair (i, j) contributes
+  pi_i^(1+alpha) * pi_j * |y_i - y_j|, the product of group i's
+  IDENTIFICATION (pi_i^(1+alpha), super-linear in own mass) and
+  the ALIENATION between groups (pi_j * |y_i - y_j|). The
+  super-linear identification weight (alpha > 0) is the defining
+  axiomatic mark that separates POLARIZATION from INEQUALITY.
+
+  ER and Gini share the SAME pairwise-distance kernel
+  |y_i - y_j| but differ in the WEIGHTS:
+
+      Gini  : weight(i, j) = (1/n) * (1/n)              (linear in pi_i)
+      ER(a) : weight(i, j) = pi_i^(1+a) * pi_j           (super-linear)
+
+  Under per-day projection (pi_i = 1/n forced) the two reduce to
+  a CLOSED-FORM PROPORTIONAL identity at fixed n:
+
+      erNorm / gini = 2 * n^{-alpha}.
+
+  So at alpha = 0 the ratio is 2 (constant: ER(0) = 2*mu*Gini);
+  at alpha = 1 the ratio is 2/n; at alpha = 1.5 the ratio is
+  2 * n^{-1.5}. THIS IS THE ORTHOGONALITY THAT SURVIVES THE
+  PER-DAY PROJECTION: an N-DEPENDENT RESCALING of the Gini
+  signal. Sources with different #days have different ER/Gini
+  ratios -- a real cross-source decoupling that no other axis
+  surfaces. The full non-trivial Esteban-Ray identification
+  axiom (mass coalescence into super-groups) is degenerate under
+  per-day grouping; we surface the n-rescaling form, which is
+  the natural way ER enters when groups are atomic units (here:
+  UTC days).
+
+  Orthogonal in functional class to every prior cross-source axis:
+
+  - axis-32 Gini (LINEAR pair weighting on the same kernel; ER
+    super-linearizes the identification term)
+  - axes-33/34/37/49 GE(0)/GE(1)/GE(2)/GE(-1) (SHARE-MOMENT
+    family; ER is pairwise-distance, no share-power moment)
+  - axes-35/42 Pietra/Hoover (single-point L_inf Lorenz gaps; ER
+    is a sum over all n^2 pairs)
+  - axes-36/44 Atkinson/Kolm-Pollak (CRRA/CARA welfare-equivalent
+    power means; ER has no welfare functional)
+  - axis-39 Zenga (lower-mean / upper-mean ratio; ER is full-pair)
+  - axes-40/46 Palma/Wolfson (specific-rank functionals; ER is
+    rank-aggregated)
+  - axis-41 FGT (one-sided lower-tail threshold; ER two-sided,
+    threshold-FREE)
+  - axes-43/45/47 Bonferroni/Mehran/S-Gini (rank-weighted PARTIAL-
+    MEAN kernels; ER is a PAIRWISE-DISTANCE kernel)
+  - axis-48 Chakravarty (parametric concave share-power averaging;
+    ER is parametric IDENTIFICATION-power weighting)
+  - axis-50 Amato (Lorenz arc length; ER is pairwise-distance
+    polarization, not a Lorenz-curve functional)
+
+  Refinement shipped together:
+
+  - `--include-gini-anchor`: per-row `gini` (axis-32 functional on
+    the same per-day vector) and `erNormOverGini` ratio. Surfaces
+    the n-dependent ER/Gini rescaling identity row-by-row;
+    confirms the closed form 2 * n^{-alpha} on live data.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (vscode-other
+  token scrubbed for changelog policy):
+
+      pew-insights daily-token-esteban-ray-polarization-index --include-gini-anchor
+
+      per-source Esteban-Ray polarization at alpha=1 (sorted by erNorm):
+
+      source         days  erNorm    er           meanDaily    tokens
+      -------------  ----  --------  -----------  -----------  -------------
+      codex          8     0.147307  14907919.70  101,203,083  809,624,660
+      openclaw       15    0.051071  7151263.55   140,025,043  2,100,375,641
+      hermes         15    0.047216  782711.81    16,577,255   248,658,820
+      claude-code    35    0.043374  4265954.45   98,353,880   3,442,385,788
+      opencode       12    0.041517  18283438.62  440,383,796  5,284,605,547
+      vscode-other   73    0.019178  495.40       25,832       1,885,727
+
+      Gini cross-anchor (axis-32; LINEAR pair weighting vs ER's
+      SUPER-LINEAR identification weighting on the same kernel):
+
+      source         erNorm    gini    erNorm/gini   2/n (predicted)
+      -------------  --------  ------  -----------   ---------------
+      codex          0.147307  0.5892  0.2500        0.2500
+      openclaw       0.051071  0.3830  0.1333        0.1333
+      hermes         0.047216  0.3541  0.1333        0.1333
+      claude-code    0.043374  0.7590  0.0571        0.0571
+      opencode       0.041517  0.2491  0.1667        0.1667
+      vscode-other   0.019178  0.7000  0.0274        0.0274
+
+  The erNorm/gini column matches 2/n EXACTLY (to four decimal
+  places) on every live source -- the closed-form identity holds
+  on real data. The cross-source ranking by erNorm is
+  STRUCTURALLY DIFFERENT from the cross-source ranking by gini:
+  claude-code has the highest gini (0.7590) but is fourth on
+  erNorm, while codex has middling gini (0.5892) but the highest
+  erNorm by a wide margin -- the n-rescaling penalizes
+  long-tenure sources (claude-code: 35 days, vscode-other: 73
+  days) and rewards short-tenure spiky sources (codex: 8 days).
+  This is the cross-source signal the n-dependent rescaling
+  surfaces, and no prior axis captures it.
+
 ## 0.6.294 — 2026-05-01
 
 ### Added
