@@ -125,6 +125,7 @@ import {
   renderDailyTokenHurstRs,
   renderDailyTokenDfaAlpha,
   renderDailyTokenSampleEntropy,
+  renderDailyTokenHiguchiFd,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -412,6 +413,7 @@ import { buildDailyTokenPermutationEntropy } from './dailytokenpermutationentrop
 import { buildDailyTokenHurstRs } from './dailytokenhurstrs.js';
 import { buildDailyTokenDfaAlpha } from './dailytokendfaalpha.js';
 import { buildDailyTokenSampleEntropy } from './dailytokensampleentropy.js';
+import { buildDailyTokenHiguchiFd } from './dailytokenhiguchifd.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17046,6 +17048,140 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSampleEntropy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-higuchi-fd')
+  .description(
+    "Per-source Higuchi Fractal Dimension (Higuchi 1988, Physica D 31:277-283) on the gap-filled daily total_tokens series (SEVENTY-FOURTH cross-source axis). HFD = -OLS slope of log(L(k)) vs log(k) for k = 1..k-max, where L(k) is the Higuchi-normalised average path length of stride-k sub-series of the raw values: L_m(k) = ((N-1)/(M*k)) * sum_{i=1..M} |x[m+i*k-1] - x[m+(i-1)*k-1]| with M = floor((N-m)/k), then L(k) = mean over m in 1..k of L_m(k). HFD ~ 1.0 = smooth / near-monotone curve; HFD ~ 1.5 = Brownian-like / fractional-Brownian H = 0.5; HFD ~ 2.0 = white-noise-like / space-filling. Multi-scale GEOMETRIC arc-length exponent: orthogonal to (a) Hurst R/S axis 71 (variance-scaling on cumulative deviations vs path-length-scaling on raw values; coincide only for ideal fBm and routinely disagree on real bounded gap-filled data); (b) DFA-alpha axis 72 (DFA integrates once and detrends per window before measuring fluctuation; HFD measures arc length directly with no integration and no detrending - opposite ends of the integration ladder); (c) lag-1/lag-7 ACF axes 67/68 (single-lag linear scalars vs multi-scale exponent); (d) spectral entropy axis 69 (flatness vs scaling exponent); (e) permutation entropy axis 70 (ordinal alphabet vs metric path-length); (f) sample entropy axis 73 (short-window single-scale conditional irregularity vs multi-scale arc-length scaling); (g) all permutation-invariant dispersion / shape axes 32-67 (shuffle-invariant; HFD is shuffle-sensitive: sorted -> ~1.0, shuffled -> ~2.0).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor k-max+2. Default 32.',
+    '32',
+  )
+  .option(
+    '--k-max <n>',
+    'cap on the Higuchi stride k. Hard floor 2, ceiling 64. Default 8.',
+    '8',
+  )
+  .option(
+    '--min-k <n>',
+    'minimum surviving scales required to fit the log-log OLS. Hard floor 2, ceiling k-max. Default 4.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absHfdDeviationDesc (default, sources furthest from hfd=1.5 first) | hfd | hfdDesc | r2Desc | tokens | tenure | source.',
+    'absHfdDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        kMax: string;
+        minK: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const kMax = Number.parseInt(opts.kMax, 10);
+        if (!Number.isInteger(kMax) || kMax < 2 || kMax > 64) {
+          throw new Error(
+            `--k-max must be an integer in [2, 64] (got ${opts.kMax})`,
+          );
+        }
+        const minK = Number.parseInt(opts.minK, 10);
+        if (!Number.isInteger(minK) || minK < 2 || minK > kMax) {
+          throw new Error(
+            `--min-k must be an integer in [2, k-max=${kMax}] (got ${opts.minK})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < kMax + 2) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= k-max+2=${kMax + 2} (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absHfdDeviationDesc',
+          'hfd',
+          'hfdDesc',
+          'r2Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHiguchiFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          kMax,
+          minK,
+          top,
+          sort: opts.sort as
+            | 'absHfdDeviationDesc'
+            | 'hfd'
+            | 'hfdDesc'
+            | 'r2Desc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHiguchiFd(report) + '\n');
         }
       } catch (e) {
         die(e);

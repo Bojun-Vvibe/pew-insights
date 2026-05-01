@@ -17083,6 +17083,7 @@ import type { DailyTokenPermutationEntropyReport } from './dailytokenpermutation
 import type { DailyTokenHurstRsReport } from './dailytokenhurstrs.js';
 import type { DailyTokenDfaAlphaReport } from './dailytokendfaalpha.js';
 import type { DailyTokenSampleEntropyReport } from './dailytokensampleentropy.js';
+import type { DailyTokenHiguchiFdReport } from './dailytokenhiguchifd.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18407,6 +18408,75 @@ export function renderDailyTokenSampleEntropy(
     s.rAbsolute.toFixed(2),
     formatNumber(s.matchesAplusone),
     formatNumber(s.matchesB),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHiguchiFd(
+  r: DailyTokenHiguchiFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-higuchi-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    k-max: ${formatNumber(r.kMax)}    min-k: ${formatNumber(r.minK)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewScales)} too-few-scales-after-degeneracy, ${formatNumber(r.droppedTopSources)} below top cap; clamped: ${formatNumber(r.clampedBelow1)} below 1, ${formatNumber(r.clampedAbove2)} above 2`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Higuchi Fractal Dimension (Higuchi 1988, Physica D 31:277-283) on the gap-filled daily total_tokens series. SEVENTY-FOURTH cross-source axis. HFD = -OLS slope of log(L(k)) vs log(k) for k = 1..kMax, where L(k) is the Higuchi-normalised average path length of stride-k sub-series of the raw values. HFD ~ 1.0 = smooth / near-monotone curve; HFD ~ 1.5 = Brownian-like / fractional-Brownian H = 0.5; HFD ~ 2.0 = white-noise-like / space-filling. Multi-scale GEOMETRIC arc-length exponent -- structurally orthogonal to (a) Hurst R/S axis 71 -- R/S is variance-scaling on cumulative deviations; HFD is path-length-scaling on raw values; coincide only for ideal fBm (HFD = 2 - H) and routinely disagree on real bounded gap-filled data; (b) DFA-alpha axis 72 -- DFA integrates once and detrends per window before measuring fluctuation; HFD measures arc length directly with no integration and no detrending (opposite ends of the integration ladder); (c) lag-1 / lag-7 ACF axes 67/68 -- single-lag linear scalars vs multi-scale exponent; (d) spectral entropy axis 69 -- flatness vs scaling exponent (HFD = (5-beta)/2 only under idealised 1/f^beta); (e) permutation entropy axis 70 -- ordinal alphabet vs metric path-length; (f) sample entropy axis 73 -- short-window single-scale conditional irregularity vs multi-scale arc-length scaling; (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; HFD is shuffle-sensitive (sorted -> ~1.0, shuffled -> ~2.0). hfdRaw is the un-clamped fit; hfd is clamped to [1, 2].)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source HFD (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'minK',
+    'maxK',
+    'scales',
+    'hfd',
+    'r2',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.minScaleUsed),
+    formatNumber(s.maxScaleUsed),
+    formatNumber(s.scalesUsed),
+    s.hfd.toFixed(4),
+    s.r2.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
