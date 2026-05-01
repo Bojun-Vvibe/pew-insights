@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.318 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTY-FOURTH):
+  `pew-insights daily-token-higuchi-fd`.
+
+  Per-source Higuchi Fractal Dimension (Higuchi, T.,
+  "Approach to an irregular time series on the basis of the
+  fractal theory", Physica D: Nonlinear Phenomena
+  31(2):277-283, 1988) on the gap-filled daily `total_tokens`
+  series.
+
+  Defaults: `k-max = 8`, `min-k = 4`, `min-tenure-days = 32`,
+  `min-tokens = 1000`. For each scale `k = 1..k-max` and each
+  starting offset `m = 1..k`, the stride-`k` sub-series of
+  length `M+1` (with `M = floor((N-m)/k)`) contributes a
+  Higuchi-normalised average path length:
+
+      L_m(k) = ((N - 1) / (M * k)) * sum_{i=1..M}
+                |x[m + i*k - 1] - x[m + (i-1)*k - 1]|
+
+  Then `L(k) = mean over m of L_m(k)`, averaging only over m
+  starts that produced at least one increment. `HFD` is
+  `-OLS slope` of `log(L(k))` vs `log(k)` across the surviving
+  scales. The reported `hfd` is clamped to `[1, 2]` (the
+  theoretically meaningful bracket for self-affine planar
+  curves) and the un-clamped `hfdRaw`, `clampedBelow1`,
+  `clampedAbove2` counters are surfaced for operators.
+
+  Reading `hfd`:
+
+  - `hfd` ~ 1.0  = smooth / near-monotone curve.
+  - `hfd` ~ 1.5  = Brownian-like / fractional-Brownian H = 0.5.
+  - `hfd` ~ 2.0  = white-noise-like / space-filling.
+
+  Edge cases surfaced as drop counters: `droppedZeroVariance`
+  (perfectly flat tenure), `scalesDroppedZeroL` (m-starts at a
+  scale all yield zero path length — collapses the scale and is
+  filtered out before the OLS), `droppedTooFewScales` (fewer
+  than `min-k` surviving scales after the degeneracy filter).
+
+  STRUCTURAL ORTHOGONALITY — multi-scale GEOMETRIC arc-length
+  exponent, fundamentally distinct from every shipped
+  daily-token axis 32..73:
+
+  - vs `daily-token-hurst-rs` (axis 71) and `daily-token-dfa-
+    alpha` (axis 72): R/S and DFA are VARIANCE-scaling
+    estimators on cumulative deviations (DFA additionally
+    detrends each window). HFD is a PATH-LENGTH-scaling
+    estimator on the raw series with no integration and no
+    detrending — opposite ends of the integration ladder.
+    Coincide only for ideal fBm (`HFD = 2 - H` and
+    `HFD = 2 - alpha`); on real bounded gap-filled token series
+    they routinely disagree and rankings do not preserve. The
+    sorted-vs-shuffled multiset witness ships in the test file
+    and separates HFD from every multiset / dispersion / shape
+    statistic.
+
+  - vs `daily-token-spectral-entropy` (axis 69): SE summarises
+    flatness of the global periodogram. HFD is a power-law
+    exponent linking stride `k` to average arc length. Related
+    only under idealised `1/f^beta` stationarity
+    (`HFD = (5 - beta)/2`); in practice they routinely
+    disagree.
+
+  - vs `daily-token-permutation-entropy` (axis 70): PE is
+    ORDINAL on length-3 windows, monotone-invariant. HFD is
+    METRIC and invariant only under positive affine. A linear
+    ramp has PE = 0 AND HFD ~ 1.0; a noisy alternating bounded
+    oscillation can have PE near 1 and HFD near 2.0.
+
+  - vs `daily-token-sample-entropy` (axis 73): SampEn is a
+    SHORT-WINDOW SINGLE-SCALE conditional irregularity at one
+    `(m, r)`. HFD is a MULTI-SCALE arc-length scaling exponent.
+    They measure orthogonal facets of complexity (template
+    recurrence vs geometric path roughness).
+
+  - vs `daily-token-autocorrelation-lag1` / `lag7`
+    (axes 67/68): ACF is a SECOND-MOMENT linear scalar at one
+    fixed lag. HFD is a multi-scale geometric exponent and is
+    well-defined even when all finite-lag `rho_k = 0`.
+
+  - vs all permutation-invariant dispersion / shape axes 32..67
+    (Gini, Atkinson, Theil, GE, Hill, MC, L-skew, ...): those
+    are shuffle-invariant; HFD is shuffle-sensitive
+    (sorted-vs-shuffled witness test ships in the test file).
+
+  Live-smoke (real `~/.config/pew/queue.jsonl`, default
+  `k-max=8 min-k=4 min-tenure-days=32 min-tokens=1000`,
+  generated 2026-05-02; vscode-* product names scrubbed):
+
+  - claude-code: hfd=1.0650 (hfdRaw=1.0650, tenure=72d, active=35d, scales=8, r2=0.9881)
+  - vscode-other: hfd=1.0000 (hfdRaw=0.9549, tenure=265d, active=73d, scales=8, r2=0.9964; clampedBelow1)
+
+  4 other sources fell below the 32-day gap-filled-tenure floor
+  and surfaced as `droppedBelowMinTenure`. Both surviving
+  sources sit just at / below the lower clamp boundary
+  (`hfd = 1`), with the un-clamped `hfdRaw` showing the rough-
+  vs-smooth ordering: claude-code's daily-token series is
+  geometrically rougher than vscode-other's despite both
+  estimators landing in the same `hfd = 1` bin after clamping —
+  consistent with claude-code's higher SampEn / lower predict-
+  ability surfaced by axis-73 on the same data.
+
+  Tests: 8780 -> 8798 (+18). Includes hand-computed L(1) /
+  L(2) on a deterministic ramp, a white-noise relative bound,
+  scale-invariance under positive multiplicative rescale, and
+  an orthogonality witness (sorted-vs-shuffled heavy-tailed
+  multiset).
+
 ## 0.6.317 — 2026-05-02
 
 ### Added
