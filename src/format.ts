@@ -16779,3 +16779,97 @@ export function renderDailyTokenVarianceOfLogarithms(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+import type { DailyTokenLogMeanAbsoluteDeviationIndexReport } from './dailytokenlogmeanabsolutedeviationindex.js';
+
+export function renderDailyTokenLogMeanAbsoluteDeviationIndex(
+  r: DailyTokenLogMeanAbsoluteDeviationIndexReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-log-mean-absolute-deviation-index'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-lmad: ${r.minLmad === null ? '\u2014' : r.minLmad}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinLmad)} below min-lmad, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LMAD = (1/n) * sum_i | log D_i - mean_j log D_j |. FIRST ABSOLUTE CENTRAL MOMENT of LOG y, dimensionless, geometric-mean-anchored, scale-invariant in tokens. L1 sibling of axis-53 VL. Identity LMAD/sqrt(VL) = sqrt(2/pi) ~ 0.7979 holds iff log y is normal; the residual is an INDEPENDENT per-source lognormality audit.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source log-mean-absolute-deviation (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'lmad',
+    'meanLog',
+    'geoMeanDaily',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.lmad.toFixed(4),
+    s.degenerate ? '\u2014' : s.meanLog.toFixed(4),
+    formatNumber(Math.round(s.geoMeanDaily)),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.vl !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `VL cross-anchor (axis-53; variance of logarithms on the same vector. Lognormality identity: lmad/sqrt(vl) = sqrt(2/pi) ~ 0.7979 iff log y is normal.)`,
+      ),
+    );
+    const wHeaders = ['source', 'lmad', 'vl', 'lmad/sqrt(vl)'];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.lmad.toFixed(6),
+      s.vl === undefined ? 'n/a' : (s.vl as number).toFixed(6),
+      s.lmadOverSqrtVl === undefined || Number.isNaN(s.lmadOverSqrtVl)
+        ? 'n/a'
+        : (s.lmadOverSqrtVl as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

@@ -105,6 +105,7 @@ import {
   renderDailyTokenEstebanRayPolarizationIndex,
   renderDailyTokenFosterWolfsonIndex,
   renderDailyTokenVarianceOfLogarithms,
+  renderDailyTokenLogMeanAbsoluteDeviationIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -372,6 +373,7 @@ import { buildDailyTokenAmatoIndex } from './dailytokenamatoindex.js';
 import { buildDailyTokenEstebanRayPolarizationIndex } from './dailytokenestebanraypolarizationindex.js';
 import { buildDailyTokenFosterWolfsonIndex } from './dailytokenfosterwolfsonindex.js';
 import { buildDailyTokenVarianceOfLogarithms } from './dailytokenvarianceoflogarithms.js';
+import { buildDailyTokenLogMeanAbsoluteDeviationIndex } from './dailytokenlogmeanabsolutedeviationindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -14405,6 +14407,140 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenVarianceOfLogarithms(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-log-mean-absolute-deviation-index')
+  .description(
+    "Per-source LOG-MAD (mean absolute deviation of log y around the log-mean) of the per-day total_tokens distribution (FIFTY-FOURTH cross-source axis). LMAD = (1/n) * sum_i | log D_i - mean_j log D_j |: FIRST ABSOLUTE CENTRAL MOMENT of LOG y, dimensionless, geometric-mean-anchored, scale-invariant in tokens. Range [0, +inf); LMAD = 0 iff perfect equality. The L1 sibling of axis-53 VL (which is the L2 second moment of log y). Closed-form identity to VL (axis-53): for log y ~ N(mu_L, sigma^2) we have VL = sigma^2 and LMAD = sigma * sqrt(2/pi), so LMAD/sqrt(VL) = sqrt(2/pi) ~ 0.7979 FOR LOGNORMAL ONLY. The residual on a real source measures non-lognormality and is INDEPENDENT of the axis-53 vl/(2*GE(0)) audit (different moment pair). Per-source columns: lmad, meanLog, geoMeanDaily, meanDaily, minDay, maxDay. Refinement: --include-vl-anchor surfaces vl (axis-53) and the lmad/sqrt(vl) lognormality audit on the same vector.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). LMAD degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: lmad (default) | tokens | days | source | meanDaily | geoMeanDaily | meanLog. Applied before --top.',
+    'lmad',
+  )
+  .option(
+    '--min-lmad <x>',
+    'display filter: hide non-degenerate rows whose lmad is strictly below this non-negative value. Default null = no filter.',
+  )
+  .option(
+    '--include-vl-anchor',
+    'every row gains vl (axis-53) and lmadOverSqrtVl (lognormality audit; equals sqrt(2/pi) ~ 0.7979 iff log y is normal).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minLmad?: string;
+        includeVlAnchor?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minLmad: number | null = null;
+        if (opts.minLmad !== undefined) {
+          const mv = Number.parseFloat(opts.minLmad);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-lmad must be a non-negative finite number (got ${opts.minLmad})`,
+            );
+          }
+          minLmad = mv;
+        }
+        const validSorts = [
+          'lmad',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'geoMeanDaily',
+          'meanLog',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLogMeanAbsoluteDeviationIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minLmad,
+          includeVlAnchor: opts.includeVlAnchor ?? false,
+          sort: opts.sort as
+            | 'lmad'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'geoMeanDaily'
+            | 'meanLog',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLogMeanAbsoluteDeviationIndex(report) + '\n',
           );
         }
       } catch (e) {
