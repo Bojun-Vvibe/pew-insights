@@ -2,6 +2,106 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.290 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FORTY-SIXTH):
+  `pew-insights daily-token-wolfson-polarization-index`.
+
+  Per-source WOLFSON BIPOLARIZATION INDEX (Wolfson 1994, "When
+  inequalities diverge") of the per-day total_tokens distribution:
+
+      W = (mu / m) * (2 * T - G),    T = 0.5 - L(0.5)
+
+  where mu = mean(D), m = median(D), L(0.5) is the Lorenz curve at
+  the 50% population rank (cumulative share of the bottom half), and
+  G is Gini(D). Sign of W is NOT constrained:
+
+      W >  0   distribution is MORE BIPOLARIZED than the
+               within-Gini baseline (mass pulled away from the
+               median into the two tails).
+      W == 0   bipolarization matches the within-Gini baseline.
+      W <  0   ANTI-polarization (mass concentrated AROUND the
+               median; rare in heavy-tailed real data).
+
+  THE DEFINING CONTRAST. Every prior daily-token axis (32 through
+  45) measures DISPERSION FROM THE MEAN, single-point Lorenz gaps
+  at the mean rank, or rank-weighted partial-mean shortfalls.
+  Wolfson is the ONLY axis in the family that measures
+  CONCENTRATION AWAY FROM THE MEDIAN — bipolarization, not
+  inequality. Two distributions can have IDENTICAL Gini and yet
+  opposite-sign Wolfson values when bulk mass migrates between
+  "around the median" and "split into two tails".
+
+  Genuinely orthogonal to every prior daily-token axis. Distinct
+  from axis-32 Gini (uniform Lorenz integral, mean-anchored), axes
+  33/34/37 Theil-L/Theil-T/GE2 (moment-based on shares, no median),
+  axis-35 Pietra / axis-42 Hoover (single-point L_infinity Lorenz
+  gaps at the MEAN rank, not the median), axis-36 Atkinson (CRRA
+  welfare loss, no median anchor), axis-39 Zenga (lower-mean /
+  upper-mean shortfall functional, no median anchor), axis-40 Palma
+  (top-decile / bottom-four-decile ratio, different rank cuts and
+  no Gini subtraction), axis-41 FGT (one-sided lower-tail
+  threshold-anchored), axis-43 Bonferroni / axis-45 Mehran
+  (rank-weighted partial-mean shortfalls; uniform and linear
+  kernels), axis-44 Kolm-Pollak (translation-invariant absolute,
+  not relative). Permutation-invariant, so orthogonal by
+  construction to every time-ordered axis.
+
+  Refinement shipped together:
+
+  - `--include-mean-over-median`: per-row `meanOverMedian` field
+    (mu / m). Surfaces the right-skew multiplier component of
+    Wolfson independent of the (2T - G) bipolarization core. The
+    decomposition W = (mu/m) * (2T - G) cleanly separates the
+    AMPLIFIER from the bipolarization CORE: a heavy right tail can
+    inflate W via mu/m even when (2T - G) is modest, and conversely
+    a near-symmetric distribution with mu/m close to 1 isolates the
+    pure (2T - G) Gini-rebased polarization signal.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (vscode-other
+  token scrubbed for changelog policy):
+
+      pew-insights daily-token-wolfson-polarization-index --include-mean-over-median
+
+      per-source Wolfson polarization (sorted by wolfson):
+      source        days  wolfson  gini    T       mu/m
+      claude-code   35    +0.6331  0.7590  0.4613  3.8711
+      vscode-other  73    +0.5352  0.7000  0.4341  3.1820
+      codex          8    +0.5059  0.5892  0.3977  2.4543
+      openclaw      15    +0.2595  0.3859  0.2851  1.4091
+      hermes        15    +0.2481  0.3706  0.2873  1.2161
+      opencode      12    +0.0878  0.2597  0.1776  0.9196
+
+      mean-over-median decomposition (W = (mu/m) * (2T - G)):
+      source        wolfson  2T-G     mu/m
+      claude-code   +0.6331  +0.1635  3.8711
+      vscode-other  +0.5352  +0.1682  3.1820
+      codex         +0.5059  +0.2061  2.4543
+      openclaw      +0.2595  +0.1842  1.4091
+      hermes        +0.2481  +0.2040  1.2161
+      opencode      +0.0878  +0.0955  0.9196
+
+  All six sources read STRICTLY POSITIVE Wolfson on this corpus —
+  every per-source daily-token distribution is more bipolarized
+  than its Gini baseline alone would imply. The bipolarization core
+  (2T - G) is itself positive on every source, ranging from
+  +0.0955 (opencode, the most "mass-around-the-median" source) to
+  +0.2061 (codex, the most internally-bipolarized 8-day vector).
+  But the headline ordering is dominated by the mu/m AMPLIFIER:
+  claude-code reaches the highest W not because its core is the
+  largest (codex's is +0.2061 vs claude-code's +0.1635) but because
+  its right-skew multiplier is 3.8711 — the heaviest mean-over-
+  median ratio in the family. Conversely opencode's mu/m = 0.9196
+  is BELOW 1 (median exceeds mean — left-skew), suppressing its
+  Wolfson reading even though its core is non-trivially positive.
+  This is the structural signal Wolfson exposes that no prior axis
+  surfaces: SAME Gini family, but radically different bipolarization
+  geometries when read against the median rather than the mean.
+
+  Tested: 23 cases (10 primitive + 13 builder).
+
 ## 0.6.289 — 2026-05-01
 
 ### Added
