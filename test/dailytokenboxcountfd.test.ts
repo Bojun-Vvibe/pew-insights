@@ -507,3 +507,65 @@ test('property: monotone-transform-invariance witness across multiple sqrt-style
   // Most trials should differ.
   assert.ok(differs >= trials - 2, `sqrt-transform differed in only ${differs}/${trials}`);
 });
+
+// ---- Short-tenure ladder-cap sanity check ----------------------------
+
+test('refinement: very short qualifying tenure (N=5..6) -- ladder collapses, builder surfaces droppedNonFiniteBfd', () => {
+  // With minTenureDays=4 and N=5 (so N-1=4), the doubling ladder from
+  // gridMin=2 yields {2, 4} -- exactly 2 grid points, the minimum for
+  // OLS. Verify this still computes a finite BFD and does NOT bail.
+  const queue: QueueLine[] = [];
+  const dates = ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04', '2026-01-05'];
+  const vals = [10, 90, 30, 70, 50];
+  dates.forEach((d, i) => queue.push(ql(`${d}T00:00:00.000Z`, 'short', vals[i]!)));
+  const r = buildDailyTokenBoxCountFd(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minTenureDays: 4,
+    gridMin: 2,
+    gridMax: 4,
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.droppedNonFiniteBfd, 0);
+  const row = r.sources[0]!;
+  assert.equal(row.nGridSteps, 2);
+  assert.equal(row.gridMin, 2);
+  assert.equal(row.gridMax, 4);
+  assert.ok(Number.isFinite(row.bfdRaw));
+  // With only 2 OLS points, slopeR2 is exactly 1 (perfect fit through 2 points).
+  assert.ok(Math.abs(row.slopeR2 - 1) < 1e-12, `R2=${row.slopeR2}`);
+});
+
+test('refinement: short tenure where ladder collapses to < 2 grid points -- builder catches and counts droppedNonFiniteBfd', () => {
+  // N=4 (tenure=4), N-1=3, so ladder cap is 3 -- only m=2 survives
+  // (m=4 > 3). boxCountFd should throw; builder should catch as
+  // droppedNonFiniteBfd.
+  const queue: QueueLine[] = [];
+  const dates = ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04'];
+  const vals = [10, 90, 30, 70];
+  dates.forEach((d, i) => queue.push(ql(`${d}T00:00:00.000Z`, 'tiny', vals[i]!)));
+  const r = buildDailyTokenBoxCountFd(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minTenureDays: 4,
+    gridMin: 2,
+    gridMax: 32,
+  });
+  assert.equal(r.droppedNonFiniteBfd, 1);
+  assert.equal(r.sources.length, 0);
+});
+
+test('refinement: invariance under monotone power-law transforms is broken systematically (not just sqrt)', () => {
+  // Strengthens the sqrt witness: cube-root and squaring also break
+  // the invariance. Anchors BFD as a genuinely magnitude-distribution-
+  // sensitive primitive.
+  const rng = mulberry32(0x77777);
+  const v = Array.from({ length: 200 }, () => Math.floor(rng() * 1e6) + 1);
+  const a = boxCountFd(v, 2, 64);
+  const cube = v.map((x) => Math.cbrt(x));
+  const sq = v.map((x) => x * x);
+  const b = boxCountFd(cube, 2, 64);
+  const c = boxCountFd(sq, 2, 64);
+  assert.ok(Math.abs(a.bfdRaw - b.bfdRaw) > 1e-3, `cbrt: ${a.bfdRaw} vs ${b.bfdRaw}`);
+  assert.ok(Math.abs(a.bfdRaw - c.bfdRaw) > 1e-3, `sq: ${a.bfdRaw} vs ${c.bfdRaw}`);
+});
