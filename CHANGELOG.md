@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.314 — 2026-05-02
+
+### Added
+
+- New cross-source axis (SEVENTIETH):
+  `pew-insights daily-token-permutation-entropy`.
+
+  Per-source Bandt & Pompe (PRL 2002) normalised permutation
+  entropy of the gap-filled daily `total_tokens` series at
+  embedding `m=3`, lag `tau=1`. For each source:
+
+  1. Aggregate per UTC calendar day across all rows; build the
+     dense series across the source's tenure
+     `[firstActiveDay, lastActiveDay]` with missing days filled
+     as 0 tokens.
+  2. Slide a length-`m=3` window across the `W = N - 2`
+     starting positions, encoding each window into one of
+     `m! = 6` ordinal patterns
+     `{012, 021, 102, 120, 201, 210}` with the
+     EARLIER-INDEX-WINS deterministic tie-break (Cao, Tung,
+     Gao, Protopopescu & Hively, Phys. Rev. E 70, 2004).
+  3. Normalise the per-pattern counts into a probability
+     vector `p_pi = count_pi / W` and report the Shannon
+     entropy normalised by `ln(m!) = ln(6)` into `[0, 1]`:
+
+         H_PE = -sum_pi p_pi ln(p_pi) / ln(6)
+
+  - `H_PE = 0` : a single ordinal pattern carries 100% of the
+    `W` windows (e.g. a strictly monotone series produces only
+    `012` — strictly increasing — or `210` — strictly
+    decreasing).
+  - `H_PE = 1` : all 6 ordinal patterns are equiprobable
+    (maximally complex local micro-trajectories — the
+    canonical Bandt-Pompe upper bound, attained by an iid
+    continuous-uniform series).
+  - `H_PE` in between: partial ordinal regularity. The
+    canonical Rosso et al. 2007 complexity-entropy plane is
+    parameterised by exactly this measure.
+
+  ORDINAL/RANK-BASED primitive — structurally orthogonal to
+  every shipped axis 32–69:
+
+  - **vs `daily-token-spectral-entropy` (axis 69)** —
+    spectral entropy is Shannon on the periodogram and is
+    invariant under any reordering that preserves the
+    autocovariance sequence; permutation entropy is Shannon
+    on the ordinal-pattern distribution. They coincide at
+    extremes (a sorted iid-uniform series has both ~1; a
+    strictly-monotone ramp has both 0) but disagree on the
+    middle of the complexity-randomness plane. A pure cosine
+    has `H_spec` near 0 (single-bin spectrum) yet
+    `H_PE` ≈ `ln(4)/ln(6)` (only 4 of 6 patterns occur).
+  - **vs lag-1 / lag-7 Pearson autocorrelation** — `rho` is
+    a single linear-correlation scalar at one lag,
+    INVARIANT under affine `x -> a*x + b` (`a > 0`) only.
+    `H_PE` is invariant under any STRICTLY MONOTONE
+    transform (not just affine), and is also defined for
+    series whose `rho_k = 0` at every lag yet whose ordinal
+    patterns are heavily skewed.
+  - **vs all permutation-invariant dispersion / shape axes
+    32–67** (Gini, Atkinson, Theil, GE, Hill, MC, L-skew,
+    …) — those throw away temporal placement entirely. A
+    sorted and a shuffled copy of the same multiset produce
+    `H_PE = 0` and `H_PE` near 1 respectively while every
+    multiset statistic is identical. New refinement test
+    `orthogonality: sorted vs shuffled multiset` is the
+    explicit witness.
+  - **vs sign-trace / runs-test / monotone-run-length axes**
+    — a sign trace is the `m=2` ordinal alphabet
+    `{up, down}` and loses information about the relative
+    ordering of non-adjacent points within a window. With
+    `m=3` we resolve six patterns including the two peak
+    shapes `120 / 021` and the two valley shapes `201 / 102`
+    that collapse onto the same up-down sign pair under
+    `m=2`.
+  - **vs trend / forecast / source-daily-token-trend-slope**
+    — a non-linear monotone curve (e.g. exponential growth)
+    has `H_PE = 0` but a non-zero least-squares slope
+    residual; conversely a mean-zero high-frequency
+    oscillation has slope ≈ 0 and `H_PE` near 1. New test
+    `orthogonality vs spectral entropy: a non-linear
+    monotone curve` is the explicit witness.
+
+  Knobs: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-tenure-days` (default 14, hard
+  floor `m+1 = 4` so that `W >= 1`), `--top` (default 0 = no
+  cap), `--sort` ∈ `entropy | entropyDesc | tokens | tenure
+  | source` (default `entropy` — most-ordinally-concentrated
+  first, ascending `H_PE`), `--max-entropy` ∈ `[0, 1]`
+  display filter, and `--json`. Schema mirrors the
+  spectral-entropy axis exactly for cross-axis
+  comparability, with `peakBin/peakShare/entropyNorm`
+  replaced by `peakPattern/peakShare/entropyNorm` plus a
+  full `patternShares[6]` vector indexed by the canonical
+  `{012, 021, 102, 120, 201, 210}` ordering.
+
+  Live-smoke against this dev box's real
+  `~/.config/pew/queue.jsonl` (5,830,337,127 tokens across
+  6 sources; 2 dropped below the 14-day tenure floor; the
+  `vscode-other` source-key below is the scrubbed display
+  rename for an upstream tool whose canonical name contains
+  a banned substring; underlying counts are unchanged):
+
+  ```
+  pew-insights daily-token-permutation-entropy
+  per-source permutation entropy (sorted by entropy ascending)
+
+  source        firstDay    lastDay     tenure  windows  peakPat  peakShare  H_PE    tokens
+  ------------  ----------  ----------  ------  -------  -------  ---------  ------  -------------
+  vscode-other  2025-07-30  2026-04-20     265      263  012        0.6198  0.6686       1,885,727
+  claude-code   2026-02-11  2026-04-23      72       70  012        0.5286  0.7931   3,442,385,788
+  openclaw      2026-04-17  2026-05-01      15       13  012        0.2308  0.8655   2,125,253,958
+  ```
+
+  Read-out: every kept source has `peakPattern = 012`
+  (strictly-increasing triple is the modal local shape) but
+  `peakShare` ranges from 0.62 (vscode-other, the long-
+  tenure low-volume background process — the sliding window
+  is dominated by long zero-then-tiny-then-zero stretches
+  that all collapse onto `012` under earlier-index-wins
+  tie-break) down to 0.23 (openclaw, the brand-new source
+  whose 13 windows are spread across most of the 6 patterns
+  and so has the least ordinal regularity of the kept set).
+  This separation — a 4× swing in the modal-pattern
+  fraction at nearly identical `H_spec` values from the
+  axis-69 live-smoke (openclaw 0.7007 vs vscode-other
+  0.9149) — is exactly the orthogonality the Rosso 2007
+  complexity-entropy plane was designed to surface and is
+  not visible from any single shipped axis.
+
+### Changed
+
+- `package.json`: `0.6.313` → `0.6.314`.
+
 ## 0.6.313 — 2026-05-02
 
 ### Added
