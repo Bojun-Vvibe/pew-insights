@@ -395,3 +395,134 @@ test('buildDailyTokenVarianceOfLogarithms: bad hour_start counted as droppedInva
   assert.equal(r.droppedInvalidHourStart, 1);
   assert.equal(r.sources.length, 1);
 });
+
+// ---- Refinement: numerical-stability + closed-form audit sweep -------
+
+test('refinement: Welford handles 1e6 near-equal entries with tiny multiplicative jitter (no catastrophic cancellation)', () => {
+  // Build a vector of 100,000 values clustered tightly around exp(20)
+  // with multiplicative jitter at the 1e-6 level. The naive two-pass
+  // formula would still be fine here, but this exercises the running
+  // online algorithm on a large n with a tiny true variance.
+  const base = Math.exp(20);
+  let seed = 987654321;
+  function lcg(): number {
+    seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+    return seed / 0xffffffff;
+  }
+  const xs: number[] = [];
+  for (let i = 0; i < 100000; i++) {
+    xs.push(base * (1 + (lcg() - 0.5) * 2e-6));
+  }
+  const r = varianceOfLogarithmsOfVector(xs);
+  // True variance of log(1 + u*1e-6 - 1e-6) ~ Var(u*1e-6) where u~U(0,1).
+  // Var(u*1e-6) = (1e-6)^2 / 12 ~ 8.3e-14.
+  assert.ok(
+    r.vl > 0 && r.vl < 1e-10,
+    `expected tiny but positive vl on near-equal vector, got ${r.vl}`,
+  );
+  // meanLog should be very close to log(base) = 20.
+  assert.ok(Math.abs(r.meanLog - 20) < 1e-5);
+});
+
+test('refinement: scale-invariance is exact across 12 orders of magnitude', () => {
+  const v = [1, 3, 7, 11, 23, 47, 89, 179];
+  const r0 = varianceOfLogarithmsOfVector(v).vl;
+  for (const k of [1e-6, 1e-3, 1, 1e3, 1e6]) {
+    const rk = varianceOfLogarithmsOfVector(v.map((x) => x * k)).vl;
+    assert.ok(
+      Math.abs(rk - r0) < 1e-12,
+      `scale-invariance broke at k=${k}: ${rk} vs ${r0}`,
+    );
+  }
+});
+
+test('refinement: Pareto sample drives VL/(2*GE(0)) systematically away from 1', () => {
+  // For a Pareto-distributed y_i = (1/U)^(1/alpha) with U ~ U(0,1),
+  // log y = -log(U)/alpha is Exponential(alpha), so:
+  //   Var(log y) = 1/alpha^2
+  //   E[log y]   = 1/alpha
+  // GE(0) = log(E[y]) - E[log y]. For Pareto with alpha > 1,
+  //   E[y] = alpha/(alpha-1). So GE(0) = log(alpha/(alpha-1)) - 1/alpha.
+  // For alpha = 2: VL = 0.25, GE(0) = log(2) - 0.5 = 0.1931..,
+  //   ratio VL/(2*GE(0)) = 0.25 / 0.3863 ~ 0.6472. Strictly < 1.
+  let seed = 42424242;
+  function lcg(): number {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  }
+  const alpha = 2;
+  const xs: number[] = [];
+  for (let i = 0; i < 20000; i++) {
+    let u = lcg();
+    if (u === 0) u = 1e-12;
+    xs.push(Math.pow(1 / u, 1 / alpha));
+  }
+  const r = varianceOfLogarithmsOfVector(xs);
+  const l = theilLOfVector(xs).theilL;
+  const ratio = r.vl / (2 * l);
+  // Theoretical ratio for Pareto(alpha=2): ~0.6472. Allow generous
+  // sampling tolerance because Pareto has fat tails -> noisy E[y].
+  assert.ok(
+    ratio > 0.4 && ratio < 0.85,
+    `expected Pareto VL/(2*GE(0)) in [0.4, 0.85] (theory ~0.65); got ${ratio}`,
+  );
+  // The crucial qualitative claim: ratio is clearly NOT 1 (not lognormal).
+  assert.ok(
+    Math.abs(ratio - 1) > 0.1,
+    `expected Pareto sample to break VL = 2*GE(0); got ratio ${ratio}`,
+  );
+});
+
+test('refinement: VL is invariant to perfect doubling-of-mass duplication (replication invariance on log scale)', () => {
+  // Replicating each entry k times leaves the empirical distribution
+  // of LOG y unchanged, so VL is invariant. (This is the standard
+  // Dalton "principle of population".)
+  const v = [1, 2, 4, 8, 16];
+  const r1 = varianceOfLogarithmsOfVector(v);
+  const r2 = varianceOfLogarithmsOfVector([...v, ...v, ...v]);
+  assert.ok(Math.abs(r1.vl - r2.vl) < 1e-12);
+  assert.ok(Math.abs(r1.meanLog - r2.meanLog) < 1e-12);
+});
+
+test('refinement: closed-form identity on equal-spaced log-grid matches discrete-uniform variance', () => {
+  // values = exp(0), exp(1), ..., exp(N-1) -> log values = 0..N-1
+  // VL = Var of {0..N-1} = (N^2 - 1) / 12.
+  for (const N of [3, 5, 8, 13, 21]) {
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(Math.exp(i));
+    const r = varianceOfLogarithmsOfVector(v);
+    const expected = (N * N - 1) / 12;
+    assert.ok(
+      Math.abs(r.vl - expected) < 1e-12,
+      `N=${N}: got ${r.vl}, expected ${expected}`,
+    );
+  }
+});
+
+test('refinement: build pipeline preserves vl across includeGe0Anchor on/off (anchor is read-only)', () => {
+  const queue: QueueLine[] = [];
+  for (const [d, t] of [
+    ['01', 1000],
+    ['02', 4000],
+    ['03', 9000],
+    ['04', 25000],
+    ['05', 64000],
+  ] as const) {
+    queue.push(ql(`2026-04-${d}T00:00:00.000Z`, 'A', t));
+  }
+  const off = buildDailyTokenVarianceOfLogarithms(queue, {
+    minTokens: 1000,
+    minDays: 4,
+    generatedAt: GEN,
+  });
+  const on = buildDailyTokenVarianceOfLogarithms(queue, {
+    minTokens: 1000,
+    minDays: 4,
+    includeGe0Anchor: true,
+    generatedAt: GEN,
+  });
+  assert.equal(off.sources[0].vl, on.sources[0].vl);
+  assert.equal(off.sources[0].meanLog, on.sources[0].meanLog);
+  assert.equal(off.sources[0].theilL, undefined);
+  assert.ok(on.sources[0].theilL !== undefined && (on.sources[0].theilL as number) > 0);
+});

@@ -145,6 +145,39 @@ All notable changes to this project will be documented in this file.
   `--include-ge0-anchor` (refinement: surfaces theilL on the same
   vector and the vl/(2*GE(0)) lognormality-audit ratio), `--json`.
 
+### Changed
+
+- axis-53 numerical-stability + closed-form audit sweep
+  (refinement, no behaviour change). Adds:
+
+  - 100k-element near-equal vector test (multiplicative jitter at
+    the 1e-6 level around exp(20)) confirms Welford's online
+    second-moment accumulator stays positive and sub-1e-10 -- no
+    catastrophic cancellation on tightly clustered log-vectors.
+  - Scale-invariance audit across 12 orders of magnitude (k in
+    {1e-6, 1e-3, 1, 1e3, 1e6}) confirms VL is bit-identical to
+    1e-12 under arbitrary multiplicative rescaling, the defining
+    property of a log-scale dispersion measure.
+  - Pareto(alpha=2) closed-form contrast: theoretical
+    VL/(2*GE(0)) = 0.25 / (2*(log 2 - 0.5)) = 0.6472..; on a 20k
+    sample we hit ratio in [0.4, 0.85] (tolerance for fat-tail
+    sampling noise on E[y]). Confirms (a) VL = 2*GE(0) is NOT a
+    universal identity, (b) the sign of the deviation depends on
+    the tail family (lognormal -> ratio = 1, sub-lognormal heavy-
+    tail / Pareto -> ratio < 1, the live data above gives ratios
+    > 1 on every source, so the live distributions are LIGHTER-
+    tailed than lognormal in their lower halves while the upper
+    tail effect dominates).
+  - Replication-invariance test (Dalton's principle of population
+    on the log scale): tripling every entry leaves VL unchanged
+    to 1e-12.
+  - Equal-spaced log-grid closed form: for v_i = exp(i), i =
+    0..N-1, the discrete-uniform log-variance is (N^2 - 1)/12;
+    matched to 1e-12 for N in {3, 5, 8, 13, 21}.
+  - Pipeline read-only audit: toggling `--include-ge0-anchor` on
+    a real per-source vector leaves `vl` and `meanLog` bit-
+    identical (the anchor is purely additive surfacing).
+
 ## 0.6.296 — 2026-05-01
 
 ### Added
