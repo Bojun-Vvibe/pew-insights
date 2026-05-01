@@ -17077,6 +17077,7 @@ import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
 import type { DailyTokenMedcoupleSkewnessReport } from './dailytokenmedcoupleskewness.js';
 import type { DailyTokenLSkewnessReport } from './dailytokenlskewness.js';
+import type { DailyTokenAutocorrelationLag7Report } from './dailytokenautocorrelationlag7.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17990,6 +17991,73 @@ export function renderDailyTokenLSkewness(
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenAutocorrelationLag7(
+  r: DailyTokenAutocorrelationLag7Report,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-autocorrelation-lag7'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    min-abs-rho7: ${r.minAbsRho7 === null ? '\u2014' : r.minAbsRho7}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedBelowMinAbsRho7)} below min-abs-rho7, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LAG-7 Pearson autocorrelation rho7 of the gap-filled daily total_tokens series. rho7 in [-1, +1]: positive = weekly echo (this Monday predicts next Monday), negative = anti-periodic, ~0 = no weekly cycle. SIXTY-EIGHTH cross-source axis. Captures specifically WEEKLY periodicity at lag 7 -- structurally orthogonal to lag-1 autocorrelation (adjacency persistence), to weekday-share HHI (aggregates same-weekday observations and is order-invariant within a weekday), and to all permutation-invariant dispersion / shape axes 32-67.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source lag-7 autocorrelation (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'mean',
+    'stddev',
+    'rho7',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nLag7Pairs),
+    formatNumber(Math.round(s.mean)),
+    formatNumber(Math.round(s.stddev)),
+    s.flat ? '\u2014' : s.rho7.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
 
   return lines.join('\n').replace(/\n+$/, '');
 }

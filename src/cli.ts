@@ -119,6 +119,7 @@ import {
   renderDailyTokenHillTailIndex,
   renderDailyTokenMedcoupleSkewness,
   renderDailyTokenLSkewness,
+  renderDailyTokenAutocorrelationLag7,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -400,6 +401,7 @@ import { buildDailyTokenRunsTestZ } from './dailytokenrunstestz.js';
 import { buildDailyTokenHillTailIndex } from './dailytokenhilltailindex.js';
 import { buildDailyTokenMedcoupleSkewness } from './dailytokenmedcoupleskewness.js';
 import { buildDailyTokenLSkewness } from './dailytokenlskewness.js';
+import { buildDailyTokenAutocorrelationLag7 } from './dailytokenautocorrelationlag7.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -16263,6 +16265,123 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenLSkewness(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-autocorrelation-lag7')
+  .description(
+    "Per-source LAG-7 Pearson autocorrelation rho7 of the gap-filled daily total_tokens series (SIXTY-EIGHTH cross-source axis). For each source, build the dense [firstActiveDay, lastActiveDay] series with missing days filled as 0 tokens, then rho7 = sum_{i<n-7} (x[i]-mu)(x[i+7]-mu) / sum_i (x[i]-mu)^2. rho7 in [-1, +1]: positive = weekly echo (this Monday predicts next Monday), negative = anti-periodic (week B inverts week A), ~0 = no weekly cycle. Captures specifically WEEKLY periodicity at lag 7. STRUCTURALLY ORTHOGONAL to (a) lag-1 autocorrelation -- a source with rho1=0 i.i.d. day-to-day can still have rho7=+0.99 under a rigid weekly pattern, and the two are mathematically independent at finite n; (b) weekday-share HHI -- HHI aggregates ALL Mondays into one bucket and is order-invariant within a weekday, so a source with constant Monday share but Mondays alternating heavy/light across weeks has identical HHI but very different rho7; (c) all permutation-invariant dispersion / shape axes 32-67 (Gini, Atkinson, Theil, GE, Hoover, Pietra, Bonferroni, Mehran, Wolfson, Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, Var-of-Logs, Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM, Zenga, Hill, MC, L-skew); (d) calendar-order axes 60/64 and run-length / sign-trace axes (sign primitives, not value correlation at a fixed lag); (e) trend / forecast / source-daily-token-trend-slope (linear drift; rho7 explicitly de-trends via mean-centring). flat=true marks sources with var(x)=0 across the gap-filled tenure.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure (lastActive - firstActive + 1) is below n. Hard floor 8 (lag-7 needs >= 1 (i, i+7) pair => n >= 8). Default 14 so rho7 has at least one full week of overlapping pairs.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absRho7 (default, most weekly-periodic first; |rho7| descending) | rho7 (most positively-periodic first) | rho7Asc (most anti-periodic first) | tokens | tenure | source. Applied before --top.',
+    'absRho7',
+  )
+  .option(
+    '--min-abs-rho7 <x>',
+    'display filter: hide non-flat rows whose |rho7| is strictly below x (in [0, 1]). Useful for surfacing only strongly-periodic sources.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        minAbsRho7?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minAbsRho7: number | null = null;
+        if (opts.minAbsRho7 !== undefined) {
+          const mv = Number.parseFloat(opts.minAbsRho7);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-abs-rho7 must be a finite number in [0, 1] (got ${opts.minAbsRho7})`,
+            );
+          }
+          minAbsRho7 = mv;
+        }
+        const validSorts = ['absRho7', 'rho7', 'rho7Asc', 'tokens', 'tenure', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAutocorrelationLag7(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          minAbsRho7,
+          sort: opts.sort as
+            | 'absRho7'
+            | 'rho7'
+            | 'rho7Asc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenAutocorrelationLag7(report) + '\n');
         }
       } catch (e) {
         die(e);
