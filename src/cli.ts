@@ -107,6 +107,7 @@ import {
   renderDailyTokenVarianceOfLogarithms,
   renderDailyTokenLogMeanAbsoluteDeviationIndex,
   renderDailyTokenGeHalfIndex,
+  renderDailyTokenGeThreeIndex,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -376,6 +377,7 @@ import { buildDailyTokenFosterWolfsonIndex } from './dailytokenfosterwolfsoninde
 import { buildDailyTokenVarianceOfLogarithms } from './dailytokenvarianceoflogarithms.js';
 import { buildDailyTokenLogMeanAbsoluteDeviationIndex } from './dailytokenlogmeanabsolutedeviationindex.js';
 import { buildDailyTokenGeHalfIndex } from './dailytokengehalfindex.js';
+import { buildDailyTokenGeThreeIndex } from './dailytokengethreeindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -14676,6 +14678,139 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenGeHalfIndex(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-ge-three-index')
+  .description(
+    "Per-source GENERALIZED ENTROPY index at parameter alpha = 3 (GE(3)) of the per-day total_tokens distribution (FIFTY-SIXTH cross-source axis). GE(3) = (1/6) * (mean((D_i/mean(D))^3) - 1). Range [0, +inf); GE(3) = 0 iff perfect equality. The unique CUBIC-SHARE member of the GE family and the next standard heavy-tail GE point above alpha=2; orthogonal to GE(-1)/GE(0)/GE(1/2)/GE(1)/GE(2) shipped in axes-49/33/55/34/37. Closed-form moment decomposition: GE(3) = (1/2)*CV^2 + (1/6)*skewness*CV^3 = GE(2) + (1/6)*skewness*CV^3, so GE(3) - GE(2) isolates the skewness-weighted-by-CV^3 contribution that GE(2) cannot see. Refinement: --include-moment-decomposition surfaces cv, skewness, ge2, geThreeMinusGeTwo.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 4). GE(3) degenerate for n<2; default 4 matches the daily-token axis family.',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: gethree (default) | tokens | days | source | meanDaily | cv | ge2. Applied before --top.',
+    'gethree',
+  )
+  .option(
+    '--min-gethree <x>',
+    'display filter: hide non-degenerate rows whose gethree is strictly below this non-negative value. Default null = no filter.',
+  )
+  .option(
+    '--include-moment-decomposition',
+    'every row gains cv (sigma_D/mu), skewness (standardized 3rd moment), ge2 (= (1/2)*CV^2), and geThreeMinusGeTwo (= (1/6)*skewness*CV^3 = GE(3) - GE(2) by closed form).',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minGethree?: string;
+        includeMomentDecomposition?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minGeThree: number | null = null;
+        if (opts.minGethree !== undefined) {
+          const mv = Number.parseFloat(opts.minGethree);
+          if (!Number.isFinite(mv) || mv < 0) {
+            throw new Error(
+              `--min-gethree must be a non-negative finite number (got ${opts.minGethree})`,
+            );
+          }
+          minGeThree = mv;
+        }
+        const validSorts = [
+          'gethree',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'cv',
+          'ge2',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenGeThreeIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minGeThree,
+          includeMomentDecomposition:
+            opts.includeMomentDecomposition ?? false,
+          sort: opts.sort as
+            | 'gethree'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'cv'
+            | 'ge2',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenGeThreeIndex(report) + '\n');
         }
       } catch (e) {
         die(e);

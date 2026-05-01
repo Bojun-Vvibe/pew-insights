@@ -16875,6 +16875,7 @@ export function renderDailyTokenLogMeanAbsoluteDeviationIndex(
 }
 
 import type { DailyTokenGeHalfIndexReport } from './dailytokengehalfindex.js';
+import type { DailyTokenGeThreeIndexReport } from './dailytokengethreeindex.js';
 export function renderDailyTokenGeHalfIndex(
   r: DailyTokenGeHalfIndexReport,
 ): string {
@@ -16960,6 +16961,103 @@ export function renderDailyTokenGeHalfIndex(
       !Number.isFinite(s.lognormalImpliedSigmaSq as number)
         ? 'n/a'
         : (s.lognormalImpliedSigmaSq as number).toFixed(4),
+    ]);
+    lines.push(renderTableLocal(wHeaders, wRows));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenGeThreeIndex(
+  r: DailyTokenGeThreeIndexReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-ge-three-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-gethree: ${r.minGeThree === null ? '\u2014' : r.minGeThree}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinGeThree)} below min-gethree, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source GE(3) = (1/6) * (mean((D/mean(D))^3) - 1). Cubic-share generalised entropy; the unique cubic-share member of the GE family. Range [0, +inf); GE(3) = 0 iff perfect equality. Closed form: GE(3) = (1/2)*CV^2 + (1/6)*skewness*CV^3 = GE(2) + (1/6)*skewness*CV^3.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source GE(3) (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'gethree',
+    'cubicShareMean',
+    'meanDaily',
+    'minDay',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.gethree.toFixed(6),
+    s.cubicShareMean.toFixed(6),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    s.minDay,
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.cv !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `moment decomposition (closed form: GE(3) = (1/2)*CV^2 + (1/6)*skewness*CV^3 = GE(2) + (1/6)*skewness*CV^3).`,
+      ),
+    );
+    const wHeaders = [
+      'source',
+      'gethree',
+      'ge2',
+      'gethree-ge2',
+      'cv',
+      'skewness',
+    ];
+    const wRows: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.gethree.toFixed(6),
+      s.ge2 === undefined ? 'n/a' : (s.ge2 as number).toFixed(6),
+      s.geThreeMinusGeTwo === undefined
+        ? 'n/a'
+        : (s.geThreeMinusGeTwo as number).toFixed(6),
+      s.cv === undefined ? 'n/a' : (s.cv as number).toFixed(4),
+      s.skewness === undefined ? 'n/a' : (s.skewness as number).toFixed(4),
     ]);
     lines.push(renderTableLocal(wHeaders, wRows));
   }
