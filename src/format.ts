@@ -17084,6 +17084,7 @@ import type { DailyTokenHurstRsReport } from './dailytokenhurstrs.js';
 import type { DailyTokenDfaAlphaReport } from './dailytokendfaalpha.js';
 import type { DailyTokenSampleEntropyReport } from './dailytokensampleentropy.js';
 import type { DailyTokenHiguchiFdReport } from './dailytokenhiguchifd.js';
+import type { DailyTokenKatzFdReport } from './dailytokenkatzfd.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18477,6 +18478,75 @@ export function renderDailyTokenHiguchiFd(
     formatNumber(s.scalesUsed),
     s.hfd.toFixed(4),
     s.r2.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKatzFd(
+  r: DailyTokenKatzFdReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-katz-fd'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteKfd)} non-finite-kfd, ${formatNumber(r.droppedTopSources)} below top cap; clamped: ${formatNumber(r.clampedBelow1)} below 1, ${formatNumber(r.clampedAbove2)} above 2`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Katz Fractal Dimension (Katz 1988, Comput. Biol. Med. 18(3):145-156) on the gap-filled daily total_tokens series. SEVENTY-FIFTH cross-source axis. KFD = log10(N-1) / (log10(N-1) + log10(d/L)) where L is total Euclidean path length under unit x-spacing, d is the maximal Euclidean chord from the first day. Single-scale CLOSED-FORM geometric ratio -- structurally orthogonal to (a) Higuchi FD axis 74 -- HFD is a multi-scale OLS power-law exponent across stride k = 1..kMax; KFD is a single-scale closed-form ratio with no scaling hierarchy at all; coincide only on ideal self-similar curves and routinely disagree on real bounded gap-filled token series; (b) Hurst R/S axis 71 and DFA-alpha axis 72 -- variance-scaling on cumulative deviations vs single-scale geometric ratio on raw values; (c) lag-1 / lag-7 ACF axes 67/68 -- single-lag linear scalars vs deterministic geometric ratio; (d) spectral entropy axis 69 -- frequency-domain flatness vs time-domain geometric scalar; (e) permutation entropy axis 70 -- ordinal alphabet vs metric geometric ratio; (f) sample entropy axis 73 -- template recurrence at one (m, r) vs curve geometry; (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; KFD is shuffle-sensitive (sorted -> ~1.0, shuffled inflates KFD above 1). kfdRaw is the un-clamped fit; kfd is clamped to [1, 2].)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source KFD (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'kfd',
+    'kfdRaw',
+    'L',
+    'd',
+    'dIdx',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.kfd.toFixed(4),
+    s.kfdRaw.toFixed(4),
+    s.pathLength.toFixed(0),
+    s.maxChord.toFixed(0),
+    formatNumber(s.maxChordIndex),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

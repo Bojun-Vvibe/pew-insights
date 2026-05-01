@@ -126,6 +126,7 @@ import {
   renderDailyTokenDfaAlpha,
   renderDailyTokenSampleEntropy,
   renderDailyTokenHiguchiFd,
+  renderDailyTokenKatzFd,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -414,6 +415,7 @@ import { buildDailyTokenHurstRs } from './dailytokenhurstrs.js';
 import { buildDailyTokenDfaAlpha } from './dailytokendfaalpha.js';
 import { buildDailyTokenSampleEntropy } from './dailytokensampleentropy.js';
 import { buildDailyTokenHiguchiFd } from './dailytokenhiguchifd.js';
+import { buildDailyTokenKatzFd } from './dailytokenkatzfd.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17182,6 +17184,111 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHiguchiFd(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-katz-fd')
+  .description(
+    "Per-source Katz Fractal Dimension (Katz 1988, Comput. Biol. Med. 18(3):145-156) on the gap-filled daily total_tokens series (SEVENTY-FIFTH cross-source axis). KFD = log10(N-1) / (log10(N-1) + log10(d/L)) where L is total Euclidean path length under unit x-spacing and d is the maximal Euclidean chord from the first day. KFD ~ 1.0 = near-straight (d ~ L); KFD ~ 1.3-1.5 = moderately rough; KFD -> 2 = heavily oscillating / space-filling. Single-scale CLOSED-FORM geometric ratio: structurally orthogonal to (a) Higuchi FD axis 74 (multi-scale OLS power-law exponent across stride k = 1..kMax vs single-scale closed-form ratio with no scaling hierarchy at all; coincide only on ideal self-similar curves and routinely disagree on real bounded gap-filled token series; the disagreement zone is a long-flat-then-spike series where HFD ~ 1 but KFD substantially > 1); (b) Hurst R/S axis 71 and DFA-alpha axis 72 (variance-scaling on cumulative deviations vs single-scale geometric ratio on raw values); (c) lag-1 / lag-7 ACF axes 67/68 (single-lag linear scalars vs deterministic geometric ratio); (d) spectral entropy axis 69 (frequency-domain flatness vs time-domain geometric scalar); (e) permutation entropy axis 70 (ordinal alphabet vs metric geometric ratio); (f) sample entropy axis 73 (template recurrence at one (m, r) vs curve geometry); (g) all permutation-invariant dispersion / shape axes 32-67 (shuffle-invariant; KFD is shuffle-sensitive: sorted -> ~1.0, shuffled inflates KFD above 1).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absKfdDeviationDesc (default, KFD desc -- furthest from the smooth lower edge first) | kfd | kfdDesc | tokens | tenure | source.',
+    'absKfdDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absKfdDeviationDesc',
+          'kfd',
+          'kfdDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKatzFd(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absKfdDeviationDesc'
+            | 'kfd'
+            | 'kfdDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenKatzFd(report) + '\n');
         }
       } catch (e) {
         die(e);
