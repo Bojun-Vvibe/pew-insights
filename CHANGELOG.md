@@ -2,6 +2,165 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.307 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-THIRD):
+  `pew-insights daily-token-mad-over-median`.
+
+  Per-source MEDIAN-ABSOLUTE-DEVIATION OVER MEDIAN
+
+      MADM = MAD / median
+      MAD  = median_i |D_i - median(D)|
+
+  on the per-day total_tokens distribution. For each source we
+  collapse all hourly buckets into one scalar per UTC day
+  (D_d = sum of total_tokens on day d), take the median under
+  linear-interpolation percentiles (numpy 'linear' / R type 7),
+  then compute the inner median of the absolute deviations from
+  that median, and divide by the median again. MADM is in
+  [0, +inf), dimensionless, scale-invariant, permutation-invariant,
+  and SIGN-AGNOSTIC AROUND THE MEDIAN.
+
+  HEADLINE QUESTION: "For each source, how large is the typical
+  day-to-day fluctuation from the median day, expressed as a
+  multiple of the median day itself?"
+
+  This is the canonical robust scale-shape statistic (Hampel 1974
+  median absolute deviation, normalised by the median rather than
+  by the standard MAD's Gaussian-consistency factor 1.4826). It has
+  BREAKDOWN POINT 0.5: up to floor((n-1)/2) days can be replaced
+  by arbitrarily large outliers without changing the median, and
+  MAD itself shifts only by O(typical-deviation) -- not by
+  O(outlier).
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..62):
+
+  - axes 32..57 (Gini, S-Gini, Atkinson, Theil-L/T, GE family,
+    Hoover, Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson,
+    Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+    Var-of-Logs, Log-MAD, FGT) are MOMENT- or LORENZ-functional
+    summaries that integrate over the FULL distribution and divide
+    by the MEAN. Breakdown point 1/n -- a single outlier moves
+    them by O(outlier). MADM has breakdown point 0.5.
+  - axes 58/60 (PGR = P90/P50, MSR = (P75-P25)/(P90-P10)) are
+    RATIOS OF PERCENTILE VALUES drawing on the upper half /
+    interdecile spread. MADM uses no rank cuts at all.
+  - axis 59 (IOM = (P75-P25)/P50) is the closest cousin: both are
+    scale statistics normalised by the median. But IQR has
+    breakdown point 0.25; MAD has breakdown point 0.5. Under
+    symmetric Gaussian iom/madm ~ 1.349 (the consistency factor);
+    departures witness asymmetric / heavy-tailed shape. We surface
+    iomOverMadm via `--include-iom`.
+  - axes 61/62 (DSG, QSR) are mass-sum functionals on the EXTREME
+    deciles/quintiles. MADM is built from CENTRAL order statistics
+    and IGNORES extremes by construction.
+
+  RANK-FLIP WITNESS vs axis-62 QSR (closed-form, n=10):
+  - A = [10, 10, 10, 10, 100, 100, 100, 100, 100, 100]
+        median = 100; |D - 100| sorted = [0,0,0,0,0,0,90,90,90,90]
+        inner median = 0  -> MADM(A) = 0
+        QSR(A): k=2; bottomMass=20, topMass=200 -> QSR(A) = 10
+  - B = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        median = 4.5; inner median of |D - 4.5| = 2.5
+        MADM(B) = 2.5 / 4.5 = 0.555556...
+        QSR(B): bottomMass=2, topMass=17 -> QSR(B) = 8.5
+  QSR ranks A > B (10.0 > 8.5); MADM ranks B > A (0.556 > 0).
+  Hard rank flip -- QSR is dominated by the 6 mass-equal upper
+  days; MADM sees them as collapsed at the median. No monotone
+  transform recovers QSR from MADM or vice-versa.
+
+  RANGE AND DEGENERACY. MADM = 0 iff strictly more than half of
+  the days carry the median value (the inner median of the
+  absolute-deviation vector is then 0). MADM is unbounded above
+  for the same reason any X/median ratio is: it explodes when the
+  median collapses while typical absolute deviations stay finite.
+  We guard the denominator (degenerate=true if median <= 0).
+
+  CLOSED-FORM ANCHOR ON [1..7]. median = 4;
+  |D - 4| sorted = [0, 1, 1, 2, 2, 3, 3]; inner median = 2;
+  MADM = 2 / 4 = 0.5, reproduced by `madOverMedianOfVector([1..7])`
+  in tests.
+
+  KNOBS. `--since` / `--until` (ISO time-window filter on
+  hour_start), `--source` (single-source restrict), `--min-tokens`
+  (default 1000; sparse-source filter), `--min-days` (default 5;
+  algebraic minimum is 2 but default 5 keeps the inner median
+  nontrivial), `--top` (display cap, default 0 = no cap),
+  `--sort` (`madm`|`tokens`|`days`|`source`|`meanDaily`|`medianDaily`|`mad`),
+  `--min-madm` (display filter; degenerate rows always retained),
+  `--include-iom` (refinement: surface IOM = (P75-P25)/median and
+  the dimensionless ratio iomOverMadm = IOM / MADM alongside MADM
+  for cross-axis comparison vs axis 59. Symmetric Gaussian
+  reference is ~1.349; departures witness asymmetric / heavy-tailed
+  shape),
+  `--json` (raw JSON output).
+
+  LIVE SMOKE (against `~/.config/pew/queue.jsonl`, 6 sources):
+  Top-3 by MADM (descending):
+
+      source          days  madm      mad         medianDaily
+      --------------  ----  --------  ----------  -----------
+      claude-code     35    0.861821  21,896,292  25,407,006
+      codex            8    0.824009  33,978,164  41,235,207
+      vscode-copilot  73    0.738606  5,996       8,118
+
+  Full ranking (6 sources): claude-code 0.861821, codex 0.824009,
+  vscode-copilot 0.738606, hermes 0.640102, openclaw 0.413396,
+  opencode 0.197782.
+
+  RANK-FLIP WITNESS (live data) vs axis-62 QSR (v0.6.306). QSR
+  top-3 from the prior release was:
+
+      source          qsr
+      --------------  ----------
+      claude-code     208.699233
+      vscode-copilot  63.694700
+      codex           39.489990
+
+  MADM top-3 (this release):
+
+      source          madm
+      --------------  --------
+      claude-code     0.861821
+      codex           0.824009
+      vscode-copilot  0.738606
+
+  Real flip: vscode-copilot is #2 by QSR but #3 by MADM, and codex
+  is #3 by QSR but #2 by MADM. A second flip lower in the ranking:
+  openclaw is #4 by QSR (6.69) but #5 by MADM (0.41), with hermes
+  (#5 by QSR at 6.55) sitting at #4 by MADM (0.64). Mechanism: QSR
+  is a hyperbolic mass ratio between the two extreme quintiles --
+  vscode-copilot's tiny-floor days drive an enormous denominator
+  collapse. MADM ignores those extreme-quintile days entirely and
+  reads the relative spread of the central body, where codex's
+  short 8-day history sits in a narrow median band with relatively
+  larger inner deviations than vscode-copilot's longer 73-day
+  series. No monotone transform recovers QSR from MADM on this
+  data.
+
+  IOM REFINEMENT (live data, `--include-iom`). The iomOverMadm
+  column witnesses departures from the symmetric-Gaussian
+  reference 1.349:
+
+      source          madm      iom       iomOverMadm
+      --------------  --------  --------  -----------
+      claude-code     0.861821  2.307729  2.677736
+      codex           0.824009  2.605439  3.161907
+      vscode-copilot  0.738606  2.703006  3.659606
+      hermes          0.640102  1.092726  1.707112
+      openclaw        0.413396  1.499359  3.626931
+      opencode        0.197782  0.326231  1.649442
+
+  All sources sit well above the 1.349 Gaussian reference (range
+  1.65 to 3.66), confirming that the per-day daily-token vectors
+  are not symmetric Gaussian on this data: the IQR is 1.6x to 3.7x
+  the dual-MAD prediction, i.e. the central body has more
+  asymmetric / heavier-tailed spread than its inner median
+  suggests.
+
 ## 0.6.306 — 2026-05-01
 
 ### Added
