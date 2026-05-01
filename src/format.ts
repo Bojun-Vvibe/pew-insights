@@ -17071,6 +17071,7 @@ import type { DailyTokenPercentileGapRatioReport } from './dailytokenpercentileg
 import type { DailyTokenIqrOverMedianReport } from './dailytokeniqrovermedian.js';
 import type { DailyTokenMidSpreadRatioReport } from './dailytokenmidspreadratio.js';
 import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.js';
+import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintileshareratio.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -17521,6 +17522,94 @@ export function renderDailyTokenDecileShareGap(
       s.source,
       s.degenerate ? '\u2014' : s.dsg.toFixed(6),
       s.hoover === undefined ? 'n/a' : (s.hoover as number).toFixed(6),
+      formatNumber(Math.round(s.meanDailyTokens)),
+    ]);
+    lines.push(renderTableLocal(wHeaders2, wRows2));
+  }
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenQuintileShareRatio(
+  r: DailyTokenQuintileShareRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-quintile-share-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-qsr: ${r.minQsr === null ? '\u2014' : r.minQsr}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinQsr)} below min-qsr, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source QSR = topMass / bottomMass on the QUINTILE cut k=ceil(0.20*n). Range [1, +inf); QSR = 1 iff the two extreme quintiles' mass is balanced. Canonical EU-SILC inequality measure -- structurally orthogonal to DSG (axis 61, decile MASS DIFFERENCE / total, bounded in [0,1]) and to PGR/IOM/MSR (axes 58/59/60, percentile-VALUE ratios) and to the full-Lorenz GE/Atkinson/Theil/Gini/Hoover family (axes 32-57, mean-normalised integrals).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source QSR (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'k',
+    'qsr',
+    'topShare',
+    'botShare',
+    'topMass',
+    'botMass',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.k),
+    s.degenerate ? '\u2014' : s.qsr.toFixed(6),
+    s.topShare.toFixed(6),
+    s.bottomShare.toFixed(6),
+    formatNumber(Math.round(s.topMass)),
+    formatNumber(Math.round(s.bottomMass)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  if (r.sources.some((s) => s.palma !== undefined)) {
+    lines.push('');
+    lines.push(
+      chalk.bold(
+        `Palma refinement: symmetric quintile ratio (QSR, top-20% mass / bottom-20% mass) vs asymmetric Palma ratio (top-10% mass / bottom-40% mass).`,
+      ),
+    );
+    const wHeaders2 = ['source', 'qsr', 'palma', 'meanDaily'];
+    const wRows2: string[][] = r.sources.map((s) => [
+      s.source,
+      s.degenerate ? '\u2014' : s.qsr.toFixed(6),
+      s.palma === undefined ? 'n/a' : (s.palma as number).toFixed(6),
       formatNumber(Math.round(s.meanDailyTokens)),
     ]);
     lines.push(renderTableLocal(wHeaders2, wRows2));

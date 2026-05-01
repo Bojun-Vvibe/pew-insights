@@ -113,6 +113,7 @@ import {
   renderDailyTokenIqrOverMedian,
   renderDailyTokenMidSpreadRatio,
   renderDailyTokenDecileShareGap,
+  renderDailyTokenQuintileShareRatio,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -388,6 +389,7 @@ import { buildDailyTokenPercentileGapRatio } from './dailytokenpercentilegaprati
 import { buildDailyTokenIqrOverMedian } from './dailytokeniqrovermedian.js';
 import { buildDailyTokenMidSpreadRatio } from './dailytokenmidspreadratio.js';
 import { buildDailyTokenDecileShareGap } from './dailytokendecilesharegap.js';
+import { buildDailyTokenQuintileShareRatio } from './dailytokenquintileshareratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -15493,6 +15495,142 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenDecileShareGap(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-quintile-share-ratio')
+  .description(
+    "Per-source QUINTILE SHARE RATIO QSR = topMass / bottomMass on the QUINTILE cut k=ceil(0.20*n) of per-day total_tokens (SIXTY-SECOND cross-source axis). QSR is the canonical EU-SILC inequality measure (S80/S20): how many TIMES more total daily-token mass lives in the busiest fifth of days than in the quietest fifth. Range [1, +inf); QSR == 1 iff the two extreme quintiles' mass is balanced. STRUCTURALLY ORTHOGONAL to every shipped daily-token axis (32-61): the GE/Atkinson/Theil/Var-of-Logs/Hoover/Gini/Pietra/Bonferroni/Mehran/Wolfson/Foster-Wolfson/Palma/Kolm-Pollak/Chakravarty/Amato/Esteban-Ray/FGT/S-Gini/Log-MAD axes (32-57) integrate over the FULL distribution and divide by the MEAN; PGR/IOM/MSR (axes 58/59/60) are RATIOS OF PERCENTILE VALUES; DSG (axis 61) is a DIFFERENCE-OVER-TOTAL functional on the DECILE cut, bounded in [0, 1]. QSR is a RATIO-OF-MASSES (not a difference) on the QUINTILE cut (k=ceil(0.20n), not 0.10n), unbounded above, and HYPERBOLIC in bottomMass. Refinement: --include-palma surfaces Palma ratio (top-10% mass / bottom-40% mass) for cross-axis comparison vs the asymmetric quintile-pair contrast.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 5). QSR degenerate for n<2; default 5 keeps the quintile cut meaningful (k=1 with non-overlapping body).',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: qsr (default) | tokens | days | source | meanDaily | topMass | bottomMass | k. Applied before --top.',
+    'qsr',
+  )
+  .option(
+    '--min-qsr <x>',
+    'display filter: hide non-degenerate rows whose qsr is strictly below this value (must be >= 1). Default null = no filter.',
+  )
+  .option(
+    '--include-palma',
+    'every row gains palma (= top-10% mass / bottom-40% mass), enabling a side-by-side comparison of the symmetric quintile ratio (QSR) vs the asymmetric Palma ratio.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minQsr?: string;
+        includePalma?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minQsr: number | null = null;
+        if (opts.minQsr !== undefined) {
+          const mv = Number.parseFloat(opts.minQsr);
+          if (!Number.isFinite(mv) || mv < 1) {
+            throw new Error(
+              `--min-qsr must be a finite number >= 1 (got ${opts.minQsr})`,
+            );
+          }
+          minQsr = mv;
+        }
+        const validSorts = [
+          'qsr',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'topMass',
+          'bottomMass',
+          'k',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenQuintileShareRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minQsr,
+          includePalma: opts.includePalma ?? false,
+          sort: opts.sort as
+            | 'qsr'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'topMass'
+            | 'bottomMass'
+            | 'k',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenQuintileShareRatio(report) + '\n',
           );
         }
       } catch (e) {
