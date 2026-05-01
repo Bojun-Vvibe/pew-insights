@@ -2,6 +2,154 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.299 — 2026-05-01
+
+### Added
+
+- New cross-source axis (FIFTY-FIFTH):
+  `pew-insights daily-token-ge-half-index`.
+
+  Per-source GENERALIZED ENTROPY index at parameter alpha = 1/2
+  (GE(1/2)) of the per-day total_tokens distribution:
+
+      GE(1/2) = (1/((1/2)*(-1/2)*n)) * sum_i [ sqrt(D_i/mu) - 1 ]
+              = -4 * (1/n) * sum_i [ sqrt(D_i/mu) - 1 ]
+              =  4 * (1 - (1/n) * sum_i sqrt(D_i/mu))
+              =  4 * (1 - sqrt(M_{1/2}(D) / mu)),
+
+      where M_{1/2}(D) = ((1/n) * sum sqrt(D_i))^2 is the POWER MEAN
+      of order 1/2.
+
+  THE UNIQUE HALF-POWER (sqrt-share) member of the GE family. Among
+  the prior GE-family daily-token axes, alpha takes values
+  {0, 1, 2, -1} (axes 33/34/37/49) -- 1/2 is the only standard alpha
+  not yet shipped. alpha=1/2 sits midway in the Box-Cox sense
+  between alpha=0 (log) and alpha=1 (identity); the kernel is the
+  square-root transform of share. Range [0, +inf); GE(1/2) = 0 iff
+  perfect equality (Jensen on the concave sqrt). Dimensionless;
+  scale-invariant in tokens.
+
+  CLOSED-FORM BRIDGE TO Atkinson(eps=1/2). For ANY positive vector,
+
+      Atkinson(eps=1/2)(D) = 1 - M_{1/2}(D) / mu,
+      GE(1/2)(D)           = 4 * (1 - sqrt(M_{1/2}(D) / mu))
+                           = 4 * (1 - sqrt(1 - Atkinson(eps=1/2))).
+
+  Equivalently Atkinson(eps=1/2) = 1 - (1 - GE(1/2)/4)^2 and the
+  ratio GE(1/2) / Atkinson(eps=1/2) = 4 / (1 + sqrt(1 - Atk(1/2)))
+  lives in [2, 4): -> 2 as the vector approaches equality, -> 4 in
+  the heavy-tail-spike limit. The two scalars are MONOTONE in each
+  other (rank-equivalent at fixed eps=1/2) but the GE(1/2)/Atk(1/2)
+  ratio carries an independent DISPERSION-REGIME diagnostic.
+
+  CLOSED-FORM AUDIT vs axes 33/34/37/49 (other GE alphas) on
+  lognormal data. For log y ~ N(m, sigma^2),
+
+      GE(alpha) = (exp(alpha*(alpha-1)*sigma^2/2) - 1) / (alpha*(alpha-1)),
+      GE(1/2)   = 4 * (1 - exp(-sigma^2 / 8)),
+      GE(2)     = (exp(sigma^2) - 1) / 2.
+
+  The ratio GE(1/2) / GE(2) approaches 1 as sigma -> 0 and
+  approaches 0 as sigma -> +inf, so GE(1/2) and GE(2) carry
+  different sigma sensitivity even on the lognormal manifold; the
+  ratio itself is a per-source HEAVY-TAILEDNESS audit (smaller
+  ratio = heavier upper tail).
+
+  NON-DEGENERACY (live, ~/.config/pew/queue.jsonl, 6 sources,
+  --include-atk-anchor, vscode source labelled `vscode-other`):
+
+      source         gehalf    atkHalf   gehalf/atkHalf
+      -------------  --------  --------  --------------
+      claude-code    1.172102  0.500187  2.3433
+      vscode-other   0.929575  0.410781  2.2629
+      codex          0.655010  0.300690  2.1784
+      openclaw       0.258650  0.125144  2.0668
+      hermes         0.210015  0.102251  2.0539
+      opencode       0.181655  0.088765  2.0465
+
+  All six live ratios fall inside the theoretical bound [2, 4) and
+  the bridge residual abs(GE(1/2) - 4*(1 - sqrt(1 - atkHalf))) is
+  ~0 to fp on every source -- the structural audit holds. Ratios
+  cluster between 2.05 (opencode, near-equality regime) and 2.34
+  (claude-code, heavy-tail regime), a 14% spread that reflects the
+  monotone Box-Cox bridge between the two axes.
+
+  NON-DEGENERACY WITNESS vs axis-37 GE(2). The shipped GE(2) on the
+  same vector reads (sorted desc):
+
+      source         ge2     gehalf  gehalf/ge2
+      -------------  ------  ------  ----------
+      claude-code    2.2601  1.1721  0.519
+      vscode-other   1.6243  0.9296  0.572
+      codex          0.7350  0.6550  0.891
+      openclaw       0.2419  0.2587  1.069
+      hermes         0.1828  0.2100  1.149
+      opencode       0.0995  0.1817  1.825
+
+  Top-3 source ranks agree (claude-code > vscode-other > codex) and
+  bottom-3 ranks also agree (openclaw > hermes > opencode), but the
+  GE(1/2) / GE(2) RATIO sweeps from 0.519 (heavy-tail dominated) to
+  1.825 (near-uniform) -- a 3.5x spread. The ratio ordering is
+  EXACTLY THE REVERSE of the GE(2) ordering: opencode (lowest GE(2))
+  has the HIGHEST GE(1/2)/GE(2) ratio, claude-code (highest GE(2))
+  has the LOWEST. This is the sqrt-share kernel's defining
+  signature: the half-power transform compresses heavy upper tails
+  more than the squared transform amplifies them, so on tail-heavy
+  sources GE(1/2) shrinks faster than GE(2) and the ratio collapses.
+
+  RANK-FLIP WITNESS vs axis-53 VL. From the axis-54 CHANGELOG, the
+  axis-53 VL ranking on the same six sources is:
+
+      VL     : claude-code > vscode-other > codex > opencode > openclaw > hermes
+      GE(1/2): claude-code > vscode-other > codex > openclaw  > hermes  > opencode
+
+  Bottom-3 RANK FLIP: opencode is the 4th source under VL but the
+  LAST source under GE(1/2). Equivalently openclaw and hermes are
+  the bottom two under VL but the 4th and 5th under GE(1/2). The
+  half-power kernel ranks opencode below both openclaw and hermes
+  on linear-share dispersion even though VL (log-scale L2) ranks
+  opencode above both -- the Box-Cox interpolation parameter (alpha
+  in {0, 1/2}) genuinely changes the source order.
+
+  Why orthogonal to every prior daily-token axis (axes 32-54):
+
+  - axes-33/34/37/49 GE family at alpha in {0, 1, 2, -1}: GE(1/2)
+    is the unique sqrt-share kernel, the only alpha at which the
+    underlying transform is the square root.
+  - axis-32 Gini: pairwise mean-absolute-difference / 2mu. GE(1/2)
+    is a single-point welfare functional, not pairwise.
+  - axes-35/42 pietra/hoover: L_inf Lorenz gap. GE(1/2) is a global
+    L1-on-sqrt-share moment.
+  - axis-36 atkinson: monotone in GE(1/2) at eps=1/2 (functional
+    bridge above) but parametric on epsilon at other values.
+  - axis-44 kolm-pollak: CARA / translation-equivariant. GE(1/2) is
+    CRRA / scale-equivariant.
+  - axes-39/40 zenga/palma: rank-cut ratios. GE(1/2) is global, no
+    rank cut.
+  - axis-41 fgt: lower-tail threshold-anchored. GE(1/2) is two-
+    sided and threshold-free.
+  - axes-43/45/47 bonferroni/mehran/s-gini: rank-weighted partial-
+    mean kernels. GE(1/2) has no rank kernel.
+  - axes-46/52 wolfson/foster-wolfson: median-anchored polarization.
+    GE(1/2) is mean-anchored inequality.
+  - axis-48 chakravarty: parametric CES utility loss; not additive
+    decomposable. GE(1/2) is.
+  - axis-50 amato: Lorenz arc length. GE(1/2) is not a Lorenz
+    functional.
+  - axis-51 esteban-ray: pairwise identification-alienation.
+  - axis-53 variance-of-logarithms: L2 second central moment of log
+    y; GE(1/2) is sqrt-share L1 deviation -- Box-Cox alpha=0.5 vs 0.
+  - axis-54 log-mean-absolute-deviation: L1 first absolute central
+    moment of log y; GE(1/2) is sqrt-share L1 deviation -- Box-Cox
+    alpha=0.5 vs 0.
+
+  Knobs (mirror the daily-token axis family): `--since` / `--until`,
+  `--source`, `--min-tokens` (default 1000), `--min-days` (default
+  4; GE(1/2) degenerate for n<2), `--top` (default 0 = no cap),
+  `--sort` (`gehalf` | `tokens` | `days` | `source` | `meanDaily` |
+  `sqrtMeanDaily` | `atk`), `--min-gehalf`, `--include-atk-anchor`
+  (refinement), `--json`.
+
 ## 0.6.298 — 2026-05-01
 
 ### Added
