@@ -430,3 +430,63 @@ test('buildDailyTokenPercentileGapRatio: production-scale day totals stable', ()
   assert.ok(row.pgr > 1);
   assert.ok(row.pgr < 100); // sanity
 });
+
+// ---- Refinement (post-release): additional structural edge cases ----
+
+test('percentileGapRatioOfVector: degenerate when top half is constant (P50 == P90 without all-equal)', () => {
+  // Construct a vector where the bottom half varies but the top half
+  // (above the median) is flat. Then P50 == P90 -> pgr = 1, even
+  // though the vector is NOT all-equal. This is a corner case unique
+  // to quantile-ratio axes; no GE/Atkinson/Theil index would call this
+  // distribution "equal" because the bottom half varies.
+  // n=11. Sorted [1,2,3,4,5, 7,7,7,7,7,7]. P50 = sorted[5] = 7.
+  // P90 = sorted[9] = 7. PGR = 1. Degenerate.
+  const v = [1, 2, 3, 4, 5, 7, 7, 7, 7, 7, 7];
+  const r = percentileGapRatioOfVector(v);
+  assert.equal(r.p50, 7);
+  assert.equal(r.p90, 7);
+  assert.equal(r.pgr, 1);
+  assert.equal(r.degenerate, true);
+  // Sanity: GE(2) is positive on this vector even though pgr is
+  // degenerate (the moment-based axis sees the bottom-half spread).
+  const ge2 = ge2OfVector(v).ge2;
+  assert.ok(ge2 > 0, `GE(2) sees bottom-half spread, got ${ge2}`);
+});
+
+test('percentileGapRatioOfVector: monotone-increasing in top-decile magnitude only when below P90 boundary moves', () => {
+  // Test that PGR responds to changes inside the (P50, P90) window
+  // but is invariant outside it. Use n=11 so P50 = sorted[5] and
+  // P90 = sorted[9] exactly (no interpolation weight on sorted[10]).
+  // Increasing sorted[7] from 8 to 80 raises P90 only via the exact
+  // index-9 position -- but in our base vector sorted[9] is the only
+  // value at q=0.9, so we need a careful construction.
+  // Simpler witness: change sorted[9] (the P90 anchor) and watch PGR
+  // strictly increase; change sorted[10] (above P90) and watch PGR
+  // stay constant.
+  const base = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const baseR = percentileGapRatioOfVector(base);
+  // raise sorted[9] from 10 to 50 (still above sorted[8]=9)
+  const raisedAtP90 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 50, 51];
+  const raisedR = percentileGapRatioOfVector(raisedAtP90);
+  assert.ok(
+    raisedR.pgr > baseR.pgr,
+    `PGR must rise when sorted[9] (the P90 anchor) rises: base=${baseR.pgr}, raised=${raisedR.pgr}`,
+  );
+  // raise only sorted[10] (above P90) from 11 to 1e9: PGR unchanged
+  const raisedAboveP90 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1_000_000_000];
+  const aboveR = percentileGapRatioOfVector(raisedAboveP90);
+  assert.ok(
+    Math.abs(aboveR.pgr - baseR.pgr) < 1e-12,
+    `PGR must stay constant when only sorted[10] (above P90) rises: base=${baseR.pgr}, above=${aboveR.pgr}`,
+  );
+});
+
+test('percentileGapRatioOfVector: PGR never reports a value below 1 even on near-uniform fp data', () => {
+  // Defensive check: with values that differ only by fp noise, PGR
+  // should be clamped to 1 and degenerate, not 0.999... (which
+  // would violate the documented range [1, +inf)).
+  const v: number[] = [];
+  for (let i = 0; i < 100; i++) v.push(1 + i * 1e-15);
+  const r = percentileGapRatioOfVector(v);
+  assert.ok(r.pgr >= 1, `pgr must be >= 1, got ${r.pgr}`);
+});

@@ -129,6 +129,22 @@
  * total_tokens only, so per-day totals are strictly positive, and
  * P50 / P90 are strictly positive. PGR is always finite for a
  * non-degenerate row.
+ *
+ * CLOSED-FORM ANCHOR (refinement, post-release). For D = [1..10]:
+ *   P50 = 5 + 0.5 * (6 - 5) = 5.5
+ *   P90 = 9 + 0.1 * (10 - 9) = 9.1
+ *   PGR = 9.1 / 5.5 = 1.6545454...
+ * Reproduced exactly by `percentileGapRatioOfVector([1..10])` in the
+ * test suite.
+ *
+ * STRUCTURAL EDGE CASE (refinement). When the top half of the day
+ * vector is constant -- e.g. [1, 2, 3, 4, 5, 7, 7, 7, 7, 7, 7] --
+ * P50 == P90 == 7, so PGR == 1 and the row reports `degenerate=true`,
+ * EVEN THOUGH the bottom half varies. This is a corner case unique to
+ * quantile-ratio axes: every shipped GE / Atkinson / Theil index
+ * would call this distribution clearly non-equal (it has bottom-half
+ * spread). The "degenerate" flag in this axis means specifically
+ * "P50 == P90", not "all-equal".
  */
 import type { QueueLine } from './types.js';
 
