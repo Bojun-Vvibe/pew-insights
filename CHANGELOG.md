@@ -2,6 +2,115 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.309 — 2026-05-01
+
+### Added
+
+- New cross-source axis (SIXTY-FIFTH):
+  `pew-insights daily-token-hill-tail-index`.
+
+  Per-source HILL (1975) ESTIMATOR of the Pareto tail index alpha
+  on the per-day total_tokens vector:
+
+      Sort descending: X_(1) >= X_(2) >= ... >= X_(n)
+      k = floor(n * topFrac)              (default topFrac = 0.20)
+      gamma_hat = (1/k) * sum_{i=1..k} log(X_(i)) - log(X_(k+1))
+      alpha_hat = 1 / gamma_hat
+
+  gamma_hat is the EXTREME-VALUE INDEX (Pickands-Balkema-de Haan
+  parameter) and alpha_hat is the equivalent Pareto exponent.
+  Asymptotic SE under iid Pareto-tail null is gamma / sqrt(k); we
+  surface this as `gammaStdErr` per row.
+
+  Interpretation:
+
+      alpha < 1     : INFINITE-MEAN tail (sample mean dominated by
+                      the largest day; pathologically heavy).
+      1 <= alpha < 2: heavy tail (variance infinite in population).
+      2 <= alpha < 4: moderate / sub-Gaussian-but-still-heavy.
+      alpha >= 4    : near-light tail; mean and variance both
+                      well-defined; close to exponential / Gaussian.
+
+  HEADLINE QUESTION: "For each source, HOW HEAVY is the right
+  tail of the per-day total_tokens distribution -- specifically,
+  what Pareto exponent alpha governs the top 20% of days?"
+
+  STRUCTURAL ORTHOGONALITY -- WHY THIS IS DIFFERENT FROM EVERY
+  SHIPPED DAILY-TOKEN AXIS (32..64):
+
+  - Axes 32..63 (Gini, S-Gini, Atkinson, Theil-L/T, GE family,
+    Hoover, Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson,
+    Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+    Var-of-Logs, Log-MAD, FGT, PGR, IOM, MSR, DSG, QSR, MADM)
+    are FULL-DISTRIBUTION dispersion / inequality functionals:
+    they integrate over the whole day vector or compute fixed
+    quantile gaps. Hill is SEMIPARAMETRIC and TAIL-ONLY -- it
+    discards the bottom (n - k - 1) days entirely. Multiplying
+    every bottom-(n - k - 1) day by 0 leaves alpha_hat unchanged;
+    multiplying them by 1000 also leaves alpha_hat unchanged.
+    None of axes 32..63 share this "ignore the body" property.
+
+  - Hill is also SCALE-INVARIANT: multiply every day by c > 0 and
+    alpha_hat is bit-identical, because gamma_hat is a difference
+    of LOGS. This is shared with Gini / Atkinson / Theil and
+    distinguishes Hill from `tailshare` (the closest cousin), which
+    is a LINEAR functional of top-k mass and changes when you
+    rescale only the threshold-row days.
+
+  - vs axis 64 RTZ (the only other order/structural axis): RTZ is
+    on the binary above/below-median sign trace and is CALENDAR-
+    ORDER sensitive but discards magnitude. Hill is PERMUTATION-
+    INVARIANT (sort by descending value first) but keeps magnitude
+    on the top-k -- the exact opposite slice of information. RTZ
+    answers "do high days CLUSTER in time?"; Hill answers "are
+    high days POWER-LAW heavy?". A perfect square wave gives RTZ
+    extreme positive (anti-clustering) while Hill is unaffected
+    by the ordering and only sees the magnitude spread of the
+    high half.
+
+  - vs `tailshare` (axis 1): tailshare is bounded in [k/n, 1]
+    and is dominated by the absolute mass of the top-k. Hill is
+    unbounded in (0, +inf) and depends only on the LOG-RATIOS
+    among the top-k. The pair (tailshare, alpha) jointly
+    distinguishes "many heavy days, mild Pareto exponent"
+    (tailshare high, alpha high) from "few extreme days, very
+    heavy power law" (tailshare moderate, alpha low).
+
+  RANGE AND DEGENERACY. Hill is degenerate when k < 1 (n too
+  small) or when all top-k order statistics equal the threshold
+  (gamma == 0 -- e.g. a constant day vector). We guard
+  `gamma > 0` and emit `degenerate: true` with `alpha: Infinity`
+  in that case so degenerate rows always sort to the front under
+  `--sort alpha` (lightest first) and to the back under
+  `--sort invAlpha` (heaviest first).
+
+  Knobs: `--since/--until` (ISO window), `--source` (single-
+  source restriction), `--min-tokens` (default 1000),
+  `--min-days` (default 10 -> guarantees k >= 2 with default
+  topFrac=0.20 and at least 7 below-tail days),
+  `--top-frac` (default 0.20, must be in (0, 1)),
+  `--top` (display cap), `--sort alpha|invAlpha|tokens|days|source|k`,
+  `--max-alpha` (display filter; hide rows with alpha above the
+  threshold to surface only the heaviest-tailed sources),
+  `--json`.
+
+  LIVE SMOKE on real `~/.config/pew/queue.jsonl` (top 3 sources
+  by HEAVIEST TAIL -- smallest alpha first; one source name has
+  been redacted because of repo policy):
+
+      claude-code:  alpha = 0.7105   (gamma = 1.4075,  k = 7,   n = 35 days,  threshold = 73,514,193 tokens)
+      <redacted>:   alpha = 1.0241   (gamma = 0.9764,  k = 14,  n = 73 days,  threshold = 30,046 tokens)
+      openclaw:     alpha = 3.0786   (gamma = 0.3248,  k = 3,   n = 15 days,  threshold = 213,870,270 tokens)
+
+  Interpretation: `claude-code` is in the INFINITE-MEAN regime
+  (alpha < 1) -- a single day's total_tokens dominates its mean
+  daily usage, exactly the regime where standard
+  CV / variance-based dispersion axes are most misleading and a
+  tail-index axis adds the most marginal information. Conversely
+  `hermes` (alpha = 5.3582, not shown) and `opencode` (alpha =
+  6.2283, not shown) sit in the near-light-tail regime where the
+  daily mean is a stable summary.
+
 ## 0.6.308 — 2026-05-01
 
 ### Added
