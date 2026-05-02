@@ -526,3 +526,90 @@ test('build: lzCountDesc sort puts highest LZ first', () => {
   });
   assert.ok(r.sources[0]!.lzCount >= r.sources[1]!.lzCount);
 });
+
+// ---- additional refinement: orthogonality witnesses ------------------
+
+test('orthogonality: periodic alternation has near-maximal first-difference sign-change rate but LOW LZ', () => {
+  // y = [1,9,1,9,1,9,...] alternates -> first-diff sign-change
+  // rate = 1 (max); but LZ over the binarised median split should
+  // be modest because the same 2-bit pattern repeats forever.
+  // This pins the structural orthogonality we documented in the
+  // axis header against accidental regressions.
+  const v = [1, 9, 1, 9, 1, 9, 1, 9, 1, 9, 1, 9, 1, 9, 1, 9];
+  const r = dailyTokenLempelZivComplexity(v);
+  // Bits = "0101010101010101" -> the LZ count should be small.
+  // Compute the rate explicitly.
+  assert.ok(
+    r.lzNormalized < 0.85,
+    `periodic lzNormalized=${r.lzNormalized} should be < 0.85 to demonstrate orthogonality vs PFD`,
+  );
+});
+
+test('orthogonality: noisy-but-bounded series produces higher LZ than periodic of same length', () => {
+  const periodic = [1, 9, 1, 9, 1, 9, 1, 9, 1, 9, 1, 9, 1, 9, 1, 9];
+  const noisy = [1, 9, 5, 2, 8, 3, 7, 4, 6, 9, 1, 11, 2, 5, 8, 3];
+  const rPeriodic = dailyTokenLempelZivComplexity(periodic);
+  const rNoisy = dailyTokenLempelZivComplexity(noisy);
+  assert.ok(
+    rNoisy.lzCount >= rPeriodic.lzCount,
+    `noisy ${rNoisy.lzCount} should match-or-exceed periodic ${rPeriodic.lzCount}`,
+  );
+});
+
+test('build: JSON shape is stable (smoke contract for downstream consumers)', () => {
+  const v = [1000, 5000, 1000, 5000, 1000, 5000, 1000, 5000, 1000, 5000];
+  const q = buildSeries(v, 'src');
+  const r = buildDailyTokenLempelZivComplexity(q, {
+    generatedAt: GEN,
+    minTenureDays: 8,
+    minTokens: 0,
+  });
+  // Top-level fields
+  for (const k of [
+    'generatedAt',
+    'minTokens',
+    'minTenureDays',
+    'top',
+    'sort',
+    'totalTokens',
+    'totalSources',
+    'droppedDegenerateBinarisation',
+    'droppedNonFiniteLz',
+    'sources',
+  ]) {
+    assert.ok(k in r, `missing top-level field: ${k}`);
+  }
+  // Per-source fields
+  const s = r.sources[0]!;
+  for (const k of [
+    'source',
+    'totalTokens',
+    'nActiveDays',
+    'nTenureDays',
+    'firstActiveDay',
+    'lastActiveDay',
+    'median',
+    'onesCount',
+    'lzCount',
+    'lzRate',
+    'lzNormalized',
+  ]) {
+    assert.ok(k in s, `missing per-source field: ${k}`);
+  }
+});
+
+test('build: lzNormalized field equals lzCount * log2(n) / n at the per-source level', () => {
+  const v = [1000, 5000, 2000, 4000, 3000, 5000, 1000, 5000, 2500, 4500, 1500, 5500];
+  const q = buildSeries(v, 'src');
+  const r = buildDailyTokenLempelZivComplexity(q, {
+    generatedAt: GEN,
+    minTenureDays: 8,
+    minTokens: 0,
+  });
+  const s = r.sources[0]!;
+  const expected = (s.lzCount * Math.log2(s.nTenureDays)) / s.nTenureDays;
+  assert.ok(
+    Math.abs(s.lzNormalized - expected) < 1e-12,
+    `lzNormalized=${s.lzNormalized} expected=${expected}`,
+  );
+});
