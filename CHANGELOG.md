@@ -2,6 +2,207 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.333 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-NINTH):
+  `pew-insights daily-token-spectral-crest-factor`.
+
+  Per-source SPECTRAL CREST FACTOR -- the ratio of the PEAK
+  one-sided periodogram bin to the MEAN one-sided periodogram
+  bin over the surviving (strictly-positive-power) non-DC band
+  of the gap-filled mean-centred daily `total_tokens` series.
+  Reports `crestFactor` in `[1, usableBins]`, the argmax
+  `peakBin` in `[1, K]`, the K-normalised position
+  `peakBinNormalised = peakBin / K` in `(0, 1]`, and the
+  share of total non-DC power in the peak bin
+  `peakBinShare = peakPower / sum P[k]` in `(0, 1]`.
+  `crestFactor` approx 1 indicates a WHITE-NOISE-LIKE non-DC
+  PSD (peak barely above mean; mass spread evenly across all
+  surviving bins); `crestFactor >> 5` indicates a
+  LINE-SPECTRUM-LIKE one-bin-dominated PSD; `crestFactor`
+  near `usableBins` indicates a degenerate single-tone
+  concentration entirely in one bin.
+
+  This is a PEAK-vs-MEAN RATIO statistic on the Fourier
+  power spectrum -- distinct from every shipped daily-token
+  spectral sibling. The cleanest orthogonality witnesses:
+
+  - vs `daily-token-spectral-flatness-wiener` (axis 85): both
+    statistics share the arithmetic-mean denominator, but
+    flatness uses the GEOMETRIC-MEAN-of-distribution numerator
+    (a SHAPE-DISPERSION) while crest uses the
+    MAX-of-distribution numerator (a SINGLE-EXTREMUM). MAX vs
+    GM is the precise witness: a spectrum with one huge spike
+    and many tiny but strictly positive bins can have a
+    moderate flatness (GM dominated by the many small terms)
+    and a very large crest (peak/mean spikes when the max is
+    much bigger than the average); the two can move in
+    opposite directions on the same series.
+  - vs `daily-token-spectral-rolloff` (axis 88): roll-off is a
+    CDF QUANTILE (the smallest bin where the cumulative mass
+    crosses a chosen fraction); crest is a PEAK-vs-MEAN RATIO
+    that does not depend on cumulative integrals at all. Two
+    spectra can share an identical roll-off at very different
+    crests (a thin spike at bin R vs a wide hump centred near
+    R both reach the 85% mark at R; the spike has a large
+    crest, the hump a small crest).
+  - vs `daily-token-spectral-bandwidth` (axis 87) and
+    `spectral-centroid` (axis 86): bandwidth/centroid are
+    bin-INDEX moments along the bin axis; crest is
+    BIN-PERMUTATION-INVARIANT (it cares only about the
+    extremum and the average, not bin position). Reshuffling
+    bin indices preserves crest exactly but changes
+    centroid/bandwidth arbitrarily. POSITION-MOMENT vs
+    PEAK-RATIO is the precise witness.
+  - vs `daily-token-spectral-entropy` (axis 69): entropy is a
+    SHANNON ENTROPY summed over ALL bins (a shape-dispersion
+    statistic in nats); crest is a SINGLE-EXTREMUM ratio.
+    Both are bin-permutation-invariant, but a spectrum with
+    one moderate peak and many roughly-equal small bins can
+    have a high entropy and a small crest, while a spectrum
+    with one extreme spike and otherwise near-uniform power
+    can have a similar entropy but a much larger crest.
+    ENTROPY-OF-DISTRIBUTION vs MAX-OF-DISTRIBUTION.
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is
+    the log-log slope of P[k]; crest is a single peak/mean
+    ratio that does not reference any monotone trend or bin
+    index. Crest is well-defined on spectra that are not
+    power laws at all (line spectra, comb spectra) where
+    beta is meaningless.
+  - vs Hjorth mobility/complexity (axes 79/80): those are
+    NON-CENTRAL spectral moment ratios in angular-frequency
+    units; crest is a PEAK-vs-MEAN RATIO of bin POWERS, not
+    a moment ratio. A spectrum with most mass spread across
+    many bins of similar magnitude plus a single very-high-k
+    spike can have a small crest (peak barely above mean) and
+    a large mobility (the high-k spike pulls m_2 a lot).
+  - vs `source-row-token-crest-factor` (the per-source-row
+    AMPLITUDE-DOMAIN crest on the raw total_tokens-per-row
+    series): that statistic operates on TIME-DOMAIN amplitudes
+    (peak |y| / RMS y); the new axis operates on the
+    FREQUENCY-DOMAIN POWER SPECTRUM of the gap-filled daily
+    aggregate (peak P[k] / mean P[k]). AMPLITUDE-DOMAIN vs
+    POWER-SPECTRUM-DOMAIN is the orthogonality witness; the
+    two can move in opposite directions on the same source.
+  - vs LZ (83), TKE (81), curvature/Petrosian (82/76),
+    box-count/Sevcik/Katz/Higuchi FDs (78/77/75/74), Hurst R/S
+    (71), DFA-alpha (72), permutation-entropy (70), sample-
+    entropy (73), autocorrelation (67/68), and all
+    permutation-invariant amplitude-shape axes (32-67):
+    crest is a frequency-domain peak/mean ratio, none of the
+    others are.
+
+  Invariances of `crestFactor`: shift-invariant (DC bin is
+  dropped by mean-centring), scale-invariant for any non-zero
+  scalar a (peak/mean is scale-blind), sign-flip-invariant,
+  time-reversal-invariant, and -- the key witness vs
+  rolloff/centroid/bandwidth -- BIN-PERMUTATION-INVARIANT
+  (peak/mean does not depend on bin index). NOT invariant
+  under time-domain shuffle (whitening drives crest toward
+  the white-noise asymptote 1). Bound: `crestFactor` in
+  `[1, usableBins]`, with the lower bound attained iff every
+  surviving bin has identical power (white-noise-on-band) and
+  the upper bound attained iff a single bin carries all the
+  non-DC mass (line-spectrum). The hard floor
+  `--min-tenure-days 8` keeps `K = floor(n/2) >= 4` and
+  enforces `usableBins >= 2`.
+
+  References: Peeters, G., "A large set of audio features for
+  sound description (similarity and classification) in the
+  CUIDADO project", IRCAM Technical Report v1.0, 2004
+  (§6.1.4 -- canonical definition of spectral crest as
+  max/arithmetic-mean over the analysis band); Lerch, A., "An
+  Introduction to Audio Content Analysis", Wiley/IEEE 2012,
+  §3.3.1 (lists spectral crest factor as the canonical
+  PEAK-vs-MEAN companion to the GM/AM-vs-MEAN flatness
+  ratio); Tzanetakis, G. & Cook, P., "Musical Genre
+  Classification of Audio Signals", IEEE Trans. Speech Audio
+  Process. 10(5):293-302, 2002 (broader timbre-descriptor
+  context); Klapuri, A. & Davy, M. (eds.), "Signal Processing
+  Methods for Music Transcription", Springer 2006, §5.3
+  (spectral peakiness measures including crest as a tonality
+  / harmonicity proxy).
+
+  CLI flags: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-tenure-days` (hard floor 8, default
+  32), `--top` (default 0 = no cap), `--sort` (`crestDesc`
+  (default) | `crest` | `tokens` | `tenure` | `source`),
+  `--json`. Drop counters: `droppedInvalidHourStart`,
+  `droppedNonPositiveTokens`, `droppedSourceFilter`,
+  `droppedSparseSources`, `droppedBelowMinTenure`,
+  `droppedZeroVariance`, `droppedTooFewUsableBins`,
+  `droppedNonFiniteFit`, `droppedTopSources`.
+
+### Live-smoke
+
+Ran against the local `~/.config/pew/queue.jsonl` (6 sources,
+3,444,271,515 total tokens) with `--min-tokens 100000`. Two
+sources cleared the `--min-tenure-days 32` floor; the other
+four were correctly shed under `droppedBelowMinTenure`. Top-2
+carriers (sorted by default `crestDesc`):
+
+```
+source        tenure  bins  usable  peakBin  peakNorm  peakShare  crest   tokens
+vscode-other  265     132   132     7        0.0530    0.0313     4.1262  1,885,727
+claude-code   72      36    36      1        0.0278    0.1090     3.9228  3,442,385,788
+```
+
+Both carriers sit in the BROADBAND-with-mild-concentration
+band (crest in [2, 5]), with peaks safely below the
+LINE-SPECTRUM threshold of `>> 5` and nowhere near the
+single-tone upper bound `usableBins`. The argmax bin
+positions are markedly different (`vscode-other` peaks at
+bin 7 of 132 -- a slow weekly-scale rhythm at roughly 132/7
+~= 19-day period; `claude-code` peaks at bin 1 of 36 -- the
+slowest non-DC trend bin, consistent with a low-frequency
+ramp over its 72-day tenure), giving `peakBinNormalised`
+values of 0.0530 vs 0.0278 -- both distinctly below the
+white-noise-asymptote roll-off readings of 0.8030 / 0.8333
+that axis 88 reported on the same series, and below the
+mass-weighted centroid/bandwidth readings (axes 86/87).
+This direct disagreement between the PEAK-LOCALISER (axis 89,
+peak in the lowest bins) and the CDF-PERCENTILE/MEAN-MOMENT
+band-edge (axes 86/87/88, mass spread broadly across the
+band) is exactly the orthogonality witness the new axis was
+chosen to capture: a few low-frequency bins carry a
+disproportionate peak share, but the BULK of the non-DC mass
+sits much further along the band -- a fact that crest,
+roll-off, centroid, and bandwidth jointly describe but no
+single axis can.
+
+### Tests
+
+- Test count grew from 9342 -> 9370 (+28). New suite:
+  `dailytokenspectralcrestfactor` covering the
+  `spectralCrestFactor` and `dailyTokenSpectralCrestFactor`
+  primitives plus the `buildDailyTokenSpectralCrestFactor`
+  orchestrator. Coverage: empty / non-finite / negative power
+  rejection; too-few-positive-bins guard; uniform-power ->
+  crest=1 white-noise asymptote; single-tone -> crest near
+  usableBins line-spectrum asymptote; closed-form on a
+  hand-checked 2-bin example; tie-breaking (lowest-k argmax);
+  bin-permutation invariance (the key orthogonality witness
+  vs rolloff/centroid/bandwidth); scale invariance for any
+  non-zero scalar; pure-sinusoid argmax recovery; shift /
+  time-reversal invariances; bound respect (crest in
+  [1, usableBins]); option validation; empty-queue handling;
+  drop-counter wiring (invalid hour_start, non-positive
+  tokens, source filter, min-tokens, min-tenure-days,
+  zero-variance); sort variants (crest, crestDesc, tokens,
+  tenure, source); top cap; since/until window honour; full
+  per-source row field coverage; gap-filling across silent
+  days.
+
+### Build
+
+- Fixed a pre-existing `tsc` build failure in
+  `src/format.ts` at the `bucket-handoff-frequency` per-day
+  table renderer (an undefined `rowsOut` reference plus a
+  duplicated trailer). The TypeScript build now succeeds
+  cleanly under `npm run build` again.
+
 ## 0.6.332 — 2026-05-02
 
 ### Added
