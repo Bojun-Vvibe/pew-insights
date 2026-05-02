@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.326 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-SECOND):
+  `pew-insights daily-token-curvature-sign-change-rate`.
+
+  Per-source rate of sign changes in the **second difference**
+  `d2[i] = y[i+1] - 2*y[i] + y[i-1]` of the gap-filled daily
+  `total_tokens` series. Counts INFLECTION POINTS / curvature
+  sign reversals — the second-order analogue of axis-76 Petrosian
+  (which counts sign changes in the FIRST difference `d1 = diff(y)`).
+
+  References:
+  - Bracewell, R. N., "The Fourier Transform and Its Applications",
+    McGraw-Hill, 1965.
+  - Marr, D., Hildreth, E., "Theory of edge detection", Proc. R.
+    Soc. Lond. B 207:187-217, 1980 (zero-crossings of the Laplacian
+    as the canonical second-order edge primitive).
+  - Kedem, B., "Spectral analysis and discrimination by
+    zero-crossings", Proc. IEEE 74(11):1477-1493, 1986.
+
+  Algorithm:
+
+      1. d2[i] = y[i+1] - 2*y[i] + y[i-1] for i in [1, N-2]
+      2. signChanges = count of adjacent pairs (d2[i], d2[i+1])
+                       with d2[i] * d2[i+1] < 0
+                       (zeros break runs without contributing)
+      3. cscRate       = signChanges / (N - 3)            in [0, 1]
+         cscNormalized = cscRate / (2/3)
+                         (white-noise reference; iid noise has
+                          asymptotic d2 sign-change rate -> 2/3)
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`. Hard
+  floor `min-tenure-days >= 5` so that d2 has at least 3 entries
+  and there are at least 2 comparable d2 pairs.
+
+  Reading `cscNormalized`:
+
+  - `cscNormalized ~ 0`  = very few inflection points; the series
+                           has long runs of one-sign curvature
+                           (smooth concave or convex segments).
+  - `cscNormalized ~ 1`  = white-noise-like curvature behaviour
+                           (asymptote of iid d2 sign-change rate
+                           is 2/3, so cscRate / (2/3) -> 1).
+  - `cscNormalized > 1`  = more frequent curvature reversals than
+                           white noise; locally "wavier" than
+                           random.
+  - `cscNormalized < 1`  = persistently concave or convex regions;
+                           smoother-than-random in the
+                           second-derivative sense.
+
+  Structural orthogonality vs the prior 81 axes (recap):
+
+  - vs `daily-token-petrosian-fd` (axis 76): PFD counts
+    FIRST-difference sign changes; CSC counts SECOND-difference
+    sign changes. A series with low PFD (smooth monotonic trend)
+    can still have high CSC (many curvature reversals), and vice
+    versa.
+  - vs `daily-token-teager-kaiser-energy` (axis 81): TKE is a
+    QUADRATIC magnitude-aware operator on triplets; CSC is a
+    BINARY magnitude-blind count.
+  - vs Hjorth axes 79 / 80: GLOBAL variance ratios vs LOCAL
+    topological count.
+  - vs box-count / Sevcik / Katz / Higuchi FD axes 78 / 77 / 75 /
+    74: path-length / coverage geometries vs sign-change count.
+  - vs Hurst R/S 71 / DFA 72: multi-scale variance scaling on
+    cumulative deviations vs single-scale topological count.
+  - vs spectral entropy 69 / autocorrelation 67-68: linear /
+    Fourier full-spectrum summaries vs high-pass-biased count
+    (the second-difference filter has transfer function
+    `|H(omega)|^2 = (2 - 2*cos(omega))^2`, a sharp high-pass).
+  - vs all permutation-invariant dispersion / shape axes 32-67:
+    they are SHUFFLE-INVARIANT; CSC is SHUFFLE-SENSITIVE.
+
+  Invariances of `cscRate`: SHIFT, LINEAR-TREND, SCALE,
+  SIGN-FLIP, and TIME-REVERSAL invariant; SHUFFLE-sensitive.
+  (Linear-trend invariance is shared with axes 71 / 72 but NOT
+  with 74 / 75 / 77 / 78 / 79 / 80 / 81.)
+
+  Live-smoke against the local `~/.config/pew/queue.jsonl`
+  (top-2 sources by tokens; `--sort tokens --top 2`):
+
+  - `claude-code`     (3,442,385,788 tokens, tenure 72d):
+    `signChg=29  pairs=69   cscRate=0.4203  cscNorm=0.6304`
+  - `vscode-copilot`  (1,885,727   tokens, tenure 265d):
+    `signChg=84  pairs=262  cscRate=0.3206  cscNorm=0.4809`
+
+  Both sources sit BELOW the white-noise reference of 1.0,
+  consistent with persistent, autocorrelated daily-token
+  curvature (long stretches of consistent acceleration or
+  deceleration rather than constantly reversing concavity).
+
 ## 0.6.325 — 2026-05-02
 
 ### Added
