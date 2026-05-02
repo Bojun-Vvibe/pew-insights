@@ -576,3 +576,58 @@ test('spectralRoughness: orthogonality vs decrease -- bin-reversal flips decreas
     Math.abs(spectralRoughness(dec).roughness - spectralRoughness(inc).roughness) < 1e-12,
   );
 });
+
+// ---------- refine: telescoping closed-form + comb K-sweep + zigzag bound ----------
+
+test('spectralRoughness: monotone PSD telescopes to |p[K] - p[1]| (closed form)', () => {
+  // For any monotone PSD, sum_{k} |p[k+1] - p[k]| = |p[K] - p[1]|
+  // because all adjacent diffs share the same sign and so collapse.
+  const psds: number[][] = [
+    [10, 5, 3, 2, 1, 1, 1, 1],
+    [1, 1, 1, 1, 2, 3, 5, 10],
+    [100, 50, 25, 12, 6, 3],
+    [1, 2, 4, 8, 16, 32, 64, 128],
+  ];
+  for (const p of psds) {
+    const total = p.reduce((a, b) => a + b, 0);
+    const expected = Math.abs(p[p.length - 1]! - p[0]!) / total;
+    const r = spectralRoughness(p);
+    assert.ok(
+      Math.abs(r.roughness - expected) < 1e-12,
+      `telescoping mismatch for ${JSON.stringify(p)}: got ${r.roughness}, expected ${expected}`,
+    );
+  }
+});
+
+test('spectralRoughness: alternating-comb K-sweep matches (K-1) / ceil(K/2) closed form', () => {
+  for (const K of [3, 4, 5, 6, 7, 8, 9, 10]) {
+    const p = new Array(K).fill(0).map((_, i) => (i % 2 === 0 ? 1 : 0));
+    const ones = Math.ceil(K / 2);
+    const expected = (K - 1) / ones;
+    const r = spectralRoughness(p);
+    assert.ok(
+      Math.abs(r.roughness - expected) < 1e-12,
+      `comb K=${K}: got ${r.roughness}, expected ${expected}`,
+    );
+  }
+});
+
+test('spectralRoughness: zigzag bound -- non-monotone perturbation INCREASES TV vs monotone baseline', () => {
+  // Baseline: monotone-decreasing [4, 3, 2, 1] -> TV = (4-1)/10 = 0.3
+  const baseline = spectralRoughness([4, 3, 2, 1]).roughness;
+  // Perturbed (swap two interior bins): [4, 2, 3, 1] -> TV = (|2-4|+|3-2|+|1-3|)/10 = 5/10 = 0.5
+  const perturbed = spectralRoughness([4, 2, 3, 1]).roughness;
+  assert.ok(perturbed > baseline, `perturbed ${perturbed} should exceed baseline ${baseline}`);
+});
+
+test('spectralRoughness: boundary spike pins SUPREMUM 1 (not 2) -- single adjacent diff', () => {
+  // Boundary spike has only ONE adjacent diff equal to 1, hence TV = 1 not 2.
+  // Interior spike has TWO adjacent diffs of 1 each, hence TV = 2.
+  // This pins the boundary-vs-interior asymmetry at the bound.
+  for (const K of [4, 8, 16]) {
+    const boundary = new Array(K).fill(0); boundary[0] = 1;
+    const interior = new Array(K).fill(0); interior[Math.floor(K / 2)] = 1;
+    assert.equal(spectralRoughness(boundary).roughness, 1);
+    assert.equal(spectralRoughness(interior).roughness, 2);
+  }
+});

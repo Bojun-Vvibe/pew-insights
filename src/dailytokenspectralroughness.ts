@@ -264,6 +264,20 @@ export interface DailyTokenSpectralRoughnessReport {
  *   - K>=3, P=[1,0,1,0,...] (alternating comb): every adjacent
  *                          pair contributes 1 / sum = 1 / (number
  *                          of 1s); roughness = (K-1) / ceil(K/2).
+ *   - MONOTONE PSD (either direction): the L1 TV telescopes to
+ *                          |p[K] - p[1]|. This pins roughness
+ *                          for monotone-decreasing decay-PSDs
+ *                          (1/f-like) at exactly p[1] - p[K]
+ *                          on the L1-normalised pmf. Any
+ *                          non-monotone perturbation only
+ *                          INCREASES the TV (zigzag bound),
+ *                          giving a clean lower-bound interpretation.
+ *   - SUPREMUM 2 is approached only when one INTERIOR bin
+ *                          carries (almost) all the mass (both
+ *                          adjacent diffs hit ~ 1).
+ *   - SUPREMUM 1 (not 2) when a BOUNDARY bin (k=1 or k=K)
+ *                          carries (almost) all the mass (only
+ *                          one adjacent diff exists).
  */
 export function spectralRoughness(power: number[]): {
   roughness: number;
