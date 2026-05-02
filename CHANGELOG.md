@@ -2,6 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.339 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-SIXTH):
+  `pew-insights daily-token-spectral-peak-frequency`.
+
+  Per-source SPECTRAL PEAK-FREQUENCY -- the argmax-bin POSITION
+  descriptor on the one-sided non-DC periodogram of the gap-
+  filled mean-centred daily total_tokens series. For the
+  periodogram P[k], k = 1..K with K = floor(n/2), let
+
+      k*                  = argmax_{k=1..K} P[k]   (smallest-k tie-break)
+      peakFreqRatio       = (k* - 1) / (K - 1)     in [0, 1]
+      peakNormalisedFreq  = k* / n                 in (0, 0.5]
+      peakMassShare       = P[k*] / sum_j P[j]     in (0, 1]
+
+  This is a Class-P (POSITION / ARGMAX) primitive -- a 0TH-
+  ORDER INDEX-VALUED read, structurally distinct from every
+  shipped axis 32..95, all of which report magnitude/moment/
+  ratio/entropy/TV/slope/quantile MASS aggregates. Reading:
+  peakFreqRatio = 0 -> mass at the LOWEST non-DC bin (slow-
+  cycle / low-frequency-dominant series); ~ 0.5 -> mid-band
+  peak; ~ 1 -> mass at the HIGHEST representable bin (near-
+  Nyquist / fast-oscillation-dominant series).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`:
+
+  - `claude-code`: tenure 72 days, K = 36 bins,
+    totalPower = 8.5717e+17, peakPower = 9.3402e+16,
+    peakBin = 1, peakFreqRatio = 0.0000,
+    peakNormalisedFreq = 0.0139, peakMassShare = 0.1090.
+    The dominant Fourier mode sits at the LOWEST representable
+    non-DC bin -- a slow-cycle / low-frequency-dominant
+    workload, consistent with the axis-92 spectral-decrease
+    reading -0.2735 on the same gap-filled carrier (decrease
+    < 0 -> mass piles toward bin 1) and the axis-95 spectral-
+    roughness 0.2678 (modest TV across a smooth-from-low-
+    frequency PSD shape).
+  - `vscode-copilot`: tenure 265 days, K = 132 bins,
+    totalPower = 9.6767e+10, peakPower = 3.0249e+09,
+    peakBin = 7, peakFreqRatio = 0.0458,
+    peakNormalisedFreq = 0.0264, peakMassShare = 0.0313.
+    The dominant mode sits in the low-mid band (bin 7 of 132,
+    cycle period roughly n / k* ~ 38 days), with a very thin
+    peak-mass share (3.13%) -- a much flatter spectrum where
+    the argmax wins by only a small margin over the rest. This
+    contrasts cleanly with `claude-code`'s low-bin spike
+    (peakBin = 1, peakMassShare = 10.90% -- the winning bin
+    holds 3.5x the mass share of the vscode-copilot winner).
+
+  The DECOUPLING between the two sources -- (peakBin = 1,
+  high mass share) vs (peakBin = 7, low mass share) -- is the
+  precise orthogonality witness. A bin-permutation- or
+  bin-reversal- INVARIANT axis (entropy 69, flatness 85,
+  crest 89, kurtosis 91, skewness 90, roughness 95) cannot
+  distinguish these two SHAPES the same way, because the
+  dominant-bin POSITION is exactly what those descriptors
+  blur out.
+
+  Reference: Peeters, G., "A large set of audio features for
+  sound description (similarity and classification) in the
+  CUIDADO project", IRCAM Technical Report (2004) §6 --
+  spectral descriptors including peak-frequency / argmax-bin
+  primitives on the periodogram. Lerch, A., "An Introduction
+  to Audio Content Analysis", Wiley-IEEE Press (2012) §3.3 --
+  spectral peak features. Tzanetakis, G. & Cook, P., "Musical
+  genre classification of audio signals", IEEE TSAP 10:5
+  (2002) -- canonical use of spectral peak / dominant
+  frequency in classification.
+
+  Invariances: shift-, scale-(any non-zero a)-, sign-flip-,
+  time-reversal-invariant; bin-permutation-SENSITIVE; bin-
+  reversal-SENSITIVE (k* flips to K + 1 - k*). The reversal-
+  sensitivity is the clean orthogonality witness vs axis-95
+  spectral-roughness, which is bin-reversal-INVARIANT (TV is
+  reversal-blind in magnitude). Structural orthogonality vs
+  every shipped daily-token axis 32..95: against axis-95
+  roughness (REAL-VALUED L1 TV-of-pmf MASS aggregate over ALL
+  adjacent pairs vs INDEX-VALUED single bin position;
+  reversal-INVARIANT vs reversal-SENSITIVE); against axis-94
+  spread-IQR (inner-50% percentile WIDTH vs argmax INDEX);
+  against axis-93 irregularity (SECOND-ORDER L2 magnitude vs
+  position); against axis-92 decrease (real-valued slope-from-
+  anchor vs argmax bin); against axes 87/90/91 bandwidth/
+  skewness/kurtosis (centroid-relative central moments use ALL
+  bins vs argmax uses only WINNING bin -- a bimodal PSD with
+  equal peaks at k=1 and k=K has centroid (K+1)/2 mid-band but
+  argmax = 1 / smallest-k tie-break); against axis-88 rolloff
+  (CDF quantile vs argmax); against axis-86 centroid (FIRST
+  RAW MOMENT vs ARGMAX -- two PSDs with identical centroid can
+  have wildly different argmax); against axis-89 crest
+  (peak-to-mean MAGNITUDE vs argmax INDEX of that peak);
+  against axes 85/69 flatness-wiener / spectral-entropy
+  (BIN-PERMUTATION INVARIANT vs SENSITIVE); against axis-84
+  DFT-power-law-slope (LOG-LOG global slope vs single bin
+  position); against all permutation-invariant amplitude-shape
+  axes 32-67 (TIME-DOMAIN shuffle-invariant vs FREQUENCY-DOMAIN
+  bin-position-sensitive).
+
+  Adds 46 tests; suite 9609 -> 9655 green.
+
 ## 0.6.338 — 2026-05-02
 
 ### Added
