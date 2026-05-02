@@ -154,6 +154,7 @@ import {
   renderDailyTokenSpectralRenyiHalfEntropy,
   renderDailyTokenSpectralRenyi3Entropy,
   renderDailyTokenSpectralContrast,
+  renderDailyTokenSpectralFlux,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -470,6 +471,7 @@ import { buildDailyTokenSpectralRenyi2Entropy } from './dailytokenspectralrenyi2
 import { buildDailyTokenSpectralRenyiHalfEntropy } from './dailytokenspectralrenyihalfentropy.js';
 import { buildDailyTokenSpectralRenyi3Entropy } from './dailytokenspectralrenyi3entropy.js';
 import { buildDailyTokenSpectralContrast } from './dailytokenspectralcontrast.js';
+import { buildDailyTokenSpectralFlux } from './dailytokenspectralflux.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -35271,6 +35273,142 @@ program
           process.stdout.write(
             renderDailyTokenSpectralContrast(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-spectral-flux')
+  .description(
+    "Per-source SPECTRAL FLUX (mean L2 distance between consecutive unit-energy one-sided non-DC periodograms of length-W sliding windows over the gap-filled mean-centred daily total_tokens series) (ONE-HUNDRED-AND-THIRD cross-source axis). Class-DYNAMIC-SPECTRAL primitive, FRAME-ORDER SENSITIVE -- structurally orthogonal to all 84-102 static-spectrum axes which are time-permutation invariant on the frame multiset. Defaults: window=7 days, hop=1 day (Tzanetakis & Cook, IEEE Trans. Speech Audio Proc. 2002).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor windowSize+hop. Default max(16, windowSize+hop).',
+  )
+  .option(
+    '--window <n>',
+    'sliding window size in days. Must be an integer >= 4. Default 7 (one calendar week).',
+    '7',
+  )
+  .option(
+    '--hop <n>',
+    'sliding hop in days. Must be a positive integer. Default 1.',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: fluxMeanDesc (default) | fluxMean | fluxMax | fluxMaxDesc | tokens | tenure | source.',
+    'fluxMeanDesc',
+  )
+  .option('--debug', 'include framePsdEnergy debug field on each row')
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays?: string;
+        window: string;
+        hop: string;
+        top: string;
+        sort: string;
+        debug?: boolean;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const windowSize = Number.parseInt(opts.window, 10);
+        if (!Number.isInteger(windowSize) || windowSize < 4) {
+          throw new Error(`--window must be an integer >= 4 (got ${opts.window})`);
+        }
+        const hop = Number.parseInt(opts.hop, 10);
+        if (!Number.isInteger(hop) || hop < 1) {
+          throw new Error(`--hop must be a positive integer (got ${opts.hop})`);
+        }
+        const minFloor = windowSize + hop;
+        const minTenureDefault = Math.max(16, minFloor);
+        const minTenureDays =
+          opts.minTenureDays != null
+            ? Number.parseInt(opts.minTenureDays, 10)
+            : minTenureDefault;
+        if (!Number.isInteger(minTenureDays) || minTenureDays < minFloor) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= ${minFloor} (= window+hop; got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'fluxMean',
+          'fluxMeanDesc',
+          'fluxMax',
+          'fluxMaxDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralFlux(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          windowSize,
+          hop,
+          top,
+          sort: opts.sort as
+            | 'fluxMean'
+            | 'fluxMeanDesc'
+            | 'fluxMax'
+            | 'fluxMaxDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+          debug: opts.debug ?? false,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralFlux(report) + '\n');
         }
       } catch (e) {
         die(e);
