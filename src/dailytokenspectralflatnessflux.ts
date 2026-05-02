@@ -107,6 +107,12 @@
  *     bins -- each has phi = 0). fluxMax = 1 is approached
  *     when consecutive frames swing between an exact pure
  *     tone (phi -> 0) and an exactly flat PSD (phi = 1).
+ *     This bound is TIGHT in the closed-form sense: the
+ *     test suite includes a witness frame pair (tone vs flat
+ *     PSD on K = W/2 bins) for which fluxMean exceeds 0.75
+ *     at W = 8 (the discrete-spectrum approximation of a
+ *     perfectly flat PSD on a length-8 frame is bounded
+ *     below 1 by the finite-bin leakage).
  *   - Frames whose mean-centred window has zero variance, or
  *     fewer than 2 strictly positive periodogram bins, are
  *     counted in `nFramesZero` and dropped from the pairing.

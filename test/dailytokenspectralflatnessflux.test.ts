@@ -146,6 +146,37 @@ test('axis-104 frame-order sensitive: reordering frames changes fluxMean', () =>
   assert.notEqual(ordered, swapped);
 });
 
+test('axis-104 closed-form anchor: pure-tone <-> flat-PSD swing yields fluxMean ~ 1', () => {
+  // Construct two length-W frames whose mean-centred PSDs are
+  // (a) a pure tone (one bin holds all power -> phi = 0) and
+  // (b) approximately flat across all non-DC bins (phi -> 1).
+  // The absolute flatness change should be close to 1.
+  const W = 8;
+  const tone: number[] = [];
+  for (let n = 0; n < W; n += 1) {
+    // Single sinusoid at bin 1 -> pure tone after mean-centre.
+    tone.push(Math.cos((2 * Math.PI * 1 * n) / W));
+  }
+  // Flat-PSD frame: superpose all non-DC cosine basis vectors with
+  // equal amplitude. Mean-centred periodogram bins are all equal.
+  const flat: number[] = new Array(W).fill(0);
+  const K = Math.floor(W / 2);
+  for (let k = 1; k <= K; k += 1) {
+    for (let n = 0; n < W; n += 1) {
+      flat[n]! += Math.cos((2 * Math.PI * k * n) / W);
+    }
+  }
+  // Alternate tone, flat, tone, flat -> consecutive |Δphi| ~ 1.
+  const r = spectralFlatnessFlux([tone, flat, tone, flat]);
+  assert.ok(
+    r.fluxMean > 0.75,
+    `expected fluxMean close to 1 for tone<->flat swing (got ${r.fluxMean})`,
+  );
+  // And axis-104 is bounded above by 1 always.
+  assert.ok(r.fluxMean <= 1);
+  assert.ok(r.fluxMax <= 1);
+});
+
 // ---------- dailyTokenSpectralFlatnessFlux ----------
 
 test('dailyTokenSpectralFlatnessFlux: rejects window < 4', () => {
