@@ -204,7 +204,7 @@
  * Determinism: pure builder. Wall clock only via
  * `opts.generatedAt`.
  *
- * CLI usage examples:
+ *     CLI usage examples:
  *
  *   # Default (min-tenure-days=14):
  *   pew-insights daily-token-zero-crossing-rate
@@ -212,6 +212,11 @@
  *   # JSON for downstream tooling, restricted to one source:
  *   pew-insights daily-token-zero-crossing-rate \
  *     --source vscode-other --json
+ *
+ *   # Sort by mean run length descending (longest persistence
+ *   # of above-/below-mean stretches first):
+ *   pew-insights daily-token-zero-crossing-rate \
+ *     --sort meanRunLengthDesc
  *
  * References:
  *   Kedem, B., "Spectral analysis and discrimination by

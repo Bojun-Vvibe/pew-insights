@@ -437,3 +437,38 @@ test('build: deterministic given fixed generatedAt', () => {
   });
   assert.deepEqual(r1, r2);
 });
+
+test('dailyTokenZeroCrossingRate: single above-mean island has nCrossings=2', () => {
+  // Series with one contiguous above-mean island in the middle.
+  // 1,1,1,9,9,9,1,1,1 mean = 33/9 ~ 3.67; signs: -,-,-,+,+,+,-,-,- -> 2 crossings.
+  const r = dailyTokenZeroCrossingRate([1, 1, 1, 9, 9, 9, 1, 1, 1]);
+  assert.equal(r.nCrossings, 2);
+  assert.equal(r.nPairs, 8);
+  assert.ok(Math.abs(r.zcr - 0.25) < 1e-12);
+});
+
+test('dailyTokenZeroCrossingRate: meanRunLength sums to non-zero subseq length', () => {
+  // Closed-form: meanRunLength * nRuns = nNonZero.
+  const xs = [10, 1, 10, 1, 1, 10, 10, 1, 10, 1, 1];
+  const r = dailyTokenZeroCrossingRate(xs);
+  const nNonZero = r.nSamples - r.nZeroSamples;
+  // nRuns = nCrossings + 1 (each crossing closes a run).
+  const nRuns = r.nCrossings + 1;
+  assert.ok(
+    Math.abs(r.meanRunLength * nRuns - nNonZero) < 1e-9,
+    `meanRunLength * nRuns (${r.meanRunLength * nRuns}) != nNonZero (${nNonZero})`,
+  );
+});
+
+test('build: formatter-anchor field zcrExpectedWhite reaches the report row', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 18; i += 1) {
+    queue.push(ql(dayIso(i), 'src-a', 1000 + 100 * i + (i % 3) * 50));
+  }
+  const r = buildDailyTokenZeroCrossingRate(queue, {
+    minTokens: 1,
+    generatedAt: '2026-05-03T00:00:00.000Z',
+  });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0]!.zcrExpectedWhite, 0.5);
+});

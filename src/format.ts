@@ -20795,6 +20795,12 @@ export function renderDailyTokenZeroCrossingRate(
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: zcrExpectedWhite = ${r.sources[0]!.zcrExpectedWhite.toFixed(4)} -- asymptotic ZCR for a zero-mean i.i.d. continuous-noise source (Kedem, Proc. IEEE 74(11), 1986). Sources with zcr < 0.5 exhibit POSITIVE serial dependence (above-mean stretches persist); sources with zcr > 0.5 exhibit NEGATIVE serial dependence (alternation).)`,
+    ),
+  );
 
   return lines.join('\n').replace(/\n+$/, '');
 }
