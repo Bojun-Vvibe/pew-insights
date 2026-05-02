@@ -2,6 +2,172 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.349 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-SIXTH):
+  `pew-insights daily-token-turning-point-rate`.
+
+  Per-source TURNING-POINT RATE -- count of strict interior
+  local extrema (peaks AND troughs) on the gap-filled daily
+  total tokens series, normalised by `n - 2` (Kendall,
+  "Time Series" 3rd ed., Griffin & Co., London, 1973,
+  sec. 2.7 "Tests of randomness: turning points";
+  Bienayme, Bull. Soc. Math. France 2, 1874, pp. 153-154;
+  Brockwell & Davis, "Introduction to Time Series and
+  Forecasting" 3rd ed., Springer, 2016, sec. 1.6).
+
+  Construction. Let `x[0..n-1]` be the gap-filled daily
+  token series for one source over its tenure
+  (`n = nTenureDays`). An interior index `i` in `[1, n-2]`
+  is a TURNING POINT when
+
+      (x[i-1] < x[i] AND x[i] > x[i+1])   [strict peak]
+   OR (x[i-1] > x[i] AND x[i] < x[i+1])   [strict trough]
+
+  Plateau triples (any of `x[i-1] == x[i]` or
+  `x[i] == x[i+1]`) are NOT counted toward `T` and are
+  surfaced as `nPlateauTriples`. Equivalently, `T` is the
+  count of sign changes in the FIRST DIFFERENCE
+  `d[i] = x[i+1] - x[i]`, restricted to non-zero adjacent
+  pairs. The headline scalar is
+
+      tpr = T / (n - 2)   in   [0, 1]
+
+  Reported alongside `tpr`: `nTurningPoints = T`,
+  `nPlateauTriples`, `nInteriorTriples = n - 2`,
+  `tprExpectedIid = 2/3` (asymptotic E[T]/(n-2) for an iid
+  continuous sample), and the standardised score
+
+      tprZ = (T - 2(n-2)/3) / sqrt((16n - 29)/90)
+
+  approximately N(0, 1) under the iid continuous null.
+
+  CLASS-TIME-DOMAIN-SYMBOLIC primitive on the FIRST
+  DIFFERENCE sign sequence.
+
+  ### Live-smoke results (`~/.config/pew/queue.jsonl` as of
+  ### `2026-05-02T16:45:14Z`, `min-tenure-days=14`)
+
+  - `claude-code` (n=72, 35 active days):
+    `tpr = 0.2571`, `nTurningPoints = 18`,
+    `nInteriorTriples = 70`, `nPlateauTriples = 35`,
+    `tprZ = -8.115`. Strongly LESS reversal than iid --
+    smooth long stretches dominated by gap-fill zeros and
+    a few large active-day spikes.
+  - `hermes` (n=16, 16 active days):
+    `tpr = 0.5714`, `nTurningPoints = 8`,
+    `nInteriorTriples = 14`, `nPlateauTriples = 0`,
+    `tprZ = -0.840`. Within iid noise band, slightly
+    smoother -- consistent with a daily-cadence active
+    workload that reverses direction roughly every other
+    day.
+  - `openclaw` (n=16, 16 active days):
+    `tpr = 0.5714`, `nTurningPoints = 8`,
+    `nInteriorTriples = 14`, `nPlateauTriples = 0`,
+    `tprZ = -0.840`. Coincidentally the same `tpr` as
+    hermes for this 16-day window -- both look iid-like
+    on first-difference sign reversals.
+
+  Anchor: `tprExpectedIid = 0.6667`. Sources with
+  `tpr < 2/3` reverse direction LESS often than iid noise
+  (smoother / trendier); `tpr > 2/3` indicates MORE
+  reversal than noise (chattier).
+
+  ### Structural orthogonality vs the full 79-105 chain
+
+  - vs axis-105 zero-crossing-rate (the previously
+    shipped Class-TIME-DOMAIN-SYMBOLIC primitive). ZCR
+    counts sign changes of `x - mean(x)` (LEVEL
+    crossings); TPR counts sign changes of `diff(x)`
+    (FIRST DIFFERENCE crossings). Provably orthogonal:
+
+      * A monotone strictly-increasing series with mean
+        in the middle has ZCR ~ 1/(n-1) (one mean
+        crossing) but TPR = 0 (no local extrema).
+      * A series like `(1, 3, 2, 4, 3, 5, 4, ...)` has
+        TPR ~ 1 but ZCR much smaller (the rising mean
+        rarely crosses).
+      * A strictly-alternating series gives both = 1.
+
+    The two axes therefore span a genuinely 2D corner of
+    feature space; the live-smoke data confirms this
+    (e.g. `claude-code` had axis-105 `zcr = 0.5915`
+    against axis-106 `tpr = 0.2571` -- the level crosses
+    its mean often but the level itself reverses
+    direction rarely, consistent with a few large
+    spikes around long zero stretches).
+
+  - vs axis-82 curvature-sign-change-rate. Axis-82 counts
+    sign changes of the SECOND difference
+    `d2x[i] = x[i+1] - 2*x[i] + x[i-1]` (curvature
+    reversals -- "concave up" to "concave down" or vice
+    versa). TPR counts sign changes of the FIRST
+    difference (level extrema). Strictly different
+    operators on the difference cascade.
+
+  - vs Hjorth-mobility (axis-79) and Hjorth-complexity
+    (axis-80). Both are CONTINUOUS variance ratios of
+    the difference series; TPR is a DISCRETE event count
+    on the SIGN of the differences. TPR ignores
+    magnitudes of `d[i]`, mobility ignores their order.
+
+  - vs Teager-Kaiser energy (axis-81). TKE is a squared
+    local-product magnitude statistic; TPR is purely
+    binary on `sign(diff(x))`.
+
+  - vs LZ complexity (axis-83). LZ on the binary
+    above-/below-mean sequence is a dictionary-parsing
+    count; TPR is a simple adjacent-triple extremum
+    count on the LEVEL.
+
+  - vs run-length axes (monotone-run-length, second-diff
+    sign runs, runs-test Z). Run-length axes summarise
+    the LENGTH DISTRIBUTION of monotonic stretches; TPR
+    is the COUNT of stretch boundaries normalised by
+    interior length. Mathematically `T = (number of
+    monotone runs) - 1` in the plateau-free case, but
+    they report different functionals (mean length vs
+    rate).
+
+  - vs autocorrelation lag-1 / lag-7 axes. Those are
+    normalised inner products of the WHOLE series with
+    a shifted copy; TPR is a triple-local statistic.
+
+  - vs sample / permutation / approximate entropy. Those
+    measure pattern-recurrence complexity on amplitude
+    embeddings; TPR is a single binary statistic on the
+    first-difference sign sequence.
+
+  - vs all permutation-invariant inequality / shape axes
+    (Gini, Atkinson, Theil, Palma, Hoover, Bonferroni,
+    Mehran, Pietra, Foster-Wolfson, Esteban-Ray,
+    Wolfson, Zenga, Chakravarty, Kolm-Pollak, GE2, GE3,
+    GE4, GEhalf, GEnegone, S-Gini, Amato, FGT, Hill-tail,
+    decile / quintile / percentile gap ratios,
+    IQR/median, MAD/median, log-MAD, midspread,
+    var-of-logs, z-score-extremes, L-skewness,
+    medcouple, Bowley): every one depends only on the
+    multiset of values; TPR depends on the temporal
+    order of differences.
+
+  - vs all spectral / PSD axes (84-104). PSD operators
+    erase the SIGN of differences via squared magnitudes
+    and are time-reversal invariant; TPR is built
+    directly from the first-difference sign sequence
+    and changes under time reversal of asymmetric
+    series.
+
+  CLI entry point: `pew-insights daily-token-turning-point-rate`.
+
+```
+pew-insights daily-token-turning-point-rate                       # default sort tprZAbsDesc
+pew-insights daily-token-turning-point-rate --source claude-code  # one source
+pew-insights daily-token-turning-point-rate --json                # downstream tooling
+pew-insights daily-token-turning-point-rate --sort tpr            # ascending tpr
+```
+
 ## 0.6.348 — 2026-05-03
 
 ### Added
