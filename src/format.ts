@@ -17243,6 +17243,7 @@ import type { DailyTokenSpectralRolloffReport } from './dailytokenspectralrollof
 import type { DailyTokenSpectralCrestFactorReport } from './dailytokenspectralcrestfactor.js';
 import type { DailyTokenSpectralSkewnessReport } from './dailytokenspectralskewness.js';
 import type { DailyTokenSpectralKurtosisReport } from './dailytokenspectralkurtosis.js';
+import type { DailyTokenSpectralDecreaseReport } from './dailytokenspectraldecrease.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -19699,6 +19700,77 @@ export function renderDailyTokenSpectralKurtosis(
     s.fourthCentralMoment.toFixed(4),
     s.kurtosis.toFixed(4),
     s.excessKurtosis.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralDecrease(
+  r: DailyTokenSpectralDecreaseReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-decrease'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroTailPower)} zero-tail-power, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL DECREASE = (1/sum_{k=2..K} P[k]) * sum_{k=2..K} (P[k] - P[1])/(k-1) on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series. NINETY-SECOND cross-source axis. FIXED-ANCHOR (bin 1) PERCEPTUALLY-WEIGHTED slope-from-anchor descriptor (Peeters 2004 §6.1.2). decrease < 0 -> PSD genuinely decreases away from bin 1; ~ 0 -> holds up flat past bin 1; > 0 -> mass piles higher up the band. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal moves the anchor. Structurally orthogonal to centroid 86 (1st RAW MOMENT, ALL-bin location, NOT bin-1 anchored), bandwidth 87 / skewness 90 / kurtosis 91 (CENTROID-relative central moments, NOT bin-1 anchored), rolloff 88 (CDF QUANTILE), crest 89 (PEAK-RATIO bin-permutation INVARIANT), flatness 85 (GM/AM bin-permutation INVARIANT, position-blind), DFT-slope 84 (LOG-LOG slope vs LINEAR-AXIS 1/(k-1)-weighted ratio anchored at bin 1), spectral-entropy 69 (BIN-PERMUTATION INVARIANT), Hjorth 79/80, source-row spectral decrease (per-row stream vs daily-aggregate stream), and all permutation-invariant amplitude-shape axes 32-67.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL DECREASE (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'firstBinPower',
+    'tailPower',
+    'decrease',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.firstBinPower.toExponential(4),
+    s.tailPower.toExponential(4),
+    s.decrease.toExponential(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

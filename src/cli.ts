@@ -143,6 +143,7 @@ import {
   renderDailyTokenSpectralCrestFactor,
   renderDailyTokenSpectralSkewness,
   renderDailyTokenSpectralKurtosis,
+  renderDailyTokenSpectralDecrease,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -448,6 +449,7 @@ import { buildDailyTokenSpectralRolloff } from './dailytokenspectralrolloff.js';
 import { buildDailyTokenSpectralCrestFactor } from './dailytokenspectralcrestfactor.js';
 import { buildDailyTokenSpectralSkewness } from './dailytokenspectralskewness.js';
 import { buildDailyTokenSpectralKurtosis } from './dailytokenspectralkurtosis.js';
+import { buildDailyTokenSpectralDecrease } from './dailytokenspectraldecrease.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19060,6 +19062,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralKurtosis(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-decrease')
+  .description(
+    "Per-source SPECTRAL DECREASE (Peeters 2004 §6.1.2) = (1/sum_{k=2..K} P[k]) * sum_{k=2..K} (P[k] - P[1])/(k-1) on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series (NINETY-SECOND cross-source axis). FIXED-ANCHOR (bin 1) PERCEPTUALLY-WEIGHTED slope-from-anchor descriptor with 1/(k-1) weighting that gives disproportionate importance to the immediate drop past the fundamental and de-emphasizes the high-frequency tail. Signed dimensionless: < 0 -> PSD genuinely decreases away from bin 1 (low-frequency-anchored daily series); ~ 0 -> holds up flat past bin 1 (broadband); > 0 -> mass piles higher up the band (high-pass-shaped daily series). References: Peeters 2004 CUIDADO IRCAM TR §6.1.2 (canonical definition); Lerch 2012 §3.3.1 (Spectral Slope and Decrease). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal MOVES THE ANCHOR (so changes the descriptor non-trivially). Structurally orthogonal to (a) spectral-centroid 86 (1st RAW MOMENT, ALL-bin location vs FIXED bin-1 anchor); (b) spectral-bandwidth 87 / spectral-skewness 90 / spectral-kurtosis 91 (CENTROID-relative central moments vs bin-1 anchored slope); (c) spectral-rolloff 88 (CDF QUANTILE vs full-tail integrated ratio); (d) spectral-crest 89 (PEAK-RATIO bin-permutation INVARIANT vs bin-permutation SENSITIVE); (e) flatness 85 (GM/AM bin-permutation INVARIANT, position-blind, anchor-blind vs anchor-aware position-aware); (f) DFT-power-law-slope 84 (LOG-LOG slope across decades vs LINEAR-AXIS 1/(k-1)-weighted ratio anchored at bin 1); (g) spectral-entropy 69 (Shannon, BIN-PERMUTATION INVARIANT); (h) Hjorth 79/80; (i) source-row spectral decrease (per-row stream vs daily-aggregate stream); (j) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: decrease (default; asc, most-negative first) | decreaseDesc | absDecreaseDesc | tokens | tenure | source.',
+    'decrease',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'decrease',
+          'decreaseDesc',
+          'absDecreaseDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralDecrease(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'decrease'
+            | 'decreaseDesc'
+            | 'absDecreaseDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralDecrease(report) + '\n');
         }
       } catch (e) {
         die(e);
