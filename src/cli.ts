@@ -134,6 +134,7 @@ import {
   renderDailyTokenHjorthComplexity,
   renderDailyTokenTeagerKaiserEnergy,
   renderDailyTokenCurvatureSignChangeRate,
+  renderDailyTokenLempelZivComplexity,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -430,6 +431,7 @@ import { buildDailyTokenHjorthMobility } from './dailytokenhjorthmobility.js';
 import { buildDailyTokenHjorthComplexity } from './dailytokenhjorthcomplexity.js';
 import { buildDailyTokenTeagerKaiserEnergy } from './dailytokenteagerkaiserenergy.js';
 import { buildDailyTokenCurvatureSignChangeRate } from './dailytokencurvaturesignchangerate.js';
+import { buildDailyTokenLempelZivComplexity } from './dailytokenlempelzivcomplexity.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18079,6 +18081,118 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenCurvatureSignChangeRate(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-lempel-ziv-complexity')
+  .description(
+    "Per-source LZ76 phrase count of the median-binarised gap-filled daily total_tokens series (EIGHTY-THIRD cross-source axis). Symbolise s[i] = 1 if y[i] > median(y) else 0; parse with Lempel-Ziv 1976; lzCount = c(n); lzRate = c(n)/n; lzNormalized = c(n) / (n / log2(n)) referenced to the binary-iid asymptotic upper bound (Lempel-Ziv 1976; Kaspar-Schuster 1987; Aboy et al. 2006). Algorithmic / string-compression complexity primitive. Shift-, scale- (k>0), sign-flip-, and monotone-rescaling-INVARIANT; time-reversal-SENSITIVE; shuffle-SENSITIVE. Structurally orthogonal to (a) curvature-sign-change-rate axis 82 / Petrosian FD axis 76 -- local sign-change counts on derivatives vs global dictionary count (a periodic alternation has high CSC/PFD but low LZ); (b) Teager-Kaiser axis 81 -- magnitude-aware quadratic vs binary-symbol dictionary; (c) Hjorth axes 79/80; (d) box-count/Sevcik/Katz/Higuchi axes 78/77/75/74; (e) Hurst R/S axis 71 / DFA axis 72; (f) spectral entropy axis 69; (g) permutation-entropy 70 / sample-entropy 73 -- fixed-length window pattern statistics vs variable-length phrase parsing; (h) all permutation-invariant dispersion / shape axes 32-67 (LZ is shuffle-sensitive).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: lzNormalizedDesc (default) | lzNormalized | lzRate | lzRateDesc | lzCount | lzCountDesc | tokens | tenure | source.',
+    'lzNormalizedDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'lzNormalizedDesc',
+          'lzNormalized',
+          'lzRate',
+          'lzRateDesc',
+          'lzCount',
+          'lzCountDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLempelZivComplexity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'lzNormalizedDesc'
+            | 'lzNormalized'
+            | 'lzRate'
+            | 'lzRateDesc'
+            | 'lzCount'
+            | 'lzCountDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenLempelZivComplexity(report) + '\n');
         }
       } catch (e) {
         die(e);

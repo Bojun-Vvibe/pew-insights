@@ -4725,9 +4725,11 @@ export function renderProviderSwitchingFrequency(
       (d.switchShare * 100).toFixed(1) + '%',
       d.dominantProvider,
       formatNumber(d.dominantProviderBuckets),
-    ]);
-    lines.push(renderTableLocal(headers, rows));
-  }
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
   return lines.join('\n').replace(/\n+$/, '');
 }
@@ -15779,6 +15781,76 @@ export function renderDailyTokenBonferroniIndex(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenLempelZivComplexity(
+  r: DailyTokenLempelZivComplexityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-lempel-ziv-complexity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedDegenerateBinarisation)} degenerate-binarisation, ${formatNumber(r.droppedNonFiniteLz)} non-finite-lz, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LZ76 phrase count of the median-binarised gap-filled daily total_tokens series. EIGHTY-THIRD cross-source axis. Symbolise s[i] = 1 if y[i] > median(y) else 0; parse with Lempel-Ziv 1976 sequential parsing into distinct phrases; lzCount = c(n); lzRate = c(n)/n; lzNormalized = c(n) / (n / log2(n)) referenced to the binary-iid asymptotic upper bound (Lempel-Ziv 1976; Kaspar-Schuster 1987; Aboy et al. 2006). Algorithmic / string-compression complexity primitive. Shift-, scale- (k>0), sign-flip-, and monotone-rescaling-INVARIANT (the median split is preserved); time-reversal-SENSITIVE; shuffle-SENSITIVE. Structurally orthogonal to (a) curvature-sign-change-rate axis 82 / Petrosian FD axis 76 -- local sign-change counts on derivatives vs global dictionary count (a periodic alternation has high CSC/PFD but low LZ); (b) Teager-Kaiser axis 81 -- magnitude-aware quadratic vs binary-symbol dictionary; (c) Hjorth axes 79/80 -- variance ratios vs string-combinatorial count; (d) box-count/Sevcik/Katz/Higuchi FD axes 78/77/75/74 -- geometric path-length / coverage vs symbolic dictionary; (e) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale symbol count; (f) spectral entropy axis 69 -- Fourier power spectrum entropy vs time-domain symbol complexity; (g) permutation-entropy 70 / sample-entropy 73 -- fixed-length window pattern statistics vs variable-length phrase parsing; (h) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; LZ is shuffle-sensitive.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source LZ76 phrase complexity (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'median',
+    'ones',
+    'lzCount',
+    'lzRate',
+    'lzNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.median),
+    formatNumber(s.onesCount),
+    formatNumber(s.lzCount),
+    s.lzRate.toFixed(4),
+    s.lzNormalized.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+
 export function renderDailyTokenKolmPollakIndex(
   r: DailyTokenKolmPollakReport,
 ): string {
@@ -17092,6 +17164,7 @@ import type { DailyTokenHjorthMobilityReport } from './dailytokenhjorthmobility.
 import type { DailyTokenHjorthComplexityReport } from './dailytokenhjorthcomplexity.js';
 import type { DailyTokenTeagerKaiserEnergyReport } from './dailytokenteagerkaiserenergy.js';
 import type { DailyTokenCurvatureSignChangeRateReport } from './dailytokencurvaturesignchangerate.js';
+import type { DailyTokenLempelZivComplexityReport } from './dailytokenlempelzivcomplexity.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
