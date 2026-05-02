@@ -247,6 +247,21 @@ export interface DailyTokenSpectralDecreaseReport {
  * has fewer than 2 bins / has non-positive tail power
  * (sum_{k=2..K} P[k] <= 0; degenerate single-bin spectrum at
  * bin 1).
+ *
+ * Closed-form sanity anchors (used in the test sweep):
+ *   - K=2, P=[a,b]      -> decrease = (b - a) / b = 1 - a/b
+ *   - K>=2, P=[c,c,...,c] -> decrease = 0   (every (P[k]-P[1]) term vanishes)
+ *   - K>=2, P=[eps,M,M,...,M] with M >> eps
+ *                       -> decrease -> H_{K-1} / (K-1)
+ *                          (where H_n is the n-th harmonic
+ *                           number; the upper-bound limit
+ *                           when the anchor is overwhelmed
+ *                           by a uniform tail). Strictly
+ *                           less than 1 for any finite K > 2,
+ *                           so `decrease` is bounded above by
+ *                           H_{K-1}/(K-1) on a uniform tail
+ *                           and bounded below by the symmetric
+ *                           decrease-from-large-anchor case.
  */
 export function spectralDecrease(power: number[]): {
   decrease: number;

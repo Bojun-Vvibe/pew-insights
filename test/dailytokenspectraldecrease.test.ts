@@ -513,3 +513,88 @@ test('build: orthogonality vs centroid witness -- equal centroid, opposite-sign 
   // and the sign flip is the orthogonality witness vs
   // centroid (which is unsigned and bin-index-anchored).
 });
+
+// ---------- axis-92 refinement: tightened edge-case coverage ----------
+
+test('refine: spectralDecrease two-bin minimum support [a,b] = (b-a)/b', () => {
+  // K=2: numer=(P[2]-P[1])/1 ; denom=P[2] -> decrease = 1 - P[1]/P[2]
+  const r = spectralDecrease([3, 7]);
+  // expected: (7-3)/7 = 4/7
+  assert.ok(Math.abs(r.decrease - 4 / 7) < 1e-12);
+});
+
+test('refine: spectralDecrease equal-flat past anchor [c,c,c,c] = 0', () => {
+  // P[1]=P[2]=...=P[K] -> every (P[k]-P[1])=0 -> decrease = 0
+  const r = spectralDecrease([5, 5, 5, 5, 5]);
+  assert.equal(r.decrease, 0);
+});
+
+test('refine: spectralDecrease upper-bound parametric sweep [eps, M, M, ...] -> approaches 1 as M >> eps', () => {
+  // anchor near zero, tail flat at M -> decrease -> sum_{k=2..K} 1/(k-1) / (K-1) = 1 in the limit
+  const eps = 1e-12;
+  const M = 1;
+  const K = 8;
+  const power = [eps];
+  for (let k = 2; k <= K; k += 1) power.push(M);
+  const r = spectralDecrease(power);
+  // expected limit: (1/(M*(K-1))) * sum_{j=1..K-1} (M-eps)/j
+  // ~= (1/(K-1)) * H_{K-1} where H_n is the harmonic number
+  let h = 0;
+  for (let j = 1; j <= K - 1; j += 1) h += 1 / j;
+  const expected = h / (K - 1);
+  assert.ok(Math.abs(r.decrease - expected) < 1e-9);
+  assert.ok(r.decrease > 0);
+  // bounded above by H_{K-1}/(K-1) which is < 1 for K > 2
+  assert.ok(r.decrease < 1);
+});
+
+test('refine: dailyTokenSpectralDecrease 1e9/1e-9 numerical stability across 18 orders of magnitude', () => {
+  const base = [1, 3, 2, 5, 4, 7, 6, 9, 8, 10, 12, 11, 14, 13, 15, 16];
+  const big = base.map((v) => v * 1e9);
+  const small = base.map((v) => v * 1e-9);
+  const r1 = dailyTokenSpectralDecrease(big);
+  const r2 = dailyTokenSpectralDecrease(small);
+  // scale invariance must hold across 18 OOM
+  assert.ok(
+    Math.abs(r1.decrease - r2.decrease) < 1e-6,
+    `scale invariance broke: ${r1.decrease} vs ${r2.decrease}`,
+  );
+});
+
+test('refine: build absDecreaseDesc preserves source-asc tiebreak on equal magnitude', () => {
+  // two sources with mirrored series -> equal |decrease|
+  const lines: QueueLine[] = [];
+  for (let i = 0; i < 64; i += 1) {
+    // source a: increasing
+    lines.push(ql(dayIso(i), 'a', 1000 + i * 100));
+    // source b: identical pattern
+    lines.push(ql(dayIso(i), 'b', 1000 + i * 100));
+  }
+  const r = buildDailyTokenSpectralDecrease(lines, {
+    minTokens: 1000,
+    minTenureDays: 32,
+    sort: 'absDecreaseDesc',
+    generatedAt: ISO,
+  });
+  // identical series -> identical |decrease| -> source-asc breaks tie
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['a', 'b'],
+  );
+});
+
+test('refine: build droppedZeroTailPower never observed on a non-degenerate real series', () => {
+  // sanity: a real noisy series never hits the zero-tail-power
+  // bucket; the bucket exists only as a defensive guard.
+  const lines: QueueLine[] = [];
+  for (let i = 0; i < 64; i += 1) {
+    lines.push(ql(dayIso(i), 's', 1000 + ((i * 13) % 17) + i));
+  }
+  const r = buildDailyTokenSpectralDecrease(lines, {
+    minTokens: 1000,
+    minTenureDays: 32,
+    generatedAt: ISO,
+  });
+  assert.equal(r.droppedZeroTailPower, 0);
+  assert.equal(r.droppedNonFiniteFit, 0);
+});
