@@ -623,3 +623,153 @@ test('orthogonality vs axis-95 (roughness): permutation invariance vs adjacent-p
   const b = spectralRenyi2Entropy([100, 1, 100, 1, 5, 5, 5]);
   assert.ok(Math.abs(a.h2Norm - b.h2Norm) < 1e-12);
 });
+
+// ---------- refinement: extra closed-form anchors + sharp witnesses ----------
+
+test('refine: m equipowered bins anchor — h2Norm = ln(m) / ln(K) sweep K=4..20, m=2..K', () => {
+  for (let k = 4; k <= 20; k += 1) {
+    for (let m = 2; m <= k; m += 1) {
+      const arr = new Array<number>(k).fill(0);
+      for (let i = 0; i < m; i += 1) arr[i] = 7;
+      const r = spectralRenyi2Entropy(arr);
+      const expectedH2Norm = Math.log(m) / Math.log(k);
+      assert.ok(
+        Math.abs(r.h2Norm - expectedH2Norm) < 1e-12,
+        `K=${k}, m=${m}: h2Norm=${r.h2Norm}, expected=${expectedH2Norm}`,
+      );
+      assert.ok(Math.abs(r.kEff - m) < 1e-9);
+    }
+  }
+});
+
+test('refine: kEff is the inverse participation ratio 1/sum p^2', () => {
+  // Verified for non-equipowered cases.
+  const cases: number[][] = [
+    [9, 4, 1, 1, 1, 1, 1, 1],
+    [100, 50, 25, 12, 6, 3, 1, 1],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  ];
+  for (const c of cases) {
+    const r = spectralRenyi2Entropy(c);
+    assert.ok(Math.abs(r.kEff - 1 / r.sumP2) < 1e-12);
+    // kEff bounded by [1, K] strictly (non-degenerate).
+    assert.ok(r.kEff > 1 && r.kEff < c.length);
+  }
+});
+
+test('refine: h2Norm = 1 sharp upper bound achievable for every K in [2, 32]', () => {
+  for (let k = 2; k <= 32; k += 1) {
+    const arr = new Array<number>(k).fill(13);
+    const r = spectralRenyi2Entropy(arr);
+    assert.ok(Math.abs(r.h2Norm - 1) < 1e-12, `K=${k}: h2Norm=${r.h2Norm}`);
+  }
+});
+
+test('refine: h2Norm = 0 sharp lower bound achievable for every K in [2, 32]', () => {
+  for (let k = 2; k <= 32; k += 1) {
+    const arr = new Array<number>(k).fill(0);
+    arr[0] = 7;
+    const r = spectralRenyi2Entropy(arr);
+    assert.equal(r.h2Norm, 0, `K=${k}`);
+    assert.equal(r.h2, 0, `h2=${r.h2} K=${k}`);
+  }
+});
+
+test('refine: Jensen gap H_Shannon - H2 >= 0 strictly for non-uniform PSDs', () => {
+  // Sweep many random non-uniform PSDs.
+  const rng = (seed: number) => {
+    let s = seed;
+    return () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+  };
+  const r = rng(42);
+  for (let trial = 0; trial < 20; trial += 1) {
+    const k = 8 + (trial % 5);
+    const arr = Array.from({ length: k }, () => r() * 100 + 0.001);
+    const result = spectralRenyi2Entropy(arr);
+    let s = 0;
+    for (const v of arr) s += v;
+    let hShannon = 0;
+    for (const v of arr) {
+      const p = v / s;
+      hShannon -= p * Math.log(p);
+    }
+    // Jensen: H2 <= H_Shannon, equality iff uniform.
+    assert.ok(result.h2 <= hShannon + 1e-9);
+    // Non-uniform: strict inequality with some margin.
+    assert.ok(hShannon - result.h2 > 1e-6);
+  }
+});
+
+test('refine: scale invariance is exact (multiply by very large and very small)', () => {
+  const base = [1, 2, 3, 4, 5, 6, 7, 8];
+  const huge = base.map((x) => x * 1e10);
+  const tiny = base.map((x) => x * 1e-10);
+  const r0 = spectralRenyi2Entropy(base);
+  const r1 = spectralRenyi2Entropy(huge);
+  const r2 = spectralRenyi2Entropy(tiny);
+  assert.ok(Math.abs(r0.h2Norm - r1.h2Norm) < 1e-12);
+  assert.ok(Math.abs(r0.h2Norm - r2.h2Norm) < 1e-12);
+  assert.ok(Math.abs(r0.kEff - r1.kEff) < 1e-9);
+  assert.ok(Math.abs(r0.kEff - r2.kEff) < 1e-9);
+});
+
+test('refine: sumP2 numerical clamp to [1/K, 1] does not break valid in-range values', () => {
+  // A near-uniform PSD: sumP2 just barely above 1/K.
+  const k = 10;
+  const arr = new Array<number>(k).fill(1);
+  arr[0] = 1.000001;
+  const r = spectralRenyi2Entropy(arr);
+  assert.ok(r.sumP2 >= 1 / k);
+  assert.ok(r.sumP2 <= 1);
+  assert.ok(r.h2Norm > 0.999);
+});
+
+test('refine: build sort by kEff (asc) reverses kEffDesc', () => {
+  const flat = Array.from({ length: 40 }, (_, i) => 1000 + 50 * Math.sin(i));
+  const sharp = Array.from({ length: 40 }, (_, i) =>
+    1000 + 500 * Math.sin((Math.PI * i) / 1.05),
+  );
+  const q = [...makeQueue('aa-flat', flat), ...makeQueue('bb-sharp', sharp)];
+  const r = buildDailyTokenSpectralRenyi2Entropy(q, {
+    generatedAt: ISO,
+    minTenureDays: 10,
+    sort: 'kEff',
+  });
+  if (r.sources.length === 2) {
+    assert.ok(r.sources[0]!.kEff <= r.sources[1]!.kEff);
+  }
+});
+
+test('refine: build sort by tenure descends', () => {
+  const long = Array.from({ length: 60 }, (_, i) => 1500 + 100 * Math.sin(i));
+  const short = Array.from({ length: 40 }, (_, i) => 1500 + 100 * Math.sin(i));
+  const q = [...makeQueue('aaa-short', short), ...makeQueue('zzz-long', long)];
+  const r = buildDailyTokenSpectralRenyi2Entropy(q, {
+    generatedAt: ISO,
+    minTenureDays: 10,
+    sort: 'tenure',
+  });
+  if (r.sources.length === 2) {
+    assert.ok(r.sources[0]!.nTenureDays >= r.sources[1]!.nTenureDays);
+  }
+});
+
+test('refine: kEff of two-bin equipartition equals exactly 2 for all K', () => {
+  for (let k = 4; k <= 20; k += 1) {
+    const arr = new Array<number>(k).fill(0);
+    arr[0] = 100;
+    arr[1] = 100;
+    const r = spectralRenyi2Entropy(arr);
+    assert.ok(Math.abs(r.kEff - 2) < 1e-9, `K=${k}`);
+  }
+});
+
+test('refine: series-level kEff identity exp(h2) = 1/sumP2', () => {
+  const series = [1, 5, 2, 8, 3, 9, 4, 6, 7, 2, 5, 1, 8, 3, 9, 4];
+  const r = dailyTokenSpectralRenyi2Entropy(series);
+  assert.ok(Math.abs(Math.exp(r.h2) - r.kEff) < 1e-9);
+  assert.ok(Math.abs(r.kEff - 1 / r.sumP2) < 1e-9);
+});
