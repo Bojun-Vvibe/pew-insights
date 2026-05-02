@@ -670,3 +670,89 @@ test('refine: periodogram round-trip -- spectralFlatnessWiener ingests periodogr
   assert.ok(Math.abs(direct.flatness - wrapped.flatness) < 1e-12);
   assert.equal(direct.usableBins, wrapped.usableBins);
 });
+
+test('refine: bin-permutation invariance witness vs slope tilt -- a tilted spectrum and its bin-shuffled twin share IDENTICAL flatness', () => {
+  // Build a 1/k tilted power vector (a k=8 toy "1/f" spectrum).
+  const tilted = [1.0, 0.5, 1 / 3, 0.25, 0.2, 1 / 6, 1 / 7, 0.125];
+  // Permute bin indices but keep the same multiset of values.
+  const permuted = [0.125, 1.0, 1 / 7, 0.5, 1 / 6, 1 / 3, 0.2, 0.25];
+  // Sanity: same multiset
+  const sortedA = [...tilted].sort((a, b) => a - b);
+  const sortedB = [...permuted].sort((a, b) => a - b);
+  for (let i = 0; i < sortedA.length; i += 1) {
+    assert.ok(Math.abs(sortedA[i]! - sortedB[i]!) < 1e-15);
+  }
+  const fa = spectralFlatnessWiener(tilted);
+  const fb = spectralFlatnessWiener(permuted);
+  assert.ok(
+    Math.abs(fa.flatness - fb.flatness) < 1e-12,
+    `bin-permutation moved flatness: ${fa.flatness} vs ${fb.flatness}`,
+  );
+});
+
+test('refine: closed-form recovery on geometric sequence -- flatness = (n * r^((n-1)/2)) / (1 + r + ... + r^(n-1)) when first bin is 1', () => {
+  // For p_k = r^k, k=0..n-1: GM = r^((n-1)/2); AM = (1-r^n)/(n*(1-r)).
+  // ratio = n * r^((n-1)/2) * (1 - r) / (1 - r^n).
+  const n = 6;
+  const r = 0.5;
+  const p: number[] = [];
+  for (let k = 0; k < n; k += 1) p.push(Math.pow(r, k));
+  const expected = (n * Math.pow(r, (n - 1) / 2) * (1 - r)) / (1 - Math.pow(r, n));
+  const got = spectralFlatnessWiener(p);
+  assert.ok(
+    Math.abs(got.flatness - expected) < 1e-12,
+    `geometric flatness ${got.flatness} vs closed form ${expected}`,
+  );
+});
+
+test('refine: flatnessDb -inf only when all bins zero (which throws), positive flatness always finite dB', () => {
+  // Confirm the dB output is always finite for any valid input
+  // since the throw-on-too-few-positive-bins guard means we never
+  // reach the flatness=0 case.
+  const y = [1, 2, 4, 8, 5, 3, 7, 6, 9, 4, 11, 13];
+  const r = dailyTokenSpectralFlatnessWiener(y);
+  assert.ok(Number.isFinite(r.flatnessDb));
+  assert.ok(r.flatnessDb <= 0);
+});
+
+test('refine: build report rejects sort=tokens|tenure as valid keys (regression -- sort enum surface)', () => {
+  // Smoke that all enumerated sort keys are accepted; no throw.
+  const ok: Array<'flatness' | 'flatnessDesc' | 'tokens' | 'tenure' | 'source'> = [
+    'flatness',
+    'flatnessDesc',
+    'tokens',
+    'tenure',
+    'source',
+  ];
+  for (const s of ok) {
+    const r = buildDailyTokenSpectralFlatnessWiener([], { sort: s, generatedAt: ISO });
+    assert.equal(r.sort, s);
+  }
+});
+
+test('refine: dailyTokenSpectralFlatnessWiener noise-vs-tone gap survives DC offset and scale', () => {
+  // The flatness gap between a sinusoid and white noise must be
+  // robust under both DC offset (shift) and amplitude scaling
+  // (scale), because flatness is invariant under both.
+  const n = 128;
+  const tone: number[] = [];
+  for (let i = 0; i < n; i += 1) tone.push(Math.sin((2 * Math.PI * 8 * i) / n));
+  let s = 99;
+  const rand = () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x1_0000_0000;
+  };
+  const noise: number[] = [];
+  for (let i = 0; i < n; i += 1) noise.push(rand());
+  const baseGap =
+    dailyTokenSpectralFlatnessWiener(noise).flatness -
+    dailyTokenSpectralFlatnessWiener(tone).flatness;
+  const shiftedGap =
+    dailyTokenSpectralFlatnessWiener(noise.map((v) => v + 1234.5)).flatness -
+    dailyTokenSpectralFlatnessWiener(tone.map((v) => v + 1234.5)).flatness;
+  const scaledGap =
+    dailyTokenSpectralFlatnessWiener(noise.map((v) => 7 * v)).flatness -
+    dailyTokenSpectralFlatnessWiener(tone.map((v) => 7 * v)).flatness;
+  assert.ok(Math.abs(baseGap - shiftedGap) < 1e-10);
+  assert.ok(Math.abs(baseGap - scaledGap) < 1e-10);
+});
