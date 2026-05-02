@@ -15851,6 +15851,78 @@ export function renderDailyTokenLempelZivComplexity(
 }
 
 
+export function renderDailyTokenDftPowerLawSlope(
+  r: DailyTokenDftPowerLawSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-dft-power-law-slope'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DFT 1/f^beta spectral exponent of the gap-filled daily total_tokens series. EIGHTY-FOURTH cross-source axis. Compute the one-sided periodogram P[k] for k=1..K=floor(n/2) of the mean-centred series; OLS-fit log10(P[k]) = a - beta*log10(k) over bins with P[k] > 0. beta ~ 0 white spectrum; beta ~ 1 pink/1-f noise (Voss-Clarke 1975); beta ~ 2 red/Brownian (Mandelbrot-Van Ness 1968); beta < 0 blue. Reference: Voss & Clarke 1975; Mandelbrot & Van Ness 1968; Bak-Tang-Wiesenfeld 1987; Eke et al. 2002. Shift-, scale- (a>0), sign-flip-, AND time-reversal-INVARIANT; shuffle-SENSITIVE. Structurally orthogonal to (a) spectral-entropy axis 69 -- entropy is a flatness measure of the same periodogram, beta is the slope; a sharp mid-frequency peak has low entropy and beta ~ 0, a 1/f spectrum has high entropy and beta ~ 1; (b) Lempel-Ziv axis 83 -- string-combinatorial vs continuous log-log slope; (c) Teager-Kaiser axis 81 -- local triplet vs global periodogram fit; (d) curvature-sign-change-rate axis 82 / Petrosian FD axis 76 -- amplitude-blind sign counts; (e) Hjorth axes 79/80 -- low-order spectral moment ratios; (f) box-count/Sevcik/Katz/Higuchi FD axes 78/77/75/74 -- time-domain geometric FDs (asymptotic FD = (5-beta)/2 holds only for ideal fBm; finite token series diverge by 0.3-0.8); (g) Hurst R/S 71 / DFA-alpha 72 -- time-domain scaling exponents (asymptotic beta = 2H +/- 1 holds only for fGn/fBm); (h) permutation-entropy 70 / sample-entropy 73 -- ordinal/template; (i) autocorrelation 67/68 -- single-lag time-domain summaries; (j) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; beta is shuffle-sensitive (whitening drives beta to 0).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source DFT 1/f^beta spectral exponent (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'beta',
+    'rSquared',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.beta.toFixed(4),
+    s.rSquared.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+
 export function renderDailyTokenKolmPollakIndex(
   r: DailyTokenKolmPollakReport,
 ): string {
@@ -17165,6 +17237,7 @@ import type { DailyTokenHjorthComplexityReport } from './dailytokenhjorthcomplex
 import type { DailyTokenTeagerKaiserEnergyReport } from './dailytokenteagerkaiserenergy.js';
 import type { DailyTokenCurvatureSignChangeRateReport } from './dailytokencurvaturesignchangerate.js';
 import type { DailyTokenLempelZivComplexityReport } from './dailytokenlempelzivcomplexity.js';
+import type { DailyTokenDftPowerLawSlopeReport } from './dailytokendftpowerlawslope.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,

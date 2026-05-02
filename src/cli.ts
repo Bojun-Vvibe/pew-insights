@@ -135,6 +135,7 @@ import {
   renderDailyTokenTeagerKaiserEnergy,
   renderDailyTokenCurvatureSignChangeRate,
   renderDailyTokenLempelZivComplexity,
+  renderDailyTokenDftPowerLawSlope,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -432,6 +433,7 @@ import { buildDailyTokenHjorthComplexity } from './dailytokenhjorthcomplexity.js
 import { buildDailyTokenTeagerKaiserEnergy } from './dailytokenteagerkaiserenergy.js';
 import { buildDailyTokenCurvatureSignChangeRate } from './dailytokencurvaturesignchangerate.js';
 import { buildDailyTokenLempelZivComplexity } from './dailytokenlempelzivcomplexity.js';
+import { buildDailyTokenDftPowerLawSlope } from './dailytokendftpowerlawslope.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18193,6 +18195,114 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenLempelZivComplexity(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-dft-power-law-slope')
+  .description(
+    "Per-source DFT 1/f^beta spectral exponent of the gap-filled daily total_tokens series (EIGHTY-FOURTH cross-source axis). Compute the one-sided periodogram P[k] for k=1..K=floor(n/2) of the mean-centred series; OLS-fit log10(P[k]) = a - beta*log10(k) over bins with P[k] > 0. beta ~ 0 white noise; beta ~ 1 pink/1-f noise (Voss-Clarke 1975); beta ~ 2 red/Brownian (Mandelbrot-Van Ness 1968); beta < 0 blue. References: Voss & Clarke 1975; Mandelbrot & Van Ness 1968; Bak-Tang-Wiesenfeld 1987; Eke et al. 2002. Shift-, scale- (a>0), sign-flip-, AND time-reversal-INVARIANT; shuffle-SENSITIVE. Structurally orthogonal to (a) spectral-entropy axis 69 -- entropy is a flatness measure, beta is the slope of the same periodogram; (b) Lempel-Ziv axis 83 -- string-combinatorial vs continuous log-log slope; (c) Teager-Kaiser axis 81 -- local triplet vs global periodogram fit; (d) curvature-sign-change-rate axis 82 / Petrosian FD axis 76; (e) Hjorth axes 79/80; (f) box-count/Sevcik/Katz/Higuchi FD axes 78/77/75/74 (asymptotic FD = (5-beta)/2 only for ideal fBm); (g) Hurst R/S axis 71 / DFA-alpha axis 72 (asymptotic beta = 2H +/- 1 only for fGn/fBm); (h) permutation-entropy 70 / sample-entropy 73; (i) autocorrelation 67/68; (j) all permutation-invariant dispersion / shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: betaDesc (default) | beta | rSquared | rSquaredDesc | tokens | tenure | source.',
+    'betaDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'beta',
+          'betaDesc',
+          'rSquared',
+          'rSquaredDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDftPowerLawSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'beta'
+            | 'betaDesc'
+            | 'rSquared'
+            | 'rSquaredDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenDftPowerLawSlope(report) + '\n');
         }
       } catch (e) {
         die(e);
