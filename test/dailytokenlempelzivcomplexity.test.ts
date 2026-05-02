@@ -389,3 +389,140 @@ test('build: invalid hour_start increments dropped counter', () => {
   });
   assert.equal(r.droppedInvalidHourStart, 1);
 });
+
+// ---- refinement: defence-in-depth ------------------------------------
+
+test('lempelZivPhraseCount: parametric sweep -- count is monotone non-decreasing in n for the iid-like prefix', () => {
+  // Take a fixed pseudo-random binary string and measure c(n) on
+  // its prefixes of growing length. c(n) is monotone non-decreasing
+  // in n by construction (each new bit either fits the current
+  // candidate, in which case c stays put, or closes a phrase and
+  // increments c by 1).
+  const seed = '0110100011101100100110100011101001011010001110110010011010';
+  let prev = 0;
+  for (let n = 4; n <= seed.length; n += 1) {
+    const c = lempelZivPhraseCount(seed.slice(0, n));
+    assert.ok(c >= prev, `c(${n})=${c} < c(${n - 1})=${prev}`);
+    prev = c;
+  }
+});
+
+test('lempelZivPhraseCount: power-of-two structured prefixes (Aboy 2006 style benchmark)', () => {
+  // Highly self-similar binary -> low LZ count vs an iid-like
+  // string of the same length.
+  const repetitive = '0101'.repeat(8); // 32 chars, periodic
+  const irregular = '0110100011101100100110100011101100'.slice(0, 32);
+  const cRep = lempelZivPhraseCount(repetitive);
+  const cIrr = lempelZivPhraseCount(irregular);
+  assert.ok(cIrr > cRep, `irregular ${cIrr} should exceed periodic ${cRep}`);
+});
+
+test('dailyTokenLempelZivComplexity: edge-case -- exactly n=8 (boundary)', () => {
+  // Smallest accepted length: 8 elements. Must accept and produce
+  // a sane lzNormalized.
+  const v = [1, 9, 1, 9, 2, 8, 3, 7];
+  const r = dailyTokenLempelZivComplexity(v);
+  assert.ok(r.lzCount >= 1 && r.lzCount <= 8);
+  assert.ok(Number.isFinite(r.lzNormalized) && r.lzNormalized > 0);
+});
+
+test('dailyTokenLempelZivComplexity: monotone-trend series produces low LZ', () => {
+  // Strictly monotone increasing -> binarisation is exactly
+  // n/2 zeros followed by n/2 ones (or off-by-one for odd n).
+  // The string "00..011..1" parses to a small number of phrases
+  // -> low LZ count vs the asymptotic upper bound.
+  const v = Array.from({ length: 32 }, (_, i) => i + 1);
+  const r = dailyTokenLempelZivComplexity(v);
+  assert.ok(r.lzNormalized < 0.9, `lzNormalized=${r.lzNormalized}`);
+});
+
+test('dailyTokenLempelZivComplexity: parametric sweep over series length n in [8, 64]', () => {
+  // Sanity-sweep: for every accepted length, the primitive
+  // returns finite values, lzCount is in [1, n], and the
+  // normaliser n/log2(n) is positive.
+  for (let n = 8; n <= 64; n += 1) {
+    const v: number[] = new Array(n);
+    for (let i = 0; i < n; i += 1) {
+      // Two-frequency sinusoid avoids periodicity-collapse.
+      v[i] = Math.sin(i * 0.37) + 0.5 * Math.sin(i * 1.91);
+    }
+    const r = dailyTokenLempelZivComplexity(v);
+    assert.ok(
+      r.lzCount >= 1 && r.lzCount <= n,
+      `n=${n}: lzCount=${r.lzCount}`,
+    );
+    assert.ok(
+      Number.isFinite(r.lzNormalized) && r.lzNormalized > 0,
+      `n=${n}: lzNormalized=${r.lzNormalized}`,
+    );
+  }
+});
+
+test('dailyTokenLempelZivComplexity: numerical stability at amplitude 1e12', () => {
+  const v = [1e12, 9e12, 1e12, 9e12, 1e12, 9e12, 1e12, 9e12, 1e12, 9e12];
+  const r = dailyTokenLempelZivComplexity(v);
+  assert.ok(Number.isFinite(r.lzNormalized));
+  assert.ok(r.lzCount >= 1);
+});
+
+test('dailyTokenLempelZivComplexity: numerical stability at amplitude 1e-12', () => {
+  const v = [1e-12, 9e-12, 1e-12, 9e-12, 1e-12, 9e-12, 1e-12, 9e-12, 1e-12, 9e-12];
+  const r = dailyTokenLempelZivComplexity(v);
+  assert.ok(Number.isFinite(r.lzNormalized));
+  assert.ok(r.lzCount >= 1);
+});
+
+test('build: tokens-sort produces tokens-descending order', () => {
+  const queues = [
+    ...buildSeries(
+      [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
+      'light',
+    ),
+    ...buildSeries(
+      [100000, 200000, 150000, 300000, 250000, 400000, 350000, 500000, 600000, 700000],
+      'heavy',
+    ),
+  ];
+  const r = buildDailyTokenLempelZivComplexity(queues, {
+    generatedAt: GEN,
+    sort: 'tokens',
+    minTenureDays: 8,
+    minTokens: 0,
+  });
+  assert.equal(r.sources[0]!.source, 'heavy');
+  assert.ok(r.sources[0]!.totalTokens >= r.sources[1]!.totalTokens);
+});
+
+test('build: tenure-sort tiebreak alphabetic', () => {
+  const v = [1000, 5000, 1000, 5000, 1000, 5000, 1000, 5000, 1000, 5000];
+  const queues = [
+    ...buildSeries(v, 'b-src'),
+    ...buildSeries(v, 'a-src'),
+  ];
+  const r = buildDailyTokenLempelZivComplexity(queues, {
+    generatedAt: GEN,
+    sort: 'tenure',
+    minTenureDays: 8,
+    minTokens: 0,
+  });
+  assert.equal(r.sources[0]!.source, 'a-src');
+  assert.equal(r.sources[1]!.source, 'b-src');
+});
+
+test('build: lzCountDesc sort puts highest LZ first', () => {
+  const periodic = [1000, 5000, 1000, 5000, 1000, 5000, 1000, 5000, 1000, 5000];
+  const aperiodic = [
+    1000, 5000, 5000, 1000, 5000, 1000, 1000, 5000, 1000, 5000, 5000, 1000,
+  ];
+  const queues = [
+    ...buildSeries(periodic, 'periodic-src'),
+    ...buildSeries(aperiodic, 'aperiodic-src'),
+  ];
+  const r = buildDailyTokenLempelZivComplexity(queues, {
+    generatedAt: GEN,
+    sort: 'lzCountDesc',
+    minTenureDays: 8,
+    minTokens: 0,
+  });
+  assert.ok(r.sources[0]!.lzCount >= r.sources[1]!.lzCount);
+});
