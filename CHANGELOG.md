@@ -2,6 +2,196 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.352 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-NINTH):
+  `pew-insights daily-token-upper-records-count`.
+
+  Per-source NUMBER OF STRICT UPPER RECORDS in the
+  gap-filled daily total tokens series. Index `i` in
+  `{0, .., n-1}` is a STRICT UPPER RECORD iff
+  `x[i] > max(x[0..i-1])`, with the convention that index
+  0 is ALWAYS a record (the empty-prefix max is `-inf`).
+  The reported statistic is the integer count
+
+      R_n = |{ i in {0..n-1} : x[i] > max(x[0..i-1]) }|
+
+  in `{1, .., n}` (Renyi, "Theorie des elements saillants
+  d'une suite d'observations", Annales scientifiques de
+  l'Universite de Clermont-Ferrand 8, 1962, pp. 7-13;
+  Glick, "Breaking records and breaking boards",
+  American Mathematical Monthly 85, 1978, pp. 2-26;
+  Arnold-Balakrishnan-Nagaraja, "Records", Wiley 1998,
+  ch. 2).
+
+  CLOSED-FORM NULL DISTRIBUTION (Renyi 1962). For an iid
+  continuous sample the indicator variables `I_i = 1[x[i]
+  is a record]` are MUTUALLY INDEPENDENT Bernoulli(1/i),
+  so
+
+      E[R_n]   = H_n          = sum_{k=1}^{n} 1/k
+      Var[R_n] = H_n - H_n^(2)  where H_n^(2) = sum 1/k^2
+
+  Lyapunov CLT then gives the standardised score
+
+      recordZ = (R_n - H_n) / sqrt(H_n - H_n^(2))
+
+  approximately `N(0, 1)` for moderate `n`. For `n < 4`
+  `recordZ = 0` (the variance is too small for the normal
+  approximation to have purchase).
+
+  Reported alongside `nUpperRecords` (strict, headline):
+  `nUpperRecordsLoose` (>=, side-quantity for the
+  zero-padded regime), `lastRecordIndex`, `argmaxIndex`,
+  `maxValue`, `recordExpectedIid = H_n`,
+  `recordVarIid = H_n - H_n^(2)`, and `recordZ`.
+
+  CLASS-RECORDS-COUNT primitive: a CUMULATIVE-MAXIMUM
+  CROSSING COUNT — the number of times the running maximum
+  strictly increases. It is a function of the RANK of
+  `x[i]` within the prefix `x[0..i]` only; the sample space
+  is partitioned into `n!` equiprobable permutations
+  (under iid continuous) and `R_n` is a PERMUTATION
+  STATISTIC whose distribution is exactly the convolution
+  of independent `Bernoulli(1/k)` variables.
+
+  ### Orthogonality vs every prior axis (axis 79-108)
+
+  - vs axis-105 daily-token-zero-crossing-rate. ZCR is a
+    SIGN-CHANGE rate of the demeaned LEVEL series — a
+    forward-difference local statistic depending only on
+    consecutive pairs `(x[i] - mean, x[i+1] - mean)`.
+    `R_n` is a PREFIX-WIDE GLOBAL statistic: each index
+    `i` compares to its entire prefix max, not to `i-1`.
+    Functionally independent: a monotone increase has
+    `ZCR ~ 0` and `R_n = n`; a reverse-sorted series has
+    very low `ZCR` and `R_n = 1`.
+
+  - vs axis-106 daily-token-turning-point-rate. TPR is the
+    sign-change rate of the FIRST DIFFERENCE — a
+    local-curvature symbol stream depending on three
+    consecutive values. A pure monotone increase has
+    `TPR = 0` and `R_n = n`; a strictly decreasing series
+    has `TPR = 0` and `R_n = 1`. Same TPR, opposite `R_n`.
+
+  - vs axis-107 daily-token-spearman-autocorrelation-lag1
+    and axis-108 daily-token-kendall-tau-autocorrelation-
+    lag1. Both are LAG-1 PAIR statistics. `R_n` is
+    NON-LAGGED prefix-comparison. A strictly increasing
+    series has `tau = +1`, `rho = +1`, AND `R_n = n`, but
+    a "mostly flat with one big late spike" series can
+    have `tau ~ 0` and still surface a `R_n` much larger
+    than the iid expectation `H_n`. Records detect global
+    upward trend regardless of lag-1 alternation.
+
+  - vs the runs-test / monotone-run-length / second-
+    difference sign-runs axes. Those condition on
+    consecutive sign blocks; `R_n` only counts strict
+    prefix-max crossings. A series with many short
+    monotone runs but no new global maxima after index 0
+    has high run statistics and `R_n = 1`.
+
+  - vs the inequality / shape axes (Gini, Atkinson, Theil,
+    Palma, Hoover, Bonferroni, Mehran, Pietra, Foster-
+    Wolfson, Esteban-Ray, Wolfson, Zenga, Chakravarty,
+    Kolm-Pollak, GE2/3/4/half/negone, S-Gini, Amato, FGT,
+    Hill-tail, decile/quintile/percentile gap ratios,
+    IQR/median, MAD/median, log-MAD, midspread, var-of-
+    logs, z-score-extremes, L-skewness, medcouple, Bowley):
+    every one is a PERMUTATION-INVARIANT functional of the
+    empirical distribution. `R_n` depends on the TEMPORAL
+    ORDER of the prefix. A reverse-sorted permutation of
+    `x` has identical Gini etc., but `R_n = 1` instead of
+    `n`.
+
+  - vs the spectral / PSD axes (axis-84 to axis-104). PSD
+    axes map the WHOLE-tenure periodogram to a scalar; the
+    periodogram is invariant to TIME-REVERSAL and discards
+    phase. `R_n` is built from directional prefix scans and
+    is NOT time-reversal symmetric (records under reversal
+    correspond to LOWER records of the original series).
+
+  - vs the entropy axes (sample, permutation, approximate,
+    Renyi spectral, spectral entropy). Those are
+    pattern-recurrence complexity measures on amplitude /
+    spectral embeddings; `R_n` is an integer count of
+    prefix-max strict-improvement events with a
+    closed-form null mean and variance.
+
+  - vs the fractal-dimension / long-memory axes (Higuchi,
+    Katz, Petrosian, Sevcik, box-count, DFA alpha,
+    Hurst R/S). Those measure scaling exponents across
+    multiple scales. `R_n` is a single integer count, not
+    a scaling fit.
+
+  - vs Hjorth (mobility, complexity), Teager-Kaiser, LZ,
+    curvature-sign-change-rate (axis-79 to axis-83). Those
+    are continuous-magnitude operators on the level or its
+    differences. `R_n` is a counting statistic in
+    `{1, .., n}` with a closed-form Bernoulli-convolution
+    null.
+
+  Headline question:
+  **"For each source, how many times during its gap-filled
+    tenure did the daily token total strictly EXCEED EVERY
+    prior day's total -- and is that number larger or
+    smaller than the iid expected H_n new-records count?"**
+
+  ### Live-smoke test against real `~/.config/pew/queue.jsonl`
+
+  Run with defaults (`--min-tenure-days=14`, `--min-tokens=1000`,
+  `--sort=recordZAbsDesc`). Six total sources; two dropped
+  below min-tenure; four reported. Real per-source numbers:
+
+  | source         | tenure | active | records | looseRec | lastIdx | argmax | maxValue       | E[H_n] | recordZ |
+  |----------------|--------|--------|---------|----------|---------|--------|----------------|--------|---------|
+  | claude-code    |     72 |     35 |       8 |        8 |      68 |     68 |  1,052,011,841 | 4.8608 | +1.7468 |
+  | hermes         |     16 |     16 |       2 |        2 |       2 |      2 |     34,683,508 | 3.3807 | -1.0302 |
+  | vscode-copilot |    265 |     73 |       7 |        7 |     261 |    261 |        240,730 | 6.1588 | +0.3958 |
+  | openclaw       |     16 |     16 |       3 |        3 |       2 |      2 |    354,037,834 | 3.3807 | -0.2841 |
+
+  Substantive readings.
+  - `claude-code` has the strongest positive `recordZ`
+    (+1.747): with `n = 72`, the iid expectation is
+    `H_72 ~ 4.86` records, but it actually sets 8 strict
+    upper records — globally ramping daily token usage
+    (largest record at index 68, near the end of tenure).
+  - `hermes` (n=16, H_16 ~ 3.38) sets only 2 strict
+    upper records, both within the first three days
+    (`lastRecordIndex = 2`, `argmaxIndex = 2`); its global
+    maximum was reached on day 3 and never exceeded.
+    `recordZ = -1.03` flags this as record-deficient
+    relative to iid.
+  - `openclaw` (n=16) is similar to `hermes`: 3 strict
+    records all by day 2, no late new highs (`recordZ =
+    -0.28`).
+  - `vscode-copilot` long-tenure (265 days, 73 active) but
+    most days are zero-padded; nevertheless it sets 7
+    strict records vs `H_265 ~ 6.16` expected — slightly
+    above iid, with the maximum at day 261 (very late).
+    Strict and loose record counts are equal because the
+    real activity days never exactly tied any prior
+    maximum.
+  - Tie pressure assessment: in this dataset the strict
+    and loose counts coincide for every source, meaning
+    no zero-padded day ever exactly equalled a prior
+    maximum (which would only happen if a prior maximum
+    were itself zero — impossible since we filter
+    `total_tokens <= 0` before gap-filling).
+
+  Cross-checks against axes 105-108. `vscode-copilot`'s
+  late-loaded global max (`argmaxIndex = 261` with tenure
+  265) is invisible to ZCR / TPR / lag-1 autocorrelation,
+  which collapse to local sign / pair statistics; the
+  records axis surfaces it as a near-iid count with
+  end-loaded structure that lag-1 axes cannot detect.
+
+  ### Test count delta
+
+  +44 unit tests (`test/dailytokenupperrecordscount.test.ts`).
+
 ## 0.6.351 — 2026-05-03
 
 ### Added
