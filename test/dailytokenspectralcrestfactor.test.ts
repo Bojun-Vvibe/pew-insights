@@ -499,3 +499,84 @@ test('build: gap-filling extends tenure across silent days', () => {
   assert.equal(r.sources[0]!.nTenureDays, 40);
   assert.equal(r.sources[0]!.nActiveDays, 20);
 });
+
+// ---------- refinement coverage ----------
+
+test('spectralCrestFactor: tight bound -- crest <= usableBins exactly at single-tone limit', () => {
+  // Construct a strict single-tone limit: m=5 surviving bins
+  // where four are exactly equal to eps and one carries the
+  // mass; the upper bound usableBins = m must be respected
+  // and approached as eps -> 0.
+  for (const m of [3, 5, 8, 12]) {
+    const eps = 1e-15;
+    const p = new Array(m).fill(eps);
+    p[m - 1] = 1;
+    const r = spectralCrestFactor(p);
+    assert.equal(r.usableBins, m);
+    assert.ok(
+      r.crestFactor <= m + 1e-9,
+      `crest ${r.crestFactor} must be <= usableBins ${m}`,
+    );
+    assert.ok(
+      r.crestFactor > m - 1e-6,
+      `crest ${r.crestFactor} must approach usableBins ${m} as eps -> 0`,
+    );
+  }
+});
+
+test('spectralCrestFactor: bound respected on a hand-chosen mid-range case', () => {
+  // bins (1, 1, 1, 5); m=4; total=8; mean=2; peak=5; crest=2.5;
+  // share = 5/8 = 0.625; bound: 1 <= 2.5 <= 4. Sanity.
+  const r = spectralCrestFactor([1, 1, 1, 5]);
+  assert.equal(r.peakBin, 4);
+  assert.equal(r.usableBins, 4);
+  assert.ok(Math.abs(r.crestFactor - 2.5) < 1e-12);
+  assert.ok(Math.abs(r.peakBinShare - 0.625) < 1e-12);
+  assert.ok(r.crestFactor >= 1 && r.crestFactor <= r.usableBins);
+});
+
+test('build: --source round-trip pin -- single-source view matches the per-source row of the unfiltered view', () => {
+  // Multi-source queue: building with --source X should
+  // produce the SAME numeric row for X as the unfiltered build
+  // (since the cross-source axis is per-source by definition).
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 50; i += 1) {
+    queue.push(ql(dayIso(i), 'a', 100 + (i % 7) * 10));
+    queue.push(ql(dayIso(i), 'b', 200 + (i % 5) * 5));
+  }
+  const all = buildDailyTokenSpectralCrestFactor(queue, {
+    generatedAt: ISO,
+    minTokens: 0,
+  });
+  const onlyA = buildDailyTokenSpectralCrestFactor(queue, {
+    generatedAt: ISO,
+    minTokens: 0,
+    source: 'a',
+  });
+  const aRow = all.sources.find((s) => s.source === 'a')!;
+  const aRowFiltered = onlyA.sources[0]!;
+  assert.equal(aRowFiltered.source, aRow.source);
+  assert.equal(aRowFiltered.peakBin, aRow.peakBin);
+  assert.equal(aRowFiltered.usableBins, aRow.usableBins);
+  assert.ok(Math.abs(aRowFiltered.crestFactor - aRow.crestFactor) < 1e-12);
+  assert.ok(Math.abs(aRowFiltered.peakBinShare - aRow.peakBinShare) < 1e-12);
+  assert.equal(aRowFiltered.nTenureDays, aRow.nTenureDays);
+  assert.equal(aRowFiltered.totalTokens, aRow.totalTokens);
+});
+
+test('build: empty positive-power band (constant after gap-fill) surfaces under droppedZeroVariance, not droppedTooFewUsableBins', () => {
+  // Single-source case where every gap-filled day is identical.
+  // The variance-zero gate must catch this before periodogram
+  // sees a degenerate input. Verifies counter routing.
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 40; i += 1) {
+    queue.push(ql(dayIso(i), 'flat2', 7));
+  }
+  const r = buildDailyTokenSpectralCrestFactor(queue, {
+    generatedAt: ISO,
+    minTokens: 0,
+  });
+  assert.equal(r.droppedZeroVariance, 1);
+  assert.equal(r.droppedTooFewUsableBins, 0);
+  assert.equal(r.droppedNonFiniteFit, 0);
+});

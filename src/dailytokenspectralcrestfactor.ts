@@ -327,6 +327,20 @@ export interface DailyTokenSpectralCrestFactorReport {
  * over bins with p > 0, and usableBins is the count of those
  * surviving bins.
  *
+ * TIE-BREAKING: when multiple bins share the maximum power,
+ * the LOWEST bin index wins (we visit bins in ascending k and
+ * only replace peakBin on a strict `p > peakPower`). This is
+ * deterministic and matches the natural reading of "first
+ * spectral peak from DC outward".
+ *
+ * TIGHT BOUND: crestFactor in [1, usableBins]. Lower bound
+ * attained iff all surviving bins have identical power
+ * (white-noise-on-band: peak/mean = 1). Upper bound attained
+ * iff a single bin carries (essentially) all the mass while
+ * the other surviving bins carry an arbitrarily small but
+ * strictly-positive floor (single-tone limit: peak/mean ->
+ * usableBins as the floor -> 0). Covered by unit tests.
+ *
  * Throws when the input is empty, contains a non-finite or
  * negative value, when fewer than 2 bins survive the strictly-
  * positive filter, or when the total power is non-positive.
