@@ -17247,6 +17247,7 @@ import type { DailyTokenSpectralDecreaseReport } from './dailytokenspectraldecre
 import type { DailyTokenSpectralIrregularityReport } from './dailytokenspectralirregularity.js';
 import type { DailyTokenSpectralSpreadIqrReport } from './dailytokenspectralspreadiqr.js';
 import type { DailyTokenSpectralRoughnessReport } from './dailytokenspectralroughness.js';
+import type { DailyTokenSpectralPeakFrequencyReport } from './dailytokenspectralpeakfrequency.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -19989,6 +19990,83 @@ export function renderDailyTokenSpectralRoughness(
     s.totalPower.toExponential(4),
     s.absDiffSum.toExponential(4),
     s.roughness.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralPeakFrequency(
+  r: DailyTokenSpectralPeakFrequencyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-peak-frequency'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL PEAK-FREQUENCY (argmax-bin POSITION descriptor on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; k* = argmax_{k=1..K} P[k] with smallest-k tie-break; peakFreqRatio = (k* - 1) / (K - 1) in [0, 1]; peakNormalisedFreq = k* / n in (0, 0.5]). NINETY-SIXTH cross-source axis. Class-P (POSITION / ARGMAX) primitive -- a 0TH-ORDER INDEX-VALUED read, structurally distinct from every shipped axis 32..95 (which all report magnitude/moment/ratio/entropy/TV/slope/quantile MASS aggregates). Bin-permutation-SENSITIVE; bin-reversal-SENSITIVE.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL PEAK-FREQUENCY (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'totalPower',
+    'peakPower',
+    'peakBin',
+    'peakFreqRatio',
+    'peakNormFreq',
+    'peakMassShare',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.totalPower.toExponential(4),
+    s.peakPower.toExponential(4),
+    formatNumber(s.peakBin),
+    s.peakFreqRatio.toFixed(4),
+    s.peakNormalisedFreq.toFixed(4),
+    s.peakMassShare.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

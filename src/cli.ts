@@ -147,6 +147,7 @@ import {
   renderDailyTokenSpectralIrregularity,
   renderDailyTokenSpectralSpreadIqr,
   renderDailyTokenSpectralRoughness,
+  renderDailyTokenSpectralPeakFrequency,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -456,6 +457,7 @@ import { buildDailyTokenSpectralDecrease } from './dailytokenspectraldecrease.js
 import { buildDailyTokenSpectralIrregularity } from './dailytokenspectralirregularity.js';
 import { buildDailyTokenSpectralSpreadIqr } from './dailytokenspectralspreadiqr.js';
 import { buildDailyTokenSpectralRoughness } from './dailytokenspectralroughness.js';
+import { buildDailyTokenSpectralPeakFrequency } from './dailytokenspectralpeakfrequency.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19486,6 +19488,116 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralRoughness(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-peak-frequency')
+  .description(
+    "Per-source SPECTRAL PEAK-FREQUENCY (argmax-bin POSITION descriptor on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; k* = argmax_{k=1..K} P[k] with smallest-k tie-break; peakFreqRatio = (k* - 1) / (K - 1) in [0, 1]; peakNormalisedFreq = k* / n in (0, 0.5]) (NINETY-SIXTH cross-source axis). Class-P (POSITION / ARGMAX) primitive -- a 0TH-ORDER INDEX-VALUED read, structurally distinct from every shipped axis 32..95 which report magnitude-, moment-, ratio-, entropy-, TV-, slope-, or quantile-of-mass numbers. peakFreqRatio = 0 -> mass at LOWEST non-DC bin (slow-cycle / low-frequency-dominant series); ~ 1 -> mass at HIGHEST representable bin (near-Nyquist / fast-oscillation-dominant). References: Peeters 2004 §6 (CUIDADO spectral descriptors incl. peak-frequency); Lerch 2012 §3.3 (spectral peak features); Tzanetakis & Cook 2002 (dominant-frequency in classification). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal-SENSITIVE (k* flips to K + 1 - k*). Structurally orthogonal to (a) spectral-roughness 95 (REAL-VALUED L1 TV-of-pmf MASS aggregate over all adjacent pairs, BIN-REVERSAL-INVARIANT; peak-freq is INDEX-VALUED and bin-reversal-SENSITIVE); (b) spectral-spread-IQR 94 (inner-50% percentile WIDTH); (c) spectral-irregularity 93 (SECOND-ORDER L2 magnitude statistic on raw periodogram); (d) spectral-decrease 92 (fixed-anchor slope-from-anchor real value); (e) spectral-bandwidth 87 / -skewness 90 / -kurtosis 91 (centroid-relative central moments use ALL bins; argmax uses only WINNING bin -- a bimodal PSD with equal peaks at k=1 and k=K has centroid mid-band but argmax = 1); (f) spectral-rolloff 88 (CDF quantile, not argmax); (g) spectral-centroid 86 (FIRST RAW MOMENT vs ARGMAX -- two PSDs with identical centroid can have wildly different argmax); (h) spectral-crest 89 (MAGNITUDE of winning bin; peak-freq is its INDEX); (i) spectral-flatness-wiener 85 / -spectral-entropy 69 (BIN-PERMUTATION INVARIANT); (j) DFT-power-law-slope 84 (LOG-LOG global slope); (k) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: peakFreqRatioDesc (default; high-frequency-dominant first) | peakFreqRatio | peakBin | peakBinDesc | tokens | tenure | source.',
+    'peakFreqRatioDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'peakFreqRatio',
+          'peakFreqRatioDesc',
+          'peakBin',
+          'peakBinDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralPeakFrequency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'peakFreqRatio'
+            | 'peakFreqRatioDesc'
+            | 'peakBin'
+            | 'peakBinDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpectralPeakFrequency(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
