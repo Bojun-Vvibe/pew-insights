@@ -2,6 +2,273 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.358 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-FIFTEENTH):
+  `pew-insights daily-token-mann-whitney-halves`.
+
+  Per-source MANN-WHITNEY U TWO-SAMPLE LEVEL-SHIFT
+  TEST comparing the first half (n1 = floor(n/2)
+  days) vs the second half (n2 = n - n1 days) of the
+  gap-filled daily total tokens series. Let
+  x[0..n-1] be the gap-filled daily token series,
+  A = x[0..n1-1], B = x[n1..n-1]. Pool the n1 + n2
+  values, assign MID-RANKS, and let R_A be the sum
+  of mid-ranks of the first half. Then the MANN-
+  WHITNEY U STATISTIC (Mann & Whitney 1947, Annals
+  of Mathematical Statistics 18(1):50-60) is
+
+      U = R_A - n1 (n1 + 1) / 2
+
+  with E[U] = n1 n2 / 2 under the iid two-sample
+  null. The TIE-CORRECTED variance (Lehmann 1975
+  "Nonparametrics: Statistical Methods Based on
+  Ranks" eq. 1.8; Hollander, Wolfe & Chicken 2014
+  "Nonparametric Statistical Methods" 3rd ed. sec.
+  4.1) is
+
+      Var_tie[U] = (n1 n2 / (12 n (n - 1)))
+                   * (n^3 - n - sum_g (t_g^3 - t_g))
+
+  where the sum runs over tied groups of size t_g
+  (necessary because gap-fill produces many exact
+  zeros). The standardised score
+
+      mwZ = (U - n1 n2 / 2) / sqrt(Var_tie[U])
+
+  is approximately N(0, 1) for min(n1, n2) >= 8.
+
+  mwZ much greater than +1.96 = first half strictly
+  larger than second half (DECLINE in token mass);
+  mwZ much less than -1.96 = second half strictly
+  larger (GROWTH in token mass); mwZ approx 0 = no
+  detectable level shift. The test is sensitive to a
+  LEVEL SHIFT IN MEDIAN between the two contiguous
+  halves and INSENSITIVE TO WITHIN-HALF MONOTONICITY.
+
+  STRUCTURAL ORTHOGONALITY vs all prior axes (79-114).
+  Mann-Whitney U on contiguous halves is the UNPAIRED
+  TWO-SAMPLE RANK-SUM LEVEL-SHIFT statistic with a
+  tie-corrected Gaussian null -- fundamentally
+  distinct from every prior axis:
+
+  - vs axis-114 daily-token-ljung-box-q-test.
+    Ljung-Box is a MULTI-LAG SQUARED-AUTOCORRELATION
+    PORTMANTEAU statistic on the centred raw series
+    with a Chi-Square(H) null. Mann-Whitney is a
+    TWO-SAMPLE RANK-SUM statistic comparing two
+    contiguous halves with a Normal null. Sample
+    space differs (H squared correlations vs n1*n2
+    pair-comparisons); functional differs (squared
+    Pearson autocorr vs sum of mid-ranks); null
+    differs (Chi-Square vs tie-corrected Gaussian);
+    detection target differs (any serial structure
+    across H lags vs SPECIFIC level shift between
+    two contiguous halves).
+
+  - vs axis-113 daily-token-difference-sign-test
+    (Mood). Mood is a SINGLE-LAG (k=1) BINARY
+    SIGN-COUNT on first differences (Binomial null).
+    Mann-Whitney is an UNPAIRED TWO-SAMPLE RANK-SUM
+    over n1*n2 cross-half pairs (Gaussian null). A
+    series with constant first half then constant
+    second half at a higher level has only ONE
+    non-zero diff (Mood reports nothing detectable),
+    while Mann-Whitney reports the full level shift
+    (mwU = 0, mwZ much less than 0).
+
+  - vs axis-112 daily-token-bartels-rank-von-neumann.
+    Bartels is a SINGLE-LAG (k=1) SQUARED-RANK-
+    ADJACENT-DIFFERENCE statistic on the rank
+    series of the WHOLE sequence. Mann-Whitney
+    PARTITIONS the ranks into two contiguous groups
+    and compares sums.
+
+  - vs axis-111 daily-token-cox-stuart-trend-test.
+    Cox-Stuart uses ELEMENT-BY-ELEMENT PAIRED binary
+    sign-tests at lag floor(n/2) (Binomial null,
+    sample space n/2 binary outcomes). Mann-Whitney
+    uses ALL n1*n2 cross-half pair comparisons
+    (Gaussian null, sample space ~n^2/4). For a
+    series where the second half is uniformly higher
+    in median but element-by-element the paired
+    comparisons are mixed (each half oscillates
+    independently around a different median),
+    Mann-Whitney detects the shift while Cox-Stuart
+    does not.
+
+  - vs axis-110 daily-token-mann-kendall-tau. Mann-
+    Kendall is a GLOBAL ALL-PAIRS sign-of-difference
+    statistic over n*(n-1)/2 pairs, sensitive to
+    monotonic trend across the WHOLE sweep. Mann-
+    Whitney is a TWO-SAMPLE rank-sum over only the
+    n1*n2 CROSS-HALF pairs. A clean STEP-FUNCTION
+    shift (constant first half at 10, constant second
+    half at 20) yields mwU = 0 (perfect cross-half
+    separation) but tau_MK only modestly elevated
+    (within-half pairs are all ties, contributing 0
+    to the Kendall sum).
+
+  - vs axis-109 / 108 / 107 (records-count, Kendall
+    lag-1, Spearman lag-1). All are SINGLE-METRIC
+    statistics on the WHOLE series; Mann-Whitney
+    PARTITIONS the series at the midpoint and
+    compares the two halves' rank-sums.
+
+  - vs axis-64 daily-token-runs-test-z (Wald-
+    Wolfowitz median-binarised run-count). Wald-
+    Wolfowitz binarises by MEDIAN and counts
+    MAXIMAL RUNS (sensitive to ALTERNATION around
+    the median). Mann-Whitney compares two
+    CONTIGUOUS halves' rank-sums (sensitive to a
+    LEVEL SHIFT between halves). Different
+    binarisation, different aggregation, different
+    nulls.
+
+  - vs the inequality / shape axes (Gini, Atkinson,
+    Theil, ..). PERMUTATION-INVARIANT functionals.
+    Mann-Whitney depends entirely on the temporal
+    partition into first/second halves -- a
+    uniformly random permutation has E[mwZ] = 0
+    regardless of value distribution.
+
+  - vs the spectral axes (84-104) and the Ljung-Box
+    axis (114). Those are FREQUENCY / multi-lag
+    autocorrelation summaries. Mann-Whitney asks a
+    single question: is the median of the second
+    half stochastically equal to the median of the
+    first half? Different aggregation surface
+    entirely.
+
+  EXACT IDENTITIES preserved (verified in tests):
+  mwU(x + c) === mwU(x) (shift-invariance of mid-
+  ranks); mwU(a * x) === mwU(x) for a > 0 (positive-
+  scale invariance of mid-ranks); mwU(reverse(x))
+  === n1*n2 - mwU(x) when n1 = n2 (reversal swaps
+  halves); 0 <= mwU <= n1*n2; rankSumA + rankSumB
+  === n*(n+1)/2; E[mwU] === n1*n2/2.
+
+  CLOSED-FORM ANCHORS: monotone increasing -> mwU = 0,
+  mwZ much less than 0; monotone decreasing -> mwU
+  = n1*n2, mwZ much greater than 0; perfect step-
+  shift 0,..,0,1,..,1 -> mwU = 0; balanced halves
+  with same distribution -> mwZ approx 0.
+
+  Default `--min-tenure-days = 14`, hard floor 8 (so
+  each half >= 4 elements per Conover 1999
+  "Practical Nonparametric Statistics" 3rd ed. sec.
+  5.1 minimum). Sort key default `mwZAbsDesc`
+  (strongest level-shift evidence first); other
+  keys: `u`, `uDesc`, `mwZ`, `mwZDesc`, `mwZAbs`,
+  `tokens`, `tenure`, `source`. Filter / window /
+  source / top knobs identical to the other
+  daily-token-* axes.
+
+  TEST SUITE adds 47 new tests covering: input
+  validation (non-finite, < 8 samples, zero
+  variance, non-positive maxLag), split sizes for
+  even / odd / explicit n, closed-form anchors
+  (monotone up / down, step-shift forwards /
+  backwards, balanced halves), invariants (shift,
+  scale, time-reversal Z-flip, U + complement = n1*n2,
+  rank-sum identity, U bounds, E[U] anchor), tie-
+  corrected variance reducing to no-tie variance for
+  distinct values, half-medians for even / odd
+  splits, mid-rank handling for ties, builder happy
+  path / option validation / drop counts / source
+  filter / top cap / sort keys / gap-filling /
+  determinism / window filtering, plus property
+  anchors (random permutations have mean U approx
+  n1*n2/2; sort `mwZAbsDesc` orders by |mwZ|
+  descending; U + complement_U = n1*n2).
+
+  Reference:
+    Mann, H. B. and Whitney, D. R., "On a test of
+      whether one of two random variables is
+      stochastically larger than the other", Annals
+      of Mathematical Statistics 18 (1947),
+      pp. 50-60.
+    Wilcoxon, F., "Individual comparisons by ranking
+      methods", Biometrics Bulletin 1 (1945),
+      pp. 80-83.
+    Lehmann, E. L., "Nonparametrics: Statistical
+      Methods Based on Ranks", Holden-Day, 1975,
+      sec. 1.3 / eq. 1.8.
+    Hollander, M., Wolfe, D. A. and Chicken, E.,
+      "Nonparametric Statistical Methods", 3rd ed.,
+      Wiley, 2014, sec. 4.1.
+    Conover, W. J., "Practical Nonparametric
+      Statistics", 3rd ed., Wiley, 1999, sec. 5.1.
+
+### Live-smoke
+
+Real `~/.config/pew/queue.jsonl` (5,926,526,111
+total tokens, 6 sources, sorted by `mwZAbsDesc`,
+remapping `vscode-copilot` -> `vscode-other` per
+established convention):
+
+```
+source         tenure  n1   n2   medA          medB         mwU     mwZ
+-------------  ------  ---  ---  ------------  -----------  ------  -------
+claude-code    72      36   36   0             20,516,446   341.0   -3.7189
+openclaw       16      8    8    213,788,093   60,413,590   59.0    +2.8356
+vscode-other   265     132  133  0             0            9802.0  +2.0852
+hermes         16      8    8    12,943,815.5  21,576,987   31.0    -0.1050
+```
+
+Interpretation:
+
+- `claude-code` mwZ = -3.7189 (HIGHLY SIGNIFICANT
+  GROWTH): the second half of its 72-day tenure
+  has stochastically higher token mass than the
+  first half. Per-half medians confirm the shift
+  (medA = 0 vs medB = 20.5M tokens) -- the source
+  was largely dormant in its first 36 days and
+  only ramped to consistent activity in the
+  second 36 days. Mann-Whitney rejects the iid
+  two-sample null at p approx 2e-4.
+- `openclaw` mwZ = +2.8356 (SIGNIFICANT DECLINE):
+  the first half of its 16-day tenure has
+  stochastically higher token mass. Per-half
+  medians 213.8M (A) vs 60.4M (B). U = 59 out of
+  n1*n2 = 64 -- 59 of 64 cross-half pair
+  comparisons go A > B.
+- `vscode-other` mwZ = +2.0852 (MARGINALLY
+  SIGNIFICANT DECLINE over a long 265-day
+  tenure). Both half-medians are 0 (the source
+  is sparse: 73 active days out of 265), but the
+  mid-rank tie correction still resolves a
+  modest decline in the second half. With n =
+  265 the test has high power to detect even
+  small distributional shifts.
+- `hermes` mwZ = -0.1050 (NULL): the 16-day
+  tenure has no detectable level shift between
+  halves. Per-half medians are within a factor
+  of two (12.9M vs 21.6M); U = 31 is essentially
+  E[U] = n1*n2/2 = 32.
+
+Two sources dropped below the 14-day min-tenure
+floor (recent debutants).
+
+CO-MOVEMENT WITH PRIOR AXES validates the
+implementation: `claude-code` and `openclaw` both
+showed strong axis-110 Mann-Kendall and axis-111
+Cox-Stuart signals in prior ticks (claude-code
+growth, openclaw decline); Mann-Whitney now adds
+the LEVEL-SHIFT diagnostic with the same direction
+of evidence but a fundamentally different
+statistic (rank-sum partition vs all-pairs sign vs
+paired half-shift sign). For the long sparse
+`vscode-other` tenure, Mann-Whitney surfaces a
+level shift that only a partition-based statistic
+can detect; the autocorrelation / portmanteau
+axes (107, 108, 114) and the global trend axis
+(110) all see the long flat zero-stretches and
+report weaker signals.
+
+
 ## 0.6.357 — 2026-05-03
 
 ### Added
