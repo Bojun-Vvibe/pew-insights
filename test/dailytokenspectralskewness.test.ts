@@ -629,3 +629,53 @@ test('orthogonality: crest-equal pair with different skew -- the WITNESS vs axis
   assert.ok(b.skewness < 0, `expected b.skewness < 0, got ${b.skewness}`);
   assert.ok(Math.abs(a.skewness - b.skewness) > 1e-6);
 });
+
+// ---------- refinement: numerical guards ----------
+
+test('refinement: spectralSkewness bandwidth-zero gate -- 3 equal bins at SAME index would be 0 spread', () => {
+  // We cannot construct a real "3 equal bins at same index"
+  // since the input is a vector indexed by position. The gate
+  // is reachable in practice only if (k - mu)^2 telescopes to
+  // zero across positive-power bins. The closest construction
+  // is three equal bins at adjacent positions; bandwidth must
+  // remain strictly positive then.
+  const r = spectralSkewness([1, 1, 1]);
+  assert.ok(r.bandwidth > 0);
+  assert.ok(Number.isFinite(r.bandwidth));
+  // Skewness on the perfectly symmetric (1,1,1) is exactly 0.
+  assert.ok(Math.abs(r.skewness) < 1e-12);
+});
+
+test('refinement: Wilkins 1944 envelope respected on a real-series PSD', () => {
+  // |skewness| <= sqrt(m-2) * (m-1) / sqrt(m); a generous bound
+  // that must hold on every well-formed input.
+  const y = [
+    10, 30, 5, 22, 18, 7, 14, 9, 25, 11, 8, 19, 6, 20, 13, 16,
+    12, 28, 4, 21, 17, 6, 15, 10, 24, 12, 9, 18, 7, 21, 14, 17,
+  ];
+  const r = dailyTokenSpectralSkewness(y);
+  const m = r.usableBins;
+  const envelope = (Math.sqrt(m - 2) * (m - 1)) / Math.sqrt(m);
+  assert.ok(
+    Math.abs(r.skewness) <= envelope + 1e-9,
+    `|skewness|=${Math.abs(r.skewness)} must be <= Wilkins envelope ${envelope} on m=${m}`,
+  );
+});
+
+test('refinement: centroidBin stays inside [1, K] (the mathematical range)', () => {
+  // mu is a power-weighted mean of bin indices in {1,..,K}
+  // restricted to bins with p > 0; therefore mu in [1, K].
+  const y = [
+    100, 50, 200, 75, 150, 60, 180, 90, 110, 40, 220, 70,
+    130, 95, 160, 55,
+  ];
+  const r = dailyTokenSpectralSkewness(y);
+  const K = r.nFreqBins;
+  assert.ok(r.centroidBin >= 1 - 1e-12);
+  assert.ok(r.centroidBin <= K + 1e-12);
+  // Bandwidth (sigma) on a non-degenerate PSD is also bounded
+  // above by (K - 1) / sqrt(2) (the standard discrete-uniform
+  // bound on a {1,..,K} support); use a generous K bound here.
+  assert.ok(r.bandwidth > 0);
+  assert.ok(r.bandwidth <= K);
+});

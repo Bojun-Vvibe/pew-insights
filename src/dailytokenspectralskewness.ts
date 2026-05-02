@@ -497,6 +497,13 @@ export function dailyTokenSpectralSkewness(values: number[]): {
   const power = periodogramOneSided(values);
   const k = power.length;
   const result = spectralSkewness(power);
+  // Numerical guard: with usableBins >= 3 and bandwidth > 0
+  // already enforced inside spectralSkewness, the standardised
+  // third moment is mathematically finite. The check below
+  // catches catastrophic cancellation on pathological inputs
+  // where double precision overflows the (k - mu)^3 weighting
+  // (e.g. bandwidth underflows to a denormal after sqrt while
+  // the third moment carries a finite cube).
   if (
     !Number.isFinite(result.skewness) ||
     !Number.isFinite(result.centroidBin) ||
