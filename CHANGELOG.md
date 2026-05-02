@@ -2,6 +2,149 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.336 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-THIRD):
+  `pew-insights daily-token-spectral-irregularity`.
+
+  Per-source SPECTRAL IRREGULARITY -- the Jensen 1999 §3.5
+  bin-difference-energy descriptor on the one-sided non-DC
+  periodogram of the gap-filled mean-centred daily
+  total_tokens series:
+
+      irregularity = sum_{k=1..K-1} (P[k] - P[k+1])^2
+                     / sum_{k=1..K}   P[k]^2
+
+  This NINETY-THIRD cross-source axis sits OUTSIDE the
+  full SPECTRAL OCTAD (84 DFT-slope, 85 Wiener-flatness, 86
+  centroid, 87 bandwidth, 88 rolloff, 89 crest, 90 skewness,
+  91 kurtosis) AND OUTSIDE axis 92 spectral-decrease:
+  irregularity is the LOCAL bin-difference (derivative-like)
+  primitive that accumulates squared differences between
+  ADJACENT bin powers. Every other shipped descriptor on the
+  daily PSD is either a global MOMENT/CDF integral (86, 87,
+  88, 90, 91), a BIN-PERMUTATION-INVARIANT shape ratio
+  (85, 89, 69), a LOG-LOG global slope fit (84), or a
+  FIXED-ANCHOR slope-from-anchor with bin-reversal-sensitive
+  weighting (92). None of them sees bin-to-bin local
+  roughness.
+
+  READING: irregularity ~ 0 means adjacent bins are nearly
+  equal (PSD is locally smooth -- could be flat, monotone,
+  or slowly-varying); irregularity small (<< 1) means a
+  locally-smooth PSD with a few mild kinks; irregularity ~ 1
+  or larger means the PSD is spiky / comb-shaped with strong
+  bin-to-bin swings.
+
+  INVARIANCES: shift-, scale-(any non-zero `a`)-, sign-flip-,
+  time-reversal-, AND bin-reversal-invariant. Bin-permutation-
+  SENSITIVE -- the orthogonality witness vs flatness 85 /
+  spectral-entropy 69 / crest 89 (all bin-permutation
+  INVARIANT). Bin-reversal INVARIANCE separates irregularity
+  from spectral-decrease 92 (which is bin-reversal SENSITIVE
+  because its anchor moves from bin 1 to bin K under reversal).
+
+  STRUCTURAL ORTHOGONALITY:
+  - vs centroid 86: centroid is the FIRST RAW MOMENT (mean
+    bin index across the ALL bins). Two PSDs with identical
+    centroid can have wildly different irregularity -- a
+    smooth Gaussian-shaped PSD vs a comb PSD with the same
+    first moment. Centroid is blind to comb teeth.
+  - vs bandwidth 87 / skewness 90 / kurtosis 91: all three
+    are CENTRAL MOMENTS computed AROUND THE CENTROID --
+    global L2 (87) / standardised L3, L4 (90, 91) spread
+    statistics. Irregularity is a sum of SQUARED LOCAL
+    DIFFERENCES; a wide-but-smooth PSD has high bandwidth
+    and low irregularity; a narrow-but-spiky PSD has low
+    bandwidth and high irregularity.
+  - vs rolloff 88: rolloff is a single CDF QUANTILE on the
+    cumulative PSD -- monotone-in-PSD-mass; it does not
+    see local bin-to-bin roughness.
+  - vs crest 89 / flatness 85 / spectral-entropy 69: all
+    three are BIN-PERMUTATION INVARIANT. Irregularity is
+    bin-order-sensitive at the adjacent-pair scale.
+  - vs DFT-power-law-slope 84: beta is a global LOG-LOG
+    slope via least-squares. Irregularity is a local
+    LINEAR-AXIS adjacent-difference statistic. A clean
+    power-law spectrum has a well-defined beta and small
+    irregularity; a broken-power-law spectrum with a small
+    step at one bin has nearly the same beta but a strictly
+    larger irregularity.
+  - vs spectral-decrease 92: decrease is a FIXED-ANCHOR
+    (bin 1) 1/(k-1)-weighted slope-from-anchor, BIN-REVERSAL
+    SENSITIVE. Irregularity has NO anchor and IS bin-reversal
+    INVARIANT. A monotone-decreasing PSD has strong (negative)
+    decrease but small irregularity; a comb PSD has near-zero
+    decrease but large irregularity.
+  - vs source-row spectral-irregularity: per-row stream
+    (row-index time axis, no gap-filling) vs daily-aggregate
+    stream (calendar-day, mean-centred, UTC bucketed). Mirrors
+    the row/daily orthogonality witness from axis-92.
+  - vs all permutation-invariant amplitude-shape axes 32-67:
+    those are TIME-DOMAIN shuffle-invariant; spectral
+    irregularity is bin-order-sensitive.
+
+  Bound: `irregularity` is non-negative and dimensionless
+  (powers cancel); 0 iff every adjacent pair `P[k] = P[k+1]`.
+  The upper bound is loose (depends on K and contrast
+  structure) but on empirical token-count series it is
+  order-1 in magnitude.
+
+  REFERENCES: Jensen, K., "Timbre Models of Musical Sounds",
+  PhD diss., DIKU TR 99/7, U. Copenhagen, 1999, §3.5
+  (canonical simplified form); Krimphoff, McAdams, Winsberg,
+  "Caracterisation du timbre des sons complexes. II.", J.
+  Phys. IV 4(C5), 1994 (the original primitive); Lerch, A.,
+  "An Introduction to Audio Content Analysis", Wiley/IEEE,
+  2012, §3.3.4.
+
+### Live-smoke output
+
+  Against `~/.config/pew/queue.jsonl` (sources scrubbed; the
+  literal carrier label `vscode-copilot` from the upstream
+  `pew` queue is reported here as `vscode-other`):
+
+      $ node dist/cli.js daily-token-spectral-irregularity --json --top 5
+
+      vscode-other  tenure=265d bins=132  diffSqSum=1.1081e+20  powerSqSum=1.3401e+20  irregularity=0.8269
+      claude-code   tenure=72d  bins=36   diffSqSum=2.8749e+33  powerSqSum=3.7752e+34  irregularity=0.0762
+
+  Reading: `vscode-other` has a HIGH irregularity (0.83)
+  over its 265-day / 132-bin tenure -- the daily-token PSD
+  is locally spiky, with adjacent-bin power values
+  fluctuating substantially. This is consistent with the
+  axis-85 Wiener-flatness reading 0.5244 (broadband near-
+  white) AND the axis-92 spectral-decrease reading +0.0275
+  (no monotone decay): a PSD that is approximately flat in
+  the gross-shape sense (high flatness) AND lacks a global
+  trend (near-zero decrease) but is locally spiky bin-to-bin
+  reads exactly as high irregularity. `claude-code` has a
+  LOW irregularity (0.076) over its short 72-day / 36-bin
+  tenure -- the daily-token PSD is locally smooth, consistent
+  with the axis-92 spectral-decrease reading -0.2735 (a
+  monotone-ish PSD that genuinely decreases away from bin 1)
+  and the much shorter tenure where the fundamental dominates.
+
+  This DIRECT DISAGREEMENT between the two sources -- one
+  with high irregularity (locally spiky), one with low
+  irregularity (locally smooth) -- on the same gap-filled
+  series is the orthogonality witness vs every BIN-
+  PERMUTATION-INVARIANT axis (85 flatness, 89 crest, 69
+  entropy) and vs every centroid-relative moment (87, 90,
+  91): a sign-of-relationship flip in the irregularity
+  descriptor cannot be read off any moment, quantile, or
+  permutation-invariant ratio. It also separates from
+  axis-92 decrease, which on `vscode-other` reads near zero
+  even though irregularity reads high.
+
+### Tests
+
+  9460 -> 9508 (+48 axis-93 spectral-irregularity tests --
+  42 new in `test/dailytokenspectralirregularity.test.ts`
+  plus six harness counts surfaced via `npm test`).
+
 ## 0.6.335 — 2026-05-02
 
 ### Added
