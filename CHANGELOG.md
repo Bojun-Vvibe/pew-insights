@@ -2,6 +2,189 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.345 — 2026-05-02
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-SECOND):
+  `pew-insights daily-token-spectral-contrast`.
+
+  Per-source SPECTRAL CONTRAST -- mean over `B` log-spaced
+  sub-bands of (log mean-of-top-quartile bin power minus log
+  mean-of-bottom-quartile bin power) on the one-sided non-DC
+  periodogram of the gap-filled mean-centred daily
+  total_tokens series. Default `B = 6` (Jiang et al., ICME
+  2002, "Music type classification by spectral contrast
+  feature", eqs. 4-5).
+
+  Construction. Let P[k] for k = 1..K = floor(n/2) be the
+  one-sided periodogram of the gap-filled mean-centred series
+  (same construction used by axes 86-101). Partition the bin
+  index range [1, K] into B contiguous LOG-spaced sub-bands
+  with edges e[b] = round(K^(b/B)) (with e[0] = 0, monotone-
+  clamped, e[B] = K). Within each band b with at least four
+  bins, sort the bin powers ascending, compute
+
+      vTop[b]    = mean of the top    ceil(|band|/4) bins
+      vBottom[b] = mean of the bottom ceil(|band|/4) bins
+      contrast[b] = log(vTop[b] + eps) - log(vBottom[b] + eps)
+
+  with eps = 1e-30. The headline scalar is
+
+      contrastMean = (1/Bvalid) * sum_{b valid} contrast[b]
+
+  the AVERAGE peak-vs-valley LOG-power gap across log-spaced
+  sub-bands. Reported alongside contrastMax / contrastMin /
+  nBandsValid / nBandsDropped / nBandsSaturated.
+
+  CLASS-SPECTRAL primitive, BIN-POSITION SENSITIVE -- the
+  FIRST primitive in the suite that splits the PSD into log-
+  spaced sub-bands and reduces each band to a single peak-vs-
+  valley contrast scalar. Structurally orthogonal to every
+  bin-permutation-invariant Renyi/Shannon spectral entropy
+  (axes 69, 99, 100, 101) and to every global single-statistic
+  spectral axis (centroid 86, bandwidth 87, rolloff 88,
+  crest 89, peak 96, second-peak 97).
+
+  ### Structural orthogonality
+
+  - vs all Renyi/Shannon spectral entropies (axes 69, 99,
+    100, 101): every Renyi/Shannon entropy on the PSD is
+    BIN-PERMUTATION INVARIANT (a symmetric function of the
+    pmf vector). Axis-102 partitions on the bin INDEX, so
+    permuting the same multiset of bin powers leaves Renyi
+    entropy unchanged but generally changes contrastMean.
+    The test suite includes a witness pair (`sorted` vs
+    `interleaved` PSDs with identical multisets) where
+    Renyi-3 h3Norm matches to 1e-12 ULP and contrastMean
+    differs noticeably.
+  - vs `daily-token-spectral-flatness-wiener` (axis 85, full-
+    band GM/AM) and `-flatness-tail` (axis 98, upper-half
+    GM/AM): both are GLOBAL or HALF-BAND ratios in linear
+    space. Axis-102 is LOCAL log-power gap inside each log-
+    spaced sub-band, then averaged. Two PSDs with the same
+    Wiener flatness can have very different contrastMean
+    depending on whether power is concentrated in one band
+    (high contrast in that band, near-zero elsewhere) vs
+    spread evenly across bands (medium contrast everywhere).
+  - vs `daily-token-spectral-crest-factor` (axis 89, max P
+    / mean P): axis-89 is a SINGLE GLOBAL extremum ratio.
+    Axis-102 averages B local quartile-mean ratios in LOG
+    space. A spectrum with one isolated huge bin (high crest)
+    but no inner-band structure has moderate contrastMean
+    (most bands locally flat); a spectrum with B medium peaks
+    (one per band) has the same crest factor but much higher
+    contrastMean.
+  - vs `daily-token-spectral-irregularity` (axis 93, |P[k] -
+    P[k+1]| / sum P): axis-93 is a NEAREST-NEIGHBOUR
+    adjacent-bin difference. Axis-102 is a QUARTILE-MEAN
+    difference inside log-spaced bands. Two spectra with the
+    same TV norm can have very different contrast (jittery
+    adjacent-bin noise gives high TV but low band-quartile
+    contrast; monotone within-band ramps give low TV but
+    high contrast).
+  - vs `daily-token-spectral-decrease/skewness/kurtosis`
+    (axes 92/90/91): centroid-based moments in LINEAR power.
+    Axis-102 is LOG-power, LOCAL, quartile-based (robust to
+    extreme bins inside a band; trimmed by quartile mean).
+  - vs `daily-token-spectral-bandwidth/spread-iqr` (axes
+    87/94): GLOBAL dispersion of the bin-index pmf. Axis-102
+    is within-band peak-vs-valley.
+  - vs `daily-token-spectral-rolloff/centroid/peak-frequency
+    /second-peak-frequency` (axes 88/86/96/97): single-bin-
+    index summaries. Axis-102 is a per-band continuous
+    log-power gap.
+  - vs `daily-token-dft-power-law-slope` (axis 84): a single
+    OLS slope on log P vs log k. A pure 1/f^alpha spectrum
+    has a well-defined slope but contrastMean ~ 0 (each band
+    is a smooth local power-law slice with low quartile
+    spread). A 1/f^alpha spectrum WITH band-local notches
+    has the same slope but contrastMean strictly positive --
+    axis-102 surfaces the notches that axis-84 averages away.
+  - vs all amplitude-shape axes 32-67 (Gini, Atkinson, Theil,
+    GE, Hill, Bowley, ...): time-domain amplitude
+    concentration. Axis-102 is frequency-domain log-spaced
+    sub-band local contrast. A shuffle of the daily series
+    leaves all time-domain shape statistics fixed but
+    destroys the spectrum.
+  - vs all per-row spectral axes (`source-row-token-spectral-
+    *`): those operate on the per-row TOKEN MASS distribution.
+    Axis-102 is on the per-source DAILY-AGGREGATED series.
+
+  ### Live smoke test against `~/.config/pew/queue.jsonl`
+
+  Command: `node dist/cli.js daily-token-spectral-contrast
+  --min-tokens 5000 --min-tenure-days 16 --bands 6`
+
+  Output (the source identifier `vscode-copilot` is remapped
+  to `vscode-other` per local naming policy; numeric values
+  copied verbatim from the live run):
+
+  ```
+  pew-insights daily-token-spectral-contrast
+  as of: 2026-05-02T14:22:41.068Z    sources: 6 (shown 2)    tokens: 3,444,271,515    bands: 6    min-tokens: 5,000    min-tenure-days: 16    sort: contrastMeanDesc
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 2 below min-tenure-days, 0 zero-variance, 0 zero-power, 2 no-valid-band, 0 non-finite-fit, 0 below top cap
+
+  per-source SPECTRAL CONTRAST (sorted by contrastMeanDesc; ties: source asc)
+  source        firstDay    lastDay     tenure  active  bins  totalPower               bV  bD  bSat  cMean   cMax    cMin    tokens
+  ------------  ----------  ----------  ------  ------  ----  -----------------------  --  --  ----  ------  ------  ------  -------------
+  vscode-other  2025-07-30  2026-04-20  265     73      132   96,767,474,488.181       4   2   0     2.5462  3.3485  1.7686  1,885,727
+  claude-code   2026-02-11  2026-04-23  72      35      36    857,165,821,737,595,600  3   3   0     1.4329  1.9733  0.7126  3,442,385,788
+  ```
+
+  Per-carrier reads:
+
+  - `vscode-other` (265-day tenure, K = 132 Fourier bins,
+    B = 6 log-spaced bands -> 4 valid + 2 dropped narrow):
+    contrastMean = 2.5462 nats per band, contrastMax = 3.3485
+    nats (loudest band has top-quartile mean roughly
+    exp(3.35) ~ 28x its bottom-quartile mean), contrastMin =
+    1.7686 nats (flattest valid band still has a top/bottom
+    ratio of ~5.9x). 0 saturated bands (every valid band has
+    a strictly positive bottom quartile -- no eps floor
+    saturation). The reading describes a spectrum with
+    SUBSTANTIAL within-band structure across the log-spaced
+    partition.
+  - `claude-code` (72-day tenure, K = 36 Fourier bins, B = 6
+    log-spaced bands -> 3 valid + 3 dropped narrow):
+    contrastMean = 1.4329 nats, contrastMax = 1.9733 nats
+    (top-quartile mean ~ 7.2x bottom-quartile mean in the
+    loudest band), contrastMin = 0.7126 nats (~ 2x in the
+    flattest valid band). The carrier sits at substantially
+    lower per-band contrast than `vscode-other` despite
+    having ~1800x more tokens -- on this axis `claude-code`
+    spectra are MORE LOCALLY UNIFORM within each log-spaced
+    sub-band. Diagnostic ratio: vscode-other contrastMean /
+    claude-code contrastMean = 2.5462 / 1.4329 = 1.78x.
+  - 2 sources dropped below `--min-tenure-days 16`; 2 more
+    surfaced as droppedNoValidBand (tenure between 16 and
+    11; K = floor(n/2) too small to give any band >= 4
+    bins after the log-spaced split with B = 6). Filter
+    accounting closes; no zero-variance, zero-power, or
+    non-finite-fit drops.
+
+### Verification
+
+- 9979 tests pass (delta +28 vs 0.6.344's 9951). Suite covers
+  `logSpacedBinEdges` monotonicity and total-partition
+  guarantees across (K, B) in {4, 5, 8, 10, 50, 100, 365} x
+  {2, 4, 6, 8}; the spectralContrast primitive's input
+  validation (bands < 2, K < bands, non-finite, negative,
+  zero total power), uniform-PSD anchor (contrastMean = 0
+  across K in {16, 32, 64, 100}), bin-position-sensitivity
+  witness vs Renyi-3 (identical multisets, identical h3Norm
+  to 1e-12 ULP, different contrastMean), monotonicity in
+  within-band peak amplitude, saturated-band counting, total-
+  power passthrough; the daily-token wrapper's series-level
+  guards (too-short, non-finite, zero-variance), pure-sine
+  contrast peak (contrastMax > 1), and pure-tone-vs-noise
+  behavioural anchor; the builder's bands < 2, min-tenure-
+  below-2*bands floor, bad sort key, empty queue, bad
+  hour_start, non-positive tokens, sine-source end-to-end
+  row, source filter, top cap, zero-variance, and run-to-run
+  determinism for fixed `generatedAt`.
+- TypeScript build passes (`npm run build`).
+
 ## 0.6.344 — 2026-05-02
 
 ### Added
