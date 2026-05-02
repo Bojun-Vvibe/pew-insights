@@ -2,6 +2,123 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.327 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-THIRD):
+  `pew-insights daily-token-lempel-ziv-complexity`.
+
+  Per-source Lempel-Ziv 1976 phrase count of the median-binarised
+  gap-filled daily `total_tokens` series. Symbolises the daily
+  series as a binary string by the median split, then runs the
+  canonical LZ76 sequential parsing into a minimal set of distinct
+  phrases. The phrase count `c(n)` is a measure of the algorithmic
+  / string-compression COMPLEXITY of the symbolised stream and is
+  the first axis in the daily-token family that uses a
+  dictionary-based string primitive rather than a derivative,
+  variance, spectral, or geometric one.
+
+  References:
+  - Lempel, A., Ziv, J., "On the complexity of finite sequences",
+    IEEE Trans. Inf. Theory IT-22(1):75-81, 1976.
+  - Kaspar, F., Schuster, H. G., "Easily calculable measure for the
+    complexity of spatiotemporal patterns", Phys. Rev. A
+    36(2):842-848, 1987.
+  - Aboy, M., Hornero, R., Abasolo, D., Alvarez, D.,
+    "Interpretation of the Lempel-Ziv complexity measure in the
+    context of biomedical signal analysis", IEEE Trans. Biomed.
+    Eng. 53(11):2282-2288, 2006.
+
+  Algorithm:
+
+      1. m = median(y)
+      2. s[i] = '1' if y[i] > m else '0'    (median-threshold
+         binarisation; ties go to '0')
+      3. c(n) = LZ76 phrase count of s
+      4. lzCount      = c(n)
+         lzRate       = c(n) / n
+         lzNormalized = c(n) / (n / log2(n))
+                        (Lempel-Ziv asymptotic upper bound for
+                         binary iid sequences -- white-noise
+                         reference value 1)
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`. Hard
+  floor `min-tenure-days >= 8` so `log2(n) >= 3` and the
+  normalisation `n / log2(n)` is meaningful.
+
+  Reading `lzNormalized`:
+
+  - `lzNormalized ~ 0`  = highly compressible / periodic
+                          symbolised series; very few distinct
+                          phrases ever emerge.
+  - `lzNormalized ~ 1`  = white-noise-like (asymptotic upper
+                          bound for binary iid input).
+  - `lzNormalized > 1`  = rare; can occur on short series before
+                          the asymptotic bound becomes tight.
+  - `lzNormalized < 1`  = predictable above-/below-median pattern;
+                          the binary stream is structured.
+
+  Structural orthogonality vs the prior 82 axes (recap):
+
+  - vs `daily-token-curvature-sign-change-rate` (axis 82) and
+    `daily-token-petrosian-fd` (axis 76): CSC and PFD are LOCAL
+    sign-change counts on derivatives. A perfectly periodic
+    alternation has HIGH PFD and HIGH CSC but LOW LZ -- the same
+    short phrase repeats forever, so the dictionary stays small.
+  - vs `daily-token-teager-kaiser-energy` (axis 81): TKE is a
+    QUADRATIC magnitude-aware operator; LZ is a binary-symbol
+    DICTIONARY count and discards every magnitude beyond the
+    median split.
+  - vs Hjorth axes 79 / 80: GLOBAL variance ratios vs a STRING-
+    COMBINATORIAL count.
+  - vs box-count / Sevcik / Katz / Higuchi FD axes 78 / 77 / 75 /
+    74: GEOMETRIC path-length / coverage scaling vs SYMBOLIC
+    dictionary cardinality.
+  - vs Hurst R/S 71 / DFA 72: multi-scale variance scaling on
+    cumulative deviations vs single-scale symbol count.
+  - vs spectral entropy 69: Fourier power-spectrum Shannon
+    entropy vs time-domain symbol complexity. LZ can rise even
+    when the spectrum is concentrated -- e.g. an aperiodic
+    narrowband modulation that the spectrum compresses but the
+    LZ dictionary does not.
+  - vs permutation-entropy 70 / sample-entropy 73: those use
+    FIXED-length ordinal / template windows; LZ uses
+    VARIABLE-length phrase parsing and captures long-range
+    structure that fixed-window entropies miss.
+  - vs autocorrelation axes 67 / 68: linear second-order
+    statistics vs non-linear symbol complexity.
+  - vs all permutation-invariant dispersion / shape axes 32-67:
+    they are SHUFFLE-INVARIANT; LZ is SHUFFLE-SENSITIVE because
+    reshuffling the days changes which substrings appear.
+
+  Invariances of `lzCount` after the median binarisation:
+  SHIFT-, SCALE- (k > 0), SIGN-FLIP- (the LZ phrase count of a
+  binary string equals that of its bitwise complement), and
+  MONOTONE-RESCALING-INVARIANT (any strictly increasing transform
+  preserves the median split). TIME-REVERSAL-SENSITIVE (a useful
+  asymmetry vs CSC / PFD which ARE time-reversal-invariant) and
+  SHUFFLE-SENSITIVE.
+
+  Live-smoke against the local `~/.config/pew/queue.jsonl`
+  (the two surviving sources after `min-tenure-days = 32` and
+  `min-tokens = 1000` filters; default sort
+  `lzNormalizedDesc`):
+
+  - `claude-code`     (3,442,385,788 tokens, tenure 72d):
+    `median=0  ones=35  lzCount=11  lzRate=0.1528  lzNorm=0.9426`
+  - `vscode-other`    (1,885,727   tokens, tenure 265d):
+    `median=0  ones=73  lzCount=32  lzRate=0.1208  lzNorm=0.9721`
+
+  Both sources sit just BELOW the binary-iid asymptote of 1.0,
+  consistent with daily-token streams that look almost-random on
+  the median-binarised symbol axis but carry a small amount of
+  predictable above-/below-median structure (the LZ dictionary
+  is roughly 94-97% of the white-noise upper bound). Note both
+  series have `median = 0` -- a majority of calendar days within
+  the tenure window saw zero tokens, so the binarisation reduces
+  to "active vs inactive day" and `ones = nActiveDays` exactly.
+
 ## 0.6.326 — 2026-05-02
 
 ### Added
