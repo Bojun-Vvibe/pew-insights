@@ -2,6 +2,147 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.331 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-SEVENTH):
+  `pew-insights daily-token-spectral-bandwidth`.
+
+  Per-source SPECTRAL BANDWIDTH (frequency-weighted standard
+  deviation / SECOND CENTRAL MOMENT, sqrt, of the power
+  spectrum about its centroid) of the gap-filled daily
+  `total_tokens` series, defined as
+
+  ```
+  centroidBin         = sum_k k * P[k] / sum_k P[k]
+  m2                  = sum_k (k - centroidBin)^2 * P[k] / sum_k P[k]
+  bandwidthBin        = sqrt(m2)                in [0, (K-1)/2]
+  bandwidthNormalised = bandwidthBin / K        in [0, 1/2)
+  ```
+
+  over the strictly-positive bins of the one-sided
+  periodogram `P[k]` for `k = 1..K = floor(n/2)` of the mean-
+  centred series. Pure-tone limit -> 0; discrete-uniform
+  (white) limit -> `sqrt((K^2 - 1)/12)/K -> 1/sqrt(12) ~
+  0.2887`; bipolar bin-1/bin-K split -> `1/2`. The textbook
+  two-pass numerically-stable second-central-moment
+  estimator is used instead of the single-pass `m2 - m1^2`
+  identity to avoid catastrophic cancellation for narrow-
+  peaked spectra.
+
+  References:
+  - Klapuri, A., "Wide-band pitch estimation for natural
+    sound sources with inharmonicities", AES 106th
+    Convention, Munich, 1999 (definition of spectral spread
+    as the second central moment of the spectrum).
+  - Peeters, G., "A large set of audio features for sound
+    description (similarity and classification) in the
+    CUIDADO project", IRCAM tech. report, 2004 -- §6.1
+    defines spectral spread as
+    `sqrt( sum_k (f[k] - centroid)^2 * P[k] / sum_k P[k] )`,
+    the canonical MIR definition adopted here in bin-index
+    units.
+  - Lerch, A., "An Introduction to Audio Content Analysis:
+    Applications in Signal Processing and Music
+    Informatics", Wiley/IEEE, 2012, §3.3.1.
+  - Klapuri, A., Davy, M. (eds.), "Signal Processing Methods
+    for Music Transcription", Springer, 2006, ch. 5.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`:
+
+  - `claude-code`: `centroidBin = 12.9822`,
+    `bandwidthBin = 11.7038`,
+    `bandwidthNormalised = 0.3251` over a 72-day gap-filled
+    tenure (K = 36 bins) -- moderately wide spread, slightly
+    above the discrete-uniform white-asymptote 0.2887,
+    consistent with a broadband multi-timescale workload
+    spectrum that is not concentrated in any narrow band.
+  - `vscode-other`: `centroidBin = 58.1358`,
+    `bandwidthBin = 38.8869`,
+    `bandwidthNormalised = 0.2946` over a 265-day gap-filled
+    tenure (K = 132 bins) -- right at the white-noise
+    asymptote `1/sqrt(12) ~ 0.2887`, consistent with a
+    spectrum that is broadband and close to flat across the
+    band (a noise-dominated process), matching the axis-85
+    Wiener-flatness reading of `0.5244` for the same source.
+
+  STRUCTURAL ORTHOGONALITY -- this is a SECOND-CENTRAL-
+  MOMENT (sqrt) statistic about the centroid on the Fourier
+  power spectrum, distinct from every shipped daily-token
+  axis 32..86. The precise orthogonality witness vs
+  `daily-token-spectral-centroid` (axis 86) is the FIRST-
+  MOMENT-ABOUT-ZERO vs SECOND-CENTRAL-MOMENT-ABOUT-CENTROID
+  distinction: a single tone at the midpoint bin and a
+  bipolar two-tone with mass split between bins 1 and K
+  share the SAME centroid `(K + 1)/2` but very different
+  bandwidths (~0 vs `(K - 1)/2`). Symmetrically, two
+  location-shifted Gaussians on the bin axis share the same
+  bandwidth at very different centroids. Vs flatness axis 85
+  and entropy axis 69, both of which are bin-permutation-
+  INVARIANT (depend only on the multiset of kept bin
+  values), bandwidth is bin-permutation-SENSITIVE (the
+  deviations are computed in the bin-index metric); two
+  periodograms with the same multiset of bin powers but
+  reshuffled bin assignments share identical flatness and
+  entropy but different bandwidths. Vs `daily-token-dft-
+  power-law-slope` (axis 84): two spectra can share the same
+  `beta` but very different bandwidths (a steep `1/k^2`
+  spectrum spread across 64 bins vs the same `beta`
+  concentrated in the lowest 4 bins both have `beta ~ 2` but
+  very different bandwidths); bandwidth is also well-defined
+  on spectra that are not power laws at all (line spectra,
+  impulse trains) where `beta` is meaningless. Vs Hjorth-
+  mobility axis 79: mobility is `sqrt(m_2 / m_0)` -- a NON-
+  CENTRAL second moment ratio (about zero) in angular-
+  frequency units. Bandwidth here is the CENTRAL second
+  moment about the CENTROID, in bin-index units, normalised
+  by K. A spectrum perfectly centred at bin K/2 can have
+  arbitrarily small bandwidth but very large mobility -- the
+  orthogonality witness is the CENTRAL-vs-NON-CENTRAL
+  distinction.
+
+  INVARIANCES of `bandwidthNormalised`:
+  - SHIFT `y -> y + c`: only the DC bin moves; kept bins
+    `k >= 1` unchanged. SHIFT-INVARIANT.
+  - SCALE `y -> a*y` for `a != 0`: every kept bin scales by
+    `a^2`; numerator and denominator both scale by `a^2`;
+    the ratio (and its sqrt) are unchanged. SCALE-INVARIANT
+    for any non-zero `a`.
+  - SIGN-FLIP `y -> -y`: scale by -1. SIGN-FLIP-INVARIANT.
+  - TIME-REVERSAL `y[i] -> y[n-1-i]`: `|DFT|^2` is reversal-
+    blind. TIME-REVERSAL-INVARIANT.
+  - SHUFFLE: NOT invariant -- shuffling whitens the spectrum
+    and drives the bandwidth toward the discrete-uniform
+    spread `sqrt((K^2 - 1)/12)`.
+  - BIN-PERMUTATION (frequency reshuffle): NOT invariant --
+    the key orthogonality witness vs flatness (85) and
+    entropy (69), which are bin-permutation-INVARIANT.
+
+  +50 tests covering the primitive guards, four closed-form
+  witnesses (uniform `[1,1,1,1,1]` -> `centroid=3,
+  bandwidth=sqrt(2)`; `[1,4]` -> `centroid=9/5,
+  bandwidth=0.4`; bipolar `[1,0,0,0,1]` -> maximum
+  `bandwidth=(K-1)/2=2`; `[0,1,0,1,0,1]` -> `centroid=4,
+  bandwidth=sqrt(8/3)`), the `[0, (K-1)/2]` bound across 50
+  random vectors, the bin-permutation sensitivity witness vs
+  reshuffled multiset, the pure-tone collapse to ~0
+  bandwidth, scale invariance, the daily-token wrapper
+  guards (n<8 / non-finite / zero variance throws), the
+  full SHIFT-/SCALE-/SIGN-FLIP-/TIME-REVERSAL-invariance
+  surface, the SHUFFLE-sensitivity witness, the white-noise
+  asymptote `bandwidthNorm in (0.2, 0.35)` consistent with
+  `1/sqrt(12)`, the pure low-/high-frequency sinusoid
+  collapse to `bandwidthNorm < 0.05`, the two-tone
+  (low+high) `> 5x` single-tone bandwidth contrast, the n=8
+  boundary period-2 alternation pinned at the Nyquist bin
+  with bandwidth ~0, the 1e9 / 1e-9 numerical-stability
+  witness, the full builder-knob and JSON-contract surface,
+  and the precise orthogonality-vs-centroid-axis-86 witness
+  via single-tone-at-midpoint vs bipolar-bin-1+bin-K-split
+  sharing centroid but bandwidth differing by a factor of 5
+  (9225 -> 9275 tests).
+
 ## 0.6.330 — 2026-05-02
 
 ### Added
