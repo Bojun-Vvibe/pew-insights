@@ -275,6 +275,9 @@ export function midranks(values: number[]): {
   nTies: number;
 } {
   const n = values.length;
+  if (n === 0) {
+    return { ranks: [], nTies: 0 };
+  }
   const idx = new Array<number>(n);
   for (let i = 0; i < n; i += 1) idx[i] = i;
   idx.sort((a, b) => values[a]! - values[b]!);

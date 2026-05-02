@@ -25,6 +25,12 @@ function dayIso(i: number): string {
 
 // ---------- midranks helper ----------
 
+test('midranks: empty input returns empty ranks and zero ties', () => {
+  const { ranks, nTies } = midranks([]);
+  assert.deepEqual(ranks, []);
+  assert.equal(nTies, 0);
+});
+
 test('midranks: distinct values give 1..n', () => {
   const { ranks, nTies } = midranks([10, 30, 20]);
   assert.deepEqual(ranks, [1, 3, 2]);

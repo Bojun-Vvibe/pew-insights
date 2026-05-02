@@ -20964,7 +20964,7 @@ export function renderDailyTokenSpearmanAutocorrelationLag1(
   lines.push('');
   lines.push(
     chalk.dim(
-      `(reference anchor: rs1ExpectedIid = ${r.sources[0]!.rs1ExpectedIid.toFixed(4)} -- asymptotic E[rs1] under independence. rs1 > 0 means today's rank predicts tomorrow's rank in the same direction (persistence); rs1 < 0 means rank reversal (anti-persistence). |rs1Z| > 2 is suggestive of non-iid lag-1 structure at the n we have.)`,
+      `(reference anchor: rs1ExpectedIid = ${r.sources[0]!.rs1ExpectedIid.toFixed(4)} -- asymptotic E[rs1] under independence. rs1 > 0 means today's rank predicts tomorrow's rank in the same direction (persistence); rs1 < 0 means rank reversal (anti-persistence). |rs1Z| > 2 is suggestive of non-iid lag-1 structure at the n we have. iid one-sigma envelope on rs1 itself is approximately 1/sqrt(n - 2) -- e.g. for the longest tenure shown (${formatNumber(Math.max(...r.sources.map((s) => s.nTenureDays)))} days) the envelope is approx ${(1 / Math.sqrt(Math.max(2.0001, Math.max(...r.sources.map((s) => s.nTenureDays)) - 2))).toFixed(4)}.)`,
     ),
   );
 
