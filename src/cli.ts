@@ -156,6 +156,7 @@ import {
   renderDailyTokenSpectralContrast,
   renderDailyTokenSpectralFlux,
   renderDailyTokenSpectralFlatnessFlux,
+  renderDailyTokenZeroCrossingRate,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -474,6 +475,7 @@ import { buildDailyTokenSpectralRenyi3Entropy } from './dailytokenspectralrenyi3
 import { buildDailyTokenSpectralContrast } from './dailytokenspectralcontrast.js';
 import { buildDailyTokenSpectralFlux } from './dailytokenspectralflux.js';
 import { buildDailyTokenSpectralFlatnessFlux } from './dailytokenspectralflatnessflux.js';
+import { buildDailyTokenZeroCrossingRate } from './dailytokenzerocrossingrate.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -35548,6 +35550,114 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralFlatnessFlux(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-zero-crossing-rate')
+  .description(
+    "Per-source ZERO-CROSSING RATE (count of adjacent-pair sign changes on the demeaned gap-filled daily total_tokens series, normalised by n-1) (ONE-HUNDRED-AND-FIFTH cross-source axis). Class-TIME-DOMAIN-SYMBOLIC primitive -- the FIRST daily-token axis that operates purely on the SIGN SEQUENCE of the demeaned signal. Structurally orthogonal to all permutation-invariant inequality / shape axes, to all spectral / PSD axes 84-104 (which discard time-domain sign), to Hjorth-mobility (continuous variance ratio), and to curvature-sign-change-rate axis-82 (sign of the SECOND difference, not of the LEVEL). Reference anchor zcrExpectedWhite = 0.5 (Kedem 1986). Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: zcrDesc (default) | zcr | meanRunLength | meanRunLengthDesc | tokens | tenure | source.',
+    'zcrDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'zcr',
+          'zcrDesc',
+          'meanRunLength',
+          'meanRunLengthDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenZeroCrossingRate(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'zcr'
+            | 'zcrDesc'
+            | 'meanRunLength'
+            | 'meanRunLengthDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenZeroCrossingRate(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -20244,6 +20244,7 @@ import type { DailyTokenSpectralRenyi3EntropyReport } from './dailytokenspectral
 import type { DailyTokenSpectralContrastReport } from './dailytokenspectralcontrast.js';
 import type { DailyTokenSpectralFluxReport } from './dailytokenspectralflux.js';
 import type { DailyTokenSpectralFlatnessFluxReport } from './dailytokenspectralflatnessflux.js';
+import type { DailyTokenZeroCrossingRateReport } from './dailytokenzerocrossingrate.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20716,6 +20717,81 @@ export function renderDailyTokenSpectralFlatnessFlux(
     s.fluxMean.toFixed(4),
     s.fluxMax.toFixed(4),
     s.fluxMin.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenZeroCrossingRate(
+  r: DailyTokenZeroCrossingRateReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-zero-crossing-rate'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedAllZeroDemeaned)} all-demeaned-zero, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ZERO-CROSSING RATE -- C / (n - 1) where C is the count of adjacent-pair sign changes on the demeaned gap-filled daily total_tokens series. ONE-HUNDRED-AND-FIFTH cross-source axis. Class-TIME-DOMAIN-SYMBOLIC primitive -- the FIRST daily-token axis that operates purely on the SIGN SEQUENCE of the demeaned signal. Structurally orthogonal to all permutation-invariant inequality / shape axes (depend only on the value multiset), to all spectral / PSD axes 84-104 (which discard time-domain sign via |.|^2), to Hjorth-mobility (continuous variance ratio), and to curvature-sign-change-rate axis-82 (sign of the SECOND difference, not of the LEVEL). Reference anchor zcrExpectedWhite = 0.5 (Kedem 1986) for zero-mean i.i.d. continuous noise.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source ZERO-CROSSING RATE (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'cross',
+    'zSamp',
+    'mean',
+    'stddev',
+    'zcr',
+    'runLen',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nPairs),
+    formatNumber(s.nCrossings),
+    formatNumber(s.nZeroSamples),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.zcr.toFixed(4),
+    s.meanRunLength.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
