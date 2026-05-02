@@ -20255,6 +20255,7 @@ import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsr
 import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferencesigntest.js';
 import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
+import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21670,6 +21671,91 @@ export function renderDailyTokenMannWhitneyHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: mwU approx n1*n2/2 = halves stochastically equal; mwU approx 0 = first half strictly smaller (growth); mwU approx n1*n2 = first half strictly larger (decline). |mwZ| > 1.96 = significant level-shift between halves at alpha = 0.05 (two-sided, tie-corrected Gaussian approximation). For perfect step-function shifts mwU saturates at 0 or n1*n2; for pure linear trends mwZ co-moves with axis-110 Mann-Kendall tau and axis-111 Cox-Stuart but with a different sample space (n1*n2 cross-half pairs vs n*(n-1)/2 all-pairs vs n/2 paired sign-tests).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBrownForsythHalves(
+  r: DailyTokenBrownForsythHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-brown-forsyth-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BROWN-FORSYTHE TWO-SAMPLE SCALE-SHIFT (EQUALITY-OF-VARIANCE) TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SIXTEENTH cross-source axis. Class-TWO-SAMPLE-SCALE-SHIFT-TEST (Brown & Forsythe 1974, Journal of the American Statistical Association 69(346):364-367, eq. 2; Levene 1960): per-half median-centred absolute deviations z_i = |x_i - median(group)|; bfT = (n-2) * SSB / SSW with k = 2 groups, F(1, n-2) null. bfTSigned = sign(zBarB - zBarA) * sqrt(bfT) approx t(n-2); bfZ = bfTSigned * sqrt(1 - 3/(4*df - 1)) (Wallace 1959 normal correction) approx N(0,1). bfZ much greater than +1.96 = second half strictly more dispersed (variance grew); bfZ much less than -1.96 = first half strictly more dispersed (variance shrank). Distinct from axis-115 Mann-Whitney halves (LOCATION shift, not SCALE), axes 110/111/113 (TREND statistics), 114 (multi-lag autocorrelation portmanteau). Sensitive to SCALE shift between halves, INSENSITIVE to within-half location.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BROWN-FORSYTHE F (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'madA',
+    'madB',
+    'bfT',
+    'bfZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.bfN1),
+    formatNumber(s.bfN2),
+    formatNumber(s.bfMedianA),
+    formatNumber(s.bfMedianB),
+    s.bfMadA.toFixed(1),
+    s.bfMadB.toFixed(1),
+    s.bfT.toFixed(4),
+    s.bfZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bfT approx 1 = halves equally dispersed; bfT much greater than 1 with bfZ > +1.96 = second half more dispersed; bfT much greater than 1 with bfZ < -1.96 = first half more dispersed. |bfZ| > 1.96 = significant scale-shift between halves at alpha = 0.05 (two-sided, Wallace-corrected normal approximation). Brown-Forsythe is the structural complement of axis-115 Mann-Whitney: axis-115 detects LOCATION shifts; axis-116 detects SCALE shifts; both are unpaired two-sample tests on the same first/second half partition.)`,
     ),
   );
 
