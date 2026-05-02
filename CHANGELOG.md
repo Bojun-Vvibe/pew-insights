@@ -2,6 +2,167 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.347 — 2026-05-02
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-FOURTH):
+  `pew-insights daily-token-spectral-flatness-flux`.
+
+  Per-source SPECTRAL FLATNESS FLUX -- mean ABSOLUTE
+  frame-to-frame change in WIENER spectral flatness over
+  length-`W` sliding windows (hop `H`) of the gap-filled
+  mean-centred daily total_tokens series. Defaults
+  `W = 7` days, `H = 1` day (Johnston, IEEE J. Sel. Areas
+  Comm. 6(2), 1988; Lerch, "An Introduction to Audio
+  Content Analysis", Wiley-IEEE, 2012, sec. 3.3.3 (flatness)
+  + 3.3.4 (flux)).
+
+  Construction. Slide a window of length `W` across the
+  tenure series with hop `H`, producing
+  `F = floor((n - W) / H) + 1` frames. For each frame
+  compute the mean-centred one-sided non-DC periodogram
+  `P_i[k]` for `k = 1..K = floor(W/2)`. Compute the Wiener
+  flatness scalar of the frame as
+  `phi_i = GM(P_i) / AM(P_i)` over the strictly
+  positive-power bins, in `[0, 1]`. Frames with zero total
+  power, or with fewer than 2 strictly positive bins, are
+  surfaced as `nFramesZero` and excluded from the pairing;
+  consecutive-frame gaps caused by such drops are bridged.
+  The headline scalar is
+
+      fluxMean = (1 / nPairs) * sum_{i->j} | phi_j - phi_i |
+
+  the AVERAGE absolute frame-to-frame Wiener-flatness change
+  over the tenure. Reported alongside `fluxMean`:
+  `fluxMax`, `fluxMin`, `flatnessMean` (mean of `phi_i` over
+  surviving frames), `nFrames`, `nFramesZero`, `nPairs`,
+  `nFreqBins`.
+
+  CLASS-DYNAMIC-SPECTRAL-SHAPE primitive, FRAME-ORDER
+  SENSITIVE -- a SCALAR-shape complement to axis-103
+  (which measures the FULL VECTOR L2 distance between
+  consecutive unit-energy PSDs). Axis-104 tracks the
+  temporal evolution of a single SHAPE STATISTIC of the
+  PSD (Wiener flatness, the geometric/arithmetic mean
+  ratio), not the full PSD vector.
+
+  ### Structural orthogonality
+
+  - vs all static-spectrum axes 84-102 (DFT-slope through
+    spectral-contrast): every prior axis collapses the
+    WHOLE-tenure PSD to a single scalar via the periodogram
+    operator, which is a sum over global cosine/sine
+    projections; the operator does not see frame order.
+    Two series whose frames are the same multiset of
+    length-`W` windows in different temporal order have
+    IDENTICAL whole-tenure PSDs and thus identical
+    axes 84-102 outputs. Axis-104 directly measures the
+    consecutive-frame transition `|phi_{i+1} - phi_i|`, so
+    a frame reorder generally changes `fluxMean`.
+
+  - vs axis-103 daily-token-spectral-flux (L2 distance
+    between consecutive unit-energy PSD VECTORS): axis-103
+    measures the L2 distance between full unit-energy PSD
+    vectors `Q_i` and `Q_j` in K-dimensional space.
+    Axis-104 measures only the change in a single SHAPE
+    SCALAR `phi_i`. The two are not comonotone:
+
+      (a) Two frames can have identical Wiener flatness
+          `phi` but be ORTHOGONAL as unit-energy PSD
+          vectors (e.g. pure tones at distinct bins both
+          have `phi -> 0`). Axis-104 yields per-pair flux
+          `~ 0`; axis-103 yields per-pair flux close to
+          `sqrt(2)`. Witness test in suite:
+          `axis-104 is NOT a function of axis-103`.
+
+      (b) Conversely, two frames can have small L2 PSD
+          distance but a sharp swing in `phi` (a small
+          perturbation that shifts a tiny fraction of
+          energy off a near-monochromatic spike onto a
+          previously-zero bin can move `phi` from near 0
+          (peaky) sharply, while `||Q_j - Q_i||_2` stays
+          small).
+
+    Axis-104 therefore tracks the temporal evolution of
+    PSD SHAPE PEAKINESS, not the temporal evolution of the
+    full PSD vector. Bound: `|phi_j - phi_i| <= 1` because
+    `phi in [0, 1]`; `fluxMean in [0, 1]` (a tighter bound
+    than axis-103's `[0, sqrt(2)]`).
+
+  - vs the time-domain Hjorth-mobility / Hjorth-complexity
+    axes (79, 80) and Teager-Kaiser (81): those are
+    POINTWISE successive-difference statistics on `x`
+    itself. Axis-104 is a SLIDING-WINDOW change in a SHAPE
+    SCALAR of sub-band PSDs.
+
+  - vs sample / permutation / approximate entropy on the
+    time series (axes 71, 73, 74): those are pattern-
+    recurrence entropies on amplitude embeddings.
+    Axis-104 lives in the spectral-shape domain on a
+    per-frame basis.
+
+  - vs the curvature-sign-change-rate (82) and LZ
+    complexity (83) axes: both are symbolic-sequence
+    statistics on the time-domain signal. Axis-104 lives
+    in the spectral domain on a per-frame basis.
+
+  - vs autocorrelation lag-1 / lag-7 axes: those are
+    normalised inner products of the WHOLE series with
+    itself; they do not decompose the series into
+    temporally adjacent SPECTRAL SHAPE descriptors.
+
+  ### Bounds and sanity anchors
+
+  - `fluxMean` is in `[0, 1]`. Each `phi_i in [0, 1]`, so
+    `|phi_j - phi_i| <= 1` per pair. `fluxMean = 0` iff
+    every consecutive surviving frame has identical
+    Wiener flatness; `fluxMax -> 1` is approached when
+    consecutive frames swing between an exact pure tone
+    (`phi -> 0`) and an exactly flat PSD (`phi = 1`).
+  - All-identical frames → fluxMean = 0, fluxMax = 0.
+  - Zero-power frames are surfaced as `nFramesZero` and
+    excluded from the pairing; the surrounding pair is
+    bridged.
+
+  ### Live-smoke output (real `~/.config/pew/queue.jsonl`,
+  default `--window 7 --hop 1`, `min-tenure-days = 16`)
+
+  - `openclaw` (16-day tenure, 10 frames, 9 pairs):
+    `flatnessMean = 0.7399`, `fluxMean = 0.1896`,
+    `fluxMax = 0.4027`, `fluxMin = 0.0391`.
+  - `claude-code` (72-day tenure, 66 frames, 6 zero-power,
+    59 pairs): `flatnessMean = 0.8197`,
+    `fluxMean = 0.0739`, `fluxMax = 0.4757`,
+    `fluxMin = 0`.
+  - `hermes` (16-day tenure, 10 frames, 9 pairs):
+    `flatnessMean = 0.6424`, `fluxMean = 0.1799`,
+    `fluxMax = 0.4845`, `fluxMin = 0.0021`.
+
+  All within the bound `[0, 1]`. The shorter-tenure
+  carriers (`openclaw`, `hermes`) show the highest mean
+  shape drift (their PSD peakiness is rotating roughly
+  every other frame), while the long-tenure carrier
+  (`claude-code`) settles to a lower mean drift but with
+  comparable peak swings.
+
+  CLI:
+
+      pew-insights daily-token-spectral-flatness-flux \
+        [--window 7] [--hop 1] [--min-tokens 1000] \
+        [--min-tenure-days N] [--source NAME] \
+        [--top N] [--sort fluxMeanDesc|fluxMean|fluxMax|fluxMaxDesc|flatnessMean|flatnessMeanDesc|tokens|tenure|source] \
+        [--since ISO] [--until ISO] [--json]
+
+### Internal
+
+- `dailytokenspectralflux.ts`: tighten the consecutive-
+  surviving-frame loop's null check to also tolerate
+  `undefined` (raised by `noUncheckedIndexedAccess`); pure
+  type narrowing, no runtime behavioural change. Required
+  for clean `tsc` build under the strict index access
+  flag.
+
 ## 0.6.346 — 2026-05-02
 
 ### Added
