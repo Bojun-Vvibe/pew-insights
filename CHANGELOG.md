@@ -2,6 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.359 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-SIXTEENTH):
+  `pew-insights daily-token-brown-forsyth-halves`.
+
+  Per-source BROWN-FORSYTHE TWO-SAMPLE SCALE-SHIFT
+  (EQUALITY-OF-VARIANCE) TEST comparing the first
+  half (n1 = floor(n/2) days) vs the second half
+  (n2 = n - n1 days) of the gap-filled daily total
+  tokens series. Let x[0..n-1] be the gap-filled
+  daily token series, A = x[0..n1-1], B = x[n1..n-1],
+  medA = median(A), medB = median(B). Form the per-
+  half median-centred absolute deviations
+
+      z_i = |x_i - medA|   for i in [0, n1)
+      z_i = |x_i - medB|   for i in [n1, n)
+
+  and the BROWN-FORSYTHE F-STATISTIC (Brown &
+  Forsythe 1974, Journal of the American Statistical
+  Association 69(346):364-367, eq. 2; Levene 1960
+  with median substituted for the mean per BF eq. 2)
+
+      bfT = (n - 2) * SSB / SSW
+
+  with k = 2 groups, SSB = n1 (zBarA - zBar)^2 +
+  n2 (zBarB - zBar)^2, SSW = sum_{A} (z_i - zBarA)^2
+  + sum_{B} (z_i - zBarB)^2. Under H0 (equal
+  variances of A and B), bfT is approximately
+  F(1, n - 2) distributed. We additionally report a
+  signed-t equivalent
+
+      bfTSigned = sign(zBarB - zBarA) * sqrt(bfT)
+
+  approximately t(n - 2), and a Wallace 1959
+  normal-corrected z-equivalent
+
+      bfZ = bfTSigned * sqrt(1 - 3 / (4 (n - 2) - 1))
+
+  approximately N(0, 1) (Wallace 1959, Annals of
+  Mathematical Statistics 30(4):1121-1130).
+
+  bfZ much greater than +1.96 = second half strictly
+  more dispersed (DISPERSION GREW over the tenure);
+  bfZ much less than -1.96 = first half strictly
+  more dispersed (DISPERSION SHRANK over the tenure);
+  bfZ approx 0 = no detectable scale shift.
+
+  STRUCTURAL ORTHOGONALITY -- this is the SCALE-SHIFT
+  complement of axis-115 (Mann-Whitney halves, LEVEL
+  SHIFT) on the same first/second half partition.
+  axis-115 detects shifts in MEDIAN; axis-116 detects
+  shifts in SPREAD. A series with constant per-half
+  median but doubled per-half spread in the second
+  half yields mwZ approx 0 and bfZ much greater than
+  +1.96; a series with shifted per-half median but
+  identical per-half spread yields mwZ much less
+  than -1.96 and bfZ approx 0. Distinct from axis-114
+  Ljung-Box (multi-lag squared autocorrelation
+  portmanteau, Chi-Square null) and axes 110/111/113
+  (Mann-Kendall tau / Cox-Stuart paired half-shift /
+  Mood single-lag diff-sign -- all TREND statistics
+  on LOCATION). Median-centring (the BF variant of
+  Levene's test) is the correct choice for the heavy-
+  tailed gap-filled token series; Brown & Forsythe
+  1974 showed the median variant has correct Type-I
+  error under heavy-tailed and skewed distributions.
+
+  Reference: Brown, M. B. and Forsythe, A. B.,
+  "Robust Tests for the Equality of Variances",
+  Journal of the American Statistical Association
+  69(346) (1974), pp. 364-367, eq. 2; Levene, H.,
+  "Robust tests for equality of variances", in
+  "Contributions to Probability and Statistics:
+  Essays in Honor of Harold Hotelling", Stanford
+  University Press, 1960, pp. 278-292; Wallace,
+  D. L., "Bounds on Normal Approximations to
+  Student's and the Chi-Square Distributions",
+  Annals of Mathematical Statistics 30(4) (1959),
+  pp. 1121-1130.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (per-source; the upstream vscode source name is
+  remapped to `vscode-other` per the established
+  CHANGELOG convention):
+
+      $ pew-insights daily-token-brown-forsyth-halves
+      sources: 6 (shown 4)    tokens: 5,928,723,099
+      sort: bfZAbsDesc
+
+      source        firstDay    lastDay     tenure  n1   n2   madA        madB        bfT     bfZ
+      claude-code   2026-02-11  2026-04-23  72      36   36   3440847.1   89505728.4  6.3964  +2.5155
+      openclaw      2026-04-17  2026-05-02  16      8    8    74365929.3  17657795.5  6.5087  -2.4807
+      hermes        2026-04-17  2026-05-02  16      8    8    7785851.9   6181838.9   0.1668  -0.3971
+      vscode-other  2025-07-30  2026-04-20  265     132  133  7252.4      6980.6      0.0067  -0.0814
+
+  Interpretation:
+
+  - `claude-code` bfZ = +2.5155 (|bfZ| > 1.96, p < 0.05
+    two-sided): the second half of the tenure is
+    SIGNIFICANTLY MORE DISPERSED than the first half.
+    madB / madA = 89.5M / 3.4M = ~26x increase in
+    median-centred absolute deviation. Consistent with
+    a transition from sparse early-tenure use to
+    bursty later use.
+  - `openclaw` bfZ = -2.4807 (|bfZ| > 1.96, p < 0.05
+    two-sided): the FIRST half of the (short, n=16)
+    tenure is SIGNIFICANTLY MORE DISPERSED than the
+    second half. madA / madB = 74M / 18M = ~4x
+    decrease. Consistent with stabilisation after an
+    initial burst-pattern.
+  - `hermes` bfZ = -0.3971: no detectable scale shift
+    (|bfZ| < 1.96, p > 0.05). madA approx madB.
+  - `vscode-other` bfZ = -0.0814: no detectable scale
+    shift over the long 265-day tenure. madA / madB
+    = 7252 / 6981 approx 1.04, the closest case to
+    the F(1, df) null mean of 1.
+
+  This axis is structurally orthogonal to axis-115
+  Mann-Whitney halves and is reported alongside it
+  in the dispatcher's compositional surface; the two
+  together provide a complete first/second half two-
+  sample location-and-scale characterisation per
+  source.
+
 ## 0.6.358 — 2026-05-03
 
 ### Added
