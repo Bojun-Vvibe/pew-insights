@@ -398,3 +398,74 @@ test('buildDailyTokenTurningPointRate: deterministic across runs (same input)', 
   });
   assert.deepEqual(a, b);
 });
+
+// ---------- axis-106 hardening: extra edge cases ----------
+
+test('dailyTokenTurningPointRate: n=3 minimum length works', () => {
+  // Smallest valid input. Single interior triple.
+  const peak = dailyTokenTurningPointRate([1, 5, 1]);
+  assert.equal(peak.nInteriorTriples, 1);
+  assert.equal(peak.nTurningPoints, 1);
+  assert.equal(peak.tpr, 1);
+
+  const trough = dailyTokenTurningPointRate([5, 1, 5]);
+  assert.equal(trough.nTurningPoints, 1);
+
+  const mono = dailyTokenTurningPointRate([1, 2, 3]);
+  assert.equal(mono.nTurningPoints, 0);
+  assert.equal(mono.tpr, 0);
+});
+
+test('dailyTokenTurningPointRate: single interior plateau triple', () => {
+  // 1, 1, 2 -> the only interior triple has x[i-1] == x[i],
+  // so it is a plateau, not an extremum.
+  const r = dailyTokenTurningPointRate([1, 1, 2]);
+  assert.equal(r.nInteriorTriples, 1);
+  assert.equal(r.nTurningPoints, 0);
+  assert.equal(r.nPlateauTriples, 1);
+  assert.equal(r.tpr, 0);
+});
+
+test('dailyTokenTurningPointRate: time-reversal preserves T (extrema are symmetric)', () => {
+  // T is invariant under time-reversal because peaks and
+  // troughs swap roles but both are still counted.
+  const x = [1, 4, 2, 9, 5, 7, 3, 8, 6, 10];
+  const a = dailyTokenTurningPointRate(x);
+  const b = dailyTokenTurningPointRate([...x].reverse());
+  assert.equal(a.nTurningPoints, b.nTurningPoints);
+  assert.equal(a.tpr, b.tpr);
+});
+
+test('dailyTokenTurningPointRate: negation preserves T (peaks <-> troughs)', () => {
+  // Negating swaps peaks and troughs but T counts both,
+  // so T is invariant.
+  const x = [1, 4, 2, 9, 5, 7, 3, 8];
+  const a = dailyTokenTurningPointRate(x);
+  const b = dailyTokenTurningPointRate(x.map((v) => -v));
+  assert.equal(a.nTurningPoints, b.nTurningPoints);
+  assert.equal(a.tpr, b.tpr);
+});
+
+test('buildDailyTokenTurningPointRate: tprZAbsDesc surfaces most-non-iid first', () => {
+  const queue: QueueLine[] = [];
+  // Source "alt" -> tprZ very positive; "mono" -> very negative.
+  // Source "mid" -> close to zero (just one peak/trough).
+  for (let i = 0; i < 16; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 1000 : 5000));
+    queue.push(ql(dayIso(i), 'mono', 1000 + i * 100));
+  }
+  const r = buildDailyTokenTurningPointRate(queue, {
+    minTokens: 0,
+    minTenureDays: 14,
+    sort: 'tprZAbsDesc',
+    generatedAt: '2026-05-03T00:00:00.000Z',
+  });
+  assert.equal(r.sources.length, 2);
+  // Both alt and mono are far from iid; mono's |z| might be
+  // larger because alt saturates at T = n-2 with bounded
+  // upper tail. Either way, the two highly non-iid sources
+  // come first; just assert ordering is by |tprZ| descending.
+  assert.ok(
+    Math.abs(r.sources[0]!.tprZ) >= Math.abs(r.sources[1]!.tprZ),
+  );
+});

@@ -376,6 +376,12 @@ export function dailyTokenTurningPointRate(values: number[]): {
     );
   }
   // Kendall 1973: E[T] = 2(n-2)/3, Var[T] = (16n - 29)/90
+  // Closed-form anchors are exact for n >= 3; Var[T] > 0
+  // for all such n (since 16*3 - 29 = 19 > 0), so the
+  // sqrt below is always well-defined and the conditional
+  // is a defence-in-depth no-op. Numerical magnitudes are
+  // safely small (n <= a few thousand) so float64 is more
+  // than enough for both sums and the ratio.
   const expT = (2 * (n - 2)) / 3;
   const varT = (16 * n - 29) / 90;
   const tprZ = varT > 0 ? (nTurningPoints - expT) / Math.sqrt(varT) : 0;
