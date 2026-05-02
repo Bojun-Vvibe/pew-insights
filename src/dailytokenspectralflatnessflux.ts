@@ -1,10 +1,10 @@
 /**
- * daily-token-spectral-flux: per-source SPECTRAL FLUX
- * (mean L2 norm of frame-to-frame PSD differences over a
- * sliding window of the gap-filled mean-centred daily total
- * tokens series).
+ * daily-token-spectral-flatness-flux: per-source SPECTRAL
+ * FLATNESS FLUX (mean absolute frame-to-frame change in
+ * Wiener flatness over a sliding window of the gap-filled
+ * mean-centred daily total tokens series).
  *
- * ONE-HUNDRED-AND-THIRD cross-source axis.
+ * ONE-HUNDRED-AND-FOURTH cross-source axis.
  *
  * Definition. Let x[0..n-1] be the gap-filled daily token
  * series for one source over its tenure. Slide a window of
@@ -13,96 +13,105 @@
  *     F = floor((n - windowSize) / hop) + 1.
  * For each frame f[i] of length W = windowSize, mean-centre
  * the frame in place and compute its one-sided non-DC
- * periodogram P_i[k] for k = 1..K = floor(W / 2). L2-NORMALISE
- * each frame's PSD to unit energy:
- *     Q_i[k] = P_i[k] / ||P_i||_2
- * (frames whose total power is zero -- a constant frame --
- * are surfaced as `nFramesZero` and excluded from the flux
- * average; the surrounding frame-pair gaps are bridged).
- * Spectral flux between consecutive surviving frames i and j
- * (the next surviving frame after i) is
- *     flux[i->j] = sqrt( sum_{k=1..K} (Q_j[k] - Q_i[k])^2 )
- *               = ||Q_j - Q_i||_2
+ * periodogram P_i[k] for k = 1..K = floor(W / 2). Compute
+ * the WIENER SPECTRAL FLATNESS scalar of the frame
+ *     phi_i = GM(P_i) / AM(P_i)   in   [0, 1]
+ * (geometric over arithmetic mean of strictly positive bins;
+ * frames with fewer than 2 positive-power bins or with zero
+ * total power are surfaced as `nFramesZero` and excluded from
+ * the pairing). Define the per-pair flatness flux as the
+ * ABSOLUTE difference between consecutive surviving frames:
+ *     flux[i->j] = | phi_j - phi_i |
  * The headline statistic is
- *     fluxMean = (1/Npairs) * sum_{i->j} flux[i->j]
- * the AVERAGE frame-to-frame spectral L2 distance of the
- * unit-energy PSDs over the tenure. Reported alongside
- * fluxMean: fluxMax, fluxMin, nFrames, nFramesZero, nPairs.
+ *     fluxMean = (1 / nPairs) * sum_{i->j} | phi_j - phi_i |
+ * the AVERAGE absolute frame-to-frame Wiener-flatness change
+ * over the tenure. Reported alongside fluxMean: fluxMax,
+ * fluxMin, flatnessMean (mean of phi_i over surviving
+ * frames), nFrames, nFramesZero, nPairs.
  *
  * STRUCTURAL ORTHOGONALITY -- WHY THIS IS A FUNDAMENTALLY NEW
  * PRIMITIVE NOT REDUCIBLE TO ANY OTHER DAILY-TOKEN AXIS:
  *
- *   - vs ALL static-spectrum axes 84-102 (DFT-slope, Wiener-
- *     flatness, centroid, bandwidth, rolloff, crest, skew,
- *     decrease, irregularity, spread-iqr, roughness, peak,
- *     second-peak, tail-flatness, Renyi-2/half/3, contrast):
- *     every prior axis collapses the WHOLE-tenure PSD to a
- *     single scalar and is therefore TIME-PERMUTATION
- *     INVARIANT on the frame sequence. Specifically, two
- *     series whose frames are the same MULTISET of windows
- *     (just re-ordered in time) have IDENTICAL whole-tenure
- *     PSDs (the periodogram operator does not see frame
- *     order; it sees the global cosine/sine projections), so
- *     all axes 84-102 produce identical scalars on a frame
- *     reshuffle. Axis-103 is FRAME-ORDER SENSITIVE: shuffling
- *     the frame multiset generally changes the consecutive
- *     differences ||Q_{i+1} - Q_i||_2 and therefore changes
- *     fluxMean.
+ *   - vs all static-spectrum axes 84-102: every prior axis
+ *     collapses the WHOLE-tenure PSD to a single scalar via
+ *     the periodogram operator and is therefore TIME-
+ *     PERMUTATION INVARIANT on the frame multiset. Two
+ *     series whose frames are the same multiset of windows
+ *     in different temporal order have IDENTICAL whole-tenure
+ *     PSDs and thus identical axes 84-102 outputs. Axis-104
+ *     directly measures consecutive-frame |phi_{i+1}-phi_i|,
+ *     so a frame reorder generally changes fluxMean.
+ *
+ *   - vs axis-103 (daily-token-spectral-flux, L2 distance
+ *     between consecutive UNIT-ENERGY PSD VECTORS): axis-103
+ *     measures the L2 distance between the full unit-energy
+ *     PSD vectors Q_i and Q_j in K-dimensional space.
+ *     Axis-104 measures only the change in a single SHAPE
+ *     SCALAR phi_i (the geometric/arithmetic mean ratio).
+ *     The two axes are not comonotone:
+ *
+ *       (a) Two frames can have identical Wiener flatness
+ *           phi but be ORTHOGONAL as unit-energy PSD
+ *           vectors. Example with K=4 bins: Q_i = (a,b,a,b)
+ *           and Q_j = (b,a,b,a) for any positive a != b
+ *           normalised to unit L2 energy. Both have phi =
+ *           (ab)^{1/2} / ((a^2+b^2)/2)^{1/2} (same arithmetic
+ *           and geometric means over the four bins because
+ *           the multiset {a,b,a,b} = {b,a,b,a}). So axis-104
+ *           yields per-pair flux = 0 while axis-103 yields a
+ *           strictly positive per-pair flux equal to
+ *           ||Q_j - Q_i||_2 = 2|a-b|.
+ *
+ *       (b) Conversely, two frames can have small L2 PSD
+ *           distance but a sharp swing in phi. A small
+ *           perturbation that shifts a tiny fraction of
+ *           energy off a near-monochromatic spike onto a
+ *           previously-zero bin can move phi from near 0
+ *           (peaky) sharply, while ||Q_j - Q_i||_2 stays
+ *           small.
+ *
+ *     Axis-104 therefore tracks the temporal evolution of
+ *     PSD SHAPE PEAKINESS, not the temporal evolution of the
+ *     full PSD vector. Bound: |phi_j - phi_i| <= 1 because
+ *     phi in [0,1]; fluxMean in [0, 1]. (Tighter bound than
+ *     axis-103's [0, sqrt(2)].)
  *
  *   - vs the time-domain Hjorth-mobility / Hjorth-complexity
  *     axes (79, 80) and Teager-Kaiser (81): those are
- *     POINTWISE successive-difference statistics on x itself
- *     (first-difference variance, second-difference variance,
- *     pointwise instantaneous energy). Axis-103 is a
- *     SLIDING-WINDOW spectral L2 distance between SUB-band
- *     PSDs across ENTIRE windows, not single samples. Two
- *     series with identical Hjorth mobility / complexity can
- *     have arbitrarily different fluxMean depending on
- *     whether their window-local frequency content is
- *     piecewise constant (low flux) or rapidly drifting
- *     (high flux).
+ *     POINTWISE successive-difference statistics on x itself.
+ *     Axis-104 is a SLIDING-WINDOW change in a SHAPE SCALAR
+ *     of sub-band PSDs.
  *
- *   - vs sample/permutation/approximate entropy on the time
- *     series (axes 71, 73, 74): those are pattern-recurrence
- *     entropies on amplitude embeddings. Axis-103 is a
- *     spectral-domain L2 frame distance.
+ *   - vs the curvature-sign-change-rate (82) and LZ
+ *     complexity (83) axes: both are symbolic-sequence
+ *     statistics on the time-domain signal. Axis-104 lives
+ *     in the spectral domain on a per-frame basis.
  *
- *   - vs the curvature-sign-change-rate axis (82) and the LZ
- *     complexity axis (83): both are symbolic-sequence
- *     statistics on the time-domain signal. Axis-103 lives
- *     in the SPECTRAL domain on a per-frame basis.
- *
- *   - vs the autocorrelation lag-1 / lag-7 axes: those are
+ *   - vs autocorrelation lag-1 / lag-7 axes: those are
  *     normalised inner products of the WHOLE series with
- *     itself at a single lag; they do not decompose the
- *     series into temporally adjacent SPECTRAL fingerprints.
+ *     itself; they do not decompose the series into
+ *     temporally adjacent SPECTRAL SHAPE descriptors.
  *
  * Headline question:
- * **"For each source, how rapidly does the local frequency
- *   content of its daily-token activity drift, frame to
- *   frame, over its tenure?"**
+ * **"For each source, how rapidly does the local spectral
+ *   PEAKINESS (Wiener flatness) of its daily-token activity
+ *   change, frame to frame, over its tenure?"**
  *
  * Caveats:
  *
  *   - fluxMean depends on `windowSize` and `hop`. Defaults are
- *     `windowSize = 7` (one calendar week) and `hop = 1` (slide
- *     by one day). With `hop = windowSize` the windows are
- *     non-overlapping; with `hop < windowSize` they overlap.
- *   - fluxMean is in [0, sqrt(2)]: each Q_i is a unit L2 vector,
- *     so ||Q_j - Q_i||_2 <= ||Q_j||_2 + ||Q_i||_2 = 2 by the
- *     triangle inequality, and the maximum achievable on the
- *     unit sphere of K dimensions is sqrt(2) (when Q_j and
- *     Q_i are orthogonal unit vectors). Two identical PSDs
- *     give flux = 0. The bound is TIGHT: it is achieved iff
- *     consecutive unit-energy PSDs are exactly orthogonal,
- *     which on a non-DC periodogram of length K >= 2 is
- *     attainable (concentrate all of frame i's energy on bin
- *     k_a, all of frame j's energy on bin k_b != k_a).
- *   - Frames whose mean-centred window has zero variance
- *     (constant window) yield zero PSD power; those frames
- *     are counted in `nFramesZero` and dropped from the
- *     pairing. If fewer than two surviving frames remain,
- *     the source is dropped as `droppedNoFramePair`.
+ *     `windowSize = 7` (one calendar week) and `hop = 1`.
+ *   - fluxMean is in [0, 1]. fluxMean = 0 iff every
+ *     consecutive surviving frame has identical Wiener
+ *     flatness (e.g., all frames are pure tones at distinct
+ *     bins -- each has phi = 0). fluxMax = 1 is approached
+ *     when consecutive frames swing between an exact pure
+ *     tone (phi -> 0) and an exactly flat PSD (phi = 1).
+ *   - Frames whose mean-centred window has zero variance, or
+ *     fewer than 2 strictly positive periodogram bins, are
+ *     counted in `nFramesZero` and dropped from the pairing.
+ *     If fewer than two surviving frames remain, the source
+ *     is dropped as `droppedNoFramePair`.
  *
  * Determinism: pure builder. Wall clock only via
  * `opts.generatedAt`.
@@ -110,35 +119,41 @@
  * CLI usage examples:
  *
  *   # Default (window=7, hop=1):
- *   pew-insights daily-token-spectral-flux
+ *   pew-insights daily-token-spectral-flatness-flux
  *
  *   # Non-overlapping weekly windows:
- *   pew-insights daily-token-spectral-flux --window 7 --hop 7
+ *   pew-insights daily-token-spectral-flatness-flux \
+ *     --window 7 --hop 7
  *
  *   # JSON for downstream tooling, restricted to one source:
- *   pew-insights daily-token-spectral-flux \
+ *   pew-insights daily-token-spectral-flatness-flux \
  *     --source vscode-other --json
  *
  * References:
- *   Tzanetakis, G. & Cook, P., "Musical genre classification
- *     of audio signals", IEEE Trans. Speech Audio Proc.
- *     10(5), 2002, eq. 3 (spectral flux).
+ *   Johnston, J. D., "Transform coding of audio signals
+ *     using perceptual noise criteria", IEEE J. Sel. Areas
+ *     Comm. 6(2), 1988 (Wiener flatness measure).
  *   Lerch, A., "An Introduction to Audio Content Analysis",
- *     Wiley-IEEE Press, 2012, sec. 3.3.4.
+ *     Wiley-IEEE Press, 2012, secs. 3.3.3 (flatness) &
+ *     3.3.4 (flux).
  */
 import type { QueueLine } from './types.js';
 import { periodogramOneSided } from './dailytokenspectralentropy.js';
+import { spectralFlatnessWiener } from './dailytokenspectralflatnesswiener.js';
+import { frameSeries } from './dailytokenspectralflux.js';
 
-export type DailyTokenSpectralFluxSort =
+export type DailyTokenSpectralFlatnessFluxSort =
   | 'fluxMean'
   | 'fluxMeanDesc'
   | 'fluxMax'
   | 'fluxMaxDesc'
+  | 'flatnessMean'
+  | 'flatnessMeanDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
 
-export interface DailyTokenSpectralFluxOptions {
+export interface DailyTokenSpectralFlatnessFluxOptions {
   since?: string | null;
   until?: string | null;
   source?: string | null;
@@ -150,28 +165,22 @@ export interface DailyTokenSpectralFluxOptions {
   minTenureDays?: number;
   /**
    * Sliding window length in days. Default 7. Must be an
-   * integer >= 4 (so K = floor(window/2) >= 2 spectral bins
-   * are available per frame).
+   * integer >= 4 so K = floor(window/2) >= 2 spectral bins
+   * are available per frame (Wiener flatness needs >= 2
+   * positive-power bins).
    */
   windowSize?: number;
   /**
-   * Sliding hop length in days. Default 1. Must be a positive
-   * integer.
+   * Sliding hop length in days. Default 1. Must be a
+   * positive integer.
    */
   hop?: number;
   top?: number;
-  sort?: DailyTokenSpectralFluxSort;
+  sort?: DailyTokenSpectralFlatnessFluxSort;
   generatedAt?: string;
-  /**
-   * When true, include per-source `framePsdEnergy` summary in
-   * the report (mean of pre-normalised total power per frame).
-   * Off by default to keep the JSON tight; tests use it to
-   * pin internal behaviour.
-   */
-  debug?: boolean;
 }
 
-export interface DailyTokenSpectralFluxSourceRow {
+export interface DailyTokenSpectralFlatnessFluxSourceRow {
   source: string;
   totalTokens: number;
   /** Days with strictly positive token mass. */
@@ -180,7 +189,11 @@ export interface DailyTokenSpectralFluxSourceRow {
   nTenureDays: number;
   /** Total number of frames cut from the tenure series. */
   nFrames: number;
-  /** Frames whose mean-centred window had zero total power. */
+  /**
+   * Frames whose mean-centred window had zero total power
+   * OR fewer than 2 positive-power bins (Wiener flatness
+   * undefined).
+   */
   nFramesZero: number;
   /** Number of consecutive surviving-frame pairs in fluxMean. */
   nPairs: number;
@@ -192,20 +205,17 @@ export interface DailyTokenSpectralFluxSourceRow {
   mean: number;
   /** Population stddev of the gap-filled tenure series. */
   stddev: number;
-  /** Mean L2 distance between consecutive unit-energy PSDs. */
+  /** Mean per-frame Wiener flatness over surviving frames. */
+  flatnessMean: number;
+  /** Mean |phi_j - phi_i| between consecutive surviving frames. */
   fluxMean: number;
-  /** Max consecutive-pair L2 distance. */
+  /** Max consecutive-pair |phi_j - phi_i|. */
   fluxMax: number;
-  /** Min consecutive-pair L2 distance. */
+  /** Min consecutive-pair |phi_j - phi_i|. */
   fluxMin: number;
-  /**
-   * Optional debug stat: mean of pre-normalisation total
-   * frame power. Only present when opts.debug = true.
-   */
-  framePsdEnergy?: number;
 }
 
-export interface DailyTokenSpectralFluxReport {
+export interface DailyTokenSpectralFlatnessFluxReport {
   generatedAt: string;
   windowStart: string | null;
   windowEnd: string | null;
@@ -214,9 +224,8 @@ export interface DailyTokenSpectralFluxReport {
   windowSize: number;
   hop: number;
   top: number;
-  sort: DailyTokenSpectralFluxSort;
+  sort: DailyTokenSpectralFlatnessFluxSort;
   source: string | null;
-  debug: boolean;
   totalTokens: number;
   totalSources: number;
   droppedInvalidHourStart: number;
@@ -228,76 +237,44 @@ export interface DailyTokenSpectralFluxReport {
   droppedNoFramePair: number;
   droppedNonFiniteFit: number;
   droppedTopSources: number;
-  sources: DailyTokenSpectralFluxSourceRow[];
+  sources: DailyTokenSpectralFlatnessFluxSourceRow[];
 }
 
 /**
- * Cut frames from a series with given window size and hop.
- * Returns a list of length-W slices in chronological order.
- *
- * Throws on bad geometry (window < 1, hop < 1, or n < window).
- */
-export function frameSeries(
-  values: number[],
-  windowSize: number,
-  hop: number,
-): number[][] {
-  if (!Number.isInteger(windowSize) || windowSize < 1) {
-    throw new Error(`frameSeries: windowSize must be a positive integer (got ${windowSize})`);
-  }
-  if (!Number.isInteger(hop) || hop < 1) {
-    throw new Error(`frameSeries: hop must be a positive integer (got ${hop})`);
-  }
-  const n = values.length;
-  if (n < windowSize) {
-    throw new Error(`frameSeries: series too short (n=${n}, windowSize=${windowSize})`);
-  }
-  const f = Math.floor((n - windowSize) / hop) + 1;
-  const out: number[][] = new Array(f);
-  for (let i = 0; i < f; i += 1) {
-    const start = i * hop;
-    const slice = new Array<number>(windowSize);
-    for (let j = 0; j < windowSize; j += 1) {
-      slice[j] = values[start + j]!;
-    }
-    out[i] = slice;
-  }
-  return out;
-}
-
-/**
- * Spectral-flux primitive on a list of length-W frames.
- * Computes the one-sided non-DC periodogram of each frame,
- * L2-normalises it (zero-power frames are surfaced and
- * skipped), then averages the L2 distance between consecutive
- * surviving-frame PSDs.
+ * Spectral-flatness-flux primitive on a list of length-W
+ * frames. For each frame, computes the one-sided non-DC
+ * periodogram, then the Wiener flatness scalar of its
+ * positive-power bins. Frames with zero power, or with fewer
+ * than 2 positive-power bins, are surfaced as nFramesZero
+ * and skipped. Returns nFrames, nFramesZero, nPairs,
+ * fluxMean, fluxMax, fluxMin, flatnessMean.
  *
  * Closed-form sanity anchors:
- *   - all frames identical -> every consecutive pair has
- *     flux = 0 -> fluxMean = 0.
- *   - alternating pure-tone frames at distinct frequencies ->
- *     unit PSDs concentrated on different bins -> consecutive
- *     L2 distance = sqrt(2) per pair -> fluxMean = sqrt(2).
+ *   - all frames identical -> consecutive |Δphi| = 0 ->
+ *     fluxMean = 0.
+ *   - alternating "pure tone" (phi ~ 0) and "flat" (phi = 1)
+ *     frames -> consecutive |Δphi| ~ 1 -> fluxMean ~ 1.
  *
- * Returns nFrames, nFramesZero, nPairs, fluxMean, fluxMax,
- * fluxMin, framePsdEnergy. When fewer than two surviving
- * frames remain, throws "no frame pair".
+ * Throws "no frame pair" when fewer than two surviving
+ * frames remain.
  */
-export function spectralFlux(frames: number[][]): {
+export function spectralFlatnessFlux(frames: number[][]): {
   nFrames: number;
   nFramesZero: number;
   nPairs: number;
   fluxMean: number;
   fluxMax: number;
   fluxMin: number;
-  framePsdEnergy: number;
+  flatnessMean: number;
 } {
   const f = frames.length;
   if (f < 2) {
-    throw new Error(`spectralFlux: need at least 2 frames (got ${f})`);
+    throw new Error(
+      `spectralFlatnessFlux: need at least 2 frames (got ${f})`,
+    );
   }
-  const unit: (number[] | null)[] = new Array(f);
-  let energySum = 0;
+  const flat: (number | null)[] = new Array(f);
+  let flatSum = 0;
   let nZero = 0;
   for (let i = 0; i < f; i += 1) {
     const frame = frames[i]!;
@@ -305,7 +282,9 @@ export function spectralFlux(frames: number[][]): {
     let mu = 0;
     for (const v of frame) {
       if (!Number.isFinite(v)) {
-        throw new Error(`spectralFlux: non-finite value in frame ${i}`);
+        throw new Error(
+          `spectralFlatnessFlux: non-finite value in frame ${i}`,
+        );
       }
       mu += v;
     }
@@ -314,42 +293,46 @@ export function spectralFlux(frames: number[][]): {
     for (let j = 0; j < w; j += 1) centred[j] = frame[j]! - mu;
     const psd = periodogramOneSided(centred);
     let total = 0;
-    for (const p of psd) total += p;
-    if (!(total > 0)) {
-      unit[i] = null;
+    let positiveBins = 0;
+    for (const p of psd) {
+      total += p;
+      if (p > 0) positiveBins += 1;
+    }
+    if (!(total > 0) || positiveBins < 2) {
+      flat[i] = null;
       nZero += 1;
       continue;
     }
-    energySum += total;
-    let sq = 0;
-    for (const p of psd) sq += p * p;
-    const norm = Math.sqrt(sq);
-    if (!(norm > 0)) {
-      unit[i] = null;
+    let phi: number;
+    try {
+      phi = spectralFlatnessWiener(psd).flatness;
+    } catch {
+      flat[i] = null;
       nZero += 1;
       continue;
     }
-    const u = new Array<number>(psd.length);
-    for (let k = 0; k < psd.length; k += 1) u[k] = psd[k]! / norm;
-    unit[i] = u;
+    if (!Number.isFinite(phi)) {
+      flat[i] = null;
+      nZero += 1;
+      continue;
+    }
+    flat[i] = phi;
+    flatSum += phi;
   }
-  let prev: number[] | null = null;
+  let prev: number | null = null;
   let nPairs = 0;
   let sumFlux = 0;
   let maxFlux = -Infinity;
   let minFlux = +Infinity;
   for (let i = 0; i < f; i += 1) {
-    const cur = unit[i];
+    const cur = flat[i];
     if (cur === null || cur === undefined) continue;
     if (prev !== null) {
-      let sq = 0;
-      for (let k = 0; k < cur.length; k += 1) {
-        const d = cur[k]! - prev[k]!;
-        sq += d * d;
-      }
-      const fl = Math.sqrt(sq);
+      const fl = Math.abs(cur - prev);
       if (!Number.isFinite(fl)) {
-        throw new Error(`spectralFlux: non-finite flux at pair ending ${i}`);
+        throw new Error(
+          `spectralFlatnessFlux: non-finite flux at pair ending ${i}`,
+        );
       }
       sumFlux += fl;
       if (fl > maxFlux) maxFlux = fl;
@@ -359,10 +342,12 @@ export function spectralFlux(frames: number[][]): {
     prev = cur;
   }
   if (nPairs === 0) {
-    throw new Error(`spectralFlux: no frame pair (every consecutive pair lost a frame to zero power)`);
+    throw new Error(
+      `spectralFlatnessFlux: no frame pair (every consecutive pair lost a frame to zero power or undefined flatness)`,
+    );
   }
   const surviving = f - nZero;
-  const framePsdEnergy = surviving > 0 ? energySum / surviving : 0;
+  const flatnessMean = surviving > 0 ? flatSum / surviving : 0;
   return {
     nFrames: f,
     nFramesZero: nZero,
@@ -370,19 +355,19 @@ export function spectralFlux(frames: number[][]): {
     fluxMean: sumFlux / nPairs,
     fluxMax: maxFlux,
     fluxMin: minFlux,
-    framePsdEnergy,
+    flatnessMean,
   };
 }
 
 /**
- * Daily-token spectral-flux primitive on a real-valued
- * series. Frames the series with the given window/hop, then
- * applies `spectralFlux` to the resulting frames.
+ * Daily-token spectral-flatness-flux primitive on a
+ * real-valued series. Frames the series with the given
+ * window/hop, then applies `spectralFlatnessFlux`.
  *
  * Throws when the series is too short, non-finite,
  * zero-variance, or yields fewer than two surviving frames.
  */
-export function dailyTokenSpectralFlux(
+export function dailyTokenSpectralFlatnessFlux(
   values: number[],
   windowSize: number,
   hop: number,
@@ -393,28 +378,32 @@ export function dailyTokenSpectralFlux(
   nFramesZero: number;
   nPairs: number;
   nFreqBins: number;
+  flatnessMean: number;
   fluxMean: number;
   fluxMax: number;
   fluxMin: number;
-  framePsdEnergy: number;
 } {
   const n = values.length;
   if (!Number.isInteger(windowSize) || windowSize < 4) {
     throw new Error(
-      `dailyTokenSpectralFlux: windowSize must be an integer >= 4 (got ${windowSize})`,
+      `dailyTokenSpectralFlatnessFlux: windowSize must be an integer >= 4 (got ${windowSize})`,
     );
   }
   if (!Number.isInteger(hop) || hop < 1) {
-    throw new Error(`dailyTokenSpectralFlux: hop must be a positive integer (got ${hop})`);
+    throw new Error(
+      `dailyTokenSpectralFlatnessFlux: hop must be a positive integer (got ${hop})`,
+    );
   }
   if (n < windowSize + hop) {
     throw new Error(
-      `dailyTokenSpectralFlux: series too short (n=${n}, need n >= windowSize + hop = ${windowSize + hop})`,
+      `dailyTokenSpectralFlatnessFlux: series too short (n=${n}, need n >= windowSize + hop = ${windowSize + hop})`,
     );
   }
   for (const v of values) {
     if (!Number.isFinite(v)) {
-      throw new Error('dailyTokenSpectralFlux requires finite values');
+      throw new Error(
+        'dailyTokenSpectralFlatnessFlux requires finite values',
+      );
     }
   }
   let mn = values[0]!;
@@ -425,7 +414,9 @@ export function dailyTokenSpectralFlux(
     if (v > mx) mx = v;
   }
   if (mn === mx) {
-    throw new Error('dailyTokenSpectralFlux: zero variance (constant series)');
+    throw new Error(
+      'dailyTokenSpectralFlatnessFlux: zero variance (constant series)',
+    );
   }
   let mu = 0;
   for (const v of values) mu += v;
@@ -438,14 +429,15 @@ export function dailyTokenSpectralFlux(
   const stddev = Math.sqrt(varSum / n);
 
   const frames = frameSeries(values, windowSize, hop);
-  const res = spectralFlux(frames);
+  const res = spectralFlatnessFlux(frames);
   if (
     !Number.isFinite(res.fluxMean) ||
     !Number.isFinite(res.fluxMax) ||
-    !Number.isFinite(res.fluxMin)
+    !Number.isFinite(res.fluxMin) ||
+    !Number.isFinite(res.flatnessMean)
   ) {
     throw new Error(
-      `dailyTokenSpectralFlux: non-finite output (fluxMean=${res.fluxMean})`,
+      `dailyTokenSpectralFlatnessFlux: non-finite output (fluxMean=${res.fluxMean})`,
     );
   }
   return {
@@ -455,10 +447,10 @@ export function dailyTokenSpectralFlux(
     nFramesZero: res.nFramesZero,
     nPairs: res.nPairs,
     nFreqBins: Math.floor(windowSize / 2),
+    flatnessMean: res.flatnessMean,
     fluxMean: res.fluxMean,
     fluxMax: res.fluxMax,
     fluxMin: res.fluxMin,
-    framePsdEnergy: res.framePsdEnergy,
   };
 }
 
@@ -473,10 +465,10 @@ function dayDiffInclusive(a: string, b: string): number {
   return Math.round((bm - am) / 86_400_000) + 1;
 }
 
-export function buildDailyTokenSpectralFlux(
+export function buildDailyTokenSpectralFlatnessFlux(
   queue: QueueLine[],
-  opts: DailyTokenSpectralFluxOptions = {},
-): DailyTokenSpectralFluxReport {
+  opts: DailyTokenSpectralFlatnessFluxOptions = {},
+): DailyTokenSpectralFlatnessFluxReport {
   const minTokens = opts.minTokens ?? 1000;
   if (!Number.isFinite(minTokens) || minTokens < 0) {
     throw new Error(
@@ -502,12 +494,14 @@ export function buildDailyTokenSpectralFlux(
   if (!Number.isInteger(top) || top < 0) {
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
-  const sort: DailyTokenSpectralFluxSort = opts.sort ?? 'fluxMeanDesc';
-  const validSorts: DailyTokenSpectralFluxSort[] = [
+  const sort: DailyTokenSpectralFlatnessFluxSort = opts.sort ?? 'fluxMeanDesc';
+  const validSorts: DailyTokenSpectralFlatnessFluxSort[] = [
     'fluxMean',
     'fluxMeanDesc',
     'fluxMax',
     'fluxMaxDesc',
+    'flatnessMean',
+    'flatnessMeanDesc',
     'tokens',
     'tenure',
     'source',
@@ -516,7 +510,6 @@ export function buildDailyTokenSpectralFlux(
     throw new Error(`sort must be one of ${validSorts.join('|')} (got ${opts.sort})`);
   }
   const sourceFilter = opts.source ?? null;
-  const debug = opts.debug ?? false;
 
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
   const untilMs = opts.until != null ? Date.parse(opts.until) : null;
@@ -583,7 +576,7 @@ export function buildDailyTokenSpectralFlux(
   let droppedNoFramePair = 0;
   let droppedNonFiniteFit = 0;
   let totalTokensSum = 0;
-  const rows: DailyTokenSpectralFluxSourceRow[] = [];
+  const rows: DailyTokenSpectralFlatnessFluxSourceRow[] = [];
 
   for (const [src, acc] of agg) {
     if (acc.totalTokens < minTokens) {
@@ -614,7 +607,7 @@ export function buildDailyTokenSpectralFlux(
     }
     let result;
     try {
-      result = dailyTokenSpectralFlux(filled, windowSize, hop);
+      result = dailyTokenSpectralFlatnessFlux(filled, windowSize, hop);
     } catch (e) {
       const msg = (e as Error).message;
       if (msg.includes('no frame pair')) {
@@ -624,7 +617,7 @@ export function buildDailyTokenSpectralFlux(
       }
       continue;
     }
-    const row: DailyTokenSpectralFluxSourceRow = {
+    const row: DailyTokenSpectralFlatnessFluxSourceRow = {
       source: src,
       totalTokens: acc.totalTokens,
       nActiveDays: acc.perDay.size,
@@ -637,11 +630,11 @@ export function buildDailyTokenSpectralFlux(
       lastActiveDay: acc.lastDay,
       mean: result.mean,
       stddev: result.stddev,
+      flatnessMean: result.flatnessMean,
       fluxMean: result.fluxMean,
       fluxMax: result.fluxMax,
       fluxMin: result.fluxMin,
     };
-    if (debug) row.framePsdEnergy = result.framePsdEnergy;
     rows.push(row);
     totalTokensSum += acc.totalTokens;
   }
@@ -660,6 +653,12 @@ export function buildDailyTokenSpectralFlux(
         break;
       case 'fluxMaxDesc':
         primary = b.fluxMax - a.fluxMax;
+        break;
+      case 'flatnessMean':
+        primary = a.flatnessMean - b.flatnessMean;
+        break;
+      case 'flatnessMeanDesc':
+        primary = b.flatnessMean - a.flatnessMean;
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;
@@ -696,7 +695,6 @@ export function buildDailyTokenSpectralFlux(
     top,
     sort,
     source: sourceFilter,
-    debug,
     totalTokens: totalTokensSum,
     totalSources,
     droppedInvalidHourStart,

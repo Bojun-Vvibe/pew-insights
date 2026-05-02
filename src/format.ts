@@ -20243,6 +20243,7 @@ import type { DailyTokenSpectralRenyiHalfEntropyReport } from './dailytokenspect
 import type { DailyTokenSpectralRenyi3EntropyReport } from './dailytokenspectralrenyi3entropy.js';
 import type { DailyTokenSpectralContrastReport } from './dailytokenspectralcontrast.js';
 import type { DailyTokenSpectralFluxReport } from './dailytokenspectralflux.js';
+import type { DailyTokenSpectralFlatnessFluxReport } from './dailytokenspectralflatnessflux.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20631,6 +20632,87 @@ export function renderDailyTokenSpectralFlux(
     formatNumber(s.nFreqBins),
     formatNumber(s.mean),
     formatNumber(s.stddev),
+    s.fluxMean.toFixed(4),
+    s.fluxMax.toFixed(4),
+    s.fluxMin.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralFlatnessFlux(
+  r: DailyTokenSpectralFlatnessFluxReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-flatness-flux'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    window: ${r.windowSize}    hop: ${r.hop}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNoFramePair)} no-frame-pair, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL FLATNESS FLUX -- mean absolute frame-to-frame change in Wiener flatness over length-${r.windowSize} sliding windows (hop=${r.hop}) of the gap-filled mean-centred daily total_tokens series. ONE-HUNDRED-AND-FOURTH cross-source axis. Class-DYNAMIC-SPECTRAL-SHAPE primitive, FRAME-ORDER SENSITIVE -- structurally orthogonal to all 84-102 static-spectrum axes (time-permutation invariant) and to axis-103 daily-token-spectral-flux (which measures L2 distance between full unit-energy PSD vectors, not change in a single shape scalar). Headline question: how rapidly does the local spectral peakiness drift, frame to frame, over the source's tenure?)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPECTRAL FLATNESS FLUX (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'frames',
+    'fZero',
+    'pairs',
+    'bins',
+    'mean',
+    'stddev',
+    'flatMean',
+    'fluxMean',
+    'fluxMax',
+    'fluxMin',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFrames),
+    formatNumber(s.nFramesZero),
+    formatNumber(s.nPairs),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.flatnessMean.toFixed(4),
     s.fluxMean.toFixed(4),
     s.fluxMax.toFixed(4),
     s.fluxMin.toFixed(4),
