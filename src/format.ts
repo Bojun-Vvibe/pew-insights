@@ -20245,6 +20245,7 @@ import type { DailyTokenSpectralContrastReport } from './dailytokenspectralcontr
 import type { DailyTokenSpectralFluxReport } from './dailytokenspectralflux.js';
 import type { DailyTokenSpectralFlatnessFluxReport } from './dailytokenspectralflatnessflux.js';
 import type { DailyTokenZeroCrossingRateReport } from './dailytokenzerocrossingrate.js';
+import type { DailyTokenTurningPointRateReport } from './dailytokenturningpointrate.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20799,6 +20800,87 @@ export function renderDailyTokenZeroCrossingRate(
   lines.push(
     chalk.dim(
       `(reference anchor: zcrExpectedWhite = ${r.sources[0]!.zcrExpectedWhite.toFixed(4)} -- asymptotic ZCR for a zero-mean i.i.d. continuous-noise source (Kedem, Proc. IEEE 74(11), 1986). Sources with zcr < 0.5 exhibit POSITIVE serial dependence (above-mean stretches persist); sources with zcr > 0.5 exhibit NEGATIVE serial dependence (alternation).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTurningPointRate(
+  r: DailyTokenTurningPointRateReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-turning-point-rate'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source TURNING-POINT RATE -- T / (n - 2) where T is the count of strict interior local extrema (peaks AND troughs) on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SIXTH cross-source axis. Class-TIME-DOMAIN-SYMBOLIC primitive on the FIRST DIFFERENCE sign sequence -- distinct from axis-105 (zero-crossing-rate, sign of the LEVEL) and axis-82 (curvature-sign-change-rate, sign of the SECOND difference). Reference anchor tprExpectedIid = 2/3 (Kendall, "Time Series", 3rd ed., 1973, sec. 2.7); standardised tprZ = (T - 2(n-2)/3) / sqrt((16n-29)/90).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source TURNING-POINT RATE (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'triples',
+    'turns',
+    'plateau',
+    'mean',
+    'stddev',
+    'tpr',
+    'tprZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nInteriorTriples),
+    formatNumber(s.nTurningPoints),
+    formatNumber(s.nPlateauTriples),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.tpr.toFixed(4),
+    s.tprZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: tprExpectedIid = ${r.sources[0]!.tprExpectedIid.toFixed(4)} -- asymptotic E[T]/(n-2) for an i.i.d. continuous sample (Kendall 1973). tpr < 2/3 means the level reverses LESS often than iid (smoother / trendier); tpr > 2/3 means MORE often than iid (chattier than noise). |tprZ| > 2 is suggestive of non-iid behaviour at the n we have.)`,
     ),
   );
 
