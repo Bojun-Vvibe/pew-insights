@@ -20247,6 +20247,7 @@ import type { DailyTokenSpectralFlatnessFluxReport } from './dailytokenspectralf
 import type { DailyTokenZeroCrossingRateReport } from './dailytokenzerocrossingrate.js';
 import type { DailyTokenTurningPointRateReport } from './dailytokenturningpointrate.js';
 import type { DailyTokenSpearmanAutocorrelationLag1Report } from './dailytokenspearmanautocorrelationlag1.js';
+import type { DailyTokenKendallTauAutocorrelationLag1Report } from './dailytokenkendalltauautocorrelationlag1.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20965,6 +20966,95 @@ export function renderDailyTokenSpearmanAutocorrelationLag1(
   lines.push(
     chalk.dim(
       `(reference anchor: rs1ExpectedIid = ${r.sources[0]!.rs1ExpectedIid.toFixed(4)} -- asymptotic E[rs1] under independence. rs1 > 0 means today's rank predicts tomorrow's rank in the same direction (persistence); rs1 < 0 means rank reversal (anti-persistence). |rs1Z| > 2 is suggestive of non-iid lag-1 structure at the n we have. iid one-sigma envelope on rs1 itself is approximately 1/sqrt(n - 2) -- e.g. for the longest tenure shown (${formatNumber(Math.max(...r.sources.map((s) => s.nTenureDays)))} days) the envelope is approx ${(1 / Math.sqrt(Math.max(2.0001, Math.max(...r.sources.map((s) => s.nTenureDays)) - 2))).toFixed(4)}.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKendallTauAutocorrelationLag1(
+  r: DailyTokenKendallTauAutocorrelationLag1Report,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-kendall-tau-autocorrelation-lag1'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KENDALL TAU-B SERIAL AUTOCORRELATION at LAG 1 of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-EIGHTH cross-source axis. Class-KENDALL-TAU-PAIR-CONCORDANCE: U-statistic of order 2 counting concordant minus discordant pair INVERSIONS over all unordered pairs of (x[t], x[t+1]) windows. Distinct from axis-107 Spearman (which is the Pearson correlation of midrank LEVELS) -- here only pairwise CONCORDANT/DISCORDANT classification enters; rank levels never appear. Reference anchor tauExpectedIid = 0; standardised tauZ uses the no-ties asymptotic null variance 2*(2m+5)/(9*m*(m-1)).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KENDALL TAU-B LAG-1 AUTOCORRELATION (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'nC',
+    'nD',
+    'nTU',
+    'nTV',
+    'nTB',
+    'mean',
+    'stddev',
+    'tau',
+    'tauZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nPairs),
+    formatNumber(s.nConcordant),
+    formatNumber(s.nDiscordant),
+    formatNumber(s.nTiedU),
+    formatNumber(s.nTiedV),
+    formatNumber(s.nTiedBoth),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.tau.toFixed(4),
+    s.tauZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: tauExpectedIid = ${r.sources[0]!.tauExpectedIid.toFixed(4)} -- asymptotic E[tau_b] under independence (Kendall 1945). tau > 0 means today's lag-1 pair tends to be concordant with other days' lag-1 pairs (persistence); tau < 0 means anti-concordance (anti-persistence). |tauZ| > 2 is suggestive of non-iid lag-1 structure under the no-ties asymptotic null. Note tauZ uses the no-ties variance form; under heavy ties (e.g. zero-padded sparse days) read tauZ directionally rather than as a calibrated p-value.)`,
     ),
   );
 

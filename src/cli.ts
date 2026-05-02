@@ -159,6 +159,7 @@ import {
   renderDailyTokenZeroCrossingRate,
   renderDailyTokenTurningPointRate,
   renderDailyTokenSpearmanAutocorrelationLag1,
+  renderDailyTokenKendallTauAutocorrelationLag1,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -480,6 +481,7 @@ import { buildDailyTokenSpectralFlatnessFlux } from './dailytokenspectralflatnes
 import { buildDailyTokenZeroCrossingRate } from './dailytokenzerocrossingrate.js';
 import { buildDailyTokenTurningPointRate } from './dailytokenturningpointrate.js';
 import { buildDailyTokenSpearmanAutocorrelationLag1 } from './dailytokenspearmanautocorrelationlag1.js';
+import { buildDailyTokenKendallTauAutocorrelationLag1 } from './dailytokenkendalltauautocorrelationlag1.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -35887,6 +35889,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSpearmanAutocorrelationLag1(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-kendall-tau-autocorrelation-lag1')
+  .description(
+    "Per-source KENDALL TAU-B SERIAL AUTOCORRELATION at LAG 1 of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTH cross-source axis). Class-KENDALL-TAU-PAIR-CONCORDANCE primitive: U-statistic of order 2 counting concordant minus discordant pair INVERSIONS over all unordered pairs of (x[t], x[t+1]) windows. Distinct from axis-107 Spearman lag-1 (which is the Pearson correlation of midrank LEVELS) -- here only the pairwise CONCORDANT / DISCORDANT classification enters; rank levels never appear (Daniels 1944: tau and rho are functionally independent). Reference anchor tauExpectedIid = 0; standardised tauZ uses the no-ties asymptotic null variance 2*(2m+5)/(9*m*(m-1)). Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tauZAbsDesc (default) | tau | tauDesc | tauZ | tauZDesc | tauZAbs | tokens | tenure | source.',
+    'tauZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tau',
+          'tauDesc',
+          'tauZ',
+          'tauZDesc',
+          'tauZAbs',
+          'tauZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKendallTauAutocorrelationLag1(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'tau'
+            | 'tauDesc'
+            | 'tauZ'
+            | 'tauZDesc'
+            | 'tauZAbs'
+            | 'tauZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenKendallTauAutocorrelationLag1(report) + '\n',
           );
         }
       } catch (e) {
