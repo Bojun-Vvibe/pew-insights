@@ -17240,6 +17240,7 @@ import type { DailyTokenLempelZivComplexityReport } from './dailytokenlempelzivc
 import type { DailyTokenDftPowerLawSlopeReport } from './dailytokendftpowerlawslope.js';
 import type { DailyTokenSpectralFlatnessWienerReport } from './dailytokenspectralflatnesswiener.js';
 import type { DailyTokenSpectralCentroidReport } from './dailytokenspectralcentroid.js';
+import type { DailyTokenSpectralBandwidthReport } from './dailytokenspectralbandwidth.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -17376,6 +17377,79 @@ export function renderDailyTokenSpectralCentroid(
     formatNumber(s.stddev),
     s.centroidBin.toFixed(4),
     s.centroidNormalised.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralBandwidth(
+  r: DailyTokenSpectralBandwidthReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-bandwidth'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL BANDWIDTH = sqrt( sum_k (k - centroid)^2 * P[k] / sum_k P[k] ) over the strictly-positive bins of the one-sided periodogram of the gap-filled mean-centred daily total_tokens series. EIGHTY-SEVENTH cross-source axis. SECOND CENTRAL MOMENT (sqrt) about the centroid in bin-index units. bandwidthBin in [0, (K-1)/2]; bandwidthNormalised = bandwidthBin / K in [0, 1/2). Pure-tone limit -> 0; discrete-uniform (white) limit -> sqrt((K^2-1)/12)/K -> 1/sqrt(12) ~ 0.2887; bipolar split (mass at bins 1 and K) -> 1/2. References: Klapuri 1999 (AES); Peeters 2004 CUIDADO §6.1; Lerch 2012 §3.3.1; Klapuri & Davy 2006. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; time-domain-shuffle-SENSITIVE; bin-permutation-SENSITIVE. Structurally orthogonal to (a) spectral-centroid 86 (FIRST moment about zero vs SECOND CENTRAL moment about centroid -- two spectra can share centroid but differ in bandwidth, and vice versa); (b) flatness 85 (GM/AM ratio, permutation-invariant); (c) DFT-power-law-slope 84 (log-log slope; same beta can yield different bandwidths); (d) spectral-entropy 69 (Shannon, permutation-invariant); (e) Hjorth-mobility 79 (NON-CENTRAL m_2/m_0 ratio in angular-frequency units, vs CENTRAL second moment about centroid in bin-index units); (f) Hjorth-complexity 80; (g) Lempel-Ziv 83; (h) Teager-Kaiser 81; (i) curvature-sign-change-rate 82 / Petrosian FD 76; (j) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (k) Hurst R/S 71 / DFA-alpha 72; (l) permutation-entropy 70 / sample-entropy 73; (m) autocorrelation 67/68; (n) all permutation-invariant dispersion / shape axes 32-67 -- those are time-domain-shuffle-invariant; bandwidth is time-domain-shuffle-sensitive (whitening drives bandwidth toward sqrt((K^2-1)/12)/K).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL BANDWIDTH (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'centroidBin',
+    'bandwidthBin',
+    'bandwidthNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.centroidBin.toFixed(4),
+    s.bandwidthBin.toFixed(4),
+    s.bandwidthNormalised.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

@@ -138,6 +138,7 @@ import {
   renderDailyTokenDftPowerLawSlope,
   renderDailyTokenSpectralFlatnessWiener,
   renderDailyTokenSpectralCentroid,
+  renderDailyTokenSpectralBandwidth,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -438,6 +439,7 @@ import { buildDailyTokenLempelZivComplexity } from './dailytokenlempelzivcomplex
 import { buildDailyTokenDftPowerLawSlope } from './dailytokendftpowerlawslope.js';
 import { buildDailyTokenSpectralFlatnessWiener } from './dailytokenspectralflatnesswiener.js';
 import { buildDailyTokenSpectralCentroid } from './dailytokenspectralcentroid.js';
+import { buildDailyTokenSpectralBandwidth } from './dailytokenspectralbandwidth.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18515,6 +18517,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralCentroid(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-bandwidth')
+  .description(
+    "Per-source SPECTRAL BANDWIDTH = sqrt( sum_k (k - centroid)^2 * P[k] / sum_k P[k] ) over the strictly-positive bins of the one-sided periodogram of the gap-filled mean-centred daily total_tokens series (EIGHTY-SEVENTH cross-source axis). SECOND CENTRAL MOMENT (sqrt) about the centroid. bandwidthBin in [0, (K-1)/2]; bandwidthNormalised = bandwidthBin / K in [0, 1/2). Pure-tone limit -> 0; discrete-uniform (white) limit -> 1/sqrt(12) ~ 0.2887; bipolar bin-1/bin-K split -> 1/2. References: Klapuri 1999 AES; Peeters 2004 (CUIDADO §6.1); Lerch 2012 §3.3.1; Klapuri & Davy 2006. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; time-domain-shuffle-SENSITIVE; bin-permutation-SENSITIVE. Structurally orthogonal to (a) spectral-centroid 86 (FIRST moment about zero vs SECOND CENTRAL moment about centroid -- two spectra can share centroid but differ in bandwidth, and vice versa); (b) flatness 85; (c) DFT-power-law-slope 84; (d) spectral-entropy 69; (e) Hjorth-mobility 79 (NON-CENTRAL m_2/m_0 ratio in angular-frequency units, vs CENTRAL second moment about centroid in bin-index units); (f) Hjorth-complexity 80; (g) Lempel-Ziv 83; (h) Teager-Kaiser 81; (i) curvature-sign-change-rate 82 / Petrosian FD 76; (j) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (k) Hurst R/S 71 / DFA-alpha 72; (l) permutation-entropy 70 / sample-entropy 73; (m) autocorrelation 67/68; (n) all permutation-invariant dispersion / shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bandwidthDesc (default) | bandwidth | tokens | tenure | source.',
+    'bandwidthDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bandwidth',
+          'bandwidthDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralBandwidth(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'bandwidth'
+            | 'bandwidthDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralBandwidth(report) + '\n');
         }
       } catch (e) {
         die(e);
