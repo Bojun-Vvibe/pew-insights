@@ -2,6 +2,275 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.357 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-FOURTEENTH):
+  `pew-insights daily-token-ljung-box-q-test`.
+
+  Per-source LJUNG-BOX PORTMANTEAU Q-TEST FOR SERIAL
+  CORRELATION at H lags on the gap-filled mean-centred
+  daily total tokens series. Let x[0..n-1] be the gap-
+  filled daily token series, xbar = mean(x). For each
+  lag k in {1, .., H} compute the BIASED sample
+  autocorrelation (Box, Jenkins & Reinsel 1994 sec.
+  2.1.4):
+
+      r_k = sum_{t=0..n-1-k} (x[t]-xbar)(x[t+k]-xbar)
+            / sum_{t=0..n-1} (x[t]-xbar)^2
+
+  and the LJUNG-BOX PORTMANTEAU Q-STATISTIC (Ljung &
+  Box 1978, Biometrika 65(2):297-303):
+
+      Q_LB(H) = n (n + 2) sum_{k=1..H} r_k^2 / (n - k)
+
+  Under the iid white-noise null Q_LB ~ Chi-Square(H).
+  The standardised score
+
+      lbZ = (Q_LB(H) - H) / sqrt(2 H)
+
+  is approximately N(0, 1) for H >= 10.
+  lbZ much greater than +1.96 = significant joint
+  serial structure across lags 1..H. The test is BLIND
+  TO THE SIGN of the autocorrelations (squared values
+  enter the sum) and BLIND TO THE SPECIFIC LAG that
+  drives significance -- inspect the lbAcf array to
+  identify which lag dominates. Lag-7 strength
+  indicates weekly seasonality; lag-1 strength
+  indicates short-range persistence.
+
+  DEFAULT H = min(10, floor(n/4)). The cap follows the
+  conservative Hyndman & Athanasopoulos 2018 sec. 3.3
+  recommendation H = min(10, T/5), tightened to T/4
+  here for compositional consistency with the 14-day
+  default min-tenure.
+
+  MODIFICATION OVER BOX-PIERCE 1970. The original
+  Box-Pierce Q-statistic is Q_BP = n sum r_k^2; the
+  Ljung-Box modification weights each squared
+  autocorrelation by (n + 2) / (n - k), which
+  substantially improves the chi-square approximation
+  for moderate n. We use the Ljung-Box form
+  exclusively as it is the modern default in R
+  (Box.test type "Ljung-Box"), statsmodels
+  (acorr_ljungbox), and MATLAB (lbqtest).
+
+  STRUCTURAL ORTHOGONALITY vs all prior axes (79-113).
+  Ljung-Box is the MULTI-LAG SQUARED-AUTOCORRELATION
+  PORTMANTEAU statistic with a Chi-Square(H) null --
+  fundamentally distinct from every prior axis:
+
+  - vs axis-113 daily-token-difference-sign-test
+    (Mood). Mood is a SINGLE-LAG (k=1) BINARY
+    SIGN-COUNT statistic on first differences with a
+    Binomial(n-1, 1/2) null. Ljung-Box is a MULTI-
+    LAG (k=1..H) SQUARED-AUTOCORRELATION statistic
+    on the centred series with a Chi-Square(H) null.
+    Sample space differs (n-1 diff signs vs H
+    squared autocorrelations); functional differs
+    (binary sign count vs squared correlation sum);
+    null differs (Binomial vs Chi-Square); detection
+    target differs (directional drift at lag 1 vs
+    ANY serial structure across H lags).
+
+  - vs axis-112 daily-token-bartels-rank-von-neumann.
+    Bartels is a SINGLE-LAG (k=1) SQUARED-RANK-
+    ADJACENT-DIFFERENCE statistic with a closed-form
+    Gaussian null. Ljung-Box is a MULTI-LAG (k=1..H)
+    SQUARED-AUTOCORRELATION statistic on the RAW
+    centred values with a Chi-Square null. A series
+    with strong lag-7 weekly seasonality but no lag-1
+    persistence has Bartels RVN approx 2 (lag-1
+    random) but Ljung-Box Q(10) much greater than 10
+    (the lag-7 contribution dominates the sum).
+    Conversely, a series with strong lag-1
+    persistence but no longer-lag structure has both
+    flagged, but Ljung-Box reveals the SPECIFIC LAG
+    via the per-lag lbAcf array.
+
+  - vs axis-111 daily-token-cox-stuart-trend-test.
+    Cox-Stuart is a HALF-SHIFT BINOMIAL SIGN-TEST on
+    floor(n/2) paired comparisons at LAG floor(n/2)
+    -- a SINGLE-LAG TREND test at the half-shift
+    lag. Ljung-Box is a MULTI-LAG PORTMANTEAU test.
+    Sample space differs by a full order of
+    magnitude.
+
+  - vs axis-110 daily-token-mann-kendall-tau. Mann-
+    Kendall is a GLOBAL ALL-PAIRS sign-of-difference
+    statistic over n*(n-1)/2 pairs, sensitive to
+    monotonic trend across the whole sweep. Ljung-
+    Box is a SUM OF SQUARED AUTOCORRELATIONS at H
+    SPECIFIC LAGS, sensitive to serial structure at
+    those lags. A series with a slow linear trend
+    has tau_MK = +1 AND Ljung-Box Q elevated, but
+    they detect by different statistics; a series
+    with strong lag-7 seasonality but no monotonic
+    trend has tau_MK approx 0 AND Ljung-Box Q very
+    large.
+
+  - vs axis-109 daily-token-upper-records-count.
+    Upper-records counts STRICT NEW MAXIMA. Ljung-
+    Box sums squared autocorrelations. Unrelated.
+
+  - vs axis-108 / 107 (kendall-tau / spearman lag-1
+    rank autocorrelation). Both axes 107 and 108
+    are SINGLE-LAG (k=1) RANK CORRELATIONS. Ljung-
+    Box is a MULTI-LAG (k=1..H) PEARSON
+    AUTOCORRELATION-SQUARED summed statistic. For a
+    series with weak rho_S(1) but strong rho(7),
+    axes 107/108 report nothing while Ljung-Box
+    Q(10) clearly rejects iid -- demonstrating the
+    portmanteau advantage.
+
+  - vs axis-64 daily-token-runs-test-z (Wald-
+    Wolfowitz median-binarised run-count). Wald-
+    Wolfowitz binarises by MEDIAN and counts
+    MAXIMAL RUNS with a hypergeometric null.
+    Ljung-Box uses raw centred values and sums
+    SQUARED PEARSON AUTOCORRELATIONS with a chi-
+    square null. Different binarisation (median-
+    sign vs raw centred); different aggregation
+    (run count vs squared-correlation sum);
+    different nulls.
+
+  - vs the existing daily-token-autocorrelation-
+    lag1 and -lag7 axes (single-lag Pearson
+    autocorr at fixed lags). Those report the *raw*
+    r_1 and r_7 values without a calibrated null.
+    Ljung-Box delivers a CALIBRATED p-value over
+    the SUM of the lag-1..lag-H squared autocorrs.
+    The two are complementary: lag-k axes give the
+    SHAPE of the acf; Ljung-Box gives a PORTMANTEAU
+    test that the acf is jointly distinguishable
+    from white noise.
+
+  - vs the inequality / shape axes (Gini, Atkinson,
+    Theil, ..). PERMUTATION-INVARIANT functionals
+    of the empirical distribution. Ljung-Box
+    depends entirely on the TEMPORAL ORDER of
+    values; a uniformly random permutation has
+    E[lbQ] = H regardless of value distribution.
+
+  - vs the spectral axes (84-104). Spectral axes
+    transform to the FREQUENCY domain via the FFT
+    and summarise the periodogram. Ljung-Box stays
+    in the TIME domain and summarises the SAMPLE
+    AUTOCORRELATION FUNCTION (the Fourier transform
+    pair of the periodogram by Wiener-Khinchin).
+    They contain equivalent INFORMATION in the
+    limit n -> inf but the FINITE-SAMPLE statistics,
+    the nulls, and the sensitivity profiles all
+    differ fundamentally. Ljung-Box has a closed-
+    form Chi-Square null at finite H; spectral
+    entropy etc. require permutation tests for
+    calibration.
+
+  - vs DFA / Hurst R/S / fractal-dimension axes.
+    Those are scaling exponents fit across multiple
+    window sizes. Ljung-Box is a single chi-square
+    test statistic at a single fixed H. Hurst-type
+    axes detect long-memory power-law decay of the
+    acf; Ljung-Box detects ANY non-zero acf at lags
+    1..H but is most sensitive to short-range
+    structure (the lag-k contribution decays as
+    1 / (n - k), so small lags dominate Q_LB).
+
+  Headline question:
+  **"For each source, when we compute the sample
+    autocorrelation at lags 1..H on the gap-filled
+    daily token series, does the joint magnitude
+    sum n(n+2) sum r_k^2 / (n-k) exceed what would
+    be expected under an iid white-noise null
+    (Chi-Square(H) right-tail)?"**
+
+  Defaults: `--min-tokens 1000`, `--min-tenure-days 14`,
+  `--max-lag 10`, `--top 0` (no cap), `--sort lbZAbsDesc`.
+  Sort keys: `q`, `qDesc`, `lbZ`, `lbZDesc`, `lbZAbs`,
+  `lbZAbsDesc`, `tokens`, `tenure`, `source`. `--json`
+  for machine-readable output (full per-lag lbAcf
+  array).
+
+  Reported alongside `lbQ`: the effective lag count
+  `lbH` (after the floor(n/4) cap), the chi-square
+  degrees of freedom `lbDf` (= lbH), the standardised
+  score `lbZ`, and the per-lag autocorrelations
+  `lbAcf` (a length-lbH array of r_k values for
+  k = 1..lbH).
+
+  Drop counters surface `droppedInvalidHourStart`,
+  `droppedNonPositiveTokens`, `droppedSourceFilter`,
+  `droppedSparseSources`, `droppedBelowMinTenure`,
+  `droppedZeroVariance`, `droppedNonFiniteFit`,
+  `droppedTopSources`.
+
+  References:
+  - Ljung, G. M. and Box, G. E. P., "On a measure of
+    lack of fit in time series models", Biometrika
+    65 (1978), pp. 297-303.
+  - Box, G. E. P. and Pierce, D. A., "Distribution of
+    residual autocorrelations in autoregressive-
+    integrated moving average time series models",
+    JASA 65 (1970), pp. 1509-1526.
+  - Box, G. E. P., Jenkins, G. M. and Reinsel, G. C.,
+    "Time Series Analysis: Forecasting and Control",
+    3rd ed., Prentice-Hall, 1994, sec. 2.1 / 8.2.
+  - Tsay, R. S., "Analysis of Financial Time Series",
+    3rd ed., Wiley, 2010, sec. 2.4.
+  - Hyndman, R. J. and Athanasopoulos, G., "Fore-
+    casting: Principles and Practice", 2nd ed.,
+    OTexts, 2018, sec. 3.3.
+
+  Live smoke (sorted by lbZAbsDesc, all sources kept;
+  source labels remapped per CHANGELOG convention
+  vscode-copilot -> vscode-other):
+
+  ```
+  pew-insights daily-token-ljung-box-q-test
+  sources: 6 (shown 4)    tokens: 5,926,130,863
+  min-tokens: 1,000   min-tenure-days: 14   max-lag: 10
+  sort: lbZAbsDesc
+  dropped: 2 below min-tenure-days
+
+  per-source LJUNG-BOX Q
+  source        tenure  lbH   r1      r2      r7        lbQ      lbZ
+  claude-code      72   10    0.3323  0.4166  -0.0075   25.9738   3.5719
+  hermes           16    4    0.4038  0.0490   0.0000    7.7800   1.3364
+  openclaw         16    4    0.4684  0.1623   0.0000    7.0085   1.0637
+  vscode-other    265   10    0.1447  0.0630   0.0030    8.6912  -0.2927
+  ```
+
+  Reading: claude-code shows OVERWHELMING evidence of
+  multi-lag serial correlation across the recent
+  10-week tenure (lbZ = +3.57, two-sided p approx
+  0.0004). The per-lag acf reveals the structure: r1
+  = +0.33 and r2 = +0.42 dominate -- short-range
+  persistence (today's tokens correlate with the
+  next 1-2 days), with r7 ~ 0 indicating NO weekly
+  seasonality at the daily granularity. hermes and
+  openclaw both show elevated lag-1 acf (r1 = 0.40
+  and 0.47 respectively) but only 16-day tenures
+  cap H at 4, so the portmanteau Q does not reach
+  significance individually (lbZ approx +1.0 to
+  +1.3). vscode-other (the longest-tenure source at
+  265 days) shows essentially flat acf across the
+  full H = 10 lags (r1 = 0.14, r2 = 0.06, r7 = 0.00)
+  -- consistent with the heavy gap-filling diluting
+  any short-range structure into white-noise
+  behaviour over the long sweep.
+
+  Pair with axis-113 Mood (lag-1 directional sign-
+  count) and axis-112 Bartels (lag-1 squared-rank-
+  difference) to disambiguate the ORIGIN of the
+  Ljung-Box rejection: claude-code's lbZ = +3.57
+  combined with axis-112 bZ = -4.60 (positive lag-1
+  serial dependence) and axis-113 dZ = -2.73
+  (negative directional drift) jointly characterise
+  the source as "persistent-but-decaying daily token
+  usage" -- exactly the decomposition the three
+  axes are designed to deliver jointly.
+
 ## 0.6.356 — 2026-05-03
 
 ### Added
