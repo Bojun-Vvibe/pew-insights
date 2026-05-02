@@ -141,6 +141,7 @@ import {
   renderDailyTokenSpectralBandwidth,
   renderDailyTokenSpectralRolloff,
   renderDailyTokenSpectralCrestFactor,
+  renderDailyTokenSpectralSkewness,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -444,6 +445,7 @@ import { buildDailyTokenSpectralCentroid } from './dailytokenspectralcentroid.js
 import { buildDailyTokenSpectralBandwidth } from './dailytokenspectralbandwidth.js';
 import { buildDailyTokenSpectralRolloff } from './dailytokenspectralrolloff.js';
 import { buildDailyTokenSpectralCrestFactor } from './dailytokenspectralcrestfactor.js';
+import { buildDailyTokenSpectralSkewness } from './dailytokenspectralskewness.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18844,6 +18846,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralCrestFactor(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-skewness')
+  .description(
+    "Per-source SPECTRAL SKEWNESS = third standardised central moment of P[k] about the spectral centroid mu = sum k*P[k]/sum P[k] over surviving non-DC bins of the gap-filled mean-centred daily total_tokens series (NINETIETH cross-source axis; closes the SPECTRAL HEPTAD). skewness = sum (k-mu)^3 P[k] / (sum P[k] * sigma^3) where sigma^2 is the spectral bandwidth squared. Signed real (positive: right-skewed PSD with long high-frequency tail; negative: left-skewed PSD with long low-frequency tail; ~0: symmetric about mu). Wilkins 1944 envelope: |skewness| <= sqrt(usableBins-2)*(usableBins-1)/sqrt(usableBins). References: Peeters 2004 CUIDADO IRCAM TR §6.1.3 (canonical definition); Lerch 2012 §3.3.1 (asymmetry descriptor in moment sequence centroid->spread->SKEWNESS->kurtosis); Pearson 1895 Phil. Trans. Roy. Soc. A 186 (third standardised central moment); Wilkins 1944 Annals Math. Stat. 15(3) (algebraic envelope). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal FLIPS sign. Structurally orthogonal to (a) spectral-bandwidth 87 (2nd CENTRAL MOMENT vs 3rd STANDARDISED CENTRAL MOMENT -- bandwidth is unsigned spread, skewness is signed asymmetry); (b) spectral-crest 89 (PEAK-vs-MEAN ratio, BIN-PERMUTATION INVARIANT vs SIGNED MOMENT, BIN-PERMUTATION SENSITIVE); (c) spectral-rolloff 88 (CDF QUANTILE vs SIGNED CENTRAL MOMENT); (d) spectral-centroid 86 (1st RAW MOMENT vs 3rd CENTRAL MOMENT about centroid -- two spectra with same mu can have opposite skewness); (e) flatness 85 (GM/AM, bin-permutation INVARIANT vs signed bin-permutation SENSITIVE); (f) DFT-power-law-slope 84 (LOG-LOG SLOPE vs LINEAR-AXIS SIGNED MOMENT); (g) spectral-entropy 69 (SHANNON ENTROPY vs SIGNED THIRD MOMENT); (h) Hjorth-mobility 79 / Hjorth-complexity 80; (i) all permutation-invariant amplitude-shape axes 32-67; (j) source-row-token-spectral-skewness (per-row stream vs daily-aggregate stream).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absSkewDesc (default; |skew| desc) | skew (asc) | skewDesc | tokens | tenure | source.',
+    'absSkewDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'skew',
+          'skewDesc',
+          'absSkewDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'skew'
+            | 'skewDesc'
+            | 'absSkewDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralSkewness(report) + '\n');
         }
       } catch (e) {
         die(e);

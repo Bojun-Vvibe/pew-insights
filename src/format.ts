@@ -17241,6 +17241,7 @@ import type { DailyTokenSpectralCentroidReport } from './dailytokenspectralcentr
 import type { DailyTokenSpectralBandwidthReport } from './dailytokenspectralbandwidth.js';
 import type { DailyTokenSpectralRolloffReport } from './dailytokenspectralrolloff.js';
 import type { DailyTokenSpectralCrestFactorReport } from './dailytokenspectralcrestfactor.js';
+import type { DailyTokenSpectralSkewnessReport } from './dailytokenspectralskewness.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -17598,6 +17599,81 @@ export function renderDailyTokenSpectralCrestFactor(
     s.peakBinNormalised.toFixed(4),
     s.peakBinShare.toFixed(4),
     s.crestFactor.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralSkewness(
+  r: DailyTokenSpectralSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedZeroBandwidth)} zero-bandwidth, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL SKEWNESS = third standardised central moment of P[k] about the spectral centroid mu over surviving non-DC bins of the gap-filled mean-centred daily total_tokens series. NINETIETH cross-source axis; closes the SPECTRAL HEPTAD (84 DFT-slope, 85 Wiener-flatness, 86 centroid, 87 bandwidth, 88 rolloff, 89 crest, 90 SKEWNESS). skewness > 0 -> right-skewed PSD (long high-frequency tail); skewness < 0 -> left-skewed PSD (long low-frequency tail); ~0 -> symmetric about mu. Wilkins 1944 envelope: |skewness| <= sqrt(usableBins-2)*(usableBins-1)/sqrt(usableBins). References: Peeters 2004 CUIDADO IRCAM TR §6.1.3; Lerch 2012 §3.3.1; Pearson 1895 Phil. Trans. Roy. Soc. A 186; Wilkins 1944 Annals Math. Stat. 15(3). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal FLIPS sign. Structurally orthogonal to bandwidth 87 (unsigned 2nd moment vs SIGNED 3rd moment), crest 89 (PEAK-RATIO bin-permutation INVARIANT vs SIGNED MOMENT bin-permutation SENSITIVE), rolloff 88 (CDF QUANTILE), centroid 86 (1st RAW MOMENT vs 3rd CENTRAL MOMENT about it), flatness 85 (GM/AM), DFT-slope 84, spectral-entropy 69, Hjorth 79/80, source-row spectral skewness, and all permutation-invariant amplitude-shape axes 32-67.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL SKEWNESS (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'centroidBin',
+    'bandwidth',
+    'thirdMoment',
+    'skewness',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.centroidBin.toFixed(4),
+    s.bandwidth.toFixed(4),
+    s.thirdCentralMoment.toFixed(4),
+    s.skewness.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
