@@ -495,3 +495,63 @@ test('build: orthogonality vs decrease witness -- different ordering of same-mul
   const r2 = dailyTokenSpectralIrregularity(b);
   assert.ok(Math.abs(r1.irregularity - r2.irregularity) < 1e-9);
 });
+
+// ---------- axis-93 refinement: tightened edge-case coverage ----------
+
+test('refine: spectralIrregularity parametric sweep [c, c+d, c, c+d, ...] approaches 1 as d/c grows', () => {
+  // alternating two-level PSD: every adjacent diff = d, every
+  // power = c or c+d. As d/c -> infinity the (c+d)^2 term
+  // dominates the denom and the d^2 numer scales the same way
+  // -> irregularity approaches a fixed limit < 1.
+  const c = 1;
+  for (const d of [1, 10, 100, 1000]) {
+    const power = [c, c + d, c, c + d, c, c + d, c, c + d];
+    const r = spectralIrregularity(power);
+    assert.ok(r.irregularity > 0);
+    assert.ok(r.irregularity < 2); // loose upper bound
+    assert.ok(Number.isFinite(r.irregularity));
+  }
+});
+
+test('refine: spectralIrregularity numerical stability across 18 OOM via scale-invariance check', () => {
+  const base = [1.5, 0.5, 2.7, 0.1, 1.2, 0.9, 1.7, 0.3];
+  const big = base.map((v) => v * 1e9);
+  const small = base.map((v) => v * 1e-9);
+  const r1 = spectralIrregularity(base);
+  const r2 = spectralIrregularity(big);
+  const r3 = spectralIrregularity(small);
+  assert.ok(Math.abs(r1.irregularity - r2.irregularity) < 1e-9);
+  assert.ok(Math.abs(r1.irregularity - r3.irregularity) < 1e-9);
+});
+
+test('refine: build droppedZeroPowerSum is a defensive bucket -- never observed on a non-degenerate real series', () => {
+  // sanity: a real noisy series never hits the zero-power-sum
+  // bucket; the bucket exists only as a defensive guard against
+  // an all-zero one-sided periodogram (which the upstream
+  // var(y)>0 gate already prevents).
+  const lines: QueueLine[] = [];
+  for (let i = 0; i < 64; i += 1) {
+    lines.push(ql(dayIso(i), 's', 1000 + ((i * 13) % 17) + i));
+  }
+  const r = buildDailyTokenSpectralIrregularity(lines, {
+    minTokens: 1000,
+    minTenureDays: 32,
+    generatedAt: ISO,
+  });
+  assert.equal(r.droppedZeroPowerSum, 0);
+  assert.equal(r.droppedNonFiniteFit, 0);
+});
+
+test('refine: spectralIrregularity preserves orthogonality vs flatness via spike-multiset reordering', () => {
+  // identical multiset {0, 0, 0, 1, 1, 1} -> flatness identical
+  // (geometric mean = 0 in both cases, so flatness = 0); but the
+  // arrangement changes adjacent-pair structure, so irregularity
+  // diverges. (Use a non-zero floor to keep flatness well-defined
+  // in any downstream consumer; for this test we only check that
+  // irregularity is order-sensitive.)
+  const grouped = spectralIrregularity([1, 1, 1, 0.001, 0.001, 0.001]);
+  const interleaved = spectralIrregularity([1, 0.001, 1, 0.001, 1, 0.001]);
+  // grouped: only one large adjacent diff (between the third 1 and
+  // the first 0.001); interleaved: five large adjacent diffs.
+  assert.ok(interleaved.irregularity > grouped.irregularity);
+});

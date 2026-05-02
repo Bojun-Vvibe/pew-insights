@@ -244,6 +244,8 @@ export interface DailyTokenSpectralIrregularityReport {
  *
  * Closed-form sanity anchors (used in the test sweep):
  *   - K=2, P=[a,b]      -> irregularity = (a-b)^2 / (a^2 + b^2)
+ *                          (in [0, 1]; equals 1 iff exactly one of
+ *                          {a, b} is 0; equals 0 iff a == b)
  *   - K>=2, P=[c,c,...,c] -> irregularity = 0   (every diff vanishes)
  *   - K=2, P=[1,0]      -> irregularity = 1     (max contrast)
  *   - K>=3, P=[1,0,1,0,...] -> irregularity sums every adjacent
