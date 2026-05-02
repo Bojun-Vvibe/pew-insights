@@ -153,6 +153,7 @@ import {
   renderDailyTokenSpectralRenyi2Entropy,
   renderDailyTokenSpectralRenyiHalfEntropy,
   renderDailyTokenSpectralRenyi3Entropy,
+  renderDailyTokenSpectralContrast,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -468,6 +469,7 @@ import { buildDailyTokenSpectralFlatnessTail } from './dailytokenspectralflatnes
 import { buildDailyTokenSpectralRenyi2Entropy } from './dailytokenspectralrenyi2entropy.js';
 import { buildDailyTokenSpectralRenyiHalfEntropy } from './dailytokenspectralrenyihalfentropy.js';
 import { buildDailyTokenSpectralRenyi3Entropy } from './dailytokenspectralrenyi3entropy.js';
+import { buildDailyTokenSpectralContrast } from './dailytokenspectralcontrast.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -35147,6 +35149,127 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSpectralRenyi3Entropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-spectral-contrast')
+  .description(
+    "Per-source SPECTRAL CONTRAST (mean over log-spaced sub-bands of log mean-of-top-quartile minus log mean-of-bottom-quartile bin power) on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series (ONE-HUNDRED-AND-SECOND cross-source axis). Class-SPECTRAL primitive, BIN-POSITION SENSITIVE -- structurally orthogonal to all bin-permutation-invariant Renyi/Shannon spectral entropies (axes 69, 99, 100, 101) and to global single-statistic spectral axes (centroid 86, bandwidth 87, rolloff 88, crest 89, peak 96). Default 6 log-spaced sub-bands (Jiang et al., ICME 2002).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 2*bands so K = floor(n/2) >= bands and at least one band can host >= 4 bins. Default 16.',
+    '16',
+  )
+  .option(
+    '--bands <n>',
+    'number of log-spaced sub-bands. Must be an integer >= 2. Default 6 (ICME-2002 spectral-contrast convention).',
+    '6',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: contrastMeanDesc (default) | contrastMean | contrastMax | contrastMaxDesc | tokens | tenure | source.',
+    'contrastMeanDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        bands: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const bands = Number.parseInt(opts.bands, 10);
+        if (!Number.isInteger(bands) || bands < 2) {
+          throw new Error(`--bands must be an integer >= 2 (got ${opts.bands})`);
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        const minFloor = 2 * bands;
+        if (!Number.isInteger(minTenureDays) || minTenureDays < minFloor) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= ${minFloor} (= 2*bands; got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'contrastMean',
+          'contrastMeanDesc',
+          'contrastMax',
+          'contrastMaxDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralContrast(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          bands,
+          top,
+          sort: opts.sort as
+            | 'contrastMean'
+            | 'contrastMeanDesc'
+            | 'contrastMax'
+            | 'contrastMaxDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpectralContrast(report) + '\n',
           );
         }
       } catch (e) {

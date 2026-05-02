@@ -20241,6 +20241,7 @@ export function renderDailyTokenSpectralFlatnessTail(
 import type { DailyTokenSpectralRenyi2EntropyReport } from './dailytokenspectralrenyi2entropy.js';
 import type { DailyTokenSpectralRenyiHalfEntropyReport } from './dailytokenspectralrenyihalfentropy.js';
 import type { DailyTokenSpectralRenyi3EntropyReport } from './dailytokenspectralrenyi3entropy.js';
+import type { DailyTokenSpectralContrastReport } from './dailytokenspectralcontrast.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20472,6 +20473,87 @@ export function renderDailyTokenSpectralRenyi3Entropy(
     s.kEff3.toFixed(4),
     s.h3.toFixed(4),
     s.h3Norm.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralContrast(
+  r: DailyTokenSpectralContrastReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-contrast'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    bands: ${r.bands}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPower)} zero-power, ${formatNumber(r.droppedNoValidBand)} no-valid-band, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL CONTRAST -- mean over ${r.bands} log-spaced sub-bands of (log mean-of-top-quartile bin power - log mean-of-bottom-quartile bin power) on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series. ONE-HUNDRED-AND-SECOND cross-source axis. Class-SPECTRAL primitive, BIN-POSITION SENSITIVE (log-spaced edges) -- structurally orthogonal to all bin-permutation-invariant Renyi/Shannon entropies (axes 69, 99, 100, 101) and to global single-statistic axes (centroid 86, bandwidth 87, rolloff 88, crest 89, peak 96). Headline question: how large is the within-band peak-vs-valley LOG-power gap, averaged across log-spaced sub-bands?)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPECTRAL CONTRAST (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'totalPower',
+    'bV',
+    'bD',
+    'bSat',
+    'cMean',
+    'cMax',
+    'cMin',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.totalPower),
+    formatNumber(s.nBandsValid),
+    formatNumber(s.nBandsDropped),
+    formatNumber(s.nBandsSaturated),
+    s.contrastMean.toFixed(4),
+    s.contrastMax.toFixed(4),
+    s.contrastMin.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
