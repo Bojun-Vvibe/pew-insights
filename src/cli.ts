@@ -136,6 +136,7 @@ import {
   renderDailyTokenCurvatureSignChangeRate,
   renderDailyTokenLempelZivComplexity,
   renderDailyTokenDftPowerLawSlope,
+  renderDailyTokenSpectralFlatnessWiener,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -434,6 +435,7 @@ import { buildDailyTokenTeagerKaiserEnergy } from './dailytokenteagerkaiserenerg
 import { buildDailyTokenCurvatureSignChangeRate } from './dailytokencurvaturesignchangerate.js';
 import { buildDailyTokenLempelZivComplexity } from './dailytokenlempelzivcomplexity.js';
 import { buildDailyTokenDftPowerLawSlope } from './dailytokendftpowerlawslope.js';
+import { buildDailyTokenSpectralFlatnessWiener } from './dailytokenspectralflatnesswiener.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18303,6 +18305,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenDftPowerLawSlope(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-flatness-wiener')
+  .description(
+    "Per-source SPECTRAL FLATNESS / Wiener entropy = GM(P_kept) / AM(P_kept) over the strictly-positive bins of the one-sided periodogram of the gap-filled mean-centred daily total_tokens series (EIGHTY-FIFTH cross-source axis). flatness in [0, 1] by AM-GM; flatness=1 iff all kept bins identical (Wiener-white spectrum), flatness->0 in the pure-tone limit. Reports flatness and flatnessDb=10*log10(flatness) for audio-style readability. References: Wiener 1930; Gray & Markel 1974 (canonical SFM); Johnston 1988; Peeters 2004 (CUIDADO MIR feature suite). Shift-, scale-(any non-zero a), sign-flip-, time-reversal-, AND BIN-PERMUTATION-invariant; time-domain-shuffle-SENSITIVE. Structurally orthogonal to (a) spectral-entropy axis 69 -- entropy is Shannon of the L1-normalised periodogram, flatness is the GM/AM ratio of the same unnormalised periodogram; the two agree only at the boundary; (b) DFT-power-law-slope axis 84 -- beta is the LOG-LOG SLOPE across bin index, flatness is BIN-PERMUTATION-INVARIANT, so a tilted spectrum and the same bin VALUES randomly reshuffled across indices share IDENTICAL flatness but very different beta; (c) Lempel-Ziv axis 83 -- string-combinatorial vs continuous mean ratio; (d) Teager-Kaiser axis 81 -- local triplet vs global GM/AM; (e) curvature-sign-change-rate 82 / Petrosian FD 76; (f) Hjorth axes 79/80; (g) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (h) Hurst R/S 71 / DFA-alpha 72; (i) permutation-entropy 70 / sample-entropy 73; (j) autocorrelation 67/68; (k) all permutation-invariant dispersion / shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: flatnessDesc (default) | flatness | tokens | tenure | source.',
+    'flatnessDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'flatness',
+          'flatnessDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralFlatnessWiener(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'flatness'
+            | 'flatnessDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralFlatnessWiener(report) + '\n');
         }
       } catch (e) {
         die(e);

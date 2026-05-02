@@ -17238,6 +17238,78 @@ import type { DailyTokenTeagerKaiserEnergyReport } from './dailytokenteagerkaise
 import type { DailyTokenCurvatureSignChangeRateReport } from './dailytokencurvaturesignchangerate.js';
 import type { DailyTokenLempelZivComplexityReport } from './dailytokenlempelzivcomplexity.js';
 import type { DailyTokenDftPowerLawSlopeReport } from './dailytokendftpowerlawslope.js';
+import type { DailyTokenSpectralFlatnessWienerReport } from './dailytokenspectralflatnesswiener.js';
+
+export function renderDailyTokenSpectralFlatnessWiener(
+  r: DailyTokenSpectralFlatnessWienerReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-flatness-wiener'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL FLATNESS / Wiener entropy = GM(P_kept)/AM(P_kept) of the strictly-positive bins of the one-sided periodogram of the gap-filled mean-centred daily total_tokens series. EIGHTY-FIFTH cross-source axis. flatness in [0, 1] by AM-GM; flatness=1 iff all kept bins identical (white limit), flatness->0 in the pure-tone limit. flatnessDb = 10*log10(flatness) for audio-style readability. References: Wiener 1930; Gray & Markel 1974 (canonical SFM); Johnston 1988; Peeters 2004 (CUIDADO MIR feature suite). Shift-, scale-(any non-zero a), sign-flip-, time-reversal-, AND BIN-PERMUTATION-invariant; time-domain-shuffle-SENSITIVE. Structurally orthogonal to (a) spectral-entropy axis 69 -- entropy is Shannon of the L1-normalised periodogram, flatness is the GM/AM ratio of the SAME unnormalised periodogram; the two agree only at the boundary; (b) DFT-power-law-slope axis 84 -- beta is the LOG-LOG SLOPE across bin index, flatness is BIN-PERMUTATION-INVARIANT, so a tilted spectrum and the same bin VALUES randomly reshuffled across indices share IDENTICAL flatness but very different beta; (c) Lempel-Ziv axis 83 -- string-combinatorial vs continuous mean ratio; (d) Teager-Kaiser axis 81 -- local triplet vs global GM/AM; (e) curvature-sign-change-rate 82 / Petrosian FD 76; (f) Hjorth axes 79/80 -- low-order spectral moment ratios; (g) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (h) Hurst R/S 71 / DFA-alpha 72; (i) permutation-entropy 70 / sample-entropy 73; (j) autocorrelation 67/68; (k) all permutation-invariant dispersion / shape axes 32-67 -- those are time-domain-shuffle-invariant; flatness is time-domain-shuffle-sensitive (whitening drives flatness toward 1).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL FLATNESS / Wiener entropy (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'flatness',
+    'flatnessDb',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.flatness.toFixed(4),
+    Number.isFinite(s.flatnessDb) ? s.flatnessDb.toFixed(2) : '-inf',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
