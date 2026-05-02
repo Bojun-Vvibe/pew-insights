@@ -4725,11 +4725,9 @@ export function renderProviderSwitchingFrequency(
       (d.switchShare * 100).toFixed(1) + '%',
       d.dominantProvider,
       formatNumber(d.dominantProviderBuckets),
-  ]);
-  lines.push(renderTableLocal(headers, rowsOut));
-
-  return lines.join('\n').replace(/\n+$/, '');
-}
+    ]);
+    lines.push(renderTableLocal(headers, rows));
+  }
 
   return lines.join('\n').replace(/\n+$/, '');
 }
@@ -17242,6 +17240,7 @@ import type { DailyTokenSpectralFlatnessWienerReport } from './dailytokenspectra
 import type { DailyTokenSpectralCentroidReport } from './dailytokenspectralcentroid.js';
 import type { DailyTokenSpectralBandwidthReport } from './dailytokenspectralbandwidth.js';
 import type { DailyTokenSpectralRolloffReport } from './dailytokenspectralrolloff.js';
+import type { DailyTokenSpectralCrestFactorReport } from './dailytokenspectralcrestfactor.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -17524,6 +17523,81 @@ export function renderDailyTokenSpectralRolloff(
     formatNumber(s.rolloffBin),
     s.rolloffNormalised.toFixed(4),
     s.cumulativeFraction.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralCrestFactor(
+  r: DailyTokenSpectralCrestFactorReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-crest-factor'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL CREST FACTOR = peak P[k] / mean P[k] over surviving non-DC bins of the gap-filled mean-centred daily total_tokens series. EIGHTY-NINTH cross-source axis. PEAK-vs-MEAN ratio on the Fourier power spectrum. crestFactor in [1, usableBins]; peakBinShare in (0, 1]; peakBinNormalised = peakBin / K in (0, 1]. crestFactor approx 1 -> WHITE-NOISE-LIKE non-DC PSD; crestFactor >> 5 -> LINE-SPECTRUM-LIKE; crestFactor near usableBins -> single-tone non-DC mass. References: Peeters 2004 CUIDADO IRCAM TR §6.1.4; Lerch 2012 §3.3.1; Tzanetakis & Cook 2002 IEEE TSAP; Klapuri & Davy 2006 §5.3. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-, BIN-PERMUTATION-invariant; time-domain-shuffle-SENSITIVE. Structurally orthogonal to (a) spectral-rolloff 88 (CDF QUANTILE vs PEAK-RATIO -- equal-rolloff spectra can have very different crests); (b) spectral-bandwidth 87 (2nd CENTRAL MOMENT vs PEAK-RATIO); (c) spectral-centroid 86 (POSITION vs RATIO -- crest is bin-permutation-INVARIANT, centroid is NOT); (d) flatness 85 (GM/AM vs MAX/AM -- same denominator, MAX vs GM numerator); (e) DFT-power-law-slope 84 (LOG-LOG SLOPE vs PEAK-RATIO; crest defined on non-power-law spectra too); (f) spectral-entropy 69 (SHANNON ENTROPY vs SINGLE-EXTREMUM RATIO); (g) Hjorth-mobility 79 / Hjorth-complexity 80 (MOMENT RATIOS vs PEAK RATIO); (h) Lempel-Ziv 83; (i) Teager-Kaiser 81; (j) curvature-sign-change-rate 82 / Petrosian FD 76; (k) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (l) Hurst R/S 71 / DFA-alpha 72; (m) permutation-entropy 70 / sample-entropy 73; (n) autocorrelation 67/68; (o) source-row-token-crest-factor (TIME-DOMAIN amplitude crest vs FREQUENCY-DOMAIN power crest); (p) all permutation-invariant amplitude-shape axes 32-67 -- those are time-domain-shuffle-invariant; spectral crest is time-domain-shuffle-sensitive (whitening drives it toward 1).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL CREST FACTOR (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'peakBin',
+    'peakNorm',
+    'peakShare',
+    'crest',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.peakBin),
+    s.peakBinNormalised.toFixed(4),
+    s.peakBinShare.toFixed(4),
+    s.crestFactor.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

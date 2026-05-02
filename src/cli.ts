@@ -140,6 +140,7 @@ import {
   renderDailyTokenSpectralCentroid,
   renderDailyTokenSpectralBandwidth,
   renderDailyTokenSpectralRolloff,
+  renderDailyTokenSpectralCrestFactor,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -442,6 +443,7 @@ import { buildDailyTokenSpectralFlatnessWiener } from './dailytokenspectralflatn
 import { buildDailyTokenSpectralCentroid } from './dailytokenspectralcentroid.js';
 import { buildDailyTokenSpectralBandwidth } from './dailytokenspectralbandwidth.js';
 import { buildDailyTokenSpectralRolloff } from './dailytokenspectralrolloff.js';
+import { buildDailyTokenSpectralCrestFactor } from './dailytokenspectralcrestfactor.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18744,6 +18746,104 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralRolloff(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-crest-factor')
+  .description(
+    "Per-source SPECTRAL CREST FACTOR = peak P[k] / mean P[k] over surviving non-DC bins of the gap-filled mean-centred daily total_tokens series (EIGHTY-NINTH cross-source axis). PEAK-vs-MEAN ratio on the Fourier power spectrum. crestFactor in [1, usableBins]; peakBinShare in (0, 1]; peakBinNormalised = peakBin / K in (0, 1]. crestFactor approx 1 -> WHITE-NOISE-LIKE non-DC PSD; crestFactor >> 5 -> LINE-SPECTRUM-LIKE; crestFactor near usableBins -> single-tone non-DC mass concentrated entirely in one bin. References: Peeters 2004 CUIDADO IRCAM TR §6.1.4 (canonical definition); Lerch 2012 §3.3.1 (spectral tonality companion to flatness); Tzanetakis & Cook 2002 IEEE TSAP 10(5); Klapuri & Davy 2006 §5.3. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-, BIN-PERMUTATION-invariant; time-domain-shuffle-SENSITIVE. Structurally orthogonal to (a) spectral-rolloff 88 (CDF QUANTILE vs PEAK-RATIO -- equal-rolloff spectra can have very different crests); (b) spectral-bandwidth 87 (2nd CENTRAL MOMENT vs PEAK-RATIO); (c) spectral-centroid 86 (POSITION vs RATIO -- crest is bin-permutation-INVARIANT, centroid is NOT); (d) flatness 85 (GM/AM vs MAX/AM -- same denominator, MAX vs GM numerator; can move in opposite directions on the same series); (e) DFT-power-law-slope 84; (f) spectral-entropy 69 (SHANNON ENTROPY vs SINGLE-EXTREMUM RATIO); (g) Hjorth-mobility 79 / Hjorth-complexity 80 (MOMENT RATIOS vs PEAK RATIO); (h) Lempel-Ziv 83; (i) Teager-Kaiser 81; (j) curvature-sign-change-rate 82 / Petrosian FD 76; (k) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (l) Hurst R/S 71 / DFA-alpha 72; (m) permutation-entropy 70 / sample-entropy 73; (n) autocorrelation 67/68; (o) source-row-token-crest-factor (TIME-DOMAIN amplitude crest vs FREQUENCY-DOMAIN power crest); (p) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: crestDesc (default) | crest | tokens | tenure | source.',
+    'crestDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = ['crest', 'crestDesc', 'tokens', 'tenure', 'source'];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralCrestFactor(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'crest'
+            | 'crestDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralCrestFactor(report) + '\n');
         }
       } catch (e) {
         die(e);
