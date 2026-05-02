@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.330 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-SIXTH):
+  `pew-insights daily-token-spectral-centroid`.
+
+  Per-source SPECTRAL CENTROID (frequency-weighted mean / first
+  moment of the power spectrum) of the gap-filled daily
+  `total_tokens` series, defined as
+
+  ```
+  centroidBin       = sum_k k * P[k] / sum_k P[k]
+  centroidNormalised = centroidBin / K   in (0, 1]
+  ```
+
+  over the strictly-positive bins of the one-sided periodogram
+  `P[k]` for `k = 1..K = floor(n/2)` of the mean-centred series.
+  Low values mean low-frequency mass dominates (slow drift /
+  weekly cycles); high values mean near-Nyquist alternation
+  dominates the spectrum.
+
+  References:
+  - Beauchamp, J. W., "Synthesis by spectral amplitude and
+    'brightness' matching of analyzed musical instrument tones",
+    J. Audio Eng. Soc. 30(6):396-406, 1982 (the canonical
+    "brightness" interpretation of the spectral centroid).
+  - Schubert, E., Wolfe, J., "Does timbral brightness scale with
+    frequency and spectral centroid?", Acta Acust. United Acust.
+    92(5):820-825, 2006.
+  - Peeters, G., "A large set of audio features for sound
+    description (similarity and classification) in the CUIDADO
+    project", IRCAM tech. report, 2004 (canonical centroid
+    definition in MIR feature suites).
+  - Klapuri, A., Davy, M. (eds.), "Signal Processing Methods for
+    Music Transcription", Springer, 2006, ch. 5 (spectral
+    centroid as a first-order frequency moment).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`:
+
+  - `claude-code`: `centroidBin = 12.9822`,
+    `centroidNormalised = 0.3606` over a 72-day gap-filled
+    tenure (K = 36 bins) — slightly low-frequency-leaning,
+    consistent with multi-day workload bursts dominating the
+    spectrum.
+  - `vscode-other`: `centroidBin = 58.1358`,
+    `centroidNormalised = 0.4404` over a 265-day gap-filled
+    tenure (K = 132 bins) — closer to the mid-band, consistent
+    with a broader, noisier daily-token spectrum and shorter
+    characteristic timescales.
+
+  STRUCTURAL ORTHOGONALITY -- this is a FIRST-MOMENT
+  (frequency-weighted mean) statistic on the Fourier power
+  spectrum, distinct from every shipped daily-token axis 32..85.
+  The precise orthogonality witness vs `daily-token-spectral-
+  flatness-wiener` (axis 85) and `daily-token-spectral-entropy`
+  (axis 69) is BIN PERMUTATION: flatness and entropy are
+  bin-permutation-INVARIANT (depend only on the multiset of
+  kept bin values) while centroid is bin-permutation-SENSITIVE
+  (depends on which `k` carries the mass). Two periodograms with
+  the same multiset of bin powers but reshuffled bin assignments
+  share IDENTICAL flatness and IDENTICAL entropy but very
+  different centroids. Symmetrically, vs `daily-token-dft-power-
+  law-slope` (axis 84): two spectra can share the same `beta`
+  but very different centroids (a steep `1/k^2` spectrum
+  concentrated in the lowest 4 bins vs a gentle `1/k^2` spectrum
+  spread across 64 bins both have `beta ~ 2` but very different
+  `centroidBin / K`); centroid is also well-defined on spectra
+  that are not power laws at all (line spectra, impulse trains)
+  where `beta` is meaningless. Vs Hjorth axes 79/80: those are
+  RATIOS of low-order moments (mobility uses an `m_2 / m_0`
+  numerator); centroid is `m_1 / m_0` -- a different order.
+
+  INVARIANCES of `centroidNormalised`:
+  - SHIFT `y -> y + c`: only the DC bin moves; kept bins
+    `k >= 1` unchanged. SHIFT-INVARIANT.
+  - SCALE `y -> a*y` for `a != 0`: numerator and denominator
+    both scale by `a^2`; ratio unchanged. SCALE-INVARIANT for
+    any non-zero `a`.
+  - SIGN-FLIP `y -> -y`: SIGN-FLIP-INVARIANT.
+  - TIME-REVERSAL `y[i] -> y[n-1-i]`: `|DFT|^2` is reversal-
+    blind. TIME-REVERSAL-INVARIANT.
+  - SHUFFLE: NOT invariant -- shuffling whitens the spectrum
+    and drives the centroid toward `(K + 1) / (2 K)`.
+  - BIN-PERMUTATION (frequency reshuffle): NOT invariant -- the
+    key orthogonality witness vs flatness (axis 85) and entropy
+    (axis 69).
+
+  Bound: `centroidBin in (0, K]`, attained at `centroidBin = K`
+  iff all power sits at the Nyquist bin. After normalisation
+  `centroidNormalised in (0, 1]`. `usableBins >= 2` is enforced
+  (a single bin trivially pins the centroid).
+
+  Reuses the `periodogramOneSided` helper from axis-69 spectral-
+  entropy. Adds `spectralCentroidBin(power)` as a small reusable
+  power-vector primitive (centroid in bin-index units, returns
+  `{ centroidBin, usableBins }`), and the daily-token wrapper
+  `dailyTokenSpectralCentroid(values)` which applies the
+  primitive to the periodogram of a real-valued series and
+  returns `{ mean, stddev, nFreqBins, usableBins, centroidBin,
+  centroidNormalised }`.
+
+  Tests: 46 covering the primitive (empty / non-finite /
+  negative / single-positive-bin / zero-positive-bin guards;
+  closed-form GM-vs-AM contrast on `[1, 4]` -> `9/5` and
+  `[1, 2, 4, 8]` -> `49/15`; `centroidBin in [1, K]` bound
+  across 50 random vectors; zero-bins-skipped count; BIN-
+  PERMUTATION SENSITIVITY witness on `[1, 4, 9, 16, 25]`
+  vs its reverse; pure-tone collapse to the dominant bin;
+  scale invariance of the ratio), the daily-token wrapper
+  (`n < 8` / non-finite / zero-variance throws; white-noise
+  `centroidNorm` in `(0.3, 0.7)`; low-frequency sinusoid at
+  `k = 2` -> `centroidNorm < 0.1`; near-Nyquist sinusoid ->
+  `centroidNorm > 0.9`; SHIFT/ SCALE / SIGN-FLIP / TIME-
+  REVERSAL invariance; SHUFFLE sensitivity via half-reverse;
+  `usableBins <= floor(n/2)`; `centroidNormalised = centroidBin
+  / K` identity; `mean` and `stddev` match input; `1e9 / 1e-9`
+  numerical stability), and the full builder-knob and JSON-
+  contract surface (rejects bad `minTokens` / `minTenureDays
+  < 8` / bad sort / bad since/until / bad top; empty-queue
+  defaults; bad-`hour_start` / non-positive-tokens / source-
+  filter / sparse-tokens / short-tenure / zero-variance /
+  top-cap / source-asc-tiebreak / window-filter; per-source
+  row JSON shape contract; report-level JSON shape contract;
+  orthogonality-vs-flatness witness via low-bin-2 sinusoid
+  `centroidNorm < 0.15` vs near-Nyquist sinusoid `centroidNorm
+  > 0.85`).
+
 ## 0.6.329 — 2026-05-02
 
 ### Added
