@@ -354,9 +354,12 @@ export function spectralRenyi3Entropy(power: number[]): {
   // Normalise -0 to +0 for clean equality semantics.
   const h3Out = h3 === 0 ? 0 : h3;
   const h3NormOut = h3Norm === 0 ? 0 : h3Norm;
-  // kEff3 = exp(h3) = M3^(-1/2). Use exp(h3) for numeric
-  // consistency with the entropy report.
-  const kEff3 = Math.exp(h3);
+  // kEff3 = exp(h3) = M3^(-1/2). Compute directly via the
+  // closed-form 1/sqrt(M3) to avoid an unnecessary exp(log(...))
+  // round-trip; the two are mathematically identical and the
+  // direct form has one fewer transcendental call and one fewer
+  // ULP of round-trip noise on near-uniform spectra.
+  const kEff3 = 1 / Math.sqrt(sumP3);
   return {
     h3: h3Out,
     h3Norm: h3NormOut,
