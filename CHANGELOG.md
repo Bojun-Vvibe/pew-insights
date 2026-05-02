@@ -2,6 +2,143 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.341 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-EIGHTH):
+  `pew-insights daily-token-spectral-flatness-tail`.
+
+  Per-source SPECTRAL TAIL-FLATNESS -- a Wiener (geometric/
+  arithmetic mean) flatness restricted to the UPPER-HALF
+  (high-frequency) bins of the one-sided non-DC periodogram of
+  the gap-filled mean-centred daily total_tokens series. For
+  P[k], k = 1..K with K = floor(n/2) and K >= 4, define the
+  TAIL bin set
+
+      T   = { k in 1..K : k > floor(K / 2) }
+      T+  = { k in T : P[k] > 0 }            (must satisfy |T+| >= 2)
+      tailFlat = exp(mean_{k in T+} log P[k]) /
+                 mean_{k in T+} P[k]         in [0, 1]
+
+  CLASS-FT (FLATNESS-TAIL) primitive -- the FIRST primitive in
+  the suite that restricts a flatness statistic to a
+  STRUCTURED BIN SUBSET (the upper half of the spectrum).
+
+  ### Structural orthogonality
+
+  - vs `daily-token-spectral-flatness-wiener` (axis 85):
+    axis-85 is the FULL-BAND Wiener flatness; axis-98 is the
+    UPPER-HALF restricted flatness. The two COINCIDE iff the
+    spectrum is uniformly distributed across all positive-
+    power bins, and DECOUPLE on every non-uniform spectrum: a
+    head-dominant PSD has axis-85 depressed (head outliers
+    drive GM down) but tailFlat ~ 1 (tail noise floor is
+    flat); a tail-spike has the reverse pattern. Live-smoke
+    confirms decoupling: claude-code shows tailFlat = 0.6150
+    (intermediate tail structure), distinct from any single-
+    band statistic.
+  - vs `daily-token-spectral-second-peak-frequency` (axis 97):
+    axis-97 is a SECOND-INDEX-VALUED descriptor (where does
+    k2* sit?); axis-98 is a real-valued SUB-BAND MAGNITUDE-
+    RATIO statistic. A bimodal PSD with peaks at k=1 and k=K
+    has axis-97 (k1*, k2*) = (1, K) and axis-98 tailFlat -> 0
+    (one tail bin dominates) -- same structural fact, two
+    completely different primitive reads.
+  - vs `daily-token-spectral-peak-frequency` (axis 96):
+    axis-96 is a SINGLE-INDEX read on the full band; axis-98
+    is a real-valued AGGREGATE on the tail subset. Disjoint
+    primitive types.
+  - vs `daily-token-spectral-roughness` (axis 95): roughness
+    is an L1 TV-of-pmf MASS aggregate over ADJACENT bin pairs
+    (full-band) and is permutation-SENSITIVE. Tail-flatness
+    is permutation-INVARIANT within the tail subset.
+  - vs `daily-token-spectral-spread-iqr` (axis 94): spread-
+    IQR is a DATA-DEFINED inner-50% percentile-gap WIDTH;
+    tail-flatness uses a STRUCTURAL fixed (non-quantile)
+    sub-band. Two PSDs with identical IQR can have wildly
+    different tailFlat depending on within-tail mass
+    arrangement.
+  - vs `daily-token-spectral-irregularity` (axis 93):
+    irregularity is a SECOND-ORDER L2 magnitude statistic on
+    the raw periodogram; tail-flatness is a 0th-order GM/AM
+    scalar.
+  - vs `daily-token-spectral-decrease` (axis 92): decrease is
+    a fixed-anchor (bin 1) slope-from-anchor REAL value
+    spanning the FULL band; tail-flatness ignores the anchor
+    and the head entirely.
+  - vs `daily-token-spectral-bandwidth` (axis 87) /
+    `-skewness` (axis 90) / `-kurtosis` (axis 91): each is a
+    CENTROID-RELATIVE central moment (full-band); tail-
+    flatness is a SUB-BAND GM/AM ratio.
+  - vs `daily-token-spectral-rolloff` (axis 88): rolloff is a
+    CDF QUANTILE BIN INDEX; tail-flatness is a GM/AM ratio
+    over a fixed (non-quantile) sub-band. Decoupled by
+    construction.
+  - vs `daily-token-spectral-crest-factor` (axis 89): crest
+    is a peak-to-mean RATIO over the full band; tail-flatness
+    is a GM/AM ratio (not max/mean) on a sub-band.
+  - vs `daily-token-spectral-centroid` (axis 86): centroid is
+    a FIRST RAW MOMENT; tail-flatness is a sub-band GM/AM
+    ratio.
+  - vs `daily-token-spectral-entropy` (axis 69): entropy is
+    Shannon entropy on the full normalised PSD; tail-flatness
+    uses GM/AM (not -p log p) on the upper half only.
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is a
+    global LOG-LOG slope; a clean 1/f PSD has beta ~ -1 with
+    tailFlat ~ 1 (smooth low-amplitude tail) -- decoupled.
+  - vs all permutation-invariant amplitude-shape axes 32-67:
+    those are TIME-DOMAIN shuffle-invariant; tail-flatness is
+    bin-position-sensitive (tail vs head) in the FREQUENCY
+    domain.
+
+  ### Invariances
+
+  - SHIFT y -> y + c: SHIFT-INVARIANT (DC bin not in T).
+  - SCALE y -> a*y, a != 0: SCALE-INVARIANT (AM and GM scale
+    by a^2 identically).
+  - SIGN-FLIP y -> -y: SIGN-FLIP-INVARIANT.
+  - TIME-REVERSAL: INVARIANT (|DFT|^2 is reversal-blind).
+  - PERMUTATION within T: INVARIANT.
+  - BIN-REVERSAL k -> K+1-k: NOT invariant (T maps to head
+    subset). This asymmetry is the structural distinction
+    from axis-85.
+
+  ### Live-smoke output
+
+  Run against `~/.config/pew/queue.jsonl` (real local data,
+  source labels carrier-anonymised here):
+
+      $ node dist/cli.js daily-token-spectral-flatness-tail --json
+      sources after filter (--min-tokens 1000, --min-tenure-days 32):
+        - claude-code:
+            tenure=72d  active=35d  bins(K)=36  tailStart=19  tailBins=18
+            usableTail=18  tailFlat=0.6150  tailPowerSum=2.606e+17
+        - vscode-other:
+            tenure=265d active=73d  bins(K)=132 tailStart=67  tailBins=66
+            usableTail=66  tailFlat=0.5253  tailPowerSum=4.240e+10
+
+  Both real carriers occupy the intermediate flatness regime
+  (0.5 < tailFlat < 0.7), which is structurally distinct from
+  full-band Wiener flatness (axis-85) and from axis-97's
+  second-peak-bin index. The claude-code tail is ~17% flatter
+  than vscode-other -- a clean magnitude-ratio decoupling
+  witness.
+
+  ### Test delta
+
+  +60 unit tests (9710 -> 9770) covering: K-boundary anchors
+  (K=4..7), too-few-bins / non-finite / negative-power /
+  m<2-tail rejection, m=2 closed form 2*sqrt(a*b)/(a+b),
+  scale / permutation-within-tail invariance, bin-reversal
+  NON-invariance witness, head-dominant + flat-tail
+  decoupling vs axis-85, tail-spike depression, tailStartBin
+  / nTailBins formula validation across K=4..20, series-level
+  shift / scale / sign-flip / time-reversal invariance, full
+  build-level filter sweep (sort keys, top cap, source filter,
+  invalid-since/until, schema fields), and orthogonality
+  witnesses vs axes 85, 86, 87, 89, 92, 93, 94, 95, 96, 97.
+
 ## 0.6.340 — 2026-05-02
 
 ### Added
