@@ -17239,6 +17239,7 @@ import type { DailyTokenCurvatureSignChangeRateReport } from './dailytokencurvat
 import type { DailyTokenLempelZivComplexityReport } from './dailytokenlempelzivcomplexity.js';
 import type { DailyTokenDftPowerLawSlopeReport } from './dailytokendftpowerlawslope.js';
 import type { DailyTokenSpectralFlatnessWienerReport } from './dailytokenspectralflatnesswiener.js';
+import type { DailyTokenSpectralCentroidReport } from './dailytokenspectralcentroid.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -17304,6 +17305,77 @@ export function renderDailyTokenSpectralFlatnessWiener(
     formatNumber(s.stddev),
     s.flatness.toFixed(4),
     Number.isFinite(s.flatnessDb) ? s.flatnessDb.toFixed(2) : '-inf',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralCentroid(
+  r: DailyTokenSpectralCentroidReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-centroid'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL CENTROID = sum_k k*P[k] / sum_k P[k] over the strictly-positive bins of the one-sided periodogram of the gap-filled mean-centred daily total_tokens series. EIGHTY-SIXTH cross-source axis. centroidBin in (0, K]; centroidNormalised = centroidBin / K in (0, 1]. Low values mean low-frequency mass dominates (slow drift / weekly cycles); high values mean near-Nyquist alternation dominates. References: Beauchamp 1982 (brightness); Schubert & Wolfe 2006; Peeters 2004 (CUIDADO MIR feature suite); Klapuri & Davy 2006. Shift-, scale-(any non-zero a), sign-flip-, time-reversal-invariant; time-domain-shuffle-SENSITIVE; bin-permutation-SENSITIVE -- the precise orthogonality witness vs flatness axis 85 and entropy axis 69, both of which are bin-permutation-INVARIANT. Structurally orthogonal to (a) flatness 85 (GM/AM ratio, permutation-invariant); (b) DFT-power-law-slope 84 (log-log slope; same beta can yield different centroids); (c) spectral-entropy 69 (L1 Shannon, permutation-invariant); (d) Lempel-Ziv 83; (e) Teager-Kaiser 81 (time-domain triplet); (f) curvature-sign-change-rate 82 / Petrosian FD 76; (g) Hjorth axes 79/80 (m_i ratios, different orders/normalisations); (h) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (i) Hurst R/S 71 / DFA-alpha 72; (j) permutation-entropy 70 / sample-entropy 73; (k) autocorrelation 67/68; (l) all permutation-invariant dispersion / shape axes 32-67 -- those are time-domain-shuffle-invariant; centroid is time-domain-shuffle-sensitive (whitening drives centroid toward (K+1)/(2K)).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL CENTROID (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'centroidBin',
+    'centroidNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.centroidBin.toFixed(4),
+    s.centroidNormalised.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

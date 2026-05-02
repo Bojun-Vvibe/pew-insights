@@ -137,6 +137,7 @@ import {
   renderDailyTokenLempelZivComplexity,
   renderDailyTokenDftPowerLawSlope,
   renderDailyTokenSpectralFlatnessWiener,
+  renderDailyTokenSpectralCentroid,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -436,6 +437,7 @@ import { buildDailyTokenCurvatureSignChangeRate } from './dailytokencurvaturesig
 import { buildDailyTokenLempelZivComplexity } from './dailytokenlempelzivcomplexity.js';
 import { buildDailyTokenDftPowerLawSlope } from './dailytokendftpowerlawslope.js';
 import { buildDailyTokenSpectralFlatnessWiener } from './dailytokenspectralflatnesswiener.js';
+import { buildDailyTokenSpectralCentroid } from './dailytokenspectralcentroid.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18409,6 +18411,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralFlatnessWiener(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-centroid')
+  .description(
+    "Per-source SPECTRAL CENTROID = sum_k k*P[k] / sum_k P[k] over the strictly-positive bins of the one-sided periodogram of the gap-filled mean-centred daily total_tokens series (EIGHTY-SIXTH cross-source axis). centroidBin in (0, K]; centroidNormalised = centroidBin / K in (0, 1]. Low values mean low-frequency mass dominates (slow drift / weekly cycles); high values mean near-Nyquist alternation dominates. References: Beauchamp 1982 (brightness); Schubert & Wolfe 2006; Peeters 2004 (CUIDADO MIR feature suite); Klapuri & Davy 2006. Shift-, scale-(any non-zero a), sign-flip-, time-reversal-invariant; time-domain-shuffle-SENSITIVE; bin-permutation-SENSITIVE -- the precise orthogonality witness vs flatness axis 85 and entropy axis 69, both of which are bin-permutation-INVARIANT. Structurally orthogonal to (a) flatness 85; (b) DFT-power-law-slope 84; (c) spectral-entropy 69; (d) Lempel-Ziv 83; (e) Teager-Kaiser 81; (f) curvature-sign-change-rate 82 / Petrosian FD 76; (g) Hjorth axes 79/80; (h) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (i) Hurst R/S 71 / DFA-alpha 72; (j) permutation-entropy 70 / sample-entropy 73; (k) autocorrelation 67/68; (l) all permutation-invariant dispersion / shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: centroidDesc (default) | centroid | tokens | tenure | source.',
+    'centroidDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'centroid',
+          'centroidDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralCentroid(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'centroid'
+            | 'centroidDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralCentroid(report) + '\n');
         }
       } catch (e) {
         die(e);
