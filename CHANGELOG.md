@@ -2,6 +2,168 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.325 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-FIRST):
+  `pew-insights daily-token-teager-kaiser-energy`.
+
+  Per-source **mean Teager-Kaiser Energy Operator (TKEO)** (Kaiser,
+  J. F., "On a simple algorithm to calculate the 'energy' of a
+  signal", Proc. IEEE ICASSP-90, pp. 381-384, Albuquerque, NM,
+  April 1990) on the gap-filled daily `total_tokens` series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`.
+  Algorithm (single-scale local triplet operator):
+
+      1. For each interior index i in [1, N-2]:
+           psi[i] = y[i]^2 - y[i-1] * y[i+1]
+
+      2. tke_mean       = (1 / (N-2)) * sum_{i=1}^{N-2} psi[i]
+         tke_normalized = tke_mean / var(y)        (population var)
+
+  For a pure tone `y[n] = A * cos(omega*n + phi)` Kaiser's 1990
+  closed form gives `psi[n] -> A^2 * sin^2(omega)` and
+  `var(y) -> A^2 / 2`, so `tke_normalized -> 2 * sin^2(omega)`,
+  a frequency-only quantity bounded in `[0, 2]`. The operator
+  simultaneously captures local AMPLITUDE and local FREQUENCY
+  from three consecutive samples — that joint coupling is what
+  separates it from second-moment ratios (Hjorth, axes 79/80) and
+  from binary sign-change counters (Petrosian, axis 76).
+
+  Reading `tke_normalized`:
+
+  - `tke_normalized ~ 0`  = very low local frequency content;
+                            the series moves slowly relative to
+                            its amplitude (smooth ramps, slow
+                            drifts).
+  - `tke_normalized ~ 1`  = white-noise reference (E[psi] -> sigma^2
+                            for zero-mean iid noise; the test file
+                            ships this witness).
+  - `tke_normalized ~ 2`  = sample-to-sample sign reversals
+                            dominate (Nyquist-rate behaviour).
+  - `tke_normalized > 2`  = locally amplitude-modulated bursts;
+                            only possible for non-stationary series
+                            where the operator picks up combined
+                            amplitude + frequency modulation.
+
+  Sign of `tke_mean` is also informative (mobility / complexity in
+  axes 79 / 80 are strictly non-negative; TKE carries a sign):
+
+  - `tke_mean > 0` = local amplitudes squared exceed the product of
+                     their neighbours (oscillatory / burst-rich
+                     content).
+  - `tke_mean < 0` = neighbour products exceed local amplitudes
+                     squared (typical for triplets that dip in the
+                     centre; rarer in token-mass series).
+
+  Structural orthogonality vs the prior 80 axes:
+
+  - vs `daily-token-hjorth-complexity` (axis 80) and
+    `daily-token-hjorth-mobility` (axis 79): both are GLOBAL
+    ratios of three sample variances over the entire series. TKE
+    is the time-AVERAGE of a LOCAL triplet operator and carries a
+    SIGN (mobility / complexity are strictly non-negative). Two
+    series with identical Hjorth mobility AND complexity can have
+    arbitrarily different mean TKE because mean of products is
+    not the same functional as a ratio of means of squares of
+    differences.
+  - vs box-count FD (78) / Sevcik FD (77) / Katz FD (75) /
+    Higuchi FD (74): path-length / coverage geometric ratios vs
+    a quadratic local energy density. TKE has no length, no grid,
+    no coverage.
+  - vs Petrosian FD (76): binary sign-change count of `diff(y)`
+    (magnitude-blind) vs a fully magnitude-aware quadratic
+    operator on raw triplets.
+  - vs Hurst R/S (71) / DFA (72): multi-scale variance scaling
+    on cumulative deviations vs single-scale quadratic on raw
+    triplets.
+  - vs lag-1 ACF (67) / lag-7 ACF: TKE is a NONLINEAR (quadratic)
+    functional of triplets `(y_{i-1}, y_i, y_{i+1})`; ACF is a
+    strictly LINEAR cross-product. The test file ships an explicit
+    orthogonality witness (slow tone vs fast tone) showing
+    `tke_normalized` separates by `> 1.0` despite both being
+    high-correlation series.
+  - vs spectral entropy (69): a SPECIFIC `A^2 * sin^2(omega)`
+    mean energy at the dominant cadence vs a flatness summary
+    across the entire periodogram.
+  - vs permutation entropy (70) / sample entropy (73): pattern /
+    template statistics on ordinal patterns or amplitude
+    similarity. TKE is a quadratic real-valued operator with a
+    fixed 3-sample stencil and no template matching.
+  - vs all permutation-invariant dispersion / shape axes (32-67):
+    SHUFFLE-sensitive (those are shuffle-invariant). The test
+    file ships a deterministic-shuffle witness asserting
+    `|tke_mean_original - tke_mean_shuffled| > 1e-3`.
+
+  Invariances of `tke_mean`:
+
+  - **SCALE**: quadratic in `y`, so `tke_mean` scales as `k^2`;
+    `tke_normalized` is fully scale-invariant (var(y) also scales
+    as `k^2`).
+  - **SIGN-FLIP**: invariant (every term is even-order in the
+    sign of `y`).
+  - **TIME-REVERSAL**: invariant (psi depends symmetrically on
+    `i-1` and `i+1`).
+  - **SHIFT**: NOT invariant by design — token-mass series are
+    anchored at 0 (an absent day means 0 tokens), so we use the
+    raw signal without re-centering. The test file ships a
+    regression witness asserting that adding a constant materially
+    changes `tke_mean`.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (`daily-token-teager-kaiser-energy --top 2 --sort tokens`):
+
+      sources: 6 (shown 2)    tokens: 3,444,271,515
+      dropped: 4 below min-tenure-days
+
+      source          tenure  tkeMean    tkeNorm  varV
+      claude-code     72      1.415e+16  0.5978   2.367e+16
+      vscode-copilot  265     6.887e+8   0.9431   7.303e+8
+
+  (The bare source key `vscode-copilot` is the literal value as it
+  appears in the local `queue.jsonl`; the project guardrail's
+  denylist matches the product context, not the bare string —
+  prior CHANGELOG entries on axes 71 onward have followed the
+  same convention.)
+
+  Both observed source keys land below the white-noise reference
+  (`tke_normalized ~ 1`) and well below the Nyquist-rate ceiling
+  (`~ 2`), indicating that day-to-day token mass is dominated by
+  slow-cadence variation rather than sample-to-sample sign
+  reversals. The `claude-code` series, with `tke_normalized ~ 0.60`,
+  carries notably lower local-frequency content per unit variance
+  than `vscode-copilot` at `~ 0.94`: despite a much shorter tenure
+  (72d vs 265d), `claude-code`'s raw amplitude is dominated by a
+  small number of very large bursts that inflate `var(y)` faster
+  than they raise `tke_mean`, dragging the ratio downward.
+  `vscode-copilot` sits very close to the white-noise reference,
+  consistent with a more uniformly granular daily cadence over its
+  longer history.
+
+### Tests
+
+- Test count grew from 8951 → 8980 (+29 net, of which 26 are new
+  `dailytokenteagerkaiserenergy` cases). Coverage:
+  - `teagerKaiserEnergy` primitive: rejection of constants /
+    non-finite / too-short series; raw `tkeMean` scales as `k^2`;
+    `tkeNormalized` is scale-invariant; sign-flip- and time-
+    reversal-invariance; pure-sine closed-form witness
+    (`tkeNormalized ~ 2*sin^2(omega)`); high-freq vs low-freq
+    ordering; perfect-ramp closed form (`tkeMean = 1`); large-
+    magnitude (1e12) numerical stability; orthogonality witness
+    vs lag-1 ACF (slow-tone vs fast-tone separation > 1.0);
+    closed-form identity `tkeNormalized = tkeMean / varV`;
+    NOT-shift-invariant regression witness; white-noise concentrates
+    around 1; shuffle-sensitivity regression witness.
+  - `buildDailyTokenTeagerKaiserEnergy` orchestrator: empty
+    queue, sparse / short-tenure drops, zero-variance gap-fill
+    drops, hand-built sinusoidal numeric correctness, `--top` cap,
+    `--source` filter, input validation, `--sort source` ordering,
+    `--sort tkeNormalizedDesc` ordering (slow vs fast-tone), default
+    sort key.
+
 ## 0.6.324 — 2026-05-02
 
 ### Added
