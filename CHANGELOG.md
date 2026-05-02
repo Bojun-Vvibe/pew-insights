@@ -2,6 +2,133 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.355 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWELFTH):
+  `pew-insights daily-token-bartels-rank-von-neumann`.
+
+  Per-source BARTELS RANK VON NEUMANN RATIO TEST FOR
+  RANDOMNESS on the gap-filled daily total tokens series.
+  Replace each x[i] by its mid-rank R[i] in {1, .., n}
+  (ties: average rank), let Rbar = (n + 1) / 2, and
+  define the BARTELS RANK VON NEUMANN STATISTIC
+  (Bartels 1982, JASA 77(377):40-46):
+
+      RVN = sum_{i=0..n-2} (R[i+1] - R[i])^2
+            / sum_{i=0..n-1} (R[i] - Rbar)^2
+
+  in [0, 4]. RVN < 2 indicates POSITIVE serial
+  dependence (consecutive ranks too close -> trend or
+  persistence); RVN > 2 indicates NEGATIVE serial
+  dependence (consecutive ranks too far -> oscillation
+  / mean-reversion); RVN approx 2 indicates iid
+  randomness.
+
+  CLOSED-FORM GAUSSIAN NULL (Bartels 1982 Theorem 1).
+  Under the iid uniform-permutation null,
+
+      E[RVN]   = 2
+      Var[RVN] = 4 (n - 2)(5 n^2 - 2 n - 9)
+                 / (5 n (n + 1)(n - 1)^2)
+
+  and the standardised score
+
+      bZ = (RVN - 2) / sqrt(Var[RVN])
+
+  is approximately N(0, 1) for n >= 10. |bZ| > 1.96 is
+  two-sided significant at alpha = 0.05.
+
+  STRUCTURAL ORTHOGONALITY vs all prior axes (79-111).
+  Bartels rank von Neumann is the L2-SQUARED-ADJACENT-
+  RANK-DIFFERENCE randomness statistic -- fundamentally
+  distinct from every prior axis:
+
+  - vs axis-111 daily-token-cox-stuart-trend-test.
+    Cox-Stuart is the HALF-SHIFT BINOMIAL SIGN-TEST on
+    floor(n/2) paired comparisons at lag c = floor(n/2)
+    with a Binomial(k, 1/2) null. Bartels is the SUM OF
+    SQUARED ADJACENT-RANK DIFFERENCES at lag 1 with a
+    closed-form Gaussian null. A series with strong
+    half-shift drift but iid-shuffled within each half
+    has csTau approx +1 but RVN approx 2 (random within-
+    half makes adjacent ranks far apart, killing serial
+    dependence at lag 1). Conversely, a locally
+    clustered series (ranks 1,2,3 then 8,9,10 then
+    4,5,6 ...) has RVN much less than 2 but csTau
+    approx 0. Sample space differs (n-1 vs floor(n/2)),
+    functional family differs (squared rank diff vs
+    binary sign), lag differs (1 vs floor(n/2)).
+
+  - vs daily-token-runs-test-z (Wald-Wolfowitz median-
+    binarised maximal-run count). Wald-Wolfowitz uses
+    median-binarised SIGNS (s_i = sgn(x_i - median));
+    Bartels uses the FULL ORDINAL RANKS R[i] in
+    {1, .., n}. Bartels is strictly finer.
+
+  - vs axis-110 (Mann-Kendall global tau). Mann-Kendall
+    is the GLOBAL ALL-PAIRS Kendall U-statistic over
+    n*(n-1)/2 pairs. Bartels operates only on adjacent
+    rank differences (lag-1, n-1 squared diffs) --
+    sensitive to LOCAL serial structure, not global
+    monotonic concordance. A linear trend has tau_MK
+    = +1 AND RVN very low; a no-trend / strong-local-
+    correlation series has tau_MK approx 0 but RVN low.
+
+  - vs axes 107 / 108 (spearman-lag-1 / kendall-tau-
+    lag-1). Both are LAG-1 RANK CORRELATIONS using
+    normalised cross-products. Bartels uses the L2 form
+    -- unnormalised squared adjacent rank differences --
+    with the closed-form von Neumann 1941 / Bartels
+    1982 null. For lag-1 Spearman rho, RVN equals
+    2 * (1 - rho_S * (n - 1) / n) (Bartels 1982 eq. 3),
+    so the two are MONOTONE RELATED but the test
+    statistic, asymptotic null, and operator semantics
+    (randomness-test vs autocorrelation) are different.
+    For lag-1 Kendall tau there is NO such relation.
+
+  - vs axes 105 / 106 (zero-crossing rate / turning-
+    point rate). LOCAL counting statistics on
+    consecutive sign-changes. Bartels is a LAG-1
+    SQUARED-RANK-DIFFERENCE statistic with closed-form
+    Gaussian null -- entirely distinct primitive.
+
+  - vs the inequality / shape axes (Gini, Atkinson, ...).
+    PERMUTATION-INVARIANT functionals of the empirical
+    distribution. Bartels depends entirely on the
+    TEMPORAL ORDER of ranks; a uniformly random
+    permutation has E[RVN] = 2 regardless of value
+    distribution.
+
+  Live-smoke (against ~/.config/pew/queue.jsonl, defaults
+  min-tokens=1000, min-tenure-days=14):
+
+      source         tenure  nTies  RVN     bVar     bZ       tokens
+      ----------     ------  -----  ------  -------  -------  ----------
+      vscode-other      265    192  1.2825  0.01501  -5.8558   1,885,727
+      claude-code        72     37  0.9260  0.05446  -4.6020   3,442,385,788
+      openclaw           16      0  0.5000  0.22674  -3.1501   2,194,316,178
+      hermes             16      0  1.2588  0.22674  -1.5565   286,233,552
+
+  All four high-tenure sources have RVN < 2 and bZ < 0,
+  consistent with positive serial dependence in daily
+  token usage (tokens cluster temporally rather than
+  appearing iid). The vscode-other 265-day series shows
+  the strongest evidence (bZ = -5.86, highly
+  significant at alpha = 0.05) -- consistent with
+  weeks-long active-then-idle patterns picked up by the
+  median-runs and Cox-Stuart axes from earlier
+  releases. openclaw's RVN = 0.5000 is the lowest
+  observed: the 16-day tenure with no ties yields a
+  half-of-iid expectation, indicating tight day-over-
+  day persistence. hermes (also 16-day, no ties) has
+  RVN = 1.2588, marginal serial dependence not yet
+  significant under the conservative no-ties Gaussian
+  null. Reference: Bartels, R., "The rank version of
+  von Neumann's ratio test for randomness", JASA 77
+  (1982), pp. 40-46; von Neumann 1941, AoMS 12:367-395.
+
 ## 0.6.354 — 2026-05-03
 
 ### Added
