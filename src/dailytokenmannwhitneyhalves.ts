@@ -413,6 +413,49 @@ export interface DailyTokenMannWhitneyHalvesReport {
  *   - 0 <= mwU <= n1*n2 by construction.
  *   - E[mwU] === n1*n2/2 under the iid null.
  *
+ * REFINE-LEVEL ANCHORS (axis-115 refine commit):
+ * the following EXACT identities are explicitly
+ * pinned by the property test suite to prevent
+ * regressions in either the rank-assignment or the
+ * variance computation:
+ *
+ *   1. EVEN-n TIME-REVERSAL Z-FLIP. For any input x
+ *      with even n, dailyTokenMannWhitneyHalves(x)
+ *      and dailyTokenMannWhitneyHalves(reverse(x))
+ *      satisfy mwZ(reverse) === -mwZ(orig) EXACTLY
+ *      (within 1e-9). The reversal swaps A and B,
+ *      so U_A(rev) = U_B(orig) = n1*n2 - U_A(orig);
+ *      the variance is symmetric in (n1, n2) and the
+ *      tie-group sizes are unchanged, so sqrt(Var)
+ *      is identical. Anchored across 5 stress
+ *      inputs (linear, alternating, step-shift,
+ *      cosine, modular-arithmetic).
+ *
+ *   2. ODD-n COMPLEMENT IDENTITY. For ANY n
+ *      (including odd), the U statistic on A and the
+ *      U statistic on B (computed via the rank-sum
+ *      complement R_B = n(n+1)/2 - R_A) satisfy
+ *      U_A + U_B === n1*n2 EXACTLY (within 1e-9).
+ *      This is the U-statistic partitioning identity
+ *      that makes Mann-Whitney "two-sided by
+ *      symmetry" -- the two cross-half pair-counts
+ *      sum to the total number of cross-half pairs.
+ *      Anchored across 5 stress inputs with n in
+ *      {9, 11, 13, 17, 25}.
+ *
+ *   3. STRICT-MONOTONE AFFINE INVARIANCE. For any
+ *      a > 0 and any c, the transformation y_i =
+ *      a*x_i + c leaves mwU, mwRankSumA, AND mwZ
+ *      EXACTLY invariant (within 1e-9). This is
+ *      stronger than the separate shift- and scale-
+ *      invariance identities: it asserts that ANY
+ *      strict-monotone-positive-affine map preserves
+ *      the entire output, including the tie-
+ *      corrected variance (because tie-group sizes
+ *      are preserved under any strict-monotone
+ *      transform). Anchored across 4 inputs x 5
+ *      transforms = 20 (input, transform) pairs.
+ *
  * Closed-form sanity anchors:
  *   - constant series filtered upstream by zero-
  *     variance guard.

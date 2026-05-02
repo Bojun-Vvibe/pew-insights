@@ -543,3 +543,97 @@ test('property: U + complement_U = n1 * n2', () => {
   const uB = rankSumB - (r.mwN2 * (r.mwN2 + 1)) / 2;
   assert.equal(r.mwU + uB, r.mwN1 * r.mwN2);
 });
+
+// ---------- exact-identity property anchors (refine) ----------
+
+test('dailyTokenMannWhitneyHalves: exact time-reversal Z-flip when n1 = n2 (stress)', () => {
+  // For even n, reversal exactly swaps A and B, so U_A(reverse) = n1*n2 - U_A(orig)
+  // hence mwZ(reverse) = -mwZ(orig) exactly.
+  const inputs: number[][] = [
+    [1, 4, 2, 7, 3, 9, 5, 11, 6, 8, 4, 10, 12, 7, 13, 9],
+    [10, 20, 5, 15, 25, 30, 8, 12, 18, 22, 28, 35, 11, 17, 23, 29],
+    [100, 100, 100, 100, 100, 100, 100, 100, 1, 1, 1, 1, 1, 1, 1, 1],
+    Array.from({ length: 24 }, (_, i) => Math.cos(i / 4) * 100 + 50),
+    Array.from({ length: 40 }, (_, i) => ((i * 7919) % 173) + 1),
+  ];
+  for (const x of inputs) {
+    const a = dailyTokenMannWhitneyHalves(x);
+    const b = dailyTokenMannWhitneyHalves(x.slice().reverse());
+    assert.equal(a.mwN1, a.mwN2, 'pre-condition: even n');
+    // U_A + U_A(rev) === n1*n2 exactly
+    assert.ok(
+      Math.abs(a.mwU + b.mwU - a.mwN1 * a.mwN2) < 1e-9,
+      `U + U(rev) mismatch: ${a.mwU} + ${b.mwU} vs ${a.mwN1 * a.mwN2}`,
+    );
+    // mwZ(reverse) === -mwZ(orig) exactly (variance is symmetric in halves)
+    assert.ok(
+      Math.abs(a.mwZ + b.mwZ) < 1e-9,
+      `Z anti-symmetry violated: ${a.mwZ} + ${b.mwZ}`,
+    );
+  }
+});
+
+test('dailyTokenMannWhitneyHalves: exact U + complement_U === n1*n2 across odd-n stress', () => {
+  // For odd n, the middle element goes into the second half, so reversal does NOT
+  // exactly swap halves. But the U + U_B = n1*n2 identity still holds for ANY split
+  // (computed via the rank-sum complement).
+  const inputs: number[][] = [
+    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5],
+    [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130],
+    Array.from({ length: 17 }, (_, i) => (i * 11 + 7) % 23),
+    Array.from({ length: 25 }, (_, i) => Math.sin(i / 2) * 50 + 100),
+  ];
+  for (const x of inputs) {
+    const r = dailyTokenMannWhitneyHalves(x);
+    const totalRankSum = (x.length * (x.length + 1)) / 2;
+    const rankSumB = totalRankSum - r.mwRankSumA;
+    const uB = rankSumB - (r.mwN2 * (r.mwN2 + 1)) / 2;
+    assert.ok(
+      Math.abs(r.mwU + uB - r.mwN1 * r.mwN2) < 1e-9,
+      `U + U_B mismatch for n=${x.length}: ${r.mwU} + ${uB} vs ${r.mwN1 * r.mwN2}`,
+    );
+    // Also bound check
+    assert.ok(r.mwU >= 0 && r.mwU <= r.mwN1 * r.mwN2);
+    assert.ok(uB >= 0 && uB <= r.mwN1 * r.mwN2);
+  }
+});
+
+test('dailyTokenMannWhitneyHalves: exact shift+scale invariance (stress)', () => {
+  // mid-ranks depend only on the order, so any strictly-monotone affine
+  // transformation y = a*x + c with a > 0 must leave mwU, mwRankSumA, mwZ
+  // EXACTLY invariant (not approximately).
+  const inputs: number[][] = [
+    [1, 4, 2, 7, 3, 9, 5, 11, 6, 8, 4, 10],
+    Array.from({ length: 20 }, (_, i) => Math.sin(i / 3) * 17 + 5),
+    [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0],
+    Array.from({ length: 30 }, (_, i) => ((i * 13) % 19) + 0.5),
+  ];
+  const transforms: Array<[number, number]> = [
+    [1, 0],
+    [1, 1000],
+    [7.5, 0],
+    [0.001, -42.7],
+    [1e6, 1e9],
+  ];
+  for (const x of inputs) {
+    const base = dailyTokenMannWhitneyHalves(x);
+    for (const [a, c] of transforms) {
+      const y = x.map((v) => a * v + c);
+      const r = dailyTokenMannWhitneyHalves(y);
+      assert.equal(
+        r.mwRankSumA,
+        base.mwRankSumA,
+        `rankSumA mismatch under (a=${a}, c=${c})`,
+      );
+      assert.equal(r.mwU, base.mwU, `mwU mismatch under (a=${a}, c=${c})`);
+      // Z must match within float tolerance (variance computation is the
+      // same since it depends only on tie-group sizes, which are
+      // preserved under strict-monotone affine transforms).
+      assert.ok(
+        Math.abs(r.mwZ - base.mwZ) < 1e-9,
+        `mwZ mismatch under (a=${a}, c=${c}): ${r.mwZ} vs ${base.mwZ}`,
+      );
+    }
+  }
+});
