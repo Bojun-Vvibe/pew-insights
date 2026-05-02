@@ -132,6 +132,7 @@ import {
   renderDailyTokenBoxCountFd,
   renderDailyTokenHjorthMobility,
   renderDailyTokenHjorthComplexity,
+  renderDailyTokenTeagerKaiserEnergy,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -426,6 +427,7 @@ import { buildDailyTokenSevcikFd } from './dailytokensevcikfd.js';
 import { buildDailyTokenBoxCountFd } from './dailytokenboxcountfd.js';
 import { buildDailyTokenHjorthMobility } from './dailytokenhjorthmobility.js';
 import { buildDailyTokenHjorthComplexity } from './dailytokenhjorthcomplexity.js';
+import { buildDailyTokenTeagerKaiserEnergy } from './dailytokenteagerkaiserenergy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17855,6 +17857,116 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHjorthComplexity(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-teager-kaiser-energy')
+  .description(
+    "Per-source mean Teager-Kaiser Energy Operator (Kaiser, J. F., \"On a simple algorithm to calculate the 'energy' of a signal\", Proc. IEEE ICASSP-90, pp. 381-384, 1990) on the gap-filled daily total_tokens series (EIGHTY-FIRST cross-source axis). psi[i] = y[i]^2 - y[i-1]*y[i+1] for i in [1, N-2]; tkeMean = mean(psi[i]); tkeNormalized = tkeMean / var(y) (population). Local quadratic operator on three-sample triplets that simultaneously couples local AMPLITUDE and local FREQUENCY (single-tone closed form: tkeNormalized ~ 2*sin^2(omega), bounded in [0, 2]). Sign-flip- and time-reversal-invariant; SHUFFLE-sensitive; NOT shift-invariant by design (token-mass series are anchored at 0). Structurally orthogonal to (a) Hjorth mobility/complexity axes 79/80 -- those are GLOBAL ratios of three sample variances; TKE is the time-mean of a LOCAL triplet operator and carries a SIGN (mobility/complexity are strictly non-negative). (b) box-count/Sevcik/Katz/Higuchi FD axes 78/77/75/74 -- path-length / coverage geometries vs quadratic local energy. (c) Petrosian FD axis 76 -- binary sign-change count vs magnitude-aware quadratic operator. (d) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale local quadratic. (e) lag-1 ACF axis 67 -- TKE is a NONLINEAR (quadratic) functional of triplets while ACF is strictly linear; identical rho_1 can split sharply on TKE. (f) spectral entropy axis 69 -- specific A^2 sin^2(omega) mean energy vs flatness summary. (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; TKE is shuffle-sensitive because the i-1 / i / i+1 stencil carries the operator's frequency information.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 5. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absTkeNormalizedDesc (default, distance from white-noise reference 1 desc) | tkeMean | tkeMeanDesc | tkeNormalized | tkeNormalizedDesc | tokens | tenure | source.',
+    'absTkeNormalizedDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 5) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 5 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absTkeNormalizedDesc',
+          'tkeMean',
+          'tkeMeanDesc',
+          'tkeNormalized',
+          'tkeNormalizedDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenTeagerKaiserEnergy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absTkeNormalizedDesc'
+            | 'tkeMean'
+            | 'tkeMeanDesc'
+            | 'tkeNormalized'
+            | 'tkeNormalizedDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenTeagerKaiserEnergy(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -17090,6 +17090,7 @@ import type { DailyTokenSevcikFdReport } from './dailytokensevcikfd.js';
 import type { DailyTokenBoxCountFdReport } from './dailytokenboxcountfd.js';
 import type { DailyTokenHjorthMobilityReport } from './dailytokenhjorthmobility.js';
 import type { DailyTokenHjorthComplexityReport } from './dailytokenhjorthcomplexity.js';
+import type { DailyTokenTeagerKaiserEnergyReport } from './dailytokenteagerkaiserenergy.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18897,6 +18898,73 @@ export function renderDailyTokenHjorthComplexity(
     s.varV.toExponential(3),
     s.varDv.toExponential(3),
     s.varDdv.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTeagerKaiserEnergy(
+  r: DailyTokenTeagerKaiserEnergyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-teager-kaiser-energy'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteTke)} non-finite-tke, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source mean Teager-Kaiser Energy Operator (Kaiser 1990, Proc. ICASSP-90 pp. 381-384) on the gap-filled daily total_tokens series. EIGHTY-FIRST cross-source axis. psi[i] = y[i]^2 - y[i-1]*y[i+1]; tkeMean = mean(psi[i]) over i in [1,N-2]; tkeNormalized = tkeMean / var(y). Local instantaneous-energy operator on three-sample triplets that simultaneously couples local amplitude AND local frequency (single-tone closed form: tkeNormalized ~ 2*sin^2(omega), bounded in [0,2]). Sign-flip- and time-reversal-invariant; SHUFFLE-sensitive; NOT shift-invariant by design (token-mass series anchored at 0). Structurally orthogonal to (a) Hjorth mobility/complexity axes 79/80 -- those are GLOBAL ratios of three sample variances; TKE is the time-mean of a LOCAL triplet operator and carries a sign; (b) box-count/Sevcik/Katz/Higuchi FD axes 78/77/75/74 -- path-length / coverage geometries vs quadratic local energy; (c) Petrosian FD axis 76 -- binary sign-change count vs magnitude-aware quadratic operator; (d) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale local quadratic; (e) lag-1 ACF axis 67 -- TKE is a NONLINEAR (quadratic) functional of triplets while ACF is strictly linear; (f) spectral entropy axis 69 -- specific A^2 sin^2(omega) mean energy vs flatness summary; (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; TKE is shuffle-sensitive because the i-1 / i / i+1 stencil carries the operator's frequency information.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source Teager-Kaiser energy (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'tkeMean',
+    'tkeNorm',
+    'varV',
+    'interior',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.tkeMean.toExponential(3),
+    s.tkeNormalized.toFixed(4),
+    s.varV.toExponential(3),
+    formatNumber(s.interiorSamples),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
