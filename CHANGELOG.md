@@ -2,6 +2,174 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.348 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-FIFTH):
+  `pew-insights daily-token-zero-crossing-rate`.
+
+  Per-source ZERO-CROSSING RATE -- count of adjacent-pair
+  sign changes on the demeaned gap-filled daily total
+  tokens series, normalised by `n - 1` (Kedem, Proc. IEEE
+  74(11), 1986; Rice, Bell Sys. Tech. J. 23(3), 1944;
+  Lerch, "An Introduction to Audio Content Analysis",
+  Wiley-IEEE, 2012, sec. 3.2.4).
+
+  Construction. Let `x[0..n-1]` be the gap-filled daily
+  token series for one source over its tenure
+  (`n = nTenureDays`). Let `mu = mean(x)` and
+  `y[i] = x[i] - mu`. Define `s[i] = sign(y[i])` in
+  `{-1, 0, +1}` with `sign(0) = 0`. The zero-crossing
+  count is
+
+      C = #{ i : s[i] != 0 AND s[i+1] != 0 AND s[i] != s[i+1] }
+
+  where the comparison walks the non-zero subsequence
+  (samples with `y[i] = 0` are surfaced as `nZeroSamples`
+  and bridged). The headline scalar is
+
+      zcr = C / (n - 1)   in   [0, 1]
+
+  the fraction of adjacent-pair transitions that are
+  sign-change events. Reported alongside `zcr`:
+  `nCrossings = C`, `nZeroSamples`, `nPairs = n - 1`,
+  `meanRunLength` (mean length of a maximal run of
+  consecutive same-sign non-zero samples), and
+  `zcrExpectedWhite = 0.5` (Kedem 1986 reference anchor
+  for zero-mean i.i.d. continuous noise).
+
+  CLASS-TIME-DOMAIN-SYMBOLIC primitive -- the FIRST
+  daily-token axis that operates purely on the SIGN
+  SEQUENCE of the demeaned signal.
+
+  ### Structural orthogonality vs the full 79-104 chain
+
+  - vs all permutation-invariant inequality / shape axes
+    (Gini, Atkinson, Theil, Palma, Hoover, Bonferroni,
+    Mehran, Pietra, Foster-Wolfson, Esteban-Ray, Wolfson,
+    Zenga, Chakravarty, Kolm-Pollak, GE family, S-Gini,
+    Amato, FGT, Hill-tail, decile / quintile / percentile
+    gap ratios, IQR/median, MAD/median, log-MAD,
+    midspread, var-of-logs, z-score-extremes, L-skewness,
+    medcouple, Bowley): every one of those is a
+    PERMUTATION-INVARIANT functional of the empirical
+    distribution. They depend ONLY on the multiset of
+    values; ZCR depends on temporal ORDER of the signs.
+    Witness in suite: same multiset, monotone vs alternating
+    -> same value-distribution, different ZCR.
+
+  - vs all spectral / PSD axes 84-102: the periodogram
+    operator collapses the WHOLE-tenure signal via squared
+    cosine/sine projections, so the SIGN of each
+    time-domain sample is discarded. ZCR is built directly
+    from the sign sequence.
+
+  - vs the dynamic-spectral axes 103 (PSD-vector flux) and
+    104 (Wiener-flatness flux): both are FRAME-SLIDING
+    statistics on the LOCAL PSD; both still discard
+    time-domain sample sign within each frame. ZCR is a
+    single-pass tally on the binary sign sequence over the
+    full tenure.
+
+  - vs Hjorth-mobility (axis-79) / Hjorth-complexity
+    (axis-80): Hjorth-mobility = `sqrt(var(dx)/var(x))` is
+    a CONTINUOUS variance-ratio of the first-difference
+    series. ZCR is a DISCRETE event-count on the sign
+    sequence. Witness: two series with identical
+    per-sample magnitudes but different sign patterns
+    (`+-+-+-+-` vs `+--++--+`) have identical sample
+    variance but different ZCR (1 vs 4/7).
+
+  - vs Teager-Kaiser energy (axis-81): TKE involves
+    `x[i]^2` and `x[i-1]*x[i+1]`, a SQUARED local-product
+    statistic, not a sign-change count.
+
+  - vs curvature-sign-change-rate (axis-82): axis-82
+    counts sign changes of the SECOND difference (a
+    CURVATURE reversal). ZCR counts sign changes of the
+    LEVEL itself relative to the mean. A smooth concave
+    hump above the mean has many curvature flips but zero
+    level crossings; a noisy series oscillating around
+    the mean has many level crossings without
+    curvature reversals at every step.
+
+  - vs LZ complexity (axis-83): LZ on the sign sequence
+    is a DICTIONARY-PARSING count; ZCR is the simple
+    adjacent-bit-flip count. A strictly alternating
+    binary string `+-+-+-+-` has ZCR = 1 but very LOW LZ
+    complexity (one repeated phrase). A single-sign
+    string has ZCR = 0 and also LOW LZ complexity. The
+    two are not monotone in either direction.
+
+  - vs run-length axes (monotone-run-length, second-diff
+    sign runs, runs-test Z): those summarise the LENGTH
+    DISTRIBUTION of monotonicity / sign runs of
+    DIFFERENCES; ZCR is the SIMPLE COUNT of sign changes
+    of LEVELS. The `meanRunLength` field is reported
+    alongside `zcr` so both views are visible.
+
+  - vs autocorrelation lag-1 / lag-7: the Kedem (1986)
+    bridge `zcr ~= 1 - acos(rho_1)/pi` holds only for a
+    stationary GAUSSIAN process; the daily-token series is
+    discrete, integer-valued, non-Gaussian, and short
+    (n ~ 16-72), so the two are independent in practice.
+
+  ### Bounds and sanity anchors
+
+  - `zcr` is in `[0, 1]`. `zcr = 0` iff every adjacent
+    pair of non-zero-demeaned samples shares the same
+    sign (monotone or one-sided). `zcr = 1` iff every
+    adjacent pair has opposite sign (strict alternation).
+  - For zero-mean i.i.d. continuous noise, asymptotic
+    `E[zcr] -> 0.5` (Kedem 1986); reported as
+    `zcrExpectedWhite`.
+  - Constant series -> `mu = x`, `y = 0` everywhere ->
+    surfaced via `droppedZeroVariance`.
+  - `meanRunLength >= 1`; equals `1` iff strict
+    alternation with no demeaned zeros.
+
+  ### Live-smoke output (real `~/.config/pew/queue.jsonl`,
+  default `--min-tenure-days 14`, `--min-tokens 1000`)
+
+  - `hermes` (16-day tenure, 16 active days, 15 pairs):
+    `mean = 17,622,389.13`, `stddev = 9,457,971.98`,
+    `zcr = 0.4000` (6 sign-change events out of 15
+    pairs), `meanRunLength = 2.2857`,
+    `tokens = 281,958,226`.
+  - `openclaw` (16-day tenure, 16 active days, 15 pairs):
+    `mean = 136,338,426`, `stddev = 94,990,223.82`,
+    `zcr = 0.4000` (6 events), `meanRunLength = 2.2857`,
+    `tokens = 2,181,414,816`. (Identical sign pattern to
+    `hermes` over this 16-day window, despite a
+    ~7.7x scale difference — a striking ZCR/scale
+    decoupling that the spectral axes cannot surface.)
+  - `claude-code` (72-day tenure, 35 active days, 71
+    pairs): `mean = 47,810,913.72`,
+    `stddev = 153,856,936.42`, `zcr = 0.1690` (12 events),
+    `meanRunLength = 5.5385`, `tokens = 3,442,385,788`.
+
+  All within the bound `[0, 1]`. The two short-tenure
+  carriers (`hermes`, `openclaw`) sit near `0.4` — close to
+  the white-noise anchor `0.5`, indicating a near-random
+  sign sequence around the mean. The long-tenure carrier
+  (`claude-code`) is much closer to `0.17`, with mean run
+  length `> 5` days — the demeaned daily-token activity
+  stays above (or below) the mean for ~5-day stretches at
+  a time, evidencing strong WEEKLY-SCALE PERSISTENCE that
+  is invisible to all permutation-invariant inequality
+  axes.
+
+  CLI:
+
+  ```
+  pew-insights daily-token-zero-crossing-rate
+  pew-insights daily-token-zero-crossing-rate \
+    --source hermes --json
+  ```
+
+  Tests: `+31` (10076 total), all passing.
+
 ## 0.6.347 — 2026-05-02
 
 ### Added
