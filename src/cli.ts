@@ -148,6 +148,7 @@ import {
   renderDailyTokenSpectralSpreadIqr,
   renderDailyTokenSpectralRoughness,
   renderDailyTokenSpectralPeakFrequency,
+  renderDailyTokenSpectralSecondPeakFrequency,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -458,6 +459,7 @@ import { buildDailyTokenSpectralIrregularity } from './dailytokenspectralirregul
 import { buildDailyTokenSpectralSpreadIqr } from './dailytokenspectralspreadiqr.js';
 import { buildDailyTokenSpectralRoughness } from './dailytokenspectralroughness.js';
 import { buildDailyTokenSpectralPeakFrequency } from './dailytokenspectralpeakfrequency.js';
+import { buildDailyTokenSpectralSecondPeakFrequency } from './dailytokenspectralsecondpeakfrequency.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19597,6 +19599,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSpectralPeakFrequency(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-second-peak-frequency')
+  .description(
+    "Per-source SPECTRAL SECOND-PEAK-FREQUENCY (second-argmax-bin POSITION descriptor on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; k1* = argmax_{k=1..K} P[k]; k2* = argmax over residual after excluding {k1*-1, k1*, k1*+1} with smallest-k tie-break; primary-and-immediate-neighbour exclusion suppresses spectral-leakage side-lobes; peak2FreqRatio = (k2* - 1) / (K - 1) in [0, 1]; peak2NormalisedFreq = k2* / n in (0, 0.5]; peakRatio = P[k2*] / P[k1*] in (0, 1]; peakSeparationBins = |k2* - k1*| in {2..K-1}) (NINETY-SEVENTH cross-source axis). Class-P2 (SECOND-POSITION / SECOND-ARGMAX) primitive -- the FIRST primitive in the suite that reads a SECONDARY structural feature on the PSD, structurally distinct from axis-96 (SINGLE-argmax) on every bimodal spectrum (a PSD with equal peaks at k=1 and k=K has axis-96 k1*=1 and axis-97 k2*=K -- the precise bimodal-decoupling witness). References: Peeters 2004 §6 (CUIDADO secondary-peak extraction); Lerch 2012 §3.3 (peak picking with neighbour-exclusion windows); McAulay & Quatieri 1986 (greedy peak picking with local-maximum suppression). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal MAPS the index pair (k1*, k2*) to (K+1-k1*, K+1-k2*) (peakRatio and peakSeparationBins are bin-reversal-INVARIANT). Structurally orthogonal to (a) spectral-peak-frequency 96 (single-argmax; axis-97 reads the SECONDARY mode); (b) spectral-roughness 95 (real-valued L1 TV-of-pmf MASS aggregate, bin-reversal-INVARIANT in magnitude); (c) spectral-spread-IQR 94 (inner-50% percentile WIDTH); (d) spectral-irregularity 93 (second-order L2 magnitude); (e) spectral-decrease 92 (fixed-anchor slope); (f) spectral-bandwidth 87 / -skewness 90 / -kurtosis 91 (centroid-relative central moments); (g) spectral-rolloff 88 (CDF quantile); (h) spectral-centroid 86 (first raw moment); (i) spectral-crest 89 (PRIMARY peak-to-mean MAGNITUDE; peakRatio is SECONDARY-to-PRIMARY MAGNITUDE -- a strictly different magnitude relationship); (j) spectral-flatness-wiener 85 / -spectral-entropy 69 (BIN-PERMUTATION INVARIANT); (k) DFT-power-law-slope 84 (LOG-LOG global slope); (l) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 10 (so K >= 5 leaves >= 2 candidates after worst-case neighbour exclusion). Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: peak2FreqRatioDesc (default) | peak2FreqRatio | peak2Bin | peak2BinDesc | peakRatio | peakRatioDesc | peakSeparationBins | peakSeparationBinsDesc | tokens | tenure | source.',
+    'peak2FreqRatioDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 10) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 10 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'peak2FreqRatio',
+          'peak2FreqRatioDesc',
+          'peak2Bin',
+          'peak2BinDesc',
+          'peakRatio',
+          'peakRatioDesc',
+          'peakSeparationBins',
+          'peakSeparationBinsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralSecondPeakFrequency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'peak2FreqRatio'
+            | 'peak2FreqRatioDesc'
+            | 'peak2Bin'
+            | 'peak2BinDesc'
+            | 'peakRatio'
+            | 'peakRatioDesc'
+            | 'peakSeparationBins'
+            | 'peakSeparationBinsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpectralSecondPeakFrequency(report) + '\n',
           );
         }
       } catch (e) {

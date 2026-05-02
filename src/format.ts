@@ -17248,6 +17248,7 @@ import type { DailyTokenSpectralIrregularityReport } from './dailytokenspectrali
 import type { DailyTokenSpectralSpreadIqrReport } from './dailytokenspectralspreadiqr.js';
 import type { DailyTokenSpectralRoughnessReport } from './dailytokenspectralroughness.js';
 import type { DailyTokenSpectralPeakFrequencyReport } from './dailytokenspectralpeakfrequency.js';
+import type { DailyTokenSpectralSecondPeakFrequencyReport } from './dailytokenspectralsecondpeakfrequency.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -20067,6 +20068,89 @@ export function renderDailyTokenSpectralPeakFrequency(
     s.peakFreqRatio.toFixed(4),
     s.peakNormalisedFreq.toFixed(4),
     s.peakMassShare.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralSecondPeakFrequency(
+  r: DailyTokenSpectralSecondPeakFrequencyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-spectral-second-peak-frequency'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedSingleMode)} single-mode (all-zero residual after neighbour exclusion), ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL SECOND-PEAK-FREQUENCY (second-argmax-bin POSITION descriptor on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; k1* = argmax_{k=1..K} P[k]; k2* = argmax_{k in {1..K} \\ {k1*-1, k1*, k1*+1}} P[k] with smallest-k tie-break; primary-and-immediate-neighbour exclusion suppresses spectral-leakage side-lobes; peak2FreqRatio = (k2* - 1) / (K - 1) in [0, 1]; peakRatio = P[k2*] / P[k1*] in (0, 1]). NINETY-SEVENTH cross-source axis. Class-P2 (SECOND-POSITION / SECOND-ARGMAX) primitive -- the FIRST primitive in the suite that reads a SECONDARY structural feature; structurally distinct from axis-96 (single-argmax) on bimodal spectra and from every shipped axis 32..95 which collapse the PSD to a single scalar. Bin-permutation-SENSITIVE; bin-reversal MAPS the index pair.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPECTRAL SECOND-PEAK-FREQUENCY (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'peakBin',
+    'peak2Bin',
+    'sepBins',
+    'peak2FreqRatio',
+    'peak2NormFreq',
+    'peakRatio',
+    'peak2MassShare',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.peakBin),
+    formatNumber(s.peak2Bin),
+    formatNumber(s.peakSeparationBins),
+    s.peak2FreqRatio.toFixed(4),
+    s.peak2NormalisedFreq.toFixed(4),
+    s.peakRatio.toFixed(4),
+    s.peak2MassShare.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
