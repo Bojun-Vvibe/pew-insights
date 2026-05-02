@@ -355,9 +355,20 @@ export function spectralRenyiHalfEntropy(power: number[]): {
   let sumSqrtP = 0;
   for (let i = 0; i < k; i += 1) {
     const p = power[i]! / s;
-    sumSqrtP += Math.sqrt(p);
+    // Guard against floating-point negative-zero from p=0 power
+    // bins (sqrt(-0) = -0). Both are mathematically 0; we
+    // canonicalise to +0 to keep the running sum monotone.
+    const sp = p > 0 ? Math.sqrt(p) : 0;
+    sumSqrtP += sp;
   }
   // Numerical guard: clamp sumSqrtP to its valid range [1, sqrt K].
+  // Lower bound: by Cauchy-Schwarz on sum sqrt(p) given sum p = 1,
+  // we have sum sqrt(p) >= 1 with equality iff p is a single-bin
+  // delta. A floating-point underflow on a near-delta could push
+  // the sum below 1 by O(eps); the clamp restores the guarantee
+  // without affecting values that are already in range.
+  // Upper bound: by Cauchy-Schwarz again, sum sqrt(p) <= sqrt K
+  // with equality iff p is uniform.
   const sqrtK = Math.sqrt(k);
   if (sumSqrtP > sqrtK) sumSqrtP = sqrtK;
   if (sumSqrtP < 1) sumSqrtP = 1;

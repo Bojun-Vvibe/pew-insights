@@ -875,3 +875,29 @@ test('refine: cross-check kEffHalf >= kEff for series wrapper too', () => {
     assert.ok(half.kEffHalf <= half.nFreqBins + 1e-9);
   }
 });
+
+test('refine: negative-zero power bin treated as +0 (no NaN propagation)', () => {
+  // -0 is mathematically equal to 0 and IEEE-754 sqrt(-0) = -0;
+  // the inner-loop guard canonicalises to +0 so the sum stays
+  // numerically clean.
+  const arr = [1, -0, -0, 0, 1];
+  const r = spectralRenyiHalfEntropy(arr);
+  assert.ok(Number.isFinite(r.hHalfNorm));
+  assert.ok(Number.isFinite(r.sumSqrtP));
+  assert.ok(r.sumSqrtP > 0);
+  // Same-multiset comparison with all +0 bins.
+  const arrPos = [1, 0, 0, 0, 1];
+  const rPos = spectralRenyiHalfEntropy(arrPos);
+  assert.ok(Math.abs(r.hHalfNorm - rPos.hHalfNorm) < 1e-12);
+  assert.ok(Math.abs(r.sumSqrtP - rPos.sumSqrtP) < 1e-12);
+});
+
+test('refine: Cauchy-Schwarz upper bound sum sqrt(p) <= sqrt K achieved exactly on uniform', () => {
+  // sum sqrt(p) <= sqrt K with equality iff p is uniform; the
+  // upper-bound clamp must be inactive on every uniform PSD.
+  for (let k = 2; k <= 24; k += 1) {
+    const arr = new Array<number>(k).fill(1);
+    const r = spectralRenyiHalfEntropy(arr);
+    assert.ok(Math.abs(r.sumSqrtP - Math.sqrt(k)) < 1e-12, `K=${k}`);
+  }
+});
