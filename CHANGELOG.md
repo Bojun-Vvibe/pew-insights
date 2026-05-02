@@ -2,6 +2,193 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.353 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TENTH):
+  `pew-insights daily-token-mann-kendall-tau`.
+
+  Per-source MANN-KENDALL GLOBAL MONOTONIC TREND TAU on
+  the gap-filled daily total tokens series. The
+  Mann-Kendall S statistic counts the difference between
+  concordant and discordant ordered pairs:
+
+      S = sum_{i<j} sgn(x[j] - x[i])
+
+  and the normalised tau is
+
+      tau_MK = S / (n*(n-1)/2)   in [-1, +1]
+
+  (Mann, "Nonparametric tests against trend",
+  Econometrica 13, 1945, pp. 245-259; Kendall, "Rank
+  Correlation Methods", 4th ed., Charles Griffin, 1975;
+  Hipel & McLeod, "Time Series Modelling of Water
+  Resources and Environmental Systems", Elsevier, 1994,
+  ch. 23).
+
+  CLOSED-FORM NULL DISTRIBUTION (Mann 1945; Kendall
+  1975). Under the null hypothesis that x is a random
+  permutation of n distinct continuous values,
+
+      E[S]   = 0
+      Var[S] = n*(n-1)*(2n+5) / 18
+
+  and S is asymptotically normal by Hoeffding's CLT for
+  U-statistics. With ties present we apply the standard
+  tie correction (Hipel-McLeod 1994 eq. 23.1.4-23.1.5):
+
+      Var[S] = ( n*(n-1)*(2n+5)
+                 - sum_g t_g*(t_g-1)*(2*t_g+5) ) / 18
+
+  where t_g is the size of the g-th tied group. The
+  continuity-corrected standardised score
+
+      mkZ = (S - sgn(S)) / sqrt(Var[S])    if S != 0
+          = 0                              if S == 0
+
+  is approximately N(0, 1) under the iid null; |mkZ| >
+  1.96 is two-sided significant at alpha = 0.05.
+
+  STRUCTURAL ORTHOGONALITY vs all prior axes (79-109).
+  Mann-Kendall tau is the GLOBAL all-pairs concordance
+  statistic over n*(n-1)/2 ordered index pairs --
+  fundamentally distinct from every prior axis:
+
+  - vs axis-108 (lag-1 Kendall tau autocorrelation).
+    Axis-108 is the LOCAL pairwise Kendall on the n-1
+    ADJACENT pairs (x[i], x[i+1]); axis-110 is the
+    GLOBAL all-pairs Kendall over n*(n-1)/2 pairs. A
+    series with one big late spike on an iid background
+    has lag-1 tau approx 0 (the spike is one local
+    event) but a positive Mann-Kendall tau (the spike
+    creates n-1 concordant pairs against all earlier
+    indices). Local vs global -- the canonical
+    decomposition in environmental trend testing
+    (Hirsch & Slack, Water Resources Research 20(6),
+    1984).
+
+  - vs axis-107 (lag-1 Spearman autocorrelation). Same
+    local vs global distinction; lag-k autocorrelations
+    cannot detect a slow monotone drift, which is
+    precisely what Mann-Kendall is designed for.
+
+  - vs axis-109 (records-count). Records is an integer
+    counting statistic with a Bernoulli-convolution
+    null (Renyi 1962); Mann-Kendall is a normalised
+    pair-concordance ratio with a Gaussian null. They
+    differ in sample space (n events vs n*(n-1)/2
+    pairs) and functional form (count vs ratio). A
+    "constant baseline + one big late spike" series has
+    R_n = 2 but tau_MK > 0 because the spike creates
+    many concordant pairs.
+
+  - vs axes 105 / 106 (zero-crossing rate / turning-
+    point rate). LOCAL counting statistics on
+    consecutive sign-changes of level / first-difference;
+    Mann-Kendall is GLOBAL all-pairs and invariant to
+    the order of any same-sign run.
+
+  - vs the inequality / shape axes (Gini, Atkinson,
+    Theil, Palma, Hoover, Bonferroni, Mehran, Pietra,
+    GE2/3/4/half/negone, S-Gini, Foster-Wolfson,
+    Esteban-Ray, Wolfson, Zenga, Chakravarty,
+    Kolm-Pollak, Amato, FGT, Hill-tail, decile /
+    quintile / percentile gap ratios, IQR / median,
+    MAD / median, log-MAD, midspread, var-of-logs,
+    z-score-extremes, L-skewness, medcouple, Bowley):
+    permutation-invariant functionals of the empirical
+    distribution; Mann-Kendall depends on temporal
+    order. A reverse-sorted permutation of x has
+    identical Gini / Atkinson but tau_MK negated.
+
+  - vs the spectral axes (84-104). PSD axes are time-
+    reversal symmetric (the periodogram drops phase);
+    Mann-Kendall is anti-symmetric under time reversal
+    (S -> -S), so it cannot be reconstructed from any
+    spectral functional.
+
+  - vs the fractal-dimension / long-memory axes
+    (Higuchi, Katz, Petrosian, Sevcik, box-count, DFA
+    alpha, Hurst R/S). Scaling exponents fit across
+    multiple window sizes; Mann-Kendall is a single
+    scalar in [-1, +1] with a closed-form Gaussian null
+    -- the standard non-parametric trend test in
+    environmetrics (Hirsch-Slack-Smith, Water
+    Resources Research 18(1), 1982).
+
+  - vs runs-test / monotone-run-length / second-
+    difference sign-runs. Conditional on consecutive
+    sign blocks; Mann-Kendall counts concordant vs
+    discordant pairs over all index pairs.
+
+  HEADLINE QUESTION. "For each source, do the daily
+  token totals exhibit a GLOBAL monotonic trend across
+  the entire gap-filled tenure -- and is the trend sign
+  and magnitude significant under the iid permutation
+  null?"
+
+  CLI examples:
+
+      pew-insights daily-token-mann-kendall-tau
+      pew-insights daily-token-mann-kendall-tau \
+        --source claude-code --json
+      pew-insights daily-token-mann-kendall-tau \
+        --sort tauDesc --top 5
+
+  LIVE SMOKE on `~/.config/pew/queue.jsonl`
+  (2,429 rows, 5.92 GT total, 6 sources, 4 surfaced):
+
+      source        tenure  S      tau_MK    mkZ
+      claude-code   72      826    +0.3232   +4.3200
+      openclaw      16      -66    -0.5500   -2.9265
+      vscode-other  265     -2502  -0.0715   -2.2047
+      hermes        16      -4     -0.0333   -0.1351
+
+  Reading: claude-code shows a clear UPWARD global
+  monotonic trend (tau = +0.32, mkZ = +4.32, two-sided
+  p < 0.001) -- daily token consumption is monotonically
+  growing across the 72-day tenure. openclaw and
+  vscode-other both show a downward trend significant at
+  alpha = 0.05 (mkZ < -1.96); openclaw is a sharp short-
+  tenure decline (16 days, tau = -0.55), vscode-other is
+  a long-tenure mild decline (265 days, tau = -0.07 with
+  a large pair count making mkZ significant). hermes is
+  flat over its 16-day tenure.
+
+  Note vs axis-108 (lag-1 Kendall): vscode-other has
+  axis-108 tau very near zero (no local serial
+  dependence), but axis-110 picks up the slow long-run
+  drift -- exactly the local-vs-global distinction that
+  motivates this axis.
+
+  Determinism: pure builder. Wall clock only via
+  `--generated-at`-equivalent option (`opts.generatedAt`).
+
+  Defaults: `--min-tenure-days 14` (hard floor 4 so the
+  asymptotic normal null has purchase),
+  `--min-tokens 1000`, `--sort mkZAbsDesc` (strongest
+  trend first by absolute z-score). Surfaces full drop
+  accounting (`droppedInvalidHourStart`,
+  `droppedNonPositiveTokens`, `droppedSourceFilter`,
+  `droppedSparseSources`, `droppedBelowMinTenure`,
+  `droppedZeroVariance`, `droppedNonFiniteFit`,
+  `droppedTopSources`).
+
+  Tests: +37 (10221 -> 10258, all pass). Coverage
+  spans (a) primitive sanity anchors (monotone increase
+  / decrease / constant / tent), (b) tie semantics
+  including the explicit Hipel-McLeod tie correction
+  formula, (c) continuity-correction `(S - sgn(S))`
+  arithmetic, (d) S = 0 -> mkZ = 0 short-circuit,
+  (e) time-reversal sign flip property, (f) builder
+  drop counters, source filter, top cap, sort orders,
+  invalid argument validation, (g) gap-fill semantics
+  (sparse two-day source -> 20-day tenure with 18
+  zero-padded interior days, S = 1 by manual count),
+  (h) stable source-asc tie break, and (i) since/until
+  window slicing.
+
 ## 0.6.352 — 2026-05-03
 
 ### Added
