@@ -17249,6 +17249,7 @@ import type { DailyTokenSpectralSpreadIqrReport } from './dailytokenspectralspre
 import type { DailyTokenSpectralRoughnessReport } from './dailytokenspectralroughness.js';
 import type { DailyTokenSpectralPeakFrequencyReport } from './dailytokenspectralpeakfrequency.js';
 import type { DailyTokenSpectralSecondPeakFrequencyReport } from './dailytokenspectralsecondpeakfrequency.js';
+import type { DailyTokenSpectralFlatnessTailReport } from './dailytokenspectralflatnesstail.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -20151,6 +20152,85 @@ export function renderDailyTokenSpectralSecondPeakFrequency(
     s.peak2NormalisedFreq.toFixed(4),
     s.peakRatio.toFixed(4),
     s.peak2MassShare.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralFlatnessTail(
+  r: DailyTokenSpectralFlatnessTailReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-spectral-flatness-tail'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewTailBins)} too-few-tail-bins (m < 2), ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL TAIL-FLATNESS -- Wiener GM/AM ratio over the upper-half subset T = {k > floor(K/2)}. tailFlat in [0, 1]. NINETY-EIGHTH cross-source axis. Class-FT primitive. Coincides with axis-85 only on uniform spectra; bin-permutation-invariant within tail; NOT bin-reversal-invariant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPECTRAL TAIL-FLATNESS (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'tailStart',
+    'tailBins',
+    'usableTail',
+    'mean',
+    'stddev',
+    'tailPowerSum',
+    'tailFlat',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.tailStartBin),
+    formatNumber(s.nTailBins),
+    formatNumber(s.usableTailBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.tailPowerSum),
+    s.tailFlat.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

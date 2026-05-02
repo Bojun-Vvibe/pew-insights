@@ -149,6 +149,7 @@ import {
   renderDailyTokenSpectralRoughness,
   renderDailyTokenSpectralPeakFrequency,
   renderDailyTokenSpectralSecondPeakFrequency,
+  renderDailyTokenSpectralFlatnessTail,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -460,6 +461,7 @@ import { buildDailyTokenSpectralSpreadIqr } from './dailytokenspectralspreadiqr.
 import { buildDailyTokenSpectralRoughness } from './dailytokenspectralroughness.js';
 import { buildDailyTokenSpectralPeakFrequency } from './dailytokenspectralpeakfrequency.js';
 import { buildDailyTokenSpectralSecondPeakFrequency } from './dailytokenspectralsecondpeakfrequency.js';
+import { buildDailyTokenSpectralFlatnessTail } from './dailytokenspectralflatnesstail.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19717,6 +19719,116 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSpectralSecondPeakFrequency(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-flatness-tail')
+  .description(
+    "Per-source SPECTRAL TAIL-FLATNESS (Wiener GM/AM ratio restricted to the upper-half subset T = {k > floor(K/2)} of the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; tailFlat in [0, 1]) (NINETY-EIGHTH cross-source axis). Class-FT (FLATNESS-TAIL) primitive -- the FIRST primitive in the suite that restricts a flatness statistic to a STRUCTURED BIN SUBSET. Structurally orthogonal to axis-85 (full-band Wiener flatness; coincides only on uniform spectra) and to every shipped axis 32..97 (single-band collapses). Bin-permutation-invariant within tail; NOT bin-reversal-invariant.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (so K >= 4 leaves >= 2 candidates in the tail subset). Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tailFlatDesc (default) | tailFlat | usableTailBins | usableTailBinsDesc | tokens | tenure | source.',
+    'tailFlatDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tailFlat',
+          'tailFlatDesc',
+          'usableTailBins',
+          'usableTailBinsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralFlatnessTail(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'tailFlat'
+            | 'tailFlatDesc'
+            | 'usableTailBins'
+            | 'usableTailBinsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpectralFlatnessTail(report) + '\n',
           );
         }
       } catch (e) {
