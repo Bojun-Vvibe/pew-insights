@@ -93,7 +93,11 @@
  *     triangle inequality, and the maximum achievable on the
  *     unit sphere of K dimensions is sqrt(2) (when Q_j and
  *     Q_i are orthogonal unit vectors). Two identical PSDs
- *     give flux = 0.
+ *     give flux = 0. The bound is TIGHT: it is achieved iff
+ *     consecutive unit-energy PSDs are exactly orthogonal,
+ *     which on a non-DC periodogram of length K >= 2 is
+ *     attainable (concentrate all of frame i's energy on bin
+ *     k_a, all of frame j's energy on bin k_b != k_a).
  *   - Frames whose mean-centred window has zero variance
  *     (constant window) yield zero PSD power; those frames
  *     are counted in `nFramesZero` and dropped from the

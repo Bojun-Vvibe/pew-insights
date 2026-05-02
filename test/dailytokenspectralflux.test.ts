@@ -587,3 +587,42 @@ test('build: sort fluxMeanDesc puts larger fluxMean first', () => {
   assert.equal(r.sources.length, 2);
   assert.ok(r.sources[0]!.fluxMean >= r.sources[1]!.fluxMean);
 });
+
+// ---------- closed-form bound anchors ----------
+
+test('spectralFlux: sqrt(2) upper bound is TIGHT under construction', () => {
+  // Hand-build two frames whose mean-centred PSDs are exactly
+  // orthogonal: a single-period sine and a single-period cosine
+  // at distinct frequencies. The unit-energy PSDs concentrate on
+  // disjoint bins, so ||Q_j - Q_i||_2 = sqrt(2) within numerical
+  // tolerance.
+  const w = 32;
+  const fa: number[] = [];
+  const fb: number[] = [];
+  for (let i = 0; i < w; i += 1) {
+    fa.push(Math.sin((2 * Math.PI * i) / 4)); // bin near K/4
+    fb.push(Math.sin((2 * Math.PI * i) / 8)); // bin near K/8
+  }
+  const r = spectralFlux([fa, fb]);
+  assert.ok(
+    Math.abs(r.fluxMax - Math.SQRT2) < 0.02,
+    `fluxMax=${r.fluxMax} not within 0.02 of sqrt(2)`,
+  );
+  // And it is bounded above by sqrt(2) within tight tolerance.
+  assert.ok(r.fluxMax <= Math.SQRT2 + 1e-9);
+});
+
+test('spectralFlux: nFramesZero never exceeds nFrames and nPairs <= surviving - 1', () => {
+  // Mix surviving and zero-power frames; verify accounting invariants.
+  const w = 8;
+  const tone: number[] = [];
+  for (let i = 0; i < w; i += 1) tone.push(Math.sin((2 * Math.PI * i) / 4));
+  const flat = new Array(w).fill(3);
+  const frames = [tone, flat, tone, flat, tone, tone];
+  const r = spectralFlux(frames);
+  assert.equal(r.nFrames, frames.length);
+  assert.ok(r.nFramesZero <= r.nFrames);
+  const surviving = r.nFrames - r.nFramesZero;
+  assert.ok(r.nPairs <= surviving - 1 || r.nPairs === surviving - 1);
+  assert.ok(r.fluxMin >= 0);
+});
