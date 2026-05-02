@@ -2,6 +2,130 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.329 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-FIFTH):
+  `pew-insights daily-token-spectral-flatness-wiener`.
+
+  Per-source SPECTRAL FLATNESS (Wiener entropy) of the gap-filled
+  daily `total_tokens` series, defined as the ratio of the
+  geometric mean to the arithmetic mean of the strictly-positive
+  bins of the one-sided periodogram of the mean-centred series:
+
+  ```
+  flatness = GM(P_kept) / AM(P_kept)
+           = exp((1/m) sum log P_k) / ((1/m) sum P_k)
+  ```
+
+  By the AM-GM inequality `flatness in [0, 1]`, attained at 1 iff
+  every kept bin has identical power (Wiener-white limit) and
+  approached as `flatness -> 0` in the pure-tone limit (one
+  dominant bin drowns the geometric mean). Reported alongside
+  `flatnessDb = 10 * log10(flatness)` in `(-inf, 0]` for audio-
+  style readability and the count of usable (strictly-positive)
+  bins.
+
+  References:
+  - Wiener, N., "Generalized harmonic analysis", Acta Math.
+    55:117-258, 1930 (geometric-mean spectral measure).
+  - Gray, A. H., Markel, J. D., "A spectral-flatness measure for
+    studying the autocorrelation method of linear prediction of
+    speech analysis", IEEE Trans. ASSP 22(3):207-217, 1974
+    (canonical SFM definition used here).
+  - Johnston, J. D., "Transform coding of audio signals using
+    perceptual noise criteria", IEEE J. Select. Areas Commun.
+    6(2):314-323, 1988 (SFM as a tonality / coding-gain
+    diagnostic).
+  - Peeters, G., "A large set of audio features for sound
+    description (similarity and classification) in the CUIDADO
+    project", IRCAM tech. report, 2004 (SFM in MIR feature
+    suites).
+
+  Structurally orthogonal to all prior axes 32..84. Most
+  directly:
+
+  - vs `daily-token-spectral-entropy` (axis 69): Shannon entropy
+    of the L1-normalised periodogram is a probability-shape
+    statistic; flatness is the geometric-vs-arithmetic mean
+    RATIO of the same unnormalised periodogram. The two agree
+    only at the boundary (flat -> H = log K, flatness = 1; pure
+    tone -> H = 0, flatness = 0). Everywhere else they diverge:
+    a spectrum with two equal mid-band tones can have high
+    entropy (mass spread across multiple bins) and very low
+    flatness (most bins near zero, drowning the geometric mean).
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is the
+    LOG-LOG SLOPE of the periodogram across bin INDEX k.
+    Flatness is BIN-INDEX-INVARIANT -- permuting the bins
+    leaves the geometric / arithmetic mean ratio unchanged. A
+    tilted 1/f^beta spectrum and the SAME bin VALUES randomly
+    reshuffled across bin indices share IDENTICAL flatness but
+    completely different beta. This is the precise sense in
+    which flatness measures SPECTRAL SHAPE INDEPENDENT OF
+    FREQUENCY ORDERING, while beta measures the FREQUENCY-
+    DEPENDENT TILT.
+  - vs Lempel-Ziv axis 83 / Teager-Kaiser axis 81 / curvature
+    axis 82 / Petrosian / Box-count / Sevcik / Katz / Higuchi
+    FDs / Hjorth axes 79/80 / Hurst R/S 71 / DFA-alpha 72 /
+    permutation-entropy 70 / sample-entropy 73 / autocorrelation
+    67/68: time-domain or non-spectral statistics; flatness is a
+    pure frequency-domain mean-ratio.
+  - vs all permutation-invariant dispersion / shape axes 32-67:
+    those are TIME-DOMAIN shuffle-invariant. Time-domain
+    shuffling whitens the spectrum and drives flatness toward 1;
+    flatness is therefore TIME-DOMAIN-SHUFFLE-SENSITIVE.
+
+  Invariances of flatness: SHIFT-INVARIANT (only the DC bin
+  moves); SCALE-INVARIANT for any NON-ZERO `a` (every kept bin
+  scales by `a^2`, both means scale by `a^2`, the ratio is
+  preserved -- so even SIGN-FLIP is in the invariance group);
+  TIME-REVERSAL-INVARIANT (`|DFT|^2` is reversal-blind); and
+  BIN-PERMUTATION-INVARIANT in the frequency domain (the
+  precise orthogonality witness vs axis 84). TIME-DOMAIN-
+  SHUFFLE-SENSITIVE -- shuffling whitens the spectrum and
+  drives flatness toward 1.
+
+  Hard floor: gap-filled tenure `n >= 8` (so `K = floor(n/2)
+  >= 4` candidate Fourier bins are available); `>= 2` bins must
+  survive the strictly-positive-power filter for the GM / AM
+  ratio to carry orthogonality content (a single bin trivially
+  yields flatness = 1).
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (top-2):
+  ```
+  source         tenure  bins  usable  flatness  flatnessDb
+  claude-code    72      36    36        0.6058       -2.18
+  vscode-other   265     132   132       0.5244       -2.80
+  ```
+  Both sources land in the noise-dominated middle of the unit
+  interval -- neither resembles a pure tone, neither is fully
+  white. `claude-code` over a 72-day window has the marginally
+  flatter spectrum (0.61, ~ -2.2 dB) consistent with a workload
+  that distributes daily-token mass across many Fourier bins
+  with no single dominant cycle. `vscode-other` over a 265-day
+  tenure sits a touch lower (0.52, ~ -2.8 dB) -- a longer
+  record where a slightly larger fraction of the spectral mass
+  concentrates in a few bins (mild structure on top of the
+  noise floor), but still very far from the pure-tone limit
+  near 0. The two values are mutually informative against the
+  axis-84 beta numbers (0.70 vs 0.31): `vscode-other`'s smaller
+  beta and slightly smaller flatness together say its spectrum
+  is both flatter ON THE LOG-LOG TILT and slightly more
+  CONCENTRATED in a few bins -- a non-monotone signal that no
+  single shipped axis 32..84 captures.
+
+  Coverage: 52 new tests (9116 -> 9168) covering the GM/AM
+  primitive (closed-form on `[1,4]` and `[1,2,4,8]`, AM-GM
+  bound across 50 random vectors, identical-bin -> 1, pure-tone
+  limit, bin-permutation invariance, zero-bin handling, all
+  invariance properties on the daily-token wrapper, the
+  orthogonality witness vs spectral entropy on a synthetic
+  two-tone spectrum, the time-domain-shuffle-sensitivity
+  witness, and the full builder-knob and JSON-contract surface
+  (rejects bad knobs; counts every drop reason; sort and
+  tiebreak; per-source row + report-level JSON shapes).
+
 ## 0.6.328 — 2026-05-02
 
 ### Added
