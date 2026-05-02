@@ -194,6 +194,17 @@
  *   - Mann-Kendall does NOT assume the trend is linear; it
  *     detects ANY monotone (concordant-pair-majority)
  *     trend.
+ *   - Complexity. The S accumulator is O(n^2) by design
+ *     (every i<j pair is enumerated). For tenures up to a
+ *     few thousand days this is well under a millisecond;
+ *     no Knight (1966) merge-sort O(n log n) optimisation
+ *     is warranted at this scale and the explicit pair
+ *     loop keeps the tie semantics auditable.
+ *   - The tie-correction tied-group keys are the raw
+ *     numerical values; no bucketing or rounding is
+ *     applied. In the gap-filled regime the dominant tied
+ *     group is the integer 0 (zero-padded sparse days),
+ *     which the JavaScript Map keys exactly.
  *
  * Determinism: pure builder. Wall clock only via
  * `opts.generatedAt`.

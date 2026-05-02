@@ -459,3 +459,29 @@ test('buildDailyTokenMannKendallTau: window since/until filters by hour_start ms
   // since inclusive, until exclusive -> 10 active days (5..14).
   assert.equal(s.nActiveDays, 10);
 });
+
+test('dailyTokenMannKendallTau: large monotone series stays exact (no float drift)', () => {
+  // n=200 strictly increasing -> tau = +1 exactly, S = 200*199/2 = 19900.
+  const x: number[] = [];
+  for (let i = 0; i < 200; i += 1) x.push(i + 1);
+  const r = dailyTokenMannKendallTau(x);
+  assert.equal(r.mannKendallS, 19900);
+  assert.equal(r.mannKendallTau, 1);
+  assert.equal(r.nDiscordant, 0);
+  assert.equal(r.nTies, 0);
+});
+
+test('dailyTokenMannKendallTau: tied-group key is the exact value (zero-pad bucket)', () => {
+  // 10 zeros + a single 5 -> one tied group of size 10.
+  // Pairs: 10*9/2 = 45 ties at zero, 10 conc (5 > 0 for each
+  // zero preceding the 5 if 5 is last; here we put 5 last).
+  const x = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5];
+  const r = dailyTokenMannKendallTau(x);
+  assert.equal(r.nTies, 45);
+  assert.equal(r.nConcordant, 10);
+  assert.equal(r.nDiscordant, 0);
+  assert.equal(r.mannKendallS, 10);
+  // Tie correction for one group of 10: 10*9*25 = 2250.
+  // Var = (11*10*27 - 2250)/18 = (2970 - 2250)/18 = 720/18 = 40.
+  assert.ok(Math.abs(r.mannKendallVarS - 40) < 1e-9);
+});
