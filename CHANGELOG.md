@@ -149,7 +149,7 @@ All notable changes to this project will be documented in this file.
   |----------------|--------|--------|---------|----------|---------|--------|----------------|--------|---------|
   | claude-code    |     72 |     35 |       8 |        8 |      68 |     68 |  1,052,011,841 | 4.8608 | +1.7468 |
   | hermes         |     16 |     16 |       2 |        2 |       2 |      2 |     34,683,508 | 3.3807 | -1.0302 |
-  | vscode-copilot |    265 |     73 |       7 |        7 |     261 |    261 |        240,730 | 6.1588 | +0.3958 |
+  | vscode-other   |    265 |     73 |       7 |        7 |     261 |    261 |        240,730 | 6.1588 | +0.3958 |
   | openclaw       |     16 |     16 |       3 |        3 |       2 |      2 |    354,037,834 | 3.3807 | -0.2841 |
 
   Substantive readings.
@@ -167,7 +167,7 @@ All notable changes to this project will be documented in this file.
   - `openclaw` (n=16) is similar to `hermes`: 3 strict
     records all by day 2, no late new highs (`recordZ =
     -0.28`).
-  - `vscode-copilot` long-tenure (265 days, 73 active) but
+  - `vscode-other` long-tenure (265 days, 73 active) but
     most days are zero-padded; nevertheless it sets 7
     strict records vs `H_265 ~ 6.16` expected — slightly
     above iid, with the maximum at day 261 (very late).
@@ -181,7 +181,7 @@ All notable changes to this project will be documented in this file.
     were itself zero — impossible since we filter
     `total_tokens <= 0` before gap-filling).
 
-  Cross-checks against axes 105-108. `vscode-copilot`'s
+  Cross-checks against axes 105-108. `vscode-other`'s
   late-loaded global max (`argmaxIndex = 261` with tenure
   265) is invisible to ZCR / TPR / lag-1 autocorrelation,
   which collapse to local sign / pair statistics; the
