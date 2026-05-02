@@ -2,6 +2,164 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.332 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-EIGHTH):
+  `pew-insights daily-token-spectral-rolloff`.
+
+  Per-source SPECTRAL ROLL-OFF -- the smallest bin index R such
+  that the cumulative one-sided periodogram up to and including
+  R reaches `rolloffFraction` (default 0.85, the canonical
+  Tzanetakis & Cook 2002 / McKinney & Breebaart 2003 value) of
+  the total non-DC spectral energy of the gap-filled mean-
+  centred daily `total_tokens` series. Reports `rolloffBin` in
+  `[1, K]`, `rolloffNormalised = rolloffBin / K` in `(0, 1]`,
+  and the realised `cumulativeFraction` in
+  `[rolloffFraction, 1]`. Low-frequency-dominated series have
+  small rolloffNormalised; white-noise-like series have
+  rolloffNormalised approx. `rolloffFraction`; high-frequency-
+  dominated series have rolloffNormalised near 1.
+
+  This is a CDF-PERCENTILE statistic on the Fourier power
+  spectrum -- a quantile, not a moment -- and is therefore
+  structurally orthogonal to every shipped daily-token spectral
+  sibling. The cleanest orthogonality witnesses:
+
+  - vs `daily-token-spectral-bandwidth` (axis 87): bandwidth is
+    the SECOND CENTRAL MOMENT (sqrt) about the centroid; roll-
+    off is a CDF QUANTILE. A symmetric two-tone at bins
+    `(k0, k0 + d)` and a one-sided two-tone at bins `(1, 1 + d)`
+    share bandwidth `d/2` but have totally different roll-offs;
+    a thin spike at bin R and a wide hump centred near R can
+    share roll-off R but have very different bandwidths.
+    MOMENT vs QUANTILE is the precise witness.
+  - vs `daily-token-spectral-centroid` (axis 86): centroid is
+    the MASS-WEIGHTED MEAN bin (a first moment); roll-off is
+    the bin where the CUMULATIVE MASS first reaches a chosen
+    quantile. MEAN vs PERCENTILE -- the same orthogonality
+    witness as median-vs-mean in the amplitude domain.
+  - vs `daily-token-spectral-flatness-wiener` (axis 85): Wiener
+    flatness is GM/AM and is bin-permutation-invariant; roll-
+    off is bin-permutation-sensitive (it depends on the
+    cumulative integral up to bin index R).
+  - vs `daily-token-spectral-entropy` (axis 69): entropy is the
+    Shannon entropy of the L1-normalised periodogram and is
+    bin-permutation-invariant; roll-off is bin-permutation-
+    sensitive.
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is the
+    log-log slope of P[k]; roll-off is a linear-axis percentile
+    in k. Roll-off is well-defined on spectra that are not power
+    laws at all (line spectra, comb spectra) where beta is
+    meaningless.
+  - vs Hjorth mobility/complexity (axes 79/80): those are
+    NON-CENTRAL spectral moment ratios in angular-frequency
+    units; roll-off is a CDF percentile in bin-index units. A
+    spectrum with most mass at low k plus a tiny but very high-k
+    tail can have a small roll-off (CDF reaches 85% before the
+    tail) but a large mobility (the tail moves m_2 a lot).
+  - vs LZ (83), TKE (81), curvature/Petrosian (82/76),
+    box-count/Sevcik/Katz/Higuchi FDs (78/77/75/74), Hurst R/S
+    (71), DFA-alpha (72), permutation-entropy (70), sample-
+    entropy (73), autocorrelation (67/68), and all permutation-
+    invariant amplitude-shape axes (32-67): roll-off is a
+    spectral CDF percentile, none of the others are.
+
+  Invariances of `rolloffNormalised`: shift-invariant (DC bin
+  is dropped by mean-centring), scale-invariant for any
+  non-zero scalar a (cumulative-fraction CDF is scale-blind),
+  sign-flip-invariant, time-reversal-invariant. NOT invariant
+  under time-domain shuffle (whitening drives roll-off toward
+  the white-noise asymptote `R / K` -> `rolloffFraction`) and
+  NOT invariant under bin-permutation (the key witness vs
+  flatness 85 and entropy 69, which are bin-permutation-
+  invariant). Bound: `rolloffBin in [1, K]`,
+  `rolloffNormalised in (0, 1]`,
+  `cumulativeFraction in [rolloffFraction, 1]`. The hard floor
+  `--min-tenure-days 8` keeps `K = floor(n/2) >= 4` and
+  enforces `usableBins >= 2` (a single bin trivially pins R = 1
+  with no percentile information).
+
+  References: Tzanetakis, G. & Cook, P., "Musical Genre
+  Classification of Audio Signals", IEEE Trans. Speech Audio
+  Process. 10(5):293-302, 2002 (§III.A.4); McKinney, M. F. &
+  Breebaart, J., "Features for Audio and Music Classification",
+  Proc. ISMIR 2003, 151-158; Klapuri, A., "Sound onset
+  detection by applying psychoacoustic knowledge", Proc.
+  ICASSP-99 vol. 6, 3089-3092; Lerch, A., "An Introduction to
+  Audio Content Analysis", Wiley/IEEE 2012, §3.3.1.
+
+  CLI flags: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-tenure-days` (hard floor 8, default
+  32), `--rolloff-fraction` (default 0.85, must be in (0, 1]),
+  `--top` (default 0 = no cap), `--sort`
+  (`rolloffDesc` (default) | `rolloff` | `tokens` | `tenure` |
+  `source`), `--json`. Drop counters: `droppedInvalidHourStart`,
+  `droppedNonPositiveTokens`, `droppedSourceFilter`,
+  `droppedSparseSources`, `droppedBelowMinTenure`,
+  `droppedZeroVariance`, `droppedTooFewUsableBins`,
+  `droppedNonFiniteFit`, `droppedTopSources`.
+
+### Live-smoke
+
+Ran against the local `~/.config/pew/queue.jsonl` (607,659
+bytes, 6 sources, 3,444,271,515 total tokens) with
+`--min-tokens 100000`. Two sources cleared the
+`--min-tenure-days 32` floor; the other four were correctly
+shed under `droppedBelowMinTenure`. Top-2 carriers (sorted by
+default `rolloffDesc`):
+
+```
+source         tenure  bins  usable  rolloffBin  rolloffNorm  cumFrac  tokens
+claude-code    72      36    36      30          0.8333       0.8838   3,442,385,788
+vscode-other   265     132   132     106         0.8030       0.8632   1,885,727
+```
+
+Both carriers sit just below the 0.85 white-noise-asymptote
+band-edge `R / K` -> `rolloffFraction` (claude-code 0.8333 vs
+vscode-other 0.8030), confirming roughly white-on-band non-DC
+PSD shapes once the DC is removed -- consistent with the
+spectral-centroid (axis 86) and spectral-bandwidth (axis 87)
+readings on the same series, which both place mass broadly
+across the available bins rather than concentrated at the low
+or high frequency edge. The `cumulativeFraction` field
+realises the >= 0.85 contract precisely (0.8838 and 0.8632).
+
+### Tests
+
+- Test count grew from 9279 -> 9333 (+54). New suite:
+  `dailytokenspectralrolloff` covering the
+  `spectralRolloffBin` and `dailyTokenSpectralRolloff`
+  primitives plus the `buildDailyTokenSpectralRolloff`
+  orchestrator. Coverage: empty / non-finite / negative power
+  guards; `rolloffFraction` domain guards (0, NaN, > 1); too-
+  few-positive-bins guard; uniform-power closed form
+  `R = ceil(f * K)` parametric sweep across
+  `K in [4, 8, 16, 32, 64, 128]` and
+  `f in [0.25, 0.5, 0.75, 0.85, 0.95]`; bipolar-mass monotone
+  sweep (mass on bin 1 vs bin K with tiny noise floor); bin-
+  permutation sensitivity (orthogonality witness vs flatness
+  / entropy); scale invariance under 1e12 / 1e-12 numerical
+  stability; monotonicity in `rolloffFraction`; white-noise
+  asymptote `R / K` -> `rolloffFraction` (wide tolerance for
+  single random draw); pure low-/high-frequency sinusoid
+  bounds; shift / scale-(any non-zero a) / sign-flip / time-
+  reversal invariances; `usableBins <= nFreqBins` =
+  `floor(n/2)` bound; `rolloffNormalised = rolloffBin / K` in
+  `(0, 1]` identity; `cumulativeFraction >= rolloffFraction`
+  contract; mean / stddev pass-through; full builder option-
+  validation guards; bad-`hour_start` / non-positive-token /
+  source-filter / short-tenure / zero-variance / top-cap drop
+  counters; window-filter via `since` / `until`; per-source
+  row JSON shape contract; report-level JSON shape contract;
+  orthogonality witness vs bandwidth (axis 87) on tone vs
+  hump pair sharing low-band roll-off but differing in bin-
+  spread; default-sort acceptance witness on low-freq vs
+  high-freq tone pair; n=8 boundary `period-2 alternation`
+  acceptance pinning roll-off at the Nyquist bin; tokens-
+  sort and tenure-sort tiebreak (source asc) witnesses.
+
 ## 0.6.331 — 2026-05-02
 
 ### Added
