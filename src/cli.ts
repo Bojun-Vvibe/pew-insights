@@ -146,6 +146,7 @@ import {
   renderDailyTokenSpectralDecrease,
   renderDailyTokenSpectralIrregularity,
   renderDailyTokenSpectralSpreadIqr,
+  renderDailyTokenSpectralRoughness,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -454,6 +455,7 @@ import { buildDailyTokenSpectralKurtosis } from './dailytokenspectralkurtosis.js
 import { buildDailyTokenSpectralDecrease } from './dailytokenspectraldecrease.js';
 import { buildDailyTokenSpectralIrregularity } from './dailytokenspectralirregularity.js';
 import { buildDailyTokenSpectralSpreadIqr } from './dailytokenspectralspreadiqr.js';
+import { buildDailyTokenSpectralRoughness } from './dailytokenspectralroughness.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19380,6 +19382,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralSpreadIqr(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-roughness')
+  .description(
+    "Per-source SPECTRAL ROUGHNESS (Rudin-Osher-Fatemi 1992 discrete TOTAL VARIATION transplanted onto the L1-normalised one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; roughness = sum_{k=1..K-1} |p[k+1] - p[k]| where p = P / sum P) (NINETY-FIFTH cross-source axis). FIRST-ORDER L1 TV descriptor in [0, 2]: 0 iff p[k] is constant across k (white-noise-like / flat PSD); ~ 1 iff a single boundary spike or alternating comb at small K; ~ 2 iff a single isolated INTERIOR spike (cum-up + cum-down each contribute the spike's full normalised mass). References: Rudin/Osher/Fatemi 1992 (canonical TV); Krishnamoorthy & Kumar 2011 §3.2 (spectral roughness on a normalised PSD); Klapuri & Davy 2006 §5 (spectral descriptors). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-, AND bin-reversal-invariant; bin-permutation-SENSITIVE; tail-INSENSITIVE. Structurally orthogonal to (a) spectral-irregularity 93 (SECOND-order L2 squared-difference on RAW periodogram; roughness is FIRST-order L1 on the NORMALISED pmf -- L1 vs L2, raw vs normalised, all at once); (b) spectral-spread-IQR 94 (GLOBAL inner-50% percentile gap vs LOCAL adjacent-bin TV -- a narrow contiguous band has small IQR + small roughness; an isolated spike has small IQR + large roughness); (c) spectral-bandwidth 87 / -skewness 90 / -kurtosis 91 (centroid-relative central moments, multiset-summary; roughness is bin-order-sensitive); (d) spectral-rolloff 88 (single CDF quantile); (e) spectral-centroid 86 (LOCATION vs SHAPE); (f) spectral-crest 89 / -flatness-wiener 85 / -spectral-entropy 69 (BIN-PERMUTATION INVARIANT); (g) DFT-power-law-slope 84 (LOG-LOG global slope); (h) spectral-decrease 92 (FIXED bin-1 anchor + bin-reversal SENSITIVE; roughness IS bin-reversal-invariant); (i) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: roughnessDesc (default; roughest spectra first) | roughness | tokens | tenure | source.',
+    'roughnessDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'roughness',
+          'roughnessDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralRoughness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'roughness'
+            | 'roughnessDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralRoughness(report) + '\n');
         }
       } catch (e) {
         die(e);

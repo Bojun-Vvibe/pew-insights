@@ -17246,6 +17246,7 @@ import type { DailyTokenSpectralKurtosisReport } from './dailytokenspectralkurto
 import type { DailyTokenSpectralDecreaseReport } from './dailytokenspectraldecrease.js';
 import type { DailyTokenSpectralIrregularityReport } from './dailytokenspectralirregularity.js';
 import type { DailyTokenSpectralSpreadIqrReport } from './dailytokenspectralspreadiqr.js';
+import type { DailyTokenSpectralRoughnessReport } from './dailytokenspectralroughness.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -19917,6 +19918,77 @@ export function renderDailyTokenSpectralSpreadIqr(
     formatNumber(s.q3Bin),
     s.totalPower.toExponential(4),
     s.spreadIqr.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralRoughness(
+  r: DailyTokenSpectralRoughnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-roughness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL ROUGHNESS (Rudin-Osher-Fatemi 1992 discrete TV transplanted onto the L1-normalised one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; roughness = sum_{k=1..K-1} |p[k+1] - p[k]| where p = P / sum P). NINETY-FIFTH cross-source axis. FIRST-ORDER L1 TV descriptor in [0, 2] -- distinct from axis-93 irregularity (SECOND-ORDER L2 squared-difference on RAW periodogram), from axis-94 spread-IQR (GLOBAL inner-50% percentile gap), and from every centroid-relative central moment by virtue of being bin-order-SENSITIVE on the normalised pmf. Bin-reversal-INVARIANT; bin-permutation-SENSITIVE; tail-INSENSITIVE.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL ROUGHNESS (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'totalPower',
+    'absDiffSum',
+    'roughness',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.totalPower.toExponential(4),
+    s.absDiffSum.toExponential(4),
+    s.roughness.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
