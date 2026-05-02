@@ -266,7 +266,9 @@ export interface DailyTokenSpectralSpreadIqrReport {
  * all-zero spectrum).
  *
  * The quartile bins are defined via the smallest cumulative
- * mass index that meets or exceeds the threshold:
+ * mass index that meets or exceeds the threshold (INCLUSIVE
+ * `>=` semantics; an exact-equality cumulative share at the
+ * 0.25 / 0.75 boundary picks THAT bin, not the next):
  *
  *   q1Bin = min { m : sum_{k=1..m} P[k] / totalPower >= 0.25 }
  *   q3Bin = min { m : sum_{k=1..m} P[k] / totalPower >= 0.75 }

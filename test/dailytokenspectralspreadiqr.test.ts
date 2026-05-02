@@ -409,3 +409,56 @@ test('buildDailyTokenSpectralSpreadIqr: report meta fields populated', () => {
   assert.equal(r.totalSources, 1);
   assert.equal(r.totalTokens, r.sources.reduce((a, s) => a + s.totalTokens, 0));
 });
+
+// ---------- refine: closed-form K=5 sweep + bin-reversal width sweep ----------
+
+test('spectralSpreadIqr: K=5 cum-share sweep -- threshold-meets-equality boundary', () => {
+  // [1,1,1,1,1]: total=5; cum-shares = [0.2, 0.4, 0.6, 0.8, 1.0]
+  // 0.2 < 0.25 -> q1Bin = 2 (0.4 >= 0.25)
+  // 0.6 < 0.75 -> q3Bin = 4 (0.8 >= 0.75)
+  // spread = (4-2)/5 = 0.4
+  const r = spectralSpreadIqr([1, 1, 1, 1, 1]);
+  assert.equal(r.q1Bin, 2);
+  assert.equal(r.q3Bin, 4);
+  assert.equal(r.spreadIqr, 0.4);
+});
+
+test('spectralSpreadIqr: K=4 uniform meets exactly at boundary -- inclusive >=', () => {
+  // [1,1,1,1]: cum-shares = [0.25, 0.5, 0.75, 1.0]
+  // q1Bin = 1 (0.25 >= 0.25, exact-equality boundary), q3Bin = 3 (0.75 >= 0.75)
+  // This pins the inclusive >= threshold semantics.
+  const r = spectralSpreadIqr([1, 1, 1, 1]);
+  assert.equal(r.q1Bin, 1);
+  assert.equal(r.q3Bin, 3);
+});
+
+test('spectralSpreadIqr: bin-reversal width sweep across 6 random PSDs', () => {
+  // For every reversal pair, |q3Bin - q1Bin| (and hence spreadIqr) must agree.
+  const psds: number[][] = [
+    [5, 4, 3, 2, 1],
+    [1, 5, 1, 5, 1],
+    [10, 1, 1, 1, 1, 10],
+    [0, 0, 1, 2, 3, 4],
+    [4, 3, 2, 1, 0, 0],
+    [1, 2, 4, 8, 16, 32],
+  ];
+  for (const p of psds) {
+    const fwd = spectralSpreadIqr(p);
+    const rev = spectralSpreadIqr([...p].reverse());
+    assert.equal(
+      fwd.q3Bin - fwd.q1Bin,
+      rev.q3Bin - rev.q1Bin,
+      `width mismatch for ${JSON.stringify(p)}`,
+    );
+    assert.equal(fwd.spreadIqr, rev.spreadIqr);
+  }
+});
+
+test('spectralSpreadIqr: q1 == q3 iff inner-50% mass is concentrated in one bin', () => {
+  // Single dominant bin -> spread = 0.
+  const a = spectralSpreadIqr([100, 1, 1, 1, 1, 1]);
+  // cum-shares: 100/105, 101/105, 102/105, 103/105, 104/105, 1.0
+  //         ~= 0.952, 0.962, 0.971, 0.981, 0.990, 1.0; q1Bin=q3Bin=1, spread=0
+  assert.equal(a.q1Bin, a.q3Bin);
+  assert.equal(a.spreadIqr, 0);
+});
