@@ -20254,6 +20254,7 @@ import type { DailyTokenCoxStuartTrendTestReport } from './dailytokencoxstuarttr
 import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsrankvonneumann.js';
 import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferencesigntest.js';
 import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
+import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21586,6 +21587,89 @@ export function renderDailyTokenLjungBoxQTest(
   lines.push(
     chalk.dim(
       `(reference anchor: lbQ approx H = white-noise-consistent; lbQ much greater than H = serial structure detected; lbZ much greater than +1.96 = significant portmanteau evidence of serial correlation across lags 1..H at alpha = 0.05. The test is BLIND TO SIGN of the autocorrelations (squared values enter the sum) and BLIND TO THE SPECIFIC LAG that drives significance -- inspect the lbAcf array (r1, r2, r7 surfaced in the table; full array via --json) to identify which lag dominates. Lag-7 strength under r7 indicates weekly seasonality.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMannWhitneyHalves(
+  r: DailyTokenMannWhitneyHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-mann-whitney-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MANN-WHITNEY U TWO-SAMPLE LEVEL-SHIFT TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-FIFTEENTH cross-source axis. Class-TWO-SAMPLE-LEVEL-SHIFT-TEST (Mann & Whitney 1947, Annals of Mathematical Statistics 18:50-60; Wilcoxon 1945, Biometrics Bulletin 1:80-83): pool the n values, assign mid-ranks; U = R_A - n1(n1+1)/2 where R_A is the rank-sum of the first half. Under the iid two-sample null E[U] = n1*n2/2 and Var_tie[U] = (n1*n2/(12*n*(n-1))) * (n^3 - n - sum_g (t_g^3 - t_g)) (tie-corrected, Lehmann 1975 eq. 1.8). mwZ = (U - E[U])/sqrt(Var_tie[U]) approx N(0,1). mwZ much greater than +1.96 = first half stochastically larger (decline); mwZ much less than -1.96 = second half stochastically larger (growth). Distinct from axes 110 (Mann-Kendall global all-pairs trend), 111 (Cox-Stuart paired half-shift sign-test), 113 (Mood single-lag diff-sign), 114 (Ljung-Box multi-lag portmanteau). Sensitive to LEVEL SHIFT between halves, NOT to within-half monotonicity.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MANN-WHITNEY U (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'rankSumA',
+    'mwU',
+    'mwZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.mwN1),
+    formatNumber(s.mwN2),
+    formatNumber(s.mwMedianA),
+    formatNumber(s.mwMedianB),
+    s.mwRankSumA.toFixed(1),
+    s.mwU.toFixed(1),
+    s.mwZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: mwU approx n1*n2/2 = halves stochastically equal; mwU approx 0 = first half strictly smaller (growth); mwU approx n1*n2 = first half strictly larger (decline). |mwZ| > 1.96 = significant level-shift between halves at alpha = 0.05 (two-sided, tie-corrected Gaussian approximation). For perfect step-function shifts mwU saturates at 0 or n1*n2; for pure linear trends mwZ co-moves with axis-110 Mann-Kendall tau and axis-111 Cox-Stuart but with a different sample space (n1*n2 cross-half pairs vs n*(n-1)/2 all-pairs vs n/2 paired sign-tests).)`,
     ),
   );
 
