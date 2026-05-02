@@ -20246,6 +20246,7 @@ import type { DailyTokenSpectralFluxReport } from './dailytokenspectralflux.js';
 import type { DailyTokenSpectralFlatnessFluxReport } from './dailytokenspectralflatnessflux.js';
 import type { DailyTokenZeroCrossingRateReport } from './dailytokenzerocrossingrate.js';
 import type { DailyTokenTurningPointRateReport } from './dailytokenturningpointrate.js';
+import type { DailyTokenSpearmanAutocorrelationLag1Report } from './dailytokenspearmanautocorrelationlag1.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20881,6 +20882,89 @@ export function renderDailyTokenTurningPointRate(
   lines.push(
     chalk.dim(
       `(reference anchor: tprExpectedIid = ${r.sources[0]!.tprExpectedIid.toFixed(4)} -- asymptotic E[T]/(n-2) for an i.i.d. continuous sample (Kendall 1973). tpr < 2/3 means the level reverses LESS often than iid (smoother / trendier); tpr > 2/3 means MORE often than iid (chattier than noise). |tprZ| > 2 is suggestive of non-iid behaviour at the n we have.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpearmanAutocorrelationLag1(
+  r: DailyTokenSpearmanAutocorrelationLag1Report,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-spearman-autocorrelation-lag1'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPEARMAN RANK SERIAL AUTOCORRELATION at LAG 1 of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SEVENTH cross-source axis. Class-RANK-AUTOCORRELATION primitive: invariant to any strictly monotone transform of the level. Reference anchor rs1ExpectedIid = 0; standardised rs1Z = rs1 * sqrt(n - 2) approximately N(0, 1) under the iid null. rs1 = +1 -> perfect monotone serial dependence; rs1 = -1 -> perfect rank reversal day to day; rs1 ~ 0 -> independence at lag 1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPEARMAN LAG-1 RANK AUTOCORRELATION (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'tiesU',
+    'tiesV',
+    'mean',
+    'stddev',
+    'rs1',
+    'rs1Z',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nPairs),
+    formatNumber(s.nTiesU),
+    formatNumber(s.nTiesV),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.rs1.toFixed(4),
+    s.rs1Z.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: rs1ExpectedIid = ${r.sources[0]!.rs1ExpectedIid.toFixed(4)} -- asymptotic E[rs1] under independence. rs1 > 0 means today's rank predicts tomorrow's rank in the same direction (persistence); rs1 < 0 means rank reversal (anti-persistence). |rs1Z| > 2 is suggestive of non-iid lag-1 structure at the n we have.)`,
     ),
   );
 

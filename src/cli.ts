@@ -158,6 +158,7 @@ import {
   renderDailyTokenSpectralFlatnessFlux,
   renderDailyTokenZeroCrossingRate,
   renderDailyTokenTurningPointRate,
+  renderDailyTokenSpearmanAutocorrelationLag1,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -478,6 +479,7 @@ import { buildDailyTokenSpectralFlux } from './dailytokenspectralflux.js';
 import { buildDailyTokenSpectralFlatnessFlux } from './dailytokenspectralflatnessflux.js';
 import { buildDailyTokenZeroCrossingRate } from './dailytokenzerocrossingrate.js';
 import { buildDailyTokenTurningPointRate } from './dailytokenturningpointrate.js';
+import { buildDailyTokenSpearmanAutocorrelationLag1 } from './dailytokenspearmanautocorrelationlag1.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -35772,6 +35774,120 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenTurningPointRate(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spearman-autocorrelation-lag1')
+  .description(
+    "Per-source SPEARMAN RANK SERIAL AUTOCORRELATION at LAG 1 of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTH cross-source axis). Class-RANK-AUTOCORRELATION primitive: invariant to any strictly monotone transformation of the level (log, sqrt, percentile, etc.) -- depends only on the joint COPULA of (x[t], x[t+1]). Distinct from the existing Pearson lag-1 (which is sensitive to marginal shape and outliers) and from the symbolic time-domain axes (zero-crossing-rate, turning-point-rate) which collapse the level to a binary sign sequence. Reference anchor rs1ExpectedIid = 0; standardised rs1Z = rs1 * sqrt(n - 2). Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: rs1ZAbsDesc (default) | rs1 | rs1Desc | rs1Z | rs1ZDesc | rs1ZAbs | tokens | tenure | source.',
+    'rs1ZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'rs1',
+          'rs1Desc',
+          'rs1Z',
+          'rs1ZDesc',
+          'rs1ZAbs',
+          'rs1ZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpearmanAutocorrelationLag1(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'rs1'
+            | 'rs1Desc'
+            | 'rs1Z'
+            | 'rs1ZDesc'
+            | 'rs1ZAbs'
+            | 'rs1ZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpearmanAutocorrelationLag1(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
