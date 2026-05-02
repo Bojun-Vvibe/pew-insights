@@ -2,6 +2,115 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.335 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-SECOND):
+  `pew-insights daily-token-spectral-decrease`.
+
+  Per-source SPECTRAL DECREASE -- the Peeters 2004 §6.1.2
+  fixed-anchor (bin 1) perceptually-weighted slope-from-anchor
+  descriptor on the one-sided non-DC periodogram of the
+  gap-filled mean-centred daily total_tokens series:
+
+      decrease = (1 / sum_{k=2..K} P[k])
+                 * sum_{k=2..K} (P[k] - P[1]) / (k - 1)
+
+  This NINETY-SECOND cross-source axis sits OUTSIDE the
+  centroid-anchored SPECTRAL OCTAD (84 DFT-slope, 85
+  Wiener-flatness, 86 centroid, 87 bandwidth, 88 rolloff,
+  89 crest, 90 skewness, 91 kurtosis): every existing PSD-
+  shape descriptor is either centroid-relative (87, 90, 91),
+  ALL-bin (86, 88), bin-permutation-invariant (85, 89, 69),
+  or log-log-fitted (84). Spectral decrease is the canonical
+  bin-1-anchored linear-axis descriptor with a 1/(k-1)
+  weighting that gives disproportionate importance to the
+  immediate drop past the fundamental.
+
+  SIGN CONVENTION: decrease < 0 means the PSD genuinely
+  decreases away from bin 1 (low-frequency-anchored daily
+  series); decrease ~ 0 means it holds up flat past bin 1
+  (broadband-on-band); decrease > 0 means mass piles higher
+  up the band (high-pass-shaped daily series around its
+  mean).
+
+  INVARIANCES: shift-, scale-(any non-zero `a`)-, sign-flip-,
+  and time-reversal-invariant. Bin-permutation-SENSITIVE
+  (the `1/(k-1)` weighting is bin-index-tied -- the precise
+  orthogonality witness vs flatness 85 / entropy 69 / crest
+  89). Bin-reversal MOVES THE ANCHOR (so the descriptor
+  re-reads the spectrum from the opposite end of the band).
+
+  STRUCTURAL ORTHOGONALITY:
+  - vs centroid 86: centroid is the FIRST RAW MOMENT (ALL-
+    bin location). Decrease is anchored at bin 1 only with
+    `1/(k-1)` weighting. Two PSDs with identical centroids
+    can have very different decrease values (a PSD with mass
+    at {1, K-1} gives a strongly-positive decrease; a PSD
+    with mass at {K/2-5, K/2+5} gives a near-zero decrease).
+  - vs bandwidth 87 / skewness 90 / kurtosis 91: all three
+    are CENTROID-relative central moments. Decrease is
+    anchored at bin 1, NOT at the centroid. A PSD perfectly
+    symmetric around its centroid (skewness=0) can still
+    have a strongly-negative decrease if the centroid sits
+    near bin 1.
+  - vs rolloff 88: rolloff is a single CDF QUANTILE.
+    Decrease integrates the FULL tail with `1/(k-1)`
+    weighting anchored at bin 1.
+  - vs crest 89 / flatness 85 / spectral-entropy 69: all
+    three are BIN-PERMUTATION INVARIANT. Decrease is bin-
+    permutation SENSITIVE.
+  - vs DFT-power-law-slope 84: beta is the LOG-LOG SLOPE of
+    P[k] vs k via least squares. Decrease is a LINEAR-AXIS
+    `1/(k-1)`-weighted ratio anchored at bin 1.
+  - vs source-row spectral-decrease: per-row stream vs
+    daily-aggregate stream.
+  - vs all permutation-invariant amplitude-shape axes 32-67:
+    those are time-domain shuffle-invariant; spectral
+    decrease is bin-permutation-sensitive.
+
+  Bound: `decrease` is signed and unbounded in magnitude; the
+  practical range on empirical token-count series is order-1
+  with sign carrying the operationally-relevant information.
+
+### Live-smoke output
+
+  Against `~/.config/pew/queue.jsonl` (sources scrubbed; the
+  literal carrier label `vscode-copilot` from the upstream
+  `pew` queue is reported here as `vscode-other`):
+
+      $ node dist/cli.js daily-token-spectral-decrease --json --top 5
+
+      claude-code   tenure=72d  bins=36   firstBinPower=9.3402e+16  tailPower=7.6376e+17  decrease=-0.2735
+      vscode-other  tenure=265d bins=132  firstBinPower=5.8126e+08  tailPower=9.6186e+10  decrease=+0.0275
+
+  Reading: `claude-code` has a strongly-NEGATIVE decrease
+  (-0.27) -- the daily-token PSD genuinely decreases away
+  from the bin-1 fundamental, consistent with a low-
+  frequency-anchored workload (the 72-day tenure is short
+  enough that the fundamental period dominates and higher
+  bins drop off systematically). `vscode-other` has a tiny
+  POSITIVE decrease (+0.027) over its much-longer 265-day
+  tenure -- the PSD does NOT decrease away from bin 1; mass
+  is approximately evenly distributed across the 132-bin
+  band with a slight high-frequency lean, consistent with
+  a noise-dominated near-flat-spectrum process (matching the
+  axis-85 Wiener-flatness reading 0.5244 reported in the
+  v0.6.331 entry for the same source).
+
+  This direct DISAGREEMENT between the two sources -- one
+  with a strongly-negative decrease, one with a slightly-
+  positive decrease -- on the same gap-filled series is
+  exactly the orthogonality witness vs every centroid-
+  relative descriptor (87, 90, 91): a sign flip in the
+  decrease descriptor cannot be read off any moment computed
+  about the spectral centroid.
+
+### Tests
+
+  9418 -> 9460 (+42 axis-92 spectral-decrease tests).
+
 ## 0.6.334 — 2026-05-02
 
 ### Added
