@@ -2,6 +2,228 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.350 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-SEVENTH):
+  `pew-insights daily-token-spearman-autocorrelation-lag1`.
+
+  Per-source SPEARMAN RANK SERIAL AUTOCORRELATION at LAG 1
+  on the gap-filled daily total tokens series. Form
+  `u = (x[0..n-2])` and `v = (x[1..n-1])`, midrank both
+  (Hollander-Wolfe convention: tied values get the average
+  of the rank positions they would occupy under any
+  tie-breaking sort), and report the Pearson correlation
+  of the rank vectors
+
+      rs1 = corr(R(u), R(v))   in  [-1, +1].
+
+  Reported alongside `rs1`: `nPairs = n - 1`, `nTiesU` and
+  `nTiesV` (sum over tied groups of `binomial(groupSize, 2)`
+  in each lagged vector -- a tie-pressure summary), the
+  reference anchor `rs1ExpectedIid = 0` (asymptotic E[rs1]
+  under independence), and the standardised score
+
+      rs1Z = rs1 * sqrt(n - 2)
+
+  approximately N(0, 1) under the iid null (Brockwell &
+  Davis, "Time Series: Theory and Methods", 2nd ed.,
+  Springer, 1991, sec. 7.2; Hollander & Wolfe,
+  "Nonparametric Statistical Methods", 3rd ed., Wiley,
+  2014, sec. 8.5).
+
+  CLASS-RANK-AUTOCORRELATION primitive: invariant to any
+  STRICTLY MONOTONE TRANSFORMATION of the level series
+  (log, sqrt, percentile, scaled affine). Depends only on
+  the joint COPULA of `(x[t], x[t+1])`, not on the
+  marginal distribution of `x`.
+
+  ### Orthogonality vs every prior axis (axis 79-106)
+
+  - vs Pearson lag-1 autocorrelation (already shipped).
+    Pearson lag-1 is the LINEAR serial correlation of the
+    LEVEL series. It is sensitive to the marginal
+    distribution and to outliers: a single anomalous spike
+    can drag rho1 substantially. The Spearman lag-1 here
+    applies the rank transform first, which is bounded in
+    `[1, n]` and bounded-influence: a single spike
+    contributes at most rank `n - 1`. Two series with
+    identical rank ordering but different marginal shape
+    give the SAME `rs1` and DIFFERENT `rho1`; conversely,
+    a heavy-tailed series and its log-transform give
+    DIFFERENT `rho1` and the SAME `rs1`. So `rs1` and
+    `rho1` are independent functionals of the same series.
+
+  - vs lag-7 Pearson autocorrelation. Different lag.
+
+  - vs the inequality / shape axes (Gini, Atkinson, Theil,
+    Palma, Hoover, Bonferroni, Mehran, Pietra,
+    Foster-Wolfson, Esteban-Ray, Wolfson, Zenga,
+    Chakravarty, Kolm-Pollak, GE2/3/4/half/negone, S-Gini,
+    Amato, FGT, Hill-tail, decile/quintile/percentile gap
+    ratios, IQR/median, MAD/median, log-MAD, midspread,
+    var-of-logs, z-score-extremes, L-skewness, medcouple,
+    Bowley): every one of those is a PERMUTATION-INVARIANT
+    functional of the empirical distribution. They depend
+    only on the multiset of values; `rs1` depends on the
+    TEMPORAL ORDER of the ranks. Permuting the daily series
+    leaves every inequality axis unchanged but changes
+    `rs1` in general.
+
+  - vs the symbolic time-domain axes (axis-105
+    zero-crossing-rate, axis-106 turning-point-rate,
+    runs-test-z, monotone-run-length, second-difference
+    sign runs). Each of those collapses the level (or its
+    first / second difference) to a SIGN sequence and
+    counts events on that binary sequence. `rs1` retains
+    the full RANK resolution (n distinct rank levels rather
+    than 2 sign levels), so it carries strictly more
+    information than any of those binary statistics on the
+    same series. Concretely: a strictly monotone series
+    has TPR = 0 and ZCR ~ 1/(n-1) but `rs1` = +1; a strict
+    2-cycle has TPR = 1, ZCR = 1, and `rs1` = -1.
+
+  - vs the spectral / PSD axes (axis-84 to axis-104). Each
+    PSD axis maps the WHOLE-tenure (or frame-local)
+    periodogram to a scalar. The periodogram is invariant
+    to TIME-REVERSAL; `rs1` is not (in general). The
+    periodogram throws away the SIGN of phase information;
+    `rs1` is built directly from rank-paired comparisons.
+
+  - vs the entropy axes (sample, permutation, approximate,
+    Renyi spectral, spectral entropy itself). Those are
+    pattern-recurrence complexity measures on amplitude /
+    spectral embeddings; `rs1` is a single bilinear
+    statistic on paired ranks.
+
+  - vs the fractal-dimension axes (Higuchi, Katz,
+    Petrosian, Sevcik, box-count, DFA alpha, Hurst R/S).
+    Those measure scaling exponents (long-range structure);
+    `rs1` is a single-lag local statistic and changes
+    immediately under a one-day shuffle, while a fractal
+    dimension is a global asymptotic.
+
+  - vs Hjorth-mobility (axis-79) / Hjorth-complexity
+    (axis-80). Hjorth-mobility = sqrt(var(dx)/var(x)) is a
+    CONTINUOUS variance-ratio of the first-difference
+    series and is sensitive to magnitude. `rs1` is a rank
+    correlation and is magnitude-blind.
+
+  - vs Teager-Kaiser energy (axis-81). TKE is a continuous
+    local-product statistic on x[i]^2 and x[i-1]*x[i+1] --
+    not a rank-pair correlation.
+
+  Headline question:
+  **"For each source, how strongly does today's RANK in its
+    own daily-token distribution predict tomorrow's RANK,
+    stripping out the marginal distribution shape?"**
+
+  ### Live-smoke results (`~/.config/pew/queue.jsonl` as of
+  2026-05-02T17:12:41Z)
+
+  Output (the source identifier `vscode-copilot` is remapped
+  to `vscode-other` per local naming policy; numeric values
+  copied verbatim from the live run):
+
+  ```
+  pew-insights daily-token-spearman-autocorrelation-lag1
+  as of: 2026-05-02T17:12:41.131Z    sources: 6 (shown 4)    tokens: 5,912,488,677    min-tokens: 1,000    min-tenure-days: 14    sort: rs1ZAbsDesc
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 2 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+  source        firstDay    lastDay     tenure  active  pairs  tiesU   tiesV   mean             stddev           rs1     rs1Z    tokens
+  ------------  ----------  ----------  ------  ------  -----  ------  ------  ---------------  ---------------  ------  ------  -------------
+  vscode-other  2025-07-30  2026-04-20  265     73      264    18,336  18,336  7,115.951        27,024.444       0.3510  5.6924  1,885,727
+  claude-code   2026-02-11  2026-04-23  72      35      71     666     666     47,810,913.722   153,856,936.418  0.5361  4.4856  3,442,385,788
+  openclaw      2026-04-17  2026-05-02  16      16      15     0       0       136,582,411.938  94,755,566.895   0.7107  2.6592  2,185,318,591
+  hermes        2026-04-17  2026-05-02  16      16      15     0       0       17,681,160.688   9,445,740.553    0.3464  1.2962  282,898,571
+  ```
+
+  Readout. All four reportable sources show POSITIVE
+  Spearman lag-1 rank autocorrelation -- today's
+  daily-token rank within the source's own distribution
+  predicts tomorrow's rank in the same direction at every
+  source. Three of the four are >2 in standardised
+  z-score, well outside the iid envelope:
+
+  - `openclaw` (16-day tenure, 15 lag pairs, no ties at
+    all because every daily total is distinct):
+    `rs1 = 0.7107` -- strong rank persistence, day-to-day
+    rank changes are limited. `rs1Z = 2.66`, suggestive of
+    non-iid lag-1 structure even at very short n.
+  - `claude-code` (72-day tenure, 71 lag pairs, modest
+    tie pressure 666 in each of u and v): `rs1 = 0.5361`,
+    `rs1Z = 4.49`. Mid-range positive serial dependence
+    consistent with the source's bursty multi-day session
+    structure.
+  - `vscode-other` (265-day tenure, 264 lag pairs, very
+    high tie pressure 18,336 in each of u and v -- driven
+    by a long zero-padded gap-fill regime): `rs1 = 0.3510`,
+    `rs1Z = 5.69` -- the longest-tenured source has the
+    most tightly-bounded rank persistence simply because
+    n^(1/2) grows.
+  - `hermes` (16-day tenure, no ties): `rs1 = 0.3464`,
+    `rs1Z = 1.30` -- positive but not far from the iid
+    envelope at this short tenure.
+
+  Cross-axis sanity check vs axis-106 (turning-point-rate
+  shipped in v0.6.349). For `openclaw`, axis-106 reported
+  tpr = 0.500 (close to the iid expected anchor 2/3 from
+  below). Spearman rs1 = 0.71 here is consistent: a
+  series with FEW turning points (tpr below the iid floor)
+  is necessarily more monotone-stretchy day to day, which
+  in turn drives high rank persistence -- the two axes
+  agree on the qualitative reading and disagree on the
+  scale (one is binary-event count, the other a rank
+  correlation).
+
+  Cross-axis sanity check vs Pearson lag-1
+  autocorrelation. The numerical comparison is omitted
+  here but expected to be different in general: rs1 is
+  bounded-influence and rank-only, so the heavy-tailed
+  spikes in `claude-code` (mean 47.8M but stddev 154M --
+  marginal distribution is very heavy-right-tailed) would
+  be expected to give a notably DIFFERENT rho1 than
+  rs1 = 0.5361. The whole point of shipping the rank
+  variant is to deconfound serial structure from marginal
+  shape.
+
+  Two sources dropped below `--min-tenure-days 14`
+  (newcomers); zero non-finite fits, zero zero-variance
+  drops, zero source-filter drops.
+
+  ### Tests
+
+  - `test/dailytokenspearmanautocorrelationlag1.test.ts`
+    -- 20 new test cases. Total suite: 10118 -> 10138
+    passing; 0 failures.
+  - Coverage: midrank helper (distinct, pairwise-tied,
+    triple-tied, all-tied), primitive (rejects n<3,
+    rejects non-finite, monotone-up = +1, monotone-down
+    = +1 because both u and v decrease in lockstep,
+    rank invariance under affine monotone transform,
+    strict 2-cycle = -1, constant series throws
+    zero-variance, rs1Z arithmetic, tie-count surfacing),
+    builder (option validation, drop-invalid-hour-start,
+    drop-non-positive-tokens, monotone-up source rs1 ~ +1,
+    gap-fill of missing days as zero, drop-zero-variance,
+    drop-below-min-tenure, source filter, top cap,
+    determinism).
+
+  ### Notes
+
+  - Wired into the CLI as `daily-token-spearman-
+    autocorrelation-lag1` with the standard option set
+    (`--since`, `--until`, `--source`, `--min-tokens`,
+    `--min-tenure-days`, `--top`, `--sort`, `--json`).
+  - Default `--min-tenure-days` is 14 (hard floor 4 so at
+    least three rank pairs are available for a meaningful
+    Spearman correlation).
+  - Default `--sort` is `rs1ZAbsDesc` (most non-iid first).
+  - Pretty render exposes `pairs`, `tiesU`, `tiesV`, `rs1`,
+    `rs1Z` columns plus mean, stddev, and totalTokens for
+    cross-axis joinability.
+
 ## 0.6.349 — 2026-05-03
 
 ### Added
