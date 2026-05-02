@@ -20248,6 +20248,7 @@ import type { DailyTokenZeroCrossingRateReport } from './dailytokenzerocrossingr
 import type { DailyTokenTurningPointRateReport } from './dailytokenturningpointrate.js';
 import type { DailyTokenSpearmanAutocorrelationLag1Report } from './dailytokenspearmanautocorrelationlag1.js';
 import type { DailyTokenKendallTauAutocorrelationLag1Report } from './dailytokenkendalltauautocorrelationlag1.js';
+import type { DailyTokenUpperRecordsCountReport } from './dailytokenupperrecordscount.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21055,6 +21056,93 @@ export function renderDailyTokenKendallTauAutocorrelationLag1(
   lines.push(
     chalk.dim(
       `(reference anchor: tauExpectedIid = ${r.sources[0]!.tauExpectedIid.toFixed(4)} -- asymptotic E[tau_b] under independence (Kendall 1945). tau > 0 means today's lag-1 pair tends to be concordant with other days' lag-1 pairs (persistence); tau < 0 means anti-concordance (anti-persistence). |tauZ| > 2 is suggestive of non-iid lag-1 structure under the no-ties asymptotic null. Note tauZ uses the no-ties variance form; under heavy ties (e.g. zero-padded sparse days) read tauZ directionally rather than as a calibrated p-value.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenUpperRecordsCount(
+  r: DailyTokenUpperRecordsCountReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-upper-records-count'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source NUMBER OF STRICT UPPER RECORDS in the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINTH cross-source axis. Class-RECORDS-COUNT (Renyi 1962): integer count of indices i where x[i] > max(x[0..i-1]); index 0 is always a record. Closed-form null: independent Bernoulli(1/k) decomposition gives E[R_n] = H_n, Var[R_n] = H_n - H_n^(2). recordZ = (R_n - H_n)/sqrt(H_n - H_n^(2)) is approx N(0,1). Distinct from every prior axis (79-108): no other axis is a prefix-max-strict-improvement counting statistic with a closed-form harmonic-number null.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source UPPER RECORDS COUNT (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'records',
+    'looseRecords',
+    'lastIdx',
+    'argmaxIdx',
+    'maxValue',
+    'mean',
+    'stddev',
+    'EH_n',
+    'recordZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nUpperRecords),
+    formatNumber(s.nUpperRecordsLoose),
+    formatNumber(s.lastRecordIndex),
+    formatNumber(s.argmaxIndex),
+    formatNumber(s.maxValue),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.recordExpectedIid.toFixed(4),
+    s.recordZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: recordExpectedIid = H_n (n-th harmonic) under iid continuous (Renyi 1962). recordZ > 0 means MORE strict upper records than expected (persistent late-arriving new highs); recordZ < 0 means fewer (an early-loaded peak followed by no further global maxima). |recordZ| > 2 is suggestive of non-iid record structure under the asymptotic normal null. Note that in the zero-padded sparse-day regime, ties at zero suppress the strict count below the loose (>=) count; both are surfaced for triage.)`,
     ),
   );
 

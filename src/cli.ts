@@ -160,6 +160,7 @@ import {
   renderDailyTokenTurningPointRate,
   renderDailyTokenSpearmanAutocorrelationLag1,
   renderDailyTokenKendallTauAutocorrelationLag1,
+  renderDailyTokenUpperRecordsCount,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -482,6 +483,7 @@ import { buildDailyTokenZeroCrossingRate } from './dailytokenzerocrossingrate.js
 import { buildDailyTokenTurningPointRate } from './dailytokenturningpointrate.js';
 import { buildDailyTokenSpearmanAutocorrelationLag1 } from './dailytokenspearmanautocorrelationlag1.js';
 import { buildDailyTokenKendallTauAutocorrelationLag1 } from './dailytokenkendalltauautocorrelationlag1.js';
+import { buildDailyTokenUpperRecordsCount } from './dailytokenupperrecordscount.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -36003,6 +36005,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKendallTauAutocorrelationLag1(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-upper-records-count')
+  .description(
+    "Per-source NUMBER OF STRICT UPPER RECORDS in the gap-filled daily total_tokens series (ONE-HUNDRED-AND-NINTH cross-source axis). Class-RECORDS-COUNT (Renyi 1962): integer count of indices i where x[i] > max(x[0..i-1]); index 0 is always a record. Closed-form null: independent Bernoulli(1/k) decomposition gives E[R_n] = H_n (n-th harmonic) and Var[R_n] = H_n - H_n^(2). recordZ = (R_n - H_n)/sqrt(H_n - H_n^(2)) is approximately N(0, 1) by Lyapunov CLT. Distinct from every prior axis (79-108): no other axis is a prefix-max-strict-improvement counting statistic with a closed-form harmonic-number null. Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: recordZAbsDesc (default) | records | recordsDesc | recordZ | recordZDesc | recordZAbs | tokens | tenure | source.',
+    'recordZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'records',
+          'recordsDesc',
+          'recordZ',
+          'recordZDesc',
+          'recordZAbs',
+          'recordZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenUpperRecordsCount(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'records'
+            | 'recordsDesc'
+            | 'recordZ'
+            | 'recordZDesc'
+            | 'recordZAbs'
+            | 'recordZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenUpperRecordsCount(report) + '\n',
           );
         }
       } catch (e) {
