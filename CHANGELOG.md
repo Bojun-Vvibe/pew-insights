@@ -2,6 +2,167 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.344 — 2026-05-02
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-FIRST):
+  `pew-insights daily-token-spectral-renyi3-entropy`.
+
+  Per-source SPECTRAL RENYI-ALPHA=3 (collision-3) ENTROPY --
+  half the negative natural log of the THIRD COLLISION
+  PROBABILITY M3 = sum p[k]^3 of the normalised one-sided
+  non-DC periodogram of the gap-filled mean-centred daily
+  total_tokens series, normalised by ln(K) into [0, 1]. For
+  P[k], k = 1..K with K = floor(n/2) and K >= 2:
+
+      S       = sum_{k=1..K} P[k]                 (must be > 0)
+      p[k]    = P[k] / S                          in [0, 1]
+      M3      = sum_{k=1..K} p[k]^3               in [1/K^2, 1]
+      H3      = -ln(M3) / 2                       in [0, ln K]
+      h3Norm  = H3 / ln K                         in [0, 1]
+      kEff3   = exp(H3) = M3^(-1/2)               in [1, K]
+
+  CLASS-EN (RENYI-ENTROPY-ALPHA=3) primitive -- the FIRST
+  primitive in the suite that uses an alpha=3 (super-quadratic,
+  peak-mass-weighted) Renyi entropy on the SPECTRAL distribution.
+  Closes the alpha-sweep triple (0.5, 2, 3) on the same one-sided
+  PSD: axis-100 anchors the sub-linear tail-mass-weighted end,
+  axis-99 anchors the quadratic peak/inverse-participation-ratio
+  middle, and axis-101 anchors the alpha > 2 super-quadratic end.
+
+  ### Structural orthogonality
+
+  - vs `daily-token-spectral-renyi2-entropy` (axis 99): PRIMARY
+    target. Axis-99 uses M2 = sum p[k]^2 (the SECOND collision
+    probability / inverse participation ratio). Axis-101 uses
+    M3 = sum p[k]^3 (the THIRD collision probability). M2 and
+    M3 are MOMENT-INDEPENDENT for K >= 3 -- a 3-bin pmf has 2
+    free parameters; fixing M2 leaves a 1-parameter family on
+    which M3 still varies. Counter-example: K=10,
+    A=[0.7, 0.1, 0.1, 0.1, 0,...] vs B=[0.55, 0.4, 0.05, 0,...]
+    have h2Norm_A=0.284, h2Norm_B=0.335; h3Norm_A=0.230,
+    h3Norm_B=0.319. The h2Norm - h3Norm gap is 0.054 for A but
+    only 0.016 for B (~3.4x diagnostic ratio on two PSDs with
+    similar overall concentration). Axis-101 is the only
+    primitive in the suite that surfaces this gap.
+  - vs `daily-token-spectral-renyi-half-entropy` (axis 100):
+    structural counterpart at the OTHER end of the Renyi family.
+    Axis-100 is alpha=0.5 (sub-linear, tail-mass-weighted);
+    axis-101 is alpha=3 (super-quadratic, peak-mass-weighted).
+    Renyi monotonicity (Renyi 1961, Theorem 4) gives
+    hHalfNorm >= h2Norm >= h3Norm with equality iff uniform.
+    The TRIPLE (axis-100, axis-99, axis-101) provides a 3-point
+    sweep of the alpha axis with axis-101 supplying the alpha>2
+    anchor that no other axis provides.
+  - vs `daily-token-spectral-entropy` (axis 69, Shannon =
+    alpha->1 limit): h3Norm <= h_Shannon_norm by Renyi
+    monotonicity, with equality iff uniform. The gap
+    h_Shannon_norm - h3Norm is a "peakedness premium beyond
+    Shannon" and is STRICTLY positive on every non-uniform PSD.
+  - vs `daily-token-spectral-flatness-wiener` (axis 85, GM/AM
+    = alpha->0 limit, Hartley-style on positive bins) and
+    `daily-token-spectral-flatness-tail` (axis 98, GM/AM
+    restricted to upper-half subset): both use the GM/AM ratio
+    on a SUBSET of bins; axis-101 is FULL-BAND, bin-permutation-
+    invariant, cubic-weighted. Two PSDs with the same GM/AM can
+    have very different M3 (a 2-bin equipartition has M3 = 0.25;
+    a 4-bin equipartition has M3 = 0.0625; both have GM/AM = 1
+    on the kept-positive subset).
+  - vs `daily-token-spectral-crest-factor` (axis 89): axis-89
+    is a SINGLE-EXTREMUM ratio (max P[k] / mean P[k]); axis-101
+    is a FULL-DISTRIBUTION moment. Two spectra with identical
+    peak-to-mean can have very different M3 (one big bin + the
+    rest near uniform vs a small handful of medium-large bins).
+  - vs all bin-position-SENSITIVE spectral axes 86-97 (centroid,
+    bandwidth, rolloff, skewness, kurtosis, decrease,
+    irregularity, spread-iqr, roughness, peak-frequency,
+    second-peak-frequency): axis-101 is bin-permutation-
+    INVARIANT (M3 is a symmetric function of the pmf vector).
+    Sorted-descending vs reverse-sorted vs random-permuted
+    spectra share IDENTICAL h3Norm and very different roughness,
+    decrease, irregularity, IQR, peak indices.
+  - vs `daily-token-dft-power-law-slope` (axis 84): axis-84 is
+    the OLS slope of log P[k] on log k (a structural scaling
+    parameter). Axis-101 is a SHAPE statistic of the same P
+    normalised. beta and h3Norm are independently adjustable.
+  - vs `daily-token-permutation-entropy` (axis 70),
+    `-sample-entropy` (axis 73), `-lempel-ziv-complexity`
+    (axis 83): all TIME-DOMAIN complexity primitives. Axis-101
+    is FREQUENCY-DOMAIN. A shuffle of the daily series leaves
+    PE unchanged but DESTROYS the spectrum (and hence M3).
+    A monotone scaling of the daily series leaves PE unchanged
+    but rescales the spectrum bin values uniformly, leaving M3
+    unchanged.
+  - vs all permutation-invariant TIME-DOMAIN amplitude-shape
+    axes 32-67 (Gini, Atkinson, Theil, GE, Hill, Bowley,
+    Lehmer, ...): those operate on the TIME-DOMAIN distribution.
+    Axis-101 is on the FREQUENCY-DOMAIN |DFT|^2 distribution.
+    A shuffle of the time-domain series leaves time-domain
+    amplitude statistics fixed but DESTROYS the spectrum.
+  - vs `source-row-token-renyi-entropy`: same Renyi family
+    but on the per-row TOKEN MASS distribution (time-domain
+    histogram), not on the SPECTRAL distribution. Different
+    domain, different unit of aggregation, different primitive.
+
+  ### Live smoke test against `~/.config/pew/queue.jsonl`
+
+  Command: `node --import tsx src/cli.ts daily-token-spectral-renyi3-entropy --top 12`
+
+  Output (source identifier `vscode-copilot` remapped to
+  `vscode-other` per local naming policy; numeric values copied
+  verbatim from the live run):
+
+  ```
+  pew-insights daily-token-spectral-renyi3-entropy
+  as of: 2026-05-02T13:56:12.454Z    sources: 6 (shown 2)    tokens: 3,444,271,515    min-tokens: 1,000    min-tenure-days: 32    sort: h3NormDesc
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 4 below min-tenure-days, 0 zero-variance, 0 zero-power, 0 non-finite-fit, 0 below top cap
+
+  per-source SPECTRAL RENYI-3 ENTROPY (sorted by h3NormDesc; ties: source asc)
+  source          firstDay    lastDay     tenure  active  bins   sumP3     kEff3    h3      h3Norm  tokens
+  --------------  ----------  ----------  ------  ------  -----  --------  -------  ------  ------  -------------
+  vscode-other    2025-07-30  2026-04-20  265     73      132    0.000271  60.6930  4.1058  0.8409  1,885,727
+  claude-code     2026-02-11  2026-04-23  72      35      36     0.003692  16.4572  2.8008  0.7816  3,442,385,788
+  ```
+
+  Per-carrier reads:
+
+  - `vscode-other` (265-day tenure, 132 Fourier bins): `h3Norm`
+    = 0.8409 with `kEff3` = 60.69 effective bins under cubic
+    weighting. The series sustains 60+ effective spectral bins
+    even after the alpha=3 cubic concentration reweight -- a
+    spectrum with substantial broadband content. The reading
+    sits at ~46% of the maximum bin count (60.69 / 132).
+  - `claude-code` (72-day tenure, 36 Fourier bins): `h3Norm`
+    = 0.7816 with `kEff3` = 16.46. The ratio kEff3 / K is
+    16.46 / 36 = 0.457, structurally similar to the
+    `vscode-other` ratio (0.460); on this alpha=3 axis the two
+    carriers are NEAR-INDISTINGUISHABLE at the relative-spread
+    level, despite a 47x difference in total tokens
+    (3.44 billion vs 1.89 million) and a 4x difference in
+    tenure. h3Norm itself splits them by 0.06 in favour of
+    `vscode-other`.
+  - 4 sources dropped below `--min-tenure-days 32`; 0 sources
+    dropped on any other guardrail. Filter accounting closes.
+
+### Verification
+
+- 9949 tests pass (delta +37 vs 0.6.343's 9912). Suite covers
+  the spectral primitive's closed-form anchors (uniform K bins
+  -> h3Norm = 1; single-bin delta -> h3Norm = 0; two equipowered
+  bins -> h3 = ln 2 for all K), the Renyi monotonicity gate
+  (hHalfNorm >= h2Norm >= h3Norm and Shannon >= h3Norm), the
+  scale-invariance gate, the bin-permutation-invariance gate,
+  the orthogonality witness vs axis-99 (gap A > gap B for the
+  K=10 single-peak vs two-peak counter-example above), the
+  builder error/edge-case lattice (empty queue, below
+  min-tenure, zero-variance series, invalid hour_start,
+  non-positive tokens, source filter, top cap, sort order
+  parameters, ties broken by source asc, since/until window,
+  invalid since), and pure-tone vs white-noise behavioural
+  anchors.
+- TypeScript build passes (`npm run build`).
+
 ## 0.6.343 — 2026-05-02
 
 ### Added
