@@ -254,3 +254,78 @@ test('buildDailyTokenHjorthComplexity: --sort source orders alphabetically', () 
     ['alpha', 'mike', 'zeta'],
   );
 });
+
+// ---- Refinement: stronger orthogonality + stability witnesses ---------
+
+test('hjorthComplexity: property -- mobility-equal pairs split on complexity (parametric sweep)', async () => {
+  const { hjorthMobility } = await import('../src/dailytokenhjorthmobility.js');
+  // Sweep over a range of single-tone frequencies; for each, find a
+  // sum-of-two-tones construction whose mobility roughly matches.
+  // Assert that for at least one matched pair the complexity gap > 0.1.
+  const N = 1500;
+  let observedMaxGap = 0;
+  let mobilityMatchCount = 0;
+  for (const omega of [Math.PI / 16, Math.PI / 12, Math.PI / 8, Math.PI / 6]) {
+    const A: number[] = [];
+    for (let i = 0; i < N; i += 1) A.push(Math.cos(omega * i));
+    const mA = hjorthMobility(A).mobility;
+    // Construct a 2-tone series; tune amplitude of the high-freq tone
+    // so that joint mobility lands near mA.
+    let bestGap = 0;
+    for (const k of [0.25, 0.5, 1.0, 2.0]) {
+      const B: number[] = [];
+      for (let i = 0; i < N; i += 1) {
+        B.push(k * Math.cos(omega * 4 * i) + Math.cos(omega * 0.25 * i));
+      }
+      const mB = hjorthMobility(B).mobility;
+      if (Math.abs(mA - mB) / Math.max(mA, mB) < 0.3) {
+        mobilityMatchCount += 1;
+        const cA = hjorthComplexity(A).complexity;
+        const cB = hjorthComplexity(B).complexity;
+        bestGap = Math.max(bestGap, Math.abs(cA - cB));
+      }
+    }
+    observedMaxGap = Math.max(observedMaxGap, bestGap);
+  }
+  assert.ok(
+    mobilityMatchCount > 0,
+    'sweep should find at least one mobility-matched pair',
+  );
+  assert.ok(
+    observedMaxGap > 0.1,
+    `expected complexity gap > 0.1 for some mobility-matched pair, observed max gap ${observedMaxGap}`,
+  );
+});
+
+test('hjorthComplexity: numerical stability on near-zero diff variance (tiny perturbation on a ramp)', () => {
+  // y = i + epsilon*noise where epsilon ~ 1e-9 should still produce a
+  // finite complexity (var_dv is tiny but strictly > 0). Guards against
+  // a future regression where someone tightens the var_dv > 0 check
+  // into var_dv > eps and silently drops well-conditioned inputs.
+  const N = 200;
+  let s = 42;
+  const v: number[] = [];
+  for (let i = 0; i < N; i += 1) {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    const eps = (s / 0x7fffffff - 0.5) * 1e-9;
+    v.push(i + eps);
+  }
+  const r = hjorthComplexity(v);
+  assert.ok(Number.isFinite(r.complexity), `expected finite complexity, got ${r.complexity}`);
+  assert.ok(r.complexity > 0, `expected strictly positive complexity, got ${r.complexity}`);
+});
+
+test('hjorthComplexity: closed-form identity -- complexity = sqrt(varDdv * varV) / varDv', () => {
+  // Algebraic check that the returned complexity equals the analytic
+  // closed form computed independently from the surfaced variances.
+  const v = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8];
+  const r = hjorthComplexity(v);
+  const recomputed = Math.sqrt(r.varDdv * r.varV) / r.varDv;
+  assert.ok(
+    Math.abs(r.complexity - recomputed) < 1e-12,
+    `closed-form identity: complexity=${r.complexity} vs sqrt(varDdv*varV)/varDv=${recomputed}`,
+  );
+  // Also: complexity == mobilityDv / mobilityV
+  const ratio = r.mobilityDv / r.mobilityV;
+  assert.ok(Math.abs(r.complexity - ratio) < 1e-12);
+});
