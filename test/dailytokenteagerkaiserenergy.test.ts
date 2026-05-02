@@ -358,3 +358,61 @@ test('teagerKaiserEnergy: report sort defaults to absTkeNormalizedDesc', () => {
   const r = buildDailyTokenTeagerKaiserEnergy([], { generatedAt: GEN });
   assert.equal(r.sort, 'absTkeNormalizedDesc');
 });
+
+// ---- Refinement: parametric pure-tone closed-form sweep --------------
+
+test('teagerKaiserEnergy: parametric closed-form sweep -- pure-tone tkeNormalized matches 2*sin^2(omega) across frequencies', () => {
+  // Maragos-Kaiser-Quatieri 1993 closed form holds for every
+  // resolvable digital frequency. Sweep a range and assert the
+  // analytic match within 5% at each point. This is a stronger
+  // property than the single-frequency witness above and guards
+  // against future regressions where someone subtly changes the
+  // operator stencil (e.g. introduces a window or smoothing).
+  const N = 8192;
+  const frequencies = [
+    Math.PI / 64,
+    Math.PI / 32,
+    Math.PI / 16,
+    Math.PI / 8,
+    Math.PI / 6,
+    Math.PI / 4,
+    Math.PI / 3,
+  ];
+  for (const omega of frequencies) {
+    const v: number[] = [];
+    for (let i = 0; i < N; i += 1) v.push(Math.cos(omega * i));
+    const r = teagerKaiserEnergy(v).tkeNormalized;
+    const expected = 2 * Math.sin(omega) ** 2;
+    const relErr = Math.abs(r - expected) / Math.max(1e-3, expected);
+    assert.ok(
+      relErr < 0.05,
+      `omega=${omega.toFixed(4)}: tkeNormalized=${r.toFixed(6)} vs analytic=${expected.toFixed(6)} (relErr=${relErr.toFixed(4)})`,
+    );
+  }
+});
+
+test('teagerKaiserEnergy: interiorSamples equals N - 2 for any valid input', () => {
+  // Edge-case witness: the operator MUST average over exactly the
+  // interior triplets [1, N-2]. Off-by-one regressions would surface
+  // here.
+  for (const N of [4, 7, 10, 33, 100, 257]) {
+    const v: number[] = [];
+    for (let i = 0; i < N; i += 1) v.push(1 + Math.sin(i / 3));
+    const r = teagerKaiserEnergy(v);
+    assert.equal(
+      r.interiorSamples,
+      N - 2,
+      `N=${N}: expected interiorSamples=${N - 2}, got ${r.interiorSamples}`,
+    );
+  }
+});
+
+test('teagerKaiserEnergy: throws cleanly on N=4 boundary (smallest valid input) iff variance is non-zero', () => {
+  // N=4 boundary: interior is 2 triplets (i=1, i=2). Mean is
+  // well-defined; we should not throw on a non-constant N=4 input.
+  const r = teagerKaiserEnergy([1, 2, 3, 5]);
+  assert.ok(Number.isFinite(r.tkeMean));
+  assert.equal(r.interiorSamples, 2);
+  // But N=4 with variance 0 must still throw.
+  assert.throws(() => teagerKaiserEnergy([7, 7, 7, 7]));
+});
