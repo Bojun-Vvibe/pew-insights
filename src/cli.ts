@@ -139,6 +139,7 @@ import {
   renderDailyTokenSpectralFlatnessWiener,
   renderDailyTokenSpectralCentroid,
   renderDailyTokenSpectralBandwidth,
+  renderDailyTokenSpectralRolloff,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -440,6 +441,7 @@ import { buildDailyTokenDftPowerLawSlope } from './dailytokendftpowerlawslope.js
 import { buildDailyTokenSpectralFlatnessWiener } from './dailytokenspectralflatnesswiener.js';
 import { buildDailyTokenSpectralCentroid } from './dailytokenspectralcentroid.js';
 import { buildDailyTokenSpectralBandwidth } from './dailytokenspectralbandwidth.js';
+import { buildDailyTokenSpectralRolloff } from './dailytokenspectralrolloff.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18621,6 +18623,127 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralBandwidth(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-rolloff')
+  .description(
+    "Per-source SPECTRAL ROLL-OFF = smallest bin R such that the cumulative one-sided periodogram up to R reaches rolloffFraction (default 0.85) of the total non-DC spectral energy of the gap-filled mean-centred daily total_tokens series (EIGHTY-EIGHTH cross-source axis). CDF PERCENTILE on the Fourier power spectrum -- a quantile, NOT a moment. rolloffBin in [1, K]; rolloffNormalised = rolloffBin / K in (0, 1]; cumulativeFraction in [rolloffFraction, 1]. Low-frequency-dominated -> small rolloffNormalised; white-noise-like -> rolloffNormalised approx rolloffFraction; high-frequency-dominated -> rolloffNormalised near 1. References: Tzanetakis & Cook 2002 IEEE TSAP 10(5); McKinney & Breebaart 2003 ISMIR; Klapuri 1999 ICASSP; Lerch 2012 §3.3.1. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; time-domain-shuffle-SENSITIVE; bin-permutation-SENSITIVE. Structurally orthogonal to (a) spectral-bandwidth 87 (2nd CENTRAL MOMENT vs CDF PERCENTILE -- equal-bandwidth spectra can have very different roll-offs); (b) spectral-centroid 86 (MEAN bin vs PERCENTILE bin -- mean/median orthogonality witness); (c) flatness 85; (d) DFT-power-law-slope 84; (e) spectral-entropy 69; (f) Hjorth-mobility 79 / Hjorth-complexity 80; (g) Lempel-Ziv 83; (h) Teager-Kaiser 81; (i) curvature-sign-change-rate 82 / Petrosian FD 76; (j) box-count/Sevcik/Katz/Higuchi FD 78/77/75/74; (k) Hurst R/S 71 / DFA-alpha 72; (l) permutation-entropy 70 / sample-entropy 73; (m) autocorrelation 67/68; (n) all permutation-invariant dispersion / shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--rolloff-fraction <f>',
+    'cumulative-energy fraction at which to read the roll-off bin; must be in (0, 1]. Default 0.85 (Tzanetakis & Cook 2002).',
+    '0.85',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: rolloffDesc (default) | rolloff | tokens | tenure | source.',
+    'rolloffDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        rolloffFraction: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const rolloffFraction = Number.parseFloat(opts.rolloffFraction);
+        if (
+          !Number.isFinite(rolloffFraction) ||
+          rolloffFraction <= 0 ||
+          rolloffFraction > 1
+        ) {
+          throw new Error(
+            `--rolloff-fraction must be in (0, 1] (got ${opts.rolloffFraction})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'rolloff',
+          'rolloffDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralRolloff(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          rolloffFraction,
+          top,
+          sort: opts.sort as
+            | 'rolloff'
+            | 'rolloffDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralRolloff(report) + '\n');
         }
       } catch (e) {
         die(e);
