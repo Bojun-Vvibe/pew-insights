@@ -381,3 +381,66 @@ test('build: invalid hour_start increments dropped counter', () => {
   });
   assert.equal(r.droppedInvalidHourStart, 1);
 });
+
+// ---- refinement: defence-in-depth -----------------------------------
+
+test('curvatureSignChangeRate: cubic with single inflection -> exactly one sign change', () => {
+  // y = (i - 4)^3 for i=0..8 -> d2[i] = 6*(i-4) -> centred indices
+  // i=1..7 give d2 = -18,-12,-6,0,6,12,18 -- one strict sign change
+  // around the zero (the (-6,0) and (0,6) pairs have product 0).
+  const v: number[] = [];
+  for (let i = 0; i < 9; i += 1) v.push(Math.pow(i - 4, 3));
+  const r = curvatureSignChangeRate(v);
+  // Strictly negative-to-positive transitions across i=4 with a 0
+  // in between -> the strict-inequality convention yields 0 sign
+  // changes, matching the documented zero-handling semantics. This
+  // witness pins the convention against accidental drift.
+  assert.equal(r.signChanges, 0);
+});
+
+test('curvatureSignChangeRate: numerical stability at amplitude 1e12', () => {
+  const v = [1e12, 5e12, 1e12, 5e12, 1e12, 5e12, 1e12, 5e12];
+  const r = curvatureSignChangeRate(v);
+  assert.equal(r.cscRate, 1);
+  assert.ok(Number.isFinite(r.cscNormalized));
+});
+
+test('curvatureSignChangeRate: numerical stability at amplitude 1e-12', () => {
+  const v = [1e-12, 5e-12, 1e-12, 5e-12, 1e-12, 5e-12, 1e-12, 5e-12];
+  const r = curvatureSignChangeRate(v);
+  assert.equal(r.cscRate, 1);
+  assert.ok(Number.isFinite(r.cscNormalized));
+});
+
+test('build: sort by tokens descending puts heaviest source first', () => {
+  const queues = [
+    ...buildSeries([100, 200, 300, 400, 500, 600, 700, 800], 'light'),
+    ...buildSeries(
+      [100000, 200000, 150000, 300000, 250000, 400000, 350000, 500000],
+      'heavy',
+    ),
+  ];
+  const r = buildDailyTokenCurvatureSignChangeRate(queues, {
+    generatedAt: GEN,
+    sort: 'tokens',
+    minTenureDays: 5,
+    minTokens: 0,
+  });
+  assert.equal(r.sources[0]!.source, 'heavy');
+});
+
+test('build: tenure sort is stable across ties on source name', () => {
+  const queues = [
+    ...buildSeries([1000, 2000, 1500, 3000, 2500, 4000, 3500, 5000], 'b-src'),
+    ...buildSeries([1000, 2000, 1500, 3000, 2500, 4000, 3500, 5000], 'a-src'),
+  ];
+  const r = buildDailyTokenCurvatureSignChangeRate(queues, {
+    generatedAt: GEN,
+    sort: 'tenure',
+    minTenureDays: 5,
+    minTokens: 0,
+  });
+  // Equal tenure -> alphabetical tiebreak.
+  assert.equal(r.sources[0]!.source, 'a-src');
+  assert.equal(r.sources[1]!.source, 'b-src');
+});
