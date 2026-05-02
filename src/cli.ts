@@ -163,6 +163,7 @@ import {
   renderDailyTokenUpperRecordsCount,
   renderDailyTokenMannKendallTau,
   renderDailyTokenCoxStuartTrendTest,
+  renderDailyTokenBartelsRankVonNeumann,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -488,6 +489,7 @@ import { buildDailyTokenKendallTauAutocorrelationLag1 } from './dailytokenkendal
 import { buildDailyTokenUpperRecordsCount } from './dailytokenupperrecordscount.js';
 import { buildDailyTokenMannKendallTau } from './dailytokenmannkendalltau.js';
 import { buildDailyTokenCoxStuartTrendTest } from './dailytokencoxstuarttrendtest.js';
+import { buildDailyTokenBartelsRankVonNeumann } from './dailytokenbartelsrankvonneumann.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -36359,6 +36361,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCoxStuartTrendTest(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-bartels-rank-von-neumann')
+  .description(
+    "Per-source BARTELS RANK VON NEUMANN RATIO TEST FOR RANDOMNESS on the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWELFTH cross-source axis). Class-RANDOMNESS-TEST (Bartels 1982, JASA 77(377):40-46): replace x[i] by mid-rank R[i] in {1..n}; RVN = sum (R[i+1]-R[i])^2 / sum (R[i] - (n+1)/2)^2 in [0, 4]. E[RVN] = 2 under iid; Var[RVN] = 4(n-2)(5n^2 - 2n - 9) / (5n(n+1)(n-1)^2) closed-form (Bartels 1982 Theorem 1); bZ = (RVN - 2)/sqrt(Var) approx N(0,1) for n >= 10. RVN < 2 = positive serial dependence (trend/persistence); RVN > 2 = oscillation. Distinct from axis-111 Cox-Stuart by being a LAG-1 SQUARED-RANK-DIFFERENCE statistic with closed-form Gaussian null (vs HALF-SHIFT BINOMIAL SIGN-TEST). Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bZAbsDesc (default) | rvn | rvnDesc | bZ | bZDesc | bZAbs | tokens | tenure | source.',
+    'bZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'rvn',
+          'rvnDesc',
+          'bZ',
+          'bZDesc',
+          'bZAbs',
+          'bZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBartelsRankVonNeumann(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'rvn'
+            | 'rvnDesc'
+            | 'bZ'
+            | 'bZDesc'
+            | 'bZAbs'
+            | 'bZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenBartelsRankVonNeumann(report) + '\n',
           );
         }
       } catch (e) {

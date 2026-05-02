@@ -20251,6 +20251,7 @@ import type { DailyTokenKendallTauAutocorrelationLag1Report } from './dailytoken
 import type { DailyTokenUpperRecordsCountReport } from './dailytokenupperrecordscount.js';
 import type { DailyTokenMannKendallTauReport } from './dailytokenmannkendalltau.js';
 import type { DailyTokenCoxStuartTrendTestReport } from './dailytokencoxstuarttrendtest.js';
+import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsrankvonneumann.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21323,6 +21324,91 @@ export function renderDailyTokenCoxStuartTrendTest(
   lines.push(
     chalk.dim(
       `(reference anchor: csTau in [-1, +1]; +1 = every paired half-shift diff is strictly positive (second half dominates first half pair-by-pair), -1 = every paired diff strictly negative, 0 = no half-shift secular drift in expectation under iid binomial null (Cox & Stuart 1955). csZ > 0 means the second half dominates (UPWARD secular drift); csZ < 0 means downward drift. |csZ| > 1.96 is two-sided significant at alpha = 0.05 under the asymptotic normal approximation (valid for k >= 10). Note: ties at zero in the gap-filled regime inflate nTie and shrink k via the EXCLUDE-TIES convention; both surfaced for triage.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBartelsRankVonNeumann(
+  r: DailyTokenBartelsRankVonNeumannReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-bartels-rank-von-neumann'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BARTELS RANK VON NEUMANN RATIO TEST FOR RANDOMNESS on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWELFTH cross-source axis. Class-RANDOMNESS-TEST (Bartels 1982, JASA 77:40-46): replace x[i] by mid-rank R[i] in {1..n}; RVN = sum (R[i+1]-R[i])^2 / sum (R[i] - (n+1)/2)^2. E[RVN] = 2 under iid; Var[RVN] = 4(n-2)(5n^2 - 2n - 9) / (5n(n+1)(n-1)^2) (Bartels 1982 Theorem 1). bZ = (RVN - 2) / sqrt(Var) approx N(0,1) for n >= 10. RVN < 2 = positive serial dependence (trend/persistence); RVN > 2 = oscillation; RVN approx 2 = randomness. Distinct from axis-111 Cox-Stuart (HALF-SHIFT BINOMIAL SIGN-TEST), runs-test (median-binarised maximal-run count), Mann-Kendall (GLOBAL all-pairs concordance), and lag-1 rank-correlation axes by being the L2 SQUARED ADJACENT-RANK DIFFERENCE statistic with closed-form Gaussian null.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BARTELS RVN (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'nTies',
+    'numerator',
+    'denominator',
+    'RVN',
+    'mean',
+    'stddev',
+    'bVar',
+    'bZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nTies),
+    formatNumber(s.bartelsNumerator),
+    formatNumber(s.bartelsDenominator),
+    s.bartelsRvn.toFixed(4),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.bartelsVar.toFixed(6),
+    s.bartelsZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: RVN in [0, 4]; RVN approx 2 = iid randomness, RVN < 2 = positive serial dependence (consecutive ranks too close -> trend or persistence), RVN > 2 = negative serial dependence (consecutive ranks too far -> oscillation / mean-reversion). bZ < -1.96 is two-sided significant evidence of positive serial dependence at alpha = 0.05; bZ > 1.96 oscillation. The closed-form variance is the no-ties form (Bartels 1982 Theorem 1); nTies surfaces the mid-rank correction load -- substantial in the gap-filled regime where consecutive zero-padded days share the lowest mid-rank.)`,
     ),
   );
 
