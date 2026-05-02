@@ -700,3 +700,156 @@ test('dailyTokenSpectralRolloff: rolloffDesc default-sort acceptance witness on 
     `hi.rolloffNorm ${b.rolloffNormalised} not > lo.rolloffNorm ${a.rolloffNormalised}`,
   );
 });
+
+// ---------- refinement: extra closed-form, monotonicity, and orthogonality witnesses ----------
+
+test('spectralRolloffBin: rolloffBin is monotone non-decreasing as we shift mass from bin 1 to bin K (sweep)', () => {
+  // Place fraction (1 - w) at bin 1 and w at bin K with a tiny
+  // noise floor on the rest; for f = 0.85 the roll-off must walk
+  // from 1 (when w is small enough that bin 1 already carries
+  // >= 85% of the mass) to K (when w >= 0.15 + epsilon, bin 1
+  // alone no longer reaches 85% so the walk has to step all the
+  // way to bin K). Pin strict monotone-non-decrease across a
+  // dense w sweep.
+  const K = 50;
+  const floor = 1e-15;
+  let prev = 0;
+  for (let i = 0; i <= 20; i += 1) {
+    const w = i / 20;
+    const p = new Array(K).fill(floor);
+    p[0] = 1 - w;
+    p[K - 1] = w;
+    const r = spectralRolloffBin(p, 0.85);
+    assert.ok(
+      r.rolloffBin >= prev,
+      `non-monotone at w=${w}: ${prev} -> ${r.rolloffBin}`,
+    );
+    prev = r.rolloffBin;
+  }
+  assert.equal(prev, K);
+});
+
+test('spectralRolloffBin: f=0.5 on uniform power gives the exact median bin = ceil(K/2)', () => {
+  // Tighter pin than the parametric sweep above: at f=0.5 on a
+  // uniform PSD the roll-off bin is exactly ceil(K/2) -- the
+  // discrete median -- across every K. This is the median band-
+  // edge witness that distinguishes roll-off (PERCENTILE) from
+  // centroid (MEAN), since for a uniform PSD the centroid is
+  // the arithmetic mean (K + 1) / 2 = K/2 + 0.5, which differs
+  // from ceil(K/2) for odd K (the median floors the half-mass
+  // crossing).
+  for (const K of [3, 4, 5, 6, 7, 8, 11, 16, 25, 33, 64, 100]) {
+    const p = new Array(K).fill(1);
+    const r = spectralRolloffBin(p, 0.5);
+    assert.equal(r.rolloffBin, Math.ceil(K / 2), `K=${K}: R != ceil(K/2)`);
+  }
+});
+
+test('spectralRolloffBin: identical-PSD agreement across a sweep of rolloffFractions -- cumulativeFraction is non-decreasing', () => {
+  // For any fixed PSD the realised cumulativeFraction at the
+  // returned rolloffBin must be non-decreasing as f sweeps from
+  // 0+ up to 1. (rolloffBin itself is monotone-non-decreasing
+  // by another test; this pins the cumulative side of the
+  // contract.)
+  const p = [4, 3, 2, 1, 1, 1, 1, 2, 1, 1, 1, 3, 5, 2, 1, 1];
+  let prev = 0;
+  for (const f of [0.05, 0.1, 0.25, 0.5, 0.7, 0.85, 0.9, 0.95, 0.99, 1.0]) {
+    const r = spectralRolloffBin(p, f);
+    assert.ok(
+      r.cumulativeFraction >= prev - 1e-12,
+      `non-monotone cumulativeFraction at f=${f}: ${prev} -> ${r.cumulativeFraction}`,
+    );
+    prev = r.cumulativeFraction;
+  }
+  assert.ok(Math.abs(prev - 1) < 1e-12);
+});
+
+test('buildDailyTokenSpectralRolloff: rolloffFraction round-trip pinning -- a wider fraction never moves the roll-off bin earlier on the same source', () => {
+  // End-to-end pin on the orchestrator: build the same source
+  // twice with f = 0.5 vs f = 0.95; the rolloffBin at f=0.95
+  // must be >= rolloffBin at f=0.5 for every source row.
+  const queue: QueueLine[] = [];
+  for (let s = 0; s < 2; s += 1) {
+    for (let i = 0; i < 64; i += 1) {
+      const tt =
+        1000 +
+        ((i * 37 * (s + 1)) % 311) +
+        Math.floor(50 * Math.sin((2 * Math.PI * (3 + s) * i) / 64));
+      queue.push(ql(dayIso(i), `src${s}`, Math.max(1, tt)));
+    }
+  }
+  const rLow = buildDailyTokenSpectralRolloff(queue, {
+    minTokens: 100,
+    minTenureDays: 32,
+    rolloffFraction: 0.5,
+    sort: 'source',
+    generatedAt: ISO,
+  });
+  const rHigh = buildDailyTokenSpectralRolloff(queue, {
+    minTokens: 100,
+    minTenureDays: 32,
+    rolloffFraction: 0.95,
+    sort: 'source',
+    generatedAt: ISO,
+  });
+  assert.equal(rLow.sources.length, 2);
+  assert.equal(rHigh.sources.length, 2);
+  for (let i = 0; i < 2; i += 1) {
+    const lo = rLow.sources[i]!;
+    const hi = rHigh.sources[i]!;
+    assert.equal(lo.source, hi.source);
+    assert.ok(
+      hi.rolloffBin >= lo.rolloffBin,
+      `${lo.source}: f=0.95 R=${hi.rolloffBin} < f=0.5 R=${lo.rolloffBin}`,
+    );
+    assert.ok(hi.cumulativeFraction >= 0.95 - 1e-12);
+    assert.ok(lo.cumulativeFraction >= 0.5 - 1e-12);
+  }
+});
+
+test('buildDailyTokenSpectralRolloff: orthogonality vs spectral-centroid (axis 86) -- equal-centroid pair can have very different roll-offs', () => {
+  // Construct two sources whose periodograms have approximately
+  // the same centroid but very different roll-offs. The 'sym'
+  // source is a symmetric two-tone at bins (k_lo, k_hi)
+  // straddling the midpoint -- centroid ~ midpoint, 85% roll-
+  // off > k_hi (median percentile sits at the high tone). The
+  // 'asym' source is a single tone at the same midpoint
+  // -- centroid = midpoint as well, but the 85% roll-off lands
+  // exactly at the midpoint bin. Different roll-offs at the
+  // same centroid is the precise MEAN-vs-PERCENTILE witness.
+  const n = 64;
+  const queue: QueueLine[] = [];
+  const kMid = n / 4; // bin K/2
+  const kLo = 2;
+  const kHi = n / 2 - 1;
+  for (let i = 0; i < n; i += 1) {
+    queue.push(
+      ql(
+        dayIso(i),
+        'asym',
+        10000 + 5000 * Math.sin((2 * Math.PI * kMid * i) / n),
+      ),
+    );
+    const lo = Math.sin((2 * Math.PI * kLo * i) / n);
+    const hi = Math.sin((2 * Math.PI * kHi * i) / n);
+    queue.push(ql(dayIso(i), 'sym', 10000 + 2500 * (lo + hi)));
+  }
+  const r = buildDailyTokenSpectralRolloff(queue, {
+    minTokens: 100,
+    minTenureDays: 32,
+    sort: 'source',
+    rolloffFraction: 0.85,
+    generatedAt: ISO,
+  });
+  const asym = r.sources.find((s) => s.source === 'asym')!;
+  const sym = r.sources.find((s) => s.source === 'sym')!;
+  // 'sym' has mass at bins kLo (~2) and kHi (~K-1). The 85%
+  // roll-off must be at the high bin (need both tones to reach
+  // 85%). 'asym' has all mass at bin kMid; the 85% roll-off
+  // must be at kMid. So sym's roll-off must be strictly above
+  // asym's.
+  assert.ok(
+    sym.rolloffBin > asym.rolloffBin,
+    `sym rolloffBin ${sym.rolloffBin} not > asym rolloffBin ${asym.rolloffBin}`,
+  );
+});

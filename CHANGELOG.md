@@ -128,7 +128,7 @@ realises the >= 0.85 contract precisely (0.8838 and 0.8632).
 
 ### Tests
 
-- Test count grew from 9279 -> 9333 (+54). New suite:
+- Test count grew from 9279 -> 9338 (+59). New suite:
   `dailytokenspectralrolloff` covering the
   `spectralRolloffBin` and `dailyTokenSpectralRolloff`
   primitives plus the `buildDailyTokenSpectralRolloff`
@@ -159,6 +159,25 @@ realises the >= 0.85 contract precisely (0.8838 and 0.8632).
   high-freq tone pair; n=8 boundary `period-2 alternation`
   acceptance pinning roll-off at the Nyquist bin; tokens-
   sort and tenure-sort tiebreak (source asc) witnesses.
+  Refinement layer (+5): bipolar-mass dense w-sweep
+  monotone-non-decrease pin (`p[0] = 1 - w`, `p[K-1] = w`,
+  21 steps from `w=0` to `w=1` -- roll-off walks 1 -> K
+  monotonically); `f=0.5` exact median identity
+  `R = ceil(K/2)` parametric sweep across
+  `K in [3,4,5,6,7,8,11,16,25,33,64,100]` (the median
+  band-edge witness that distinguishes roll-off PERCENTILE
+  from centroid MEAN, since for uniform PSD the centroid is
+  `(K+1)/2` while the median is `ceil(K/2)`); `cumulativeFraction`
+  monotone-non-decrease across an `f` sweep on a fixed PSD
+  `[0.05..1.0]`; orchestrator round-trip pin
+  `f=0.95` rolloffBin `>=` `f=0.5` rolloffBin per source on a
+  two-source synthetic; orthogonality witness vs spectral-
+  centroid (axis 86) on an equal-centroid pair (single-tone
+  at midpoint vs symmetric two-tone straddling the midpoint)
+  -- both have centroid at the midpoint but the symmetric
+  two-tone's 85% roll-off lands at the high tone, strictly
+  above the single-tone's roll-off at the midpoint -- the
+  precise MEAN-vs-PERCENTILE witness.
 
 ## 0.6.331 — 2026-05-02
 
