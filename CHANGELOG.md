@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.340 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-SEVENTH):
+  `pew-insights daily-token-spectral-second-peak-frequency`.
+
+  Per-source SPECTRAL SECOND-PEAK-FREQUENCY -- the second-
+  argmax-bin POSITION descriptor on the one-sided non-DC
+  periodogram of the gap-filled mean-centred daily
+  total_tokens series. For the periodogram P[k], k = 1..K
+  with K = floor(n/2) and K >= 5, let
+
+      k1*                  = argmax_{k=1..K} P[k]   (smallest-k tie)
+      k2*                  = argmax_{k in {1..K} \ {k1*-1, k1*, k1*+1}} P[k]
+                                                    (smallest-k tie)
+      peak2FreqRatio       = (k2* - 1) / (K - 1)    in [0, 1]
+      peak2NormalisedFreq  = k2* / n                in (0, 0.5]
+      peakRatio            = P[k2*] / P[k1*]        in (0, 1]
+      peakSeparationBins   = |k2* - k1*|            in {2, ..., K-1}
+
+  The PRIMARY peak's immediate neighbour bins (k1*-1 and
+  k1*+1, where defined) are EXCLUDED from the second-argmax
+  search to suppress spectral-leakage skirts of the same
+  Fourier mode -- so k2* picks up a STRUCTURALLY DISTINCT
+  secondary mode rather than a side-lobe of the primary.
+  K >= 5 (gate via `--min-tenure-days 10`) guarantees that
+  after excluding at most 3 bins at least 2 candidates remain
+  for the secondary search regardless of where k1* sits.
+
+  This is a Class-P2 (SECOND-POSITION / SECOND-ARGMAX)
+  primitive -- the FIRST primitive in the suite that reads a
+  SECONDARY structural feature on the PSD. Every shipped
+  axis 32..96 collapses the spectrum to a SINGLE
+  scalar/index; axis-97 reads a bin PAIR. Reading:
+  peakRatio ~ 1 -> twin-peak PSD (true bimodal); peakRatio
+  ~ 0 -> the secondary is essentially background noise
+  dominated by the primary. peakSeparationBins -- how far
+  apart the two modes sit (>= 2 by construction).
+
+  CLASS-ORTHOGONALITY -- vs every shipped axis 32..96:
+
+  - vs axis-96 spectral-peak-frequency (single-argmax):
+    axis-96 is the SINGLE-ARGMAX read; axis-97 is the
+    SECOND-ARGMAX read with neighbour exclusion. The two
+    COINCIDE on k1* but DECOUPLE on k2*. A bimodal PSD with
+    equal mass at k=1 and k=K has axis-96 k1*=1 (smallest-k
+    tie) and axis-97 k2*=K -- the precise bimodal-decoupling
+    witness no single-argmax statistic can resolve. This
+    decoupling is observed live in the smoke output below
+    (claude-code k1*=1, k2*=3 with peakRatio=0.7967 -- a
+    near-twin-peak low-band PSD; vscode-copilot k1*=7,
+    k2*=10 with peakRatio=0.9301 -- an even cleaner twin-peak
+    in the low-mid band).
+  - vs axis-95 spectral-roughness (L1 TV-of-pmf, BIN-
+    REVERSAL-INVARIANT in magnitude): axis-97 INDICES are
+    bin-reversal-MAPPED, peakRatio + peakSeparationBins are
+    bin-reversal-INVARIANT (a hybrid invariance class
+    distinct from both axis-95 and axis-96).
+  - vs axis-89 spectral-crest (peak-to-mean MAGNITUDE):
+    crest is the PRIMARY peak-to-mean ratio; peakRatio is
+    the SECONDARY-to-PRIMARY ratio -- a strictly different
+    magnitude relationship (uniform PSD: crest = 1,
+    peakRatio = 1; bimodal unequal a > b: crest depends on
+    a + residual mean while peakRatio = b/a depends only on
+    the two peaks).
+  - vs axis-86 spectral-centroid / axis-87 bandwidth /
+    axis-90 skewness / axis-91 kurtosis (centroid-relative
+    moments): all use ALL bins; axis-97 uses only the SECOND-
+    WINNING non-neighbour bin. A bimodal PSD with equal mass
+    at bin 1 and bin K has centroid mid-band but
+    (k1*, k2*) = (1, K).
+  - vs axis-88 spectral-rolloff (CDF quantile): rolloff is
+    a single cumulative-mass index; axis-97 reads two
+    independent argmax indices.
+  - vs axis-85 flatness-Wiener / axis-69 spectral-entropy
+    (BIN-PERMUTATION INVARIANT): axis-97 is bin-permutation-
+    SENSITIVE on BOTH indices (categorical position read).
+  - vs axis-84 DFT-power-law-slope: a global LOG-LOG slope;
+    axis-97 reads two PSD positions.
+
+  References: Peeters 2004 §6 (CUIDADO secondary-peak
+  extraction); Lerch 2012 §3.3 (peak picking with neighbour-
+  exclusion windows to suppress leakage side-lobes);
+  McAulay & Quatieri 1986 IEEE TASSP 34:4 (canonical greedy
+  peak picking with local-maximum suppression of already-
+  claimed bins); Tzanetakis & Cook 2002 (multiple-peak
+  spectral features for classification).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`:
+
+  - `claude-code`: tenure 72 days, K = 36 bins,
+    totalPower = 8.5717e+17, peakBin = 1, peak2Bin = 3
+    (bin 2 excluded as primary-neighbour),
+    peakSeparationBins = 2,
+    peak2FreqRatio = 0.0571, peak2NormalisedFreq = 0.0417,
+    peakRatio = 0.7967, peak2MassShare = 0.0868. The
+    secondary mode sits at the third Fourier bin, just
+    beyond the primary's neighbour-exclusion window, with
+    79.67% of the primary's power -- a near-twin-peak low-
+    band PSD where the dominant mode at bin 1 (cycle period
+    = full window) is closely shadowed by a slightly-faster
+    mode at bin 3 (cycle period roughly n / 3 ~ 24 days).
+  - `vscode-copilot`: tenure 265 days, K = 132 bins,
+    totalPower = 9.6767e+10, peakBin = 7, peak2Bin = 10,
+    peakSeparationBins = 3, peak2FreqRatio = 0.0687,
+    peak2NormalisedFreq = 0.0377, peakRatio = 0.9301,
+    peak2MassShare = 0.0291. The secondary mode at bin 10
+    holds 93.01% of the primary's power -- the cleanest
+    twin-peak structure in the live data, sitting in the
+    low-mid band (cycle periods n / k* roughly 38 vs 27
+    days). The (peakBin=7, peak2Bin=10) PAIR is exactly the
+    structural information the previous 65 spectral axes
+    (axes 32..96) cannot resolve: axis-96 reports only k1*=7
+    and discards the bimodal partner.
+
+  The DECOUPLING -- (k1*=1, k2*=3, peakRatio=0.80) for
+  claude-code vs (k1*=7, k2*=10, peakRatio=0.93) for vscode-
+  copilot -- is the precise class-orthogonality witness vs
+  axis-96. Two sources with very different primary-bin
+  positions both turn out to have STRONG secondary modes
+  (peakRatio in [0.80, 0.93]); axis-96 alone would suggest
+  axis-96 reads everything worth knowing about which mode
+  dominates the PSD, but axis-97 surfaces that BOTH series
+  are essentially twin-peak rather than single-mode -- a
+  qualitative distinction invisible to every shipped
+  spectral axis.
+
 ## 0.6.339 — 2026-05-02
 
 ### Added
