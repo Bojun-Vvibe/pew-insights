@@ -131,6 +131,7 @@ import {
   renderDailyTokenSevcikFd,
   renderDailyTokenBoxCountFd,
   renderDailyTokenHjorthMobility,
+  renderDailyTokenHjorthComplexity,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -424,6 +425,7 @@ import { buildDailyTokenPetrosianFd } from './dailytokenpetrosianfd.js';
 import { buildDailyTokenSevcikFd } from './dailytokensevcikfd.js';
 import { buildDailyTokenBoxCountFd } from './dailytokenboxcountfd.js';
 import { buildDailyTokenHjorthMobility } from './dailytokenhjorthmobility.js';
+import { buildDailyTokenHjorthComplexity } from './dailytokenhjorthcomplexity.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17747,6 +17749,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHjorthMobility(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-hjorth-complexity')
+  .description(
+    "Per-source Hjorth Complexity (Hjorth, B., \"EEG analysis based on time domain properties\", Electroenceph. Clin. Neurophysiol. 29(3):306-310, 1970) on the gap-filled daily total_tokens series (EIGHTIETH cross-source axis). complexity = mobility(diff(y)) / mobility(y) = sqrt(var(diff(diff(y))) * var(y)) / var(diff(y)) using POPULATION variances (Hjorth's 1970 convention). Single-scale closed-form ratio of three sample variances. Reading: complexity ~ 1 = single-tone / sinusoidal (canonical reference); complexity > 1 = multi-component / spectrally spread / noise-like; complexity < 1 = first-difference smoother than original (slow modulation on a fast carrier). Scale-, shift-, sign-flip-, and time-reversal-invariant; SHUFFLE-sensitive. Structurally orthogonal to (a) hjorth-mobility axis 79 -- mobility is the spectral CENTROID (Hjorth Eq. 3, first moment); complexity is the BANDWIDTH-equivalent (Hjorth Eq. 8, ratio of two centroids). Two sources with identical mobility can have arbitrarily different complexity: a single sinusoid at any frequency has complexity ~ 1 but mobility = 2 sin(omega/2). (b) box-count FD axis 78 / Sevcik FD axis 77 / Katz FD axis 75 / Higuchi FD axis 74 -- path-length / coverage geometries vs second-moment ratio. (c) Petrosian FD axis 76 -- binary sign-change count vs magnitude-aware variance. (d) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale variance ratio on raw differences. (e) lag-1 ACF axis 67 -- complexity carries lag-2 covariance information through var(ddv); two stationary series with identical rho_1 but different rho_2 split on complexity. (f) spectral entropy axis 69 -- complexity is a SPECIFIC second-moment ratio while SE is a flatness summary across all moments. (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; complexity is shuffle-sensitive.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 5. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absComplexityDeviationDesc (default, distance from single-tone reference 1 desc) | complexity | complexityDesc | tokens | tenure | source.',
+    'absComplexityDeviationDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 5) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 5 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absComplexityDeviationDesc',
+          'complexity',
+          'complexityDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHjorthComplexity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absComplexityDeviationDesc'
+            | 'complexity'
+            | 'complexityDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHjorthComplexity(report) + '\n');
         }
       } catch (e) {
         die(e);

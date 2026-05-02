@@ -17089,6 +17089,7 @@ import type { DailyTokenPetrosianFdReport } from './dailytokenpetrosianfd.js';
 import type { DailyTokenSevcikFdReport } from './dailytokensevcikfd.js';
 import type { DailyTokenBoxCountFdReport } from './dailytokenboxcountfd.js';
 import type { DailyTokenHjorthMobilityReport } from './dailytokenhjorthmobility.js';
+import type { DailyTokenHjorthComplexityReport } from './dailytokenhjorthcomplexity.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18825,6 +18826,77 @@ export function renderDailyTokenHjorthMobility(
     s.varV.toExponential(3),
     s.varDv.toExponential(3),
     s.meanV.toFixed(1),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHjorthComplexity(
+  r: DailyTokenHjorthComplexityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-hjorth-complexity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteComplexity)} non-finite-complexity, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source Hjorth Complexity (Hjorth 1970, Electroenceph. Clin. Neurophysiol. 29:306-310) on the gap-filled daily total_tokens series. EIGHTIETH cross-source axis. complexity = mobility(diff(y)) / mobility(y) = sqrt(var(diff(diff(y))) * var(y)) / var(diff(y)). Single-scale closed-form variance ratio of three population variances. Reading: complexity ~ 1 = single-tone / sinusoidal (canonical reference); complexity > 1 = multi-component / spectrally spread / noise-like; complexity < 1 = first-difference smoother than original (slow modulation on a fast carrier). Scale-, shift-, sign-flip-, and time-reversal-invariant; SHUFFLE-sensitive. Structurally orthogonal to (a) hjorth-mobility axis 79 -- mobility is the spectral CENTROID (Hjorth Eq. 3, first moment); complexity is the BANDWIDTH-equivalent (Hjorth Eq. 8, ratio of two centroids); two sources with identical mobility can have arbitrarily different complexity (a single sinusoid has any mobility but complexity ~ 1); (b) box-count FD axis 78 / Sevcik FD axis 77 / Katz FD axis 75 / Higuchi FD axis 74 -- path-length / coverage geometries vs second-moment ratio; (c) Petrosian FD axis 76 -- binary sign-change count vs magnitude-aware variance; (d) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale variance ratio on raw differences; (e) lag-1 ACF axis 67 -- complexity carries lag-2 information through var(ddv); (f) spectral entropy axis 69 -- specific second-moment ratio vs flatness summary; (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; complexity is shuffle-sensitive.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source Hjorth complexity (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'complexity',
+    'mobV',
+    'mobDv',
+    'varV',
+    'varDv',
+    'varDdv',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.complexity.toFixed(4),
+    s.mobilityV.toFixed(4),
+    s.mobilityDv.toFixed(4),
+    s.varV.toExponential(3),
+    s.varDv.toExponential(3),
+    s.varDdv.toExponential(3),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
