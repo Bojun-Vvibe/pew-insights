@@ -20250,6 +20250,7 @@ import type { DailyTokenSpearmanAutocorrelationLag1Report } from './dailytokensp
 import type { DailyTokenKendallTauAutocorrelationLag1Report } from './dailytokenkendalltauautocorrelationlag1.js';
 import type { DailyTokenUpperRecordsCountReport } from './dailytokenupperrecordscount.js';
 import type { DailyTokenMannKendallTauReport } from './dailytokenmannkendalltau.js';
+import type { DailyTokenCoxStuartTrendTestReport } from './dailytokencoxstuarttrendtest.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21231,6 +21232,97 @@ export function renderDailyTokenMannKendallTau(
   lines.push(
     chalk.dim(
       `(reference anchor: tau_MK in [-1, +1]; +1 = strict global increase, -1 = strict global decrease, 0 = no monotonic trend in expectation under iid permutation null (Mann 1945). mkZ > 0 means more concordant pairs than discordant (UPWARD trend); mkZ < 0 means downward trend. |mkZ| > 1.96 is two-sided significant at alpha = 0.05 under the asymptotic normal null. Note: ties at zero in the gap-filled regime inflate nTies and reduce Var[S] via the tie correction; both are surfaced for triage.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCoxStuartTrendTest(
+  r: DailyTokenCoxStuartTrendTestReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-cox-stuart-trend-test'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source COX-STUART HALF-SHIFT SIGN-TEST FOR TREND on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-ELEVENTH cross-source axis. Class-MONOTONIC-TREND (Cox & Stuart 1955, Biometrika 42:80-95): pair x[i] with x[i + c] at lag c = floor(n/2); count nPositive = #{i : d_i > 0}, nNegative = #{i : d_i < 0}; ties (d_i = 0) excluded from k = nPositive + nNegative per Conover 1999 p.159. csTau = (nPositive - nNegative) / k in [-1, +1]. Closed-form null: nPositive ~ Binomial(k, 1/2); csZ = (nPositive - k/2 +/- 0.5) / sqrt(k/4) is approx N(0,1) for k >= 10. Distinct from axis-110 Mann-Kendall (GLOBAL all-pairs concordance, Gaussian U-statistic null) by being a HALF-SHIFT BINOMIAL SIGN-TEST on only floor(n/2) paired comparisons; distinct from runs-test (Wald-Wolfowitz median-binarised maximal-run count) by being a paired-sign trend probe.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source COX-STUART TAU (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'lag',
+    'pairs',
+    'nPos',
+    'nNeg',
+    'nTie',
+    'k',
+    'S_CS',
+    'csTau',
+    'mean',
+    'stddev',
+    'csZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.coxStuartLag),
+    formatNumber(s.nPairs),
+    formatNumber(s.nPositive),
+    formatNumber(s.nNegative),
+    formatNumber(s.nTied),
+    formatNumber(s.nEffective),
+    formatNumber(s.coxStuartS),
+    s.coxStuartTau.toFixed(4),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.coxStuartZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: csTau in [-1, +1]; +1 = every paired half-shift diff is strictly positive (second half dominates first half pair-by-pair), -1 = every paired diff strictly negative, 0 = no half-shift secular drift in expectation under iid binomial null (Cox & Stuart 1955). csZ > 0 means the second half dominates (UPWARD secular drift); csZ < 0 means downward drift. |csZ| > 1.96 is two-sided significant at alpha = 0.05 under the asymptotic normal approximation (valid for k >= 10). Note: ties at zero in the gap-filled regime inflate nTie and shrink k via the EXCLUDE-TIES convention; both surfaced for triage.)`,
     ),
   );
 

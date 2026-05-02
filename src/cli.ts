@@ -162,6 +162,7 @@ import {
   renderDailyTokenKendallTauAutocorrelationLag1,
   renderDailyTokenUpperRecordsCount,
   renderDailyTokenMannKendallTau,
+  renderDailyTokenCoxStuartTrendTest,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -486,6 +487,7 @@ import { buildDailyTokenSpearmanAutocorrelationLag1 } from './dailytokenspearman
 import { buildDailyTokenKendallTauAutocorrelationLag1 } from './dailytokenkendalltauautocorrelationlag1.js';
 import { buildDailyTokenUpperRecordsCount } from './dailytokenupperrecordscount.js';
 import { buildDailyTokenMannKendallTau } from './dailytokenmannkendalltau.js';
+import { buildDailyTokenCoxStuartTrendTest } from './dailytokencoxstuarttrendtest.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -36239,6 +36241,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMannKendallTau(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-cox-stuart-trend-test')
+  .description(
+    "Per-source COX-STUART HALF-SHIFT SIGN-TEST FOR TREND on the gap-filled daily total_tokens series (ONE-HUNDRED-AND-ELEVENTH cross-source axis). Class-MONOTONIC-TREND (Cox & Stuart 1955, Biometrika 42:80-95): pair x[i] with x[i + c] at lag c = floor(n/2); count nPositive = #{i : d_i > 0}, nNegative = #{i : d_i < 0}; ties (d_i = 0) excluded from k = nPositive + nNegative per Conover 1999 p.159. csTau = (nPositive - nNegative)/k in [-1, +1]. Closed-form null: nPositive ~ Binomial(k, 1/2); csZ approx N(0, 1) for k >= 10 with continuity correction. Distinct from axis-110 Mann-Kendall (GLOBAL all-pairs U-statistic) by being a HALF-SHIFT BINOMIAL SIGN-TEST on only floor(n/2) paired comparisons. Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: csZAbsDesc (default) | tau | tauDesc | tauAbs | tauAbsDesc | csZ | csZDesc | csZAbs | tokens | tenure | source.',
+    'csZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tau',
+          'tauDesc',
+          'tauAbs',
+          'tauAbsDesc',
+          'csZ',
+          'csZDesc',
+          'csZAbs',
+          'csZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCoxStuartTrendTest(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'tau'
+            | 'tauDesc'
+            | 'tauAbs'
+            | 'tauAbsDesc'
+            | 'csZ'
+            | 'csZDesc'
+            | 'csZAbs'
+            | 'csZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCoxStuartTrendTest(report) + '\n',
           );
         }
       } catch (e) {
