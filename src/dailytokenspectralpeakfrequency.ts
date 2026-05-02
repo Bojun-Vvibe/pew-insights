@@ -250,12 +250,36 @@ export interface DailyTokenSpectralPeakFrequencyReport {
  * Closed-form sanity anchors (used in the test sweep):
  *   - K=K, P=[c,c,...,c] -> tied across all bins; peakBin = 1
  *                          (smallest-k tie-break);
- *                          peakMassShare = 1/K.
+ *                          peakMassShare = 1/K. (LOWER BOUND
+ *                          on peakMassShare, achieved iff
+ *                          uniform PSD.)
  *   - K=K, P=[0,...,0,1] -> peakBin = K; peakMassShare = 1.
  *   - K=K, P=[1,0,...,0] -> peakBin = 1; peakMassShare = 1.
- *   - K=K, P[m]=1, others 0 -> peakBin = m; peakMassShare = 1.
+ *   - K=K, P[m]=v, others 0 -> peakBin = m; peakMassShare = 1.
+ *                          (UPPER BOUND, achieved iff a single
+ *                          bin carries all mass.)
  *   - K=K, P=[1,2,3,...,K] (monotone asc) -> peakBin = K.
  *   - K=K, P=[K,K-1,...,1] (monotone desc) -> peakBin = 1.
+ *                          The strictly-monotone family pins
+ *                          peakFreqRatio at exactly 0 or 1.
+ *   - K=K, P=[1,0,1,0,...] (alternating comb): every odd bin
+ *                          carries equal mass; peakBin = 1
+ *                          (smallest-k tie); peakMassShare =
+ *                          1 / ceil(K/2).
+ *   - BIMODAL P[1] = P[K] = c, others 0 -> peakBin = 1
+ *                          (smallest-k tie); peakMassShare =
+ *                          1/2. Centroid (axis 86) for the
+ *                          same PSD is (K+1)/2 (mid-band) --
+ *                          the precise centroid-vs-argmax
+ *                          decoupling witness.
+ *   - REVERSAL: bin-reversing any monotone PSD flips argmax
+ *                          to K + 1 - k* but leaves
+ *                          peakMassShare invariant (multiset
+ *                          invariance). Roughness (axis 95)
+ *                          is reversal-INVARIANT in magnitude;
+ *                          peak-frequency is reversal-
+ *                          SENSITIVE -- the clean
+ *                          orthogonality witness vs roughness.
  *
  * Throws on too-few-bins (< 2), non-finite power, negative
  * power, or non-positive total power.

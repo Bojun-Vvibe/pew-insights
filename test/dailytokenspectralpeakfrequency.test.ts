@@ -553,3 +553,138 @@ test('buildDailyTokenSpectralPeakFrequency: gap-filled tenure spans calendar day
   assert.equal(r.sources[0]!.nActiveDays, 4);
   assert.equal(r.sources[0]!.nFreqBins, 8);
 });
+
+// ---------- refinement sweep: tighten orthogonality witnesses ----------
+
+test('refine: bimodal-equal centroid-vs-argmax decoupling witness', () => {
+  // PSD with equal mass at k=1 and k=K. Centroid (axis 86) sits at
+  // the multiset mean (K+1)/2; argmax (this axis) is the smallest-k
+  // tie-break -> 1. This is the precise decoupling vs centroid /
+  // bandwidth / skewness / kurtosis.
+  const K = 9;
+  const power: number[] = new Array(K).fill(0);
+  power[0] = 5;
+  power[K - 1] = 5;
+  const r = spectralPeakFrequency(power);
+  assert.equal(r.peakBin, 1, 'argmax falls to smallest-k tie');
+  // sanity: centroid (probability-weighted mean bin) for this PSD
+  // is (1*5 + K*5) / 10 = (1 + K) / 2 = 5; very different from
+  // argmax = 1.
+  let centroid = 0;
+  let denom = 0;
+  for (let i = 0; i < K; i += 1) {
+    centroid += (i + 1) * power[i]!;
+    denom += power[i]!;
+  }
+  centroid /= denom;
+  assert.equal(centroid, (1 + K) / 2);
+  assert.notEqual(r.peakBin, centroid);
+});
+
+test('refine: rolloff-vs-argmax decoupling witness', () => {
+  // Spike at bin 4 of K=8: argmax = 4, peakMassShare = 1.
+  // Rolloff (smallest k s.t. cum P[1..k] >= 0.85 * total) = 4 too.
+  // But for a uniform PSD, argmax = 1 (smallest-k tie) yet rolloff
+  // ~ ceil(0.85 * K) -- they diverge sharply.
+  const K = 8;
+  const spike = new Array<number>(K).fill(0);
+  spike[3] = 1;
+  const rs = spectralPeakFrequency(spike);
+  assert.equal(rs.peakBin, 4);
+  assert.equal(rs.peakMassShare, 1);
+  const uni = new Array<number>(K).fill(1);
+  const ru = spectralPeakFrequency(uni);
+  assert.equal(ru.peakBin, 1);
+  // rolloff for uniform PSD lands well above 1
+  let cum = 0;
+  let rolloff = 0;
+  for (let i = 0; i < K; i += 1) {
+    cum += uni[i]!;
+    if (cum >= 0.85 * K) {
+      rolloff = i + 1;
+      break;
+    }
+  }
+  assert.ok(rolloff >= 7);
+  assert.notEqual(ru.peakBin, rolloff);
+});
+
+test('refine: monotone-PSD argmax pins to boundary (closed form)', () => {
+  // For ANY strictly monotone PSD on K bins:
+  //   ascending  -> argmax = K
+  //   descending -> argmax = 1
+  // This pins peakFreqRatio at exactly 0 or 1 for the entire
+  // strictly-monotone family -- a clean closed-form anchor.
+  for (const K of [4, 8, 16, 32]) {
+    const asc = Array.from({ length: K }, (_, i) => i + 1);
+    const desc = [...asc].reverse();
+    assert.equal(spectralPeakFrequency(asc).peakBin, K);
+    assert.equal(spectralPeakFrequency(desc).peakBin, 1);
+  }
+});
+
+test('refine: alternating-comb argmax depends on parity (closed form)', () => {
+  // PSD = [1, 0, 1, 0, ...] of length K:
+  //   - argmax = 1 (first 1, smallest-k tie-break across all 1s)
+  //   - peakMassShare = 1 / ceil(K/2)
+  for (const K of [4, 5, 6, 7, 8]) {
+    const comb = Array.from({ length: K }, (_, i) => (i % 2 === 0 ? 1 : 0));
+    const r = spectralPeakFrequency(comb);
+    assert.equal(r.peakBin, 1, `comb K=${K}`);
+    assert.equal(r.peakMassShare, 1 / Math.ceil(K / 2));
+  }
+});
+
+test('refine: peakMassShare lower bound 1/K achieved by uniform PSD', () => {
+  for (const K of [4, 8, 16, 32, 64]) {
+    const uni = new Array<number>(K).fill(7.5);
+    const r = spectralPeakFrequency(uni);
+    assert.equal(r.peakMassShare, 1 / K);
+    assert.equal(r.peakBin, 1);
+  }
+});
+
+test('refine: peakMassShare upper bound 1 achieved by single spike', () => {
+  for (const K of [4, 8, 16, 32]) {
+    for (const m of [1, Math.floor(K / 2), K]) {
+      const spike = new Array<number>(K).fill(0);
+      spike[m - 1] = 42;
+      const r = spectralPeakFrequency(spike);
+      assert.equal(r.peakMassShare, 1);
+      assert.equal(r.peakBin, m);
+    }
+  }
+});
+
+test('refine: cosine-at-frequency-m witness sweep across K', () => {
+  // Pure cosine at integer Fourier frequency m on n samples (n even,
+  // 1 <= m <= n/2 - 1 strictly interior, plus m = n/2 the Nyquist):
+  // the periodogram concentrates exactly on bin m.
+  for (const n of [16, 32]) {
+    for (let m = 1; m <= n / 2; m += 1) {
+      const series = Array.from({ length: n }, (_, i) =>
+        Math.cos((2 * Math.PI * m * i) / n),
+      );
+      const r = dailyTokenSpectralPeakFrequency(series);
+      assert.equal(r.peakBin, m, `n=${n}, m=${m}`);
+      assert.equal(r.peakNormalisedFreq, m / n);
+    }
+  }
+});
+
+test('refine: roughness-vs-peak-frequency reversal-sensitivity decoupling', () => {
+  // Take a strictly monotone-descending PSD. roughness (axis 95)
+  // is bin-reversal-INVARIANT (TV of pmf is reversal-blind in
+  // magnitude). peak-frequency (this axis) FLIPS argmax to K + 1 - 1
+  // = K under reversal. This is the clean orthogonality witness.
+  const K = 8;
+  const desc = [8, 7, 6, 5, 4, 3, 2, 1];
+  const asc = [...desc].reverse();
+  const rDesc = spectralPeakFrequency(desc);
+  const rAsc = spectralPeakFrequency(asc);
+  assert.equal(rDesc.peakBin, 1);
+  assert.equal(rAsc.peakBin, K);
+  assert.notEqual(rDesc.peakBin, rAsc.peakBin);
+  // peakMassShare is multiset-invariant -> identical
+  assert.equal(rDesc.peakMassShare, rAsc.peakMassShare);
+});
