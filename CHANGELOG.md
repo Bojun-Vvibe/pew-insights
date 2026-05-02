@@ -2,6 +2,126 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.337 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-FOURTH):
+  `pew-insights daily-token-spectral-spread-iqr`.
+
+  Per-source ROBUST SPECTRAL SPREAD-IQR -- the Tukey 1977
+  interquartile-range primitive transplanted onto the
+  L1-normalised one-sided non-DC periodogram of the gap-filled
+  mean-centred daily total_tokens series. For the periodogram
+  P[k], k = 1..K with K = floor(n/2), define cumulative shares
+  F[m] = sum_{k=1..m} P[k] / sum_j P[j], the lower-quartile bin
+  q1Bin = min { m : F[m] >= 0.25 }, the upper-quartile bin
+  q3Bin = min { m : F[m] >= 0.75 }, and
+
+      spreadIqr = (q3Bin - q1Bin) / K        in [0, 1)
+
+  This is a ROBUST 2nd-moment dispersion descriptor: the gap
+  between the 25th- and 75th-percentile bins of the L1-PSD,
+  normalised by the bin count. Reading: spreadIqr ~ 0 -> mass
+  is concentrated at one bin (extremely peaked PSD); near 0.5
+  -> inner-50% mass spans roughly half the band; approaching 1
+  -> mass is broadband (q1Bin near 1, q3Bin near K).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`:
+
+  - `claude-code`: tenure 72 days, K = 36 bins,
+    q1Bin = 3, q3Bin = 26, totalPower = 8.5717e+17,
+    spreadIqr = 0.6389. The inner-50% mass spans bins 3..26
+    out of 36 -- broad-but-front-loaded inner-quartile band.
+  - `vscode-other`: tenure 265 days, K = 132 bins,
+    q1Bin = 20, q3Bin = 91, totalPower = 9.6767e+10,
+    spreadIqr = 0.5379. The inner-50% mass spans bins 20..91
+    out of 132 -- moderately broad, more centrally located.
+
+  The DISAGREEMENT in the two q-bin pairs at the same nominal
+  spreadIqr range (claude-code 0.6389 vs vscode-other 0.5379)
+  is a clean orthogonality witness: the ranks are NOT the same
+  as the axis-93 spectral-irregularity ranking on the same
+  carriers, and the q1/q3 anchors are different from the
+  axis-88 spectral-rolloff bin (single 0.85 quantile), the
+  axis-87 bandwidth (variance-based L2 around the centroid),
+  and the axis-92 spectral-decrease (fixed bin-1 anchor).
+
+  Reference: Peeters, G., "A large set of audio features for
+  sound description (similarity and classification) in the
+  CUIDADO project", IRCAM tech. rep., 2004, §6.1 (spectral-
+  spread family); Lerch, A., "An Introduction to Audio Content
+  Analysis", Wiley/IEEE, 2012, §3.3.1-3.3.2 (moment-based vs
+  quantile-based spectral dispersion); Tukey, J.W., "Exploratory
+  Data Analysis", Addison-Wesley, 1977, §2 (canonical IQR
+  robust-spread primitive).
+
+  Invariances: shift-, scale-(any non-zero a)-, sign-flip-,
+  time-reversal-, AND bin-reversal-invariant (the IQR width is
+  preserved under bin reversal -- only the endpoint positions
+  flip); bin-permutation-SENSITIVE (the cumulative-mass
+  threshold traversal is bin-order-tied -- the orthogonality
+  witness vs axes 85/89/69, all bin-permutation INVARIANT).
+
+  Structural orthogonality vs every shipped daily-token axis
+  32..93:
+
+  - vs axis 87 spectral-bandwidth: bandwidth is a NON-ROBUST
+    L2 second central moment around the centroid; spread-IQR
+    is a ROBUST L1 percentile difference. A heavy outlier bin
+    moves bandwidth strongly and spread-IQR barely.
+  - vs axis 88 spectral-rolloff: rolloff is a SINGLE 0.85
+    cumulative-PSD quantile; spread-IQR uses TWO inner
+    quartiles and reports their DIFFERENCE -- two PSDs with
+    identical 85th-percentile bin can have wildly different
+    inner-50% widths. This is the canonical witness vs rolloff.
+  - vs axis 86 spectral-centroid: LOCATION (1st raw moment)
+    vs SCALE (dispersion). Trivially orthogonal.
+  - vs axes 90 / 91 spectral-skewness / spectral-kurtosis:
+    higher CENTROID-relative central moments are tail-
+    sensitive; spread-IQR is tail-INSENSITIVE (the inner-50%
+    width depends only on the mass between q1Bin and q3Bin).
+  - vs axes 89 / 85 / 69 spectral-crest / flatness-wiener /
+    spectral-entropy: BIN-PERMUTATION INVARIANT; spread-IQR
+    is bin-order-sensitive at the cumulative-mass scale.
+  - vs axis 84 DFT-power-law-slope: LOG-LOG global slope vs
+    LINEAR-AXIS quantile-based dispersion. Perturbing a single
+    mid-band bin shifts spread-IQR without moving beta.
+  - vs axis 92 spectral-decrease: decrease is FIXED bin-1
+    anchor + bin-reversal SENSITIVE; spread-IQR has NO anchor
+    and IS bin-reversal-invariant. A monotone-decreasing PSD
+    has strong negative decrease and small q3Bin (mass piles
+    early), giving small spread-IQR.
+  - vs axis 93 spectral-irregularity: irregularity is a LOCAL
+    adjacent-bin difference (derivative-like); spread-IQR is
+    a GLOBAL inner-50% dispersion (quantile-based). A locally-
+    rough PSD with mass concentrated at one band has high
+    irregularity and small spread-IQR; a locally-smooth broad
+    PSD has low irregularity and large spread-IQR.
+  - vs all permutation-invariant amplitude-shape axes 32-67:
+    those are TIME-DOMAIN shuffle-invariant; spread-IQR is
+    bin-order-sensitive in the FREQUENCY domain.
+
+  Bound: spread-IQR is in [0, 1). It equals 0 iff q1Bin == q3Bin
+  (all inner-50% mass falls in one bin). It approaches 1 only
+  when q1Bin == 1 and q3Bin == K (mass is so broad that the 25th
+  percentile is already met at the first bin and the 75th
+  percentile is only reached at the last bin).
+
+  Throws/drops: series too short (n < 8), zero variance (every
+  daily total identical), non-finite values, or degenerate
+  all-zero spectrum (totalPower = 0).
+
+  +36 unit tests (9512 -> 9548) cover the primitive (closed-
+  form anchors at K=2, K=4, all-mass-bin-1, all-mass-bin-K,
+  bimodal, monotone-increasing PSD), invariances (scale,
+  shift, sign-flip, time-reversal, bin-reversal width
+  preservation, bin-permutation sensitivity), failure modes
+  (too-short, zero-variance, non-finite, all-zero spectrum,
+  invalid sort, invalid minTenureDays, invalid since), and
+  the full pipeline (source filter, top cap, sort modes,
+  meta-field population, q1/q3/K consistency).
+
 ## 0.6.336 — 2026-05-02
 
 ### Added
