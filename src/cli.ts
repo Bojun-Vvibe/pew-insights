@@ -164,6 +164,7 @@ import {
   renderDailyTokenMannKendallTau,
   renderDailyTokenCoxStuartTrendTest,
   renderDailyTokenBartelsRankVonNeumann,
+  renderDailyTokenDifferenceSignTest,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -490,6 +491,7 @@ import { buildDailyTokenUpperRecordsCount } from './dailytokenupperrecordscount.
 import { buildDailyTokenMannKendallTau } from './dailytokenmannkendalltau.js';
 import { buildDailyTokenCoxStuartTrendTest } from './dailytokencoxstuarttrendtest.js';
 import { buildDailyTokenBartelsRankVonNeumann } from './dailytokenbartelsrankvonneumann.js';
+import { buildDailyTokenDifferenceSignTest } from './dailytokendifferencesigntest.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -36475,6 +36477,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenBartelsRankVonNeumann(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-difference-sign-test')
+  .description(
+    "Per-source MOOD DIFFERENCE-SIGN TEST FOR TREND on the gap-filled daily total_tokens series (ONE-HUNDRED-AND-THIRTEENTH cross-source axis). Class-TREND-TEST (Brockwell & Davis 1991 sec. 1.6; Mood 1950 sec. 16.10): S = #{i : x[i+1] > x[i]} in {0..n-1}; under iid continuous null S ~ Binomial(n-1, 1/2). E[S] = (n-1)/2; Var[S] = (n-1)/4; dZ = (S - (n-1)/2)/sqrt((n-1)/4) approx N(0,1) for n-1 >= 20. dZ > 1.96 = significant positive trend (more 'ups'); dZ < -1.96 = significant negative trend. Distinct from axis-112 Bartels by being a LAG-1 FIRST-DIFFERENCE SIGN-COUNT statistic with closed-form Binomial null (vs LAG-1 SQUARED-RANK-DIFFERENCE statistic with Gaussian null), and from axis-111 Cox-Stuart by operating at LAG 1 with n-1 comparisons (vs LAG floor(n/2) with floor(n/2) comparisons). Blind to periodic alternatives by design. Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: dZAbsDesc (default) | s | sDesc | dZ | dZDesc | dZAbs | tokens | tenure | source.',
+    'dZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          's',
+          'sDesc',
+          'dZ',
+          'dZDesc',
+          'dZAbs',
+          'dZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDifferenceSignTest(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 's'
+            | 'sDesc'
+            | 'dZ'
+            | 'dZDesc'
+            | 'dZAbs'
+            | 'dZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenDifferenceSignTest(report) + '\n',
           );
         }
       } catch (e) {

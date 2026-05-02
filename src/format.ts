@@ -20252,6 +20252,7 @@ import type { DailyTokenUpperRecordsCountReport } from './dailytokenupperrecords
 import type { DailyTokenMannKendallTauReport } from './dailytokenmannkendalltau.js';
 import type { DailyTokenCoxStuartTrendTestReport } from './dailytokencoxstuarttrendtest.js';
 import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsrankvonneumann.js';
+import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferencesigntest.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21324,6 +21325,91 @@ export function renderDailyTokenCoxStuartTrendTest(
   lines.push(
     chalk.dim(
       `(reference anchor: csTau in [-1, +1]; +1 = every paired half-shift diff is strictly positive (second half dominates first half pair-by-pair), -1 = every paired diff strictly negative, 0 = no half-shift secular drift in expectation under iid binomial null (Cox & Stuart 1955). csZ > 0 means the second half dominates (UPWARD secular drift); csZ < 0 means downward drift. |csZ| > 1.96 is two-sided significant at alpha = 0.05 under the asymptotic normal approximation (valid for k >= 10). Note: ties at zero in the gap-filled regime inflate nTie and shrink k via the EXCLUDE-TIES convention; both surfaced for triage.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenDifferenceSignTest(
+  r: DailyTokenDifferenceSignTestReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-difference-sign-test'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MOOD DIFFERENCE-SIGN TEST FOR TREND on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTEENTH cross-source axis. Class-TREND-TEST (Brockwell & Davis 1991 sec. 1.6; Mood 1950 sec. 16.10): S = #{i : x[i+1] > x[i]} in {0..n-1}; under iid continuous null S ~ Binomial(n-1, 1/2). E[S] = (n-1)/2; Var[S] = (n-1)/4; dZ = (S - (n-1)/2)/sqrt((n-1)/4) approx N(0,1) for n-1 >= 20. dZ > 1.96 = significant positive trend (more "ups"); dZ < -1.96 = significant negative trend. Distinct from axis-112 Bartels (LAG-1 SQUARED-RANK-DIFFERENCE, GAUSSIAN null), axis-111 Cox-Stuart (HALF-SHIFT BINOMIAL SIGN-TEST, lag floor(n/2)), axis-110 Mann-Kendall (GLOBAL all-pairs concordance), and runs-test (median-binarised maximal-run count) by being a LAG-1 FIRST-DIFFERENCE SIGN-COUNT statistic with closed-form Binomial null. Blind to periodic alternatives by design.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MOOD DIFFERENCE-SIGN (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'dsN',
+    'S+',
+    'S-',
+    'S0',
+    'mean',
+    'stddev',
+    'dsVar',
+    'dZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.dsN),
+    formatNumber(s.dsS),
+    formatNumber(s.dsSneg),
+    formatNumber(s.dsSzero),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.dsVar.toFixed(4),
+    s.dsZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: S in {0..n-1}; S approx (n-1)/2 = no directional trend, S much greater = upward drift, S much less = downward drift. dZ > 1.96 = significant positive trend at alpha = 0.05; dZ < -1.96 = significant negative trend. Zero-step events (S0) are excluded from S+ and S- but not from the (n-1) denominator (closed-form Binomial null parity, no tie correction). Test is BLIND to periodic alternatives -- a pure sinusoid has S approx (n-1)/2; pair with axis-112 Bartels for full local-serial-dependence coverage.)`,
     ),
   );
 
