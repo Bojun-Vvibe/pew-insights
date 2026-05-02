@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.328 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTY-FOURTH):
+  `pew-insights daily-token-dft-power-law-slope`.
+
+  Per-source 1/f^beta spectral exponent of the gap-filled daily
+  `total_tokens` series, estimated by ordinary-least-squares fit
+  of `log10(P[k]) = a - beta*log10(k)` over the strictly-positive
+  Fourier bins of the one-sided periodogram of the mean-centred
+  series. The headline statistic is the spectral-slope exponent
+
+  ```
+  beta = - slope of log10 P vs log10 k
+  ```
+
+  Heuristic guide (NOT a contract): beta ~ 0 white noise (flat
+  spectrum); beta ~ 1 pink / 1-f noise (Voss-Clarke 1975); beta ~
+  2 red / Brownian (random-walk dominated); beta < 0 blue noise.
+  Reported alongside the OLS coefficient of determination R^2 and
+  the count of usable bins (those with strictly positive power).
+
+  References:
+  - Voss, R. F., Clarke, J., "1/f noise in music and speech",
+    Nature 258:317-318, 1975.
+  - Mandelbrot, B. B., Van Ness, J. W., "Fractional Brownian
+    motions, fractional noises and applications", SIAM Review
+    10(4):422-437, 1968.
+  - Bak, P., Tang, C., Wiesenfeld, K., "Self-organized criticality:
+    An explanation of the 1/f noise", Phys. Rev. Lett.
+    59(4):381-384, 1987.
+  - Eke, A., Herman, P., Kocsis, L., Kozak, L. R., "Fractal
+    characterization of complexity in temporal physiological
+    signals", Physiol. Meas. 23:R1-R38, 2002.
+
+  Structurally orthogonal to all prior axes 32..83. Most directly:
+
+  - vs `daily-token-spectral-entropy` (axis 69): entropy is the
+    SHANNON ENTROPY of the normalised periodogram (a flatness
+    measure across bins). beta is the LOG-LOG SLOPE of the same
+    periodogram (a colour measure). They disagree everywhere the
+    spectrum is concentrated at one end vs spread out at another:
+    a sharp mid-band peak has very low entropy and beta near 0; a
+    1/f spectrum has high entropy and beta near 1.
+  - vs `daily-token-lempel-ziv-complexity` (axis 83): LZ is a
+    string-combinatorial dictionary count on the median-binarised
+    time-domain stream. beta is a continuous log-log slope on the
+    Fourier amplitude spectrum.
+  - vs Hjorth axes 79/80 / Teager-Kaiser axis 81 / curvature
+    axis 82 / Petrosian / Box-count / Sevcik / Katz / Higuchi
+    FDs: time-domain low-order moment ratios or geometric path-
+    length / coverage scalings.
+  - vs Hurst R/S axis 71 / DFA-alpha axis 72: time-domain
+    scaling exponents related ASYMPTOTICALLY to beta = 2H ± 1
+    only for ideal fGn / fBm; finite gap-filled token series
+    diverge by 0.3-0.8 in practice.
+
+  Invariances of beta: SHIFT-INVARIANT (only the DC bin moves);
+  SCALE-INVARIANT for k > 0 (every bin scales by k^2; intercept
+  shifts but slope does not); SIGN-FLIP-INVARIANT (|.|^2 is sign-
+  blind); TIME-REVERSAL-INVARIANT (|DFT|^2 is reversal-blind).
+  SHUFFLE-SENSITIVE -- shuffling whitens the spectrum and drives
+  beta toward 0.
+
+  Hard floor: gap-filled tenure n >= 8 (so K = floor(n/2) >= 4
+  candidate Fourier bins are available); >= 2 bins must survive
+  the strictly-positive-power filter for the OLS slope to be
+  defined.
+
+  Live-smoke against `~/.config/pew/queue.jsonl` (top-2):
+  ```
+  source         tenure  bins  usable    beta    rSquared
+  claude-code    72      36    36      0.6952      0.2424
+  vscode-other   265     132   132     0.3130      0.0395
+  ```
+  `claude-code` shows pink-noise-leaning behaviour (beta ~ 0.7)
+  on a 72-day window, consistent with a multi-timescale workload
+  that mixes strong daily / weekly cadence with shorter bursts.
+  `vscode-other` over a 265-day tenure sits closer to a near-
+  white spectrum (beta ~ 0.3) -- a much longer record dominated
+  by short-burst usage with little persistent low-frequency mass
+  relative to its mid- and high-frequency bins. Both R^2 values
+  are low (0.04 - 0.24), which is itself the right read: the
+  empirical periodograms are NOT pure power laws and the fit
+  treats beta as a robust regression tendency rather than a
+  model identity.
+
+  Coverage: 40 new tests (9071 -> 9111) covering the OLS slope
+  primitive, all five INVARIANCE properties, the orthogonality
+  witness vs spectral-entropy via low fit R^2 on a sharp-peak
+  sinusoid, the shuffle-sensitivity witness via half-reverse on
+  a monotone ramp, and the full builder-knob and JSON-contract
+  surface (rejects bad knobs; counts every drop reason; sort and
+  tiebreak; per-source row + report-level JSON shapes).
+
 ## 0.6.327 — 2026-05-02
 
 ### Added
