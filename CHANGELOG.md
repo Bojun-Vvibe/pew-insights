@@ -2,6 +2,167 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.354 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-ELEVENTH):
+  `pew-insights daily-token-cox-stuart-trend-test`.
+
+  Per-source COX-STUART HALF-SHIFT SIGN-TEST FOR TREND
+  on the gap-filled daily total tokens series. Pair x[i]
+  with x[i + c] at lag c = floor(n/2):
+
+      d_i = x[i + c] - x[i],   i = 0, .., m - 1
+      m   = floor(n / 2)
+
+  Count nPositive = #{i : d_i > 0}, nNegative = #{i :
+  d_i < 0}; ties d_i = 0 are EXCLUDED from k = nPositive
+  + nNegative per Cox-Stuart 1955 sec. 2 / Conover 1999
+  ch. 3 p. 159 / Sprent-Smeeton 2007 sec. 4.3. The
+  Cox-Stuart S-statistic and normalised tau are
+
+      S_CS  = nPositive - nNegative
+      csTau = S_CS / k     in [-1, +1]   (k > 0)
+            = 0             if k == 0
+
+  (Cox & Stuart, "Some quick sign tests for trend in
+  location and dispersion", Biometrika 42 (1955), pp. 80-
+  95; Conover, "Practical Nonparametric Statistics",
+  3rd ed., Wiley, 1999, ch. 3.)
+
+  CLOSED-FORM BINOMIAL NULL (Cox-Stuart 1955). Under the
+  null hypothesis "no trend", nPositive ~ Binomial(k,
+  1/2):
+
+      E[nPositive]   = k / 2
+      Var[nPositive] = k / 4
+
+  and the continuity-corrected standardised score
+
+      csZ = (nPositive - k/2 - 0.5) / sqrt(k/4)
+                  if nPositive > k/2
+          = (nPositive - k/2 + 0.5) / sqrt(k/4)
+                  if nPositive < k/2
+          = 0     otherwise
+
+  is approximately N(0, 1) for k >= 10 (DeGroot &
+  Schervish 2012 sec. 9.6); |csZ| > 1.96 is two-sided
+  significant at alpha = 0.05.
+
+  STRUCTURAL ORTHOGONALITY vs all prior axes (79-110).
+  Cox-Stuart is the SIGN-TEST half-shift trend statistic
+  -- fundamentally distinct from every prior axis:
+
+  - vs axis-110 (Mann-Kendall global tau). Mann-Kendall
+    is the GLOBAL ALL-PAIRS Kendall U-statistic over
+    n*(n-1)/2 ordered pairs with a Gaussian null.
+    Cox-Stuart is the HALF-SHIFT SIGN-TEST over only
+    floor(n/2) paired differences with a Binomial(k,
+    1/2) null. A series with the FIRST half random and
+    the SECOND half all-shifted-up by Delta has csTau
+    = +1 (every paired diff > 0) but tau_MK strictly
+    less than 1 because intra-half disorder still
+    creates discordant pairs. A "constant baseline +
+    one big late spike" series has tau_MK boosted by
+    n - 1 concordant pairs against the spike index;
+    csTau only sees the SINGLE paired comparison
+    whose second-half element is the spike,
+    contributing one +1 to S_CS out of m = floor(n/2)
+    pairs -- a totally different sensitivity profile.
+    Same Class-MONOTONIC-TREND family, distinct
+    primitives.
+
+  - vs daily-token-runs-test-z (Wald-Wolfowitz median-
+    binarised maximal-run count). Wald-Wolfowitz counts
+    MAXIMAL RUNS in the median-binarised sequence;
+    Cox-Stuart counts SIGNED PAIRED DIFFERENCES at lag
+    floor(n/2). A series with strong clustering above-
+    and-then-below the median has a strongly negative
+    Wald-Wolfowitz z but csTau approx 0 (the half-
+    shift differences average out across the cluster).
+    Conversely, a slowly drifting upward series can
+    have Wald-Wolfowitz z approx 0 (the runs structure
+    looks fine relative to the median) while csTau >
+    0 (the second-half dominates the first-half pair-
+    by-pair).
+
+  - vs axes 107 (Spearman lag-1) / 108 (Kendall lag-1).
+    Both are LOCAL LAG-1 dependence statistics on
+    adjacent pairs. Cox-Stuart is a LARGE LAG
+    (floor(n/2)) sign-test -- precisely the opposite
+    end of the lag spectrum.
+
+  - vs axis-109 (records-count). Records is an integer
+    counting statistic with a Bernoulli-convolution
+    null (Renyi 1962); Cox-Stuart is a paired-sign
+    statistic with a Binomial(k, 1/2) null. They differ
+    in sample space (n events vs floor(n/2) paired
+    sign events), in functional form (count vs paired-
+    sign-test ratio), and in lag scale (cumulative vs
+    half-shift).
+
+  - vs axes 105 / 106 (zero-crossing rate / turning-
+    point rate). LOCAL counting statistics on
+    consecutive sign-changes; Cox-Stuart is a HALF-
+    SHIFT paired sign-test, completely unrelated to
+    consecutive sign-change counts.
+
+  - vs the inequality / shape axes (Gini, Atkinson,
+    Theil, Palma, ...): permutation-invariant
+    functionals of the empirical distribution. Cox-
+    Stuart depends on the TEMPORAL ORDER. A reverse-
+    sorted permutation of x has identical Gini /
+    Atkinson but csTau negated.
+
+  - vs the spectral axes (84-104): PSD axes are time-
+    reversal symmetric; Cox-Stuart is anti-symmetric
+    under time reversal (S_CS -> -S_CS).
+
+  - vs DFA / Hurst R/S / fractal-dimension axes: those
+    are scaling exponents fit across multiple window
+    sizes; Cox-Stuart is a single half-shift binomial
+    sign-test scalar in [-1, +1] with a closed-form
+    Binomial null and is the canonical quick non-
+    parametric trend test (Cox & Stuart 1955).
+
+  Surfaces: coxStuartLag (= floor(n/2)), nPairs (=
+  floor(n/2)), nPositive, nNegative, nTied (excluded
+  from k), nEffective (= k = nPos + nNeg), coxStuartS,
+  coxStuartTau, coxStuartZ. Defaults min-tenure-days=14
+  (hard floor 4), min-tokens=1000, sort=csZAbsDesc.
+
+### Live smoke
+
+Live `~/.config/pew/queue.jsonl` snapshot (4 sources
+above min-tokens=1000, min-tenure-days=14;
+`vscode-copilot` source identifier remapped to
+`vscode-other` per established convention):
+
+      source        tenure  active  lag  pairs  nPos  nNeg  nTie  k   S_CS  csTau    csZ      tokens
+      claude-code   72      35      36   36     22    7     7     29  15    +0.5172  +2.5997  3,442,385,788
+      vscode-other  265     73      132  132    22    39    71    61  -17   -0.2787  -2.0486  1,885,727
+      openclaw      16      16      8    8      2     6     0     8   -4    -0.5000  -1.0607  2,191,803,446
+      hermes        16      16      8    8      4     4     0     8   0      0.0000   0.0000  285,381,781
+
+Reading: claude-code and vscode-other both clear the
+|csZ| > 1.96 alpha=0.05 two-sided significance bar but
+in OPPOSITE directions. claude-code's late-tenure mass
+shows a positive secular drift (csTau = +0.52, csZ =
++2.60); vscode-other shows a long-tenure DECLINE
+(csTau = -0.28, csZ = -2.05; nTied = 71 of 132 pairs
+are zero-zero in the gap-filled regime, so k drops to
+61 and the binomial test is conservative). openclaw
+shows a strong NEGATIVE csTau (-0.5) but tenure n=16
+gives only k=8 effective pairs and |csZ|=1.06 < 1.96,
+not significant. hermes is exactly half-and-half on
+its 8 pairs (csTau=0, csZ=0). Cross-checking: this
+matches the orthogonality vs axis-110 -- the
+relatively SHORT openclaw tenure cannot drive
+Mann-Kendall's all-pairs U-statistic to significance
+either, but on a longer horizon Cox-Stuart's half-
+shift sensitivity differs.
+
 ## 0.6.353 — 2026-05-03
 
 ### Added
