@@ -652,3 +652,81 @@ test('orthogonality vs axis-93 (irregularity): triplet-aware vs sub-band aggrega
   const b = spectralFlatnessTail([1, 1, 1, 1, 16, 2, 8, 4]);
   assert.ok(Math.abs(a.tailFlat - b.tailFlat) < 1e-12);
 });
+
+// ---------- refinement: extra closed-form anchors + boundary witnesses ----------
+
+test('refine: K=4 absolute minimum boundary — exactly 2 tail bins available', () => {
+  // K=4 is the gate boundary: tail = {3,4} -> exactly 2 candidates.
+  // Both must be positive for tailFlat to be defined.
+  const r = spectralFlatnessTail([100, 50, 7, 11]);
+  assert.equal(r.nTailBins, 2);
+  assert.equal(r.usableTailBins, 2);
+  // m=2 closed form
+  const expected = (2 * Math.sqrt(7 * 11)) / (7 + 11);
+  assert.ok(Math.abs(r.tailFlat - expected) < 1e-12);
+});
+
+test('refine: m=3 closed form GM/AM = (a*b*c)^(1/3) / ((a+b+c)/3)', () => {
+  const a = 8, b = 27, c = 64;
+  const r = spectralFlatnessTail([1, 2, 3, a, b, c]);
+  // tail = bins {4,5,6} = [8, 27, 64]. GM = (8*27*64)^(1/3) = (13824)^(1/3) = 24.
+  // AM = 99/3 = 33. ratio = 24/33 = 8/11.
+  assert.ok(Math.abs(r.tailFlat - 8 / 11) < 1e-12);
+});
+
+test('refine: tailFlat = 1 sharp upper bound is achievable for every K in [4, 20]', () => {
+  for (let k = 4; k <= 20; k += 1) {
+    const arr = new Array<number>(k).fill(1);
+    arr[0] = 100; // head outlier doesn't matter
+    const r = spectralFlatnessTail(arr);
+    assert.equal(r.tailFlat, 1, `K=${k}`);
+  }
+});
+
+test('refine: tailPowerSum equals exact sum of positive tail bins', () => {
+  const r = spectralFlatnessTail([1, 2, 3, 4, 0, 5, 6, 0]);
+  // tail = bins {5..8} = [0, 5, 6, 0] -> positive sum = 11.
+  assert.equal(r.tailPowerSum, 11);
+  assert.equal(r.usableTailBins, 2);
+});
+
+test('refine: build sort by usableTailBinsDesc is well-formed', () => {
+  const a = Array.from({ length: 40 }, (_, i) => 1500 + 100 * Math.sin(i));
+  const q = makeQueue('claude-code', a);
+  const r = buildDailyTokenSpectralFlatnessTail(q, {
+    generatedAt: ISO,
+    minTenureDays: 10,
+    sort: 'usableTailBinsDesc',
+  });
+  assert.ok(r.sources.length >= 1);
+});
+
+test('refine: build sort by tenure descends', () => {
+  const long = Array.from({ length: 60 }, (_, i) => 1500 + 100 * Math.sin(i));
+  const short = Array.from({ length: 40 }, (_, i) => 1500 + 100 * Math.sin(i));
+  const q = [
+    ...makeQueue('aaa-short', short),
+    ...makeQueue('zzz-long', long),
+  ];
+  const r = buildDailyTokenSpectralFlatnessTail(q, {
+    generatedAt: ISO,
+    minTenureDays: 10,
+    sort: 'tenure',
+  });
+  if (r.sources.length === 2) {
+    assert.ok(r.sources[0]!.nTenureDays >= r.sources[1]!.nTenureDays);
+  }
+});
+
+test('refine: bin-reversal MAPS tail subset to head subset (asymmetric witness)', () => {
+  // Construct asymmetric power: head = uniform low, tail = single dominant.
+  const fwd = [1, 1, 1, 1, 100, 1, 1, 1];
+  const rev = [...fwd].reverse(); // [1,1,1,100,1,1,1,1]
+  const r1 = spectralFlatnessTail(fwd);
+  // fwd tail = {5..8} = [100,1,1,1] -> tailFlat ~ 0.13
+  const r2 = spectralFlatnessTail(rev);
+  // rev tail = {5..8} = [1,1,1,1] -> tailFlat = 1
+  assert.ok(r1.tailFlat < 0.5);
+  assert.equal(r2.tailFlat, 1);
+  // Sharp witness: bin-reversal flips tailFlat from low to maximum.
+});
