@@ -345,7 +345,6 @@ export function dailyTokenUpperRecordsCount(values: number[]): {
 
   let prevMax = values[0]!;
   let nStrict = 1; // index 0 is always a record
-  let nLoose = 1; // index 0 is always a record
   let lastIdx = 0;
   let argmax = 0;
   let maxVal = values[0]!;
@@ -356,27 +355,24 @@ export function dailyTokenUpperRecordsCount(values: number[]): {
       lastIdx = i;
       prevMax = v;
     }
-    if (v >= prevMax) {
-      // Note: after the strict update above, prevMax == v
-      // here when v was a strict record, so the >= branch
-      // also fires. Use a separate running loose-max to
-      // count loose records correctly without entanglement.
-    }
     if (v > maxVal) {
       maxVal = v;
       argmax = i;
     }
   }
-  // Recompute loose count cleanly.
-  {
-    let looseMax = values[0]!;
-    nLoose = 1;
-    for (let i = 1; i < n; i += 1) {
-      const v = values[i]!;
-      if (v >= looseMax) {
-        nLoose += 1;
-        looseMax = v;
-      }
+  // Loose (>=) records: a separate single pass with its own
+  // running max. We do not entangle this with the strict pass
+  // because the running maxima differ once a tie at the
+  // current strict max occurs (the loose pass does not advance
+  // its max strictly above a tied value, but it still counts
+  // the tie as a record).
+  let looseMax = values[0]!;
+  let nLoose = 1;
+  for (let i = 1; i < n; i += 1) {
+    const v = values[i]!;
+    if (v >= looseMax) {
+      nLoose += 1;
+      looseMax = v;
     }
   }
 
