@@ -17245,6 +17245,7 @@ import type { DailyTokenSpectralSkewnessReport } from './dailytokenspectralskewn
 import type { DailyTokenSpectralKurtosisReport } from './dailytokenspectralkurtosis.js';
 import type { DailyTokenSpectralDecreaseReport } from './dailytokenspectraldecrease.js';
 import type { DailyTokenSpectralIrregularityReport } from './dailytokenspectralirregularity.js';
+import type { DailyTokenSpectralSpreadIqrReport } from './dailytokenspectralspreadiqr.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -19843,6 +19844,79 @@ export function renderDailyTokenSpectralIrregularity(
     s.diffSquaredSum.toExponential(4),
     s.powerSquaredSum.toExponential(4),
     s.irregularity.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralSpreadIqr(
+  r: DailyTokenSpectralSpreadIqrReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-spread-iqr'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL SPREAD-IQR (Tukey 1977 IQR transplanted onto the L1-normalised one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; spreadIqr = (q3Bin - q1Bin) / K where qBin is the smallest bin index whose cumulative PSD share meets/exceeds the threshold). NINETY-FOURTH cross-source axis. ROBUST 2nd-moment dispersion descriptor in [0, 1) -- distinct from the variance-based bandwidth (axis 87) and from the single-quantile rolloff (axis 88) by virtue of using TWO inner quartiles and reporting their DIFFERENCE. Tail-INSENSITIVE; bin-permutation-SENSITIVE; bin-reversal-INVARIANT.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL SPREAD-IQR (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'q1Bin',
+    'q3Bin',
+    'totalPower',
+    'spreadIqr',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.q1Bin),
+    formatNumber(s.q3Bin),
+    s.totalPower.toExponential(4),
+    s.spreadIqr.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

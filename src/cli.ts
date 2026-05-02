@@ -145,6 +145,7 @@ import {
   renderDailyTokenSpectralKurtosis,
   renderDailyTokenSpectralDecrease,
   renderDailyTokenSpectralIrregularity,
+  renderDailyTokenSpectralSpreadIqr,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -452,6 +453,7 @@ import { buildDailyTokenSpectralSkewness } from './dailytokenspectralskewness.js
 import { buildDailyTokenSpectralKurtosis } from './dailytokenspectralkurtosis.js';
 import { buildDailyTokenSpectralDecrease } from './dailytokenspectraldecrease.js';
 import { buildDailyTokenSpectralIrregularity } from './dailytokenspectralirregularity.js';
+import { buildDailyTokenSpectralSpreadIqr } from './dailytokenspectralspreadiqr.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19274,6 +19276,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralIrregularity(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-spread-iqr')
+  .description(
+    "Per-source SPECTRAL SPREAD-IQR (Tukey 1977 robust IQR transplanted onto the L1-normalised one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series; spreadIqr = (q3Bin - q1Bin) / K where qBin is the smallest bin index whose cumulative PSD share meets/exceeds the threshold) (NINETY-FOURTH cross-source axis). ROBUST 2nd-moment dispersion descriptor in [0, 1): 0 iff q1Bin = q3Bin (all inner-50% mass at one bin); near 0 iff PSD is sharply peaked; near 0.5 iff inner-50% mass spans half the band; near 1 iff mass is broadband (q1Bin near 1, q3Bin near K). Reference: Peeters 2004 §6.1 (spectral-spread family); Lerch 2012 §3.3.1-3.3.2 (moment-based vs quantile-based dispersion); Tukey 1977 §2 (canonical IQR primitive). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-, AND bin-reversal-invariant; bin-permutation-SENSITIVE. Structurally orthogonal to (a) spectral-bandwidth 87 (variance-based L2 vs robust L1 percentile difference); (b) spectral-rolloff 88 (SINGLE 0.85 quantile vs TWO inner quartiles + their difference -- canonical witness); (c) spectral-centroid 86 (LOCATION vs SCALE); (d) spectral-skewness 90 / spectral-kurtosis 91 (HIGHER central moments, tail-sensitive; spreadIqr is tail-INSENSITIVE); (e) spectral-crest 89 / spectral-flatness-wiener 85 / spectral-entropy 69 (BIN-PERMUTATION INVARIANT); (f) DFT-power-law-slope 84 (LOG-LOG global slope); (g) spectral-decrease 92 (FIXED bin-1 anchor + bin-reversal SENSITIVE; spreadIqr IS bin-reversal-invariant); (h) spectral-irregularity 93 (LOCAL adjacent-bin difference vs GLOBAL inner-50% percentile gap); (i) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: spreadIqrDesc (default; broadest inner-50% first) | spreadIqr | tokens | tenure | source.',
+    'spreadIqrDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'spreadIqr',
+          'spreadIqrDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralSpreadIqr(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'spreadIqr'
+            | 'spreadIqrDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralSpreadIqr(report) + '\n');
         }
       } catch (e) {
         die(e);
