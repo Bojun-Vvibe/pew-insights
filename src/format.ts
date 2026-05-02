@@ -20239,6 +20239,7 @@ export function renderDailyTokenSpectralFlatnessTail(
 }
 
 import type { DailyTokenSpectralRenyi2EntropyReport } from './dailytokenspectralrenyi2entropy.js';
+import type { DailyTokenSpectralRenyiHalfEntropyReport } from './dailytokenspectralrenyihalfentropy.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -20312,6 +20313,85 @@ export function renderDailyTokenSpectralRenyi2Entropy(
     s.kEff.toFixed(4),
     s.h2.toFixed(4),
     s.h2Norm.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralRenyiHalfEntropy(
+  r: DailyTokenSpectralRenyiHalfEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-spectral-renyi-half-entropy'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPower)} zero-power, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL RENYI-0.5 (Hartley-style) entropy -- hHalfNorm = 2*ln(sum sqrt(p[k])) / ln(K) in [0, 1]; kEffHalf = exp(hHalf) is the EFFECTIVE BIN COUNT under sqrt-weighting. ONE-HUNDREDTH cross-source axis. Class-EN primitive. Bin-permutation-INVARIANT. Tail-mass-weighted (sub-linear), the structural opposite of axis-99 (alpha=2 collision, peak-mass-weighted). Coincides with axis-99 only on uniform spectra and on single-bin deltas; the gap kEffHalf - kEff is a tail-asymmetry diagnostic.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPECTRAL RENYI-0.5 ENTROPY (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'totalPower',
+    'sumSqrtP',
+    'kEffHalf',
+    'hHalf',
+    'hHalfNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.totalPower),
+    s.sumSqrtP.toFixed(6),
+    s.kEffHalf.toFixed(4),
+    s.hHalf.toFixed(4),
+    s.hHalfNorm.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

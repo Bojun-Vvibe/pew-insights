@@ -151,6 +151,7 @@ import {
   renderDailyTokenSpectralSecondPeakFrequency,
   renderDailyTokenSpectralFlatnessTail,
   renderDailyTokenSpectralRenyi2Entropy,
+  renderDailyTokenSpectralRenyiHalfEntropy,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -464,6 +465,7 @@ import { buildDailyTokenSpectralPeakFrequency } from './dailytokenspectralpeakfr
 import { buildDailyTokenSpectralSecondPeakFrequency } from './dailytokenspectralsecondpeakfrequency.js';
 import { buildDailyTokenSpectralFlatnessTail } from './dailytokenspectralflatnesstail.js';
 import { buildDailyTokenSpectralRenyi2Entropy } from './dailytokenspectralrenyi2entropy.js';
+import { buildDailyTokenSpectralRenyiHalfEntropy } from './dailytokenspectralrenyihalfentropy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -34925,6 +34927,115 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSpectralRenyi2Entropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-spectral-renyi-half-entropy')
+  .description(
+    "Per-source SPECTRAL RENYI-ALPHA=0.5 (Hartley-style) ENTROPY (hHalfNorm = 2*ln(sum sqrt(p[k])) / ln K in [0, 1]; kEffHalf = exp(hHalf) is the EFFECTIVE BIN COUNT under sqrt-weighting) on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series (ONE-HUNDREDTH cross-source axis). Class-EN (RENYI-ENTROPY-ALPHA=0.5) primitive -- a sub-linear, tail-mass-weighted concentration entropy structurally orthogonal to axis-99 (alpha=2 collision, peak-mass-weighted) on the same PSD; opposite tail sensitivity. Bin-permutation-invariant; structurally distinct from axis-98 (sub-band tail flatness).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4 (so K = floor(n/2) >= 2 and ln K > 0). Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hHalfNormDesc (default) | hHalfNorm | kEffHalf | kEffHalfDesc | tokens | tenure | source.',
+    'hHalfNormDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'hHalfNorm',
+          'hHalfNormDesc',
+          'kEffHalf',
+          'kEffHalfDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralRenyiHalfEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'hHalfNorm'
+            | 'hHalfNormDesc'
+            | 'kEffHalf'
+            | 'kEffHalfDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpectralRenyiHalfEntropy(report) + '\n',
           );
         }
       } catch (e) {
