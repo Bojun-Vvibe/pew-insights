@@ -133,6 +133,7 @@ import {
   renderDailyTokenHjorthMobility,
   renderDailyTokenHjorthComplexity,
   renderDailyTokenTeagerKaiserEnergy,
+  renderDailyTokenCurvatureSignChangeRate,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -428,6 +429,7 @@ import { buildDailyTokenBoxCountFd } from './dailytokenboxcountfd.js';
 import { buildDailyTokenHjorthMobility } from './dailytokenhjorthmobility.js';
 import { buildDailyTokenHjorthComplexity } from './dailytokenhjorthcomplexity.js';
 import { buildDailyTokenTeagerKaiserEnergy } from './dailytokenteagerkaiserenergy.js';
+import { buildDailyTokenCurvatureSignChangeRate } from './dailytokencurvaturesignchangerate.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -17967,6 +17969,116 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenTeagerKaiserEnergy(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-curvature-sign-change-rate')
+  .description(
+    "Per-source rate of sign changes in the SECOND difference d2[i] = y[i+1] - 2*y[i] + y[i-1] of the gap-filled daily total_tokens series (EIGHTY-SECOND cross-source axis). cscRate = signChanges(d2) / (N-3) in [0,1]; cscNormalized = cscRate / (2/3), referenced to the white-noise asymptote 2/3 (Bracewell 1965; Marr-Hildreth 1980; Kedem 1986). Counts INFLECTION POINTS / curvature sign reversals -- second-order analogue of axis-76 Petrosian which counts FIRST-difference sign changes. Shift-, linear-trend-, scale-, sign-flip-, and time-reversal-INVARIANT; SHUFFLE-sensitive. Structurally orthogonal to (a) Petrosian FD axis 76: first- vs second-difference sign-change count; (b) Teager-Kaiser axis 81: magnitude-aware quadratic vs binary count; (c) Hjorth axes 79/80: global variance ratios vs local topological count; (d) box-count/Sevcik/Katz/Higuchi axes 78/77/75/74: path-length / coverage geometries vs sign-change count; (e) Hurst R/S axis 71 / DFA axis 72: multi-scale on cumulative deviations vs single-scale topological count; (f) spectral entropy axis 69 / autocorrelation axes 67/68: full-spectrum summaries vs high-pass-biased count (the second-difference filter is |H(omega)|^2 = (2-2*cos(omega))^2); (g) all permutation-invariant dispersion / shape axes 32-67: shuffle-invariant; CSC is shuffle-sensitive.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 5. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absDeviationFromWhiteDesc (default, distance from white-noise reference 2/3 desc) | cscRate | cscRateDesc | cscNormalized | cscNormalizedDesc | tokens | tenure | source.',
+    'absDeviationFromWhiteDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 5) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 5 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'absDeviationFromWhiteDesc',
+          'cscRate',
+          'cscRateDesc',
+          'cscNormalized',
+          'cscNormalizedDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCurvatureSignChangeRate(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'absDeviationFromWhiteDesc'
+            | 'cscRate'
+            | 'cscRateDesc'
+            | 'cscNormalized'
+            | 'cscNormalizedDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenCurvatureSignChangeRate(report) + '\n');
         }
       } catch (e) {
         die(e);

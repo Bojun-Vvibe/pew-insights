@@ -17091,6 +17091,7 @@ import type { DailyTokenBoxCountFdReport } from './dailytokenboxcountfd.js';
 import type { DailyTokenHjorthMobilityReport } from './dailytokenhjorthmobility.js';
 import type { DailyTokenHjorthComplexityReport } from './dailytokenhjorthcomplexity.js';
 import type { DailyTokenTeagerKaiserEnergyReport } from './dailytokenteagerkaiserenergy.js';
+import type { DailyTokenCurvatureSignChangeRateReport } from './dailytokencurvaturesignchangerate.js';
 
 export function renderDailyTokenGeFourIndex(
   r: DailyTokenGeFourIndexReport,
@@ -18965,6 +18966,73 @@ export function renderDailyTokenTeagerKaiserEnergy(
     s.tkeNormalized.toFixed(4),
     s.varV.toExponential(3),
     formatNumber(s.interiorSamples),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCurvatureSignChangeRate(
+  r: DailyTokenCurvatureSignChangeRateReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-curvature-sign-change-rate'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteCsc)} non-finite-csc, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source rate of sign changes in the SECOND difference d2[i] = y[i+1] - 2*y[i] + y[i-1] of the gap-filled daily total_tokens series. EIGHTY-SECOND cross-source axis. cscRate = signChanges(d2) / (N - 3) in [0, 1]; cscNormalized = cscRate / (2/3), referenced to the white-noise asymptote of 2/3 (Bracewell 1965; Marr-Hildreth 1980; Kedem 1986). Counts INFLECTION POINTS / curvature sign reversals; second-order analogue of axis-76 Petrosian which counts FIRST-difference sign changes. Shift-, linear-trend-, scale-, sign-flip-, and time-reversal-INVARIANT; SHUFFLE-sensitive. Structurally orthogonal to (a) Petrosian FD axis 76 -- first-difference vs second-difference sign-change count; same series can have low PFD and high CSC (smooth monotonic with curvature reversals) or vice versa; (b) Teager-Kaiser axis 81 -- magnitude-aware quadratic operator vs binary magnitude-blind sign-change count; (c) Hjorth axes 79/80 -- global variance ratios vs local topological count; (d) box-count/Sevcik/Katz/Higuchi FD axes 78/77/75/74 -- path-length / coverage geometries vs sign-change count; (e) Hurst R/S axis 71 / DFA axis 72 -- multi-scale variance scaling on cumulative deviations vs single-scale topological count; (f) spectral entropy axis 69 / autocorrelation axes 67/68 -- linear / Fourier full-spectrum summaries vs high-pass-biased count (the second-difference filter has |H(omega)|^2 = (2 - 2*cos(omega))^2, a sharp high-pass); (g) all permutation-invariant dispersion / shape axes 32-67 -- shuffle-invariant; CSC is shuffle-sensitive.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source curvature sign-change rate (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'signChg',
+    'pairs',
+    'cscRate',
+    'cscNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.signChanges),
+    formatNumber(s.comparablePairs),
+    s.cscRate.toFixed(4),
+    s.cscNormalized.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
