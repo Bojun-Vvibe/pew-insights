@@ -511,3 +511,103 @@ test('buildDailyTokenDftPowerLawSlope: rSquaredDesc sort', () => {
   assert.equal(r.sources.length, 2);
   assert.ok(r.sources[0]!.rSquared >= r.sources[1]!.rSquared);
 });
+
+// ---- refine: parametric sweep + numerical-stability + closed-form ------
+
+test('refine: olsSlope perfect-power-law recovery sweep over slopes [-3, -2, -1, -0.5, 0, 0.5, 1, 2]', () => {
+  // For each target slope s we synthesise y = a + s*x on a uniform
+  // x grid and check OLS recovers s exactly within FP noise.
+  const slopes = [-3, -2, -1, -0.5, 0, 0.5, 1, 2];
+  const x = Array.from({ length: 16 }, (_, i) => i + 1);
+  for (const s of slopes) {
+    const y = x.map((xi) => 7 + s * xi);
+    const fit = olsSlope(x, y);
+    assert.ok(
+      Math.abs(fit.slope - s) < 1e-10,
+      `slope ${s}: recovered ${fit.slope}`,
+    );
+    assert.ok(
+      Math.abs(fit.intercept - 7) < 1e-10,
+      `intercept for slope ${s}: recovered ${fit.intercept}`,
+    );
+    assert.ok(
+      Math.abs(fit.rSquared - 1) < 1e-10,
+      `R^2 for slope ${s}: recovered ${fit.rSquared}`,
+    );
+  }
+});
+
+test('refine: dailyTokenDftPowerLawSlope numerical stability under 1e9 / 1e-9 scaling', () => {
+  // Both the same: stddev rescales by 1e9 and 1e-9 but beta and R^2
+  // are scale-invariant for k > 0.
+  const base = [
+    1, 4, 2, 7, 3, 5, 8, 1, 4, 2, 9, 6, 3, 5, 1, 7,
+    8, 2, 4, 6, 3, 1, 9, 5, 7, 2, 4, 8, 1, 6, 3, 5,
+  ];
+  const r0 = dailyTokenDftPowerLawSlope(base);
+  const rBig = dailyTokenDftPowerLawSlope(base.map((v) => v * 1e9));
+  const rSmall = dailyTokenDftPowerLawSlope(base.map((v) => v * 1e-9));
+  assert.ok(
+    Math.abs(r0.beta - rBig.beta) < 1e-7,
+    `beta drift under 1e9 scale: ${r0.beta} vs ${rBig.beta}`,
+  );
+  assert.ok(
+    Math.abs(r0.beta - rSmall.beta) < 1e-7,
+    `beta drift under 1e-9 scale: ${r0.beta} vs ${rSmall.beta}`,
+  );
+  assert.ok(Math.abs(r0.rSquared - rBig.rSquared) < 1e-7);
+  assert.ok(Math.abs(r0.rSquared - rSmall.rSquared) < 1e-7);
+});
+
+test('refine: dailyTokenDftPowerLawSlope drift-vs-alternation contrast (drift > alt)', () => {
+  // Pure linear drift concentrates power at the lowest frequencies
+  // -> beta should be POSITIVE and large in magnitude.
+  // Pure alternation concentrates power at the highest frequency
+  // (Nyquist) -> beta should be NEGATIVE.
+  const n = 64;
+  const drift = Array.from({ length: n }, (_, i) => 100 + i * 5);
+  const alt = Array.from({ length: n }, (_, i) =>
+    100 + (i % 2 === 0 ? 50 : 0),
+  );
+  const rDrift = dailyTokenDftPowerLawSlope(drift);
+  const rAlt = dailyTokenDftPowerLawSlope(alt);
+  assert.ok(
+    rDrift.beta > rAlt.beta,
+    `drift beta=${rDrift.beta} should exceed alternation beta=${rAlt.beta}`,
+  );
+  assert.ok(
+    rDrift.beta > 0,
+    `drift should have positive beta, got ${rDrift.beta}`,
+  );
+});
+
+test('refine: dailyTokenDftPowerLawSlope n=8 boundary admits the smallest valid input', () => {
+  // n=8 is the hard floor; K = floor(8/2) = 4 candidate Fourier bins.
+  // A non-constant series with all four bins surviving the > 0 filter
+  // must produce a finite beta and R^2 in [0, 1].
+  const series = [10, 50, 30, 80, 20, 60, 40, 90];
+  const r = dailyTokenDftPowerLawSlope(series);
+  assert.equal(r.nFreqBins, 4);
+  assert.ok(r.usableBins >= 2);
+  assert.ok(Number.isFinite(r.beta));
+  assert.ok(r.rSquared >= 0 && r.rSquared <= 1);
+});
+
+test('refine: source-asc tiebreak under tokens-sort when totals identical', () => {
+  // Two sources with identical 8-day series carry identical totalTokens
+  // and identical beta. tokens-sort therefore reduces to source-asc.
+  const series = [100, 200, 300, 400, 500, 600, 700, 800];
+  const queue = [
+    ...buildSeries(series, 'zeta'),
+    ...buildSeries(series, 'alpha'),
+  ];
+  const r = buildDailyTokenDftPowerLawSlope(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+    minTenureDays: 8,
+    sort: 'tokens',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.sources[0]!.source, 'alpha');
+  assert.equal(r.sources[1]!.source, 'zeta');
+});
