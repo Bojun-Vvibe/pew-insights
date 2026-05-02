@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.334 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETIETH):
+  `pew-insights daily-token-spectral-skewness`.
+
+  Per-source SPECTRAL SKEWNESS -- the third standardised
+  central moment of the one-sided periodogram P[k] about the
+  spectral centroid `mu = sum k*P[k] / sum P[k]` over the
+  surviving (strictly-positive-power) non-DC band of the
+  gap-filled mean-centred daily `total_tokens` series. The
+  closed form is
+
+      sigma^2  = sum (k - mu)^2 P[k] / sum P[k]
+      m3       = sum (k - mu)^3 P[k] / sum P[k]
+      skewness = m3 / sigma^3
+
+  and the reported axis value is the dimensionless signed real
+  `skewness`, alongside the unstandardised third central moment
+  `thirdMoment` in cubed-bin units, the standardising
+  `bandwidth = sigma` in bin units, and the centroid
+  `centroidBin` in bin units.
+
+  This axis closes the SPECTRAL HEPTAD by filling the
+  third-central-moment slot:
+
+  - 84 daily-token-dft-power-law-slope (LOG-LOG slope)
+  - 85 daily-token-spectral-flatness-wiener (GM/AM ratio)
+  - 86 daily-token-spectral-centroid (1st RAW moment)
+  - 87 daily-token-spectral-bandwidth (2nd CENTRAL moment, sqrt)
+  - 88 daily-token-spectral-rolloff (CDF QUANTILE)
+  - 89 daily-token-spectral-crest-factor (PEAK-vs-MEAN ratio)
+  - 90 daily-token-spectral-skewness (3rd STANDARDISED CENTRAL
+    moment, SIGNED)
+
+  `skewness > 0` indicates a RIGHT-skewed PSD with a long
+  high-frequency tail (mass concentrated below `mu` with a
+  sparse, far-from-`mu` high-bin tail; typical for series with
+  a low-frequency hump and intermittent high-frequency bursts).
+  `skewness ~ 0` indicates a SYMMETRIC PSD about the centroid.
+  `skewness < 0` indicates a LEFT-skewed PSD with a long
+  low-frequency tail.
+
+  Distinct from every shipped daily-token spectral sibling.
+  Cleanest orthogonality witnesses:
+
+  - vs `daily-token-spectral-bandwidth` (axis 87): bandwidth is
+    the UNSIGNED 2nd central moment of P[k] about `mu`;
+    skewness is the SIGNED 3rd standardised central moment
+    about the same `mu`. Two spectra with identical bandwidth
+    can have arbitrarily different (and opposite-sign)
+    skewness. The bin-reversal pair `p_a = (4,1,1,0,0)` and
+    `p_b = (0,0,1,1,4)` makes this exact: identical bandwidth,
+    exactly opposite skewness sign. UNSIGNED-2nd-MOMENT vs
+    SIGNED-3rd-MOMENT is the precise witness.
+  - vs `daily-token-spectral-crest-factor` (axis 89): crest is
+    a PEAK-vs-MEAN RATIO that does NOT reference bin index
+    (BIN-PERMUTATION INVARIANT). Skewness is bin-index-weighted
+    by `(k - mu)^3` (BIN-PERMUTATION SENSITIVE). Two spectra
+    with identical crest can have opposite-sign skewness
+    (a single big bin at low k vs the same big bin at high k).
+  - vs `daily-token-spectral-rolloff` (axis 88): roll-off is a
+    CDF QUANTILE; skewness is a SIGNED CENTRAL MOMENT
+    integrated over ALL bins. Two spectra can share an
+    identical roll-off at very different skewness values.
+  - vs `daily-token-spectral-centroid` (axis 86): centroid is
+    the FIRST RAW MOMENT (mean bin index); skewness is the
+    THIRD STANDARDISED CENTRAL MOMENT about that centroid.
+    Two spectra with the same centroid can have opposite
+    skewness signs.
+  - vs `daily-token-spectral-flatness-wiener` (axis 85):
+    flatness is the GM/AM ratio (BIN-PERMUTATION INVARIANT);
+    skewness is signed and bin-permutation-sensitive. Mirror-
+    reflected PSDs share GM and AM but flip the third central
+    moment.
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is
+    the LOG-LOG SLOPE on a log axis; skewness is a SIGNED
+    THIRD CENTRAL MOMENT on the LINEAR power axis. Skewness
+    is well-defined on comb spectra that are not power laws.
+  - vs `source-row-token-spectral-skewness`: that statistic
+    operates on the per-row stream (row-index time axis, no
+    gap-filling, no daily aggregation). The new axis operates
+    on the gap-filled DAILY aggregate (calendar-day time axis,
+    mean-centred, UTC bucketed).
+
+  References: Peeters 2004 CUIDADO IRCAM TR §6.1.3 (canonical
+  definition); Lerch 2012 §3.3.1 (asymmetry descriptor in the
+  moment sequence centroid -> spread -> SKEWNESS -> kurtosis);
+  Pearson 1895 Phil. Trans. Roy. Soc. London A 186 (foundational
+  definition of the standardised third central moment);
+  Wilkins 1944 Annals Math. Stat. 15(3) (algebraic envelope
+  `|skewness| <= sqrt(usableBins-2)*(usableBins-1)/sqrt(usableBins)`).
+
+  Hard floor `--min-tenure-days 8` keeps `K = floor(n/2) >= 4`
+  and the `usableBins >= 3` gate keeps the third standardised
+  central moment non-degenerate (a 1-bin support pins
+  `sigma = 0`; a 2-bin support collapses the standardised third
+  moment to a sign-determined point mass).
+
+  SHIFT-, SCALE-(any non-zero a)-, SIGN-FLIP-, and
+  TIME-REVERSAL-invariant; BIN-PERMUTATION SENSITIVE;
+  BIN-REVERSAL FLIPS sign while preserving magnitude.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (`--top 8`, default `--sort absSkewDesc`,
+  `--min-tenure-days 32`):
+
+  ```
+  pew-insights daily-token-spectral-skewness
+  as of: 2026-05-02T06:34:06.686Z    sources: 6 (shown 2)    tokens: 3,444,271,515    min-tokens: 1,000    min-tenure-days: 32    top: —    sort: absSkewDesc
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 4 below min-tenure-days, 0 zero-variance, 0 too-few-usable-bins, 0 zero-bandwidth, 0 non-finite-fit, 0 below top cap
+
+  per-source SPECTRAL SKEWNESS (sorted by absSkewDesc; ties: source asc)
+  source            firstDay    lastDay     tenure  active  bins  usable  mean            stddev           centroidBin  bandwidth  thirdMoment  skewness  tokens
+  ----------------  ----------  ----------  ------  ------  ----  ------  --------------  ---------------  -----------  ---------  -----------  --------  -------------
+  claude-code       2026-02-11  2026-04-23  72      35      36    36      47,810,913.722  153,856,936.418  12.9822      11.7038    1078.7286    0.6729    3,442,385,788
+  vscode-other      2025-07-30  2026-04-20  265     73      132   132     7,115.951       27,024.444       58.1358      38.8869    13976.8527   0.2377    1,885,727
+  ```
+
+  Both surviving carriers exhibit RIGHT-skewed PSDs (positive
+  `skewness`). `claude-code` carries `skewness = 0.6729` -- a
+  mild-to-moderate right-skewed PSD with `centroidBin = 12.98`
+  out of `K = 36` bins (centroid at ~36% of Nyquist), driven
+  by a low-frequency hump and a sparse high-frequency tail
+  pulling the third central moment positive. `vscode-other`
+  carries `skewness = 0.2377` -- a mildly right-skewed PSD
+  with `centroidBin = 58.14` out of `K = 132` bins (centroid
+  at ~44% of Nyquist; nearly symmetric). These are the FIRST
+  third-moment numbers shipped on the daily-token spectral
+  axis; the spectral hexad becomes a heptad.
+
 ## 0.6.333 — 2026-05-02
 
 ### Added
