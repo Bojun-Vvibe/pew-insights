@@ -2,6 +2,155 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.343 — 2026-05-02
+
+### Added
+
+- New cross-source axis (ONE-HUNDREDTH):
+  `pew-insights daily-token-spectral-renyi-half-entropy`.
+
+  Per-source SPECTRAL RENYI-ALPHA=0.5 (HARTLEY-STYLE) ENTROPY --
+  twice the natural log of the sum of SQUARE-ROOTS of the
+  normalised bin probabilities of the one-sided non-DC
+  periodogram of the gap-filled mean-centred daily total_tokens
+  series, normalised by ln(K) into [0, 1]. For P[k], k = 1..K
+  with K = floor(n/2) and K >= 2:
+
+      S          = sum_{k=1..K} P[k]                  (must be > 0)
+      p[k]       = P[k] / S                           in [0, 1]
+      T          = sum_{k=1..K} sqrt(p[k])            in [1, sqrt K]
+      Hhalf      = 2 * ln(T)                          in [0, ln K]
+      hHalfNorm  = Hhalf / ln K                       in [0, 1]
+      kEffHalf   = T^2 = exp(Hhalf)                   in [1, K]
+
+  CLASS-EN (RENYI-ENTROPY-ALPHA=0.5) primitive -- the FIRST
+  primitive in the suite that uses an alpha=0.5 Renyi entropy
+  (sub-Shannon, super-Hartley) on the SPECTRAL distribution.
+  The kEffHalf = T^2 read is the EFFECTIVE NUMBER OF SPECTRAL
+  BINS UNDER SQRT WEIGHTING and ALWAYS satisfies kEffHalf >=
+  kEff (axis-99) by Renyi (1961, Theorem 4); the GAP kEffHalf -
+  kEff is a NEW tail-asymmetry diagnostic.
+
+  ### Structural orthogonality
+
+  - vs `daily-token-spectral-renyi2-entropy` (axis 99): PRIMARY
+    target. Axis-99 weights bins QUADRATICALLY (sum p^2,
+    peak-mass-weighted, INVERSE participation ratio). Axis-100
+    weights SUB-LINEARLY (sum sqrt(p), tail-mass-weighted,
+    sqrt-effective bin count). The two have OPPOSITE tail
+    sensitivity by construction (sqrt is concave and amplifies
+    small p[k]; square is convex and amplifies large p[k]).
+    They COINCIDE only on uniform spectra (both = 1) and on
+    single-bin deltas (both = 0); for every non-uniform PSD the
+    Renyi monotonicity hHalfNorm > h2Norm holds STRICTLY.
+    Counter-example: K=16 with p[0]=0.85, p[1..15]=0.01 each
+    -- axis-99 sees kEff~1.4 (essentially a single peak); axis-
+    100 sees kEffHalf~5.9 (six effective bins under sqrt-mass
+    weighting). The kEffHalf/kEff ratio of ~4.25 is a direct
+    quantification of TAIL ASYMMETRY: large ratio = broad tail
+    mass under one big peak; ratio ~ 1 = roughly uniform.
+  - vs `daily-token-spectral-entropy` (axis 69): axis-69 is
+    SHANNON entropy (alpha = 1 limit). By Renyi (1961, Theorem
+    4) hHalfNorm >= h_Shannon_norm with equality iff uniform;
+    they coincide on uniform spectra and depart on every non-
+    uniform one. The GAP hHalfNorm - h_Shannon_norm is a TAIL-
+    MASS concentration diagnostic distinct from h_Shannon_norm
+    - h2Norm (a peak-mass diagnostic, axis-99 vs axis-69).
+  - vs `daily-token-spectral-flatness-wiener` (axis 85):
+    axis-85 is the GM/AM ratio (the alpha->0 limit, Hartley-
+    style). Axis-100 is alpha=0.5, strictly between Hartley and
+    Shannon. Two PSDs with the same GM/AM can have different
+    sum sqrt(p): a 2-bin equipartition vs a 4-bin equipartition
+    share GM/AM = 1 on the positive subset but kEffHalf = 2 vs
+    4.
+  - vs `daily-token-spectral-flatness-tail` (axis 98): axis-98
+    is GM/AM RESTRICTED to the upper-half subset. Axis-100 is
+    FULL-BAND sqrt-weighted entropy, bin-permutation-invariant.
+    Permuting the same multiset between head and tail leaves
+    axis-100 unchanged while axis-98 swings.
+  - vs `daily-token-spectral-second-peak-frequency` (axis 97),
+    `-peak-frequency` (axis 96), `-roughness` (axis 95),
+    `-spread-iqr` (axis 94), `-irregularity` (axis 93),
+    `-decrease` (axis 92): each is bin-position-SENSITIVE in a
+    way that axis-100 (a sqrt-moment of the pmf vector) is not.
+    Sorted-descending vs reverse-sorted multisets give
+    identical hHalfNorm but dramatically different roughness,
+    decrease, irregularity, IQR, peak indices.
+  - vs `daily-token-spectral-bandwidth/skewness/kurtosis`
+    (axes 87/90/91): each is a CENTROID-RELATIVE central
+    moment computed on the bin-INDEX axis. Axis-100 is a
+    moment of the PROBABILITY VECTOR p, not of bin index --
+    two PSDs with the same bandwidth can have very different
+    sqrt-weighted concentration.
+  - vs `daily-token-spectral-centroid` (axis 86): centroid is
+    a FIRST RAW MOMENT (mass-weighted bin index). Axis-100 is
+    independent of bin index.
+  - vs `daily-token-spectral-rolloff` (axis 88): rolloff is a
+    CDF QUANTILE BIN INDEX. Axis-100 is a sub-linear
+    concentration scalar with no quantile structure.
+  - vs `daily-token-spectral-crest-factor` (axis 89): crest is
+    an L-infinity / L1 ratio (max p / mean p). Axis-100 is a
+    SQRT-SUM / L1 ratio. Same family of "spikiness"
+    descriptors but different norms; they coincide only on
+    degenerate spectra.
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is a
+    global LOG-LOG SLOPE fit. A 1/f spectrum has beta = -1 and
+    hHalfNorm depending on K; a flat spectrum has beta = 0 and
+    hHalfNorm = 1.
+  - vs all permutation-invariant TIME-DOMAIN amplitude-shape
+    axes 32-67: those operate on the time-domain shuffle-
+    invariant statistic. Axis-100 is on the FREQUENCY-domain
+    |DFT|^2 distribution. A shuffle of the time-domain series
+    leaves time-domain amplitude statistics fixed but DESTROYS
+    the spectrum.
+
+  ### Reading
+
+  - hHalfNorm ~ 1 -- the spectrum is nearly EQUIPOWERED across
+    all bins (white-noise-like; effective bin count under sqrt
+    weighting ~ K).
+  - hHalfNorm ~ 0 -- the spectrum is concentrated on a SINGLE
+    bin (delta-like).
+  - kEffHalf - kEff -- tail-asymmetry quantifier: large gap
+    means broad tail mass under one big peak; small gap means
+    roughly uniform OR roughly single-bin (the indices agree
+    at both endpoints).
+
+  ### Live smoke (`~/.config/pew/queue.jsonl`, two carriers,
+      sorted by hHalfNormDesc; vscode-other carrier vs
+      claude-code carrier)
+
+      source          tenure  bins  sumSqrtP   kEffHalf  hHalf   hHalfNorm  tokens
+      --------------  ------  ----  ---------  --------  ------  ---------  -------------
+      vscode-other    265     132   10.146406  102.9495  4.6342  0.9491     1,885,727
+      claude-code     72      36    5.406905   29.2346   3.3754  0.9419     3,442,385,788
+
+      paired axis-99 (Renyi-alpha=2 collision entropy on the
+      same PSD, sorted by h2NormDesc) for the kEffHalf / kEff
+      tail-asymmetry diagnostic:
+
+      source          sumP2     kEff     h2      h2Norm
+      --------------  --------  -------  ------  ------
+      vscode-other    0.014311  69.8762  4.2467  0.8697
+      claude-code     0.051382  19.4622  2.9685  0.8284
+
+      kEffHalf / kEff:  vscode-other 102.95 / 69.88 = 1.473
+                        claude-code   29.23 / 19.46 = 1.502
+
+      Reading: both carriers show kEffHalf > kEff strictly (the
+      Renyi monotonicity prediction); the kEffHalf/kEff ratio
+      ~ 1.47-1.50 is in the moderate tail-mass regime --
+      neither uniform (ratio = 1) nor heavily peak-dominated
+      (ratio >> 2). Despite vscode-other carrying ~4 orders of
+      magnitude fewer tokens than claude-code, the two
+      carriers are remarkably close on hHalfNorm (0.9491 vs
+      0.9419) and on the kEffHalf/kEff ratio (1.473 vs 1.502),
+      indicating they both spend most of their daily-token
+      mass in moderately-flat spectra with comparable tail
+      asymmetry profiles -- a structural similarity that
+      axis-69 (Shannon) and axis-99 (Renyi-2) alone cannot
+      surface.
+
 ## 0.6.342 — 2026-05-02
 
 ### Added
