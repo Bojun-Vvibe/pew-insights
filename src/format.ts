@@ -17244,6 +17244,7 @@ import type { DailyTokenSpectralCrestFactorReport } from './dailytokenspectralcr
 import type { DailyTokenSpectralSkewnessReport } from './dailytokenspectralskewness.js';
 import type { DailyTokenSpectralKurtosisReport } from './dailytokenspectralkurtosis.js';
 import type { DailyTokenSpectralDecreaseReport } from './dailytokenspectraldecrease.js';
+import type { DailyTokenSpectralIrregularityReport } from './dailytokenspectralirregularity.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -19771,6 +19772,77 @@ export function renderDailyTokenSpectralDecrease(
     s.firstBinPower.toExponential(4),
     s.tailPower.toExponential(4),
     s.decrease.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralIrregularity(
+  r: DailyTokenSpectralIrregularityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-irregularity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL IRREGULARITY (Jensen 1999 DIKU TR 99/7 §3.5) = sum_{k=1..K-1} (P[k]-P[k+1])^2 / sum_{k=1..K} P[k]^2 on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series. NINETY-THIRD cross-source axis. LOCAL bin-difference (derivative-like) descriptor distinct from every shipped centroid/anchor/quantile/log-log/permutation-invariant axis 32..92. Dimensionless, non-negative; 0 iff every adjacent bin pair P[k]=P[k+1]; large iff the PSD is spiky/comb-shaped. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-, AND bin-reversal-invariant; bin-permutation-SENSITIVE. Structurally orthogonal to centroid 86 (1st RAW MOMENT), bandwidth 87 / skewness 90 / kurtosis 91 (CENTROID-relative central moments), rolloff 88 (CDF QUANTILE), crest 89 / flatness 85 / spectral-entropy 69 (BIN-PERMUTATION INVARIANT), DFT-slope 84 (LOG-LOG global slope), spectral-decrease 92 (FIXED bin-1 anchor + bin-reversal SENSITIVE), source-row spectral-irregularity (per-row stream vs daily-aggregate stream), and all permutation-invariant amplitude-shape axes 32-67.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL IRREGULARITY (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'diffSqSum',
+    'powerSqSum',
+    'irregularity',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.diffSquaredSum.toExponential(4),
+    s.powerSquaredSum.toExponential(4),
+    s.irregularity.toExponential(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

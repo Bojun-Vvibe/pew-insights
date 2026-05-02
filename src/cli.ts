@@ -144,6 +144,7 @@ import {
   renderDailyTokenSpectralSkewness,
   renderDailyTokenSpectralKurtosis,
   renderDailyTokenSpectralDecrease,
+  renderDailyTokenSpectralIrregularity,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -450,6 +451,7 @@ import { buildDailyTokenSpectralCrestFactor } from './dailytokenspectralcrestfac
 import { buildDailyTokenSpectralSkewness } from './dailytokenspectralskewness.js';
 import { buildDailyTokenSpectralKurtosis } from './dailytokenspectralkurtosis.js';
 import { buildDailyTokenSpectralDecrease } from './dailytokenspectraldecrease.js';
+import { buildDailyTokenSpectralIrregularity } from './dailytokenspectralirregularity.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -19168,6 +19170,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralDecrease(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-irregularity')
+  .description(
+    "Per-source SPECTRAL IRREGULARITY (Jensen 1999 DIKU TR 99/7 §3.5) = sum_{k=1..K-1} (P[k]-P[k+1])^2 / sum_{k=1..K} P[k]^2 on the one-sided non-DC periodogram of the gap-filled mean-centred daily total_tokens series (NINETY-THIRD cross-source axis). LOCAL bin-difference (derivative-like) descriptor: dimensionless, non-negative; 0 iff every adjacent bin pair P[k]=P[k+1] (perfectly smooth PSD); large iff the PSD is spiky/comb-shaped. Reference: Jensen, K., 'Timbre Models of Musical Sounds', PhD diss., DIKU TR 99/7, U. Copenhagen, 1999, §3.5 (simplification of Krimphoff/McAdams/Winsberg 1994); Lerch 2012 §3.3.4. Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-, AND bin-reversal-invariant; bin-permutation-SENSITIVE (the orthogonality witness vs flatness 85, entropy 69, crest 89). Structurally orthogonal to (a) spectral-centroid 86 (1st RAW MOMENT, no local-difference term); (b) spectral-bandwidth 87 / spectral-skewness 90 / spectral-kurtosis 91 (CENTROID-relative central moments, global shape, no local-difference term); (c) spectral-rolloff 88 (CDF QUANTILE integral); (d) spectral-crest 89 / spectral-flatness-wiener 85 / spectral-entropy 69 (BIN-PERMUTATION INVARIANT); (e) DFT-power-law-slope 84 (LOG-LOG global slope); (f) spectral-decrease 92 (FIXED bin-1 anchor + 1/(k-1) weighting + bin-reversal SENSITIVE; irregularity has no anchor and IS bin-reversal invariant); (g) source-row spectral-irregularity (per-row stream vs daily-aggregate stream); (h) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: irregularityDesc (default; spikiest first) | irregularity | tokens | tenure | source.',
+    'irregularityDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'irregularity',
+          'irregularityDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralIrregularity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'irregularity'
+            | 'irregularityDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralIrregularity(report) + '\n');
         }
       } catch (e) {
         die(e);
