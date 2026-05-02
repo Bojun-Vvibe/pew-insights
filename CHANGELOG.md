@@ -2,6 +2,180 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.351 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-EIGHTH):
+  `pew-insights daily-token-kendall-tau-autocorrelation-lag1`.
+
+  Per-source KENDALL TAU-B SERIAL AUTOCORRELATION at LAG 1
+  on the gap-filled daily total tokens series. Form
+  `u = (x[0..n-2])` and `v = (x[1..n-1])`, then for every
+  unordered pair `{i, j}` with `i < j` in `{0..m-1}`,
+  `m = n - 1`, classify the bivariate pair
+  `((u[i], v[i]), (u[j], v[j]))` as concordant (signs of
+  `u[j]-u[i]` and `v[j]-v[i]` agree and both are non-zero),
+  discordant (signs disagree and both non-zero),
+  tied-in-U-only (`u[j] == u[i]`, `v[j] != v[i]`),
+  tied-in-V-only (`u[j] != u[i]`, `v[j] == v[i]`), or
+  tied-in-both. Let `nC, nD, nTU, nTV, nTB` be those
+  counts. The KENDALL TAU-B is
+
+      tau_b = (nC - nD) /
+              sqrt((nC + nD + nTU) * (nC + nD + nTV))
+
+  in `[-1, +1]` (Kendall, "The treatment of ties in
+  ranking problems", Biometrika 33, 1945, pp. 239-251;
+  Hollander & Wolfe, "Nonparametric Statistical Methods",
+  3rd ed., Wiley, 2014, sec. 8.5).
+
+  Reported alongside `tau`: `nPairs = m`, the full pair
+  breakdown `nConcordant / nDiscordant / nTiedU / nTiedV /
+  nTiedBoth`, the reference anchor `tauExpectedIid = 0`
+  (asymptotic E[tau_b] under independence), and the
+  standardised score
+
+      tauZ = tau_b / sqrt(2 * (2*m + 5) / (9 * m * (m - 1)))
+
+  approximately N(0, 1) under the no-ties iid null
+  (Hollander & Wolfe sec. 8.5; for `m < 4` the formula
+  collapses and `tauZ` is reported as 0).
+
+  CLASS-KENDALL-TAU-PAIR-CONCORDANCE primitive: a
+  U-statistic of order 2 (Hoeffding 1948) that counts
+  CONCORDANT - DISCORDANT pair INVERSIONS in the joint
+  rank pairing. It is a topological invariant of the
+  bivariate sample: only the categorical
+  concordant/discordant classification of each unordered
+  pair enters; the actual rank LEVELS never appear in the
+  numerator.
+
+  ### Orthogonality vs every prior axis (axis 79-107)
+
+  - vs axis-107 daily-token-spearman-autocorrelation-lag1.
+    Spearman's `rs1` is the PEARSON CORRELATION of midrank
+    vectors -- a bilinear functional of the rank LEVELS
+    (rank values 1..n appear quadratically in numerator and
+    denominator). Kendall's `tau_b` counts concordant minus
+    discordant pair INVERSIONS -- the rank LEVELS never
+    appear, only their pairwise order. The two are
+    functionally independent: there exist bivariate samples
+    with identical Spearman rho but different Kendall tau,
+    and vice versa (Daniels, "The relation between measures
+    of correlation in the universe of sample
+    permutations", Biometrika 33, 1944, pp. 129-135 --
+    `|3*tau - 2*rho| <= 1` is tight, bounding but not
+    determining one from the other). Operationally `tau_b`
+    is a U-statistic of order 2 (every pair contributes one
+    of five categorical bits), while `rs1` is a bilinear
+    form on midranks (continuous-valued rank arithmetic).
+
+  - vs Pearson lag-1 autocorrelation (already shipped).
+    Pearson lag-1 is the LINEAR serial correlation of the
+    LEVEL series; outliers can dominate. `tau_b` is bounded
+    in `[-1, +1]` and bounded-influence: a single anomalous
+    spike at index k can flip at most O(m) pair signs out
+    of O(m^2), so its leverage shrinks like 1/m. `tau_b`
+    is also invariant to any STRICTLY MONOTONE
+    transformation of the level (log, sqrt, percentile,
+    scaled affine).
+
+  - vs lag-7 Pearson autocorrelation. Different lag.
+
+  - vs the inequality / shape axes (Gini, Atkinson, Theil,
+    Palma, Hoover, Bonferroni, Mehran, Pietra, Foster-
+    Wolfson, Esteban-Ray, Wolfson, Zenga, Chakravarty,
+    Kolm-Pollak, GE2/3/4/half/negone, S-Gini, Amato, FGT,
+    Hill-tail, decile/quintile/percentile gap ratios,
+    IQR/median, MAD/median, log-MAD, midspread, var-of-
+    logs, z-score-extremes, L-skewness, medcouple, Bowley):
+    every one of those is a PERMUTATION-INVARIANT
+    functional of the empirical distribution. `tau_b` at
+    lag 1 depends on the TEMPORAL ORDER of the pairs
+    `(u[i], v[i])`; permuting the daily series leaves
+    every inequality axis unchanged but rebuilds the lag-1
+    pair set entirely.
+
+  - vs the symbolic time-domain axes (axis-105 zero-
+    crossing-rate, axis-106 turning-point-rate, runs-test-z,
+    monotone-run-length, second-difference sign runs).
+    Each collapses the level (or its first/second
+    difference) to a SIGN sequence and counts events on
+    that binary sequence. `tau_b` operates on every
+    unordered pair of lag-1 windows (O(m^2) comparisons)
+    rather than a sequential scan (O(m) comparisons), and
+    uses three-way ordering (less / equal / greater) per
+    coordinate rather than a two-way binary sign.
+
+  - vs the spectral / PSD axes (axis-84 to axis-104).
+    PSD axes map the WHOLE-tenure periodogram to a scalar;
+    the periodogram is invariant to TIME-REVERSAL and
+    discards phase. `tau_b` is built from rank-pair
+    comparisons in the natural time direction.
+
+  - vs the entropy axes (sample, permutation, approximate,
+    Renyi spectral, spectral entropy itself). Those are
+    pattern-recurrence complexity measures on amplitude /
+    spectral embeddings; `tau_b` is a single bivariate
+    U-statistic on the lag-1 pair set.
+
+  - vs the fractal-dimension / long-memory axes (Higuchi,
+    Katz, Petrosian, Sevcik, box-count, DFA alpha, Hurst
+    R/S). Those measure scaling exponents across multiple
+    scales. `tau_b` is a single-lag local statistic.
+
+  - vs Hjorth-mobility (axis-79), Hjorth-complexity
+    (axis-80), Teager-Kaiser (axis-81), Lempel-Ziv
+    (axis-82), curvature-sign-change-rate (axis-83). All
+    are continuous-magnitude operators on the level or
+    its differences. `tau_b` is rank-pair-count based and
+    magnitude-blind.
+
+  Headline question:
+  **"For each source, how often does today's lag-1 (level,
+    next-level) pair sit ON THE SAME SIDE of any other
+    day's lag-1 pair, in BOTH coordinates -- net of
+    anti-concordant pair counts?"**
+
+  ### Live-smoke test against real `~/.config/pew/queue.jsonl`
+
+  Run with defaults (`--min-tenure-days=14`, `--min-tokens=1000`,
+  `--sort=tauZAbsDesc`). Six total sources; two dropped
+  below min-tenure; four reported. Real per-source numbers:
+
+  | source         | tenure | pairs | nC   | nD   | nTU  | nTV  | nTB   | tau     | tauZ    |
+  |----------------|--------|-------|------|------|------|------|-------|---------|---------|
+  | vscode-other   |    265 |   264 | 7613 | 2521 | 6246 | 6246 | 12090 | +0.3109 | +7.5266 |
+  | claude-code    |     72 |    71 | 1157 |  347 |  315 |  315 |   351 | +0.4453 | +5.4926 |
+  | openclaw       |     16 |    15 |   82 |   23 |    0 |    0 |     0 | +0.5619 | +2.9197 |
+  | hermes         |     16 |    15 |   66 |   39 |    0 |    0 |     0 | +0.2571 | +1.3362 |
+
+  All four reported sources show POSITIVE tau-b at lag 1
+  (persistence: today's daily-token level tends to
+  predict tomorrow's in the same direction). The two
+  short-tenure dense sources (`openclaw`, `hermes`,
+  16-day tenure with no zero-padding ties) show the
+  largest raw `tau` magnitudes; the two longer-tenure
+  sources with heavy zero-padding (`vscode-other` 265
+  days, `claude-code` 72 days) show smaller raw `tau`
+  but much larger `|tauZ|` because they have far more
+  comparisons (`nComparisons` = 34 716 and 2 485
+  respectively versus 105 each for the short-tenure
+  dense sources).
+
+  Cross-checks against axis-107 (Spearman lag-1) confirm
+  Daniels' bound `|3*tau - 2*rho| <= 1` does NOT pin
+  `tau_b` to the Spearman value: e.g. `vscode-other`
+  with `tau = +0.3109` is consistent with a range of
+  `rs1` values, and the new axis surfaces the
+  pair-concordance signal that the rank-correlation
+  axis cannot.
+
+  ### Test count delta
+
+  +31 unit tests (`test/dailytokenkendalltauautocorrelationlag1.test.ts`).
+
 ## 0.6.350 — 2026-05-03
 
 ### Added
