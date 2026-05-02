@@ -593,3 +593,74 @@ test('buildDailyTokenDifferenceSignTest: aggregates same-day events into per-day
   // Each day contributes 300 tokens; constant -> dropped as zero-variance.
   assert.equal(r.droppedZeroVariance, 1);
 });
+
+// ---------- additional property anchors (refinement) ----------
+
+test('dailyTokenDifferenceSignTest: dsZ exactly satisfies dZ(reverse(x)) = -dZ(x)', () => {
+  // Time-reversal anti-symmetry of the standardised score is the
+  // canonical defining property of a directional trend test
+  // (Brockwell & Davis 1991 sec. 1.6). Verified pointwise.
+  const xs = [
+    [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9],
+    [10, 3, 7, 4, 8, 1, 9, 6, 2, 5],
+    [100, 50, 75, 25, 60, 30, 80, 40, 90, 110, 120, 70],
+    [1, 2, 3, 4, 5, 6, 7, 8],
+  ];
+  for (const x of xs) {
+    const f = dailyTokenDifferenceSignTest(x);
+    const b = dailyTokenDifferenceSignTest([...x].reverse());
+    assert.ok(
+      Math.abs(f.dsZ + b.dsZ) < 1e-12,
+      `dZ anti-symmetry violated for ${x}: dZ_forward=${f.dsZ}, dZ_reverse=${b.dsZ}`,
+    );
+  }
+});
+
+test('dailyTokenDifferenceSignTest: monotone-up has the maximum possible dsZ for a given n', () => {
+  // For a strictly monotone-increasing series, S = n-1, which is
+  // the supremum over all permutations -> dsZ = +sqrt(n-1) is
+  // the maximum possible (and -sqrt(n-1) the minimum). We verify
+  // that no permutation achieves a larger |dsZ|.
+  const monotone = dailyTokenDifferenceSignTest([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const maxAbsZ = Math.abs(monotone.dsZ);
+  const rng = (seed: number) => {
+    let s = seed;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  };
+  const rand = rng(7);
+  for (let trial = 0; trial < 20; trial += 1) {
+    const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+    }
+    const r = dailyTokenDifferenceSignTest(arr);
+    assert.ok(
+      Math.abs(r.dsZ) <= maxAbsZ + 1e-12,
+      `permutation ${arr} produced |dsZ|=${Math.abs(r.dsZ)} > monotone bound ${maxAbsZ}`,
+    );
+  }
+});
+
+test('dailyTokenDifferenceSignTest: dsZ is independent of any strictly-monotone univariate transform of values', () => {
+  // The sign of x[i+1] - x[i] is preserved by any strictly-
+  // increasing transform (Mood is rank-class for the sign
+  // operator), so dsZ is invariant under such transforms.
+  const x = [1, 5, 2, 8, 4, 7, 9, 6, 11, 3];
+  const r1 = dailyTokenDifferenceSignTest(x);
+  // x -> log(x + 1)
+  const r2 = dailyTokenDifferenceSignTest(x.map((v) => Math.log(v + 1)));
+  // x -> x^3 (strictly increasing for positive x)
+  const r3 = dailyTokenDifferenceSignTest(x.map((v) => v ** 3));
+  // x -> 2x + 100 (affine increasing)
+  const r4 = dailyTokenDifferenceSignTest(x.map((v) => 2 * v + 100));
+  assert.equal(r1.dsS, r2.dsS);
+  assert.equal(r1.dsS, r3.dsS);
+  assert.equal(r1.dsS, r4.dsS);
+  assert.ok(Math.abs(r1.dsZ - r2.dsZ) < 1e-12);
+  assert.ok(Math.abs(r1.dsZ - r3.dsZ) < 1e-12);
+  assert.ok(Math.abs(r1.dsZ - r4.dsZ) < 1e-12);
+});

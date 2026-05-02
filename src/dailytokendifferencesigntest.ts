@@ -199,7 +199,11 @@
  *     d[i] sign, so S becomes (n-1) - S - S0. A pure
  *     trend has S = n - 1 forward but S = 0 reversed.
  *     This anti-symmetry is the defining property of
- *     a directional trend test.
+ *     a directional trend test. Equivalently, the
+ *     standardised score satisfies dZ(reverse(x)) =
+ *     -dZ(x) exactly (verified in the test suite),
+ *     so |dZ| is the time-reversal-invariant
+ *     summary while sign(dZ) carries the direction.
  *
  *   - vs DFA / Hurst / fractal-dimension axes. Those
  *     are scaling exponents fit across multiple
