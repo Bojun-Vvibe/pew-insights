@@ -2,6 +2,116 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.324 — 2026-05-02
+
+### Added
+
+- New cross-source axis (EIGHTIETH):
+  `pew-insights daily-token-hjorth-complexity`.
+
+  Per-source **Hjorth Complexity parameter** (Hjorth, B., "EEG
+  analysis based on time domain properties",
+  Electroencephalography and Clinical Neurophysiology
+  29(3):306-310, 1970) on the gap-filled daily `total_tokens`
+  series.
+
+  Defaults: `min-tenure-days = 32`, `min-tokens = 1000`.
+  Algorithm (single-scale closed-form ratio of three population
+  variances; Hjorth's 1970 convention, no Bessel correction):
+
+      1. Let d[i]  = y[i+1] - y[i]    for i = 0..N-2
+         Let dd[i] = d[i+1] - d[i]    for i = 0..N-3
+
+      2. var_v   = (1/N)     * sum (y  - mean(y))^2
+         var_dv  = (1/(N-1)) * sum (d  - mean(d))^2
+         var_ddv = (1/(N-2)) * sum (dd - mean(dd))^2
+
+      3. mobility(x) = sqrt(var(diff(x)) / var(x))
+         complexity = mobility(d) / mobility(y)
+                    = sqrt(var_ddv * var_v) / var_dv
+
+  Reading `complexity` (unitless ratio):
+
+  - `complexity ~ 1`     = single-tone / sinusoidal series
+                            (canonical reference: a pure cosine has
+                            mobility(y) = mobility(d) and the ratio
+                            collapses to 1).
+  - `complexity > 1`     = the first-difference series is itself
+                            more oscillatory than the original ->
+                            spectral mass spread across multiple
+                            frequencies, noise-like / multi-component.
+  - `complexity < 1`     = the first-difference series is smoother
+                            than the original -> rare for token
+                            streams; happens under slow modulation
+                            on top of a fast carrier.
+
+  Structural orthogonality vs the prior 79 axes:
+
+  - vs `daily-token-hjorth-mobility` (axis 79): mobility IS the
+    spectral CENTROID (Hjorth Eq. 3, first moment); complexity is
+    the BANDWIDTH-equivalent (Hjorth Eq. 8, ratio of two
+    centroids — a SECOND-moment quantity). Two sources with
+    identical mobility can have arbitrarily different complexity:
+    a single sinusoid at any frequency has mobility = `2*sin(omega/2)`
+    yet complexity ~ 1 regardless of `omega`. The test file ships
+    an explicit witness on a pure-sinusoid vs sum-of-two-sinusoids
+    construction asserting `|complexity_A - complexity_B| > 0.1`.
+  - vs box-count FD (78) / Sevcik FD (77) / Katz FD (75) / Higuchi
+    FD (74): path-length / coverage geometries vs a closed-form
+    second-moment ratio.
+  - vs Petrosian FD (76): binary sign-change count of `diff(y)` vs
+    magnitude-aware variances of `diff(y)` and `diff(diff(y))`.
+  - vs Hurst R/S (71) / DFA (72): multi-scale variance scaling on
+    cumulative deviations vs single-scale variance ratio on raw
+    differences.
+  - vs lag-1 ACF (67): complexity carries lag-2 covariance
+    information through `var_ddv` (since `dd[i] = y[i+2] - 2*y[i+1]
+    + y[i]`); two stationary series with identical `rho_1` but
+    different `rho_2` split on complexity.
+  - vs spectral entropy (69): SPECIFIC second-moment ratio vs
+    flatness summary across the entire periodogram.
+  - vs permutation-entropy (70) / sample-entropy (73): no
+    embedding window, no template matching — pure second-moment
+    scalar.
+  - vs all permutation-invariant dispersion / shape axes (32-67):
+    SHUFFLE-sensitive (those are shuffle-invariant).
+
+  Invariances: SHIFT, POSITIVE-SCALE, SIGN-FLIP, TIME-REVERSAL.
+  Not invariant under non-affine monotone transforms.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (`daily-token-hjorth-complexity --top 2 --sort tokens`):
+
+      sources: 6 (shown 2)    tokens: 3,444,271,515
+      dropped: 4 below min-tenure-days
+
+      source          tenure  complexity  mobV     mobDv
+      claude-code     72      1.5319      1.1628   1.7812
+      vscode-copilot  265     1.3028      1.3103   1.7071
+
+  Both observed source keys land **above** the single-tone
+  reference (1.0): the daily-token streams carry meaningful
+  spectral spread beyond a single carrier frequency. The
+  `claude-code` series, despite a much shorter tenure (72d vs
+  265d), shows a HIGHER complexity (1.53 vs 1.30) — its first
+  differences are markedly more oscillatory than its raw series,
+  consistent with bursty / multi-mode usage. The `vscode-copilot`
+  series sits closer to 1, indicating tighter clustering of
+  spectral mass around a dominant cadence.
+
+### Tests
+
+- Test count grew from 8931 → 8951. New suite:
+  `dailytokenhjorthcomplexity` covering the `hjorthComplexity`
+  primitive (rejection of constants / linear ramps / non-finite /
+  too-short series; scale-, shift-, sign-flip-, and time-reversal-
+  invariance; pure-sine ~ 1 limit; white-noise > 1; numerical
+  stability at 1e12 magnitude; orthogonality witness vs axis 79
+  mobility) and the `buildDailyTokenHjorthComplexity` orchestrator
+  (empty queue, sparse / short-tenure drops, zero-variance gap-
+  fill drops, hand-built sinusoidal numeric correctness, --top
+  cap, --source filter, input validation, --sort source ordering).
+
 ## 0.6.323 — 2026-05-02
 
 ### Added
