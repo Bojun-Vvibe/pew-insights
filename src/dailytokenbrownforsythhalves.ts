@@ -510,15 +510,42 @@ export function dailyTokenBrownForsythHalves(values: number[]): {
   }
 
   if (SSW <= 0) {
+    // SSW == 0 iff every absolute deviation within
+    // each half coincides with that half's mean
+    // absolute deviation -- i.e. each half is either
+    // (a) constant, or (b) symmetric around its
+    // median with all elements equidistant from it
+    // (e.g. {0, 2} -> med=1, |devs|={1, 1}). In
+    // either case the F-ratio (n-2) * SSB / SSW is
+    // undefined; surface explicitly so the builder
+    // can drop the source via droppedNonFiniteFit
+    // rather than silently propagate +Infinity.
     throw new Error(
-      `dailyTokenBrownForsythHalves: within-group SSW is zero (n=${n}); test undefined`,
+      `dailyTokenBrownForsythHalves: within-group SSW is zero (n=${n}); per-half deviation distribution is degenerate, F-ratio undefined`,
     );
   }
 
   const bfDf = n - 2;
-  const bfT = ((n - 2) * SSB) / (1 * SSW); // F(1, n-2)
-  const sign = zBarB > zBarA ? 1 : zBarB < zBarA ? -1 : 0;
-  const bfTSigned = sign * Math.sqrt(Math.max(bfT, 0));
+  // F(1, n-2) per Brown & Forsythe 1974 eq. 2 with
+  // k = 2 groups. Algebraic identity: for k = 2 the
+  // BF F-statistic equals the SQUARE of the equal-
+  // variance two-sample Student t on the deviation
+  // groups (Snedecor & Cochran 1989 "Statistical
+  // Methods" 8th ed. sec. 6.7). We exploit this
+  // identity to recover a SIGNED z-equivalent below.
+  const bfT = ((n - 2) * SSB) / (1 * SSW);
+
+  // Sign convention: bfTSigned > 0 when the SECOND
+  // half is strictly more dispersed (zBarB > zBarA);
+  // bfTSigned < 0 when the FIRST half is strictly
+  // more dispersed; bfTSigned === +0 when zBarA ===
+  // zBarB exactly (sign factor 0 -> exact zero, not
+  // a sign-bit -0 from `0 * sqrt(...)`).
+  let sign: 0 | 1 | -1;
+  if (zBarB > zBarA) sign = 1;
+  else if (zBarB < zBarA) sign = -1;
+  else sign = 0;
+  const bfTSigned = sign === 0 ? 0 : sign * Math.sqrt(Math.max(bfT, 0));
 
   // Wallace 1959 normal correction: t(df) ->
   // t * sqrt(1 - 3/(4*df - 1)) approx N(0, 1).

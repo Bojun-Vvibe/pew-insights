@@ -110,6 +110,17 @@ test('dailyTokenBrownForsythHalves: identical-spread halves give bfZ approx 0', 
   assert.ok(Math.abs(r.bfZ) < 1e-12);
 });
 
+test('dailyTokenBrownForsythHalves: equal zBarA == zBarB gives bfTSigned exactly +0 (no -0 sign-bit)', () => {
+  // Same input as above; zBarA === zBarB exactly so
+  // sign === 0 and bfTSigned must be the +0 literal,
+  // never -0 from a `0 * sqrt(...)` artefact.
+  const r = dailyTokenBrownForsythHalves([0, 2, 1, 3, 10, 12, 11, 13]);
+  assert.equal(r.bfTSigned, 0);
+  // Object.is differentiates +0 from -0 -- pin +0.
+  assert.ok(Object.is(r.bfTSigned, 0), `bfTSigned should be +0, got ${r.bfTSigned}`);
+  assert.ok(Object.is(r.bfZ, 0), `bfZ should be +0, got ${r.bfZ}`);
+});
+
 test('dailyTokenBrownForsythHalves: second half wider gives bfZ > 0', () => {
   // First half tight: 4,5,5,6 -> med=5, devs=1,0,0,1 mean=0.5
   // Second half wide: 0,10,1,9 -> med=5, devs=5,5,4,4 mean=4.5
