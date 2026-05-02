@@ -279,9 +279,13 @@ export function spectralCentroidBin(power: number[]): {
       `spectralCentroidBin: too few positive-power bins (${m}; need >= 2)`,
     );
   }
-  if (totalPower <= 0) {
+  // m >= 2 with every contributing p > 0 implies totalPower > 0,
+  // but floating-point catastrophic cancellation across very wide
+  // dynamic ranges (e.g. 1e300 vs 1e-300) could in principle
+  // underflow the sum. Defend against the degenerate case.
+  if (!(totalPower > 0)) {
     throw new Error(
-      `spectralCentroidBin: non-positive total power (${totalPower})`,
+      `spectralCentroidBin: non-positive total power after sum (${totalPower})`,
     );
   }
   const centroidBin = weightedSum / totalPower;
@@ -347,7 +351,14 @@ export function dailyTokenSpectralCentroid(values: number[]): {
   const power = periodogramOneSided(values);
   const k = power.length;
   const { centroidBin, usableBins } = spectralCentroidBin(power);
-  const centroidNormalised = centroidBin / k;
+  let centroidNormalised = centroidBin / k;
+  // Floating-point defence: centroidBin is mathematically in
+  // [1, K] so centroidNormalised is in (0, 1], but extreme
+  // dynamic ranges can push the ratio a hair above 1 or below
+  // 1/K. Clamp to the closed-on-top half-open interval to keep
+  // the documented contract.
+  if (centroidNormalised > 1) centroidNormalised = 1;
+  if (centroidNormalised < 1 / k) centroidNormalised = 1 / k;
   if (
     !Number.isFinite(centroidBin) ||
     !Number.isFinite(centroidNormalised)

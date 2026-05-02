@@ -542,3 +542,130 @@ test('buildDailyTokenSpectralCentroid: orthogonality vs flatness (axis 85) -- bi
   assert.ok(low.centroidNormalised < 0.15, `low.centroidNorm = ${low.centroidNormalised}`);
   assert.ok(high.centroidNormalised > 0.85, `high.centroidNorm = ${high.centroidNormalised}`);
 });
+
+// ---------- refinement: additional edge cases ----------
+
+test('spectralCentroidBin: closed-form on uniform-mass-on-half-the-bins (alternating zeros)', () => {
+  // power = [0, 1, 0, 1, 0, 1] -> survivors at k = 2, 4, 6,
+  // each carrying mass 1; centroid = (2 + 4 + 6) / 3 = 4.
+  const r = spectralCentroidBin([0, 1, 0, 1, 0, 1]);
+  assert.ok(Math.abs(r.centroidBin - 4) < 1e-12);
+  assert.equal(r.usableBins, 3);
+});
+
+test('spectralCentroidBin: parametric sweep -- centroid grows monotonically as mass migrates upward', () => {
+  // Place the same total mass M=10 on a single bin, sweep the
+  // bin index k* across [1..K] with a tiny noise floor on the
+  // remaining bins. centroidBin should track k* tightly.
+  const K = 20;
+  const floor = 1e-9;
+  let prev = -Infinity;
+  for (let kStar = 1; kStar <= K; kStar += 1) {
+    const p = new Array(K).fill(floor);
+    p[kStar - 1] = 10;
+    const r = spectralCentroidBin(p);
+    assert.ok(r.centroidBin > prev, `non-monotone at k*=${kStar}: ${prev} -> ${r.centroidBin}`);
+    assert.ok(
+      Math.abs(r.centroidBin - kStar) < 0.001,
+      `centroidBin ${r.centroidBin} did not track k*=${kStar}`,
+    );
+    prev = r.centroidBin;
+  }
+});
+
+test('dailyTokenSpectralCentroid: n=8 boundary -- smallest valid input still produces finite centroid', () => {
+  const y = [1, 2, 1, 2, 1, 2, 1, 2];
+  const r = dailyTokenSpectralCentroid(y);
+  assert.equal(r.nFreqBins, 4);
+  assert.ok(Number.isFinite(r.centroidBin));
+  assert.ok(r.centroidBin >= 1 && r.centroidBin <= r.nFreqBins);
+  // Period-2 alternation has all power at the Nyquist bin
+  // k = n/2 = 4, so centroidBin should be very close to 4.
+  assert.ok(
+    Math.abs(r.centroidBin - 4) < 1e-9,
+    `period-2 alternation centroidBin ${r.centroidBin} not pinned at Nyquist`,
+  );
+});
+
+test('dailyTokenSpectralCentroid: noise-vs-tone gap survives DC offset and amplitude scale', () => {
+  // The contrast between a low-frequency tone (low centroid) and
+  // a high-frequency tone (high centroid) must survive both DC
+  // offset and amplitude rescaling, by SHIFT- and SCALE-
+  // invariance acting independently.
+  const n = 64;
+  const low: number[] = [];
+  const high: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    low.push(Math.sin((2 * Math.PI * 2 * i) / n));
+    high.push(Math.sin((2 * Math.PI * (n / 2 - 1) * i) / n));
+  }
+  const lowR = dailyTokenSpectralCentroid(low);
+  const highR = dailyTokenSpectralCentroid(high);
+  const lowShifted = dailyTokenSpectralCentroid(low.map((v) => 1000 + 7.5 * v));
+  const highShifted = dailyTokenSpectralCentroid(high.map((v) => 1000 + 7.5 * v));
+  assert.ok(Math.abs(lowR.centroidBin - lowShifted.centroidBin) < 1e-9);
+  assert.ok(Math.abs(highR.centroidBin - highShifted.centroidBin) < 1e-9);
+  assert.ok(highR.centroidBin > lowR.centroidBin * 5, 'tone-frequency gap collapsed');
+  assert.ok(
+    highShifted.centroidBin > lowShifted.centroidBin * 5,
+    'tone-frequency gap collapsed under shift+scale',
+  );
+});
+
+test('buildDailyTokenSpectralCentroid: centroidDesc default sort puts high-freq before low-freq tone source', () => {
+  const n = 64;
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < n; i += 1) {
+    queue.push(ql(dayIso(i), 'low', 10000 + 5000 * Math.sin((2 * Math.PI * 2 * i) / n)));
+    queue.push(ql(dayIso(i), 'high', 10000 + 5000 * Math.sin((2 * Math.PI * (n / 2 - 1) * i) / n)));
+  }
+  const r = buildDailyTokenSpectralCentroid(queue, {
+    minTokens: 100,
+    minTenureDays: 32,
+    generatedAt: ISO,
+  });
+  // default sort = centroidDesc, so 'high' should come first.
+  assert.deepEqual(
+    r.sources.map((s) => s.source),
+    ['high', 'low'],
+  );
+});
+
+test('buildDailyTokenSpectralCentroid: tokens-sort and tenure-sort tiebreak (source asc) witnesses', () => {
+  const n = 40;
+  const queue: QueueLine[] = [];
+  // Identical daily mass for both sources -> identical totalTokens
+  // and identical tenure; sorts must fall through to source asc.
+  // Inject a small per-source phase shift to keep variance > 0.
+  for (let i = 0; i < n; i += 1) {
+    const aTok = 1000 + ((i % 5) === 0 ? 200 : 0);
+    const bTok = 1000 + ((i % 5) === 2 ? 200 : 0);
+    queue.push(ql(dayIso(i), 'a', aTok));
+    queue.push(ql(dayIso(i), 'b', bTok));
+  }
+  const tokR = buildDailyTokenSpectralCentroid(queue, {
+    minTokens: 100,
+    minTenureDays: 32,
+    sort: 'tokens',
+    generatedAt: ISO,
+  });
+  // Both sources share identical totalTokens (each day adds 1000
+  // and the 200 bonus lands on the same number of days for each).
+  assert.equal(tokR.sources[0]!.totalTokens, tokR.sources[1]!.totalTokens);
+  assert.deepEqual(
+    tokR.sources.map((s) => s.source),
+    ['a', 'b'],
+  );
+  const tenR = buildDailyTokenSpectralCentroid(queue, {
+    minTokens: 100,
+    minTenureDays: 32,
+    sort: 'tenure',
+    generatedAt: ISO,
+  });
+  assert.equal(tenR.sources[0]!.nTenureDays, tenR.sources[1]!.nTenureDays);
+  assert.deepEqual(
+    tenR.sources.map((s) => s.source),
+    ['a', 'b'],
+  );
+});
+
