@@ -2,6 +2,163 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.342 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-NINTH):
+  `pew-insights daily-token-spectral-renyi2-entropy`.
+
+  Per-source SPECTRAL RENYI-ALPHA=2 (collision) ENTROPY -- the
+  negative natural-log of the sum of SQUARED normalised bin
+  probabilities of the one-sided non-DC periodogram of the
+  gap-filled mean-centred daily total_tokens series, normalised
+  by ln(K) into [0, 1]. For P[k], k = 1..K with K = floor(n/2)
+  and K >= 2:
+
+      S        = sum_{k=1..K} P[k]                   (must be > 0)
+      p[k]     = P[k] / S                            in [0, 1]
+      H2       = -ln(sum_{k=1..K} p[k]^2)            in [0, ln K]
+      h2Norm   = H2 / ln K                           in [0, 1]
+      kEff     = exp(H2) = 1 / sum p[k]^2            in [1, K]
+
+  CLASS-EN (RENYI-ENTROPY-ALPHA=2) primitive -- the FIRST
+  primitive in the suite that uses an alpha=2 Renyi (collision)
+  entropy on the SPECTRAL distribution. The kEff = exp(H2) read
+  is the classical INVERSE PARTICIPATION RATIO (IPR^-1) from
+  localisation physics: "how many bins effectively carry the
+  PSD mass under quadratic weighting".
+
+  ### Structural orthogonality
+
+  - vs `daily-token-spectral-entropy` (axis 69): axis-69 is
+    SHANNON entropy (alpha = 1 limit); axis-99 is RENYI-2
+    (alpha = 2). They COINCIDE only on uniform spectra; for
+    every non-uniform PSD they give a different ordering. By
+    Jensen's inequality H2 <= H_Shannon, with equality iff
+    uniform; the gap H_Shannon - H2 is itself a non-trivial
+    concentration diagnostic. A spectrum with one large peak
+    plus many tiny bins vs a spectrum with several medium
+    peaks can match on Shannon yet split on Renyi-2.
+  - vs `daily-token-spectral-flatness-wiener` (axis 85):
+    axis-85 is the GM/AM ratio (a 0th-order entropy on log p).
+    Axis-99 is sum p^2 (a 2nd-order moment of p). Two PSDs
+    with identical Wiener flatness can have different Renyi-2,
+    e.g. a 2-bin-equipartition PSD vs a 4-bin-equipartition
+    PSD: both have GM/AM = 1 on the positive subset, but
+    kEff = 2 vs kEff = 4.
+  - vs `daily-token-spectral-flatness-tail` (axis 98):
+    axis-98 is GM/AM RESTRICTED to the upper-half subset
+    T = {k > floor(K/2)}; axis-99 is FULL-BAND quadratic
+    entropy, bin-permutation-invariant. Permuting the same
+    multiset between head and tail leaves axis-99 unchanged
+    while axis-98 swings; this is the structural distinction.
+  - vs `daily-token-spectral-second-peak-frequency` (axis 97):
+    axis-97 is an INDEX-VALUED descriptor (k1*, k2*) plus a
+    magnitude RATIO peakRatio = P[k2*]/P[k1*]. Axis-99 is a
+    real-valued GLOBAL CONCENTRATION scalar that ignores bin
+    position. A unimodal sharp PSD has axis-99 small and
+    axis-97 peakRatio small; a bimodal balanced PSD has
+    axis-99 medium (kEff ~ 2) and axis-97 peakRatio ~ 1.
+  - vs `daily-token-spectral-peak-frequency` (axis 96):
+    axis-96 is a SINGLE-INDEX read (bin position of the max);
+    axis-99 is a magnitude aggregate that ignores bin
+    position. Two PSDs with the same multiset but peakBin in
+    {1, K} share axis-99 and split on axis-96.
+  - vs `daily-token-spectral-roughness` (axis 95): roughness
+    is permutation-SENSITIVE (L1 TV across adjacent pairs).
+    Axis-99 is permutation-INVARIANT.
+  - vs `daily-token-spectral-spread-iqr` (axis 94): IQR is a
+    CDF-quantile width on the bin-INDEX axis; axis-99 ignores
+    bin order entirely.
+  - vs `daily-token-spectral-irregularity` (axis 93):
+    irregularity is a 2nd-order L2 magnitude statistic across
+    adjacent bin triples (permutation-SENSITIVE).
+  - vs `daily-token-spectral-decrease` (axis 92): decrease is
+    a fixed-anchor (bin 1) slope-from-anchor scalar; axis-99
+    is bin-position-independent.
+  - vs `daily-token-spectral-bandwidth/skewness/kurtosis`
+    (axes 87/90/91): each is a CENTROID-RELATIVE central
+    moment on the bin-INDEX axis (mass-weighted positions).
+    Axis-99 is a moment of the PROBABILITY VECTOR p, not of
+    the index axis.
+  - vs `daily-token-spectral-centroid` (axis 86): centroid
+    is a 1st RAW MOMENT (mass-weighted bin index); axis-99 is
+    independent of bin index.
+  - vs `daily-token-spectral-rolloff` (axis 88): rolloff is a
+    CDF QUANTILE BIN INDEX; axis-99 is a quadratic
+    concentration scalar with no quantile structure.
+  - vs `daily-token-spectral-crest-factor` (axis 89): crest is
+    max(p)/mean(p) (an L-infinity / L1 ratio); axis-99 is
+    sum p^2 / (mean p)^2-style L2 / L1 ratio. Same family of
+    "spikiness" descriptors but different norms; they coincide
+    only on degenerate spectra and decouple on the middle
+    ground (two-bin equipartition gives crest = K/2 and
+    h2Norm = log 2 / log K, two genuinely different scalars).
+  - vs `daily-token-dft-power-law-slope` (axis 84): beta is a
+    global LOG-LOG SLOPE fit across all bins; a 1/f spectrum
+    has beta = -1 with kEff growing logarithmically in K; a
+    flat spectrum has beta = 0 and h2Norm = 1.
+  - vs all permutation-invariant TIME-DOMAIN amplitude-shape
+    axes 32-67: those operate on shuffle-invariant statistics
+    of the daily series; axis-99 is on the FREQUENCY-domain
+    |DFT|^2 distribution. A time-domain shuffle leaves those
+    axes fixed but DESTROYS the spectrum.
+  - vs `source-row-token-renyi-entropy`: same Renyi family
+    but on the per-row TOKEN MASS distribution (time-domain),
+    not on the SPECTRAL distribution. Different domain, unit
+    of aggregation, and primitive read.
+
+  ### Live-smoke (against `~/.config/pew/queue.jsonl`,
+       2,388 lines; `--min-tenure-days 10`)
+
+      $ npx tsx src/cli.ts daily-token-spectral-renyi2-entropy \
+          --min-tenure-days 10
+      pew-insights daily-token-spectral-renyi2-entropy
+      as of: 2026-05-02T12:11:57.807Z    sources: 6 (shown 5)
+      tokens: 11,686,813,654    min-tokens: 1,000
+      min-tenure-days: 10    top: -    sort: h2NormDesc
+      dropped: 0 bad hour_start, 0 non-positive tokens,
+      0 source-filter, 0 below min-tokens, 1 below
+      min-tenure-days, 0 zero-variance, 0 zero-power, 0
+      non-finite-fit, 0 below top cap
+
+      per-source SPECTRAL RENYI-2 ENTROPY (sorted by h2NormDesc;
+      ties: source asc)
+      source        tenure  bins  sumP2     kEff     h2      h2Norm
+      vscode-other  265     132   0.014311  69.8762  4.2467  0.8697
+      claude-code    72      36   0.051382  19.4622  2.9685  0.8284
+      opencode       13       6   0.241509   4.1406  1.4208  0.7930
+      hermes         16       8   0.330411   3.0265  1.1074  0.5326
+      openclaw       16       8   0.380672   2.6269  0.9658  0.4645
+
+  ### Live-smoke reading
+
+  The two highest-tenure carriers split sharply:
+
+  - **claude-code** (K=36 bins): h2Norm = **0.8284**,
+    kEff = **19.4622**, sumP2 = **0.051382**. The PSD spreads
+    its mass over ~19.5 effective bins out of 36 -- a moderately
+    diffuse spectrum (close to but distinct from white noise),
+    consistent with bursty-but-broadband daily token volume.
+  - **vscode-other** (K=132 bins): h2Norm = **0.8697**,
+    kEff = **69.8762**, sumP2 = **0.014311**. The PSD spreads
+    its mass over ~69.9 effective bins out of 132 -- a similar
+    proportional-spread to claude-code (kEff/K = 0.529 vs
+    0.541) but on a much wider Fourier basis (longer tenure).
+    The h2Norm gap is small (0.0413) because the normalisation
+    by ln(K) compensates for the bin-count expansion.
+
+  The tail of the table (opencode, hermes, openclaw) shows the
+  primitive's discriminating power on shorter tenures: kEff
+  collapses to 4.1 / 3.0 / 2.6 and h2Norm to 0.79 / 0.53 / 0.46
+  -- short-tenure carriers concentrate their PSD mass on a
+  handful of bins, distinct from the long-tenure broadband
+  pattern. claude-code vs vscode-other are CONCENTRATION-
+  STRUCTURALLY similar (high kEff/K ratio); the short-tenure
+  group is CONCENTRATION-STRUCTURALLY distinct (low kEff/K
+  ratio).
+
 ## 0.6.341 — 2026-05-02
 
 ### Added
