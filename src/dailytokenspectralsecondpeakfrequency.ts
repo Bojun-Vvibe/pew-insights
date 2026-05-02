@@ -350,6 +350,19 @@ export interface DailyTokenSpectralSecondPeakFrequencyReport {
  *     reversal-INVARIANT in magnitude; second-peak-frequency
  *     INDICES are reversal-MAPPED -- distinct invariance
  *     class.
+ *   - K=5, P[3]=10, others non-zero (worst-case neighbour-
+ *     exclusion at the minimum K): k1*=3 (interior); excluded
+ *     {2, 3, 4}; residual = bins {1, 5} -- exactly 2
+ *     candidates remain by the K >= 5 gate, the tightest
+ *     boundary the gate must protect.
+ *   - peakSeparationBins UPPER bound K-1 achieved by bimodal-
+ *     equal at boundaries (k1*=1, k2*=K) for every K >= 5.
+ *   - Three equal peaks at non-neighbour bins {1, 4, 7} of
+ *     K=8 (twin-secondary tie): k1*=1 (smallest-k); excluded
+ *     {1, 2}; residual peaks at 4 and 7 tied -> k2*=4
+ *     (smallest-k secondary tie); peakRatio = 1 exactly.
+ *     Demonstrates that peakRatio = 1 is a SHARP achievable
+ *     upper bound, not just a limit.
  *
  * Throws on too-few-bins (< 5), non-finite power, negative
  * power, non-positive total power, or all-zero residual after

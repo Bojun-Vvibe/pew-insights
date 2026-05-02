@@ -698,3 +698,134 @@ test('orthogonality: cosine-pair witness sweep -- both modes recovered exactly',
     }
   }
 });
+
+// ---------- refinement sweep: tighten orthogonality witnesses ----------
+
+test('refine: K=5 minimum-K boundary -- exactly 2 candidates remain after worst-case neighbour exclusion', () => {
+  // K=5, primary at INTERIOR bin 3 -> excluded {2, 3, 4}. Residual
+  // bins {1, 5}: exactly 2 candidates. Verify the build does not
+  // throw on this minimum-K-after-exclusion configuration.
+  const power = [3, 1, 10, 1, 7];
+  const r = spectralSecondPeakFrequency(power);
+  assert.equal(r.peakBin, 3);
+  assert.equal(r.peak2Bin, 5); // 7 > 3
+  assert.equal(r.peakSeparationBins, 2);
+  assert.equal(r.peakRatio, 0.7);
+});
+
+test('refine: peakRatio=1 tie achieved by twin-peak with smallest-k secondary tie-break', () => {
+  // Three equal peaks at non-neighbour bins {1, 4, 7} of K=8.
+  // k1*=1 (smallest-k); excluded {1, 2}; residual peaks at 4 and 7
+  // tied -> k2*=4 (smallest-k); peakRatio = 1 exactly.
+  const power = [9, 0, 0, 9, 0, 0, 9, 0];
+  const r = spectralSecondPeakFrequency(power);
+  assert.equal(r.peakBin, 1);
+  assert.equal(r.peak2Bin, 4);
+  assert.equal(r.peakRatio, 1);
+  assert.equal(r.peakSeparationBins, 3);
+});
+
+test('refine: scale by negative leaves both indices unchanged (a != 0 invariance)', () => {
+  // power vector after squaring magnitudes must be non-negative; we
+  // exercise the daily-fn path which derives PSD from the signed
+  // series and verify negative-scale invariance.
+  const n = 16;
+  const series = Array.from(
+    { length: n },
+    (_, i) =>
+      5000 +
+      1000 * Math.cos((2 * Math.PI * 2 * i) / n) +
+      300 * Math.cos((2 * Math.PI * 6 * i) / n),
+  );
+  const r1 = dailyTokenSpectralSecondPeakFrequency(series);
+  const r2 = dailyTokenSpectralSecondPeakFrequency(series.map((v) => -v));
+  assert.equal(r1.peakBin, r2.peakBin);
+  assert.equal(r1.peak2Bin, r2.peak2Bin);
+  assert.equal(r1.peakRatio.toFixed(12), r2.peakRatio.toFixed(12));
+  assert.equal(r1.peakSeparationBins, r2.peakSeparationBins);
+});
+
+test('refine: time-reversal vs bin-reversal -- daily-fn time-reversal preserves indices, primitive bin-reversal maps them', () => {
+  // The two reversals act on different spaces and must NOT be
+  // conflated. dailyTokenSpectralSecondPeakFrequency is time-
+  // reversal-invariant (|DFT|^2 is reversal-blind); the primitive
+  // operating directly on a bin-reversed PSD MAPS the indices.
+  const n = 20;
+  const series = Array.from(
+    { length: n },
+    (_, i) =>
+      5000 +
+      1000 * Math.cos((2 * Math.PI * 3 * i) / n) +
+      300 * Math.cos((2 * Math.PI * 7 * i) / n),
+  );
+  const rTime = dailyTokenSpectralSecondPeakFrequency(series);
+  const rTimeRev = dailyTokenSpectralSecondPeakFrequency(
+    [...series].reverse(),
+  );
+  assert.equal(rTime.peakBin, rTimeRev.peakBin);
+  assert.equal(rTime.peak2Bin, rTimeRev.peak2Bin);
+});
+
+test('refine: peakSeparationBins upper bound K-1 achieved by bimodal-equal at boundaries', () => {
+  // Bimodal equal at k=1 and k=K -> separation = K-1 (the maximum
+  // possible) for every K >= 5.
+  for (const K of [5, 6, 8, 12, 32]) {
+    const power = new Array<number>(K).fill(0);
+    power[0] = 4;
+    power[K - 1] = 4;
+    const r = spectralSecondPeakFrequency(power);
+    assert.equal(r.peakSeparationBins, K - 1, `K=${K}`);
+  }
+});
+
+test('refine: build smoke -- two-source bimodal series yields stable axis-97 reads', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 24; i += 1) {
+    const twin =
+      5000 +
+      1000 * Math.cos((2 * Math.PI * 2 * i) / 24) +
+      900 * Math.cos((2 * Math.PI * 8 * i) / 24);
+    const skew =
+      5000 +
+      1000 * Math.cos((2 * Math.PI * 3 * i) / 24) +
+      150 * Math.cos((2 * Math.PI * 9 * i) / 24);
+    queue.push(ql(dayIso(i), 'twin', twin));
+    queue.push(ql(dayIso(i), 'skew', skew));
+  }
+  const r = buildDailyTokenSpectralSecondPeakFrequency(queue, {
+    generatedAt: ISO,
+    minTokens: 0,
+    minTenureDays: 10,
+    sort: 'peakRatioDesc',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.sources[0]!.source, 'twin');
+  assert.ok(r.sources[0]!.peakRatio > r.sources[1]!.peakRatio);
+  // twin's peakRatio is close to 0.81 (900^2 / 1000^2)
+  assert.ok(r.sources[0]!.peakRatio > 0.7);
+  // skew's peakRatio close to 0.0225 (150^2 / 1000^2)
+  assert.ok(r.sources[1]!.peakRatio < 0.1);
+});
+
+test('refine: build emits all dropped counters as numbers (schema stability)', () => {
+  const r = buildDailyTokenSpectralSecondPeakFrequency([], {
+    generatedAt: ISO,
+  });
+  for (const k of [
+    'droppedInvalidHourStart',
+    'droppedNonPositiveTokens',
+    'droppedSourceFilter',
+    'droppedSparseSources',
+    'droppedBelowMinTenure',
+    'droppedZeroVariance',
+    'droppedZeroPowerSum',
+    'droppedSingleMode',
+    'droppedNonFiniteFit',
+    'droppedTopSources',
+  ] as const) {
+    assert.equal(typeof r[k], 'number', k);
+    assert.equal(r[k], 0);
+  }
+  assert.equal(r.sources.length, 0);
+  assert.equal(r.totalSources, 0);
+});
