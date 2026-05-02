@@ -176,6 +176,24 @@
  * Determinism: pure builder. Wall clock only via
  * `opts.generatedAt`.
  *
+ * CLI usage examples:
+ *
+ *   # Default (B = 6 log-spaced bands), all sources with at
+ *   # least 1000 tokens and 16 days of gap-filled tenure:
+ *   pew-insights daily-token-spectral-contrast
+ *
+ *   # Tighter band partition (B = 8) with a higher tenure
+ *   # floor (so K = floor(n/2) >= 16 = 2*B is enforced):
+ *   pew-insights daily-token-spectral-contrast \
+ *     --bands 8 --min-tenure-days 32
+ *
+ *   # JSON for downstream tooling:
+ *   pew-insights daily-token-spectral-contrast --json
+ *
+ *   # Restrict to a single source and sort by maximum band:
+ *   pew-insights daily-token-spectral-contrast \
+ *     --source claude-code --sort contrastMaxDesc
+ *
  * References:
  *   Jiang, D.-N., Lu, L., Zhang, H.-J., Tao, J.-H. & Cai,
  *     L.-H., "Music type classification by spectral contrast
@@ -392,6 +410,11 @@ export function spectralContrast(
     }
     const vTop = topSum / q;
     const vBot = botSum / q;
+    if (!Number.isFinite(vTop) || !Number.isFinite(vBot)) {
+      throw new Error(
+        `spectralContrast: non-finite quartile mean in band ${b} (vTop=${vTop}, vBot=${vBot})`,
+      );
+    }
     if (vBot <= 0) nSaturated += 1;
     const contrast = Math.log(vTop + EPS_LOG) - Math.log(vBot + EPS_LOG);
     sumContrast += contrast;

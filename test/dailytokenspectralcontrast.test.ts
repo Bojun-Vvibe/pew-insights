@@ -153,6 +153,21 @@ test('spectralContrast: returns total power = sum of input', () => {
   assert.equal(r.totalPower, power.reduce((a, b) => a + b, 0));
 });
 
+test('spectralContrast: all-zero band yields contrast = 0 (vTop = vBot = 0)', () => {
+  // Concentrate all mass in the LAST band; earlier bands all
+  // zero. Each all-zero band has vTop = vBot = 0, so
+  // log(eps) - log(eps) = 0, and the contribution to
+  // contrastMean is 0 from those bands.
+  const k = 24;
+  const power = new Array(k).fill(0);
+  for (let i = k - 6; i < k; i += 1) power[i] = 1 + (i - (k - 6));
+  const r = spectralContrast(power, 4);
+  assert.ok(r.contrastMin >= 0);
+  assert.equal(r.contrastMin, 0);
+  assert.ok(r.contrastMax > 0);
+  assert.ok(Number.isFinite(r.contrastMean));
+});
+
 // ---------- dailyTokenSpectralContrast ----------
 
 test('dailyTokenSpectralContrast: rejects too-short series', () => {
