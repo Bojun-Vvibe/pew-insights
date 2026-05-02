@@ -711,3 +711,54 @@ test('buildDailyTokenLjungBoxQTest: top=0 means no cap', () => {
   assert.equal(r.sources.length, 5);
   assert.equal(r.droppedTopSources, 0);
 });
+
+// ---------- exact-identity property anchors ----------
+
+test('dailyTokenLjungBoxQTest: time-reversal invariance lbQ(reverse(x)) === lbQ(x)', () => {
+  const x = [3, 7, 1, 9, 2, 8, 4, 6, 5, 10, 0, 11, 12, 1, 8, 3];
+  const reversed = x.slice().reverse();
+  const a = dailyTokenLjungBoxQTest(x);
+  const b = dailyTokenLjungBoxQTest(reversed);
+  assert.ok(Math.abs(a.lbQ - b.lbQ) < 1e-9, `lbQ mismatch: ${a.lbQ} vs ${b.lbQ}`);
+  assert.ok(Math.abs(a.lbZ - b.lbZ) < 1e-9);
+  for (let k = 0; k < a.lbAcf.length; k += 1) {
+    assert.ok(
+      Math.abs(a.lbAcf[k]! - b.lbAcf[k]!) < 1e-9,
+      `lbAcf[${k}] mismatch: ${a.lbAcf[k]} vs ${b.lbAcf[k]}`,
+    );
+  }
+});
+
+test('dailyTokenLjungBoxQTest: lbAcf[k] always in [-1, +1] (Cauchy-Schwarz)', () => {
+  // Stress with various non-trivial inputs
+  const inputs: number[][] = [
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    [16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+    [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+    Array.from({ length: 30 }, (_, i) => Math.sin(i / 3)),
+    Array.from({ length: 50 }, (_, i) => (i * 7919) % 173),
+  ];
+  for (const x of inputs) {
+    const r = dailyTokenLjungBoxQTest(x);
+    for (const r_k of r.lbAcf) {
+      assert.ok(
+        r_k >= -1 - 1e-12 && r_k <= 1 + 1e-12,
+        `acf out of [-1,1]: ${r_k}`,
+      );
+    }
+  }
+});
+
+test('dailyTokenLjungBoxQTest: positive-scalar invariance lbQ(a*x) === lbQ(x)', () => {
+  const x = [1, 4, 2, 7, 3, 9, 5, 11, 6, 8, 4, 10, 12, 7, 13, 9];
+  const a = dailyTokenLjungBoxQTest(x);
+  const scaled = x.map((v) => v * 7.5);
+  const b = dailyTokenLjungBoxQTest(scaled);
+  // r_k is scale-invariant by the ratio definition (numerator and
+  // denominator both pick up a^2). lbQ and lbZ inherit the invariance.
+  assert.ok(Math.abs(a.lbQ - b.lbQ) < 1e-6, `lbQ mismatch: ${a.lbQ} vs ${b.lbQ}`);
+  assert.ok(Math.abs(a.lbZ - b.lbZ) < 1e-6);
+  for (let k = 0; k < a.lbAcf.length; k += 1) {
+    assert.ok(Math.abs(a.lbAcf[k]! - b.lbAcf[k]!) < 1e-9);
+  }
+});

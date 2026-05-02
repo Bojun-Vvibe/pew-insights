@@ -395,6 +395,24 @@ export interface DailyTokenLjungBoxQTestReport {
  * on a real-valued series at lags 1..H where
  * H = min(maxLag, floor(n/4)).
  *
+ * EXACT IDENTITIES preserved by this implementation
+ * (verified by the test suite):
+ *
+ *   - lbQ(reverse(x)) === lbQ(x). The biased acf is
+ *     time-reversal symmetric (sum of products of
+ *     centred values), so reversing the series
+ *     leaves r_k, lbQ, and lbZ exactly invariant.
+ *   - lbQ(x + c) === lbQ(x) for any constant c. The
+ *     centring step removes c.
+ *   - lbQ(a * x) === lbQ(x) for any positive scalar
+ *     a. Both numerator and denominator of r_k pick
+ *     up a factor of a^2 which cancels.
+ *   - lbAcf[k] in [-1, +1] by Cauchy-Schwarz on the
+ *     centred-value cross-products.
+ *   - lbDf === lbH by construction (the chi-square
+ *     degrees-of-freedom equals the number of acf
+ *     lags entering the portmanteau sum).
+ *
  * Closed-form sanity anchors:
  *   - constant series filtered upstream by zero-
  *     variance guard (centred squared sum = 0).
