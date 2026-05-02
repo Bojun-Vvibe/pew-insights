@@ -20249,6 +20249,7 @@ import type { DailyTokenTurningPointRateReport } from './dailytokenturningpointr
 import type { DailyTokenSpearmanAutocorrelationLag1Report } from './dailytokenspearmanautocorrelationlag1.js';
 import type { DailyTokenKendallTauAutocorrelationLag1Report } from './dailytokenkendalltauautocorrelationlag1.js';
 import type { DailyTokenUpperRecordsCountReport } from './dailytokenupperrecordscount.js';
+import type { DailyTokenMannKendallTauReport } from './dailytokenmannkendalltau.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21143,6 +21144,93 @@ export function renderDailyTokenUpperRecordsCount(
   lines.push(
     chalk.dim(
       `(reference anchor: recordExpectedIid = H_n (n-th harmonic) under iid continuous (Renyi 1962). recordZ > 0 means MORE strict upper records than expected (persistent late-arriving new highs); recordZ < 0 means fewer (an early-loaded peak followed by no further global maxima). |recordZ| > 2 is suggestive of non-iid record structure under the asymptotic normal null. Note that in the zero-padded sparse-day regime, ties at zero suppress the strict count below the loose (>=) count; both are surfaced for triage.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMannKendallTau(
+  r: DailyTokenMannKendallTauReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-mann-kendall-tau'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MANN-KENDALL GLOBAL MONOTONIC TREND TAU on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TENTH cross-source axis. Class-MONOTONIC-TREND (Mann 1945; Kendall 1975): tau_MK = S / (n*(n-1)/2) where S = sum_{i<j} sgn(x[j] - x[i]). Closed-form null: E[S] = 0, Var[S] = (n*(n-1)*(2n+5) - sum_g t_g*(t_g-1)*(2*t_g+5))/18 with tie correction. mkZ = (S - sgn(S))/sqrt(Var[S]) is approx N(0,1). Distinct from axis-108 (LOCAL lag-1 Kendall on adjacent pairs only) by being the GLOBAL all-pairs concordance statistic; distinct from axis-109 records-count (counting prefix-max events) by being a normalised pair-concordance ratio.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MANN-KENDALL TAU (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'S',
+    'concordant',
+    'discordant',
+    'ties',
+    'tau_MK',
+    'mean',
+    'stddev',
+    'sqrtVarS',
+    'mkZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.mannKendallS),
+    formatNumber(s.nConcordant),
+    formatNumber(s.nDiscordant),
+    formatNumber(s.nTies),
+    s.mannKendallTau.toFixed(4),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    Math.sqrt(s.mannKendallVarS).toFixed(4),
+    s.mannKendallZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: tau_MK in [-1, +1]; +1 = strict global increase, -1 = strict global decrease, 0 = no monotonic trend in expectation under iid permutation null (Mann 1945). mkZ > 0 means more concordant pairs than discordant (UPWARD trend); mkZ < 0 means downward trend. |mkZ| > 1.96 is two-sided significant at alpha = 0.05 under the asymptotic normal null. Note: ties at zero in the gap-filled regime inflate nTies and reduce Var[S] via the tie correction; both are surfaced for triage.)`,
     ),
   );
 
