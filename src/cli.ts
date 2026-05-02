@@ -165,6 +165,7 @@ import {
   renderDailyTokenCoxStuartTrendTest,
   renderDailyTokenBartelsRankVonNeumann,
   renderDailyTokenDifferenceSignTest,
+  renderDailyTokenLjungBoxQTest,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -492,6 +493,7 @@ import { buildDailyTokenMannKendallTau } from './dailytokenmannkendalltau.js';
 import { buildDailyTokenCoxStuartTrendTest } from './dailytokencoxstuarttrendtest.js';
 import { buildDailyTokenBartelsRankVonNeumann } from './dailytokenbartelsrankvonneumann.js';
 import { buildDailyTokenDifferenceSignTest } from './dailytokendifferencesigntest.js';
+import { buildDailyTokenLjungBoxQTest } from './dailytokenljungboxqtest.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -36591,6 +36593,133 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenDifferenceSignTest(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-ljung-box-q-test')
+  .description(
+    "Per-source LJUNG-BOX PORTMANTEAU Q-TEST FOR SERIAL CORRELATION at H lags on the gap-filled mean-centred daily total_tokens series (ONE-HUNDRED-AND-FOURTEENTH cross-source axis). Class-PORTMANTEAU-RANDOMNESS-TEST (Ljung & Box 1978, Biometrika 65:297-303): r_k = sum (x_t - xbar)(x_{t+k} - xbar) / sum (x_t - xbar)^2 (biased acf, Box-Jenkins-Reinsel 1994 sec. 2.1.4); Q_LB(H) = n(n+2) sum_{k=1..H} r_k^2 / (n - k); under iid white-noise null Q_LB ~ Chi-Square(H); lbZ = (Q - H)/sqrt(2H) approx N(0,1) for H >= 10. lbZ much greater than 1.96 = significant joint serial structure across lags 1..H. Distinct from axes 107/108 (single-lag rank autocorrelations), axis-112 Bartels (single-lag squared-rank-difference RVN), axis-113 Mood (single-lag binary diff-sign), and axis-64 Wald-Wolfowitz runs-test-z (median-binarised run count) by being a MULTI-LAG (k=1..H) PORTMANTEAU statistic with chi-square null. Default H = min(10, floor(n/4)).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--max-lag <n>',
+    'maximum lag H for the portmanteau sum; effective H = min(maxLag, floor(n/4)). Default 10 (canonical Box-Jenkins).',
+    '10',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: lbZAbsDesc (default) | q | qDesc | lbZ | lbZDesc | lbZAbs | tokens | tenure | source.',
+    'lbZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        maxLag: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const maxLag = Number.parseInt(opts.maxLag, 10);
+        if (!Number.isInteger(maxLag) || maxLag < 1) {
+          throw new Error(
+            `--max-lag must be a positive integer (got ${opts.maxLag})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'q',
+          'qDesc',
+          'lbZ',
+          'lbZDesc',
+          'lbZAbs',
+          'lbZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLjungBoxQTest(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          maxLag,
+          top,
+          sort: opts.sort as
+            | 'q'
+            | 'qDesc'
+            | 'lbZ'
+            | 'lbZDesc'
+            | 'lbZAbs'
+            | 'lbZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLjungBoxQTest(report) + '\n',
           );
         }
       } catch (e) {

@@ -20253,6 +20253,7 @@ import type { DailyTokenMannKendallTauReport } from './dailytokenmannkendalltau.
 import type { DailyTokenCoxStuartTrendTestReport } from './dailytokencoxstuarttrendtest.js';
 import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsrankvonneumann.js';
 import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferencesigntest.js';
+import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21495,6 +21496,96 @@ export function renderDailyTokenBartelsRankVonNeumann(
   lines.push(
     chalk.dim(
       `(reference anchor: RVN in [0, 4]; RVN approx 2 = iid randomness, RVN < 2 = positive serial dependence (consecutive ranks too close -> trend or persistence), RVN > 2 = negative serial dependence (consecutive ranks too far -> oscillation / mean-reversion). bZ < -1.96 is two-sided significant evidence of positive serial dependence at alpha = 0.05; bZ > 1.96 oscillation. The closed-form variance is the no-ties form (Bartels 1982 Theorem 1); nTies surfaces the mid-rank correction load -- substantial in the gap-filled regime where consecutive zero-padded days share the lowest mid-rank.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenLjungBoxQTest(
+  r: DailyTokenLjungBoxQTestReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-ljung-box-q-test'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    max-lag: ${formatNumber(r.maxLag)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LJUNG-BOX PORTMANTEAU Q-TEST FOR SERIAL CORRELATION at H lags on the gap-filled mean-centred daily total_tokens series. ONE-HUNDRED-AND-FOURTEENTH cross-source axis. Class-PORTMANTEAU-RANDOMNESS-TEST (Ljung & Box 1978, Biometrika 65:297-303): r_k = sum (x_t - xbar)(x_{t+k} - xbar) / sum (x_t - xbar)^2 (biased acf, Box-Jenkins-Reinsel 1994 sec. 2.1.4); Q_LB(H) = n(n+2) sum_{k=1..H} r_k^2 / (n - k); under iid white-noise null Q_LB ~ Chi-Square(H); lbZ = (Q - H)/sqrt(2H) approx N(0, 1) for H >= 10. lbZ much greater than 1.96 = significant joint serial structure across lags 1..H. Distinct from axes 107/108 (single-lag rank autocorrelations), axis-112 Bartels (single-lag squared-rank-difference RVN), axis-113 Mood (single-lag binary diff-sign), and axis-64 Wald-Wolfowitz runs-test-z (median-binarised run count) by being a MULTI-LAG (k=1..H) PORTMANTEAU statistic with chi-square null. Default H = min(10, floor(n/4)).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source LJUNG-BOX Q (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'lbH',
+    'r1',
+    'r2',
+    'r7',
+    'mean',
+    'stddev',
+    'lbQ',
+    'lbZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    const r1 = s.lbAcf[0] ?? 0;
+    const r2 = s.lbAcf[1] ?? 0;
+    const r7 = s.lbAcf[6] ?? 0;
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      formatNumber(s.lbH),
+      r1.toFixed(4),
+      r2.toFixed(4),
+      r7.toFixed(4),
+      formatNumber(s.mean),
+      formatNumber(s.stddev),
+      s.lbQ.toFixed(4),
+      s.lbZ.toFixed(4),
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: lbQ approx H = white-noise-consistent; lbQ much greater than H = serial structure detected; lbZ much greater than +1.96 = significant portmanteau evidence of serial correlation across lags 1..H at alpha = 0.05. The test is BLIND TO SIGN of the autocorrelations (squared values enter the sum) and BLIND TO THE SPECIFIC LAG that drives significance -- inspect the lbAcf array (r1, r2, r7 surfaced in the table; full array via --json) to identify which lag dominates. Lag-7 strength under r7 indicates weekly seasonality.)`,
     ),
   );
 
