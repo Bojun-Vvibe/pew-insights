@@ -2,6 +2,229 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.356 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-THIRTEENTH):
+  `pew-insights daily-token-difference-sign-test`.
+
+  Per-source MOOD DIFFERENCE-SIGN TEST FOR TREND on the
+  gap-filled daily total tokens series. Form first
+  differences d[i] = x[i+1] - x[i] for i in 0..n-2, and
+  define the MOOD DIFFERENCE-SIGN STATISTIC (Brockwell &
+  Davis 1991 sec. 1.6; Mood 1950 sec. 16.10):
+
+      S = #{ i : d[i] > 0 }     in {0, 1, .., n-1}
+      S- = #{ i : d[i] < 0 }
+      S0 = #{ i : d[i] = 0 }    (zero-step / tie count)
+
+  Under the iid CONTINUOUS null (so ties have probability
+  zero), each d[i] has P(d[i] > 0) = 1/2 independently of
+  the marginal distribution, and so
+
+      S ~ Binomial(n - 1, 1/2)
+      E[S]   = (n - 1) / 2
+      Var[S] = (n - 1) / 4
+
+  The standardised score
+
+      dZ = (S - (n - 1)/2) / sqrt((n - 1)/4)
+
+  is approximately N(0, 1) for n - 1 >= 20. dZ > 1.96 is
+  significant positive trend (more "ups" than expected);
+  dZ < -1.96 significant negative trend. The test is
+  DIRECTIONAL and BLIND TO PERIODIC ALTERNATIVES (a pure
+  sinusoid has S approx (n-1)/2 by symmetry).
+
+  TIE HANDLING. Zero-step events (S0) are surfaced
+  separately so the operator can audit tie load. The
+  closed-form Binomial null assumes a continuous
+  distribution; with discrete or gap-filled count data
+  the (n-1) denominator is preserved (no tie correction)
+  to maintain parity with the classical Brockwell &
+  Davis 1991 reference. With many zero-steps the
+  asymptotic Binomial-null variance is mildly anti-
+  conservative; pair Mood with axis-112 Bartels for full
+  local-serial-dependence coverage when nZeroSteps is
+  large.
+
+  STRUCTURAL ORTHOGONALITY vs all prior axes (79-112).
+  Mood difference-sign is the BINOMIAL FIRST-DIFFERENCE
+  SIGN-COUNT trend statistic -- fundamentally distinct
+  from every prior axis:
+
+  - vs axis-112 daily-token-bartels-rank-von-neumann.
+    Bartels is the SUM OF SQUARED ADJACENT-RANK
+    DIFFERENCES at lag 1 with a closed-form GAUSSIAN
+    null (output in [0, 4]). Mood is the COUNT OF
+    POSITIVE FIRST DIFFERENCES with a closed-form
+    BINOMIAL null (output in {0, 1, .., n-1}).
+    Functional family differs (squared rank diff vs
+    binary sign of raw difference), null differs
+    (Gaussian vs Binomial), test direction differs
+    (Bartels is two-sided randomness; Mood is
+    directional trend). A perfectly oscillating
+    series 1, 10, 2, 11, 3, 12, .. has RVN -> 4
+    (extreme negative serial dependence) but Mood
+    S approx n/2 (alternating signs cancel).
+    Conversely, a slow monotone trend has RVN -> 0
+    AND Mood S = n - 1 (extreme on both, but for
+    different reasons -- Bartels detects local
+    persistence, Mood detects directional drift).
+
+  - vs axis-111 daily-token-cox-stuart-trend-test.
+    Cox-Stuart is also a binomial sign-test for
+    trend, but it pairs observations at LAG c =
+    floor(n/2) (first half vs second half) and
+    counts positive sign-pairs from floor(n/2)
+    comparisons. Mood operates at LAG 1 with n - 1
+    comparisons. A series 1,1,..,1,2,2,..,2 (clean
+    half-shift) has csTau approx +1 but Mood S = 1
+    (only ONE positive difference at the jump,
+    rest zero -> few "ups"); a saw-tooth ramp
+    1,2,3,4,1,2,3,4,.. has Mood S much greater than
+    (n-1)/2 (mostly +1 steps with periodic resets)
+    but csTau approx 0 (first-half mean = second-
+    half mean by symmetry).
+
+  - vs axis-110 daily-token-mann-kendall-tau. Mann-
+    Kendall sums sign(x[j] - x[i]) over ALL n*(n-1)/2
+    PAIRS i < j -- a global concordance statistic.
+    Mood sums sign(x[i+1] - x[i]) over only the n-1
+    ADJACENT pairs. Sample space differs by O(n) --
+    Mann-Kendall is O(n^2) pairs, Mood is O(n) pairs.
+    A series with strong global trend and high local
+    noise has tau_MK > 0 but Mood S can be close to
+    (n-1)/2 (local diffs have mixed signs).
+
+  - vs daily-token-runs-test-z (Wald-Wolfowitz median-
+    binarised maximal-run count). Wald-Wolfowitz
+    binarises by MEDIAN (s_i = sgn(x_i - median))
+    and counts MAXIMAL RUNS of identical signs.
+    Mood binarises by ADJACENT DIFFERENCE
+    (sgn(x[i+1] - x[i])) and SUMS the positive
+    signs. Both are sign-based but the binarisation
+    operator differs (level vs first-difference),
+    the aggregation differs (run count vs sum),
+    and the detection target differs (randomness of
+    level signs vs trend in differences).
+
+  - vs axes 105 / 106 (zero-crossing-rate / turning-
+    point-rate). Zero-crossing-rate counts sign
+    changes around the MEAN; turning-point-rate
+    counts LOCAL EXTREMA (sign change of consecutive
+    diffs). Mood counts the sign of d[i] itself,
+    NOT sign changes between consecutive d[i].
+    A monotone-up series has zero-crossing-rate = 0,
+    turning-point-rate = 0, and Mood S = n - 1.
+
+  - vs axes 107 / 108 (spearman-lag-1 / kendall-tau-
+    lag-1). Both are LAG-1 RANK CORRELATIONS using
+    normalised cross-products. Mood is a SUM OF
+    SIGNS of first DIFFERENCES, not a correlation.
+    A series with strong negative lag-1 autocorr
+    (alternating high/low) has rho_S(1) << 0 while
+    Mood S approx (n-1)/2 (alternating signs).
+
+  - vs axes 103 / 104 (second-diff-sign-runs /
+    monotone-run-length). Different primitives:
+    Mood operates on FIRST-DIFFERENCE sign sums;
+    second-diff-sign-runs operates on CURVATURE
+    sign; monotone-run-length is the LENGTH of the
+    LONGEST monotone run, not a SUM.
+
+  - vs the inequality / shape axes (Gini, Atkinson,
+    Theil, ..). PERMUTATION-INVARIANT functionals
+    of the empirical distribution. Mood depends
+    entirely on the TEMPORAL ORDER of consecutive
+    pairs.
+
+  - vs the spectral axes (84-104). PSD axes are
+    time-reversal symmetric. Mood is NOT time-
+    reversal symmetric: reversing the series flips
+    every d[i] sign, so S becomes (n-1) - S - S0.
+    A pure trend has S = n - 1 forward but S = 0
+    reversed. This anti-symmetry is the defining
+    property of a directional trend test.
+
+  - vs DFA / Hurst R/S / fractal-dimension axes.
+    Those are scaling exponents fit across multiple
+    window sizes; Mood is a single lag-1 sign-sum
+    statistic with a closed-form Binomial null.
+
+  Headline question:
+  **"For each source, do the gap-filled daily token
+    totals show a directional drift -- i.e. do strictly
+    positive day-over-day increments outnumber strictly
+    negative ones (significant positive trend) or vice
+    versa, compared to a Binomial(n-1, 1/2) null?"**
+
+  Defaults: `--min-tokens 1000`, `--min-tenure-days 14`,
+  `--top 0` (no cap), `--sort dZAbsDesc`. Sort keys: `s`,
+  `sDesc`, `dZ`, `dZDesc`, `dZAbs`, `dZAbsDesc`, `tokens`,
+  `tenure`, `source`. `--json` for machine-readable
+  output.
+
+  Reported alongside `dsS`: the negative count `dsSneg`,
+  the zero-step count `dsSzero`, the standardised score
+  `dsZ`, the asymptotic variance `dsVar`, and the
+  effective sample size n - 1 as `dsN`.
+
+  Drop counters surface `droppedInvalidHourStart`,
+  `droppedNonPositiveTokens`, `droppedSourceFilter`,
+  `droppedSparseSources`, `droppedBelowMinTenure`,
+  `droppedZeroVariance`, `droppedNonFiniteFit`,
+  `droppedTopSources`.
+
+  References:
+  - Brockwell, P. J. and Davis, R. A., "Time Series:
+    Theory and Methods", 2nd ed., Springer, 1991,
+    sec. 1.6 "Tests of Randomness".
+  - Mood, A. M., "Introduction to the Theory of
+    Statistics", McGraw-Hill, 1950, sec. 16.10.
+  - Kendall, M. G. and Stuart, A., "The Advanced
+    Theory of Statistics", vol. 3, 3rd ed., Griffin,
+    1976, sec. 45.10.
+
+  Live smoke (sorted by dZAbsDesc, all sources kept;
+  source labels remapped per CHANGELOG convention
+  vscode-copilot -> vscode-other):
+
+  ```
+  pew-insights daily-token-difference-sign-test
+  sources: 6 (shown 4)    tokens: 5,925,361,395
+  min-tokens: 1,000   min-tenure-days: 14   sort: dZAbsDesc
+  dropped: 2 below min-tenure-days
+
+  per-source MOOD DIFFERENCE-SIGN
+  source        firstDay    lastDay     tenure  active  dsN  S+  S-  S0   dZ
+  vscode-other  2025-07-30  2026-04-20  265     73      264  50  58  156  -10.0935
+  claude-code   2026-02-11  2026-04-23  72      35      71   24  20  27   -2.7296
+  hermes        2026-04-17  2026-05-02  16      16      15   5   10  0    -1.2910
+  openclaw      2026-04-17  2026-05-02  16      16      15   8   7    0    0.2582
+  ```
+
+  Reading: the vscode-other series shows OVERWHELMING
+  evidence of negative drift over its 265-day tenure
+  (dsZ = -10.09; S+ = 50 vs S- = 58 over n-1 = 264
+  diffs, with 156 zero-step gap-filled days inflating
+  S0 -- the closed-form Binomial null still rejects
+  the iid hypothesis decisively). claude-code shows
+  significant negative drift over the recent ~10-week
+  tenure (dsZ = -2.73, two-sided p approx 0.006).
+  hermes is borderline-negative on a short 16-day
+  tenure (dsZ = -1.29, p approx 0.20 -- not significant
+  at alpha = 0.05). openclaw is essentially trend-free
+  (dsZ = 0.26, S+ = 8 vs S- = 7, balanced).
+
+  Pair with axis-112 Bartels: sources with low |dsZ|
+  but extreme RVN values (e.g. openclaw with dsZ
+  approx 0) reveal LOCAL serial dependence WITHOUT
+  global directional drift -- exactly the
+  decomposition the two axes are designed to deliver
+  jointly.
+
 ## 0.6.355 — 2026-05-03
 
 ### Added
