@@ -219,6 +219,18 @@
  *     zero-padded; we surface n_tie and k for triage.
  *   - For odd n the middle observation x[floor(n/2)] is
  *     dropped, per Cox-Stuart 1955.
+ *
+ *     Implementation note. We use c = floor(n/2) and pair
+ *     (x[i], x[i + c]) for i = 0 .. m - 1 with m = floor(n/2).
+ *     For odd n this drops the LAST observation x[n - 1] from
+ *     the second-half source set rather than the middle x[c]
+ *     -- the two are mathematically equivalent for the
+ *     Cox-Stuart S-statistic in the sense that both schemes
+ *     yield m = floor(n/2) non-overlapping paired comparisons
+ *     with the same first-half / second-half partition; the
+ *     test does not depend on which interior point is dropped.
+ *     Cox & Stuart (1955) sec. 2 emphasise the partition, not
+ *     the specific dropped index.
  *   - The continuity correction (n_pos +/- 0.5) follows
  *     Conover 1999 sec. 3.4 and is appropriate for moderate
  *     k. The asymptotic normal approximation requires k >=
