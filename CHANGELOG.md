@@ -2,6 +2,158 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.346 — 2026-05-02
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-THIRD):
+  `pew-insights daily-token-spectral-flux`.
+
+  Per-source SPECTRAL FLUX -- mean L2 distance between
+  consecutive unit-energy one-sided non-DC periodograms of
+  length-`W` sliding windows (hop `H`) across the gap-filled
+  mean-centred daily total_tokens series. Defaults
+  `W = 7` days, `H = 1` day (Tzanetakis & Cook, IEEE Trans.
+  Speech Audio Proc. 10(5), 2002, eq. 3; Lerch, "An
+  Introduction to Audio Content Analysis", Wiley-IEEE, 2012,
+  sec. 3.3.4).
+
+  Construction. Slide a window of length `W` across the
+  tenure series with hop `H`, producing `F = floor((n - W) / H)
+  + 1` frames. For each frame compute the mean-centred
+  one-sided non-DC periodogram `P_i[k]` for `k = 1..K =
+  floor(W/2)`, then L2-normalise to unit energy
+  `Q_i = P_i / ||P_i||_2`. Frames whose mean-centred PSD
+  has zero total power (constant window) are surfaced as
+  `nFramesZero` and excluded from the pairing; consecutive-
+  frame gaps caused by such drops are bridged. The headline
+  scalar is
+
+      fluxMean = (1 / nPairs) * sum_{i->j} ||Q_j - Q_i||_2
+
+  the AVERAGE frame-to-frame spectral L2 distance of unit-
+  energy PSDs over the tenure. Reported alongside fluxMax /
+  fluxMin / nFrames / nFramesZero / nPairs / nFreqBins.
+
+  CLASS-DYNAMIC-SPECTRAL primitive, FRAME-ORDER SENSITIVE --
+  the FIRST primitive in the suite that summarises the
+  TEMPORAL CHANGE RATE of the local spectrum, rather than
+  any property of the whole-tenure static spectrum.
+  Structurally orthogonal to every static-spectrum axis
+  (84 DFT-slope, 85 Wiener-flatness, 86 centroid, 87
+  bandwidth, 88 rolloff, 89 crest, 90 skewness, 91 kurtosis,
+  92 decrease, 93 irregularity, 94 spread-iqr, 95 roughness,
+  96 peak-frequency, 97 second-peak-frequency, 98 tail-
+  flatness, 99 Renyi-2, 100 Renyi-half, 101 Renyi-3, 102
+  spectral-contrast), all of which are time-permutation
+  invariant on the frame multiset and therefore unchanged by
+  any reordering of the underlying frames.
+
+  ### Structural orthogonality
+
+  - vs all static-spectrum axes 84-102: every prior axis
+    collapses the WHOLE-tenure PSD to a single scalar via
+    the periodogram operator, which is a sum over global
+    cosine/sine projections; the operator does not see frame
+    order. So two series whose frames are the same multiset
+    of length-`W` windows but in a different temporal order
+    have IDENTICAL whole-tenure PSDs and therefore identical
+    axes 84-102 outputs. Axis-103 directly measures the
+    consecutive-frame transition `||Q_{i+1} - Q_i||_2`, so a
+    frame reorder generally changes fluxMean. The test suite
+    includes a witness: take a tenure of 32 days, cut it into
+    four non-overlapping length-8 frames, and compare flux
+    on the original frame order vs the swapped order
+    `[f0, f2, f1, f3]` -- fluxMean differs.
+  - vs the time-domain Hjorth-mobility / Hjorth-complexity
+    axes (79, 80) and Teager-Kaiser (81): those are POINTWISE
+    successive-difference statistics on `x` itself
+    (first-difference variance, second-difference variance,
+    pointwise instantaneous energy). Axis-103 is a SLIDING-
+    WINDOW spectral L2 distance between sub-band PSDs across
+    ENTIRE windows. Two series with identical Hjorth mobility
+    / complexity can have arbitrarily different fluxMean
+    depending on whether window-local frequency content is
+    piecewise constant (low flux) or rapidly drifting (high
+    flux).
+  - vs sample / permutation / approximate entropy on the
+    time series (axes 71, 73, 74): those are pattern-
+    recurrence entropies on amplitude embeddings. Axis-103
+    is a spectral-domain L2 frame distance.
+  - vs the curvature-sign-change-rate axis (82) and the LZ
+    complexity axis (83): both are symbolic-sequence
+    statistics on the time-domain signal. Axis-103 lives in
+    the SPECTRAL domain on a per-frame basis.
+  - vs the autocorrelation lag-1 / lag-7 axes: those are
+    normalised inner products of the WHOLE series with itself
+    at a single lag; they do not decompose the series into
+    temporally adjacent SPECTRAL fingerprints.
+
+  ### Bounds and sanity anchors
+
+  - fluxMean is in `[0, sqrt(2)]`. Each `Q_i` is a unit L2
+    vector; `||Q_j - Q_i||_2 <= 2` by triangle inequality
+    and the maximum on the unit sphere of `K` dimensions is
+    `sqrt(2)` (orthogonal unit vectors). `fluxMean = 0` iff
+    every consecutive frame pair has the same unit-energy
+    PSD; `fluxMax = sqrt(2)` is achievable only with strictly
+    orthogonal consecutive PSDs.
+  - Identical frames -> all consecutive distances are 0 ->
+    `fluxMean = 0` (test).
+  - Pure stationary tone over the whole series -> per-window
+    PSDs nearly identical -> `fluxMean` near 0 (test:
+    `fluxMean < 0.5` on a 64-day single-frequency sine).
+  - Two orthogonal pure-tone frames -> consecutive distance
+    `~ sqrt(2)` (test asserts within 0.05 of `sqrt(2)`).
+  - All-constant frames are zero-power and dropped via
+    `nFramesZero`; if fewer than two surviving frames remain
+    the source is dropped as `droppedNoFramePair`.
+
+  ### CLI
+
+      pew-insights daily-token-spectral-flux                  # defaults: window=7, hop=1
+      pew-insights daily-token-spectral-flux --window 7 --hop 7   # non-overlapping weekly
+      pew-insights daily-token-spectral-flux --json --debug       # add framePsdEnergy
+
+  Options:
+  `--since`, `--until`, `--source`, `--min-tokens`,
+  `--min-tenure-days`, `--window`, `--hop`, `--top`,
+  `--sort`, `--debug`, `--json`. Hard floor on
+  `--min-tenure-days` is `window + hop` so at least two
+  frames can be cut and one consecutive pair can be formed.
+
+  ### Live smoke (real `~/.config/pew/queue.jsonl`)
+
+  Run with defaults `--window 7 --hop 1 --min-tenure-days 8`
+  on the local pew queue (2,405 hour-rows, 6 sources) on
+  2026-05-02:
+
+      source       tenure  active  nFrames  nFramesZero  nPairs  K  fluxMean   fluxMax    fluxMin   totalTokens
+      opencode      13d     13d     7        0            6       3  0.591468   1.068981   0.069712  5,846,662,173
+      openclaw      16d     16d     10       0            9       3  0.457546   1.128165   0.029767  2,175,039,257
+      claude-code   72d     35d     66       6            59      3  0.198461   1.101433   0.000000  3,442,385,788
+
+  Reading these:
+  - `claude-code` has the lowest fluxMean (0.198) despite the
+    longest tenure: across 59 consecutive 7-day frames the
+    local spectrum is comparatively stable. It also has 6
+    zero-power frames (`nFramesZero = 6`) -- entire weeks
+    where claude-code was idle and the mean-centred window
+    was constant zero -- which the algorithm correctly drops
+    while bridging the surrounding frame pairs.
+  - `openclaw` has fluxMean 0.458 over 9 pairs: the local
+    spectrum drifts quite a bit week-to-week.
+  - `opencode` has the highest fluxMean (0.591) over only 6
+    pairs (13-day tenure): a high-volatility, short-tenure
+    spectrum.
+  - `fluxMin = 0.0` on `claude-code` arises from at least one
+    consecutive pair with effectively identical unit-energy
+    PSDs (numerical floor); `fluxMax = 1.128` on `openclaw`
+    is well below the theoretical ceiling `sqrt(2) ~ 1.414`,
+    confirming the bound holds on real data.
+
+  Test count: +41 (9980 -> 10021).
+
 ## 0.6.345 — 2026-05-02
 
 ### Added
