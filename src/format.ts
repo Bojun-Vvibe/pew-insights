@@ -17242,6 +17242,7 @@ import type { DailyTokenSpectralBandwidthReport } from './dailytokenspectralband
 import type { DailyTokenSpectralRolloffReport } from './dailytokenspectralrolloff.js';
 import type { DailyTokenSpectralCrestFactorReport } from './dailytokenspectralcrestfactor.js';
 import type { DailyTokenSpectralSkewnessReport } from './dailytokenspectralskewness.js';
+import type { DailyTokenSpectralKurtosisReport } from './dailytokenspectralkurtosis.js';
 
 export function renderDailyTokenSpectralFlatnessWiener(
   r: DailyTokenSpectralFlatnessWienerReport,
@@ -19621,6 +19622,83 @@ export function renderDailyTokenCurvatureSignChangeRate(
     formatNumber(s.comparablePairs),
     s.cscRate.toFixed(4),
     s.cscNormalized.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpectralKurtosis(
+  r: DailyTokenSpectralKurtosisReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-spectral-kurtosis'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedTooFewUsableBins)} too-few-usable-bins, ${formatNumber(r.droppedZeroBandwidth)} zero-bandwidth, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPECTRAL KURTOSIS = fourth standardised central moment of P[k] about the spectral centroid mu over surviving non-DC bins of the gap-filled mean-centred daily total_tokens series. NINETY-FIRST cross-source axis; closes the SPECTRAL OCTAD (84 DFT-slope, 85 Wiener-flatness, 86 centroid, 87 bandwidth, 88 rolloff, 89 crest, 90 skewness, 91 KURTOSIS). kurtosis = m4 / sigma^4 (Pearson; >= 1); excessKurtosis = kurtosis - 3 (Fisher; Gaussian baseline 0). kurtosis > 3 -> leptokurtic / sharp peak with heavy tails; kurtosis < 3 -> platykurtic / flatter-topped; ~3 -> Gaussian-shaped reference. Pearson 1916 inequality kurtosis >= 1 + skewness^2; Wilkins 1944 envelope kurtosis <= (m^2-3m+3)/(m-1) on m-point support. References: Peeters 2004 CUIDADO IRCAM TR §6.1.4; Lerch 2012 §3.3.1; Antoni 2006 Mech. Syst. Signal Proc. 20(2); Pearson 1916 Phil. Trans. Roy. Soc. A 216; Wilkins 1944 Annals Math. Stat. 15(3). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal PRESERVES kurtosis exactly while flipping skewness sign (the precise orthogonality witness vs axis 90). Structurally orthogonal to skewness 90 (SIGNED 3rd vs SIGN-BLIND 4th moment), bandwidth 87 (sigma vs sigma-standardised shape), crest 89 (PEAK-RATIO bin-permutation INVARIANT), rolloff 88 (CDF QUANTILE), centroid 86 (location vs location-blind shape), flatness 85 (GM/AM bounded), DFT-slope 84, spectral-entropy 69, Hjorth 79/80, source-row spectral kurtosis, and all permutation-invariant amplitude-shape axes 32-67.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source SPECTRAL KURTOSIS (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'usable',
+    'mean',
+    'stddev',
+    'centroidBin',
+    'bandwidth',
+    'fourthMoment',
+    'kurtosis',
+    'excess',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.usableBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.centroidBin.toFixed(4),
+    s.bandwidth.toFixed(4),
+    s.fourthCentralMoment.toFixed(4),
+    s.kurtosis.toFixed(4),
+    s.excessKurtosis.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

@@ -142,6 +142,7 @@ import {
   renderDailyTokenSpectralRolloff,
   renderDailyTokenSpectralCrestFactor,
   renderDailyTokenSpectralSkewness,
+  renderDailyTokenSpectralKurtosis,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -446,6 +447,7 @@ import { buildDailyTokenSpectralBandwidth } from './dailytokenspectralbandwidth.
 import { buildDailyTokenSpectralRolloff } from './dailytokenspectralrolloff.js';
 import { buildDailyTokenSpectralCrestFactor } from './dailytokenspectralcrestfactor.js';
 import { buildDailyTokenSpectralSkewness } from './dailytokenspectralskewness.js';
+import { buildDailyTokenSpectralKurtosis } from './dailytokenspectralkurtosis.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -18952,6 +18954,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenSpectralSkewness(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-spectral-kurtosis')
+  .description(
+    "Per-source SPECTRAL KURTOSIS = fourth standardised central moment of P[k] about the spectral centroid mu = sum k*P[k]/sum P[k] over surviving non-DC bins of the gap-filled mean-centred daily total_tokens series (NINETY-FIRST cross-source axis; closes the SPECTRAL OCTAD). kurtosis = m4/sigma^4 (Pearson; >= 1); excessKurtosis = kurtosis - 3 (Fisher; Gaussian baseline 0). Sign-blind, location-blind, scale-blind shape descriptor: > 3 leptokurtic (sharp peak with heavy tails); < 3 platykurtic (flatter-topped); ~ 3 Gaussian-shaped. Pearson 1916 inequality kurtosis >= 1 + skewness^2; Wilkins 1944 envelope kurtosis <= (m^2-3m+3)/(m-1) on m-point support. References: Peeters 2004 CUIDADO IRCAM TR §6.1.4 (canonical definition); Lerch 2012 §3.3.1 (peakedness/tail-weight descriptor in moment sequence centroid->spread->skewness->KURTOSIS); Antoni 2006 Mech. Syst. Signal Proc. 20(2) (engineering reference / non-stationarity detector); Pearson 1916 Phil. Trans. Roy. Soc. A 216 (foundational definition); Wilkins 1944 Annals Math. Stat. 15(3) (algebraic envelope). Shift-, scale-(any non-zero a)-, sign-flip-, time-reversal-invariant; bin-permutation-SENSITIVE; bin-reversal PRESERVES kurtosis exactly while flipping skewness sign (the precise structural orthogonality witness vs axis 90). Structurally orthogonal to (a) spectral-skewness 90 (SIGNED 3rd moment vs SIGN-BLIND 4th moment -- equal-skewness PSDs have very different kurtosis); (b) spectral-bandwidth 87 (sigma vs sigma-standardised shape); (c) spectral-crest 89 (PEAK-RATIO bin-permutation INVARIANT); (d) spectral-rolloff 88 (CDF QUANTILE); (e) spectral-centroid 86 (location vs location-blind shape); (f) flatness 85 (GM/AM bounded in [0,1] vs unbounded shape); (g) DFT-power-law-slope 84 (LOG-LOG slope vs LINEAR-AXIS 4th moment); (h) spectral-entropy 69; (i) Hjorth 79/80; (j) source-row spectral kurtosis (per-row stream vs daily-aggregate stream); (k) all permutation-invariant amplitude-shape axes 32-67.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: kurtDesc (default; kurtosis desc) | kurt (asc) | excessAbsDesc (|excess| desc) | tokens | tenure | source.',
+    'kurtDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'kurt',
+          'kurtDesc',
+          'excessAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpectralKurtosis(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'kurt'
+            | 'kurtDesc'
+            | 'excessAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenSpectralKurtosis(report) + '\n');
         }
       } catch (e) {
         die(e);
