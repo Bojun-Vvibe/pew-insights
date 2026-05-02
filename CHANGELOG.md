@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.338 — 2026-05-02
+
+### Added
+
+- New cross-source axis (NINETY-FIFTH):
+  `pew-insights daily-token-spectral-roughness`.
+
+  Per-source SPECTRAL ROUGHNESS -- the Rudin-Osher-Fatemi 1992
+  discrete TOTAL VARIATION primitive transplanted onto the
+  L1-NORMALISED one-sided non-DC periodogram of the gap-filled
+  mean-centred daily total_tokens series. For the periodogram
+  P[k], k = 1..K with K = floor(n/2), let p[k] = P[k] / sum_j P[j]
+  be the L1-normalised PSD treated as a probability mass function
+  on the bin index k. Then
+
+      roughness = sum_{k=1..K-1} |p[k+1] - p[k]|     in [0, 2]
+
+  This is a FIRST-ORDER L1 TV descriptor on the normalised PSD
+  pmf -- the discrete analogue of integral |dp/dk| over the
+  spectrum. Reading: roughness ~ 0 -> the L1-normalised PSD is
+  nearly flat bin-to-bin (smooth / white-noise-like spectrum);
+  roughness ~ 1 -> a single boundary spike or alternating comb
+  at small K; roughness -> 2 -> a single isolated INTERIOR
+  spike (cum-up + cum-down each contribute the spike's full
+  normalised mass).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`:
+
+  - `claude-code`: tenure 72 days, K = 36 bins,
+    totalPower = 8.5717e+17, absDiffSum = 2.2958e+17,
+    roughness = 0.2678. Modest TV across the spectrum -- the
+    PSD shape varies gently bin-to-bin, consistent with a
+    workload whose daily mass is broad-but-front-loaded
+    (matching the axis-94 spreadIqr = 0.6389 reading on the
+    same carrier).
+  - `vscode-other`: tenure 265 days, K = 132 bins,
+    totalPower = 9.6767e+10, absDiffSum = 8.9674e+10,
+    roughness = 0.9267. Substantially rougher PSD -- the
+    L1-normalised pmf jumps sharply between adjacent bins,
+    pointing to a spectrum dominated by a few isolated peaks
+    rather than a smooth broadband shape. This is the
+    orthogonality witness vs axis-94 spreadIqr = 0.5379 on the
+    same series: a moderately broad inner-50% (0.5379) AND a
+    high adjacent-bin TV (0.9267) is the structural fingerprint
+    of an isolated-peak spectrum sitting on a low broadband
+    floor.
+
+  Reference: Rudin, L., Osher, S., Fatemi, E., "Nonlinear total
+  variation based noise removal algorithms", Physica D 60 (1992)
+  -- canonical TV primitive; this axis transplants the discrete
+  TV functional onto the PSD pmf instead of a 2D image signal.
+  Krishnamoorthy, P. & Kumar, S., "Hierarchical audio content
+  classification system using an optimal feature selection
+  algorithm", Multimedia Tools and Applications 54 (2011) §3.2
+  -- spectral roughness on a normalised PSD. Klapuri, A. & Davy,
+  M., "Signal Processing Methods for Music Transcription",
+  Springer, 2006, §5 -- spectral descriptors and the role of
+  TV-of-spectrum statistics.
+
+  Invariances: shift-, scale-(any non-zero a)-, sign-flip-,
+  time-reversal-, AND bin-reversal-invariant (TV is reversal-
+  blind in magnitude -- reversing the pmf flips every difference
+  sign but preserves its absolute value); bin-permutation-
+  SENSITIVE; tail-INSENSITIVE (the TV is bounded by 2 even when
+  one bin carries arbitrary mass). Structural orthogonality vs
+  every shipped daily-token axis 32..94: against axis-93
+  spectral-irregularity (FIRST-order L1 on the NORMALISED pmf
+  vs SECOND-order L2 squared-difference on the RAW periodogram
+  -- L1 vs L2, raw vs normalised, all at once); against axis-94
+  spectral-spread-IQR (LOCAL adjacent-bin TV vs GLOBAL inner-50%
+  percentile gap -- a narrow contiguous band has small IQR + small
+  roughness, an isolated spike has small IQR + large roughness);
+  against axes 87/90/91 bandwidth/skewness/kurtosis (centroid-
+  relative central moments are bin-multiset summaries; roughness
+  is bin-order-sensitive); against axis-88 rolloff (single CDF
+  quantile vs sum-over-all-adjacent-pairs derivative); against
+  axis-86 centroid (LOCATION vs SHAPE); against axes 89/85/69
+  crest/flatness/spectral-entropy (BIN-PERMUTATION INVARIANT
+  whereas roughness is bin-order-sensitive); against axis-84
+  DFT-power-law-slope (LOG-LOG global slope vs linear-axis pmf
+  TV); against axis-92 spectral-decrease (FIXED bin-1 anchor +
+  bin-reversal SENSITIVE; roughness IS bin-reversal-invariant);
+  against all permutation-invariant amplitude-shape axes 32-67
+  (time-domain shuffle-invariant whereas roughness is bin-order-
+  sensitive in the FREQUENCY domain). Throws when the series is
+  too short (n < 8 -> K < 4 candidate bins), when a non-finite
+  value is present, when var(y) = 0 (every bin is exactly 0
+  power), when the cumulative PSD denominator is non-positive
+  (degenerate all-zero spectrum), or when the computed roughness
+  is non-finite. Test count: 9552 -> 9605 (+53).
+
 ## 0.6.337 — 2026-05-02
 
 ### Added
