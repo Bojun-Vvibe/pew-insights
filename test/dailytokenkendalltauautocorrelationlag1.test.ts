@@ -473,3 +473,18 @@ test('buildDailyTokenKendallTauAutocorrelationLag1: report carries correct meta 
   assert.equal(r.top, 5);
   assert.equal(r.sort, 'tau');
 });
+
+test('dailyTokenKendallTauAutocorrelationLag1: pair-count partition holds for tie-heavy zero-padded series', () => {
+  // Edge case: a sparse-day series with many zero-padded gaps.
+  // The five pair categories must always partition all
+  // m*(m-1)/2 unordered comparisons exactly.
+  const x = [0, 100, 0, 0, 200, 0, 0, 0, 50, 0, 0, 75];
+  const r = dailyTokenKendallTauAutocorrelationLag1(x);
+  const total =
+    r.nConcordant + r.nDiscordant + r.nTiedU + r.nTiedV + r.nTiedBoth;
+  assert.equal(total, r.nComparisons);
+  // m = 11 -> comparisons = 55
+  assert.equal(r.nComparisons, 55);
+  // tau still in valid range despite heavy ties.
+  assert.ok(r.tau >= -1 && r.tau <= 1, `tau out of bounds: ${r.tau}`);
+});

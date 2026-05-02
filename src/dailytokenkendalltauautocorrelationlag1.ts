@@ -288,7 +288,9 @@ export interface DailyTokenKendallTauAutocorrelationLag1Report {
  *
  * Closed-form sanity anchors:
  *   - strictly monotone increasing series x = (1, 2, 3, ...)
- *     -> u = (1..n-1), v = (2..n), tau_b = +1.
+ *     -> u = (x[0], .., x[n-2]), v = (x[1], .., x[n-1]),
+ *     every unordered pair-of-pairs is concordant (both
+ *     u and v rise together with i), so tau_b = +1.
  *   - strictly monotone decreasing -> tau_b = +1 (both u
  *     and v decrease in lockstep, every pair is concordant
  *     in the decreasing direction).
