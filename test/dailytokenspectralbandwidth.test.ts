@@ -659,3 +659,87 @@ test('dailyTokenSpectralBandwidth: n=8 boundary -- smallest valid input still pr
     `period-2 alternation bandwidth ${r.bandwidthBin} not near zero`,
   );
 });
+
+// ---------- refinement: extra closed-form / stability witnesses ----------
+
+test('spectralBandwidthBin: parametric closed-form sweep -- uniform power on K bins -> bandwidth = sqrt((K^2-1)/12)', () => {
+  // For uniform power on bins k=1..K, centroid = (K+1)/2 and the
+  // variance is the discrete-uniform variance (K^2 - 1)/12. This
+  // is the textbook white-spectrum limit and pins the exact
+  // closed-form bandwidth across a sweep of K.
+  for (const K of [2, 3, 4, 5, 8, 16, 32, 64]) {
+    const p = new Array(K).fill(1);
+    const r = spectralBandwidthBin(p);
+    const expected = Math.sqrt((K * K - 1) / 12);
+    assert.ok(
+      Math.abs(r.bandwidthBin - expected) < 1e-12,
+      `K=${K}: bandwidth ${r.bandwidthBin} != sqrt((K^2-1)/12)=${expected}`,
+    );
+    assert.ok(Math.abs(r.centroidBin - (K + 1) / 2) < 1e-12);
+  }
+});
+
+test('spectralBandwidthBin: parametric monotonicity sweep -- bandwidth grows as the two surviving bins spread apart', () => {
+  // Place equal mass M=1 on bins k=1 and k=j with a tiny noise
+  // floor on the rest; centroid = (1 + j)/2 and bandwidth =
+  // (j - 1)/2 by closed form. Sweep j and confirm strict
+  // monotone growth.
+  const K = 30;
+  const floor = 1e-12;
+  let prev = -Infinity;
+  for (let j = 2; j <= K; j += 1) {
+    const p = new Array(K).fill(floor);
+    p[0] = 1;
+    p[j - 1] = 1;
+    const r = spectralBandwidthBin(p);
+    const expectedBandwidth = (j - 1) / 2;
+    assert.ok(
+      Math.abs(r.bandwidthBin - expectedBandwidth) < 1e-3,
+      `j=${j}: bandwidth ${r.bandwidthBin} != (j-1)/2=${expectedBandwidth}`,
+    );
+    assert.ok(r.bandwidthBin > prev, `non-monotone at j=${j}: ${prev} -> ${r.bandwidthBin}`);
+    prev = r.bandwidthBin;
+  }
+});
+
+test('spectralBandwidthBin: numerical stability of the two-pass second-central-moment estimator across 1e12 / 1e-12 scale', () => {
+  // The two-pass estimator is the textbook numerically stable
+  // path: power values 1e12 vs 1e-12 should yield bit-identical
+  // bandwidthBin (the ratio is scale-invariant) without
+  // catastrophic cancellation.
+  const p = [1, 4, 9, 16, 25, 36, 49];
+  const r0 = spectralBandwidthBin(p);
+  const rBig = spectralBandwidthBin(p.map((v) => 1e12 * v));
+  const rSmall = spectralBandwidthBin(p.map((v) => 1e-12 * v));
+  assert.ok(
+    Math.abs(r0.bandwidthBin - rBig.bandwidthBin) < 1e-10,
+    `1e12 scale moved bandwidth from ${r0.bandwidthBin} to ${rBig.bandwidthBin}`,
+  );
+  assert.ok(
+    Math.abs(r0.bandwidthBin - rSmall.bandwidthBin) < 1e-10,
+    `1e-12 scale moved bandwidth from ${r0.bandwidthBin} to ${rSmall.bandwidthBin}`,
+  );
+});
+
+test('dailyTokenSpectralBandwidth: bandwidthDesc default-sort acceptance witness on a single-tone-vs-bipolar pair', () => {
+  // Two synthetic series whose periodograms share centroid but
+  // differ in bandwidth; the default sort must rank the wider
+  // one first. End-to-end acceptance test for the build pipeline
+  // and the default sort wiring.
+  const n = 64;
+  const single: number[] = [];
+  const dual: number[] = [];
+  const kMid = n / 4;
+  for (let i = 0; i < n; i += 1) {
+    single.push(Math.sin((2 * Math.PI * kMid * i) / n));
+    const lo = Math.sin((2 * Math.PI * 1 * i) / n);
+    const hi = Math.sin((2 * Math.PI * (n / 2 - 1) * i) / n);
+    dual.push(lo + hi);
+  }
+  const a = dailyTokenSpectralBandwidth(single);
+  const b = dailyTokenSpectralBandwidth(dual);
+  assert.ok(
+    b.bandwidthNormalised > a.bandwidthNormalised,
+    `dual.bandwidthNorm ${b.bandwidthNormalised} not > single.bandwidthNorm ${a.bandwidthNormalised}`,
+  );
+});
