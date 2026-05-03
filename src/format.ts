@@ -20261,6 +20261,7 @@ import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosampleh
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
 import type { DailyTokenWassersteinOneHalvesReport } from './dailytokenwassersteinonehalves.js';
+import type { DailyTokenEnergyDistanceHalvesReport } from './dailytokenenergydistancehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22212,6 +22213,97 @@ export function renderDailyTokenWassersteinOneHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: wassW1 in [0, +inf) with units of tokens (data-support space); wassZ = wassW1 / pooledMad is dimensionless and cross-source-comparable; wassZ approx 0 = halves agree; wassZ >> 1 = halves are several robust-scale units apart in L1 transport cost. wassW1 is intrinsically UNSIGNED -- wassDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); wassZSigned = wassDir * wassZ is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119/120. W1 is the SUPPORT-SPACE L1 companion to axis-120 CvM (PROBABILITY-SPACE L2 with uniform weight) and axis-119 AD (PROBABILITY-SPACE L2 with tail-amplifying inverse-variance weight). W1 is also the L1-INTEGRATED partner to axis-118 KS (L_infinity sup-norm in probability space): a single localised CDF spike of height h over a narrow support of width w gives KS = h and W1 = h*w.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenEnergyDistanceHalves(
+  r: DailyTokenEnergyDistanceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-energy-distance-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ENERGY DISTANCE TWO-SAMPLE TEST (Szekely & Rizzo 2004) comparing FIRST half vs SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-SECOND cross-source axis. Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST in CHARACTERISTIC-FUNCTION space (Szekely 2002 BGSU TR 02-16; Szekely & Rizzo 2013 JSPI 143(8):1249-1272): enE = 2*E|X-Y| - E|X-X'| - E|Y-Y'| with V-statistic estimator (2/(n1*n2))*sum|A-B| - (1/n1^2)*sum|A-A| - (1/n2^2)*sum|B-B|; equivalent to (1/pi)*integral_R |phi_A(t)-phi_B(t)|^2/t^2 dt (Feuerverger 1993, JTSA 14(2):129-145). enT = n1*n2/(n1+n2)*enE is the canonical scaled energy test statistic with weighted-chi-squared null limit. enZ = sqrt(enE)/pooledMad scale-normalises by the pooled robust dispersion to yield a cross-source-comparable EFFECT SIZE; enZSigned = sign(median(B)-median(A))*enZ. CHARACTERISTIC-FUNCTION-SPACE companion to axis-121 W1 (QUANTILE-INTEGRAL space), axis-120 CvM (PROBABILITY-SPACE L2), axis-119 AD (PROBABILITY-SPACE tail-weighted L2), and axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because energy distance weights the squared CF gap by the 1/t^2 frequency kernel while ECDF-space statistics weight CDF gaps by mass density / pointwise max / inverse-variance.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source energy-distance two-sample (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'poolMed',
+    'poolMad',
+    'enE',
+    'enT',
+    'enZ',
+    'enDir',
+    'enZSigned',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.enN1),
+    formatNumber(s.enN2),
+    formatNumber(s.enMedianA),
+    formatNumber(s.enMedianB),
+    formatNumber(s.enPooledMedian),
+    formatNumber(s.enPooledMad),
+    s.enE.toFixed(4),
+    s.enT.toFixed(4),
+    s.enZ.toFixed(4),
+    s.enDir.toFixed(0),
+    s.enZSigned.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: enE in [0, +inf) with units of tokens (energy kernel d(x,y)=|x-y| is 1-homogeneous); enT = n1*n2/(n1+n2)*enE is the canonical scaled energy statistic with weighted-chi-squared null limit (Szekely & Rizzo 2013 Theorem 2); enZ = sqrt(enE)/pooledMad is dimensionless and cross-source-comparable; enZ approx 0 = halves agree (Szekely & Rizzo 2013 Theorem 1: enE = 0 iff F_A = F_B); enZ >> 1 = halves are several robust-scale units apart in CF-weighted L2 distance. enE is intrinsically UNSIGNED -- enDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); enZSigned = enDir * enZ is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119/120/121. Energy distance lives in CHARACTERISTIC-FUNCTION SPACE while W1 (axis-121) lives in QUANTILE-INTEGRAL space, CvM/AD (axis-120/119) live in PROBABILITY space, and KS (axis-118) lives in pointwise-L_infinity probability space; the four are not monotone images of one another.)`,
     ),
   );
 

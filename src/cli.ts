@@ -173,6 +173,7 @@ import {
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
   renderDailyTokenWassersteinOneHalves,
+  renderDailyTokenEnergyDistanceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -508,6 +509,7 @@ import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
 import { buildDailyTokenWassersteinOneHalves } from './dailytokenwassersteinonehalves.js';
+import { buildDailyTokenEnergyDistanceHalves } from './dailytokenenergydistancehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37547,6 +37549,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWassersteinOneHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-energy-distance-halves')
+  .description(
+    "Per-source ENERGY DISTANCE TWO-SAMPLE TEST (Szekely & Rizzo 2004) comparing the empirical distributions of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWENTY-SECOND cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST in CHARACTERISTIC-FUNCTION space (Szekely 2002 BGSU TR 02-16; Szekely & Rizzo 2004, InterStat; Szekely & Rizzo 2013, Journal of Statistical Planning and Inference 143(8):1249-1272): enE = 2*E|X-Y| - E|X-X'| - E|Y-Y'| with V-statistic estimator enE = (2/(n1*n2))*sum|A_i-B_j| - (1/n1^2)*sum|A_i-A_j| - (1/n2^2)*sum|B_i-B_j|; equivalent to (1/pi)*integral_R |phi_A(t)-phi_B(t)|^2 / t^2 dt by Feuerverger 1993, J. Time Series Anal. 14(2):129-145. enT = n1*n2/(n1+n2)*enE is the canonical scaled energy test statistic with weighted-chi-squared null limit. enZ = sqrt(enE)/pooledMad scale-normalises by the pooled robust dispersion to yield a cross-source-comparable EFFECT SIZE; enZSigned = sign(median(B)-median(A))*enZ. CHARACTERISTIC-FUNCTION-SPACE companion to axis-121 W1 (QUANTILE-INTEGRAL space), axis-120 CvM (PROBABILITY-SPACE L2), axis-119 AD (PROBABILITY-SPACE tail-weighted L2), and axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because energy distance weights the squared CF gap by the 1/t^2 frequency kernel while ECDF-space statistics weight CDF gaps by mass density / pointwise max / inverse-variance.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for asymptotic regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: enTDesc (default) | enT | enE | enEDesc | enZ | enZDesc | enZSigned | enZSignedDesc | tokens | tenure | source.',
+    'enTDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'enE',
+          'enEDesc',
+          'enT',
+          'enTDesc',
+          'enZ',
+          'enZDesc',
+          'enZSigned',
+          'enZSignedDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenEnergyDistanceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'enE'
+            | 'enEDesc'
+            | 'enT'
+            | 'enTDesc'
+            | 'enZ'
+            | 'enZDesc'
+            | 'enZSigned'
+            | 'enZSignedDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenEnergyDistanceHalves(report) + '\n',
           );
         }
       } catch (e) {
