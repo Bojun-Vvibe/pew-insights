@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.390 — 2026-05-04
+
+### Added
+
+- `daily-token-pielou-evenness` —
+  ONE-HUNDRED-AND-FORTY-FOURTH cross-source axis. Per-source
+  PIELOU EVENNESS J of the per-day total_tokens distribution
+  (Pielou 1966, *J. Theoretical Biology* 13:131-144):
+
+      H = -sum_i s_i * ln(s_i),   s_i = D_i / sum_j D_j
+      J = H / ln(n)               for n >= 2
+
+  with D the per-source per-day total_tokens vector (one
+  scalar per UTC day, sum of hourly buckets). H is Shannon
+  ENTROPY in nats; J normalises against the uniform-
+  distribution maximum ln(n) so cross-source ranking of a
+  short-history series and a long-history series is on the
+  same `[0, 1]` scale. `J = 1` iff the daily mass is
+  perfectly flat; `J -> 0` iff one day carries all the mass.
+- `effectiveDaysShannon = exp(H)` — Hill (1973, *Ecology*
+  54:427) q=1 number, the "Shannon effective number of
+  equally-busy days". Cross-q complement to axis-143's
+  inverse-Simpson `1/HHI` (Hill q=2). Hill numbers are non-
+  increasing in q, so for any source `exp(H) >= 1/HHI`; the
+  GAP between the two surfaces TAIL THICKNESS that neither
+  index sees alone.
+- Structural orthogonality vs HHI (axis-143): HHI is L^2
+  (sum of squared shares, quadratic in shares); J is L^1-LOG
+  (Shannon entropy, concave in shares). Identical mass shifts
+  move HHI quadratically and H logarithmically; the two are
+  rank-correlated but not rank-equivalent (witness in source
+  docstring on (50,50,0.01x8) vs (30,30,30,1x7)).
+- Pure-compute primitive `pielouEvennessOfVector(values)`
+  with closed-form anchors: flat n-vector -> J=1 exactly,
+  H=ln(n); n=1 -> degenerate (J=0, nEff=1); D=[1..10] ->
+  H = ln(55) - (1/55) * sum_{k=1..10} k*ln(k), J = H/ln(10).
+- 19 tests covering empty / n=1 / flat / monopoly / scale-
+  invariance / permutation-invariance / non-positive
+  rejection / J in [0,1] / single-source dropping / source
+  filter / sort-evenness ranking / display filter
+  `--min-evenness` / option validation / determinism.
+- CLI: `--since`, `--until`, `--source`, `--min-tokens`,
+  `--min-days` (>=2), `--top`, `--sort`
+  (`evenness|entropy|tokens|days|source|meanDaily|effectiveDaysShannon`),
+  `--min-evenness`, `--json`. Renderer surfaces `H`, `maxH`,
+  `evenness`, `nEffShannon`, `maxShare`, `maxDay`.
+
+### Live smoke (queue.jsonl, 2026-05-04)
+
+`pew-insights daily-token-pielou-evenness` against the local
+pew queue (6 sources, 13.13B tokens; one source name redacted
+as `vscode-<src-d>`):
+
+| source         | days | H        | maxH     | J      | nEffShannon | maxShare |
+| ---            | ---  | ---      | ---      | ---    | ---         | ---      |
+| opencode       | 14   | 2.548897 | 2.639057 | 0.9658 | 12.793      | 0.1145   |
+| hermes         | 17   | 2.686898 | 2.833213 | 0.9484 | 14.686      | 0.1135   |
+| openclaw       | 17   | 2.605396 | 2.833213 | 0.9196 | 13.537      | 0.1577   |
+| vscode-<src-d> | 73   | 3.335910 | 4.290459 | 0.7775 | 28.104      | 0.1277   |
+| codex          |  8   | 1.463783 | 2.079442 | 0.7039 |  4.322      | 0.4814   |
+| claude-code    | 35   | 2.365690 | 3.555348 | 0.6654 | 10.651      | 0.3056   |
+
+Reading: `opencode` is structurally the MOST EVEN source on
+the queue (`J = 0.9658`, only 3.4% off the perfectly-flat
+ceiling) despite carrying the LARGEST absolute token mass
+(6.32B tokens) -- its 14 active days are within 0.115 of
+each other in share. `claude-code` is structurally the LEAST
+EVEN (`J = 0.6654`, ~33.5% below the ceiling); axis-143 also
+ranked it second-most concentrated (HHI=0.158), so the two
+axes AGREE on direction. `codex` ranks 5/6 on Pielou but 1/6
+on HHI -- a textbook L^1-vs-L^2 split: codex has only 8 days
+with a 0.48 maxShare, so HHI explodes (squared shares), but
+Pielou is dampened by ln(n=8)=2.08 in the denominator. Hill-
+number cross-check: for `vscode-<src-d>`, `nEffShannon =
+28.1` vs axis-143's `nEffSimpson = 1/0.0582 = 17.2` -- a
+GAP of 10.9 effective days, telling us the long 73-day
+history has a substantial EVEN TAIL of small days that
+Shannon (q=1) counts but Simpson (q=2) suppresses. For
+`codex` the same gap is `4.32 - 1/0.309 = 4.32 - 3.24 =
+1.08` -- a much narrower tail. Closed-form `J = H / ln(n)`
+reproduced bit-exactly on every row, as the test asserts.
+
 ## 0.6.389 — 2026-05-04
 
 ### Added

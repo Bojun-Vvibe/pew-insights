@@ -116,6 +116,7 @@ import {
   renderDailyTokenQuintileShareRatio,
   renderDailyTokenTopFourConcentrationRatio,
   renderDailyTokenHerfindahlHirschmanIndex,
+  renderDailyTokenPielouEvenness,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -552,6 +553,7 @@ import { buildDailyTokenKDivergenceHalves } from './dailytokenkdivergencehalves.
 import { buildDailyTokenPearsonSecondSkewness } from './dailytokenpearsonsecondskewness.js';
 import { buildDailyTokenTopFourConcentrationRatio } from './dailytokentopfourconcentrationratio.js';
 import { buildDailyTokenHerfindahlHirschmanIndex } from './dailytokenherfindahlhirschmanindex.js';
+import { buildDailyTokenPielouEvenness } from './dailytokenpielouevenness.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40119,6 +40121,133 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenHerfindahlHirschmanIndex(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-pielou-evenness')
+  .description(
+    "Per-source PIELOU EVENNESS J = H/ln(n), where H = -sum s_i ln s_i is the Shannon entropy of the per-day total_tokens shares s_i = D_i / sum_j D_j (ONE-HUNDRED-AND-FORTY-FOURTH cross-source axis). Pielou 1966; Hill 1973. Range [0, 1] for n>=2; 1 = perfectly flat across days, 0 = one-day monopoly. ENTROPY-BASED L^1-LOG functional -- structurally orthogonal to HHI (axis-143, sum of squared shares, L^2 quadratic) and to CR4 (axis-142, sparse top-k mass). Per row: shannonEntropy H, maxEntropy ln(n), evenness J, effectiveDaysShannon = exp(H) (Hill q=1 number complementary to axis-143's inverse-Simpson Hill q=2 number).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Pielou normalisation degenerate for n<2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: evenness (default) | entropy | tokens | days | source | meanDaily | effectiveDaysShannon. Applied before --top.',
+    'evenness',
+  )
+  .option(
+    '--min-evenness <x>',
+    'display filter: hide non-degenerate rows whose evenness is strictly below this value (must be in [0, 1]). Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minEvenness?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minEvenness: number | null = null;
+        if (opts.minEvenness !== undefined) {
+          const mv = Number.parseFloat(opts.minEvenness);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-evenness must be a finite number in [0, 1] (got ${opts.minEvenness})`,
+            );
+          }
+          minEvenness = mv;
+        }
+        const validSorts = [
+          'evenness',
+          'entropy',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'effectiveDaysShannon',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPielouEvenness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minEvenness,
+          sort: opts.sort as
+            | 'evenness'
+            | 'entropy'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'effectiveDaysShannon',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPielouEvenness(report) + '\n',
           );
         }
       } catch (e) {

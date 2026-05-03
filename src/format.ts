@@ -17293,6 +17293,7 @@ import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.
 import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintileshareratio.js';
 import type { DailyTokenTopFourConcentrationRatioReport } from './dailytokentopfourconcentrationratio.js';
 import type { DailyTokenHerfindahlHirschmanIndexReport } from './dailytokenherfindahlhirschmanindex.js';
+import type { DailyTokenPielouEvennessReport } from './dailytokenpielouevenness.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24105,6 +24106,77 @@ export function renderDailyTokenTopFourConcentrationRatio(
     s.normalisedSlack.toFixed(4),
     s.concentrationRegime,
     formatNumber(Math.round(s.topMass)),
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPielouEvenness(
+  r: DailyTokenPielouEvennessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-pielou-evenness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-evenness: ${r.minEvenness === null ? '\u2014' : r.minEvenness}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinEvenness)} below min-evenness, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PIELOU EVENNESS J = H / ln(n) where H = -sum s_i ln s_i is the Shannon entropy of the per-day total_tokens shares. J in [0, 1]; 1 = perfectly flat, 0 = one-day monopoly. ENTROPY-BASED L^1-LOG functional -- structurally orthogonal to HHI (axis-143, sum of squared shares, L^2). Hill q=1 effective-day count exp(H) reported alongside Hill q=2 = 1/HHI from axis-143 for cross-q diversity comparison (Hill 1973).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Pielou evenness (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'H',
+    'maxH',
+    'evenness',
+    'nEffShannon',
+    'maxShare',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.shannonEntropy.toFixed(6),
+    s.maxEntropy.toFixed(6),
+    s.evenness.toFixed(4),
+    s.effectiveDaysShannon.toFixed(3),
+    s.maxShare.toFixed(4),
     s.maxDay,
     formatNumber(s.totalTokens),
   ]);
