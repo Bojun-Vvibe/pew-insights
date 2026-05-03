@@ -538,20 +538,29 @@ export function dailyTokenSiegelTukeyHalves(values: number[]): {
 
   // Siegel-Tukey outward-pair rank assignment.
   // Walk inward from both ends, assigning ranks 1, 2,
-  // 3, 4, ... in the alternating pattern:
-  //   rank 1 -> sorted[0]    (smallest)
-  //   rank 2 -> sorted[n-1]  (largest)
-  //   rank 3 -> sorted[n-2]
-  //   rank 4 -> sorted[1]
-  //   rank 5 -> sorted[2]
-  //   rank 6 -> sorted[n-3]
+  // 3, 4, ... in the alternating pattern from
+  // Siegel & Tukey 1960 eq. 1:
+  //
+  //   rank 1 -> sorted[0]    (smallest, lo side, 1 take)
+  //   rank 2 -> sorted[n-1]  (largest, hi side, take 1 of 2)
+  //   rank 3 -> sorted[n-2]                (hi side, take 2 of 2)
+  //   rank 4 -> sorted[1]                  (lo side, take 1 of 2)
+  //   rank 5 -> sorted[2]                  (lo side, take 2 of 2)
+  //   rank 6 -> sorted[n-3]                (hi side, take 1 of 2)
+  //   rank 7 -> sorted[n-4]                (hi side, take 2 of 2)
   //   ...
-  // i.e. pairs alternate sides, and within each pair
-  // we exhaust the side first reached by the previous
-  // pair before flipping. The classical formulation
-  // (Siegel & Tukey 1960 eq. 1) is: rank 1 to lo,
-  // ranks 2 & 3 to (hi, hi-1), ranks 4 & 5 to (lo+1,
-  // lo+2), ranks 6 & 7 to (hi-2, hi-3), etc.
+  //
+  // i.e. the very first low-side phase takes ONLY 1
+  // (rank 1 alone goes to the global minimum); every
+  // subsequent phase (low or hi) takes a PAIR of 2.
+  // For odd n the inner walk terminates mid-pair and
+  // the leftover slot gets the final rank n. The
+  // result is that values close to the pooled
+  // EXTREMES collect SMALL ranks and values close to
+  // the pooled MEDIAN collect LARGE ranks -- the
+  // exact opposite weighting of monotonic ranking,
+  // which is what makes the rank-sum sensitive to
+  // SCALE shift instead of LOCATION shift.
   const ranks: number[] = new Array(n);
   let lo = 0;
   let hi = n - 1;

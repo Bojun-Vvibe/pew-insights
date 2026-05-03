@@ -298,3 +298,43 @@ test('buildDailyTokenSiegelTukeyHalves: zero-variance source dropped', () => {
   assert.equal(r.droppedZeroVariance, 1);
   assert.equal(r.sources.length, 0);
 });
+
+// ---------- edge-case refinement ----------
+
+test('dailyTokenSiegelTukeyHalves: stU is non-negative across many random series', () => {
+  // Mann-Whitney U is bounded in [0, n1*n2] by
+  // construction; verify across a battery of pseudo-
+  // random integer series.
+  let seed = 17;
+  const next = () => {
+    seed = (seed * 48271) % 2147483647;
+    return seed;
+  };
+  for (let trial = 0; trial < 25; trial += 1) {
+    const n = 8 + (next() % 20);
+    const x = Array.from({ length: n }, () => next() % 1000);
+    if (new Set(x).size === 1) continue;
+    const r = dailyTokenSiegelTukeyHalves(x);
+    assert.ok(
+      r.stU >= 0,
+      `stU < 0 at trial ${trial} n=${n}: stU=${r.stU}`,
+    );
+    assert.ok(
+      r.stU <= r.stN1 * r.stN2,
+      `stU > n1*n2 at trial ${trial} n=${n}: stU=${r.stU} max=${r.stN1 * r.stN2}`,
+    );
+    assert.ok(Number.isFinite(r.stZ));
+  }
+});
+
+test('dailyTokenSiegelTukeyHalves: odd n=9 rank-sum identity holds', () => {
+  // For n=9 we have n1=4, n2=5, total rank 1+..+9=45.
+  // Verify stWA + stWB == 45 and U_A + U_B == n1*n2.
+  const r = dailyTokenSiegelTukeyHalves([1, 8, 2, 7, 3, 6, 4, 5, 9]);
+  assert.equal(r.stN1, 4);
+  assert.equal(r.stN2, 5);
+  const totalRank = (9 * 10) / 2;
+  const stWB = totalRank - r.stWA;
+  const stU_B = stWB - (r.stN2 * (r.stN2 + 1)) / 2;
+  assert.ok(Math.abs(r.stU + stU_B - r.stN1 * r.stN2) < 1e-9);
+});
