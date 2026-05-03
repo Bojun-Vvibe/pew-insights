@@ -171,6 +171,7 @@ import {
   renderDailyTokenSiegelTukeyHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
+  renderDailyTokenCramerVonMisesHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -504,6 +505,7 @@ import { buildDailyTokenBrownForsythHalves } from './dailytokenbrownforsythhalve
 import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
+import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37311,6 +37313,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenAndersonDarlingHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-cramer-von-mises-halves')
+  .description(
+    "Per-source CRAMER-VON MISES TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWENTIETH cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST with UNIFORM weight (Anderson 1962, Annals of Mathematical Statistics 33(3):1148-1159; Csorgo & Faraway 1996, JRSSB 58(1):221-234; Schmid & Trede 1995, CSDA 20(4):409-419): T = U/(n1*n2*N) - (4*n1*n2 - 1)/(6*N) where U = n1*sum(r_i - i)^2 + n2*sum(s_j - j)^2 over pooled-rank gaps integrates the squared ECDF gap with UNIFORM weight on the pooled measure (in CONTRAST to axis-119 AD which weights by 1/(H_N(1-H_N)) and amplifies tails); cvmT = (T - meanH0)/sqrt(varH0) standardised via Anderson 1962 Theorem 2 closed form (meanH0 = 1/6 + 1/(6N)); cvmP from Anderson 1962 Table 1 log-linear interpolation; cvmZSigned = sign(median(B)-median(A)) * |cvmT|. UNWEIGHTED L2 companion to axis-119 AD (tail-weighted L2) and INTEGRATED L2 partner to axis-118 KS (pointwise sup-norm). Distinct from axis-115 Mann-Whitney (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for Anderson 1962 calibrated regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: cvmStatDesc (default) | cvmStat | cvmT | cvmTDesc | cvmZSigned | cvmZSignedDesc | cvmP | cvmPDesc | tokens | tenure | source.',
+    'cvmStatDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'cvmStat',
+          'cvmStatDesc',
+          'cvmT',
+          'cvmTDesc',
+          'cvmZSigned',
+          'cvmZSignedDesc',
+          'cvmP',
+          'cvmPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCramerVonMisesHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'cvmStat'
+            | 'cvmStatDesc'
+            | 'cvmT'
+            | 'cvmTDesc'
+            | 'cvmZSigned'
+            | 'cvmZSignedDesc'
+            | 'cvmP'
+            | 'cvmPDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCramerVonMisesHalves(report) + '\n',
           );
         }
       } catch (e) {

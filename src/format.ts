@@ -20259,6 +20259,7 @@ import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsyt
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
+import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22028,6 +22029,99 @@ export function renderDailyTokenAndersonDarlingHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: adA2 approx 1 = ECDFs agree under H0 (E[adA2] = k - 1 = 1 for k = 2 samples, Scholz & Stephens 1987 eq. 4); adT > 1.960 (S&S 1987 Table 1, k=2, alpha=0.05) rejects equal-distribution at the 5 % level; adP < 0.05 = significant distributional shift; adP from log-linear interpolation of S&S 1987 Table 1 anchors (t_0.25=0.325, t_0.10=1.226, t_0.05=1.960, t_0.025=2.719, t_0.01=3.752). adA2 is intrinsically UNSIGNED -- adDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); adZSigned = adDir * |adT| is a CONVENTION for cross-axis comparability with axes 115/116/117/118. AD is the TAIL-WEIGHTED L2 companion to axis-118 KS sup-norm: the inverse-variance weight 1/(H_N(1-H_N)) explodes near 0 and 1 so tail-mass differences dominate, while KS is uniform-weight and sees only the largest pointwise gap.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCramerVonMisesHalves(
+  r: DailyTokenCramerVonMisesHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-cramer-von-mises-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CRAMER-VON MISES TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTIETH cross-source axis. Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST with UNIFORM weight (Anderson 1962, Annals of Mathematical Statistics 33(3):1148-1159; Csorgo & Faraway 1996, JRSSB 58(1):221-234; Schmid & Trede 1995, CSDA 20(4):409-419): T = U/(n1*n2*N) - (4*n1*n2 - 1)/(6*N) where U = n1*sum(r_i - i)^2 + n2*sum(s_j - j)^2 over pooled-rank gaps integrates the squared ECDF gap with UNIFORM weight on the pooled measure (in CONTRAST to axis-119 AD which weights by 1/(H_N(1-H_N)) and amplifies tails); cvmT = (T - meanH0) / sqrt(varH0) standardised via Anderson 1962 Theorem 2 closed form (meanH0 = 1/6 + 1/(6N)); cvmP from Anderson 1962 Table 1 log-linear interpolation; cvmZSigned = sign(median(B)-median(A)) * |cvmT|. UNWEIGHTED L2 companion to axis-119 AD (tail-weighted L2) and INTEGRATED L2 partner to axis-118 KS (pointwise sup-norm). Distinct from axis-115 Mann-Whitney (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Cramer-von Mises two-sample (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'cvmStat',
+    'meanH0',
+    'varH0',
+    'cvmT',
+    'cvmP',
+    'cvmDir',
+    'cvmZSigned',
+    'crit05',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.cvmN1),
+    formatNumber(s.cvmN2),
+    formatNumber(s.cvmMedianA),
+    formatNumber(s.cvmMedianB),
+    s.cvmStat.toFixed(4),
+    s.cvmMeanH0.toFixed(4),
+    s.cvmVarH0.toFixed(4),
+    s.cvmT.toFixed(4),
+    s.cvmP.toExponential(3),
+    s.cvmDir.toFixed(0),
+    s.cvmZSigned.toFixed(4),
+    s.cvmStatCrit05.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: cvmStat approx 1/6 + 1/(6N) approx 0.167 = ECDFs agree under H0 (Anderson 1962 Theorem 2); cvmStat > 0.46136 (Anderson 1962 Table 1, alpha=0.05) rejects equal-distribution at the 5 % level; cvmP < 0.05 = significant distributional shift; cvmP from log-linear interpolation of Anderson 1962 Table 1 anchors (T_0.25=0.20939, T_0.10=0.34730, T_0.05=0.46136, T_0.025=0.58061, T_0.01=0.74346). cvmStat is intrinsically UNSIGNED -- cvmDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); cvmZSigned = cvmDir * |cvmT| is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119. CvM is the UNWEIGHTED L2 companion to axis-119 AD (tail-weighted L2): the uniform weight on dH_N treats every region of the support proportionally to its mass, while AD's 1/(H_N(1-H_N)) weight explodes near 0 and 1 so tail-mass differences dominate. CvM is also the INTEGRATED L2 partner to axis-118 KS (pointwise L_infinity sup-norm): many small pointwise gaps accumulate to a large CvM that KS would miss, while a single localised spike that drives KS contributes only the area under one bump in CvM.)`,
     ),
   );
 
