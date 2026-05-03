@@ -2,6 +2,122 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.376 — 2026-05-03
+
+### Added
+
+- `daily-token-max-divergence-halves` — ONE-HUNDRED-AND-THIRTY-THIRD
+  cross-source axis. Per-source KDE-SMOOTHED SUP-NORM (L^infinity) pmf-gap
+  `maxDiv = max_k |p_k - q_k|` between the FIRST and SECOND half of the
+  gap-filled daily total_tokens series. Pure L^infinity NORM of the
+  per-bin pmf gap on the IDENTICAL KDE setup as axes 126/127/128/129/
+  130/131/132 (pooled robust scale `mad_pool = 1.4826*median(|x-median(x)|)`;
+  Silverman bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared K=257-point
+  grid spanning `[min-3h, max+3h]`; Gaussian KDE per half; trapezoidal
+  mass-normalisation to exact pmfs `p, q`). `maxDiv` in `[0, 1]`;
+  `maxDiv = 0` iff KDE-smoothed halves coincide on the grid.
+
+  ORTHOGONAL to all 15 prior axes 118-132: occupies the previously empty
+  L^infinity slot in the L^p ladder on the KDE pmf gap. Neither sup-norm
+  CDF (axis-118 KS), tail-weighted CDF-L^2 (axis-119 AD), unweighted
+  CDF-L^2 (axis-120 CvM), CDF-L^1 (axis-121 W1), CF-1/t^2 (axis-122
+  energy), RKHS embedding (axis-123 MMD), low-dim Euclidean
+  (axes 124/125 qv-Mahalanobis/PCA), pmf-L^1 (axis-127 TV),
+  pmf-SQRT-L^2 (axis-128 H), pmf-RECIPROCAL-L^2 (axis-129 Delta),
+  nor any of the pmf-LOG functionals (axis-126 JSD, axis-130
+  Bhattacharyya, axis-131 Jeffreys, axis-132 Renyi-2).
+
+  Holder anchors: `maxDiv <= 2*tvDist` and `maxDiv >= (2/K)*tvDist`
+  (where `tvDist = 0.5*sum_k |p_k - q_k|` is the axis-127 statistic).
+  These bounds give a factor-of-K window for the maxDiv/tvDist ranking
+  to differ from the TV ranking — flat per-bin gaps push maxDiv/tvDist
+  toward `1/K` while spike per-bin gaps push it toward `1`.
+
+  Diagnostic field `maxDivLinfL1Ratio = maxDiv / tvDist` in `[1/K, 1]`
+  is a SPARSITY-OF-DISAGREEMENT score: low = broad half-vs-half drift
+  spread across many buckets, high = single-bucket spike concentrated
+  in one token-volume regime. Diagnostic field `argMaxBucketX` =
+  `g_lo + argMaxBucketIndex*dx` pinpoints the token-volume regime
+  driving the divergence; `argMaxSign` reports which half has the
+  larger mass at that bucket (`+1` first half, `-1` second half).
+
+  Translation-invariant AND positive-scale-invariant in the data
+  (data and bandwidth scale together, dx scales together, pmfs
+  unchanged so the per-bin gap is unchanged).
+
+  Subcommand options mirror the rest of the half-vs-half family:
+  `--source`, `--since`, `--until`, `--min-tokens` (default 1000),
+  `--min-tenure-days` (default 14, hard floor 8), `--top`,
+  `--sort` (`maxDivDesc` default, `maxDiv` asc, `maxDivLinfL1Ratio`/
+  `maxDivLinfL1RatioDesc`, `tokens`, `tenure`, `source`), `--json`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 kept sources after
+  defaults; one source name redacted from `vscode-other`):
+
+  ```
+  pew-insights daily-token-max-divergence-halves
+  as of: 2026-05-03T11:01:34.164Z    sources: 6 (shown 5)    tokens: 12,143,904,756
+  min-tokens: 1,000    min-tenure-days: 14    grid-K: 257    silverman-mult: 0.9
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+  0 below min-tokens, 1 below min-tenure-days, 0 zero-variance,
+  0 non-finite-fit, 0 below top cap
+
+  source         tenure  n1   n2   madPool       h             maxDiv    argMaxX        sign  tvDist    L^inf/L^1
+  -------------  ------  ---  ---  ------------  ------------  --------  -------------  ----  --------  ---------
+  openclaw       17      8    9    59886294.12   30583005.59   0.015981  52700070.33    -1    0.635640  0.025141
+  opencode       14      7    7    131088708.42  69595664.65   0.009510  405855227.90   -1    0.413307  0.023011
+  hermes         17      8    9    13138525.44   6709642.04    0.004787  24102505.97    -1    0.196616  0.024347
+  claude-code    72      36   36   0.00          402528503.09  0.001353  -245984013.07  +1    0.072556  0.018650
+  vscode-other   265     132  133  0.00          70977.97      0.000362  83910.43       +1    0.015223  0.023770
+  ```
+
+  Cross-axis interpretation on the live queue:
+
+  - `openclaw` has the largest sup-norm gap (`maxDiv = 0.0160`) AND
+    the largest tvDist (`0.636`); the worst bucket sits at
+    `argMaxX ~ 5.27e7` tokens with `sign = -1` (second half has more
+    mass there) — recent shift toward higher per-day token volume.
+  - All five sources have `maxDivLinfL1Ratio` in a tight band
+    `[0.019, 0.025]`, well above the floor `1/K = 1/257 ~ 0.0039`
+    but far below `1`. This says the half-vs-half drift is BROADLY
+    SPREAD across many buckets rather than concentrated on a single
+    spike — consistent with the smoothness of the Gaussian KDE on
+    K=257 grid points; no source exhibits "single-bucket spike"
+    drift.
+  - `claude-code` and `vscode-other` carry `argMaxSign = +1` (first
+    half has more mass at the worst bucket): both sources have
+    older heavy-volume tails that have receded in the more recent
+    half.
+  - The Holder anchor `maxDiv <= 2*tvDist` holds with comfortable
+    slack on every kept row (`openclaw`: 0.0160 vs 1.27; `opencode`:
+    0.0095 vs 0.83; etc.) — confirming the L^infinity vs L^1 norm
+    relationship.
+  - Cross-checks with prior axes (same KDE setup): `openclaw`'s
+    leading position is consistent with the axis-127 TV ranking,
+    but the maxDiv-derived `maxDivLinfL1Ratio` adds a NEW dimension
+    (sparsity-of-disagreement) not recoverable from any axis 118-132.
+
+### Tests
+
+- `+88` tests in `test/dailytokenmaxdivergencehalves.test.ts` covering
+  primitive input validation, shape (n1/n2 split, K=257 grid, dx
+  formula, bandwidth > 0), mathematical bounds (`maxDiv` in `[0, 1]`,
+  `tvDist` in `[0, 1]`, Holder both directions, ratio in `[1/K, 1]`),
+  argmax bookkeeping (`|argMaxPK - argMaxQK| === maxDiv`,
+  `argMaxBucketX === gLo + idx*dx`, sign in `{-1, 0, +1}`),
+  invariances (translation, positive scale, combined, bandwidth scaling),
+  symmetry (swap halves preserves `maxDiv`/`tvDist`/`argMaxBucketIndex`
+  and flips `argMaxSign`), identical-half pathology (near-zero output),
+  monotone-shift sanity, numerical sanity (all stats finite), all five
+  sort keys, builder option validation (negative/non-int/below-floor),
+  filtering (minTokens, minTenureDays, source, since, until),
+  drop counters (NonPositiveTokens, InvalidHourStart, SourceFilter,
+  TopSources), gap-fill with zeros, alphabetical tie-break,
+  `top=0` no-cap, missing source -> `(unknown)` fallback,
+  metadata round-trip, and `generatedAt` propagation.
+
+  Total test suite: 11241 -> 11329 (`+88`).
+
 ## 0.6.375 — 2026-05-03
 
 ### Added
