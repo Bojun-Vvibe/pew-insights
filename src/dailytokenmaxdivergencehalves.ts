@@ -239,6 +239,18 @@ export interface DailyTokenMaxDivergenceHalvesSourceRow {
   argMaxQK: number;
   /** +1 if p_{k*} > q_{k*}, -1 if p_{k*} < q_{k*}, 0 if equal. */
   argMaxSign: number;
+  /**
+   * Argmax-bucket location on the [0, 1] unit interval:
+   * argMaxBucketIndex / (K - 1). Cross-source-comparable
+   * diagnostic for "where on the per-source grid does the
+   * sup-norm gap concentrate" — 0 = grid-min (low-token
+   * tail), 1 = grid-max (high-token tail), 0.5 = grid-centre.
+   * Useful because per-source grids span DIFFERENT raw
+   * token-volume extents, so argMaxBucketX is not directly
+   * comparable across sources, but argMaxBucketIndexNormalized
+   * is.
+   */
+  argMaxBucketIndexNormalized: number;
   /** Total-variation distance tvDist = 0.5*sum_k |p_k - q_k| (axis-127 statistic). */
   tvDist: number;
   /** Sparsity-of-disagreement diagnostic: maxDiv / tvDist in [1/K, 1]; 0 when tvDist === 0. */
@@ -324,6 +336,7 @@ export function dailyTokenMaxDivergenceHalves(values: number[]): {
   argMaxPK: number;
   argMaxQK: number;
   argMaxSign: number;
+  argMaxBucketIndexNormalized: number;
   tvDist: number;
   maxDivLinfL1Ratio: number;
 } {
@@ -450,6 +463,7 @@ export function dailyTokenMaxDivergenceHalves(values: number[]): {
   const argMaxBucketX = gLo + argMaxIdx * dx;
   const argMaxSign =
     argMaxPK > argMaxQK ? 1 : argMaxPK < argMaxQK ? -1 : 0;
+  const argMaxBucketIndexNormalized = argMaxIdx / (K - 1);
   const maxDivLinfL1Ratio = tvDist > 0 ? maxDiv / tvDist : 0;
 
   if (
@@ -480,6 +494,7 @@ export function dailyTokenMaxDivergenceHalves(values: number[]): {
     argMaxPK,
     argMaxQK,
     argMaxSign,
+    argMaxBucketIndexNormalized,
     tvDist,
     maxDivLinfL1Ratio,
   };
@@ -662,6 +677,7 @@ export function buildDailyTokenMaxDivergenceHalves(
       argMaxPK: result.argMaxPK,
       argMaxQK: result.argMaxQK,
       argMaxSign: result.argMaxSign,
+      argMaxBucketIndexNormalized: result.argMaxBucketIndexNormalized,
       tvDist: result.tvDist,
       maxDivLinfL1Ratio: result.maxDivLinfL1Ratio,
     });
