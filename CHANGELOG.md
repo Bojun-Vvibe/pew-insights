@@ -2,6 +2,141 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.373 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-THIRTIETH):
+  `pew-insights daily-token-bhattacharyya-distance-halves`.
+
+  Per-source KDE-SMOOTHED BHATTACHARYYA DISTANCE between
+  the FIRST half (n1 = floor(n/2) days) and SECOND half
+  (n2 = n - n1 days) of the gap-filled daily total_tokens
+  series. IDENTICAL KDE setup to axes 126 (JSD), 127 (TV),
+  128 (H), and 129 (Delta): pooled robust scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid;
+  trapezoidal mass-normalisation to exact pmfs p, q on the
+  K = 257 grid (sum_k p_k = sum_k q_k = 1).
+
+  Bhattacharyya coefficient (Bhattacharyya 1943, "On a
+  measure of divergence between two statistical populations
+  defined by their probability distributions", Bull. Calcutta
+  Math. Soc. 35: 99-109):
+
+      BC(p, q)  =  sum_k sqrt( p_k * q_k )    in [0, 1]
+
+  Bhattacharyya distance (Kailath 1967, "The Divergence and
+  Bhattacharyya Distance Measures in Signal Selection", IEEE
+  Trans. Comm. Tech. 15(1): 52-60):
+
+      bDist(p, q)  =  -ln( BC(p, q) )         in [0, +inf)
+
+  with a numerical floor BC >= 1e-300 to keep the statistic
+  finite under disjoint-support pathologies (unreachable on
+  a Gaussian KDE on a shared finite grid). bDist = 0 iff
+  BC = 1 iff p === q on the grid; bDist -> +inf as BC -> 0.
+
+  Equivalent identity: bDist is the CHERNOFF INFORMATION at
+  alpha = 1/2 (Chernoff 1952, "A measure of asymptotic
+  efficiency for tests of a hypothesis based on the sum of
+  observations", Ann. Math. Statist. 23(4): 493-507; Cover
+  & Thomas 2006 Sec. 11.9), placing it in the LARGE-
+  DEVIATIONS class of error exponents. The closely related
+  HELLINGER DISTANCE (axis-128) is H = sqrt(1 - BC), and
+  bDist = -ln(1 - H^2). Locally (small H) bDist ~ H^2 so
+  bDist tracks H^2; for H -> 1 (BC -> 0), bDist diverges
+  while H saturates at 1.
+
+  STRUCTURAL ORTHOGONALITY. bDist is the NEGATIVE LOG of
+  the SQRT-AMPLITUDE INNER PRODUCT of two pmfs -- a class
+  not occupied by any prior axis. vs axes 118-123
+  KS/AD/CvM/W1/energy/MMD: CDF-L_inf / tail-weighted CDF-L^2
+  / CDF-L^2 / quantile-integral / CF-1/t^2 / RKHS spaces
+  respectively; bDist lives in the K = 257 pmf simplex via
+  -ln of an inner product. vs axis-124 qv-Mahalanobis /
+  axis-125 PCA-projection: low-dimensional Euclidean spaces
+  vs log-of-pmf-inner-product. vs axis-126 JSD: both LOG
+  functionals on the IDENTICAL KDE setup, but JSD is a
+  SHANNON-WEIGHTED log-ratio integral while bDist is the
+  LOG of a SQRT-AMPLITUDE INNER PRODUCT -- not monotone
+  images of each other. vs axis-127 TV (KDE-smoothed Total
+  Variation): TV is L^1 in pmf coordinates; the Pinsker-like
+  inequality 1 - BC <= 0.5*TV gives an upper bound on bDist
+  but not a monotone transform. vs axis-128 H (KDE-smoothed
+  Hellinger distance, identical KDE setup): H = sqrt(1 - BC)
+  and bDist = -ln(1 - H^2); LOCALLY MONOTONE for small H
+  but the cross-source ranking can differ when BC values are
+  spread across orders of magnitude because the LOG amplifies
+  near-zero coefficients (e.g. BC = 0.01 vs BC = 0.5: bDist
+  ratio ~6.6x while H ratio only ~1.4x). vs axis-129 Delta
+  (triangular discrimination, KDE, identical setup): Delta
+  is weighted L^2 in reciprocal-sum coordinates (algebraic,
+  bounded in [0, 2]) while bDist is logarithmic and unbounded
+  above; in the small-H regime bDist ~ Delta/4, but for
+  large H Delta saturates at 2 while bDist grows without
+  bound. Translation-invariant AND positive-scale-invariant
+  in the data, mirroring axes 123/124/125/126/127/128/129.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,105,458,909):
+
+      source             tenure  n1   n2   madPool         h               BC          bDist       bDistNorm    tokens
+      -----------------  ------  ---  ---  --------------  --------------  ----------  ----------  -----------  -------------
+      openclaw           17       8    9    59886294.12    30583005.59     0.602830    0.506121    0.397170     2,212,826,867
+      opencode           14       7    7   131088708.42    69595664.65     0.867146    0.142548    0.132854     6,151,437,237
+      hermes             17       8    9    13138525.44     6709642.04     0.973183    0.027183    0.026817       296,923,290
+      claude-code        72      35   36          0.00    402528503.09     0.991225    0.008813    0.008775     3,442,385,788
+      <redacted-vscode>  265     73  132   133          0.00         70977.97         0.999151    0.000849    0.000849         1,885,727
+
+  Cross-axis comparison vs axis-128 H and axis-129 Delta
+  (same queue, same bandwidth) -- bDist ranks the same top
+  source (`openclaw`, bDist = 0.5061 corresponding to BC =
+  0.6028, hence H = sqrt(1 - 0.6028) = 0.6303 and Delta =
+  1.0097 from the v0.6.372 release). The bDist : Delta
+  ratio for openclaw is ~0.50, very close to the
+  small-H predicted ratio Delta/4 = 0.25 / bDist's
+  H^2-leading-order = 0.397 (so H is past the "small"
+  regime). The relative spacing of bDist openclaw / hermes
+  is 0.5061 / 0.0272 ~ 18.6x (vs ~9.7x for Delta and ~3.8x
+  for H), confirming the LOG amplification of strong
+  cross-source disagreement that motivated the axis.
+
+### Tests
+
+- +57 tests for `daily-token-bhattacharyya-distance-halves`
+  (11018 -> 11075). Covers the input-validation contract,
+  shape (n1 = floor(n/2), gridK = 257, bandwidth > 0,
+  grid endpoints flank min/max with 3*h padding), bounds
+  (BC in [0, 1], bDist >= 0, bDistNormalized in [0, 1]),
+  identities (BC = 1 and bDist = 0 for identical halves;
+  BC < 1 and bDist > 0 for separated halves; nearly-disjoint
+  halves push bDist > 0.5 with finite values; translation-
+  invariance under x -> x + c; positive-scale-invariance
+  under x -> k*x; symmetry under half-swap; bandwidth scales
+  linearly with positive scaling and is invariant under
+  translation; constants exposed at the right values),
+  end-to-end builder behaviour (sort orders bDist asc/desc
+  and bcCoefficient asc/desc; source-asc; sparse-source /
+  below-min-tenure / zero-variance / non-positive-tokens /
+  source-filter / top-cap drop counters; empty queue;
+  generatedAt override; rows-finite-and-in-range), the
+  log-identity bDist = -ln(BC), the Hellinger relation
+  bDistNormalized = 1 - BC = H^2, monotonicity (bigger
+  half-shift gives strictly larger bDist and strictly
+  smaller BC, in 3 levels), determinism on identical input,
+  and Cauchy-Schwarz BC <= 1 / BC >= 0.
+
 ## 0.6.372 — 2026-05-03
 
 ### Added
