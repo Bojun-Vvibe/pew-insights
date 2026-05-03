@@ -20277,6 +20277,7 @@ import type { DailyTokenSymmetricChiSquaredHalvesReport } from './dailytokensymm
 import type { DailyTokenClarkDistanceHalvesReport } from './dailytokenclarkdistancehalves.js';
 import type { DailyTokenTanejaDivergenceHalvesReport } from './dailytokentanejadivergencehalves.js';
 import type { DailyTokenKumarJohnsonDivergenceHalvesReport } from './dailytokenkumarjohnsondivergencehalves.js';
+import type { DailyTokenTopsoeDivergenceHalvesReport } from './dailytokentopsoedivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23617,6 +23618,91 @@ export function renderDailyTokenKumarJohnsonDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: kumarJohnsonDivergence >= 0; =0 iff p=q on the grid; kumarJohnsonMaxRelGap = max_k |p_k-q_k|/(p_k+q_k) in [0, 1] (=1 iff at least one bin is regime-disjoint); kumarJohnsonMaxBin is the largest per-bin summand (p_k^2-q_k^2)^2 / (2*(p_k*q_k)^(3/2)); spread = kumarJohnsonDivergence/(K*kumarJohnsonMaxBin) in [0, 1] -- approaches 1 iff every bin contributes the same maximal KJ amount, approaches 1/K = ${(1 / r.gridK).toFixed(6)} iff a single bin dominates. Translation- AND positive-scale-invariant in the data; KJ_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTopsoeDivergenceHalves(
+  r: DailyTokenTopsoeDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-topsoe-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}    pmf-floor: ${r.pmfFloor}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED TOPSOE DIVERGENCE T = sum_k [p_k log(2 p_k/(p_k+q_k)) + q_k log(2 q_k/(p_k+q_k))], between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-EIGHTH cross-source axis. Topsoe 2000; Cha 2007 eq. 40. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. T = 2*JSD; bounded in [0, 2*log(2)]; =0 iff KDE-smoothed halves coincide on the grid; =2*log(2) iff disjoint support. ORTHOGONAL to all 20 prior axes 118-137: KL-to-midpoint logarithmic class, naturally bounded; vs axis-137 KJ (polynomial, unbounded); vs axis-118 JSD (T = 2*JSD as values but per-bin diagnostics on natural Topsoe scale). Diagnostic topsoeMaxRelGap = max_k |p-q|/(p+q) in [0, 1] surfaces the most regime-disjoint bin. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Topsoe divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'topsoe',
+    'maxBin',
+    'maxRel',
+    'spread',
+    'perBin',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.topsoeN1),
+    formatNumber(s.topsoeN2),
+    s.topsoeMadPool.toFixed(2),
+    s.topsoeBandwidth.toFixed(2),
+    s.topsoeDivergence.toFixed(6),
+    s.topsoeMaxBin.toFixed(6),
+    s.topsoeMaxRelGap.toFixed(6),
+    s.topsoeSpreadRatio.toFixed(6),
+    s.topsoePerBinAverage.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: topsoeDivergence in [0, 2*log(2) = ${(2 * Math.log(2)).toFixed(6)}]; =0 iff p=q on the grid; =2*log(2) iff disjoint support; topsoeMaxRelGap = max_k |p_k-q_k|/(p_k+q_k) in [0, 1] (=1 iff at least one bin is regime-disjoint); topsoeMaxBin is the largest per-bin summand p log(2p/(p+q)) + q log(2q/(p+q)) in [0, 2*log(2)]; spread = topsoeDivergence/(K*topsoeMaxBin) in [0, 1] -- approaches 1 iff every bin contributes the same maximal Topsoe amount, approaches 1/K = ${(1 / r.gridK).toFixed(6)} iff a single bin dominates. T = 2*JSD as values; sqrt(T) is a true metric (Endres & Schindelin 2003). Translation- AND positive-scale-invariant in the data; TOPSOE_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
 
