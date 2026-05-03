@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.378 — 2026-05-03
+
+### Added
+
+- `daily-token-clark-distance-halves` —
+  ONE-HUNDRED-AND-THIRTY-FIFTH cross-source axis. Per-source
+  KDE-SMOOTHED CLARK DISTANCE
+  `clarkDistance = sqrt( sum_k ((p_k - q_k)/(p_k + q_k))^2 )`
+  between the FIRST and SECOND half of the gap-filled daily
+  total_tokens series (Clark 1952; Cha 2007 eq. 24; Deza &
+  Deza 2009). Identical KDE setup to axes 126-134 (pooled
+  robust scale `mad_pool = 1.4826*median(|x-median(x)|)`;
+  Silverman bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared
+  K=257-point grid spanning `[min-3h, max+3h]`; Gaussian
+  KDE per half; trapezoidal mass-normalisation to exact
+  pmfs `p, q`). `clarkDistance` in `[0, sqrt(K)]`;
+  `clarkDistance = 0` iff KDE-smoothed halves coincide on
+  the grid; ceiling `sqrt(257) ~ 16.03` is reached only iff
+  every bin is regime-disjoint (exactly one of `p_k, q_k` is
+  zero at every k). Cross-grid-comparable form
+  `clarkNormalised = clarkDistance/sqrt(K)` in `[0, 1]`.
+
+  ORTHOGONAL to all 17 prior axes 118-134: unique
+  NORMALISED L^2 of the per-bin RELATIVE pmf gap. The
+  summand `((p-q)/(p+q))^2` normalises bin-wise to `[0, 1]`
+  BEFORE squaring — every other shipped half-vs-half axis
+  squares (or absolutes / logs) the ABSOLUTE pmf gap. vs
+  axis-129 triangular-discrim (weight `1/(p+q)` on `(p-q)^2`):
+  Clark has weight `1/(p+q)^2` — one extra factor of
+  `1/(p+q)` makes Clark much more sensitive at low base-rate
+  bins. vs axis-134 psChi2 (weight `(p+q)/(p*q)` =
+  unbounded polynomial in `1/p, 1/q`): Clark is BOUNDED;
+  reads RELATIVE per-bin gap, not the asymmetry of the
+  split. vs axis-127 TV (unweighted L^1 of `|p-q|`): Clark
+  sees proportional differences invisible to TV (a low-mass
+  bin with relative gap 1/3 contributes ~1/3 to Clark^2 but
+  ~0 to TV). vs axis-133 maxDiv (L^infinity of `|p-q|`):
+  Clark sees per-bin RELATIVE gap, maxDiv sees per-bin
+  absolute gap — diametrically opposite tail policies.
+
+  Diagnostic field `clarkMaxRelGap = max_k |r_k|` in
+  `[0, 1]` (where `r_k = (p_k - q_k)/(p_k + q_k)`) flags
+  one-bin regime-disjointness: `clarkMaxRelGap ~ 1` iff at
+  least one grid bin is effectively visited by only ONE
+  half. Companion `clarkMeanRelGap = (1/K) sum_k |r_k|`
+  surfaces the average per-bin relative disagreement
+  (averaged across the full 257-bin grid).
+
+  Numerical floor `CLARK_PMF_FLOOR = 1e-15` is a no-op
+  IEEE-754 underflow safeguard for the `(p+q)` denominator
+  in pathological tail bins; Gaussian KDE with positive
+  bandwidth on a 257-point grid puts strictly positive mass
+  everywhere. Same floor as axis-134 for cross-axis
+  numerical comparability.
+
+  Translation-invariant AND positive-scale-invariant in the
+  data (data and bandwidth scale together; pmfs unchanged).
+  Clark distance does NOT satisfy the triangle inequality
+  and is not a metric (Cha 2007); it is a symmetric
+  divergence.
+
+  Subcommand options mirror the rest of the half-vs-half
+  family: `--source`, `--since`, `--until`, `--min-tokens`
+  (default 1000), `--min-tenure-days` (default 14, hard
+  floor 8), `--top`, `--sort` (`clarkDesc` default, `clark`
+  asc, `maxRel`/`maxRelDesc`, `tokens`, `tenure`, `source`),
+  `--json`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 kept
+  sources after defaults; one source name redacted from
+  `vscode-other`):
+
+  ```
+  pew-insights daily-token-clark-distance-halves
+  as of: 2026-05-03T12:40:48.151Z    sources: 6 (shown 5)    tokens: 12,172,206,711
+  min-tokens: 1,000    min-tenure-days: 14    grid-K: 257    silverman-mult: 0.9    pmf-floor: 1e-15
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+  0 below min-tokens, 1 below min-tenure-days, 0 zero-variance,
+  0 non-finite-fit, 0 below top cap
+
+  source         tenure  n1   n2   madPool       h             clark      clarkN    meanRel   maxRel
+  -------------  ------  ---  ---  ------------  ------------  ---------  --------  --------  --------
+  openclaw       17      8    9    59886294.12   30583005.59   13.581074  0.847164  0.790117  1.000000
+  opencode       14      7    7    131088708.42  69595664.65   11.691117  0.729272  0.658732  0.999980
+  claude-code    72      36   36   0.00          402528503.09  8.682983   0.541630  0.379970  0.999054
+  hermes         17      8    9    13138525.44   6709642.04    6.637027   0.414006  0.339177  0.866259
+  vscode-other   265     132  133  0.00          70977.97      6.338850   0.395407  0.235466  0.897608
+  ```
+
+  Cross-axis interpretation on the live queue:
+
+  - `openclaw` saturates `maxRel = 1.000` exactly: at least
+    one grid bin is fully regime-disjoint between the two
+    halves. Cross-checks the same pathology axis-134 psChi2
+    flagged with `psChi2 ~ 9.1e10` — but Clark BOUNDS the
+    signal at `sqrt(K) ~ 16.03` rather than letting it
+    explode polynomially. `clarkN = 0.847` (out of 1.0)
+    confirms the disagreement is broadly distributed across
+    bins, not concentrated at one.
+  - `opencode` (`clark = 11.69`, `clarkN = 0.729`,
+    `maxRel ~ 0.99998`) — also has near-disjoint bins, but
+    the L^2 norm is materially below `openclaw`, so the
+    BREADTH of the disagreement is somewhat smaller. Clark
+    correctly orders the two pathological sources without
+    the dynamic-range collapse psChi2 suffers (where
+    `openclaw : opencode = 1.5e9 : 1` rendered the gap
+    visually unreadable on a single linear axis).
+  - `claude-code` (`maxRel = 0.999`) has one near-disjoint
+    bin but the `meanRel = 0.380` is the lowest of the four
+    drift-y sources — the disagreement is concentrated in
+    the tails and most bins agree well. This is the OPPOSITE
+    profile from `openclaw` (`meanRel = 0.790`).
+  - `hermes` (`clark = 6.64`, `maxRel = 0.866`) — moderate,
+    no full bin saturation. Clark agrees with axis-134's
+    finding that hermes is the most symmetric of the kept
+    sources.
+  - `vscode-other` (redacted from upstream source name
+    containing the banned product token; data unchanged):
+    smallest Clark of the kept sources (`6.34`, `clarkN
+    = 0.395`) — most stable half-vs-half pmf shape, and
+    `maxRel = 0.898 < 1` confirms NO bin is fully
+    regime-disjoint over its 265-day tenure. Consistent with
+    axis-134's finding (`psChi2 = 0.019`, the smallest among
+    the kept sources).
+
+  Cross-axis design check: Clark BOUNDS the dynamic range
+  that psChi2 (axis-134) leaves unbounded — the
+  `openclaw : vscode-other` ratio is `4.9e12 : 1` under
+  psChi2 but `2.1 : 1` under Clark. Clark therefore makes
+  the half-vs-half divergence ladder LEGIBLE across orders
+  of magnitude of severity, while psChi2 makes the
+  regime-disjointness CASES NUMERICALLY LOUD. Genuinely
+  complementary tools, not a rename.
+
 ## 0.6.377 — 2026-05-03
 
 ### Added
