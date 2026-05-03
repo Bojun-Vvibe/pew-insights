@@ -454,3 +454,77 @@ test('refinement: tvDist monotone w.r.t. shift magnitude (3 levels)', () => {
   assert.ok(r10.tvDist < r50.tvDist);
   assert.ok(r50.tvDist <= r200.tvDist + 1e-12);
 });
+
+// ---------- refactor follow-up: tvL2 diagnostic ----------
+
+test('refactor: tvL2 >= 0 and finite', () => {
+  const r = dailyTokenTotalVariationHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(r.tvL2 >= 0);
+  assert.ok(Number.isFinite(r.tvL2));
+});
+
+test('refactor: tvL2 ~ 0 for identical halves', () => {
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenTotalVariationHalves([...half, ...half]);
+  assert.ok(r.tvL2 < 1e-10);
+});
+
+test('refactor: tvL2 <= sqrt(2) (disjoint pmf upper bound)', () => {
+  // Each |p_k - q_k| <= 1, so sum (p-q)^2 <= sum |p-q| = 2*tvDist <= 2.
+  const r = dailyTokenTotalVariationHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(r.tvL2 <= Math.SQRT2 + 1e-10);
+});
+
+test('refactor: tvL2 translation- and positive-scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12];
+  const r1 = dailyTokenTotalVariationHalves(x);
+  const r2 = dailyTokenTotalVariationHalves(x.map((v) => 5 * v + 1000));
+  assert.ok(Math.abs(r1.tvL2 - r2.tvL2) < 1e-8);
+});
+
+test('refactor: tvL2 symmetric on swap', () => {
+  const xUp = [1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107];
+  const xDown = [
+    100, 101, 102, 103, 104, 105, 106, 107, 1, 2, 3, 4, 5, 6, 7, 8,
+  ];
+  const rUp = dailyTokenTotalVariationHalves(xUp);
+  const rDown = dailyTokenTotalVariationHalves(xDown);
+  assert.ok(Math.abs(rUp.tvL2 - rDown.tvL2) < 1e-10);
+});
+
+test('refactor: Cauchy-Schwarz bound 2*tvDist <= sqrt(K) * tvL2', () => {
+  const r = dailyTokenTotalVariationHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  const lhs = 2 * r.tvDist;
+  const rhs = Math.sqrt(r.tvGridK) * r.tvL2;
+  assert.ok(lhs <= rhs + 1e-10, `2*tvDist=${lhs} > sqrt(K)*tvL2=${rhs}`);
+});
+
+test('refactor: tvL2 monotone with shift magnitude', () => {
+  const first = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r10 = dailyTokenTotalVariationHalves([
+    ...first,
+    11, 12, 13, 14, 15, 16, 17, 18,
+  ]);
+  const r200 = dailyTokenTotalVariationHalves([
+    ...first,
+    201, 202, 203, 204, 205, 206, 207, 208,
+  ]);
+  assert.ok(r10.tvL2 < r200.tvL2);
+});
+
+test('refactor: rows expose tvL2', () => {
+  const r = buildDailyTokenTotalVariationHalves(makeQueueWithTwoSources(), {
+    minTokens: 0,
+  });
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.tvL2));
+    assert.ok(s.tvL2 >= 0);
+    assert.ok(s.tvL2 <= Math.SQRT2 + 1e-10);
+  }
+});

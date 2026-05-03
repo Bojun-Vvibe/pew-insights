@@ -263,6 +263,17 @@ export interface DailyTokenTotalVariationHalvesSourceRow {
   tvMaxBinX: number;
   /** Per-bin contribution 0.5*|p-q| at tvMaxBin (dimensionless). */
   tvMaxBinValue: number;
+  /**
+   * L^2 norm of the pmf gap: tvL2 = sqrt(sum_k (p_k - q_k)^2).
+   * Diagnostic only; bounded above by sqrt(2) (when p, q have
+   * disjoint single-bin support). Complementary to tvDist
+   * (L^1 half-norm): tvL2 amplifies sharp single-bin gaps
+   * relative to broad shallow ones, while tvDist sums them
+   * linearly. Cauchy-Schwarz: 2*tvDist <= sqrt(K) * tvL2,
+   * giving tvL2 >= 2*tvDist/sqrt(K) (here K=257). Translation-
+   * and positive-scale-invariant for the same reason as tvDist.
+   */
+  tvL2: number;
 }
 
 export interface DailyTokenTotalVariationHalvesReport {
@@ -347,6 +358,7 @@ export function dailyTokenTotalVariationHalves(values: number[]): {
   tvMaxBin: number;
   tvMaxBinX: number;
   tvMaxBinValue: number;
+  tvL2: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -455,14 +467,20 @@ export function dailyTokenTotalVariationHalves(values: number[]): {
     );
   }
   // Total-variation distance: 0.5 * sum_k |p_k - q_k|.
+  // Companion L^2 norm sqrt(sum_k (p_k - q_k)^2) computed in
+  // the same single pass for efficiency.
   let tv = 0;
+  let l2sq = 0;
   let maxBin = 0;
   let maxBinValue = -Infinity;
   for (let k = 0; k < K; k += 1) {
     const pk = (w[k]! * fA[k]!) / zA;
     const qk = (w[k]! * fB[k]!) / zB;
-    const contrib = 0.5 * Math.abs(pk - qk);
+    const gap = pk - qk;
+    const absGap = Math.abs(gap);
+    const contrib = 0.5 * absGap;
     tv += contrib;
+    l2sq += gap * gap;
     if (contrib > maxBinValue) {
       maxBinValue = contrib;
       maxBin = k;
@@ -471,11 +489,13 @@ export function dailyTokenTotalVariationHalves(values: number[]): {
   // Numerical clamp [0, 1].
   if (tv < 0) tv = 0;
   if (tv > 1) tv = 1;
+  const tvL2 = Math.sqrt(l2sq);
   const tvMaxBinX = gLo + maxBin * dx;
 
   if (
     !Number.isFinite(tv) ||
-    !Number.isFinite(maxBinValue)
+    !Number.isFinite(maxBinValue) ||
+    !Number.isFinite(tvL2)
   ) {
     throw new Error(
       `dailyTokenTotalVariationHalves: non-finite statistic (n=${n})`,
@@ -498,6 +518,7 @@ export function dailyTokenTotalVariationHalves(values: number[]): {
     tvMaxBin: maxBin,
     tvMaxBinX,
     tvMaxBinValue: maxBinValue,
+    tvL2,
   };
 }
 
@@ -676,6 +697,7 @@ export function buildDailyTokenTotalVariationHalves(
       tvMaxBin: result.tvMaxBin,
       tvMaxBinX: result.tvMaxBinX,
       tvMaxBinValue: result.tvMaxBinValue,
+      tvL2: result.tvL2,
     });
     totalTokensSum += acc.totalTokens;
   }
