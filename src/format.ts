@@ -20272,6 +20272,7 @@ import type { DailyTokenTriangularDiscriminationHalvesReport } from './dailytoke
 import type { DailyTokenBhattacharyyaDistanceHalvesReport } from './dailytokenbhattacharyyadistancehalves.js';
 import type { DailyTokenJeffreysDivergenceHalvesReport } from './dailytokenjeffreysdivergencehalves.js';
 import type { DailyTokenRenyiTwoDivergenceHalvesReport } from './dailytokenrenyitwodivergencehalves.js';
+import type { DailyTokenMaxDivergenceHalvesReport } from './dailytokenmaxdivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23185,6 +23186,91 @@ export function renderDailyTokenRenyiTwoDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: D_2^sym in [0, +inf) is the symmetrised Renyi-2 divergence in nats; D_2^sym = 0 iff KDE-smoothed halves coincide; D_2^sym -> +inf as p, q approach disjoint support. asym = |D_2(p||q) - D_2(q||p)| / (2*D_2^sym) in [0, 1] is the directional-asymmetry diagnostic. chi^2_fwd = sum (p-q)^2/q (forward Pearson chi^2); chi^2_rev = sum (p-q)^2/p (reverse); D_2(p||q) = ln(1 + chi^2_fwd) by van Erven & Harremos (2014) eq. (8). d2Norm = D_2^sym/(D_2^sym+1) in [0, 1) is a monotone normalisation on the same scale as bDistNormalized (axis-130), deltaNormalized (axis-129), tvDist (axis-127), jeffreysNormalized (axis-131). Renyi monotonicity per direction: D_2 >= KL = D_1 >= D_{1/2} = 2*bDist (van Erven & Harremos 2014 Theorem 3). D_2^sym is permutation-invariant within each half AND invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMaxDivergenceHalves(
+  r: DailyTokenMaxDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-max-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED SUP-NORM (L^infinity) divergence maxDiv = max_k |p_k - q_k| between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-THIRD cross-source axis. Pure L^infinity NORM of the per-bin pmf gap on the IDENTICAL KDE setup as axes 126/127/128/129/130/131/132 (pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q). maxDiv in [0, 1]; maxDiv=0 iff KDE-smoothed halves coincide on the grid. ORTHOGONAL to all 15 prior axes 118-132: pure sup-norm slot in the L^p ladder on the KDE pmf gap; neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), CDF-L^1 (W1), CF-1/t^2 (energy), RKHS (MMD), low-dim Euclidean (qv-Mahalanobis, PCA), pmf-L^1 (TV), pmf-SQRT-L^2 (Hellinger), pmf-RECIPROCAL-L^2 (Delta), nor pmf-LOG functionals (JSD, TV, Bhattacharyya, Jeffreys, Renyi-2). Holder anchors: maxDiv <= 2*tvDist; maxDiv >= (2/K)*tvDist. Diagnostic maxDivLinfL1Ratio = maxDiv/tvDist in [1/K, 1] is a SPARSITY-OF-DISAGREEMENT score: low = broad drift, high = single-bucket spike. argMaxBucketX pinpoints the token-volume regime driving the divergence. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed sup-norm (L^infinity) pmf-gap (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'maxDiv',
+    'argMaxX',
+    'sign',
+    'tvDist',
+    'L^inf/L^1',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.maxDivN1),
+    formatNumber(s.maxDivN2),
+    s.maxDivMadPool.toFixed(2),
+    s.maxDivBandwidth.toFixed(2),
+    s.maxDiv.toFixed(6),
+    s.argMaxBucketX.toFixed(2),
+    s.argMaxSign === 1 ? '+1' : s.argMaxSign === -1 ? '-1' : '0',
+    s.tvDist.toFixed(6),
+    s.maxDivLinfL1Ratio.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: maxDiv in [0, 1] is the L^infinity sup-norm of the per-bin pmf gap; maxDiv=0 iff KDE-smoothed halves coincide on the grid. argMaxX is the token-volume coordinate g_lo + argMaxBucketIndex*dx of the worst bucket. argMaxSign is +1 if the first half has more mass at that bucket, -1 if the second half does, 0 if equal. tvDist = 0.5*sum_k |p_k - q_k| is the total-variation distance from axis-127. maxDivLinfL1Ratio = maxDiv/tvDist in [1/K, 1]: low = broad disagreement across many buckets, high = single-bucket spike. Holder: maxDiv <= 2*tvDist; maxDiv >= (2/K)*tvDist. maxDiv is permutation-invariant within each half AND invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 

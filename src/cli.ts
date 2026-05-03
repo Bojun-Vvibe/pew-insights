@@ -184,6 +184,7 @@ import {
   renderDailyTokenBhattacharyyaDistanceHalves,
   renderDailyTokenJeffreysDivergenceHalves,
   renderDailyTokenRenyiTwoDivergenceHalves,
+  renderDailyTokenMaxDivergenceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -530,6 +531,7 @@ import { buildDailyTokenTriangularDiscriminationHalves } from './dailytokentrian
 import { buildDailyTokenBhattacharyyaDistanceHalves } from './dailytokenbhattacharyyadistancehalves.js';
 import { buildDailyTokenJeffreysDivergenceHalves } from './dailytokenjeffreysdivergencehalves.js';
 import { buildDailyTokenRenyiTwoDivergenceHalves } from './dailytokenrenyitwodivergencehalves.js';
+import { buildDailyTokenMaxDivergenceHalves } from './dailytokenmaxdivergencehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -38826,6 +38828,116 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenRenyiTwoDivergenceHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-max-divergence-halves')
+  .description(
+    "Per-source KDE-SMOOTHED SUP-NORM (L^infinity) pmf-gap maxDiv = max_k |p_k - q_k| between the FIRST and SECOND half of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-THIRTY-THIRD cross-source axis). Pure L^infinity NORM of the per-bin pmf gap; identifies the SINGLE token-volume bucket where the two half-distributions disagree most. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. maxDiv in [0, 1]. ORTHOGONAL to all 15 prior axes 118-132. Diagnostic maxDivLinfL1Ratio = maxDiv/tvDist in [1/K, 1] is a SPARSITY-OF-DISAGREEMENT score. Translation-invariant AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: maxDivDesc (default) | maxDiv | maxDivLinfL1Ratio | maxDivLinfL1RatioDesc | tokens | tenure | source.',
+    'maxDivDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'maxDiv',
+          'maxDivDesc',
+          'maxDivLinfL1Ratio',
+          'maxDivLinfL1RatioDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMaxDivergenceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'maxDiv'
+            | 'maxDivDesc'
+            | 'maxDivLinfL1Ratio'
+            | 'maxDivLinfL1RatioDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMaxDivergenceHalves(report) + '\n',
           );
         }
       } catch (e) {
