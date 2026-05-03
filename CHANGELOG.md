@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.394 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-calendar-mask-rle-entropy` —
+  per-source SHANNON ENTROPY (in bits) of the run-length
+  encoding of the 0/1 calendar mask
+  `[firstActiveDay..lastActiveDay]` of the per-day
+  `total_tokens` series (ONE-HUNDRED-AND-FORTY-SEVENTH
+  cross-source axis). Build the mask, run-length-encode
+  into segment lengths `r_1..r_K` (`sum = spanDays`),
+  compute `H = -sum_i (r_i / spanDays) * log2(r_i / spanDays)`.
+  Range `[0, log2(K)]`. THIRD PATH-DEPENDENT cross-source
+  daily-token axis (after axis-145 max-drawdown-rate and
+  axis-146 longest-zero-run).
+- Structurally orthogonal to all prior cross-source daily
+  token axes:
+  - vs the permutation-invariant inequality / diversity
+    family (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover,
+    Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson,
+    Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+    FGT, GE family, Var-of-Logs, Log-MAD, Zenga, S-Gini,
+    Hill-tail, decile-share-gap, quintile-share-ratio,
+    percentile-gap-ratio, top-4-CR, ...): those see only the
+    active-day MULTISET; they cannot see calendar gaps.
+    Sources `D=[100,100]` adjacent vs `D=[100,100]` on
+    day-1+day-30 have identical Gini=0, HHI=0.5, Pielou
+    J=1, CR4=1 — but RLE-H is 0 (single segment) vs ~0.55
+    bits (segments [1,28,1] over 30). Witness shipped in
+    test suite.
+  - vs axis-145 max-drawdown-rate: MDD is a magnitude /
+    depth functional on the active-day VALUE vector. RLE-H
+    is a SHAPE / fragmentation functional on the calendar
+    0/1 MASK. MDD ignores calendar gaps; RLE-H ignores token
+    magnitudes. Source U `[100,1,100]` adjacent: MDD=0.99,
+    RLE-H=0 (single active segment). Source V `[100,100]`
+    on day-1+day-30: MDD=0, RLE-H~=0.55. Each axis pinpoints
+    a different facet.
+  - vs axis-146 longest-zero-run: LZR is the MAX of the
+    SILENT-segment lengths only. RLE-H is the entropy of the
+    FULL segment-length distribution (active + silent).
+    Sources can have IDENTICAL LZR but different RLE-H
+    because RLE-H sees the whole shape (e.g. mask=
+    [1,0,0,1,0,0,1] -> LZR=2, segs=[1,2,1,2,1] vs mask=
+    [1,1,0,0,0,0,1] -> LZR=4, segs=[2,4,1] — different LZR
+    AND different RLE-H, demonstrating cross-table
+    separation). Witness shipped in test suite.
+- Per-row diagnostics shipped with the initial axis:
+  `spanDays`, `segmentCount`, `activeSegmentCount`,
+  `silentSegmentCount`, `rleEntropyBits`,
+  `rleEntropyNormalised` (= `H / log2(K)` in `[0,1]`),
+  `longestSegmentLength`, `shortestSegmentLength`,
+  `fragmentationRegime` (continuous | low-fragment |
+  fragmented | shattered | pulverised | degenerate).
+- CLI flags: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 2), `--top`, `--sort`
+  (`rleEntropyBits (default) | rleEntropyNormalised | segmentCount | spanDays | tokens | days | source | meanDaily`),
+  `--min-segment-count` (positive integer filter), `--json`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Invoked `pew-insights daily-token-calendar-mask-rle-entropy --top 6`
+on the live local pew queue (6 sources, 13.17B total tokens):
+
+| source       | days | span | segs | active | silent | rleEntropyBits | rleEntropyNorm | longestSeg | shortestSeg | regime     |
+|--------------|------|------|------|--------|--------|----------------|----------------|------------|-------------|------------|
+| (src-1)      |   73 |  265 |   73 |     37 |     36 |         5.5330 |         0.8939 |         23 |           1 | pulverised |
+| claude-code  |   35 |   72 |   21 |     11 |     10 |         4.0394 |         0.9197 |         12 |           1 | shattered  |
+| codex        |    8 |    8 |    1 |      1 |      0 |         0.0000 |         0.0000 |          8 |           8 | continuous |
+| hermes       |   17 |   17 |    1 |      1 |      0 |         0.0000 |         0.0000 |         17 |          17 | continuous |
+| openclaw     |   17 |   17 |    1 |      1 |      0 |         0.0000 |         0.0000 |         17 |          17 | continuous |
+| opencode     |   14 |   14 |    1 |      1 |      0 |         0.0000 |         0.0000 |         14 |          14 | continuous |
+
+Top result `(src-1)` (pulverised) has 73 segments over a
+265-day calendar span — 37 active stretches, 36 silent —
+with RLE-H = 5.5330 bits (normalised 0.8939, very close to
+the maximum log2(73) = 6.190). High normalised entropy =
+the segment lengths are roughly uniform, i.e. activity is
+SCATTERED across many similar-length stretches rather than
+concentrated in one big run; the longest single segment is
+only 23 days out of the 265-day span. `claude-code` (shattered)
+is similar but at half the spread: 21 segments over 72 days,
+RLE-H = 4.0394 bits, normalised 0.9197 (even more uniform
+fragmentation than `(src-1)`). The four newer sources
+`codex`, `hermes`, `openclaw`, `opencode` all read
+RLE-H = 0 (segmentCount = 1, perfectly continuous —
+they have been active every UTC day since their debut).
+Cross-comparison with axis-146 (longest-zero-run):
+`(src-1)` LZR=23 / RLE-H=5.53 (pulverised AND has a long
+worst gap — both axes fire). `claude-code` LZR=12 /
+RLE-H=4.04 (shattered with a 12-day worst gap). The four
+continuous sources read 0 on BOTH LZR and RLE-H, agreeing
+on "no fragmentation, no dormancy".
+
 ## 0.6.393 — 2026-05-04
 
 ### Added
