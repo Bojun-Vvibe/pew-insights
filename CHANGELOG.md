@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.364 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-FIRST):
+  `pew-insights daily-token-wasserstein-one-halves`.
+
+  Per-source WASSERSTEIN-1 (KANTOROVICH-RUBINSTEIN,
+  EARTH MOVER'S DISTANCE) TWO-SAMPLE TEST comparing
+  the empirical distributions of the FIRST half
+  (n1 = floor(n/2) days) vs the SECOND half
+  (n2 = n - n1 days) of the gap-filled daily
+  total_tokens series, computed via the
+  Kantorovich-Rubinstein duality:
+
+      wassW1  =  integral_0^1
+                   | Q_A(u) - Q_B(u) | du
+              =  integral_R
+                   | F_A(x) - F_B(x) | dx
+
+  where Q_A, Q_B are the per-half quantile functions
+  and F_A, F_B the per-half ECDFs. Discrete
+  computation walks the merged grid of CDF
+  breakpoints {i/n1} U {j/n2} on [0, 1] (Bonneel
+  et al. 2015 algorithm 1 specialised to 1-D,
+  equivalent to `scipy.stats.wasserstein_distance`).
+  Lives in DATA-UNIT space (tokens), NOT probability
+  space.
+
+  Cross-source-comparable effect size:
+
+      wassZ  =  wassW1 / pooledMad
+
+  where pooledMad is the median absolute deviation
+  about the pooled median (with fallback to
+  population stddev when pooledMad collapses to 0
+  on >= 50 % gap-filled-zero days). Sign-direction
+  indicator wassDir = sign(median(B) - median(A))
+  drives the convention wassZSigned = wassDir * wassZ
+  for cross-axis comparability with axes
+  115/116/117/118/119/120.
+
+  STRUCTURAL ORTHOGONALITY. W1 is the SUPPORT-SPACE
+  L1 partner to axis-120 CvM (PROBABILITY-SPACE L2
+  with uniform weight) and axis-119 AD (PROBABILITY-
+  SPACE L2 with tail-amplifying inverse-variance
+  weight). It is also the L1-INTEGRATED partner to
+  axis-118 KS (L_infinity sup-norm in probability
+  space). Crucially W1 weights every CDF gap by
+  SUPPORT-DISTANCE while CvM/AD/KS weight by
+  MASS-DENSITY/POINTWISE-MAX, so a single localised
+  CDF spike of height h over a narrow support of
+  width w gives KS = h, CvM proportional to h^2 in
+  probability space, and W1 = h*w in token units.
+  Equally, a high-density tail bump near the median
+  has large AD (tail weight) but small W1 (short
+  transport). Distinct from axis-117 Siegel-Tukey
+  (rank-invariant SCALE only after median-centring),
+  axis-116 Brown-Forsythe (parametric SCALE only),
+  axis-115 Mann-Whitney (LOCATION/stochastic-
+  dominance only).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (5 sources kept, 1 dropped below min-tenure-days):
+
+      openclaw      n1=8  n2=9   wassW1=1.389e+08  poolMad=4.039e+07  wassZ=3.4380  wassDir=-1  wassZSigned=-3.4380
+      opencode      n1=7  n2=7   wassW1=9.756e+07  poolMad=8.842e+07  wassZ=1.1034  wassDir=-1  wassZSigned=-1.1034
+      claude-code   n1=36 n2=36  wassW1=8.874e+07  poolMad=1.539e+08  wassZ=0.5768  wassDir=+1  wassZSigned=+0.5768
+      hermes        n1=8  n2=9   wassW1=5.613e+06  poolMad=8.862e+06  wassZ=0.6334  wassDir=+1  wassZSigned=+0.6334
+      vscode-other  n1=132 n2=133 wassW1=3.481e+03  poolMad=2.702e+04  wassZ=0.1288  wassDir= 0  wassZSigned= 0.0000
+
+  (openclaw shows the largest distributional
+  shift in robust-scale units (wassZ = 3.44),
+  with a 139 M-token L1 transport cost between
+  the first and second halves of its 17-day
+  tenure -- the second-half median 59 M is well
+  below the first-half median 214 M, so wassDir
+  is -1. claude-code, despite a much larger raw
+  transport cost (89 M tokens) over its 72-day
+  tenure, has wassZ only 0.58 because its
+  pooled MAD is 154 M -- the absolute shift is
+  small relative to the source's intrinsic
+  dispersion. vscode-other shows essentially
+  no shift: wassZ = 0.13 with tied medians.)
+
+  Reference:
+  - Vallender, S. S., "Calculation of the
+    Wasserstein Distance Between Probability
+    Distributions on the Line", Theory of
+    Probability and Its Applications 18(4)
+    (1974), pp. 784-786.
+  - Bickel, P. J. and Freedman, D. A., "Some
+    Asymptotic Theory for the Bootstrap", Annals
+    of Statistics 9(6) (1981), pp. 1196-1217.
+  - del Barrio, E., Gine, E. and Matran, C.,
+    "Central Limit Theorems for the Wasserstein
+    Distance Between the Empirical and the True
+    Distributions", Annals of Probability 27(2)
+    (1999), pp. 1009-1071.
+  - Bonneel, N., Rabin, J., Peyre, G. and
+    Pfister, H., "Sliced and Radon Wasserstein
+    Barycenters of Measures", Journal of
+    Mathematical Imaging and Vision 51(1)
+    (2015), pp. 22-45.
+
 ## 0.6.363 — 2026-05-03
 
 ### Added
