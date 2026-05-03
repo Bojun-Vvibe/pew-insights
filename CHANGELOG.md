@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.371 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-EIGHTH):
+  `pew-insights daily-token-hellinger-distance-halves`.
+
+  Per-source KDE-SMOOTHED HELLINGER DISTANCE between the
+  FIRST half (n1 = floor(n/2) days) and SECOND half
+  (n2 = n - n1 days) of the gap-filled daily total_tokens
+  series. IDENTICAL KDE setup to axes 126 (JSD) and 127
+  (TV): pooled robust scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid;
+  trapezoidal mass-normalisation to exact pmfs p, q on the
+  K=257 grid (sum_k p_k = sum_k q_k = 1).
+
+  Hellinger distance (Pollard 2002, A User's Guide to
+  Measure Theoretic Probability, Chapter 3; Le Cam & Yang
+  2000, Asymptotics in Statistics, Sec. 4.2):
+
+      hDist  =  sqrt( 0.5 * sum_k ( sqrt(p_k) - sqrt(q_k) )^2 )
+             =  sqrt( 1 - BC(p, q) )
+
+  where BC(p, q) = sum_k sqrt(p_k * q_k) is the
+  Bhattacharyya coefficient. hDist in [0, 1]. hDist = 0
+  iff p === q on the grid; hDist = 1 iff p, q have
+  disjoint support on the grid (BC = 0). TRUE METRIC on
+  the probability simplex (sym., non-neg., identity of
+  indiscernibles, triangle inequality directly inherited
+  from the L^2 norm in sqrt-amplitude coordinates). The
+  algebraic identity hDist^2 + BC = 1 is preserved
+  exactly to machine precision.
+
+  STRUCTURAL ORTHOGONALITY. Hellinger is an L^2 DISTANCE
+  IN SQRT-AMPLITUDE COORDINATES of KDE-smoothed pmfs --
+  a class not occupied by any prior axis. vs axes 118-123
+  KS/AD/CvM/W1/energy/MMD: CDF-L_inf / tail-weighted
+  CDF-L^2 / CDF-L^2 / quantile-integral / CF-1/t^2 / RKHS
+  spaces respectively; H lives in the K=257 sqrt-pmf
+  simplex. vs axis-124 qv-Mahalanobis: lives in R^9
+  quantile-coordinate space, H in K=257 sqrt-pmf-coordinate
+  space. vs axis-125 PCA-projection: PCA is COVARIANCE-
+  AWARE through the delay-embedding lag structure; H is
+  PERMUTATION-INVARIANT within each half. vs axis-126 JSD
+  (KDE-smoothed Jensen-Shannon divergence in bits): both
+  share the IDENTICAL KDE setup (h, K, grid, trapezoidal
+  weights) but JSD is a LOG-RATIO integral while H is the
+  L^2 norm in SQRT-AMPLITUDE coordinates. vs axis-127 TV
+  (most important): both share the IDENTICAL KDE setup; TV
+  is L^1 in pmf coordinates, H is L^2 in sqrt-pmf
+  coordinates. Le Cam's sandwich (Le Cam 1986 Sec. 16.4)
+
+      hDist^2  <=  tvDist  <=  sqrt(2) * hDist
+
+  shows the two are sandwiched but NOT monotone images of
+  each other -- H amplifies LOW-MASS bin disagreements
+  (sqrt is concave, so dp / sqrt(p) blows up for small p),
+  while TV is uniform in pmf coordinates. The cross-source
+  ranking can therefore differ. Translation-invariant AND
+  positive-scale-invariant in the data, mirroring axes
+  123/124/125/126/127.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,078,504,989):
+
+      source         tenure  n1   n2   madPool         h               hDist        BC          maxBinX           maxBinValue
+      -------------  ------  ---  ---  --------------  --------------  -----------  ----------  ----------------  -----------
+      openclaw       17       8    9    59886294.12    30583005.59     0.630836    0.602046    242489395.75       0.004033
+      opencode       14       7    7   131088708.42    69595664.65     0.349485    0.877860    735355984.82       0.001546
+      hermes         17       8    9    13138525.44     6709642.04     0.166801    0.972178     24660868.30       0.000363
+      claude-code    72      36   36          0.00    402528503.09     0.093674    0.991225   1230277438.84       0.000112
+      vscode-other   265    132  133          0.00         70977.97    0.029136    0.999151        287014.45       0.000015
+
+  Cross-axis comparison vs axis-127 TV and axis-126 JSD
+  (same queue, same bandwidth) -- H ranks the same top
+  three sources but the GAPS between them sit IN BETWEEN
+  TV and JSD: openclaw's hDist 0.631 vs tvDist 0.636 vs
+  jsdBits 0.458 -- H sits ~0.99x of TV (well within Le
+  Cam's sqrt(2) upper bound) and ~1.38x of JSD,
+  consistent with H being algebraically constrained as
+  the sqrt-amplitude L^2. opencode's hDist 0.349 vs
+  tvDist 0.378 (~0.92x) vs jsdBits 0.153 (~2.28x of JSD).
+  hermes drops faster on H (0.167) than on TV (0.205)
+  because the mass disagreement is broad (TV) but
+  sqrt-amplitude weighting damps the per-bin contribution
+  more for low-amplitude pmf differences. The
+  Bhattacharyya coefficient column shows the algebraic
+  identity hDist^2 + BC = 1 holds bit-exact: 0.6308^2 +
+  0.6020 = 0.398 + 0.602 = 1.000 for openclaw; 0.3495^2 +
+  0.8779 = 0.122 + 0.878 = 1.000 for opencode; etc. This
+  is the test-suite-verified algebraic identity acting as
+  a measurement instrument, not redundancy.
+
+  All 53 new tests pass (10903 -> 10956 total).
+
 ## 0.6.370 — 2026-05-03
 
 ### Added
