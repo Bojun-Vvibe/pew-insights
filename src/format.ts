@@ -4783,6 +4783,8 @@ export function renderDailyTokenHerfindahlHirschmanIndex(
     'nEff',
     'regime',
     'maxShare',
+    'peakC',
+    'peakReg',
     'maxDay',
     'tokens',
   ];
@@ -4797,6 +4799,8 @@ export function renderDailyTokenHerfindahlHirschmanIndex(
     s.effectiveDays.toFixed(3),
     s.concentrationRegime,
     s.maxShare.toFixed(4),
+    s.peakDayHhiContribution.toFixed(4),
+    s.peakRegime,
     s.maxDay,
     formatNumber(s.totalTokens),
   ]);

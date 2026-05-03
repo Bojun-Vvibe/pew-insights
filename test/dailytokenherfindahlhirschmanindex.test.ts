@@ -298,3 +298,86 @@ test('refinement: maxShare emitted on row matches largest day / total', () => {
   assert.ok(Math.abs(row.maxShare - 100 / 103) < 1e-12);
   assert.equal(row.maxDay, '2026-05-01');
 });
+
+// ---- secondary refinement: peakDayHhiContribution + peakRegime --------
+
+test('refinement2: monopoly vector -> peakDayHhiContribution ~ 1, peakRegime=monopoly', () => {
+  const queue: QueueLine[] = [];
+  queue.push(ql('2026-05-01T10:00:00Z', 'spike', 1_000_000));
+  for (let d = 2; d <= 10; d += 1) {
+    queue.push(ql(`2026-05-${String(d).padStart(2, '0')}T10:00:00Z`, 'spike', 1));
+  }
+  const r = buildDailyTokenHerfindahlHirschmanIndex(queue, {
+    minTokens: 1,
+    minDays: 2,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.ok(row.peakDayHhiContribution > 0.99);
+  assert.equal(row.peakRegime, 'monopoly');
+});
+
+test('refinement2: flat vector -> peakDayHhiContribution = 1/n, peakRegime=spread', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 8; d += 1) {
+    queue.push(ql(`2026-05-0${d}T10:00:00Z`, 'flat', 1000));
+  }
+  const r = buildDailyTokenHerfindahlHirschmanIndex(queue, {
+    minTokens: 1,
+    minDays: 2,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  // flat: maxShare=1/8, hhi=1/8, ratio = (1/64)/(1/8) = 1/8
+  assert.ok(Math.abs(row.peakDayHhiContribution - 1 / 8) < 1e-12);
+  assert.equal(row.peakRegime, 'spread');
+});
+
+test('refinement2: peakDayHhiContribution = maxShare^2 / hhi closed-form', () => {
+  // D=[1..10]: maxShare = 10/55 = 2/11; hhi = 385/3025 = 77/605 = 7/55.
+  // ratio = (2/11)^2 / (7/55) = (4/121) / (7/55) = 4*55 / (121*7)
+  //       = 220 / 847 = 0.25974...
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 10; d += 1) {
+    queue.push(
+      ql(`2026-05-${String(d).padStart(2, '0')}T10:00:00Z`, 'tri', d * 1000),
+    );
+  }
+  const r = buildDailyTokenHerfindahlHirschmanIndex(queue, {
+    minTokens: 1,
+    minDays: 2,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  const expected = (row.maxShare * row.maxShare) / row.hhi;
+  assert.ok(Math.abs(row.peakDayHhiContribution - expected) < 1e-15);
+  assert.ok(Math.abs(row.peakDayHhiContribution - 220 / 847) < 1e-12);
+  // 0.2597 < 0.5 -> spread
+  assert.equal(row.peakRegime, 'spread');
+});
+
+test('refinement2: peak-driven band in [0.5, 0.85)', () => {
+  // shares (0.7, 0.1, 0.1, 0.1): hhi = 0.49 + 3*0.01 = 0.52
+  // peakContrib = 0.49/0.52 = 0.9423... -> monopoly (>= 0.85)
+  // Need ratio in [0.5, 0.85). Try shares (0.6, 0.2, 0.1, 0.1):
+  //   hhi = 0.36 + 0.04 + 0.01 + 0.01 = 0.42
+  //   peakContrib = 0.36/0.42 = 0.8571... -> still monopoly
+  // Try (0.5, 0.25, 0.15, 0.1):
+  //   hhi = 0.25 + 0.0625 + 0.0225 + 0.01 = 0.345
+  //   peakContrib = 0.25/0.345 = 0.7246 -> peak-driven
+  const queue: QueueLine[] = [
+    ql('2026-05-01T10:00:00Z', 'pk', 5000),
+    ql('2026-05-02T10:00:00Z', 'pk', 2500),
+    ql('2026-05-03T10:00:00Z', 'pk', 1500),
+    ql('2026-05-04T10:00:00Z', 'pk', 1000),
+  ];
+  const r = buildDailyTokenHerfindahlHirschmanIndex(queue, {
+    minTokens: 1,
+    minDays: 2,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.peakRegime, 'peak-driven');
+  assert.ok(row.peakDayHhiContribution >= 0.5);
+  assert.ok(row.peakDayHhiContribution < 0.85);
+});

@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.389 — 2026-05-04
+
+### Added
+
+- axis-143 refinement: `peakDayHhiContribution` and
+  `peakRegime` per-row diagnostic fields.
+  `peakDayHhiContribution = maxShare^2 / hhi` in `[1/n, 1]`
+  is the FRACTION OF HHI EXPLAINED BY THE SINGLE PEAK DAY.
+  Closed-form interpretation: HHI is the sum of squared
+  shares; the single largest share contributes
+  `maxShare^2` to that sum and `peakDayHhiContribution`
+  reports its fractional share of the total HHI. A value
+  near `1/n` means concentration is EVENLY DISTRIBUTED
+  across many busy days; a value near `1` means HHI is
+  essentially driven by ONE monopoly day. Cross-source
+  comparable on `[0, 1]`. NaN-safe: `1` if `hhi == 0` (so
+  degenerate rows do not silently sort low).
+- `peakRegime` structural label: `'spread'` (< 0.5, HHI
+  driven by multiple busy days), `'peak-driven'`
+  (`[0.5, 0.85)`, single peak dominates but other days
+  still matter), `'monopoly'` (>= 0.85, one day explains
+  all of HHI), `'degenerate'` for `n < 2`. Pure compute
+  from existing fields, no new I/O, no new knobs, no new
+  CLI flags.
+- 4 new tests covering: monopoly vector saturation
+  (`peakRegime = 'monopoly'`, contribution > 0.99),
+  flat-vector floor (`contribution = 1/n`,
+  `peakRegime = 'spread'`), closed-form on `D=[1..10]`
+  (`220 / 847` exactly), and `peak-driven` band detection
+  on a constructed (0.5, 0.25, 0.15, 0.10) share vector.
+- Renderer surfaces `peakC` and `peakReg` columns
+  alongside `maxShare` and `regime`.
+
+### Live smoke (queue.jsonl, post-refinement, 2026-05-04)
+
+`pew-insights daily-token-herfindahl-hirschman-index --json`
+against the local pew queue (6 sources, 13.11B tokens; one
+source name redacted as `vscode-<src-d>`):
+
+| source         | hhi      | maxShare | peakC  | peakReg     |
+| ---            | ---      | ---      | ---    | ---         |
+| codex          | 0.308753 |  0.4814  | 0.7505 | peak-driven |
+| claude-code    | 0.157718 |  0.3056  | 0.5922 | peak-driven |
+| openclaw       | 0.088638 |  0.1579  | 0.2814 | spread      |
+| opencode       | 0.081044 |  0.1148  | 0.1625 | spread      |
+| hermes         | 0.074387 |  0.1136  | 0.1736 | spread      |
+| vscode-<src-d> | 0.058199 |  0.1277  | 0.2800 | spread      |
+
+The refinement column SEPARATES the field cleanly. `codex`
+(0.7505) and `claude-code` (0.5922) are both `peak-driven`
+-- a SINGLE DAY explains 75% / 59% of their respective HHI
+totals. The remaining four sources are all `spread`: even
+the most concentrated of them (`openclaw` at peakC=0.281)
+distributes its HHI across multiple busy days. Notably
+`opencode` -- which carries the LARGEST absolute token
+mass (6.31B) on the queue -- has the LOWEST peakC (0.163),
+meaning its concentration is structurally distributed
+across all 14 of its active days rather than a single
+peak. `vscode-<src-d>` over its 73-day history has
+peakC=0.280, slightly above the cross-source median --
+i.e. its modest HHI of 0.058 is itself somewhat
+peak-driven once normalised by total concentration. Closed-
+form `peakC = maxShare^2 / hhi` reproduced bit-exactly on
+every row, as the test asserts.
+
 ## 0.6.388 — 2026-05-04
 
 ### Added

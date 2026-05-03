@@ -182,6 +182,35 @@ export interface DailyTokenHerfindahlHirschmanIndexSourceRow {
   maxDailyTokens: number;
   maxDay: string;
   maxShare: number;
+  /**
+   * Refinement: fraction of HHI explained by the single peak day,
+   * `peakDayHhiContribution = maxShare^2 / hhi` in `[1/n, 1]`.
+   *
+   * Closed-form interpretation: HHI is the sum of squared shares;
+   * the single largest share contributes `maxShare^2` to that sum
+   * and `peakDayHhiContribution` reports its fractional share of
+   * the total HHI. A value near `1/n` means concentration is
+   * EVENLY DISTRIBUTED across all days (no single dominant day);
+   * a value near `1` means HHI is essentially driven by ONE
+   * monopoly day and the rest of the vector contributes negligibly.
+   *
+   * Cross-source comparable on `[0, 1]`. NaN-safe: returns `1` if
+   * `hhi == 0` (degenerate empty case) so degenerate rows do not
+   * silently sort low. For `n=1` this is `1` by construction.
+   */
+  peakDayHhiContribution: number;
+  /**
+   * Refinement: structural label for the peak-day contribution:
+   *   - `'spread'`     : peakDayHhiContribution < 0.5 -- HHI is
+   *                      driven by MULTIPLE busy days, not one.
+   *   - `'peak-driven'`: peakDayHhiContribution in `[0.5, 0.85)` --
+   *                      a single peak day dominates concentration
+   *                      but other days still matter.
+   *   - `'monopoly'`   : peakDayHhiContribution >= 0.85 -- one day
+   *                      essentially explains all of HHI.
+   *   - `'degenerate'` : `n < 2`.
+   */
+  peakRegime: 'spread' | 'peak-driven' | 'monopoly' | 'degenerate';
 }
 
 export interface DailyTokenHerfindahlHirschmanIndexReport {
@@ -441,6 +470,15 @@ export function buildDailyTokenHerfindahlHirschmanIndex(
       maxDailyTokens: Math.max(0, maxDailyTokens),
       maxDay,
       maxShare: r.maxShare,
+      peakDayHhiContribution:
+        r.degenerate || r.hhi <= 0 ? 1 : (r.maxShare * r.maxShare) / r.hhi,
+      peakRegime: r.degenerate
+        ? 'degenerate'
+        : (r.maxShare * r.maxShare) / r.hhi < 0.5
+          ? 'spread'
+          : (r.maxShare * r.maxShare) / r.hhi < 0.85
+            ? 'peak-driven'
+            : 'monopoly',
     });
     totalTokensSum += acc.totalTokens;
   }
