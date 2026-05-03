@@ -460,6 +460,17 @@ function meanPairwiseAbsCross(
  *   - E_hat in [0, +inf); enZ in [0, +inf).
  *   - Swapping the two halves leaves E_hat invariant
  *     (E_hat is symmetric in A, B) and negates enDir.
+ *   - Under the rescale x -> k*x with k > 0, enE
+ *     scales as k * enE and pooledMad scales as
+ *     k * pooledMad, so enZ = sqrt(enE)/pooledMad
+ *     scales as sqrt(k)/k = 1/sqrt(k) (NOT scale-
+ *     invariant). This is the deliberate design
+ *     choice for the canonical Szekely-Rizzo energy
+ *     effect-size scale: it preserves the unit-
+ *     analysis identity enZ ~ sqrt(transport-cost-
+ *     in-tokens) / robust-scale-in-tokens. See the
+ *     test "enZ scale-invariant under x -> k*x" for
+ *     the exact identity enZ(k*x) = enZ(x)/sqrt(k).
  */
 export function dailyTokenEnergyDistanceHalves(values: number[]): {
   mean: number;
