@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.385 — 2026-05-04
+
+### Added
+
+- axis-141 refinement: `magnitudeRegime` and `pssSaturation`
+  per-row diagnostic fields. `magnitudeRegime` classifies
+  every emitted row against Pearson's unimodal bound
+  (`|PSS| <= 3`): `'unimodal'` iff the bound holds (classical
+  regime, the per-day distribution is consistent with a single
+  mode), `'multimodal-witness'` iff the bound is violated
+  (which is itself diagnostic evidence of multi-modality /
+  heavy clumping in the per-day distribution), `'degenerate'`
+  iff `stddev = 0`. `pssSaturation = min(1, |pss| / 3)` in
+  `[0, 1]` is the cross-source comparable rank against the
+  unimodal ceiling: 0 = perfectly symmetric, 1 = at-or-above
+  the Pearson bound. Pure compute from existing fields, no
+  new I/O, no new knobs, no new CLI flags.
+- 5 new tests covering: degenerate row classification,
+  unimodal row saturation = `|pss|/3`, saturation clamp at
+  1.0 for the multimodal-witness regime, builder-level
+  emission on every non-empty row, and the `min(1, |pss|/3)`
+  closed-form across both regimes.
+- Renderer surfaces `sat` and `regime` columns alongside
+  `pss` and `sign`.
+
+### Live smoke (queue.jsonl, post-refinement, 2026-05-04)
+
+`pew-insights daily-token-pearson-second-skewness --top 8`
+against the local pew queue (6 sources, 13.08B tokens):
+
+| source         | pss       | sat    | regime   |
+| ---            | ---       | ---    | ---      |
+| openclaw       |  1.547531 | 0.5158 | unimodal |
+| codex          |  1.466168 | 0.4887 | unimodal |
+| vscode-copilot |  1.141394 | 0.3805 | unimodal |
+| hermes         | -1.119504 | 0.3732 | unimodal |
+| claude-code    |  1.046551 | 0.3489 | unimodal |
+| opencode       |  0.131376 | 0.0438 | unimodal |
+
+Every source on the local queue is in the UNIMODAL Pearson
+regime (`|PSS| <= 3`); no source straddles the
+multimodal-witness threshold. `openclaw` is the most
+saturated (0.5158, slightly over half the bound) and
+`opencode` the least (0.0438, near-symmetric). The
+saturation column reproduces `min(1, |pss|/3)` exactly
+on every row, as the test asserts.
+
 ## 0.6.384 — 2026-05-04
 
 ### Added

@@ -145,6 +145,24 @@ export interface DailyTokenPearsonSecondSkewnessSourceRow {
   pss: number;
   /** Sign of PSS in {-1, 0, +1} (skew direction). */
   pssSign: -1 | 0 | 1;
+  /**
+   * Refinement (v0.6.385): classification of `|pss|` against
+   * Pearson's unimodal bound. `'unimodal'` iff `|pss| <= 3`
+   * (Pearson's inequality holds, classical regime); `'multimodal-witness'`
+   * iff `|pss| > 3` (the unimodal bound is violated, which is
+   * itself diagnostic evidence of multi-modality / heavy clumping
+   * in the per-day distribution); `'degenerate'` iff stddev = 0
+   * (PSS not defined). Pure compute from existing fields; no extra
+   * I/O, no new knobs.
+   */
+  magnitudeRegime: 'unimodal' | 'multimodal-witness' | 'degenerate';
+  /**
+   * Refinement (v0.6.385): saturation against Pearson's unimodal
+   * bound. `pssSaturation = |pss| / 3` clamped at 1.0; in `[0, 1]`
+   * for the unimodal regime, exactly 1.0 (clamped) once the bound
+   * is violated. Cross-source comparable rank.
+   */
+  pssSaturation: number;
   /** True iff stddev = 0 (cannot normalise; constant series). */
   degenerate: boolean;
 }
@@ -358,6 +376,13 @@ export function buildDailyTokenPearsonSecondSkewness(
     let sign: -1 | 0 | 1 = 0;
     if (r.pss > 0) sign = 1;
     else if (r.pss < 0) sign = -1;
+    let regime: 'unimodal' | 'multimodal-witness' | 'degenerate';
+    if (r.degenerate) regime = 'degenerate';
+    else if (Math.abs(r.pss) <= 3) regime = 'unimodal';
+    else regime = 'multimodal-witness';
+    const saturation = r.degenerate
+      ? 0
+      : Math.min(1, Math.abs(r.pss) / 3);
     rows.push({
       source: src,
       totalTokens: acc.totalTokens,
@@ -369,6 +394,8 @@ export function buildDailyTokenPearsonSecondSkewness(
       stddevDaily: r.stddev,
       pss: r.pss,
       pssSign: sign,
+      magnitudeRegime: regime,
+      pssSaturation: saturation,
       degenerate: r.degenerate,
     });
     totalTokensSum += acc.totalTokens;
