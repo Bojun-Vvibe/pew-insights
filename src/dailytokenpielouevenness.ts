@@ -200,6 +200,60 @@ export interface DailyTokenPielouEvennessSourceRow {
    * Cross-source comparable on counts. NaN-safe: 0 if n == 0.
    */
   effectiveDaysShannon: number;
+  /**
+   * Refinement: `shannonCompleteness = effectiveDaysShannon / nDays`
+   * in `(0, 1]` for n >= 1. The fraction of the source's active
+   * days that are "effectively contributing" under the Shannon
+   * (q=1) Hill weighting. ALGEBRAICALLY EQUIVALENT to
+   * `exp(H) / n = exp(H - ln(n)) = exp(-(ln(n) - H)) =
+   * exp(-(1 - J) * ln(n))` so it is a MONOTONE BIJECTION of
+   * Pielou J once n is fixed, but it carries an ABSOLUTE
+   * count-scale meaning that J's dimensionless [0,1] index does
+   * not. A source with `shannonCompleteness = 0.4` has a
+   * Shannon-effective day count of 40% of its calendar coverage
+   * regardless of whether n=8 or n=73. NaN-safe: 0 if n == 0.
+   */
+  shannonCompleteness: number;
+  /**
+   * Refinement: structural label binning Pielou J into four
+   * bands chosen to match the cross-source profile observed
+   * on the live pew queue (which spans roughly J in [0.66,
+   * 0.97] across 6 active sources):
+   *   - 'uniform'      : J >= 0.90  -- daily mass is essentially
+   *                       evenly distributed; J within 10% of the
+   *                       flat-vector ceiling.
+   *   - 'even'         : J in [0.75, 0.90) -- well-spread, modest
+   *                       day-to-day deviation from flat.
+   *   - 'concentrated' : J in [0.50, 0.75) -- a clear minority of
+   *                       days drives most of the mass.
+   *   - 'monopolised'  : J < 0.50  -- one or two days dominate.
+   *   - 'degenerate'   : n < 2 (J undefined).
+   */
+  evennessRegime:
+    | 'uniform'
+    | 'even'
+    | 'concentrated'
+    | 'monopolised'
+    | 'degenerate';
+  /**
+   * Refinement: Hill-number TAIL-WEIGHT GAP between the Shannon
+   * (q=1) and inverse-Simpson (q=2) effective day counts:
+   *
+   *     tailWeightGap = effectiveDaysShannon - 1 / hhiOfShares
+   *
+   * where `hhiOfShares = sum_i s_i^2`. Hill numbers are NON-
+   * INCREASING in q, so this gap is ALWAYS >= 0 (with equality
+   * iff D is flat). It quantifies how much MORE day-count
+   * "credit" Shannon (which weights the tail of small shares
+   * via -s ln s) gives the source than inverse-Simpson (which
+   * suppresses the tail via squared shares). A LARGE gap
+   * indicates a source whose mass is carried by a HEAVY EVEN
+   * TAIL of small busy days; a SMALL gap indicates the active
+   * days are mostly comparable in mass. NaN-safe: 0 if
+   * degenerate. Units: effective days (same as
+   * effectiveDaysShannon).
+   */
+  tailWeightGap: number;
   meanDailyTokens: number;
   degenerate: boolean;
   maxDailyTokens: number;
@@ -428,6 +482,37 @@ export function buildDailyTokenPielouEvenness(
       }
     }
     const r = pielouEvennessOfVector(values);
+    let regime:
+      | 'uniform'
+      | 'even'
+      | 'concentrated'
+      | 'monopolised'
+      | 'degenerate';
+    if (r.degenerate) {
+      regime = 'degenerate';
+    } else if (r.evenness >= 0.9) {
+      regime = 'uniform';
+    } else if (r.evenness >= 0.75) {
+      regime = 'even';
+    } else if (r.evenness >= 0.5) {
+      regime = 'concentrated';
+    } else {
+      regime = 'monopolised';
+    }
+    let sumSqShares = 0;
+    if (!r.degenerate) {
+      for (const v of values) {
+        const s = v / r.total;
+        sumSqShares += s * s;
+      }
+    }
+    const inverseSimpson =
+      r.degenerate || sumSqShares <= 0 ? 0 : 1 / sumSqShares;
+    const tailWeightGap = r.degenerate
+      ? 0
+      : Math.max(0, r.effectiveDaysShannon - inverseSimpson);
+    const shannonCompleteness =
+      nDays > 0 ? r.effectiveDaysShannon / nDays : 0;
     rows.push({
       source: src,
       totalTokens: acc.totalTokens,
@@ -438,6 +523,9 @@ export function buildDailyTokenPielouEvenness(
       maxEntropy: r.maxEntropy,
       evenness: r.evenness,
       effectiveDaysShannon: r.effectiveDaysShannon,
+      shannonCompleteness,
+      evennessRegime: regime,
+      tailWeightGap,
       meanDailyTokens: r.mean,
       degenerate: r.degenerate,
       maxDailyTokens: Math.max(0, maxDailyTokens),
