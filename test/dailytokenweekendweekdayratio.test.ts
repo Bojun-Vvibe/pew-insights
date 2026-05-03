@@ -430,3 +430,52 @@ test('refinement: weekendDensityLogLift = null when densityRatio is null', () =>
   assert.equal(s.densityRatio, null);
   assert.equal(s.weekendDensityLogLift, null);
 });
+
+// --- v0.6.396 follow-up: deterministic tie-break + sort-by-shareDelta ----
+
+test('refinement: sort=weekendShare ties broken by source ascending', () => {
+  // Two sources with identical share -> expect alpha-asc by source.
+  const r = buildDailyTokenWeekendWeekdayRatio(
+    [
+      ql('2026-05-04T00:00:00Z', 'zeta', 1000),
+      ql('2026-05-09T00:00:00Z', 'zeta', 1000),
+      ql('2026-05-04T00:00:00Z', 'alpha', 1000),
+      ql('2026-05-09T00:00:00Z', 'alpha', 1000),
+    ],
+    { generatedAt: GEN, sort: 'weekendShare' },
+  );
+  assert.equal(r.sources.length, 2);
+  // Both have weekendShare = 0.5 (one weekday + one weekend, equal mass).
+  assert.ok(
+    Math.abs(r.sources[0]!.weekendShare - r.sources[1]!.weekendShare) < 1e-12,
+  );
+  assert.equal(r.sources[0]!.source, 'alpha');
+  assert.equal(r.sources[1]!.source, 'zeta');
+});
+
+test('refinement: weekendShareDelta is in [-2/7, +5/7] for every produced row', () => {
+  // Stress: many sources with random-ish DOW patterns; check bounds hold.
+  const lines: QueueLine[] = [];
+  const sourceNames = ['s1', 's2', 's3', 's4'];
+  // Days span Mon..Sun across two weeks.
+  const days = [
+    '2026-05-04', '2026-05-05', '2026-05-06', '2026-05-07', '2026-05-08',
+    '2026-05-09', '2026-05-10', '2026-05-11', '2026-05-12', '2026-05-13',
+    '2026-05-14', '2026-05-15', '2026-05-16', '2026-05-17',
+  ];
+  let i = 0;
+  for (const s of sourceNames) {
+    for (const d of days) {
+      // Vary token mass per source / day deterministically but unevenly.
+      const v = ((i * 7919 + 13) % 5000) + 100;
+      lines.push(ql(d + 'T00:00:00Z', s, v));
+      i += 1;
+    }
+  }
+  const r = buildDailyTokenWeekendWeekdayRatio(lines, { generatedAt: GEN });
+  assert.equal(r.sources.length, 4);
+  for (const s of r.sources) {
+    assert.ok(s.weekendShareDelta >= -2 / 7 - 1e-12);
+    assert.ok(s.weekendShareDelta <= 5 / 7 + 1e-12);
+  }
+});
