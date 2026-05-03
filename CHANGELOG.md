@@ -2,6 +2,127 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.374 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-THIRTY-FIRST):
+  `pew-insights daily-token-jeffreys-divergence-halves`.
+
+  Per-source KDE-SMOOTHED JEFFREYS DIVERGENCE between
+  the FIRST half (n1 = floor(n/2) days) and SECOND half
+  (n2 = n - n1 days) of the gap-filled daily total_tokens
+  series. IDENTICAL KDE setup to axes 126 (JSD), 127 (TV),
+  128 (H), 129 (Delta), and 130 (bDist): pooled robust
+  scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid;
+  trapezoidal mass-normalisation to exact pmfs p, q on the
+  K = 257 grid (sum_k p_k = sum_k q_k = 1).
+
+  Jeffreys divergence (Jeffreys 1946, "An invariant form
+  for the prior probability in estimation problems",
+  Proc. R. Soc. A 186(1007): 453-461; Kullback & Leibler
+  1951, "On information and sufficiency", Ann. Math.
+  Statist. 22(1): 79-86, eq. 2.4 — the "symmetric
+  divergence" J):
+
+      J(p, q)  =  KL(p||q) + KL(q||p)
+               =  sum_k ( p_k - q_k ) * ln( p_k / q_k )    in nats
+
+  in [0, +inf). J = 0 iff p === q on the grid; J -> +inf
+  as p, q approach disjoint support. Symmetric by
+  construction: J(p, q) = J(q, p).
+
+  Per-bin pmf entries are clamped to a numerical floor
+  EPS_PMF = 1e-300 before the log-ratio to keep the
+  per-bin contribution finite under subnormal-mass tails
+  (Gaussian KDE on a shared finite grid never produces
+  exact zeros, but underflow can drive ln(.) to -inf in
+  floating-point). This is a NUMERICAL guard, not a
+  smoothing.
+
+  STRUCTURAL ORTHOGONALITY. J is the (p - q) * log(p/q)
+  integral, i.e. the L^1-IN-PMF-DIFFERENCE WEIGHTED
+  LOG-RATIO functional, equivalently the f-divergence with
+  f(t) = (t - 1) * ln(t). This class is not occupied by
+  any prior axis. vs axes 118-123 KS/AD/CvM/W1/energy/MMD:
+  CDF-L_inf / tail-weighted CDF-L^2 / CDF-L^2 /
+  quantile-integral / CF-1/t^2 / RKHS spaces respectively;
+  J lives in the K = 257 pmf simplex via a log-ratio
+  integral. vs axis-124 qv-Mahalanobis / axis-125 PCA:
+  low-dimensional Euclidean spaces vs symmetric KL on
+  pmfs. vs axis-126 JSD: both LOG functionals on the
+  IDENTICAL KDE setup, but JSD = 0.5*KL(p||m) + 0.5*KL(q||m)
+  is the SHANNON-AVERAGED log-ratio against the mixture
+  m = (p+q)/2 and is BOUNDED by ln 2 in nats, while J is
+  the SUM of TWO PAIRWISE log-ratios and is UNBOUNDED.
+  Lin (1991, "Divergence measures based on the Shannon
+  entropy", IEEE Trans. Inf. Theory 37(1): 145-151) gives
+  the tightest one-direction bound JSD <= J / 4 in nats;
+  not monotone. vs axis-127 TV: TV is L^1 in pmf
+  coordinates; J is L^1-WEIGHTED LOG-RATIO. Pinsker
+  (1964): tvDist^2 <= 0.5 * J — bound, not monotone (J
+  diverges on disjoint supports while TV saturates at 2).
+  vs axis-128 H (KDE-smoothed Hellinger, identical setup):
+  H is L^2 in sqrt-amplitude coordinates; Topsoe (2000)
+  gives H^2 <= J / 4 — loose bound, not monotone. vs
+  axis-129 Delta (triangular discrimination, KDE,
+  identical setup): Delta is weighted L^2 in
+  reciprocal-sum coordinates and BOUNDED in [0, 2]; J is
+  logarithmic and UNBOUNDED. Topsoe (2000 Theorem 3.2):
+  Delta <= J / 2 with strict inequality away from p === q.
+  vs axis-130 bDist (KDE-smoothed Bhattacharyya distance,
+  identical setup): bDist = -ln(BC) is the LOG of an
+  INNER PRODUCT (sum_k sqrt(p*q)); J is LINEAR in (p - q)
+  WEIGHTED by log(p/q). 4 * bDist <= J in the
+  small-divergence regime (Cover & Thomas 2006 Sec. 11.6
+  with H^2 ~ J/4); the two diverge sharply for large
+  divergence. Translation-invariant AND
+  positive-scale-invariant in the data, mirroring axes
+  123/124/125/126/127/128/129/130.
+
+  The implementation also exposes a directional-asymmetry
+  diagnostic asym = |KL(p||q) - KL(q||p)| / J in [0, 1]
+  (0 = symmetric per-bin contributions, 1 = one direction
+  dominates entirely; defined as 0 when J = 0) and a
+  monotone normalisation jNorm = J / (J + 1) in [0, 1) on
+  the same [0, 1) scale as bDistNormalized (axis-130),
+  deltaNormalized (axis-129), and tvDist (axis-127) for
+  at-a-glance cross-axis comparison.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,118,793,724):
+
+      source             tenure  n1   n2   madPool         h               KL(p||q)    KL(q||p)    J           asym        jNorm       tokens
+      -----------------  ------  ---  ---  --------------  --------------  ----------  ----------  ----------  ----------  ----------  -------------
+      openclaw           17       8    9    59886294.12    30583005.59     6.808366    1.326697    8.135063    0.673832    0.890532    2,213,942,753
+      opencode           14       7    7   131088708.42    69595664.65     0.785826    0.488294    1.274120    0.233519    0.560269    6,163,009,205
+      hermes             17       8    9    13138525.44     6709642.04     0.109448    0.105188    0.214636    0.019851    0.176708       297,570,251
+      claude-code        72      35   36          0.00    402528503.09     0.028459    0.048896    0.077355    0.264195    0.071801     3,442,385,788
+      <redacted-vscode>  265     73  132   133          0.00         70977.97         0.002888    0.004135    0.007023    0.177538    0.006974         1,885,727
+
+  Note the strong directional asymmetry on `openclaw`
+  (asym = 0.674, KL(p||q) ~ 5.1x KL(q||p)) — the FIRST
+  half of the openclaw daily-token series carries
+  high-mass bins where the SECOND half is sparse, driving
+  the forward KL much higher than the reverse. This is
+  exactly the kind of structural per-source signal that
+  the symmetric-KL formulation surfaces but JSD's
+  mixture-bounded log-ratio cannot resolve (JSD on the
+  same source is bounded by ln 2 ~ 0.693 nats; J = 8.135
+  nats here).
+
 ## 0.6.373 — 2026-05-03
 
 ### Added
