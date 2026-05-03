@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.401 — 2026-05-04
+
+### Added
+
+- `daily-token-isoweek-day-of-week-entropy` REFINEMENT —
+  two new per-row derived fields:
+  - `effectiveDowCount` = `7 ^ meanWeeklyEntropyNorm` (perplexity
+    of the headline entropy). In `[1, 7]`. The "effective number
+    of days-of-week" the source uses on a typical iso week.
+    `1` = single-DOW each week; `5` = workdays-uniform; `7` =
+    uniform Mon-Sun. Numerically clamped to `[1, 7]` for safety.
+    Materially more intuitive for cross-source ranking than the
+    raw entropy fraction.
+  - `workweekDelta` = `meanWeeklyEntropyNorm -
+    WORKDAYS_UNIFORM_BASELINE` where the baseline is exactly
+    `log2(5) / log2(7) ~ 0.8270`. Signed deviation from the
+    workdays-uniform reference: positive = source spreads MORE
+    broadly than 5-DOW-uniform (uses weekend DOWs as well);
+    negative = source concentrates MORE narrowly than
+    5-DOW-uniform (fewer than 5 effective DOWs per week). Cleanly
+    partitions sources into "weekend-broadening" vs
+    "workweek-narrowing" tilts independent of the absolute
+    entropy.
+- New exported helpers `effectiveDowCountFromEntropy(entropyNorm)`
+  and constant `WORKDAYS_UNIFORM_BASELINE`.
+- 11 additional unit tests covering the refinement: perplexity at
+  the headline anchors `0 -> 1`, `1 -> 7`, `log2(5)/log2(7) -> 5`,
+  `log2(2)/log2(7) -> 2`, `log2(3)/log2(7) -> 3`; numerical clamp
+  on tiny-negative input; throw on `NaN`; baseline-constant
+  identity check; uniform-week source carries `effectiveDowCount
+  = 7` and positive `workweekDelta`; single-DOW source carries
+  `effectiveDowCount = 1` and `workweekDelta = -log2(5)/log2(7)`;
+  broad vs narrow witness pair confirms the sign split and that
+  3-DOW input yields `effectiveDowCount = 3`.
+- Renderer surfaces `effDows` and `wwDelta` columns next to
+  `meanH`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+Re-running the live smoke with the refinement columns populated:
+
+| source       | days | weeks | meanH  | effDows | wwDelta  | minH   | maxH   | stdH   | regime          | tokens        |
+|--------------|------|-------|--------|---------|----------|--------|--------|--------|-----------------|---------------|
+| opencode     |   14 |     2 | 0.9561 |   6.43  | +0.1290  | 0.9205 | 0.9943 | 0.0369 | uniform-week    | 6,401,982,537 |
+| hermes       |   17 |     3 | 0.8637 |   5.37  | +0.0366  | 0.4880 | 0.9958 | 0.1887 | broad-week      |   309,460,762 |
+| openclaw     |   17 |     3 | 0.8475 |   5.20  | +0.0204  | 0.4333 | 0.9944 | 0.2275 | broad-week      | 2,250,947,430 |
+| claude-code  |   35 |    10 | 0.4897 |   2.59  | -0.3374  | 0.2485 | 0.8022 | 0.2035 | workweek-tilted | 3,442,385,788 |
+| codex        |    8 |     2 | 0.3964 |   2.16  | -0.4307  | 0.0000 | 0.7643 | 0.3819 | two-dow         |   809,624,660 |
+| (src-1)      |   73 |    30 | 0.3872 |   2.12  | -0.4399  | 0.0000 | 0.7045 | 0.2979 | two-dow         |     1,885,727 |
+
+`effectiveDowCount` makes the suite split intuitive: `opencode`
+uses ~`6.4` of 7 DOWs each iso week; `hermes` and `openclaw`
+both sit just past the workdays-uniform `5.0` reference (`5.37`
+and `5.20`) — they're `broad-week` because they spill onto a
+weekend day. `claude-code` collapses to ~`2.6` effective DOWs
+per week (a workweek-narrowed pattern even within
+`workweek-tilted`). `codex` and the masked low-volume source
+both bottom out at ~`2.1` effective DOWs.
+
+`workweekDelta` cleanly separates the "weekend-broadening" tilt
+(`opencode +0.13`, `hermes +0.04`, `openclaw +0.02` are all
+above the 5-DOW-uniform baseline) from the
+"workweek-narrowing" tilt (`claude-code -0.34`, `codex -0.43`,
+`(src-1) -0.44` are well below). Note `hermes` and `openclaw`
+are barely on the broadening side despite high headline
+entropy — their PER-WEEK variability (`stdH ~ 0.19-0.23`,
+`minH ~ 0.43-0.49`) drags the mean down toward the
+5-DOW-baseline.
+
 ## 0.6.400 — 2026-05-04
 
 ### Added

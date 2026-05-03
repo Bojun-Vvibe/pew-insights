@@ -213,6 +213,30 @@ export interface DailyTokenIsoWeekDayOfWeekEntropySourceRow {
    * entropy across active weeks. 0 if only one active iso week.
    */
   stdWeeklyEntropyNorm: number;
+  /**
+   * Refinement (v0.6.401): "effective" number of days-of-week
+   * the source uses on a typical iso week, derived from the
+   * headline entropy via the perplexity formula:
+   *   effectiveDowCount = 2 ^ (meanWeeklyEntropyNorm * log2(7))
+   *                     = 7 ^ meanWeeklyEntropyNorm
+   * In [1, 7]. 1 = single-DOW each week; 7 = uniform Mon-Sun
+   * each week. log2(5)/log2(7) headline -> 5.0 effective DOWs.
+   * Always defined (we clamp to [1, 7] for numerical safety).
+   * More intuitive for ranking than the raw entropy fraction.
+   */
+  effectiveDowCount: number;
+  /**
+   * Refinement (v0.6.401): signed deviation of the headline
+   * entropy from the workdays-uniform reference baseline
+   * `log2(5) / log2(7) ~ 0.8270`. Positive = source spreads
+   * MORE broadly than 5-DOW-uniform (i.e. uses weekend DOWs);
+   * negative = source concentrates MORE narrowly than
+   * 5-DOW-uniform (i.e. fewer than 5 effective DOWs per week).
+   * Lets you cleanly partition sources into "weekend-broadening"
+   * vs "workweek-narrowing" tilts independent of the absolute
+   * entropy level.
+   */
+  workweekDelta: number;
   dowConcentrationRegime: DowConcentrationRegime;
   meanDailyTokens: number;
   degenerate: boolean;
@@ -243,6 +267,25 @@ export interface DailyTokenIsoWeekDayOfWeekEntropyReport {
 }
 
 const LOG2_7 = Math.log2(7);
+/** Workdays-uniform reference baseline: log2(5)/log2(7) ~ 0.8270. */
+export const WORKDAYS_UNIFORM_BASELINE = Math.log2(5) / LOG2_7;
+
+/**
+ * Refinement helper: convert headline entropy in [0, 1] to the
+ * "effective" number of days-of-week used per week, via
+ * perplexity:
+ *   effectiveDowCount = 7 ^ entropyNorm
+ * Clamped to [1, 7].
+ */
+export function effectiveDowCountFromEntropy(entropyNorm: number): number {
+  if (!Number.isFinite(entropyNorm)) {
+    throw new Error(`effectiveDowCountFromEntropy: invalid input ${entropyNorm}`);
+  }
+  const v = Math.pow(7, entropyNorm);
+  if (v < 1) return 1;
+  if (v > 7) return 7;
+  return v;
+}
 
 /**
  * Returns the ISO-8601 week-numbering (year, week) for a UTC day
@@ -569,6 +612,8 @@ export function buildDailyTokenIsoWeekDayOfWeekEntropy(
       minWeeklyEntropyNorm: minH,
       maxWeeklyEntropyNorm: maxH,
       stdWeeklyEntropyNorm: stdH,
+      effectiveDowCount: effectiveDowCountFromEntropy(meanWeighted),
+      workweekDelta: meanWeighted - WORKDAYS_UNIFORM_BASELINE,
       dowConcentrationRegime,
       meanDailyTokens: meanDaily,
       degenerate,

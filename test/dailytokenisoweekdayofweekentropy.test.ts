@@ -444,3 +444,97 @@ test('min/max/std: divergent weeks -> std > 0, min < max', () => {
   assert.ok(Math.abs(s.maxWeeklyEntropyNorm - 1) < 1e-12);
   assert.ok(s.stdWeeklyEntropyNorm > 0);
 });
+
+// --- v0.6.401 refinement: effectiveDowCount + workweekDelta ----------
+
+import {
+  effectiveDowCountFromEntropy,
+  WORKDAYS_UNIFORM_BASELINE,
+} from '../src/dailytokenisoweekdayofweekentropy.js';
+
+test('refinement: effectiveDowCountFromEntropy(0) = 1', () => {
+  assert.equal(effectiveDowCountFromEntropy(0), 1);
+});
+
+test('refinement: effectiveDowCountFromEntropy(1) = 7', () => {
+  const v = effectiveDowCountFromEntropy(1);
+  assert.ok(Math.abs(v - 7) < 1e-12);
+});
+
+test('refinement: effectiveDowCountFromEntropy(log2(5)/log2(7)) = 5', () => {
+  const v = effectiveDowCountFromEntropy(WORKDAYS_UNIFORM_BASELINE);
+  assert.ok(Math.abs(v - 5) < 1e-9, `expected 5, got ${v}`);
+});
+
+test('refinement: effectiveDowCountFromEntropy(log2(2)/log2(7)) = 2', () => {
+  const v = effectiveDowCountFromEntropy(1 / LOG2_7);
+  assert.ok(Math.abs(v - 2) < 1e-9, `expected 2, got ${v}`);
+});
+
+test('refinement: effectiveDowCountFromEntropy(log2(3)/log2(7)) = 3', () => {
+  const v = effectiveDowCountFromEntropy(Math.log2(3) / LOG2_7);
+  assert.ok(Math.abs(v - 3) < 1e-9, `expected 3, got ${v}`);
+});
+
+test('refinement: effectiveDowCountFromEntropy clamps below 1', () => {
+  // Numerical-edge: tiny negative -> clamp to 1
+  const v = effectiveDowCountFromEntropy(-1e-15);
+  assert.ok(v >= 1);
+});
+
+test('refinement: effectiveDowCountFromEntropy throws on NaN', () => {
+  assert.throws(() => effectiveDowCountFromEntropy(NaN));
+});
+
+test('refinement: WORKDAYS_UNIFORM_BASELINE = log2(5)/log2(7)', () => {
+  assert.ok(
+    Math.abs(WORKDAYS_UNIFORM_BASELINE - Math.log2(5) / Math.log2(7)) < 1e-15,
+  );
+});
+
+test('refinement: builder populates effectiveDowCount on uniform-week source', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const day = String(5 + i).padStart(2, '0');
+    queue.push(ql(`2026-01-${day}T10:00:00.000Z`, 's1', 1000));
+  }
+  const r = buildDailyTokenIsoWeekDayOfWeekEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.effectiveDowCount - 7) < 1e-9);
+  // workweekDelta = 1 - log2(5)/log2(7) ~ 0.173
+  assert.ok(Math.abs(s.workweekDelta - (1 - WORKDAYS_UNIFORM_BASELINE)) < 1e-12);
+});
+
+test('refinement: builder populates effectiveDowCount on single-DOW source', () => {
+  const queue: QueueLine[] = [
+    ql('2026-01-05T10:00:00.000Z', 's1', 5000),
+    ql('2026-01-12T10:00:00.000Z', 's1', 5000),
+  ];
+  const r = buildDailyTokenIsoWeekDayOfWeekEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.effectiveDowCount - 1) < 1e-9);
+  // workweekDelta = 0 - log2(5)/log2(7) ~ -0.827 (workweek-narrowing)
+  assert.ok(Math.abs(s.workweekDelta + WORKDAYS_UNIFORM_BASELINE) < 1e-12);
+  assert.ok(s.workweekDelta < 0, 'single-DOW should be workweek-narrowing (negative delta)');
+});
+
+test('refinement: workweekDelta sign separates broadening vs narrowing', () => {
+  // Broadening: uniform 7
+  const broad: QueueLine[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const day = String(5 + i).padStart(2, '0');
+    broad.push(ql(`2026-01-${day}T10:00:00.000Z`, 'broad', 1000));
+  }
+  // Narrowing: 3 weekdays only
+  const narrow: QueueLine[] = [
+    ql('2026-01-05T10:00:00.000Z', 'narrow', 1000),
+    ql('2026-01-06T10:00:00.000Z', 'narrow', 1000),
+    ql('2026-01-07T10:00:00.000Z', 'narrow', 1000),
+  ];
+  const rb = buildDailyTokenIsoWeekDayOfWeekEntropy(broad, { generatedAt: GEN });
+  const rn = buildDailyTokenIsoWeekDayOfWeekEntropy(narrow, { generatedAt: GEN });
+  assert.ok(rb.sources[0]!.workweekDelta > 0, 'uniform-7 should be positive');
+  assert.ok(rn.sources[0]!.workweekDelta < 0, '3-DOW should be negative');
+  // 3-DOW effective count
+  assert.ok(Math.abs(rn.sources[0]!.effectiveDowCount - 3) < 1e-9);
+});
