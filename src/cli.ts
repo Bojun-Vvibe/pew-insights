@@ -192,6 +192,7 @@ import {
   renderDailyTokenTopsoeDivergenceHalves,
   renderDailyTokenNeymanChiSquaredHalves,
   renderDailyTokenKDivergenceHalves,
+  renderDailyTokenPearsonSecondSkewness,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -546,6 +547,7 @@ import { buildDailyTokenKumarJohnsonDivergenceHalves } from './dailytokenkumarjo
 import { buildDailyTokenTopsoeDivergenceHalves } from './dailytokentopsoedivergencehalves.js';
 import { buildDailyTokenNeymanChiSquaredHalves } from './dailytokenneymanchisquaredhalves.js';
 import { buildDailyTokenKDivergenceHalves } from './dailytokenkdivergencehalves.js';
+import { buildDailyTokenPearsonSecondSkewness } from './dailytokenpearsonsecondskewness.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -39742,6 +39744,121 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKDivergenceHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-pearson-second-skewness')
+  .description(
+    "Per-source PEARSON SECOND SKEWNESS of per-day total_tokens (ONE-HUNDRED-AND-FORTY-FIRST cross-source axis). PSS = 3 * (mean - median) / stddev (Pearson 1895). PSS > 0 = right-skewed (mean above median, heavy upper tail); PSS < 0 = left-skewed; PSS = 0 iff mean === median. |PSS| <= 3 for unimodal distributions; |PSS| > 3 itself witnesses multi-modality. Hybrid moment/percentile functional: stddev in the denominator (moment-sensitive), median in the numerator (percentile-sensitive). STRUCTURALLY ORTHOGONAL to L-skewness (L-moments, robust, bounded by [-1,1]) and to medcouple skewness (rank-based bivariate kernel). COMPLEMENTARY to inequality axes 32-57 (sign-agnostic spread around the MEAN), to halves divergence axes 118-140 (compare first vs second half), and to autocorrelation / runs / Mann-Kendall / Cox-Stuart axes (temporal order). Permutation-invariant, scale-invariant. Surfaces the SIGN of the asymmetry that the inequality axes structurally cannot.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 5). PSS is degenerate for n<2; default 5 keeps both moments and the median nontrivial.',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absPss (default, |pss| desc) | pss (asc; most negative first) | pssDesc | tokens | days | source | meanDaily | medianDaily | stddevDaily.',
+    'absPss',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const validSorts = [
+          'absPss',
+          'pss',
+          'pssDesc',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'medianDaily',
+          'stddevDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPearsonSecondSkewness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          sort: opts.sort as
+            | 'absPss'
+            | 'pss'
+            | 'pssDesc'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'medianDaily'
+            | 'stddevDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPearsonSecondSkewness(report) + '\n',
           );
         }
       } catch (e) {

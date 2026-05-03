@@ -20280,6 +20280,74 @@ import type { DailyTokenKumarJohnsonDivergenceHalvesReport } from './dailytokenk
 import type { DailyTokenTopsoeDivergenceHalvesReport } from './dailytokentopsoedivergencehalves.js';
 import type { DailyTokenNeymanChiSquaredHalvesReport } from './dailytokenneymanchisquaredhalves.js';
 import type { DailyTokenKDivergenceHalvesReport } from './dailytokenkdivergencehalves.js';
+import type { DailyTokenPearsonSecondSkewnessReport } from './dailytokenpearsonsecondskewness.js';
+
+export function renderDailyTokenPearsonSecondSkewness(
+  r: DailyTokenPearsonSecondSkewnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-pearson-second-skewness'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PSS = 3 * (mean - median) / stddev, Pearson 1895. PSS > 0 = right-skewed (mean above median, heavy upper tail); PSS < 0 = left-skewed; PSS = 0 iff mean === median. |PSS| <= 3 for unimodal distributions; |PSS| > 3 itself witnesses multi-modality. SHAPE statistic on the WHOLE day vector -- complementary to inequality axes 32-57 (sign-agnostic spread around the mean), to halves divergence axes 118-140 (compare first vs second half), and to autocorrelation / runs / Mann-Kendall axes (temporal order). Permutation-invariant, scale-invariant.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(`per-source Pearson second skewness (sorted by ${r.sort}; ties: source asc)`),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'pss',
+    'sign',
+    'meanDaily',
+    'medianDaily',
+    'stddevDaily',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.degenerate ? '\u2014' : s.pss.toFixed(6),
+    s.pssSign === 1 ? '+' : s.pssSign === -1 ? '-' : '0',
+    formatNumber(Math.round(s.meanDaily)),
+    formatNumber(Math.round(s.medianDaily)),
+    formatNumber(Math.round(s.stddevDaily)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
