@@ -288,8 +288,39 @@ export const TOPSOE_GRID_K = 257;
 export const TOPSOE_SILVERMAN_MULTIPLIER = 0.9;
 /** Fixed grid extension in bandwidth units on each side. */
 export const TOPSOE_GRID_EXTENSION_H = 3;
-/** Numerical underflow floor on pmf bins for the (p*q)^(3/2) denominator. */
+/** Numerical underflow floor on pmf bins to keep log(2p/(p+q)) defined. */
 export const TOPSOE_PMF_FLOOR = 1e-15;
+/**
+ * Theoretical upper bound on Topsoe divergence between two
+ * pmfs. Achieved iff `p` and `q` have disjoint support on
+ * the grid (`T = 2*log(2)`); equivalently, `T = 2 * log(2)`
+ * iff every bin satisfies `min(p_k, q_k) = 0` AND
+ * `max(p_k, q_k) > 0`.
+ */
+export const TOPSOE_MAX_VALUE = 2 * Math.log(2);
+
+/**
+ * Saturation ratio diagnostic: `topsoeSaturation =
+ * topsoeDivergence / TOPSOE_MAX_VALUE` in `[0, 1]`. A
+ * cross-source-comparable PERCENT-OF-MAX reading: 0 iff
+ * the KDE-smoothed halves coincide on the grid; 1 iff
+ * they have disjoint support on the grid. Defined for
+ * any non-negative finite `topsoeDivergence`; clamped to
+ * `[0, 1]` to absorb O(eps) numerical drift around the
+ * boundaries.
+ */
+export function topsoeSaturation(topsoeDivergence: number): number {
+  if (!Number.isFinite(topsoeDivergence)) {
+    throw new Error('topsoeSaturation requires a finite input');
+  }
+  if (topsoeDivergence < 0) {
+    throw new Error('topsoeSaturation requires a non-negative input');
+  }
+  const r = topsoeDivergence / TOPSOE_MAX_VALUE;
+  if (r < 0) return 0;
+  if (r > 1) return 1;
+  return r;
+}
 
 const SQRT_2PI = Math.sqrt(2 * Math.PI);
 

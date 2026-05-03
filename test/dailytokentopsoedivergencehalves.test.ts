@@ -787,3 +787,61 @@ test('topsoe builder: every row has finite non-negative perBinAverage', () => {
     );
   }
 });
+
+// ---------- refinement: topsoeSaturation + TOPSOE_MAX_VALUE ----------
+
+import {
+  topsoeSaturation,
+  TOPSOE_MAX_VALUE,
+} from '../src/dailytokentopsoedivergencehalves.js';
+
+test('topsoe refinement: TOPSOE_MAX_VALUE equals 2*log(2)', () => {
+  assert.ok(Math.abs(TOPSOE_MAX_VALUE - 2 * Math.log(2)) < 1e-15);
+});
+
+test('topsoe refinement: saturation(0) === 0', () => {
+  assert.equal(topsoeSaturation(0), 0);
+});
+
+test('topsoe refinement: saturation(TOPSOE_MAX_VALUE) === 1', () => {
+  assert.ok(Math.abs(topsoeSaturation(TOPSOE_MAX_VALUE) - 1) < 1e-15);
+});
+
+test('topsoe refinement: saturation clamps above 1', () => {
+  // Numerical drift could push T just above the bound; saturation must clamp.
+  assert.equal(topsoeSaturation(TOPSOE_MAX_VALUE + 1e-10), 1);
+});
+
+test('topsoe refinement: saturation rejects NaN', () => {
+  assert.throws(() => topsoeSaturation(NaN), /finite input/);
+});
+
+test('topsoe refinement: saturation rejects negative', () => {
+  assert.throws(() => topsoeSaturation(-1e-12), /non-negative/);
+});
+
+test('topsoe refinement: saturation matches divergence/T_max for builder rows', () => {
+  const queue: QueueLine[] = [];
+  const rng = (seed: number) => {
+    let s = seed;
+    return () => {
+      s = (s * 1664525 + 1013904223) % 4294967296;
+      return s / 4294967296;
+    };
+  };
+  const r1 = rng(11);
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'srcA', 1000 + Math.floor(r1() * 50000)));
+  }
+  const rep = buildDailyTokenTopsoeDivergenceHalves(queue, {
+    minTenureDays: 14,
+  });
+  for (const s of rep.sources) {
+    const sat = topsoeSaturation(s.topsoeDivergence);
+    assert.ok(
+      Math.abs(sat - s.topsoeDivergence / TOPSOE_MAX_VALUE) < 1e-12,
+    );
+    assert.ok(sat >= 0);
+    assert.ok(sat <= 1);
+  }
+});
