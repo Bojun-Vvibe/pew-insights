@@ -119,6 +119,7 @@ import {
   renderDailyTokenPielouEvenness,
   renderDailyTokenMaxDrawdownRate,
   renderDailyTokenLongestZeroRun,
+  renderDailyTokenCalendarMaskRleEntropy,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -558,6 +559,7 @@ import { buildDailyTokenHerfindahlHirschmanIndex } from './dailytokenherfindahlh
 import { buildDailyTokenPielouEvenness } from './dailytokenpielouevenness.js';
 import { buildDailyTokenMaxDrawdownRate } from './dailytokenmaxdrawdownrate.js';
 import { buildDailyTokenLongestZeroRun } from './dailytokenlongestzerorun.js';
+import { buildDailyTokenCalendarMaskRleEntropy } from './dailytokencalendarmaskrleentropy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40509,6 +40511,135 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenLongestZeroRun(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-calendar-mask-rle-entropy')
+  .description(
+    "Per-source SHANNON ENTROPY (bits) of the run-length encoding of the 0/1 calendar mask [firstActiveDay, lastActiveDay] of the per-day total_tokens series (ONE-HUNDRED-AND-FORTY-SEVENTH cross-source axis). THIRD PATH-DEPENDENT cross-source daily-token axis (after axis-145 max-drawdown-rate and axis-146 longest-zero-run). Orthogonal to MDD (which measures DEPTH on the active-day value vector and ignores calendar gaps) and to longest-zero-run (which measures only the MAX silent-segment length): RLE entropy captures the SHAPE of the FULL segment-length distribution across both active and silent stretches. Per row: spanDays, segmentCount, activeSegmentCount, silentSegmentCount, rleEntropyBits, rleEntropyNormalised, longestSegmentLength, shortestSegmentLength, fragmentationRegime.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). RLE entropy is well-defined for nDays=1 (=0) but degenerate.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: rleEntropyBits (default) | rleEntropyNormalised | segmentCount | spanDays | tokens | days | source | meanDaily. Applied before --top.',
+    'rleEntropyBits',
+  )
+  .option(
+    '--min-segment-count <n>',
+    'display filter: hide rows whose segmentCount is strictly below this positive integer. Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minSegmentCount?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be an integer >= 1 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minSegmentCount: number | null = null;
+        if (opts.minSegmentCount !== undefined) {
+          const mv = Number.parseInt(opts.minSegmentCount, 10);
+          if (!Number.isInteger(mv) || mv < 1) {
+            throw new Error(
+              `--min-segment-count must be an integer >= 1 (got ${opts.minSegmentCount})`,
+            );
+          }
+          minSegmentCount = mv;
+        }
+        const validSorts = [
+          'rleEntropyBits',
+          'rleEntropyNormalised',
+          'segmentCount',
+          'spanDays',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCalendarMaskRleEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minSegmentCount,
+          sort: opts.sort as
+            | 'rleEntropyBits'
+            | 'rleEntropyNormalised'
+            | 'segmentCount'
+            | 'spanDays'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCalendarMaskRleEntropy(report) + '\n',
           );
         }
       } catch (e) {

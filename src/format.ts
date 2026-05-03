@@ -17296,6 +17296,7 @@ import type { DailyTokenHerfindahlHirschmanIndexReport } from './dailytokenherfi
 import type { DailyTokenPielouEvennessReport } from './dailytokenpielouevenness.js';
 import type { DailyTokenMaxDrawdownRateReport } from './dailytokenmaxdrawdownrate.js';
 import type { DailyTokenLongestZeroRunReport } from './dailytokenlongestzerorun.js';
+import type { DailyTokenCalendarMaskRleEntropyReport } from './dailytokencalendarmaskrleentropy.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24343,6 +24344,87 @@ export function renderDailyTokenLongestZeroRun(
     s.meanGapDays.toFixed(2),
     s.longestZeroRunStartDay || '\u2014',
     s.longestZeroRunEndDay || '\u2014',
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCalendarMaskRleEntropy(
+  r: DailyTokenCalendarMaskRleEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-calendar-mask-rle-entropy'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-segment-count: ${r.minSegmentCount === null ? '\u2014' : r.minSegmentCount}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinSegmentCount)} below min-segment-count, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SHANNON ENTROPY (bits) of the run-length encoding of the 0/1 calendar mask [firstDay, lastDay]. PATH-DEPENDENT shape / fragmentation functional. Orthogonal to MDD (depth on values) and longest-zero-run (max of silent-segment lengths only): RLE-H captures the SHAPE of the segment-length distribution across both active and silent stretches.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source RLE entropy of calendar mask (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'span',
+    'segs',
+    'active',
+    'silent',
+    'rleEntropyBits',
+    'rleEntropyNorm',
+    'longestSeg',
+    'shortestSeg',
+    'regime',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.spanDays),
+    formatNumber(s.segmentCount),
+    formatNumber(s.activeSegmentCount),
+    formatNumber(s.silentSegmentCount),
+    s.rleEntropyBits.toFixed(4),
+    s.rleEntropyNormalised.toFixed(4),
+    formatNumber(s.longestSegmentLength),
+    formatNumber(s.shortestSegmentLength),
+    s.fragmentationRegime,
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);
