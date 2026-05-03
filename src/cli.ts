@@ -70,6 +70,7 @@ import {
   renderCostPerBucketPercentiles,
   renderRollingBucketCv,
   renderDailyTokenAutocorrelationLag1,
+  renderDailyTokenAllanDeviation,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -435,6 +436,7 @@ import { buildTokenVelocityPercentiles } from './tokenvelocitypercentiles.js';
 import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
+import { buildDailyTokenAllanDeviation } from './dailytokenallandeviation.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -6725,6 +6727,78 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenAutocorrelationLag1(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-allan-deviation')
+  .description(
+    "Per-source overlapping Allan deviation (sigma_a) at tau=1 day of the gap-filled daily total_tokens series (axis-151). Step-to-step RMS volatility in token units: sigma_a = sqrt((1/(2*(N-1))) * sum (x[i+1]-x[i])^2). Orthogonal to daily-token-autocorrelation-lag1 (normalized covariance, dimensionless), burstiness / rolling-bucket-cv (order-INVARIANT marginal dispersion), daily-token-variance-of-logarithms (log-scale, not first-diff), daily-token-difference-sign-test / second-diff-sign-runs (sign-only, ignores magnitude), daily-token-hurst-rs (long-range memory, not short-range volatility), daily-token-monotone-run-length (categorical), daily-token-gini / pietra / zenga (order-invariant inequality), daily-token-spectral-* (frequency domain). Surfaces (allanDev, meanAbsStep, maxAbsStep, argMaxStepDay, allanRel = allanDev/mean, randomWalkAllanRatio = allanDev/stddev where ~1 = i.i.d., > 1 = anti-persistent step volatility, < 1 = persistent / smooth).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with gap-filled tenure shorter than n days; counts surface as droppedSparseSources (default 3, must be >= 3)',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens | allan | allanrel | rwratio | ndays (default tokens). Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 3) {
+          throw new Error(`--min-days must be an integer >= 3 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sort = opts.sort as 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'ndays';
+        if (!['tokens', 'allan', 'allanrel', 'rwratio', 'ndays'].includes(sort)) {
+          throw new Error(`--sort must be one of tokens|allan|allanrel|rwratio|ndays (got ${opts.sort})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAllanDeviation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenAllanDeviation(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -5253,6 +5253,77 @@ export function renderDailyTokenAutocorrelationLag1(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenAllanDeviation(
+  r: import('./dailytokenallandeviation.js').DailyTokenAllanDeviationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-allan-deviation'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(observation = overlapping Allan deviation at tau=1 day on the gap-filled per-source daily total_tokens series; rwRatio = allanDev / popStddev (i.i.d. baseline = 1, > 1 = anti-persistent step volatility, < 1 = persistent / smooth))`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source allan deviation tau=1 (sorted by ${r.sort} desc)`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'mean',
+    'stddev',
+    'allanDev',
+    'meanAbsStep',
+    'maxAbsStep',
+    'argMaxDay',
+    'allanRel',
+    'rwRatio',
+    'first',
+    'last',
+  ];
+  const rowsR: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.mean.toFixed(1),
+    s.stddev.toFixed(1),
+    s.allanDev.toFixed(1),
+    s.meanAbsStep.toFixed(1),
+    s.maxAbsStep.toFixed(1),
+    s.argMaxStepDay ?? '-',
+    s.flatRel ? '-' : s.allanRel.toFixed(3),
+    s.flatRwRatio ? '-' : s.randomWalkAllanRatio.toFixed(3),
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderDailyTokenZscoreExtremes(
   r: import('./dailytokenzscoreextremes.js').DailyTokenZscoreExtremesReport,
 ): string {
