@@ -20278,6 +20278,7 @@ import type { DailyTokenClarkDistanceHalvesReport } from './dailytokenclarkdista
 import type { DailyTokenTanejaDivergenceHalvesReport } from './dailytokentanejadivergencehalves.js';
 import type { DailyTokenKumarJohnsonDivergenceHalvesReport } from './dailytokenkumarjohnsondivergencehalves.js';
 import type { DailyTokenTopsoeDivergenceHalvesReport } from './dailytokentopsoedivergencehalves.js';
+import type { DailyTokenNeymanChiSquaredHalvesReport } from './dailytokenneymanchisquaredhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23703,6 +23704,93 @@ export function renderDailyTokenTopsoeDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: topsoeDivergence in [0, 2*log(2) = ${(2 * Math.log(2)).toFixed(6)}]; =0 iff p=q on the grid; =2*log(2) iff disjoint support; topsoeMaxRelGap = max_k |p_k-q_k|/(p_k+q_k) in [0, 1] (=1 iff at least one bin is regime-disjoint); topsoeMaxBin is the largest per-bin summand p log(2p/(p+q)) + q log(2q/(p+q)) in [0, 2*log(2)]; spread = topsoeDivergence/(K*topsoeMaxBin) in [0, 1] -- approaches 1 iff every bin contributes the same maximal Topsoe amount, approaches 1/K = ${(1 / r.gridK).toFixed(6)} iff a single bin dominates. T = 2*JSD as values; sqrt(T) is a true metric (Endres & Schindelin 2003). Translation- AND positive-scale-invariant in the data; TOPSOE_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenNeymanChiSquaredHalves(
+  r: DailyTokenNeymanChiSquaredHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-neyman-chi-squared-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}    pmf-floor: ${r.pmfFloor}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED ASYMMETRIC NEYMAN CHI-SQUARED in BOTH directions: forward N(p||q) = sum_k (p_k - q_k)^2 / q_k AND reverse N(q||p) = sum_k (q_k - p_k)^2 / p_k, between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-NINTH cross-source axis. Neyman 1949; Cha 2007 eq. 12. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. ASYMMETRIC -- both directions reported. neymanAsymmetry = |N_pq - N_qp| / (N_pq + N_qp) in [0, 1] is the bounded directional diagnostic. ORTHOGONAL to all 21 prior axes 118-138: vs axis-134 psChi2 = N(p||q) + N(q||p) (symmetric SUM, collapses direction); axis-139 ships the PAIR. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed asymmetric Neyman chi-squared (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'nFwd',
+    'nRev',
+    'nMax',
+    'asym',
+    'mxFwd',
+    'mxRev',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.neymanN1),
+    formatNumber(s.neymanN2),
+    s.neymanMadPool.toFixed(2),
+    s.neymanBandwidth.toFixed(2),
+    s.neymanForward.toExponential(3),
+    s.neymanReverse.toExponential(3),
+    s.neymanMax.toExponential(3),
+    s.neymanAsymmetry.toFixed(6),
+    s.neymanMaxBinFwd.toExponential(3),
+    s.neymanMaxBinRev.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: neymanForward, neymanReverse >= 0; both = 0 iff p = q on the grid. neymanMax = max(forward, reverse). neymanAsymmetry = |fwd-rev|/(fwd+rev) in [0, 1]: 0 iff fwd === rev (perfectly symmetric drift; same information as axis-134 psChi2); 1 iff one direction is identically zero (the regime psChi2 symmetrisation collapses). Per-bin maxima neymanMaxBinFwd, neymanMaxBinRev expose the most discriminating bin in each direction. axis-139 ships the DIRECTIONAL PAIR; axis-134 psChi2 = neymanForward + neymanReverse is the symmetrised sum. Translation- AND positive-scale-invariant in the data; NEYMAN_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
 

@@ -190,6 +190,7 @@ import {
   renderDailyTokenTanejaDivergenceHalves,
   renderDailyTokenKumarJohnsonDivergenceHalves,
   renderDailyTokenTopsoeDivergenceHalves,
+  renderDailyTokenNeymanChiSquaredHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -542,6 +543,7 @@ import { buildDailyTokenClarkDistanceHalves } from './dailytokenclarkdistancehal
 import { buildDailyTokenTanejaDivergenceHalves } from './dailytokentanejadivergencehalves.js';
 import { buildDailyTokenKumarJohnsonDivergenceHalves } from './dailytokenkumarjohnsondivergencehalves.js';
 import { buildDailyTokenTopsoeDivergenceHalves } from './dailytokentopsoedivergencehalves.js';
+import { buildDailyTokenNeymanChiSquaredHalves } from './dailytokenneymanchisquaredhalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -39498,6 +39500,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenTopsoeDivergenceHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+         die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-neyman-chi-squared-halves')
+  .description(
+    "Per-source KDE-SMOOTHED ASYMMETRIC NEYMAN CHI-SQUARED in BOTH directions: forward N(p||q) = sum_k (p_k - q_k)^2/q_k and reverse N(q||p) = sum_k (q_k - p_k)^2/p_k, between the FIRST and SECOND half of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-THIRTY-NINTH cross-source axis). Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid; Gaussian KDE per half; trapezoidal mass-normalisation. ASYMMETRIC: ships the directional pair plus neymanAsymmetry = |fwd-rev|/(fwd+rev) in [0, 1]. ORTHOGONAL to all 21 prior axes 118-138: vs axis-134 psChi2 = N(p||q) + N(q||p) symmetric SUM (collapses direction); axis-139 ships the pair. Translation- AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: neymanMaxDesc (default) | neymanMax | neymanForward | neymanForwardDesc | neymanReverse | neymanReverseDesc | neymanAsymmetry | neymanAsymmetryDesc | tokens | tenure | source.',
+    'neymanMaxDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'neymanMax',
+          'neymanMaxDesc',
+          'neymanForward',
+          'neymanForwardDesc',
+          'neymanReverse',
+          'neymanReverseDesc',
+          'neymanAsymmetry',
+          'neymanAsymmetryDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenNeymanChiSquaredHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'neymanMax'
+            | 'neymanMaxDesc'
+            | 'neymanForward'
+            | 'neymanForwardDesc'
+            | 'neymanReverse'
+            | 'neymanReverseDesc'
+            | 'neymanAsymmetry'
+            | 'neymanAsymmetryDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenNeymanChiSquaredHalves(report) + '\n',
           );
         }
       } catch (e) {
