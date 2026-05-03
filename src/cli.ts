@@ -115,6 +115,7 @@ import {
   renderDailyTokenDecileShareGap,
   renderDailyTokenQuintileShareRatio,
   renderDailyTokenTopFourConcentrationRatio,
+  renderDailyTokenHerfindahlHirschmanIndex,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -550,6 +551,7 @@ import { buildDailyTokenNeymanChiSquaredHalves } from './dailytokenneymanchisqua
 import { buildDailyTokenKDivergenceHalves } from './dailytokenkdivergencehalves.js';
 import { buildDailyTokenPearsonSecondSkewness } from './dailytokenpearsonsecondskewness.js';
 import { buildDailyTokenTopFourConcentrationRatio } from './dailytokentopfourconcentrationratio.js';
+import { buildDailyTokenHerfindahlHirschmanIndex } from './dailytokenherfindahlhirschmanindex.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -39988,6 +39990,135 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenTopFourConcentrationRatio(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-herfindahl-hirschman-index')
+  .description(
+    "Per-source HERFINDAHL-HIRSCHMAN INDEX HHI = sum of squared daily shares s_i = D_i / sum_j D_j on per-day total_tokens (ONE-HUNDRED-AND-FORTY-THIRD cross-source axis). Canonical IO concentration measure (Hirschman 1945; Herfindahl 1950). Range [1/n, 1]; lower bound iff perfectly flat, upper bound iff one-day monopoly. DENSE QUADRATIC functional -- structurally orthogonal to CR4 (axis-142, sparse top-k mass, piecewise-linear) and to the full-Lorenz inequality family (axes 32-57, mean-normalised L^1 integrals). Per row: hhi, lowerBound = 1/n, normalisedHhi = (hhi - 1/n)/(1 - 1/n) in [0,1], effectiveDays = 1/hhi (inverse-Simpson equally-busy day count), maxShare, regime band.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). HHI normalisation degenerate for n<2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hhi (default) | tokens | days | source | meanDaily | lowerBound | normalisedHhi | effectiveDays. Applied before --top.',
+    'hhi',
+  )
+  .option(
+    '--min-hhi <x>',
+    'display filter: hide non-degenerate rows whose hhi is strictly below this value (must be in [0, 1]). Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minHhi?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minHhi: number | null = null;
+        if (opts.minHhi !== undefined) {
+          const mv = Number.parseFloat(opts.minHhi);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-hhi must be a finite number in [0, 1] (got ${opts.minHhi})`,
+            );
+          }
+          minHhi = mv;
+        }
+        const validSorts = [
+          'hhi',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'lowerBound',
+          'normalisedHhi',
+          'effectiveDays',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHerfindahlHirschmanIndex(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minHhi,
+          sort: opts.sort as
+            | 'hhi'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'lowerBound'
+            | 'normalisedHhi'
+            | 'effectiveDays',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenHerfindahlHirschmanIndex(report) + '\n',
           );
         }
       } catch (e) {

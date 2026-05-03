@@ -4732,6 +4732,79 @@ export function renderProviderSwitchingFrequency(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenHerfindahlHirschmanIndex(
+  r: DailyTokenHerfindahlHirschmanIndexReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-herfindahl-hirschman-index'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-hhi: ${r.minHhi === null ? '\u2014' : r.minHhi}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinHhi)} below min-hhi, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HHI = sum of squared daily shares s_i = D_i / sum_j D_j on the per-day total_tokens vector. Range [1/n, 1]; lower bound iff perfectly flat, upper bound iff one-day monopoly. Canonical IO concentration measure (Hirschman 1945; Herfindahl 1950). DENSE QUADRATIC functional -- orthogonal to CR4 (axis-142, sparse top-k mass) and to the full-Lorenz inequality family (mean-normalised L^1 integrals). normalisedHhi = (hhi - 1/n) / (1 - 1/n) in [0,1] for cross-source comparability; effectiveDays = 1/hhi is the inverse-Simpson "equally-busy day count".)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source HHI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'hhi',
+    'lowerBound',
+    'normHhi',
+    'nEff',
+    'regime',
+    'maxShare',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.hhi.toFixed(6),
+    s.lowerBound.toFixed(6),
+    s.normalisedHhi.toFixed(4),
+    s.effectiveDays.toFixed(3),
+    s.concentrationRegime,
+    s.maxShare.toFixed(4),
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderOutputTokenDecileDistribution(
   r: OutputTokenDecileDistributionReport,
 ): string {
@@ -17215,6 +17288,7 @@ import type { DailyTokenMidSpreadRatioReport } from './dailytokenmidspreadratio.
 import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.js';
 import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintileshareratio.js';
 import type { DailyTokenTopFourConcentrationRatioReport } from './dailytokentopfourconcentrationratio.js';
+import type { DailyTokenHerfindahlHirschmanIndexReport } from './dailytokenherfindahlhirschmanindex.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
