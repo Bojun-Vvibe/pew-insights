@@ -518,3 +518,74 @@ test('refinement: jsdBits monotone w.r.t. shift magnitude (3 levels)', () => {
   assert.ok(r10.jsdBits < r50.jsdBits);
   assert.ok(r50.jsdBits <= r200.jsdBits + 1e-12);
 });
+
+// ---------- refactor follow-up: jsdAsymmetry diagnostic ----------
+
+test('refactor: jsdAsymmetry >= 0 and finite', () => {
+  const r = dailyTokenJensenShannonDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(r.jsdAsymmetry >= 0);
+  assert.ok(Number.isFinite(r.jsdAsymmetry));
+});
+
+test('refactor: jsdAsymmetry <= 1 bit', () => {
+  // Each KL summand is bounded by 1 bit, so |KL1 - KL2| <= 1.
+  const r = dailyTokenJensenShannonDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(r.jsdAsymmetry <= 1 + 1e-10);
+});
+
+test('refactor: jsdAsymmetry ~ 0 for identical halves', () => {
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenJensenShannonDivergenceHalves([...half, ...half]);
+  assert.ok(r.jsdAsymmetry < 1e-10);
+  assert.equal(r.jsdAsymmetryDir, 0);
+});
+
+test('refactor: jsdAsymmetryDir flips sign on swap', () => {
+  const xUp = [1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107];
+  const xDown = [
+    100, 101, 102, 103, 104, 105, 106, 107, 1, 2, 3, 4, 5, 6, 7, 8,
+  ];
+  const rUp = dailyTokenJensenShannonDivergenceHalves(xUp);
+  const rDown = dailyTokenJensenShannonDivergenceHalves(xDown);
+  assert.ok(rUp.jsdAsymmetryDir === -rDown.jsdAsymmetryDir);
+  assert.ok(Math.abs(rUp.jsdAsymmetry - rDown.jsdAsymmetry) < 1e-10);
+});
+
+test('refactor: jsdAsymmetryDir in {-1, 0, 1}', () => {
+  const r = dailyTokenJensenShannonDivergenceHalves([
+    1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12,
+  ]);
+  assert.ok(
+    r.jsdAsymmetryDir === -1 ||
+      r.jsdAsymmetryDir === 0 ||
+      r.jsdAsymmetryDir === 1,
+  );
+});
+
+test('refactor: jsdAsymmetry translation- and positive-scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12];
+  const r1 = dailyTokenJensenShannonDivergenceHalves(x);
+  const r2 = dailyTokenJensenShannonDivergenceHalves(x.map((v) => 5 * v + 1000));
+  assert.ok(Math.abs(r1.jsdAsymmetry - r2.jsdAsymmetry) < 1e-8);
+  assert.equal(r1.jsdAsymmetryDir, r2.jsdAsymmetryDir);
+});
+
+test('refactor: rows expose jsdAsymmetry and jsdAsymmetryDir', () => {
+  const r = buildDailyTokenJensenShannonDivergenceHalves(
+    makeQueueWithTwoSources(),
+    { minTokens: 0 },
+  );
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.jsdAsymmetry));
+    assert.ok(s.jsdAsymmetry >= 0);
+    assert.ok(
+      s.jsdAsymmetryDir === -1 ||
+        s.jsdAsymmetryDir === 0 ||
+        s.jsdAsymmetryDir === 1,
+    );
+  }
+});

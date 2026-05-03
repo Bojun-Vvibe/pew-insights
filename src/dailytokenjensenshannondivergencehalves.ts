@@ -292,6 +292,21 @@ export interface DailyTokenJensenShannonDivergenceHalvesSourceRow {
   jsdMaxBinX: number;
   /** Per-bin contribution at jsdMaxBin (in bits). */
   jsdMaxBinValue: number;
+  /**
+   * Asymmetry diagnostic |KL(p||m) - KL(q||m)| in bits.
+   * Symmetry of JS implies jsdAsymmetry = 0 only in the
+   * case p === q; in general it measures the imbalance
+   * between the two KL summands. Bounded above by 1 bit.
+   */
+  jsdAsymmetry: number;
+  /**
+   * Signed direction sgn(KL(q||m) - KL(p||m)) in {-1, 0, +1}.
+   * +1 means the second-half pmf is "more divergent from m"
+   * than the first-half pmf (i.e. q has more low-mass bins
+   * relative to m); -1 the converse. Sign-invariant under
+   * translation and positive scaling.
+   */
+  jsdAsymmetryDir: number;
 }
 
 export interface DailyTokenJensenShannonDivergenceHalvesReport {
@@ -377,6 +392,8 @@ export function dailyTokenJensenShannonDivergenceHalves(values: number[]): {
   jsdMaxBin: number;
   jsdMaxBinX: number;
   jsdMaxBinValue: number;
+  jsdAsymmetry: number;
+  jsdAsymmetryDir: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -518,11 +535,16 @@ export function dailyTokenJensenShannonDivergenceHalves(values: number[]): {
   if (jsdBits > 1) jsdBits = 1;
   const jsdDist = Math.sqrt(jsdBits);
   const jsdMaxBinX = gLo + maxBin * dx;
+  // Asymmetry diagnostic between the two KL summands.
+  const jsdAsymmetry = Math.abs(kl1 - kl2);
+  const klDelta = kl2 - kl1;
+  const jsdAsymmetryDir = klDelta > 0 ? 1 : klDelta < 0 ? -1 : 0;
 
   if (
     !Number.isFinite(jsdBits) ||
     !Number.isFinite(jsdDist) ||
-    !Number.isFinite(maxBinValue)
+    !Number.isFinite(maxBinValue) ||
+    !Number.isFinite(jsdAsymmetry)
   ) {
     throw new Error(
       `dailyTokenJensenShannonDivergenceHalves: non-finite statistic (n=${n})`,
@@ -546,6 +568,8 @@ export function dailyTokenJensenShannonDivergenceHalves(values: number[]): {
     jsdMaxBin: maxBin,
     jsdMaxBinX,
     jsdMaxBinValue: maxBinValue,
+    jsdAsymmetry,
+    jsdAsymmetryDir,
   };
 }
 
@@ -727,6 +751,8 @@ export function buildDailyTokenJensenShannonDivergenceHalves(
       jsdMaxBin: result.jsdMaxBin,
       jsdMaxBinX: result.jsdMaxBinX,
       jsdMaxBinValue: result.jsdMaxBinValue,
+      jsdAsymmetry: result.jsdAsymmetry,
+      jsdAsymmetryDir: result.jsdAsymmetryDir,
     });
     totalTokensSum += acc.totalTokens;
   }
