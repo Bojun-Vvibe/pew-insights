@@ -87,6 +87,25 @@ recovers the per-source drift sign. All `kMax` values are
 well below the `ln(2) ~= 0.6931` analytic ceiling, as
 required.
 
+### Live smoke (saturation, post-refinement)
+
+`kSaturation = kMax / ln(2)` against the same queue:
+
+| source         | kSaturation |
+| ---            | ---         |
+| openclaw       | 0.5293      |
+| opencode       | 0.2537      |
+| hermes         | 0.0521      |
+| claude-code    | 0.0141      |
+| vscode-copilot | 0.0014      |
+
+`openclaw` is at 53% of the analytic ceiling -- approaching
+the regime where bounded K-divergence loses resolution and
+unbounded asymmetric divergences (axis-139 Neyman) carry
+strictly more discrimination. The other four sources are
+comfortably in K-div's informative regime (`< 26%`
+saturation).
+
 ### Added (refinement)
 
 - `kDivAsymmetryRegime(forward, reverse)` — classifies the
