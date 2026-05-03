@@ -17298,6 +17298,7 @@ import type { DailyTokenMaxDrawdownRateReport } from './dailytokenmaxdrawdownrat
 import type { DailyTokenLongestZeroRunReport } from './dailytokenlongestzerorun.js';
 import type { DailyTokenCalendarMaskRleEntropyReport } from './dailytokencalendarmaskrleentropy.js';
 import type { DailyTokenWeekendWeekdayRatioReport } from './dailytokenweekendweekdayratio.js';
+import type { DailyTokenMonthEndVsMonthStartRatioReport } from './dailytokenmonthendvsmonthstartratio.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24522,6 +24523,95 @@ export function renderDailyTokenWeekendWeekdayRatio(
       : (s.weekendDensityLogLift >= 0 ? '+' : '') +
         s.weekendDensityLogLift.toFixed(4),
     s.weekendRegime,
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMonthEndVsMonthStartRatio(
+  r: DailyTokenMonthEndVsMonthStartRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-month-end-vs-month-start-ratio',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    window-size: ${r.windowSize}    min-end-share: ${r.minEndShare === null ? '\u2014' : r.minEndShare}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinEndShare)} below min-end-share, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CALENDAR-PARTITION ratio of MONTH-END to MONTH-START daily tokens. day-of-month bucket: START=[1..ws], END=[monthLen-ws+1..monthLen], MID=rest. endStartRatio = endTokens / startTokens; densityRatio = (endTokens / endCalDays) / (startTokens / startCalDays); endShare = endTokens / (endTokens + startTokens). Calendar-baseline-uniform sources have densityRatio = 1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source month-end vs month-start split (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'startDays',
+    'endDays',
+    'midDays',
+    'startCalDays',
+    'endCalDays',
+    'startTokens',
+    'endTokens',
+    'midTokens',
+    'endShare',
+    'endStartRatio',
+    'densityRatio',
+    'regime',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.startActiveDayCount),
+    formatNumber(s.endActiveDayCount),
+    formatNumber(s.midActiveDayCount),
+    formatNumber(s.startCalendarDayCount),
+    formatNumber(s.endCalendarDayCount),
+    formatNumber(s.startTokens),
+    formatNumber(s.endTokens),
+    formatNumber(s.midTokens),
+    s.endShare.toFixed(4),
+    s.endStartRatio === null ? '\u2014' : s.endStartRatio.toFixed(4),
+    s.densityRatio === null ? '\u2014' : s.densityRatio.toFixed(4),
+    s.monthEdgeRegime,
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);

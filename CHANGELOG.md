@@ -2,6 +2,91 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.397 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-month-end-vs-month-start-ratio`
+  — per-source RATIO of MONTH-END tokens to MONTH-START tokens
+  on the per-day `total_tokens` vector
+  (ONE-HUNDRED-AND-FORTY-NINTH cross-source axis). FIRST
+  intra-MONTH calendar-partition cross-source daily-token axis.
+  Day-of-month bucket: `START=[1..ws]`, `END=[monthLen-ws+1..monthLen]`,
+  `MID=rest`, with `windowSize` ws default 7 and bounded to
+  `[1, 14]` so the START and END sets stay disjoint even on a
+  28-day February. Headline scalar `endStartRatio = endTokens
+  / startTokens` plus the symmetric forms `endShare = endTokens
+  / (endTokens + startTokens)` and `startShare = 1 - endShare`.
+  A calendar-density-corrected sibling `densityRatio =
+  (endTokens / endCalendarDayCount) / (startTokens /
+  startCalendarDayCount)` rebases against how many of each
+  bucket's calendar days actually exist in the active span;
+  uniform per-day intensity gives `densityRatio = 1.0`.
+- Structurally orthogonal to all 148 prior axes:
+  - vs the permutation-invariant inequality / diversity family
+    (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover, Pietra,
+    Bonferroni, Mehran, Wolfson, Foster-Wolfson, Palma,
+    Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, FGT, GE
+    family, Var-of-Logs, Log-MAD, Zenga, S-Gini, Hill-tail,
+    decile-share-gap, quintile-share-ratio, percentile-gap-
+    ratio, top-4-CR, ...): those see only the active-day VALUE
+    multiset and cannot see which day-of-month each value
+    landed on. Witness: `D=[1000, 1000]` on `(Jan-01, Jan-02)`
+    vs `(Jan-30, Jan-31)`: same multiset, `endStartRatio = 0`
+    vs `+inf`. Test shipped.
+  - vs the path-dependent family (axis-145 max-drawdown-rate,
+    axis-146 longest-zero-run, axis-147 calendar-mask-RLE-
+    entropy): all three are sequence functionals on the
+    active-day order or the calendar 0/1 mask; they don't know
+    which day-of-MONTH any position represents. A source can
+    have `MDD = 0`, `LZR = 0`, `RLE-H = 0` and still take any
+    `endStartRatio` depending on which day-of-month
+    `firstActiveDay` landed on.
+  - vs axis-148 weekend-vs-weekday-ratio: that is a
+    day-of-WEEK partition (Sat/Sun vs Mon-Fri), this is an
+    intra-MONTH partition. Day-of-week and day-of-month are
+    demonstrably independent partitions: month-start days
+    `{1..7}` cycle through ALL seven weekdays across the year
+    and the same is true of month-end days.
+- 28 unit tests covering the helpers (`utcMonthLength`,
+  `classifyMonthEdgeBucket`, `classifyMonthEdgeRegime`),
+  builder degenerate / sparse / windowed paths, numerical
+  correctness on pure-start, pure-end, balanced and
+  density-asymmetric spans, the orthogonality witness vs
+  weekend/weekday, sort and `--top` and `--min-end-share`
+  filters, source-filter, deterministic `generatedAt`, and
+  the windowSize=14 boundary case on 28-day February.
+- Renderer surfaces `startTokens`, `endTokens`, `midTokens`,
+  `endShare`, `endStartRatio`, `densityRatio`, and
+  `monthEdgeRegime` next to the calendar-day-count columns.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+```
+$ pew-insights daily-token-month-end-vs-month-start-ratio
+```
+
+| source         | firstDay   | lastDay    | days | startTokens   | endTokens     | midTokens     | endShare | endStartRatio | densityRatio | regime        |
+|----------------|------------|------------|------|---------------|---------------|---------------|----------|---------------|--------------|---------------|
+| openclaw       | 2026-04-17 | 2026-05-03 | 17   | 155,102,453   | 728,029,290   | 1,367,510,144 |  0.8244  |  4.6939       |  2.0117      | end-heavy     |
+| opencode       | 2026-04-20 | 2026-05-03 | 14   | 1,161,238,892 | 3,365,634,612 | 1,862,453,144 |  0.7435  |  2.8983       |  1.2421      | end-heavy     |
+| hermes         | 2026-04-17 | 2026-05-03 | 17   | 63,519,586    | 113,794,689   | 131,615,514   |  0.6418  |  1.7915       |  0.7678      | end-leaning   |
+| claude-code    | 2026-02-11 | 2026-04-23 | 35   | 321,777,248   | 184,428,556   | 2,936,179,984 |  0.3643  |  0.5732       |  0.5732      | start-leaning |
+| (src-1)        | 2025-07-30 | 2026-04-20 | 73   | 398,904       | 216,589       | 1,270,234     |  0.3519  |  0.5430       |  0.5898      | start-leaning |
+| codex          | 2026-04-13 | 2026-04-20 | 8    | 0             | 0             | 809,624,660   |  0.0000  | —             | —            | start-blind   |
+
+Three sources (`openclaw`, `opencode`, `hermes`) fall in the
+end-bucket regime — their late-April activity straddled the
+April 24-30 month-end window. `claude-code` and the small
+`(src-1)` source land start-leaning thanks to longer spans
+that average across multiple month edges. `codex`'s 8-day
+span (Apr-13..Apr-20) sits entirely inside MID, so it shows
+as `start-blind` (the active span contains no day-of-month
+in `{1..7}` and no day-of-month in `{25..30}` either, but
+the `start-blind` label fires first since `startCalendarDayCount`
+is checked before `endCalendarDayCount` in the override
+order).
+
 ## 0.6.396 — 2026-05-04
 
 ### Added

@@ -121,6 +121,7 @@ import {
   renderDailyTokenLongestZeroRun,
   renderDailyTokenCalendarMaskRleEntropy,
   renderDailyTokenWeekendWeekdayRatio,
+  renderDailyTokenMonthEndVsMonthStartRatio,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -562,6 +563,7 @@ import { buildDailyTokenMaxDrawdownRate } from './dailytokenmaxdrawdownrate.js';
 import { buildDailyTokenLongestZeroRun } from './dailytokenlongestzerorun.js';
 import { buildDailyTokenCalendarMaskRleEntropy } from './dailytokencalendarmaskrleentropy.js';
 import { buildDailyTokenWeekendWeekdayRatio } from './dailytokenweekendweekdayratio.js';
+import { buildDailyTokenMonthEndVsMonthStartRatio } from './dailytokenmonthendvsmonthstartratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40775,6 +40777,154 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWeekendWeekdayRatio(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-month-end-vs-month-start-ratio')
+  .description(
+    "Per-source RATIO of MONTH-END to MONTH-START tokens on the per-day total_tokens vector (ONE-HUNDRED-AND-FORTY-NINTH cross-source axis). day-of-month bucket: START=[1..ws], END=[monthLen-ws+1..monthLen], MID=rest, with windowSize ws default 7. Structurally orthogonal to all permutation-invariant inequality / diversity functionals (Gini, HHI, Pielou, ...) which see only the active-day multiset and have no concept of which day-of-MONTH each value landed on. Orthogonal to the path-dependent family (axis-145 MDD, axis-146 longest-zero-run, axis-147 RLE-entropy) and to axis-148 weekend-vs-weekday-ratio (intra-WEEK partition vs intra-MONTH partition; demonstrably independent). Per row: startTokens, endTokens, midTokens, endShare, endStartRatio, densityRatio (calendar-density-corrected), monthEdgeRegime.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Ratio is well-defined for nDays=1 but degenerate.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: endShare (default) | startShare | endStartRatio | densityRatio | endTokens | startTokens | midTokens | tokens | days | source | meanDaily. Applied before --top.',
+    'endShare',
+  )
+  .option(
+    '--window-size <n>',
+    'width of START and END day-of-month windows (default 7, range [1, 14])',
+    '7',
+  )
+  .option(
+    '--min-end-share <f>',
+    'display filter: hide rows whose endShare is strictly below this fraction in [0, 1]. Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        windowSize: string;
+        minEndShare?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be an integer >= 1 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        const windowSize = Number.parseInt(opts.windowSize, 10);
+        if (!Number.isInteger(windowSize) || windowSize < 1 || windowSize > 14) {
+          throw new Error(
+            `--window-size must be an integer in [1, 14] (got ${opts.windowSize})`,
+          );
+        }
+        let minEndShare: number | null = null;
+        if (opts.minEndShare !== undefined) {
+          const mv = Number.parseFloat(opts.minEndShare);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-end-share must be a finite number in [0, 1] (got ${opts.minEndShare})`,
+            );
+          }
+          minEndShare = mv;
+        }
+        const validSorts = [
+          'endShare',
+          'startShare',
+          'endStartRatio',
+          'densityRatio',
+          'endTokens',
+          'startTokens',
+          'midTokens',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMonthEndVsMonthStartRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          windowSize,
+          minEndShare,
+          sort: opts.sort as
+            | 'endShare'
+            | 'startShare'
+            | 'endStartRatio'
+            | 'densityRatio'
+            | 'endTokens'
+            | 'startTokens'
+            | 'midTokens'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMonthEndVsMonthStartRatio(report) + '\n',
           );
         }
       } catch (e) {
