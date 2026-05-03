@@ -172,6 +172,7 @@ import {
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
+  renderDailyTokenWassersteinOneHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -506,6 +507,7 @@ import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
+import { buildDailyTokenWassersteinOneHalves } from './dailytokenwassersteinonehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37431,6 +37433,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCramerVonMisesHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-wasserstein-one-halves')
+  .description(
+    "Per-source WASSERSTEIN-1 (Kantorovich-Rubinstein, Earth Mover's Distance) TWO-SAMPLE TEST comparing the empirical distributions of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWENTY-FIRST cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST in OPTIMAL-TRANSPORT-L1 form (Vallender 1974, Theory of Probability and Its Applications 18(4):784-786; Bickel & Freedman 1981, Annals of Statistics 9(6):1196-1217; del Barrio, Gine & Matran 1999, Annals of Probability 27(2):1009-1071; Bonneel et al. 2015, JMIV 51(1):22-45): wassW1 = integral_0^1 |Q_A(u) - Q_B(u)| du = integral_R |F_A(x) - F_B(x)| dx by the Kantorovich-Rubinstein duality; lives in DATA-UNIT space (tokens) NOT probability space; wassZ = wassW1 / pooledMad scale-normalises by the pooled robust dispersion to yield a cross-source-comparable EFFECT SIZE; wassZSigned = sign(median(B)-median(A)) * wassZ. SUPPORT-SPACE L1 partner to axis-120 CvM (PROBABILITY-SPACE L2) and axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because W1 weights every CDF gap by SUPPORT-DISTANCE while CvM/AD/KS weight by MASS-DENSITY/POINTWISE-MAX. Distinct from axis-115 Mann-Whitney (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for asymptotic regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: wassW1Desc (default) | wassW1 | wassZ | wassZDesc | wassZSigned | wassZSignedDesc | tokens | tenure | source.',
+    'wassW1Desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'wassW1',
+          'wassW1Desc',
+          'wassZ',
+          'wassZDesc',
+          'wassZSigned',
+          'wassZSignedDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWassersteinOneHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'wassW1'
+            | 'wassW1Desc'
+            | 'wassZ'
+            | 'wassZDesc'
+            | 'wassZSigned'
+            | 'wassZSignedDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWassersteinOneHalves(report) + '\n',
           );
         }
       } catch (e) {

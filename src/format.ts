@@ -20260,6 +20260,7 @@ import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyh
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
+import type { DailyTokenWassersteinOneHalvesReport } from './dailytokenwassersteinonehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22122,6 +22123,95 @@ export function renderDailyTokenCramerVonMisesHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: cvmStat approx 1/6 + 1/(6N) approx 0.167 = ECDFs agree under H0 (Anderson 1962 Theorem 2); cvmStat > 0.46136 (Anderson 1962 Table 1, alpha=0.05) rejects equal-distribution at the 5 % level; cvmP < 0.05 = significant distributional shift; cvmP from log-linear interpolation of Anderson 1962 Table 1 anchors (T_0.25=0.20939, T_0.10=0.34730, T_0.05=0.46136, T_0.025=0.58061, T_0.01=0.74346). cvmStat is intrinsically UNSIGNED -- cvmDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); cvmZSigned = cvmDir * |cvmT| is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119. CvM is the UNWEIGHTED L2 companion to axis-119 AD (tail-weighted L2): the uniform weight on dH_N treats every region of the support proportionally to its mass, while AD's 1/(H_N(1-H_N)) weight explodes near 0 and 1 so tail-mass differences dominate. CvM is also the INTEGRATED L2 partner to axis-118 KS (pointwise L_infinity sup-norm): many small pointwise gaps accumulate to a large CvM that KS would miss, while a single localised spike that drives KS contributes only the area under one bump in CvM.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWassersteinOneHalves(
+  r: DailyTokenWassersteinOneHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-wasserstein-one-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WASSERSTEIN-1 (Kantorovich-Rubinstein, Earth Mover's Distance) TWO-SAMPLE TEST comparing the empirical distributions of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-FIRST cross-source axis. Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST in OPTIMAL-TRANSPORT-L1 form (Vallender 1974, TPA 18(4):784-786; Bickel & Freedman 1981, AoS 9(6):1196-1217; del Barrio, Gine & Matran 1999, AoP 27(2):1009-1071; Bonneel et al. 2015, JMIV 51(1):22-45): wassW1 = integral_0^1 |Q_A(u) - Q_B(u)| du = integral_R |F_A(x) - F_B(x)| dx via Kantorovich-Rubinstein duality, computed by walking the merged grid of CDF breakpoints {i/n1} U {j/n2} on [0,1]; lives in DATA-UNIT space (tokens) NOT probability space; wassZ = wassW1 / pooledMad scale-normalises by the pooled robust dispersion to yield a cross-source-comparable EFFECT SIZE; wassZSigned = sign(median(B)-median(A)) * wassZ. SUPPORT-SPACE L1 partner to axis-120 CvM (PROBABILITY-SPACE L2) and axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because W1 weights every CDF gap by SUPPORT-DISTANCE while CvM/AD/KS weight by MASS-DENSITY/POINTWISE-MAX. Distinct from axis-115 Mann-Whitney (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Wasserstein-1 two-sample (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'poolMed',
+    'poolMad',
+    'wassW1',
+    'wassZ',
+    'wassDir',
+    'wassZSigned',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.wassN1),
+    formatNumber(s.wassN2),
+    formatNumber(s.wassMedianA),
+    formatNumber(s.wassMedianB),
+    formatNumber(s.wassPooledMedian),
+    formatNumber(s.wassPooledMad),
+    s.wassW1.toFixed(4),
+    s.wassZ.toFixed(4),
+    s.wassDir.toFixed(0),
+    s.wassZSigned.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: wassW1 in [0, +inf) with units of tokens (data-support space); wassZ = wassW1 / pooledMad is dimensionless and cross-source-comparable; wassZ approx 0 = halves agree; wassZ >> 1 = halves are several robust-scale units apart in L1 transport cost. wassW1 is intrinsically UNSIGNED -- wassDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); wassZSigned = wassDir * wassZ is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119/120. W1 is the SUPPORT-SPACE L1 companion to axis-120 CvM (PROBABILITY-SPACE L2 with uniform weight) and axis-119 AD (PROBABILITY-SPACE L2 with tail-amplifying inverse-variance weight). W1 is also the L1-INTEGRATED partner to axis-118 KS (L_infinity sup-norm in probability space): a single localised CDF spike of height h over a narrow support of width w gives KS = h and W1 = h*w.)`,
     ),
   );
 
