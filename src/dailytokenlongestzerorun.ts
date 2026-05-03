@@ -181,6 +181,37 @@ export interface DailyTokenLongestZeroRunSourceRow {
    * day, inclusive). Empty string for longestZeroRun = 0.
    */
   longestZeroRunEndDay: string;
+  /**
+   * Refinement (v0.6.394): mean length of all silent stretches:
+   *   meanGapDays = totalZeroDays / max(1, zeroRunCount)
+   * For sources with zeroRunCount = 0, defined as 0.
+   * Complements longestZeroRun (the MAX) with the AVERAGE
+   * gap length: a source can have longestZeroRun = 30 with
+   * meanGapDays = 30 (single big gap) or longestZeroRun = 30
+   * with meanGapDays = 3 (many small gaps including one
+   * outlier). Together they pin down whether dormancy is
+   * EPISODIC (one big silence) vs CHRONIC (many small gaps).
+   */
+  meanGapDays: number;
+  /**
+   * Refinement (v0.6.394): structural label binning
+   * longestZeroRunShare into five bands. Cutoffs chosen to
+   * separate "fully live" / "occasional gaps" / "intermittent"
+   * / "highly intermittent" / "mostly silent" profiles:
+   *   - 'continuous'         : LZR = 0 -- no gap at all.
+   *   - 'sparse-gaps'        : share in (0, 0.10) -- isolated outages.
+   *   - 'episodic'           : share in [0.10, 0.25) -- noticeable dormancy.
+   *   - 'intermittent'       : share in [0.25, 0.50) -- silence is the norm.
+   *   - 'mostly-silent'      : share >= 0.50 -- worst gap dominates the span.
+   *   - 'degenerate'         : spanDays < 2.
+   */
+  dormancyRegime:
+    | 'continuous'
+    | 'sparse-gaps'
+    | 'episodic'
+    | 'intermittent'
+    | 'mostly-silent'
+    | 'degenerate';
   meanDailyTokens: number;
   degenerate: boolean;
 }
@@ -421,6 +452,29 @@ export function buildDailyTokenLongestZeroRun(
     let meanDaily = 0;
     for (const v of acc.perDay.values()) meanDaily += v;
     meanDaily = meanDaily / nDays;
+    const meanGapDays =
+      r.zeroRunCount > 0 ? r.totalZeros / r.zeroRunCount : 0;
+    const lzrShare = spanDays > 0 ? r.longestZeroRun / spanDays : 0;
+    let dormancyRegime:
+      | 'continuous'
+      | 'sparse-gaps'
+      | 'episodic'
+      | 'intermittent'
+      | 'mostly-silent'
+      | 'degenerate';
+    if (degenerate) {
+      dormancyRegime = 'degenerate';
+    } else if (r.longestZeroRun === 0) {
+      dormancyRegime = 'continuous';
+    } else if (lzrShare < 0.1) {
+      dormancyRegime = 'sparse-gaps';
+    } else if (lzrShare < 0.25) {
+      dormancyRegime = 'episodic';
+    } else if (lzrShare < 0.5) {
+      dormancyRegime = 'intermittent';
+    } else {
+      dormancyRegime = 'mostly-silent';
+    }
     rows.push({
       source: src,
       totalTokens: acc.totalTokens,
@@ -429,11 +483,13 @@ export function buildDailyTokenLongestZeroRun(
       firstDay: acc.firstDay,
       lastDay: acc.lastDay,
       longestZeroRun: r.longestZeroRun,
-      longestZeroRunShare: spanDays > 0 ? r.longestZeroRun / spanDays : 0,
+      longestZeroRunShare: lzrShare,
       totalZeroDays: r.totalZeros,
       zeroRunCount: r.zeroRunCount,
       longestZeroRunStartDay: longestStartDay,
       longestZeroRunEndDay: longestEndDay,
+      meanGapDays,
+      dormancyRegime,
       meanDailyTokens: meanDaily,
       degenerate,
     });
