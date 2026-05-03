@@ -17299,6 +17299,7 @@ import type { DailyTokenLongestZeroRunReport } from './dailytokenlongestzerorun.
 import type { DailyTokenCalendarMaskRleEntropyReport } from './dailytokencalendarmaskrleentropy.js';
 import type { DailyTokenWeekendWeekdayRatioReport } from './dailytokenweekendweekdayratio.js';
 import type { DailyTokenMonthEndVsMonthStartRatioReport } from './dailytokenmonthendvsmonthstartratio.js';
+import type { DailyTokenIsoWeekDayOfWeekEntropyReport } from './dailytokenisoweekdayofweekentropy.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24619,6 +24620,86 @@ export function renderDailyTokenMonthEndVsMonthStartRatio(
       : (s.endStartDensityLogLift >= 0 ? '+' : '') +
         s.endStartDensityLogLift.toFixed(4),
     s.monthEdgeRegime,
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+
+export function renderDailyTokenIsoWeekDayOfWeekEntropy(
+  r: DailyTokenIsoWeekDayOfWeekEntropyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-isoweek-day-of-week-entropy',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-weeks: ${formatNumber(r.minWeeks)}    min-mean-entropy: ${r.minMeanEntropy === null ? '\u2014' : r.minMeanEntropy}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinWeeks)} below min-weeks, ${formatNumber(r.droppedBelowMinMeanEntropy)} below min-mean-entropy, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      '(per-source TOKEN-WEIGHTED mean of per-iso-week normalised Shannon entropy of within-week DOW distribution. headline in [0, 1]: 0 = single-DOW each week; 1 = uniform Mon-Sun each week; log2(5)/log2(7) ~ 0.8270 = workdays-uniform.)',
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source iso-week DOW entropy (sorted by ${r.sort}; ties: tokens desc, source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'weeks',
+    'meanH',
+    'unwH',
+    'minH',
+    'maxH',
+    'stdH',
+    'regime',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.nIsoWeeks),
+    s.meanWeeklyEntropyNorm.toFixed(4),
+    s.unweightedMeanEntropyNorm.toFixed(4),
+    s.minWeeklyEntropyNorm.toFixed(4),
+    s.maxWeeklyEntropyNorm.toFixed(4),
+    s.stdWeeklyEntropyNorm.toFixed(4),
+    s.dowConcentrationRegime,
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);

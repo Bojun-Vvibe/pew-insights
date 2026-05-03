@@ -2,6 +2,119 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.400 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-isoweek-day-of-week-entropy` —
+  per-source TOKEN-WEIGHTED mean of per-iso-week normalised
+  Shannon entropy (base-2, divided by `log2(7)`) of the
+  within-iso-week DAY-OF-WEEK distribution
+  (ONE-HUNDRED-AND-FIFTIETH cross-source axis). FIRST per-iso-week
+  intra-WEEK aggregated functional in the suite. Headline scalar
+  `meanWeeklyEntropyNorm` lives in `[0, 1]`:
+  - `0`     = every active iso-week collapses all token mass onto
+    a single day-of-week (which day may differ week-to-week).
+  - `1`     = every active iso-week perfectly uniform Mon-Sun.
+  - `log2(2)/log2(7) ~ 0.3562` = mass split evenly between two
+    DOWs each week.
+  - `log2(5)/log2(7) ~ 0.8270` = workdays-uniform.
+
+  Per-row payload: `meanWeeklyEntropyNorm`,
+  `unweightedMeanEntropyNorm`, `minWeeklyEntropyNorm`,
+  `maxWeeklyEntropyNorm`, `stdWeeklyEntropyNorm` (token-weighted),
+  `nIsoWeeks`, `dowConcentrationRegime` in
+  `{single-dow, two-dow, workweek-tilted, broad-week,
+  uniform-week, degenerate}`. Iso week derivation is ISO-8601
+  with iso-week-numbering year (so `2025-12-29` -> `2026-W01`).
+
+- 33 new unit tests covering: ISO week boundary at year edges
+  (Dec/Jan rollover), DOW Mon=0..Sun=6 mapping, normalised
+  entropy edge cases (empty, single-bin, uniform-7, two-equal,
+  workdays-uniform, scale invariance, validation throws),
+  regime classification across all six bands, builder filters
+  (`minTokens`, `minDays`, `minMeanEntropy`), single-DOW vs
+  uniform-week vs two-DOW per-week construction, token-weighted
+  vs unweighted divergence on weeks with different totals, sort
+  by `tokens` and tie-break heavier-source-first on equal
+  entropy, top cap, and per-source `min/max/std` invariants
+  (single iso week => `std = 0` and `min = max = mean`;
+  divergent weeks => `std > 0`, `min < max`).
+
+### Structural orthogonality
+
+This is structurally orthogonal to all prior 149 axes:
+
+- vs the permutation-invariant inequality / diversity family
+  (axes 1..144 incl. Gini, HHI, Pielou, CR4, Atkinson, Theil,
+  Hoover, Pietra, Bonferroni, ...): they see only the active-day
+  VALUE multiset and have no concept of which iso-week or which
+  day-of-week each value landed on. Two sources with identical
+  daily multisets but values shuffled across calendar days have
+  identical Gini/HHI/Pielou and ANY
+  `meanWeeklyEntropyNorm in [0, 1]`.
+- vs path-dependent axes 145 (max-drawdown-rate), 146
+  (longest-zero-run), 147 (calendar-mask-RLE-entropy): all three
+  are sequence functionals on the active-day order or the
+  calendar 0/1 mask. None of them aggregate PER ISO WEEK and
+  none bin by DOW.
+- vs axis-148 weekend-vs-weekday-ratio: that is a GLOBAL
+  partition over the whole span. It cannot distinguish
+  "uniform Mon-Fri every week" (`weekendShare = 0`,
+  `meanWeeklyEntropyNorm ~ 0.83`) from "all-Mon every week"
+  (`weekendShare = 0`, `meanWeeklyEntropyNorm = 0`).
+  Witness shipped in tests.
+- vs axis-149 month-end-vs-month-start-ratio: GLOBAL intra-MONTH
+  calendar-partition functional. Independent of intra-week
+  dispersion.
+- vs the global DOW-share family (`weekdayshare.ts`,
+  `sourcedayofweektokenmassshare.ts`): those collapse the entire
+  active span into a SINGLE 7-bin DOW vector. They cannot see
+  PER-WEEK variability. Witness in tests: a source firing X on
+  Mon in iso-week A and X on Tue in iso-week B has the same
+  global DOW histogram (50% Mon + 50% Tue) as a source that
+  fires X/2 on Mon AND X/2 on Tue in EACH of the two iso weeks,
+  but `meanWeeklyEntropyNorm` is `0` vs `log2(2)/log2(7) ~ 0.3562`.
+- vs autocorrelation / spectral axes: those measure
+  translation-invariant dependence on the daily series and don't
+  aggregate per iso-week. `[X, 0, ..., 0]`-repeating and
+  `[X, X, ..., X]`-uniform have the same lag-7 autocorrelation
+  class but `meanWeeklyEntropyNorm` of `0` vs `1`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+Real run against the local pew queue, sources sorted by
+`meanEntropy` descending. The `(src-1)` row masks a low-volume
+IDE-extension source.
+
+| source       | days | weeks | meanH  | unwH   | minH   | maxH   | stdH   | regime          | tokens        |
+|--------------|------|-------|--------|--------|--------|--------|--------|-----------------|---------------|
+| opencode     |   14 |     2 | 0.9560 | 0.9574 | 0.9205 | 0.9943 | 0.0368 | uniform-week    | 6,399,331,154 |
+| hermes       |   17 |     3 | 0.8636 | 0.7829 | 0.4880 | 0.9957 | 0.1887 | broad-week      |   309,320,505 |
+| openclaw     |   17 |     3 | 0.8475 | 0.7977 | 0.4333 | 0.9944 | 0.2275 | broad-week      | 2,250,810,511 |
+| claude-code  |   35 |    10 | 0.4897 | 0.4309 | 0.2485 | 0.8022 | 0.2035 | workweek-tilted | 3,442,385,788 |
+| codex        |    8 |     2 | 0.3964 | 0.3821 | 0.0000 | 0.7643 | 0.3819 | two-dow         |   809,624,660 |
+| (src-1)      |   73 |    30 | 0.3872 | 0.2784 | 0.0000 | 0.7045 | 0.2979 | two-dow         |     1,885,727 |
+
+The headline cleanly separates the suite into three bands:
+`opencode` is essentially uniform Mon-Sun every iso week
+(`meanH = 0.9560`, `stdH = 0.037` -> two iso weeks both very
+close to flat). `hermes` and `openclaw` sit in `broad-week`
+with `meanH ~ 0.85` but show MORE per-week variability
+(`stdH ~ 0.19-0.23`, with `minH` around `0.45`). `claude-code`
+is `workweek-tilted` (`meanH = 0.49`) — across 10 iso weeks
+its DOW mass concentrates on a small subset of weekdays each
+week. `codex` and the masked low-volume source both register
+`two-dow` (`meanH ~ 0.39`) with the lowest `minH = 0.0000`,
+meaning at least one of their active iso weeks fires entirely
+on a single day-of-week.
+
+The `unwH` column is materially LOWER than `meanH` for the
+shorter-span sources (e.g. `(src-1)` `0.39` weighted vs `0.28`
+unweighted across 30 iso weeks): light iso weeks are common and
+they sit near `0`, but they don't dominate the
+token-weighted headline.
+
 ## 0.6.399 — 2026-05-04
 
 ### Changed

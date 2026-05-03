@@ -122,6 +122,7 @@ import {
   renderDailyTokenCalendarMaskRleEntropy,
   renderDailyTokenWeekendWeekdayRatio,
   renderDailyTokenMonthEndVsMonthStartRatio,
+  renderDailyTokenIsoWeekDayOfWeekEntropy,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -564,6 +565,7 @@ import { buildDailyTokenLongestZeroRun } from './dailytokenlongestzerorun.js';
 import { buildDailyTokenCalendarMaskRleEntropy } from './dailytokencalendarmaskrleentropy.js';
 import { buildDailyTokenWeekendWeekdayRatio } from './dailytokenweekendweekdayratio.js';
 import { buildDailyTokenMonthEndVsMonthStartRatio } from './dailytokenmonthendvsmonthstartratio.js';
+import { buildDailyTokenIsoWeekDayOfWeekEntropy } from './dailytokenisoweekdayofweekentropy.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40925,6 +40927,152 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMonthEndVsMonthStartRatio(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-isoweek-day-of-week-entropy')
+  .description(
+    "Per-source TOKEN-WEIGHTED mean of per-iso-week normalised Shannon entropy of the within-week DOW distribution (ONE-HUNDRED-AND-FIFTIETH cross-source axis). Headline scalar in [0, 1]: 0 = all tokens land on a single day-of-week each iso week; 1 = uniform Mon-Sun each iso week; log2(5)/log2(7) ~ 0.8270 = workdays-uniform. Structurally orthogonal to all permutation-invariant inequality / diversity functionals (Gini, HHI, Pielou, ...); to path-dependent axes 145 (MDD), 146 (LZR), 147 (RLE-H); to axis-148 weekend-vs-weekday-ratio (global partition vs per-week aggregation); to axis-149 month-end-vs-month-start-ratio (intra-MONTH vs intra-WEEK partition); and to global DOW-share axes (those collapse to a single 7-bin histogram and cannot see PER-WEEK variability). Per row: meanWeeklyEntropyNorm, unweightedMeanEntropyNorm, min/max/std across active iso weeks, dowConcentrationRegime.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2)',
+    '2',
+  )
+  .option(
+    '--min-weeks <n>',
+    'hide source rows whose nIsoWeeks is below n (default 1)',
+    '1',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: meanEntropy (default) | unweightedMeanEntropy | minEntropy | maxEntropy | stdEntropy | weeks | tokens | days | source | meanDaily. Applied before --top.',
+    'meanEntropy',
+  )
+  .option(
+    '--min-mean-entropy <f>',
+    'display filter: hide rows whose meanWeeklyEntropyNorm is strictly below this fraction in [0, 1]. Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        minWeeks: string;
+        top: string;
+        sort: string;
+        minMeanEntropy?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be an integer >= 1 (got ${opts.minDays})`,
+          );
+        }
+        const minWeeks = Number.parseInt(opts.minWeeks, 10);
+        if (!Number.isInteger(minWeeks) || minWeeks < 1) {
+          throw new Error(
+            `--min-weeks must be an integer >= 1 (got ${opts.minWeeks})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minMeanEntropy: number | null = null;
+        if (opts.minMeanEntropy !== undefined) {
+          const mv = Number.parseFloat(opts.minMeanEntropy);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-mean-entropy must be a finite number in [0, 1] (got ${opts.minMeanEntropy})`,
+            );
+          }
+          minMeanEntropy = mv;
+        }
+        const validSorts = [
+          'meanEntropy',
+          'unweightedMeanEntropy',
+          'minEntropy',
+          'maxEntropy',
+          'stdEntropy',
+          'weeks',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenIsoWeekDayOfWeekEntropy(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          minWeeks,
+          top,
+          minMeanEntropy,
+          sort: opts.sort as
+            | 'meanEntropy'
+            | 'unweightedMeanEntropy'
+            | 'minEntropy'
+            | 'maxEntropy'
+            | 'stdEntropy'
+            | 'weeks'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenIsoWeekDayOfWeekEntropy(report) + '\n',
           );
         }
       } catch (e) {
