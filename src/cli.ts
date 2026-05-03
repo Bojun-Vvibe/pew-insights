@@ -181,6 +181,7 @@ import {
   renderDailyTokenTotalVariationHalves,
   renderDailyTokenHellingerDistanceHalves,
   renderDailyTokenTriangularDiscriminationHalves,
+  renderDailyTokenBhattacharyyaDistanceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -524,6 +525,7 @@ import { buildDailyTokenJensenShannonDivergenceHalves } from './dailytokenjensen
 import { buildDailyTokenTotalVariationHalves } from './dailytokentotalvariationhalves.js';
 import { buildDailyTokenHellingerDistanceHalves } from './dailytokenhellingerdistancehalves.js';
 import { buildDailyTokenTriangularDiscriminationHalves } from './dailytokentriangulardiscriminationhalves.js';
+import { buildDailyTokenBhattacharyyaDistanceHalves } from './dailytokenbhattacharyyadistancehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -38483,6 +38485,115 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenTriangularDiscriminationHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-bhattacharyya-distance-halves')
+  .description(
+    "Per-source KDE-SMOOTHED BHATTACHARYYA DISTANCE bDist = -ln(BC) where BC = sum_k sqrt(p_k*q_k) is the Bhattacharyya coefficient between the FIRST and SECOND half of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-THIRTIETH cross-source axis). NEGATIVE LOG of the SQRT-AMPLITUDE INNER PRODUCT of KERNEL-DENSITY-SMOOTHED probability mass functions; equivalently the Chernoff information at alpha=1/2. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. BC in [0, 1], bDist in [0, +inf) (Bhattacharyya 1943; Kailath 1967; Chernoff 1952). Related to Hellinger via H = sqrt(1 - BC). ORTHOGONAL to all 12 prior axes 118-129. Translation-invariant AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bDistDesc (default) | bDist | bcCoefficient | bcCoefficientDesc | tokens | tenure | source.',
+    'bDistDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bDist',
+          'bDistDesc',
+          'bcCoefficient',
+          'bcCoefficientDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBhattacharyyaDistanceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'bDist'
+            | 'bDistDesc'
+            | 'bcCoefficient'
+            | 'bcCoefficientDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenBhattacharyyaDistanceHalves(report) + '\n',
           );
         }
       } catch (e) {

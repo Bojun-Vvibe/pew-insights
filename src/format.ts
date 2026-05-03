@@ -20269,6 +20269,7 @@ import type { DailyTokenJensenShannonDivergenceHalvesReport } from './dailytoken
 import type { DailyTokenTotalVariationHalvesReport } from './dailytokentotalvariationhalves.js';
 import type { DailyTokenHellingerDistanceHalvesReport } from './dailytokenhellingerdistancehalves.js';
 import type { DailyTokenTriangularDiscriminationHalvesReport } from './dailytokentriangulardiscriminationhalves.js';
+import type { DailyTokenBhattacharyyaDistanceHalvesReport } from './dailytokenbhattacharyyadistancehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22923,6 +22924,87 @@ export function renderDailyTokenTriangularDiscriminationHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: delta in [0, 2] is the triangular discrimination (= sum_k (p_k - q_k)^2 / (p_k + q_k)); delta = 0 iff KDE-smoothed halves coincide; delta -> 2 iff p, q have disjoint support on the grid. metric = sqrt(delta) is the true Le Cam metric on the probability simplex (Topsoe 2000 Theorem 4.2). maxBinValue is the per-bin contribution (p_k - q_k)^2 / (p_k + q_k) at the argmax bin. The axis is PERMUTATION-INVARIANT within each half (marginal pmf only). Topsoe-Vajda anchors: 4*H^2 <= delta <= 2*tvDist; delta >= tvDist^2. Delta and TV are NOT monotone images of each other -- delta amplifies bins where BOTH halves have substantial mass per absolute disagreement, vs TV which is uniform in pmf coordinates. Delta is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBhattacharyyaDistanceHalves(
+  r: DailyTokenBhattacharyyaDistanceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-bhattacharyya-distance-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED BHATTACHARYYA DISTANCE bDist = -ln(BC) where BC = sum_k sqrt(p_k*q_k) is the Bhattacharyya coefficient between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTIETH cross-source axis. NEGATIVE LOG of the SQRT-AMPLITUDE INNER PRODUCT of KERNEL-DENSITY-SMOOTHED probability mass functions; equivalently the Chernoff information at alpha=1/2 (Chernoff 1952). Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. BC in [0, 1], bDist in [0, +inf) (Bhattacharyya 1943; Kailath 1967). Related to Hellinger via H = sqrt(1 - BC); locally bDist ~ H^2 for small H but bDist amplifies near-disjoint supports through the LOG. ORTHOGONAL to all 12 prior axes 118-129: log of sqrt-amplitude inner product, neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis (qv-Mahalanobis), delay-embedded leading-PC projection (PCA), pmf-LOG-RATIO (JSD), pmf-L^1 (TV), pmf-SQRT-AMPLITUDE-L^2 (H), nor pmf-RECIPROCAL-SUM-WEIGHTED-L^2 (Delta). bDist and H not monotone images of each other across SOURCES with very different BC: a source with BC=0.01 has bDist ~6.6x bigger than one with BC=0.5 while H is only ~1.4x bigger. Translation-invariant AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Bhattacharyya distance (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'BC',
+    'bDist',
+    'bDistNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.bDistN1),
+    formatNumber(s.bDistN2),
+    s.bDistMadPool.toFixed(2),
+    s.bDistBandwidth.toFixed(2),
+    s.bcCoefficient.toFixed(6),
+    s.bDist.toFixed(6),
+    s.bDistNormalized.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: BC in [0, 1] is the Bhattacharyya coefficient = sum_k sqrt(p_k*q_k); BC=1 iff KDE-smoothed halves coincide; BC->0 iff p, q have disjoint support on the grid. bDist = -ln(BC) in [0, +inf); bDist=0 iff halves identical; bDist diverges as BC->0. bDistNorm = 1 - BC = H^2 in [0, 1] is a diagnostic on the same [0, 1] scale as deltaNormalized (axis-129) and tvDist (axis-127). bDist is permutation-invariant within each half. Topsoe-Pinsker anchors: 1 - BC >= H^2/2 (when H is small); BC >= 1 - 0.5*tvDist. bDist is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
