@@ -20265,6 +20265,7 @@ import type { DailyTokenEnergyDistanceHalvesReport } from './dailytokenenergydis
 import type { DailyTokenMaximumMeanDiscrepancyHalvesReport } from './dailytokenmaximummeandiscrepancyhalves.js';
 import type { DailyTokenQuantileVectorMahalanobisHalvesReport } from './dailytokenquantilevectormahalanobishalves.js';
 import type { DailyTokenPcaProjectionDistanceHalvesReport } from './dailytokenpcaprojectiondistancehalves.js';
+import type { DailyTokenJensenShannonDivergenceHalvesReport } from './dailytokenjensenshannondivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22589,6 +22590,89 @@ export function renderDailyTokenPcaProjectionDistanceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: pcZ in (-inf,+inf), dimensionless and signed by sign(pcGap); pcT in [0,+inf) is sign-invariant; var1 = lam_1/sum(lam) is variance explained by the leading PC. pcZ ~ 0 = half centroids coincide along u_1; |pcZ| >> 1 = halves are several pooled-leading-PC stddevs apart. The axis is COVARIANCE-AWARE through the delay-embedding lag structure: a time-permuted half (same marginal, different order) gives the same KS/AD/CvM/W1/energy/MMD/d2Diag but a different lam_i and pcZ. pcZ is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenJensenShannonDivergenceHalves(
+  r: DailyTokenJensenShannonDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-jensen-shannon-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED JENSEN-SHANNON DIVERGENCE between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-SIXTH cross-source axis. Class-INFORMATION-THEORETIC SYMMETRIC DIVERGENCE on KERNEL-DENSITY-SMOOTHED probability mass functions. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half evaluated on the shared grid; trapezoidal mass-normalisation to exact pmfs p, q. jsdBits = 0.5*(KL(p||m) + KL(q||m)) in bits with m = 0.5*(p+q) (Lin 1991 IEEE Trans. Info. Theory 37(1):145-151). jsdBits in [0,1]; jsdDist = sqrt(jsdBits) is a TRUE METRIC on the probability simplex (Endres & Schindelin 2003 IEEE Trans. Info. Theory 49(7):1858-1860). ORTHOGONAL to all 8 prior axes 118-125: marginal-log-ratio integral in pmf space, neither pointwise CDF (KS), tail-weighted CDF (AD), L^2 CDF (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis (qv-Mahalanobis), nor delay-embedded leading-PC projection (PCA). Translation-invariant AND positive-scale-invariant in the data.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Jensen-Shannon divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'jsdBits',
+    'jsdDist',
+    'maxBinX',
+    'maxBinVal',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.jsdN1),
+    formatNumber(s.jsdN2),
+    s.jsdMadPool.toFixed(2),
+    s.jsdBandwidth.toFixed(2),
+    s.jsdBits.toFixed(6),
+    s.jsdDist.toFixed(6),
+    s.jsdMaxBinX.toFixed(2),
+    s.jsdMaxBinValue.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: jsdBits in [0, 1] (bits, log base 2); jsdDist = sqrt(jsdBits) in [0, 1] is a true metric on the probability simplex; jsdMaxBinValue is the per-bin contribution at the argmax bin (bounded above by 0.5 bit). jsdBits ~ 0 = halves indistinguishable after KDE smoothing; jsdBits close to 1 = halves are essentially disjoint on the support. The axis is PERMUTATION-INVARIANT within each half (depends only on the marginal pmf), distinguishing it from axis-125 PCA-projection which is COVARIANCE-AWARE through the delay-embedding lag structure. JS is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
