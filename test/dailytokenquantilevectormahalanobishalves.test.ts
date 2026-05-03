@@ -589,3 +589,90 @@ test('build: respects all 13 valid sort keys without throwing', () => {
     assert.ok(r.sources.length === 2);
   }
 });
+
+// ---------- refinement: qvStdGapByP and qvDir mean fallback ----------
+
+test('dailyTokenQuantileVectorMahalanobisHalves: qvStdGapByP length matches grid and is signed', () => {
+  const x = [
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ];
+  const r = dailyTokenQuantileVectorMahalanobisHalves(x);
+  assert.equal(r.qvStdGapByP.length, QV_PROBABILITY_GRID.length);
+  // Second half is uniformly larger -> all signed gaps positive.
+  for (const g of r.qvStdGapByP) {
+    assert.ok(g > 0, `expected positive gap, got ${g}`);
+  }
+});
+
+test('dailyTokenQuantileVectorMahalanobisHalves: qvStdGapByP[i] == (qb-qa)/iqr at grid p', () => {
+  const x = [
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ];
+  const r = dailyTokenQuantileVectorMahalanobisHalves(x);
+  const a = x.slice(0, r.qvN1);
+  const b = x.slice(r.qvN1);
+  for (let i = 0; i < QV_PROBABILITY_GRID.length; i += 1) {
+    const p = QV_PROBABILITY_GRID[i]!;
+    const expected = (quantile7(b, p) - quantile7(a, p)) / r.qvIqrPool;
+    assert.ok(
+      Math.abs(r.qvStdGapByP[i]! - expected) < 1e-10,
+      `i=${i} expected ${expected}, got ${r.qvStdGapByP[i]}`,
+    );
+  }
+});
+
+test('dailyTokenQuantileVectorMahalanobisHalves: qvLinf == max |qvStdGapByP|', () => {
+  const x = [
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ];
+  const r = dailyTokenQuantileVectorMahalanobisHalves(x);
+  let m = 0;
+  let argmax = 0;
+  for (let i = 0; i < r.qvStdGapByP.length; i += 1) {
+    const a = Math.abs(r.qvStdGapByP[i]!);
+    if (a > m) {
+      m = a;
+      argmax = i;
+    }
+  }
+  assert.ok(Math.abs(r.qvLinf - m) < 1e-12);
+  assert.equal(r.qvLinfArgmax, argmax);
+});
+
+test('dailyTokenQuantileVectorMahalanobisHalves: qvDir falls back to mean when medians tie', () => {
+  // Halves with identical medians but differing means.
+  // Construct each half with median 5 (n=8 each, so median = mean of 4th & 5th sorted),
+  // but A has small mean and B has a heavy upper outlier so mean(B) > mean(A).
+  // A sorted = [1, 2, 3, 4, 6, 7, 8, 9] -> median = (4+6)/2 = 5, mean = 40/8 = 5.0
+  // B sorted = [1, 2, 3, 4, 6, 7, 8, 1000] -> median = 5, mean = 1031/8 = 128.875
+  // Pooled has spread => IQR > 0.
+  const a = [1, 2, 3, 4, 6, 7, 8, 9];
+  const b = [1, 2, 3, 4, 6, 7, 8, 1000];
+  const r = dailyTokenQuantileVectorMahalanobisHalves(a.concat(b));
+  assert.equal(r.qvMedianA, 5);
+  assert.equal(r.qvMedianB, 5);
+  assert.equal(r.qvDir, 1, 'expected mean(B) > mean(A) to set qvDir = +1');
+  assert.ok(r.qvZSigned > 0);
+});
+
+test('dailyTokenQuantileVectorMahalanobisHalves: qvDir = 0 only when medians AND means tie', () => {
+  // Identical halves: median, mean, all quantiles tie.
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenQuantileVectorMahalanobisHalves(half.concat(half));
+  assert.equal(r.qvMedianA, r.qvMedianB);
+  assert.equal(r.qvDir, 0);
+  assert.equal(r.qvZSigned, 0);
+});
+
+test('build: report rows include qvStdGapByP', () => {
+  const q = makeQueueWithTwoSources();
+  const r = buildDailyTokenQuantileVectorMahalanobisHalves(q, {
+    minTokens: 0,
+  });
+  for (const s of r.sources) {
+    assert.equal(s.qvStdGapByP.length, 9);
+    for (const g of s.qvStdGapByP) {
+      assert.ok(Number.isFinite(g));
+    }
+  }
+});

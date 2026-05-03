@@ -294,7 +294,13 @@ export interface DailyTokenQuantileVectorMahalanobisHalvesSourceRow {
   qvT: number;
   /** sqrt(d2Diag) -- effect size, dimensionless. */
   qvZ: number;
-  /** Sign indicator: +1 if median(B) > median(A); -1 if <; 0 if =. */
+  /**
+   * Sign indicator. +1 if median(B) > median(A);
+   * -1 if median(B) < median(A); when medians tie
+   * (common for long flat-zero tenures), falls back to
+   * the sign of mean(B) - mean(A); 0 only if both
+   * medians AND means are exactly equal.
+   */
   qvDir: number;
   /** Signed effect size: qvDir * qvZ. */
   qvZSigned: number;
@@ -302,6 +308,11 @@ export interface DailyTokenQuantileVectorMahalanobisHalvesSourceRow {
   qvLinf: number;
   /** Index in {0..k-1} of the grid probability where qvLinf is attained. */
   qvLinfArgmax: number;
+  /**
+   * Per-grid-probability standardised quantile gap
+   * ( q_B[i] - q_A[i] ) / iqr_pool, length === probabilityGrid.length.
+   */
+  qvStdGapByP: number[];
 }
 
 export interface DailyTokenQuantileVectorMahalanobisHalvesReport {
@@ -395,6 +406,7 @@ export function dailyTokenQuantileVectorMahalanobisHalves(
   qvZSigned: number;
   qvLinf: number;
   qvLinfArgmax: number;
+  qvStdGapByP: number[];
 } {
   const n = values.length;
   if (n < 8) {
@@ -448,15 +460,18 @@ export function dailyTokenQuantileVectorMahalanobisHalves(
   let sumSqGap = 0;
   let qvLinf = 0;
   let qvLinfArgmax = 0;
+  const qvStdGapByP: number[] = new Array(k);
   for (let i = 0; i < k; i += 1) {
     const p = QV_PROBABILITY_GRID[i]!;
     const qa = quantileType7Sorted(aSorted, p);
     const qb = quantileType7Sorted(bSorted, p);
     const gap = qb - qa;
     sumSqGap += gap * gap;
-    const stdGap = Math.abs(gap) / qvIqrPool;
-    if (stdGap > qvLinf) {
-      qvLinf = stdGap;
+    const stdGap = gap / qvIqrPool;
+    qvStdGapByP[i] = stdGap;
+    const absStd = Math.abs(stdGap);
+    if (absStd > qvLinf) {
+      qvLinf = absStd;
       qvLinfArgmax = i;
     }
   }
@@ -464,8 +479,23 @@ export function dailyTokenQuantileVectorMahalanobisHalves(
 
   const qvT = ((n1 * n2) / (n1 + n2)) * qvD2Diag;
   const qvZ = Math.sqrt(qvD2Diag);
-  const qvDir =
-    qvMedianB > qvMedianA ? 1 : qvMedianB < qvMedianA ? -1 : 0;
+  // Direction: prefer the median sign; when medians tie,
+  // fall back to mean comparison so qvZSigned still carries
+  // information for the (common) case of long flat-zero
+  // tenures where both half-medians are 0 but the means
+  // differ.
+  let muA = 0;
+  for (const v of aSorted) muA += v;
+  muA /= n1;
+  let muB = 0;
+  for (const v of bSorted) muB += v;
+  muB /= n2;
+  let qvDir: number;
+  if (qvMedianB > qvMedianA) qvDir = 1;
+  else if (qvMedianB < qvMedianA) qvDir = -1;
+  else if (muB > muA) qvDir = 1;
+  else if (muB < muA) qvDir = -1;
+  else qvDir = 0;
   const qvZSigned = qvDir * qvZ;
 
   if (
@@ -496,6 +526,7 @@ export function dailyTokenQuantileVectorMahalanobisHalves(
     qvZSigned,
     qvLinf,
     qvLinfArgmax,
+    qvStdGapByP,
   };
 }
 
@@ -681,6 +712,7 @@ export function buildDailyTokenQuantileVectorMahalanobisHalves(
       qvZSigned: result.qvZSigned,
       qvLinf: result.qvLinf,
       qvLinfArgmax: result.qvLinfArgmax,
+      qvStdGapByP: result.qvStdGapByP,
     };
     rows.push(row);
     totalTokensSum += acc.totalTokens;
