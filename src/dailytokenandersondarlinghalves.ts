@@ -403,10 +403,23 @@ function medianSorted(sorted: number[]): number {
  * in scipy.stats.anderson_ksamp for ranking-quality
  * tail estimates.
  */
+/**
+ * Scholz & Stephens 1987 Table 1 critical values for
+ * the standardised k = 2 AD score adT, paired with
+ * their right-tail probabilities. Used both by the
+ * p-value interpolator and by anyone consuming
+ * `adTCrit05 = SS_1987_TABLE_1_K2_T[2]` (the
+ * alpha = 0.05 anchor). Kept private to this module
+ * so the canonical numbers live in exactly one place.
+ */
+const SS_1987_TABLE_1_K2_T = [0.325, 1.226, 1.96, 2.719, 3.752] as const;
+const SS_1987_TABLE_1_K2_P = [0.25, 0.1, 0.05, 0.025, 0.01] as const;
+const SS_1987_TABLE_1_K2_T_CRIT_05 = SS_1987_TABLE_1_K2_T[2];
+
 function andersonDarlingP(adT: number): number {
-  if (!Number.isFinite(adT) || adT <= 0.325) return 1;
-  const ts = [0.325, 1.226, 1.960, 2.719, 3.752];
-  const ps = [0.25, 0.10, 0.05, 0.025, 0.01];
+  if (!Number.isFinite(adT) || adT <= SS_1987_TABLE_1_K2_T[0]) return 1;
+  const ts = SS_1987_TABLE_1_K2_T;
+  const ps = SS_1987_TABLE_1_K2_P;
   if (adT >= ts[ts.length - 1]!) {
     const t1 = ts[ts.length - 2]!;
     const t2 = ts[ts.length - 1]!;
@@ -462,11 +475,21 @@ function adVarH0Coef(n1: number, n2: number): number {
   const H = 1 / n1 + 1 / n2;
   let h = 0;
   for (let i = 1; i <= N - 1; i += 1) h += 1 / i;
+  // g = sum_{i=1..N-2} sum_{j=i+1..N-1} 1 / ((N-i)*j).
+  // Precompute the inner suffix sum
+  //     S[i] = sum_{j=i+1..N-1} 1/j
+  // in O(N) so the outer loop is O(N) too (vs the
+  // naive O(N^2) double loop). Numerically identical;
+  // ~N x faster for typical tenures of 50-300 days.
+  let suffix = 0;
+  const S: number[] = new Array(N + 1).fill(0);
+  for (let j = N - 1; j >= 1; j -= 1) {
+    S[j] = suffix;
+    suffix += 1 / j;
+  }
   let g = 0;
   for (let i = 1; i <= N - 2; i += 1) {
-    for (let j = i + 1; j <= N - 1; j += 1) {
-      g += 1 / ((N - i) * j);
-    }
+    g += S[i]! / (N - i);
   }
   const a = (4 * g - 6) * (k - 1) + (10 - 6 * g) * H;
   const b =
@@ -618,7 +641,7 @@ export function dailyTokenAndersonDarlingHalves(values: number[]): {
   const adP = andersonDarlingP(adT);
   const adDir = adMedianB > adMedianA ? 1 : adMedianB < adMedianA ? -1 : 0;
   const adZSigned = adDir * Math.abs(adT);
-  const adTCrit05 = 1.96; // S&S 1987 Table 1, k=2, alpha=0.05
+  const adTCrit05 = SS_1987_TABLE_1_K2_T_CRIT_05; // S&S 1987 Table 1, k=2, alpha=0.05
 
   if (
     !Number.isFinite(adA2) ||
