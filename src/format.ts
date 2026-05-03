@@ -20273,6 +20273,7 @@ import type { DailyTokenBhattacharyyaDistanceHalvesReport } from './dailytokenbh
 import type { DailyTokenJeffreysDivergenceHalvesReport } from './dailytokenjeffreysdivergencehalves.js';
 import type { DailyTokenRenyiTwoDivergenceHalvesReport } from './dailytokenrenyitwodivergencehalves.js';
 import type { DailyTokenMaxDivergenceHalvesReport } from './dailytokenmaxdivergencehalves.js';
+import type { DailyTokenSymmetricChiSquaredHalvesReport } from './dailytokensymmetricchisquaredhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23271,6 +23272,91 @@ export function renderDailyTokenMaxDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: maxDiv in [0, 1] is the L^infinity sup-norm of the per-bin pmf gap; maxDiv=0 iff KDE-smoothed halves coincide on the grid. argMaxX is the token-volume coordinate g_lo + argMaxBucketIndex*dx of the worst bucket. argMaxSign is +1 if the first half has more mass at that bucket, -1 if the second half does, 0 if equal. tvDist = 0.5*sum_k |p_k - q_k| is the total-variation distance from axis-127. maxDivLinfL1Ratio = maxDiv/tvDist in [1/K, 1]: low = broad disagreement across many buckets, high = single-bucket spike. Holder: maxDiv <= 2*tvDist; maxDiv >= (2/K)*tvDist. maxDiv is permutation-invariant within each half AND invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSymmetricChiSquaredHalves(
+  r: DailyTokenSymmetricChiSquaredHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-symmetric-chi-squared-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}    pmf-floor: ${r.pmfFloor}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED ADDITIVE SYMMETRIC CHI-SQUARED divergence psChi2 = sum_k (p_k-q_k)^2 (p_k+q_k)/(p_k q_k) between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-FOURTH cross-source axis. Equivalent to forward+reverse Pearson chi-squared. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. psChi2 in [0, +inf); psChi2=0 iff KDE-smoothed halves coincide on the grid. ORTHOGONAL to all 16 prior axes 118-133: unique RECIPROCAL-WEIGHTED L^2 of the pmf gap with summand weight (p+q)/(p*q); diametrically opposite tail amplification to triangular-discrim (axis-129) and base-rate-blind sup-norm maxDiv (axis-133). Diagnostic pearsonAsymmetryRatio = max(F,R)/min(F,R) flags directional drift. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed symmetric chi-squared divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'psChi2',
+    'pearsonF',
+    'pearsonR',
+    'asym',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.psChiN1),
+    formatNumber(s.psChiN2),
+    s.psChiMadPool.toFixed(2),
+    s.psChiBandwidth.toFixed(2),
+    s.psChi2.toFixed(6),
+    s.pearsonForward.toFixed(6),
+    s.pearsonReverse.toFixed(6),
+    Number.isFinite(s.pearsonAsymmetryRatio)
+      ? s.pearsonAsymmetryRatio.toFixed(4)
+      : 'inf',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: psChi2 in [0, +inf) is the additive symmetric chi-squared divergence sum_k (p_k-q_k)^2 (p_k+q_k)/(p_k q_k) between the KDE-smoothed half-pmfs; psChi2=0 iff p=q on the grid. Equivalent to pearsonF + pearsonR where pearsonF = sum_k (p_k-q_k)^2/q_k (forward Pearson p->q) and pearsonR = sum_k (p_k-q_k)^2/p_k (reverse Pearson q->p). asym = max(pearsonF, pearsonR) / min(...) in [1, +inf); asym=1 means symmetric divergence, asym>>1 means one half visits a token-volume regime the other does not. Translation- AND positive-scale-invariant in the data; PSCHI_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
 
