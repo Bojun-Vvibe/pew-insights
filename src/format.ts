@@ -20256,6 +20256,7 @@ import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferences
 import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
+import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21756,6 +21757,89 @@ export function renderDailyTokenBrownForsythHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: bfT approx 1 = halves equally dispersed; bfT much greater than 1 with bfZ > +1.96 = second half more dispersed; bfT much greater than 1 with bfZ < -1.96 = first half more dispersed. |bfZ| > 1.96 = significant scale-shift between halves at alpha = 0.05 (two-sided, Wallace-corrected normal approximation). Brown-Forsythe is the structural complement of axis-115 Mann-Whitney: axis-115 detects LOCATION shifts; axis-116 detects SCALE shifts; both are unpaired two-sample tests on the same first/second half partition.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSiegelTukeyHalves(
+  r: DailyTokenSiegelTukeyHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-siegel-tukey-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SIEGEL-TUKEY TWO-SAMPLE NONPARAMETRIC SCALE-SHIFT (EQUALITY-OF-DISPERSION) TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SEVENTEENTH cross-source axis. Class-TWO-SAMPLE-SCALE-SHIFT-TEST (Siegel & Tukey 1960, Journal of the American Statistical Association 55(291):429-445, eq. 1; Mann & Whitney 1947 normal approximation): each half median-centred (Hollander, Wolfe & Chicken 2014 eq. 5.13), pool sorted, OUTWARD-PAIR ranks assigned (rank 1 to min, ranks 2&3 to two largest, ranks 4&5 to next two smallest, alternating), stWA = sum of ranks for first-half elements; stU = stWA - n1(n1+1)/2 with E[stU] = n1*n2/2, Var[stU] = n1*n2*(n+1)/12; stZ = (stU - E)/sqrt(Var) approx N(0,1). Sign convention: positive stZ = second half MORE dispersed (matches axis-116 bfZ). Distinct from axis-116 Brown-Forsythe (PARAMETRIC F on median-deviations, sensitive to magnitudes), axis-115 Mann-Whitney halves (LOCATION shift, monotonic ranks), axes 110/111/113 (TREND statistics), 114 (multi-lag autocorrelation portmanteau). Fully RANK-INVARIANT after median-centring; calibration-stable under heavy-tailed contamination where Brown-Forsythe loses Type-I error.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SIEGEL-TUKEY rank-sum (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'stWA',
+    'stU',
+    'stZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.stN1),
+    formatNumber(s.stN2),
+    formatNumber(s.stMedianA),
+    formatNumber(s.stMedianB),
+    formatNumber(s.stWA),
+    s.stU.toFixed(1),
+    s.stZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: stZ approx 0 = halves equally dispersed; stZ > +1.96 = second half more dispersed (DISPERSION GREW); stZ < -1.96 = first half more dispersed (DISPERSION SHRANK). |stZ| > 1.96 = significant scale-shift between halves at alpha = 0.05 (two-sided, Mann-Whitney normal approximation). Siegel-Tukey is the rank-based nonparametric companion of axis-116 Brown-Forsythe: both target SCALE-SHIFT on the same first/second half partition, but axis-116 is parametric on absolute deviations while axis-117 is rank-invariant on outward-pair ranks. They can disagree under heavy-tailed contamination -- a few large outliers in the second half drive bfZ but not stZ.)`,
     ),
   );
 
