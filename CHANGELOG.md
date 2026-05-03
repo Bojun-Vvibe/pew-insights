@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.398 — 2026-05-04
+
+### Added
+
+- `daily-token-month-end-vs-month-start-ratio` REFINEMENT —
+  two new per-row derived fields:
+  - `endShareDelta` = `endShare - 0.5` (signed deviation from
+    the natural bucket-equal baseline `0.5`, since the START
+    and END buckets have IDENTICAL widths by construction).
+    Always defined and finite, in `[-0.5, +0.5]`. `0` =
+    perfectly balanced; positive = end-tilted; negative =
+    start-tilted. Lets you rank-order sources by EXCESS end
+    tilt independent of the absolute share.
+  - `endStartDensityLogLift` = `ln(densityRatio)`. `null`
+    exactly when `densityRatio` is null or zero. `0` =
+    uniform per-day intensity across the two buckets;
+    `+ln(2)` = end-day intensity is 2x start-day; `-ln(2)` =
+    half. The log form is more comparable across sources than
+    the raw ratio when intensity ranges span multiple orders
+    of magnitude.
+- 7 additional unit tests covering the refinement: zero-delta
+  at perfect baseline, `+0.5` delta on pure-end source, `-0.5`
+  delta on pure-start source, `+ln(2)` lift at 2x end
+  intensity, `-ln(2)` lift at half end intensity,
+  source-asc tie-breaker on equal endShare, and a delta-range
+  property sweep across five synthetic configurations.
+- Renderer surfaces `shareDelta` and `logLift` columns next to
+  `endShare`, `endStartRatio`, and `densityRatio`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Re-running the live smoke with the refinement columns
+populated (sources beyond the top 5 omitted; `(src-1)` masks
+a low-volume IDE extension source):
+
+| source       | endShare | shareDelta | endStartRatio | densityRatio | logLift  | regime        |
+|--------------|----------|------------|---------------|--------------|----------|---------------|
+| openclaw     |   0.8244 |    +0.3244 |       4.6939  |       2.0117 |  +0.6990 | end-heavy     |
+| opencode     |   0.7428 |    +0.2428 |       2.8875  |       1.2375 |  +0.2131 | end-heavy     |
+| hermes       |   0.6415 |    +0.1415 |       1.7898  |       0.7670 |  -0.2652 | end-leaning   |
+| claude-code  |   0.3643 |    -0.1357 |       0.5732  |       0.5732 |  -0.5566 | start-leaning |
+| (src-1)      |   0.3519 |    -0.1481 |       0.5430  |       0.5898 |  -0.5280 | start-leaning |
+| codex        |   0.0000 |    -0.5000 |  —            |  —           |  —       | start-blind   |
+
+`shareDelta` and `logLift` cleanly split the three end-heavy
+sources: `openclaw` posts the largest positive month-end tilt
+(`shareDelta = +0.32`, `logLift = +0.70` -> end-day intensity
+~ `e^0.70 ~= 2x` the start-day intensity), while `hermes`
+straddles the density baseline with a positive raw share but
+a negative density logLift (the source's active span happens
+to weight calendar START days more lightly per available day
+than END days). `codex`'s `start-blind` row carries `-0.5`
+shareDelta as a definitional artefact (no end activity, but
+also no start-bucket calendar days in the 8-day span), which
+the regime label keeps callers from over-interpreting.
+
 ## 0.6.397 — 2026-05-04
 
 ### Added
