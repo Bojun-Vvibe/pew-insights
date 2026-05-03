@@ -277,12 +277,21 @@ export interface DailyTokenRenyiTwoDivergenceHalvesSourceRow {
   renyiTwoReverse: number;
   /** Symmetrised: 0.5*(forward + reverse), in nats. */
   renyiTwoSym: number;
+  /** Symmetrised D_2^sym in BITS (= nats / ln 2) for cross-axis comparison
+   * with axis-126 JSD (also reported in bits). */
+  renyiTwoSymBits: number;
   /** Asymmetry diagnostic: |forward - reverse| / (2 * renyiTwoSym) in [0, 1]. */
   renyiTwoAsymmetry: number;
   /** Chi-squared(p||q) = sum (p-q)^2/q (forward Pearson chi-squared). */
   chiSquaredForward: number;
   /** Chi-squared(q||p) = sum (p-q)^2/p (reverse Pearson chi-squared). */
   chiSquaredReverse: number;
+  /** Harmonic mean of forward and reverse chi-squared:
+   * 2 / (1/chi^2_fwd + 1/chi^2_rev). Stability-aware symmetric scalar
+   * that down-weights the direction whose chi^2 blows up under
+   * disjoint-support tails (vs the arithmetic-mean implicit in
+   * D_2^sym). 0 if either chi^2 is 0; otherwise in [0, min(fwd, rev) * 2]. */
+  chiSquaredHarmonic: number;
   /** Normalised diagnostic: D_2^sym / (D_2^sym + 1) in [0, 1). */
   renyiTwoNormalized: number;
 }
@@ -367,9 +376,11 @@ export function dailyTokenRenyiTwoDivergenceHalves(values: number[]): {
   renyiTwoForward: number;
   renyiTwoReverse: number;
   renyiTwoSym: number;
+  renyiTwoSymBits: number;
   renyiTwoAsymmetry: number;
   chiSquaredForward: number;
   chiSquaredReverse: number;
+  chiSquaredHarmonic: number;
   renyiTwoNormalized: number;
 } {
   const n = values.length;
@@ -500,11 +511,19 @@ export function dailyTokenRenyiTwoDivergenceHalves(values: number[]): {
   const renyiTwoForward = Math.log(mPQ);
   const renyiTwoReverse = Math.log(mQP);
   const renyiTwoSym = 0.5 * (renyiTwoForward + renyiTwoReverse);
+  const renyiTwoSymBits = renyiTwoSym / Math.LN2;
 
   const renyiTwoNormalized = renyiTwoSym / (renyiTwoSym + 1);
   const renyiTwoAsymmetry =
     renyiTwoSym > 0
       ? Math.abs(renyiTwoForward - renyiTwoReverse) / (2 * renyiTwoSym)
+      : 0;
+  // Harmonic mean of the two chi-squared directions: stability-aware
+  // symmetric scalar that down-weights any direction whose chi^2
+  // blows up under disjoint-support tails. 0 if either chi^2 is 0.
+  const chiSquaredHarmonic =
+    chi2Fwd > 0 && chi2Rev > 0
+      ? 2 / (1 / chi2Fwd + 1 / chi2Rev)
       : 0;
 
   if (
@@ -532,9 +551,11 @@ export function dailyTokenRenyiTwoDivergenceHalves(values: number[]): {
     renyiTwoForward,
     renyiTwoReverse,
     renyiTwoSym,
+    renyiTwoSymBits,
     renyiTwoAsymmetry,
     chiSquaredForward: chi2Fwd,
     chiSquaredReverse: chi2Rev,
+    chiSquaredHarmonic,
     renyiTwoNormalized,
   };
 }
@@ -715,9 +736,11 @@ export function buildDailyTokenRenyiTwoDivergenceHalves(
       renyiTwoForward: result.renyiTwoForward,
       renyiTwoReverse: result.renyiTwoReverse,
       renyiTwoSym: result.renyiTwoSym,
+      renyiTwoSymBits: result.renyiTwoSymBits,
       renyiTwoAsymmetry: result.renyiTwoAsymmetry,
       chiSquaredForward: result.chiSquaredForward,
       chiSquaredReverse: result.chiSquaredReverse,
+      chiSquaredHarmonic: result.chiSquaredHarmonic,
       renyiTwoNormalized: result.renyiTwoNormalized,
     });
     totalTokensSum += acc.totalTokens;
