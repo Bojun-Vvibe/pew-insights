@@ -117,6 +117,7 @@ import {
   renderDailyTokenTopFourConcentrationRatio,
   renderDailyTokenHerfindahlHirschmanIndex,
   renderDailyTokenPielouEvenness,
+  renderDailyTokenMaxDrawdownRate,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -554,6 +555,7 @@ import { buildDailyTokenPearsonSecondSkewness } from './dailytokenpearsonseconds
 import { buildDailyTokenTopFourConcentrationRatio } from './dailytokentopfourconcentrationratio.js';
 import { buildDailyTokenHerfindahlHirschmanIndex } from './dailytokenherfindahlhirschmanindex.js';
 import { buildDailyTokenPielouEvenness } from './dailytokenpielouevenness.js';
+import { buildDailyTokenMaxDrawdownRate } from './dailytokenmaxdrawdownrate.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40248,6 +40250,133 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenPielouEvenness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-max-drawdown-rate')
+  .description(
+    "Per-source MAXIMUM PROPORTIONAL DRAWDOWN MDD = max over (i<j) of (D_i - D_j) / D_i on the per-day total_tokens series ordered by ascending UTC day (ONE-HUNDRED-AND-FORTY-FIFTH cross-source axis). Magdon-Ismail & Atiya 2004; Chekhlov, Uryasev & Zabarankin 2005. Range [0, 1); 0 = monotone non-decreasing, -> 1 = post-peak day approaches zero. PATH-DEPENDENT extremal functional -- structurally orthogonal to ALL share / inequality / diversity / spectral functionals (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover, ...) which are permutation-invariant on the day vector. Per row: peakDay, peakDailyTokens, troughDay, troughDailyTokens, maxDrawdownDurationDays, recovered flag, drawdownRegime { flat | shallow | moderate | severe | catastrophic }.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Drawdown undefined for n<2.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: maxDrawdownRate (default) | maxDrawdownDurationDays | tokens | days | source | meanDaily | peakDailyTokens. Applied before --top.',
+    'maxDrawdownRate',
+  )
+  .option(
+    '--min-drawdown <x>',
+    'display filter: hide non-degenerate rows whose maxDrawdownRate is strictly below this value (must be in [0, 1)). Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minDrawdown?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 2) {
+          throw new Error(
+            `--min-days must be an integer >= 2 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minDrawdown: number | null = null;
+        if (opts.minDrawdown !== undefined) {
+          const mv = Number.parseFloat(opts.minDrawdown);
+          if (!Number.isFinite(mv) || mv < 0 || mv >= 1) {
+            throw new Error(
+              `--min-drawdown must be a finite number in [0, 1) (got ${opts.minDrawdown})`,
+            );
+          }
+          minDrawdown = mv;
+        }
+        const validSorts = [
+          'maxDrawdownRate',
+          'maxDrawdownDurationDays',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'peakDailyTokens',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMaxDrawdownRate(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minDrawdown,
+          sort: opts.sort as
+            | 'maxDrawdownRate'
+            | 'maxDrawdownDurationDays'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'peakDailyTokens',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMaxDrawdownRate(report) + '\n',
           );
         }
       } catch (e) {

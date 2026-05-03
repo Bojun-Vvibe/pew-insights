@@ -17294,6 +17294,7 @@ import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintilesha
 import type { DailyTokenTopFourConcentrationRatioReport } from './dailytokentopfourconcentrationratio.js';
 import type { DailyTokenHerfindahlHirschmanIndexReport } from './dailytokenherfindahlhirschmanindex.js';
 import type { DailyTokenPielouEvennessReport } from './dailytokenpielouevenness.js';
+import type { DailyTokenMaxDrawdownRateReport } from './dailytokenmaxdrawdownrate.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24184,6 +24185,83 @@ export function renderDailyTokenPielouEvenness(
     s.tailWeightGap.toFixed(3),
     s.maxShare.toFixed(4),
     s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMaxDrawdownRate(
+  r: DailyTokenMaxDrawdownRateReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-max-drawdown-rate'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-drawdown: ${r.minDrawdown === null ? '\u2014' : r.minDrawdown}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinDrawdown)} below min-drawdown, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MAXIMUM PROPORTIONAL DRAWDOWN MDD = max over (i<j) of (D_i - D_j) / D_i on the per-day total_tokens series ordered by ascending UTC day. PATH-DEPENDENT extremal functional -- structurally orthogonal to all permutation-invariant share / inequality / diversity functionals (Gini, HHI, Pielou, CR4, ...). Range [0, 1); 0 = monotone non-decreasing, -> 1 = post-peak collapse to zero.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source max drawdown rate (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'mdd',
+    'regime',
+    'peakDay',
+    'peakTok',
+    'troughDay',
+    'troughTok',
+    'durDays',
+    'recovered',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.maxDrawdownRate.toFixed(4),
+    s.drawdownRegime,
+    s.peakDay,
+    formatNumber(s.peakDailyTokens),
+    s.troughDay,
+    formatNumber(s.troughDailyTokens),
+    formatNumber(s.maxDrawdownDurationDays),
+    s.recovered ? 'yes' : 'no',
+    formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rows));
