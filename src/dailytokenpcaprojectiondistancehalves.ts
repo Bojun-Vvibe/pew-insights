@@ -261,6 +261,8 @@ export interface DailyTokenPcaProjectionDistanceHalvesSourceRow {
    * Length 3. Entries with lam_i === 0 are reported as 0.
    */
   pcStdGapByAxis: number[];
+  pcDir: number;
+  pcSubspaceDistance2: number;
 }
 
 export interface DailyTokenPcaProjectionDistanceHalvesReport {
@@ -470,6 +472,8 @@ export function dailyTokenPcaProjectionDistanceHalves(values: number[]): {
   pcT: number;
   pcGapByAxis: number[];
   pcStdGapByAxis: number[];
+  pcDir: number;
+  pcSubspaceDistance2: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -654,6 +658,11 @@ export function dailyTokenPcaProjectionDistanceHalves(values: number[]): {
     pcT,
     pcGapByAxis,
     pcStdGapByAxis,
+    pcDir: pcGap > 0 ? 1 : pcGap < 0 ? -1 : 0,
+    pcSubspaceDistance2: Math.sqrt(
+      pcStdGapByAxis[0]! * pcStdGapByAxis[0]! +
+        pcStdGapByAxis[1]! * pcStdGapByAxis[1]!,
+    ),
   };
   // Unused helper reference so muPool is observable by name.
   void muPool;
@@ -839,6 +848,8 @@ export function buildDailyTokenPcaProjectionDistanceHalves(
       pcT: result.pcT,
       pcGapByAxis: result.pcGapByAxis,
       pcStdGapByAxis: result.pcStdGapByAxis,
+      pcDir: result.pcDir,
+      pcSubspaceDistance2: result.pcSubspaceDistance2,
     });
     totalTokensSum += acc.totalTokens;
   }

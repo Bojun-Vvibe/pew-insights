@@ -380,3 +380,49 @@ test('build: respects all valid sort keys without throwing', () => {
     assert.equal(r.sources.length, 2);
   }
 });
+
+// ---------- refinement: pcDir + pcSubspaceDistance2 ----------
+
+test('refinement: pcDir = sign(pcGap)', () => {
+  const xUp = [
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ];
+  const rUp = dailyTokenPcaProjectionDistanceHalves(xUp);
+  assert.equal(rUp.pcDir, rUp.pcGap > 0 ? 1 : rUp.pcGap < 0 ? -1 : 0);
+  assert.ok(rUp.pcDir !== 0);
+
+  const xDown = [
+    100, 101, 102, 103, 104, 105, 106, 107, 1, 2, 3, 4, 5, 6, 7, 8,
+  ];
+  const rDown = dailyTokenPcaProjectionDistanceHalves(xDown);
+  assert.equal(rDown.pcDir, rDown.pcGap > 0 ? 1 : rDown.pcGap < 0 ? -1 : 0);
+});
+
+test('refinement: pcSubspaceDistance2 >= |pcZ|', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12, 14, 13];
+  const r = dailyTokenPcaProjectionDistanceHalves(x);
+  // pcSubspaceDistance2 = sqrt(pcStdGapByAxis[0]^2 + pcStdGapByAxis[1]^2)
+  // and pcStdGapByAxis[0] === pcZ, so subspace distance >= |pcZ|.
+  assert.ok(
+    r.pcSubspaceDistance2 + 1e-12 >= Math.abs(r.pcZ),
+    `subspace ${r.pcSubspaceDistance2} vs |pcZ| ${Math.abs(r.pcZ)}`,
+  );
+});
+
+test('refinement: pcSubspaceDistance2 is translation- and positive-scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12, 14, 13];
+  const r1 = dailyTokenPcaProjectionDistanceHalves(x);
+  const r2 = dailyTokenPcaProjectionDistanceHalves(x.map((v) => 5 * v + 1000));
+  assert.ok(Math.abs(r1.pcSubspaceDistance2 - r2.pcSubspaceDistance2) < 1e-8);
+});
+
+test('refinement: rows expose pcDir and pcSubspaceDistance2', () => {
+  const r = buildDailyTokenPcaProjectionDistanceHalves(makeQueueWithTwoSources(), {
+    minTokens: 0,
+  });
+  for (const s of r.sources) {
+    assert.ok(s.pcDir === -1 || s.pcDir === 0 || s.pcDir === 1);
+    assert.ok(Number.isFinite(s.pcSubspaceDistance2));
+    assert.ok(s.pcSubspaceDistance2 >= 0);
+  }
+});
