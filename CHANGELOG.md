@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.384 — 2026-05-04
+
+### Added
+
+- `daily-token-pearson-second-skewness` —
+  ONE-HUNDRED-AND-FORTY-FIRST cross-source axis. Per-source
+  PEARSON SECOND SKEWNESS COEFFICIENT of the per-day
+  total_tokens distribution (Pearson 1895):
+
+      PSS = 3 * (mean - median) / stddev
+
+  where `stddev` is the POPULATION standard deviation
+  (divisor `n`) and `median` is the linear-interpolation
+  P50 (R type 7). Sign convention: `PSS > 0` iff the
+  arithmetic mean lies ABOVE the median (right-skewed,
+  heavy upper tail); `PSS < 0` iff below (left-skewed);
+  `PSS = 0` iff `mean === median` (symmetric in the
+  Pearson sense). For unimodal distributions Pearson's
+  inequality gives `|PSS| <= 3`; the `|PSS| > 3` regime
+  itself witnesses multi-modality / heavy clumping.
+- HYBRID functional class: stddev in the denominator is
+  moment-sensitive (breakdown 1/n), median in the
+  numerator is percentile-sensitive (breakdown 0.5).
+  Distinct from the `daily-token-l-skewness` axis
+  (L-moments, robust, bounded by `[-1, 1]`) and from
+  the `daily-token-medcouple-skewness` axis (Brys 2004,
+  rank-based bivariate kernel). The three skewness axes
+  carry independent shape information for non-symmetric
+  non-Gaussian day vectors.
+- COMPLEMENTARY to the inequality axes (32-57: Gini,
+  S-Gini, Atkinson, Theil, GE family, Hoover, Pietra,
+  Bonferroni, Mehran, Wolfson, Foster-Wolfson, Palma,
+  Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, FGT,
+  Var-of-Logs, Log-MAD) which are SIGN-AGNOSTIC by
+  construction (Lorenz-functional spread around the
+  mean cannot tell a right-skewed from a left-skewed
+  day vector with the same Lorenz curve). PSS surfaces
+  the SIGN of the asymmetry; the inequality axes never
+  can.
+- COMPLEMENTARY to the divergence-of-halves axes
+  (118-140: KS, MWU, AD, CvM, Bhatt, Hellinger, JS, K,
+  KJ, Topsoe, Taneja, Wasserstein, MMD, Energy,
+  Mahalanobis, Neyman) which compare the FIRST half of
+  the day vector against the SECOND half. PSS is
+  computed on the WHOLE vector at once: a perfectly
+  stationary heavy-right-tail source shows `|PSS| > 0`
+  with halves divergence ~ 0; a non-stationary
+  perfectly-symmetric source shows `|PSS| ~ 0` with
+  halves divergence > 0. Neither regime is detectable
+  by either axis alone.
+- COMPLEMENTARY to autocorrelation / runs / sign-test
+  axes (lag-1, lag-7, runs Z, Mann-Kendall, Cox-Stuart,
+  monotone-run-length): those measure TEMPORAL ORDER
+  dependence; PSS is permutation-invariant and ignores
+  order entirely.
+- Pure helpers exported: `pearsonSecondSkewnessOfVector`
+  returning `{ mean, median, stddev, pss, degenerate }`
+  on a non-negative numeric vector. Throws on negative
+  or non-finite input. Returns `degenerate: true` and
+  `pss: 0` when `n < 2` or when `stddev = 0` (constant
+  series cannot be normalised).
+- CLI sort keys: `absPss` (default, `|pss|` desc) |
+  `pss` (asc, most negative first) | `pssDesc` |
+  `tokens` | `days` | `source` | `meanDaily` |
+  `medianDaily` | `stddevDaily`. Per-row `pssSign`
+  diagnostic in `{-1, 0, +1}`.
+- Permutation-invariant, scale-invariant. Hard floor
+  `min-days >= 2` (PSS is degenerate below).
+- 27 new tests covering primitive (empty, singleton,
+  constant -> degenerate, symmetric -> 0, right-skew
+  positivity, left-skew negativity, closed-form
+  `[1,2,3,4,10] -> 3/sqrt(10)`, scale-invariance,
+  permutation-invariance, sign flip under reflection,
+  rejection of negative / non-finite), and builder
+  (filters, sort keys, top cap, sign field, scale
+  invariance per source, validation throws).
+
+### Live smoke (queue.jsonl, 2026-05-04)
+
+`pew-insights daily-token-pearson-second-skewness --top 8`
+against the local pew queue (6 sources, 13.08B tokens):
+
+| source         | days | pss        | sign | meanDaily   | medianDaily | stddevDaily |
+| ---            | ---  | ---        | ---  | ---         | ---         | ---         |
+| openclaw       | 17   |  1.547531  |  +   | 131,570,764 |  83,004,949 |  94,148,345 |
+| codex          |  8   |  1.466168  |  +   | 101,203,083 |  41,235,207 | 122,703,257 |
+| vscode-copilot | 73   |  1.141394  |  +   |      25,832 |       8,118 |      46,559 |
+| hermes         | 17   | -1.121684  |  -   |  17,871,289 |  21,333,523 |   9,259,916 |
+| claude-code    | 35   |  1.046551  |  +   |  98,353,880 |  25,407,006 | 209,106,433 |
+| opencode       | 14   |  0.128394  |  +   | 448,908,579 | 441,762,603 | 166,969,322 |
+
+Five of six sources are RIGHT-skewed (mean > median): a
+typical day is much smaller than the mean, with rare
+huge-token days pulling the mean up. `hermes` is the
+LONE LEFT-SKEWED source (`pss = -1.122`): its typical
+day (`median=21.3M`) is LARGER than its mean
+(`17.9M`) -- a few unusually small days drag the mean
+below the median. All six sources sit in
+`|PSS| <= 3`, so the unimodal Pearson regime holds
+across the queue. axis-118..140 halves-divergence
+axes would symmetrise this away; the inequality axes
+would lose the SIGN. axis-141 surfaces both the
+magnitude AND the direction of central asymmetry per
+source.
+
 ## 0.6.383 — 2026-05-03
 
 ### Added
