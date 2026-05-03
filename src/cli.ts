@@ -179,6 +179,7 @@ import {
   renderDailyTokenPcaProjectionDistanceHalves,
   renderDailyTokenJensenShannonDivergenceHalves,
   renderDailyTokenTotalVariationHalves,
+  renderDailyTokenHellingerDistanceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -520,6 +521,7 @@ import { buildDailyTokenQuantileVectorMahalanobisHalves } from './dailytokenquan
 import { buildDailyTokenPcaProjectionDistanceHalves } from './dailytokenpcaprojectiondistancehalves.js';
 import { buildDailyTokenJensenShannonDivergenceHalves } from './dailytokenjensenshannondivergencehalves.js';
 import { buildDailyTokenTotalVariationHalves } from './dailytokentotalvariationhalves.js';
+import { buildDailyTokenHellingerDistanceHalves } from './dailytokenhellingerdistancehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -38259,6 +38261,116 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenTotalVariationHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-hellinger-distance-halves')
+  .description(
+    "Per-source KDE-SMOOTHED HELLINGER DISTANCE between the FIRST and SECOND half of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWENTY-EIGHTH cross-source axis). Class-L^2 distance in SQRT-AMPLITUDE coordinates of KERNEL-DENSITY-SMOOTHED probability mass functions. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half evaluated on the shared grid; trapezoidal mass-normalisation to exact pmfs p, q. hDist = sqrt(0.5 * sum_k (sqrt(p_k) - sqrt(q_k))^2) = sqrt(1 - BC) in [0, 1] where BC = sum_k sqrt(p_k * q_k) is the Bhattacharyya coefficient (Pollard 2002 Ch. 3; Le Cam & Yang 2000 Sec. 4.2). True metric on the probability simplex. ORTHOGONAL to all 10 prior axes 118-127: pmf sqrt-amplitude L^2 integral, neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis (qv-Mahalanobis), delay-embedded leading-PC projection (PCA), pmf-LOG-RATIO integral (JSD), nor pmf-L^1 half-norm (TV: sandwich H^2 <= tvDist <= sqrt(2)*H from Le Cam 1986 Sec. 16.4 -- non-monotone, sqrt amplifies low-mass bins). Translation-invariant AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hDistDesc (default) | hDist | hMaxBinValue | hMaxBinValueDesc | tokens | tenure | source.',
+    'hDistDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'hDist',
+          'hDistDesc',
+          'hMaxBinValue',
+          'hMaxBinValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHellingerDistanceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'hDist'
+            | 'hDistDesc'
+            | 'hMaxBinValue'
+            | 'hMaxBinValueDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenHellingerDistanceHalves(report) + '\n',
           );
         }
       } catch (e) {

@@ -20267,6 +20267,7 @@ import type { DailyTokenQuantileVectorMahalanobisHalvesReport } from './dailytok
 import type { DailyTokenPcaProjectionDistanceHalvesReport } from './dailytokenpcaprojectiondistancehalves.js';
 import type { DailyTokenJensenShannonDivergenceHalvesReport } from './dailytokenjensenshannondivergencehalves.js';
 import type { DailyTokenTotalVariationHalvesReport } from './dailytokentotalvariationhalves.js';
+import type { DailyTokenHellingerDistanceHalvesReport } from './dailytokenhellingerdistancehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22755,6 +22756,89 @@ export function renderDailyTokenTotalVariationHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: tvDist in [0, 1] is the L^1-half-norm metric (= 0.5 * sum |p-q|); tvDist = 0 iff KDE-smoothed halves coincide; tvDist = 1 iff p, q have disjoint support on the grid. tvMaxBinValue is the per-bin contribution 0.5*|p_k - q_k| at the argmax bin (bounded above by 0.5). The axis is PERMUTATION-INVARIANT within each half (marginal pmf only), distinguishing it from axis-125 PCA-projection. TV captures BROAD-AND-SHALLOW pmf disagreement that JSD (axis-126) misses, while JSD captures NARROW-AND-SHARP log-ratio disagreement that TV under-weights. Both axes share the IDENTICAL h, K, and grid for direct comparability. TV is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHellingerDistanceHalves(
+  r: DailyTokenHellingerDistanceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-hellinger-distance-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED HELLINGER DISTANCE between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-EIGHTH cross-source axis. Class-L^2 distance in SQRT-AMPLITUDE coordinates of KERNEL-DENSITY-SMOOTHED probability mass functions. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half evaluated on the shared grid; trapezoidal mass-normalisation to exact pmfs p, q. hDist = sqrt(0.5 * sum_k (sqrt(p_k) - sqrt(q_k))^2) = sqrt(1 - BC) in [0, 1] where BC = sum_k sqrt(p_k * q_k) is the Bhattacharyya coefficient (Pollard 2002 Ch. 3; Le Cam & Yang 2000 Sec. 4.2). True metric on the probability simplex, sandwiched by TV via H^2 <= tvDist <= sqrt(2)*H (Le Cam 1986 Sec. 16.4). ORTHOGONAL to all 10 prior axes 118-127: pmf sqrt-amplitude L^2 integral, neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis (qv-Mahalanobis), delay-embedded leading-PC projection (PCA), pmf-LOG-RATIO integral (JSD), nor pmf-L^1 half-norm (TV). H is RIEMANNIAN on the simplex (sqrt-pmf is the embedding into the unit sphere of R^K_+), TV is FLAT in pmf coordinates -- they differ on disagreements concentrated in low-mass bins. Translation-invariant AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Hellinger distance (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'hDist',
+    'BC',
+    'maxBinX',
+    'maxBinVal',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.hN1),
+    formatNumber(s.hN2),
+    s.hMadPool.toFixed(2),
+    s.hBandwidth.toFixed(2),
+    s.hDist.toFixed(6),
+    s.hBhattacharyya.toFixed(6),
+    s.hMaxBinX.toFixed(2),
+    s.hMaxBinValue.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: hDist in [0, 1] is the Hellinger metric (= sqrt(0.5 * sum (sqrt p - sqrt q)^2)); hDist = 0 iff KDE-smoothed halves coincide; hDist = 1 iff p, q have disjoint support on the grid (BC = 0). hBhattacharyya = sum_k sqrt(p_k * q_k) in [0, 1] satisfies hDist^2 + BC = 1 exactly (algebraic identity). hMaxBinValue is the per-bin contribution 0.5*(sqrt p_k - sqrt q_k)^2 at the argmax bin (bounded above by 0.5). The axis is PERMUTATION-INVARIANT within each half (marginal pmf only). H is sandwiched by TV (axis-127) via H^2 <= tvDist <= sqrt(2)*H but the two axes are NOT monotone images of each other -- H amplifies LOW-MASS bin disagreements (sqrt is concave), while TV is uniform in pmf coordinates. H is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
