@@ -20275,6 +20275,7 @@ import type { DailyTokenRenyiTwoDivergenceHalvesReport } from './dailytokenrenyi
 import type { DailyTokenMaxDivergenceHalvesReport } from './dailytokenmaxdivergencehalves.js';
 import type { DailyTokenSymmetricChiSquaredHalvesReport } from './dailytokensymmetricchisquaredhalves.js';
 import type { DailyTokenClarkDistanceHalvesReport } from './dailytokenclarkdistancehalves.js';
+import type { DailyTokenTanejaDivergenceHalvesReport } from './dailytokentanejadivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23447,6 +23448,89 @@ export function renderDailyTokenClarkDistanceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: clarkDistance in [0, sqrt(K)] where K=${r.gridK} so ceiling = ${Math.sqrt(r.gridK).toFixed(4)}; clarkDistance=0 iff p=q on the grid; clarkNormalised in [0, 1] (rescaled cross-grid). meanRel = (1/K)*sum_k |r_k| where r_k = (p_k-q_k)/(p_k+q_k) in [-1, 1]. maxRel = max_k |r_k| in [0, 1]; maxRel ~ 1 means at least one bin is regime-disjoint (one half put effectively zero mass while the other did not). Translation- AND positive-scale-invariant in the data; CLARK_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTanejaDivergenceHalves(
+  r: DailyTokenTanejaDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-taneja-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}    pmf-floor: ${r.pmfFloor}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED TANEJA AM-GM DIVERGENCE T = sum_k AM_k * log(AM_k / GM_k) where AM_k = (p_k+q_k)/2 and GM_k = sqrt(p_k*q_k), between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-SIXTH cross-source axis. Taneja 1989/2005; Cha 2007 eq. 30. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. tanejaDivergence >= 0; tanejaDivergence=0 iff KDE-smoothed halves coincide on the grid. ORTHOGONAL to all 18 prior axes 118-135: unique LOG-OF-AM-OVER-GM contrast weighted by AM; logarithmically tail-tolerant where psChi2 (axis-134) is polynomially divergent; unbounded where Clark (axis-135) is bounded; mean-of-means f-divergence with f(t) = ((1+t)/2)*log((1+t)/(2*sqrt(t))). Diagnostic tanejaMaxAmGmRatio surfaces the largest per-bin AM/GM gap. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Taneja AM-GM divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'taneja',
+    'maxBin',
+    'maxAmGm',
+    'spread',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.tanejaN1),
+    formatNumber(s.tanejaN2),
+    s.tanejaMadPool.toFixed(2),
+    s.tanejaBandwidth.toFixed(2),
+    s.tanejaDivergence.toFixed(6),
+    s.tanejaMaxBin.toFixed(6),
+    s.tanejaMaxAmGmRatio.toFixed(4),
+    s.tanejaSpreadRatio.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: tanejaDivergence >= 0; tanejaDivergence=0 iff p=q on the grid; tanejaMaxAmGmRatio = max_k AM_k/GM_k >= 1 (=1 iff p_k = q_k at every bin); tanejaMaxBin is the largest per-bin Taneja summand AM_k * log(AM_k/GM_k); spread = tanejaDivergence/(K*tanejaMaxBin) in [0, 1] -- approaches 1 iff every bin contributes the same maximal Taneja amount, approaches 1/K = ${(1 / r.gridK).toFixed(6)} iff a single bin dominates. Translation- AND positive-scale-invariant in the data; TANEJA_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
 
