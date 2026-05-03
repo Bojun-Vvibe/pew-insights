@@ -2,6 +2,120 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.381 — 2026-05-03
+
+### Added
+
+- `daily-token-topsoe-divergence-halves` —
+  ONE-HUNDRED-AND-THIRTY-EIGHTH cross-source axis. Per-source
+  KDE-SMOOTHED TOPSOE DIVERGENCE
+  `T(p, q) = sum_k [p_k * log(2*p_k/(p_k+q_k)) + q_k * log(2*q_k/(p_k+q_k))]`,
+  between the FIRST and SECOND half of the gap-filled daily
+  total_tokens series (Topsoe 2000; Cha 2007 eq. 40).
+  Identical KDE setup to axes 126-137 (pooled robust scale
+  `mad_pool = 1.4826*median(|x-median(x)|)`; Silverman
+  bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared K=257-point
+  grid spanning `[min-3h, max+3h]`; Gaussian KDE per half;
+  trapezoidal mass-normalisation to exact pmfs `p, q`).
+  `T(p, q)` is bounded in `[0, 2*log(2) ~ 1.386294]`,
+  symmetric, and equals `2 * JSD(p, q)` as values; `T = 0`
+  iff KDE-smoothed halves coincide on the grid; `T = 2*log(2)`
+  iff `p, q` have disjoint support on the grid.
+
+  ORTHOGONAL to all 20 prior axes 118-137: sum-of-two-KL-to-
+  midpoint logarithmic class with naturally bounded per-bin
+  contribution. The per-bin summand
+  `t_k = p_k log(2 p_k/(p_k+q_k)) + q_k log(2 q_k/(p_k+q_k))
+       = KL(p_k || M_k) + KL(q_k || M_k)`
+  with `M_k = (p_k + q_k)/2` exposes the symmetric KL-to-
+  midpoint contribution at each bin BEFORE the JSD's 1/2
+  averaging convention -- so Topsoe diagnostics
+  (`topsoeMaxBin`, `topsoeSpreadRatio`,
+  `topsoePerBinAverage`) report on the natural Topsoe
+  scale `[0, 2*log(2)]` per bin, not the JSD scale
+  `[0, log(2)]`. vs axis-118 JSD: `T = 2*JSD` as values,
+  but the per-bin diagnostics are reported in Topsoe units
+  to keep the cross-axis bin-spread reading directly
+  comparable to the bound `2*log(2)`. vs axis-137 KJ
+  (`(p^2-q^2)^2 / (2 (pq)^(3/2))`, polynomial-rational,
+  unbounded with `1/min(p,q)^(3/2)` blow-up): Topsoe is
+  logarithmic and BOUNDED above by `2*log(2)` -- the per-bin
+  summand `t_k -> p_k * log(2)` (bounded) as `q_k -> 0`,
+  vs KJ summand -> `+infty` polynomially. vs axis-136 Taneja
+  (`AM*log(AM/GM)`): Taneja uses the AM/GM ratio inside the
+  log and is unbounded as `min(p,q) -> 0`; Topsoe uses the
+  ratio `2p/(p+q)` (and `2q/(p+q)`) of each pmf to its
+  ARITHMETIC MIDPOINT and is bounded by `2*log(2)`. vs
+  axis-135 Clark (sqrt-sum of bounded relative gaps,
+  bounded by `sqrt(K)`): Topsoe is bounded by
+  `2*log(2) <= 1.386` <= `sqrt(K) ~ 16.0`. vs axis-129
+  triangular Delta (bounded by 2, polynomial in `(p-q)`):
+  Topsoe is bounded by `2*log(2)`, logarithmic in the per-
+  bin pmf-to-midpoint ratio. vs axis-122 Bhattacharyya
+  (similarity, sum sqrt(pq), bounded in `[0, 1]`): Topsoe
+  is dissimilarity-valued and bounded in `[0, 2*log(2)]`.
+
+  Symmetric under swap of `p, q`. Translation- AND
+  positive-scale-invariant in the data (data and bandwidth
+  scale together; pmfs unchanged). `sqrt(T)` is a TRUE
+  METRIC on the probability simplex (Endres & Schindelin
+  2003; Osterreicher & Vajda 2003) -- the raw axis-138
+  reports `T` directly to keep the per-bin diagnostics on
+  the natural divergence scale.
+
+  Diagnostics: `topsoeMaxBin` (largest per-bin summand,
+  bounded in `[0, 2*log(2)]`); `topsoeMaxRelGap =
+  max_k |p_k-q_k|/(p_k+q_k)` in `[0, 1]` surfaces the most
+  regime-disjoint bin (`maxRelGap ~ 1` iff at least one bin
+  is regime-disjoint -- one half put effectively zero mass
+  while the other did not); `topsoeSpreadRatio = T / (K *
+  topsoeMaxBin)` in `[0, 1]` (cross-source-comparable spread;
+  approaches `1/K = 0.003891` iff a single bin dominates,
+  approaches `1` iff every bin contributes the same maximal
+  Topsoe amount); `topsoePerBinAverage = T / K` (mean per-bin
+  Topsoe summand, directly comparable across sources at the
+  same grid resolution).
+
+  Pure helper `topsoeSummand(p, q) = p * log(2p/(p+q)) + q * log(2q/(p+q))`
+  exposed for downstream tooling, with `TOPSOE_PMF_FLOOR = 1e-15`
+  numerical underflow safeguard (no-op for any genuine KDE
+  pmf; contributes at most `O(K * 1e-13)` to the sum).
+  Caveats: Topsoe is symmetric and non-negative but NOT a
+  metric (sqrt(Topsoe) is, however).
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 clean
+  cross-source rows, sorted by `topsoeDesc`):
+
+  ```
+  source          tenure  topsoe      maxBin        maxRel    spread    perBin              tokens
+  openclaw        17      0.629294    6.241873e-03  1.000000  0.392289  2.448617e-03   2,226,980,463
+  opencode        14      0.293744    2.770075e-03  0.999999  0.412615  1.142974e-03   6,241,586,701
+  hermes          17      0.061664    9.033845e-04  0.878876  0.265601  2.399394e-04     302,024,275
+  claude-code     72      0.016455    2.124113e-04  0.999054  0.301427  6.402658e-05   3,442,385,788
+  vscode-other    265     0.001647    2.967229e-05  0.897608  0.216035  6.410255e-06       1,885,727
+  ```
+
+  Reading: all five sources sit comfortably below the
+  `2*log(2) = 1.386294` upper bound -- the most drifted
+  source `openclaw` reaches `T = 0.629` (about 45% of the
+  theoretical maximum), reflecting a heavy half-vs-half
+  regime shift over its 17-day tenure (also confirmed by
+  `maxRelGap = 1.0`, indicating at least one regime-disjoint
+  bin between the two halves). `opencode` follows at
+  `T = 0.294` despite its higher overall token throughput
+  (6.2B vs 2.2B), and the spread `0.413` is the highest of
+  the five -- its half-vs-half drift is more evenly
+  distributed across bins than `openclaw`'s. `hermes` at
+  `T = 0.062` shows mild drift; `claude-code` (longest
+  tenure 72d) and `vscode-other` (265d) show the smallest
+  half-vs-half differences (`T < 0.02`), consistent with
+  their tenure-averaged stability already established by
+  axes 134-137.
+
+### Changed
+
+- Bumped version to 0.6.381.
+
 ## 0.6.380 — 2026-05-03
 
 ### Added
