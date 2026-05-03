@@ -2,6 +2,153 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.360 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-SEVENTEENTH):
+  `pew-insights daily-token-siegel-tukey-halves`.
+
+  Per-source SIEGEL-TUKEY TWO-SAMPLE NONPARAMETRIC
+  SCALE-SHIFT (EQUALITY-OF-DISPERSION) TEST comparing
+  the first half (n1 = floor(n/2) days) vs the second
+  half (n2 = n - n1 days) of the gap-filled daily
+  total tokens series. Let x[0..n-1] be the gap-
+  filled daily token series, A = x[0..n1-1],
+  B = x[n1..n-1], medA = median(A), medB = median(B).
+  Each half is MEDIAN-CENTRED (Hollander, Wolfe &
+  Chicken 2014 sec. 5.4 eq. 5.13) so a pure
+  LOCATION shift is removed and only a SCALE shift
+  survives the rank assignment:
+
+      cA_i = x_i      - medA   for i in [0, n1)
+      cB_j = x_{n1+j} - medB   for j in [0, n2)
+
+  The pool {cA_i} cup {cB_j} of size n is sorted
+  ascending (ties broken by original index, stable),
+  and SIEGEL-TUKEY OUTWARD-PAIR RANKS (Siegel &
+  Tukey 1960, Journal of the American Statistical
+  Association 55(291):429-445, eq. 1) are assigned:
+
+      pooledSorted index 0      (smallest)  -> rank 1
+      pooledSorted index n - 1  (largest)   -> rank 2
+      pooledSorted index n - 2                -> rank 3
+      pooledSorted index 1                    -> rank 4
+      pooledSorted index 2                    -> rank 5
+      pooledSorted index n - 3                -> rank 6
+      pooledSorted index n - 4                -> rank 7
+      pooledSorted index 3                    -> rank 8
+      ...
+
+  i.e. rank 1 to the smallest, ranks 2 & 3 to the two
+  largest, ranks 4 & 5 to the next two smallest,
+  ranks 6 & 7 to the next two largest, alternating
+  inward. Values close to the pooled extremes receive
+  SMALL ranks; values close to the pooled MEDIAN
+  receive LARGE ranks.
+
+  Let stWA = sum of Siegel-Tukey ranks assigned to
+  first-half elements. The Mann-Whitney representation
+  (Mann & Whitney 1947, Annals of Mathematical
+  Statistics 18(1):50-60)
+
+      stU  = stWA - n1 (n1 + 1) / 2
+      E[stU]   = n1 n2 / 2
+      Var[stU] = n1 n2 (n + 1) / 12
+      stZ      = (stU - E[stU]) / sqrt(Var[stU])
+
+  is approximately N(0, 1) under H0 (equal scale).
+
+  stZ much greater than +1.96 = SECOND half is
+  STRICTLY MORE DISPERSED (DISPERSION GREW); stZ much
+  less than -1.96 = FIRST half is STRICTLY MORE
+  DISPERSED (DISPERSION SHRANK); stZ approx 0 = no
+  detectable scale shift. Sign convention matches the
+  axis-116 bfZ convention so cross-axis comparisons
+  are direction-aligned (positive = second half more
+  dispersed in both axes).
+
+  STRUCTURAL ORTHOGONALITY -- axis-117 is the RANK-
+  BASED NONPARAMETRIC COMPANION of axis-116 Brown-
+  Forsythe. Both target SCALE-SHIFT on the same
+  first/second half partition with the same sign
+  convention, but axis-116 is PARAMETRIC (F on
+  absolute deviations from per-half medians, F(1, n-2)
+  null with Wallace 1959 normal correction) while
+  axis-117 is FULLY RANK-INVARIANT after median-
+  centring (Mann-Whitney U on outward-pair ranks,
+  Normal null). They CAN DISAGREE under heavy-tailed
+  contamination: a few large outliers in the second
+  half can drive bfZ much greater than +1.96 (BF is
+  sensitive to magnitudes) while leaving stZ approx 0
+  (the outlier ranks occupy the same extreme outward-
+  rank positions whether the value is 100 or
+  1,000,000). Distinct from axis-115 Mann-Whitney
+  halves (LOCATION shift via monotonic ranks, not
+  SCALE), axes 110/111/113 (TREND statistics on
+  LOCATION), 114 (multi-lag squared autocorrelation
+  portmanteau, Chi-Square null).
+
+  Median-centring per half is the standard Siegel-
+  Tukey prophylaxis against location-shift confound
+  (Hollander/Wolfe/Chicken 2014 eq. 5.13); without
+  it the test conflates location and scale.
+
+  Reference: Siegel, S. and Tukey, J. W., "A
+  Nonparametric Sum of Ranks Procedure for Relative
+  Spread in Unpaired Samples", Journal of the
+  American Statistical Association 55(291) (1960),
+  pp. 429-445; Mann, H. B. and Whitney, D. R., "On a
+  Test of Whether one of Two Random Variables is
+  Stochastically Larger than the Other", Annals of
+  Mathematical Statistics 18(1) (1947), pp. 50-60;
+  Hollander, M., Wolfe, D. A. and Chicken, E.,
+  "Nonparametric Statistical Methods", 3rd ed.,
+  Wiley, 2014, sec. 5.4 eq. 5.13.
+
+  CLI usage:
+
+      pew-insights daily-token-siegel-tukey-halves
+      pew-insights daily-token-siegel-tukey-halves \
+        --source vscode-other --json
+      pew-insights daily-token-siegel-tukey-halves \
+        --sort stZAbsDesc
+
+  Live-smoke against ~/.config/pew/queue.jsonl
+  (5 sources surviving min-tokens=1000 / min-tenure-
+  days=14 filters; 1 source dropped below min-tenure-
+  days):
+
+      source          tenure  n1   n2   stWA    stU      stZ
+      ----------------------------------------------------------
+      vscode-other      265   132  133  11,000  2222.0  -10.5094
+      claude-code        72    36   36   1,910  1244.0   +6.7123
+      openclaw           17     8    9      56    20.0   -1.5396
+      opencode           14     7    7      45    17.0   -0.9583
+      hermes             17     8    9      67    31.0   -0.4811
+
+  Reading: vscode-other (the long-running 265-day
+  tenure) shows stZ = -10.51, decisively rejecting
+  scale-equality at alpha = 0.05 with the FIRST half
+  strictly more dispersed (DISPERSION SHRANK as the
+  source matured -- the early period had wider day-
+  to-day spread than the more recent period).
+  claude-code shows stZ = +6.71 in the OPPOSITE
+  direction: dispersion GREW between its first 36
+  days and its last 36 days. openclaw, opencode, and
+  hermes all show |stZ| < 1.96 -- no detectable
+  scale-shift between halves at the alpha = 0.05
+  level (consistent with their short tenures of 14-17
+  days where statistical power is limited).
+
+  These two significant detections are the same
+  direction-of-effect that axis-116 Brown-Forsythe
+  reported for the same sources in v0.6.359 -- a
+  consistency check confirming that the parametric
+  and nonparametric scale-shift tests agree on the
+  long-tenure axes where statistical power is
+  sufficient.
+
 ## 0.6.359 — 2026-05-03
 
 ### Added
