@@ -361,10 +361,27 @@ function pooledRobustScale(
  *
  *     sigma  =  sqrt( median( { (z_i - z_j)^2 : i < j } ) / 2 )
  *
- * Pooled sample z is sorted on input. Returns sigma > 0.
- * When the median squared distance is 0 (>= half the
- * pooled values tied at the median), falls back to the
- * pooled population stddev.
+ * Pooled sample z is sorted on input (the sort is
+ * required by the caller for the median computation
+ * downstream; we do not re-sort here). Returns
+ * sigma > 0. When the median squared distance is 0
+ * (>= half the pooled values tied at the median), falls
+ * back to the pooled population stddev so the kernel is
+ * not degenerate.
+ *
+ * Cost. O(m^2) for the m*(m-1)/2 squared distances plus
+ * O(m^2 log m) for the sort. For pew tenures (m up to a
+ * few thousand) this is comfortably interactive at
+ * < 100 ms per source.
+ *
+ * Why divide by 2. The factor of 2 inside the sqrt
+ * matches the kernel parameterisation
+ * k(x, y) = exp( -(x-y)^2 / (2*sigma^2) ): plugging the
+ * median squared distance med_sq into k gives
+ * k = exp( -med_sq / (2*sigma^2) ) = exp(-1) when
+ * sigma^2 = med_sq / 2, putting the median pair at the
+ * kernel's natural decay point. (Garreau et al. 2017 §2
+ * gives the same convention.)
  */
 function medianHeuristicBandwidth(
   pooledSorted: number[],
