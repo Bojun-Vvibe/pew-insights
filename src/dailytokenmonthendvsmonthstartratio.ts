@@ -657,6 +657,12 @@ export function buildDailyTokenMonthEndVsMonthStartRatio(
         break;
     }
     if (primary !== 0) return primary;
+    // Secondary tie-break: heavier sources (more total tokens) win
+    // before the final lexicographic source-name fallback. This makes
+    // the cross-source ranking robust when many low-volume sources
+    // collapse onto identical headline metrics (e.g. endShare = 0 and
+    // endShare = 1 both occur for many narrow-span sources).
+    if (a.totalTokens !== b.totalTokens) return b.totalTokens - a.totalTokens;
     return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
   });
 

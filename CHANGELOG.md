@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.399 — 2026-05-04
+
+### Changed
+
+- `daily-token-month-end-vs-month-start-ratio` POLISH —
+  secondary tie-break on `totalTokens` (descending) inserted
+  between the primary sort key and the final lexicographic
+  source-name fallback. Heavier sources now win deterministic
+  ordering ties before alphabetic source-asc kicks in. Two new
+  unit tests cover the tie-break (heavier wins on equal
+  endShare) and the all-identical-totals fallback to
+  source-asc.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Live-smoke result is unchanged at the row level (every source
+has a distinct headline `endShare`), but the new tie-break
+guarantees a stable ordering when many low-volume sources
+collapse onto identical headline metrics in larger fleets:
+
+| source       | endShare | shareDelta | endStartRatio | densityRatio | logLift  | regime        | tokens        |
+|--------------|----------|------------|---------------|--------------|----------|---------------|---------------|
+| openclaw     |   0.8244 |    +0.3244 |       4.6939  |       2.0117 |  +0.6990 | end-heavy     | 2,250,641,887 |
+| opencode     |   0.7428 |    +0.2428 |       2.8875  |       1.2375 |  +0.2131 | end-heavy     | 6,393,675,497 |
+| hermes       |   0.6415 |    +0.1415 |       1.7898  |       0.7670 |  -0.2652 | end-leaning   |   308,990,926 |
+| claude-code  |   0.3643 |    -0.1357 |       0.5732  |       0.5732 |  -0.5566 | start-leaning | 3,442,385,788 |
+| (src-1)      |   0.3519 |    -0.1481 |       0.5430  |       0.5898 |  -0.5280 | start-leaning |     1,885,727 |
+| codex        |   0.0000 |    -0.5000 |  —            |  —           |  —       | start-blind   |   809,624,660 |
+
 ## 0.6.398 — 2026-05-04
 
 ### Added

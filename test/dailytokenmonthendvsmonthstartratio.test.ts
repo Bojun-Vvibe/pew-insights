@@ -590,3 +590,40 @@ test('refinement: endShareDelta range is bounded to [-0.5, +0.5]', () => {
     assert.ok(s.endShareDelta <= 0.5 + 1e-12);
   }
 });
+
+// --- v0.6.399 polish: secondary tie-break on totalTokens -----------------
+
+test('polish: heavier source wins tie-break before lexicographic fallback', () => {
+  // Both 'alpha' and 'zebra' have endShare = 0.5 (balanced). 'zebra' has
+  // 10x the tokens, so under the new secondary tie-break it should sort
+  // FIRST despite the source-asc final fallback.
+  const lines: QueueLine[] = [
+    ql('2026-01-01T12:00:00Z', 'alpha', 100),
+    ql('2026-01-31T12:00:00Z', 'alpha', 100),
+    ql('2026-01-01T12:00:00Z', 'zebra', 1000),
+    ql('2026-01-31T12:00:00Z', 'zebra', 1000),
+  ];
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+    minTokens: 1,
+    sort: 'endShare',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.sources[0]!.source, 'zebra');
+  assert.equal(r.sources[1]!.source, 'alpha');
+});
+
+test('polish: identical metrics + identical totals fall through to source-asc', () => {
+  const lines: QueueLine[] = [
+    ql('2026-01-01T12:00:00Z', 'alpha', 1000),
+    ql('2026-01-31T12:00:00Z', 'alpha', 1000),
+    ql('2026-01-01T12:00:00Z', 'beta', 1000),
+    ql('2026-01-31T12:00:00Z', 'beta', 1000),
+  ];
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+    sort: 'endShare',
+  });
+  assert.equal(r.sources[0]!.source, 'alpha');
+  assert.equal(r.sources[1]!.source, 'beta');
+});
