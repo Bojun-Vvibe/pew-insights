@@ -2,6 +2,124 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.365 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-SECOND):
+  `pew-insights daily-token-energy-distance-halves`.
+
+  Per-source ENERGY DISTANCE TWO-SAMPLE TEST
+  (Szekely & Rizzo 2004) comparing the empirical
+  distributions of the FIRST half (n1 = floor(n/2)
+  days) vs the SECOND half (n2 = n - n1 days) of
+  the gap-filled daily total_tokens series.
+
+      enE  =  2 * E|X - Y|
+              -   E|X - X'|
+              -   E|Y - Y'|
+
+  with V-statistic estimator
+
+      enE  =  (2 / (n1 * n2)) * sum_{i,j} |A_i - B_j|
+            -  (1 / n1^2)     * sum_{i,j} |A_i - A_j|
+            -  (1 / n2^2)     * sum_{i,j} |B_i - B_j|
+
+  and equivalent characteristic-function form
+
+      enE  =  (1 / pi) * integral_R
+                | phi_A(t) - phi_B(t) |^2 / t^2  dt
+
+  (Feuerverger 1993, Journal of Time Series Analysis
+  14(2):129-145). Lives in CHARACTERISTIC-FUNCTION
+  space, structurally orthogonal to ECDF-space
+  (axes 118/119/120) and quantile-space (axis 121).
+  Implementation runs in O(n log n) using the
+  sorted-vector identity for within-half pairwise
+  sums and a linear merge for the cross sum, exact
+  to brute force on every test fixture.
+
+  Canonical scaled test statistic:
+
+      enT  =  ( n1 * n2 / (n1 + n2) ) * enE
+
+  with weighted-chi-squared null limit (Szekely &
+  Rizzo 2013, Journal of Statistical Planning and
+  Inference 143(8):1249-1272 Theorem 2).
+
+  Cross-source-comparable effect size:
+
+      enZ        =  sqrt(enE) / pooledMad
+      enZSigned  =  sign(median(B) - median(A)) * enZ
+
+  STRUCTURAL ORTHOGONALITY. Energy distance weights
+  the squared CF gap by the 1/t^2 frequency kernel
+  in CHARACTERISTIC-FUNCTION space, while axes 118
+  (KS, L_infinity), 119 (AD, tail-weighted L2), 120
+  (CvM, uniform L2) all weight CDF gaps in
+  PROBABILITY space, and axis 121 (W1) weights the
+  CDF gap in QUANTILE-INTEGRAL space. The four are
+  not monotone images of one another: a sharp
+  short-range CDF discontinuity is dampened by the
+  1/t^2 kernel into a finite enE while giving
+  unbounded high-frequency |phi|^2 contribution.
+
+  References:
+  - Szekely, G. J., "E-statistics: The energy of
+    statistical samples", BGSU TR 02-16 (2002).
+  - Szekely, G. J. and Rizzo, M. L., "Testing for
+    Equal Distributions in High Dimension",
+    InterStat (November 2004).
+  - Szekely, G. J. and Rizzo, M. L., "Energy
+    statistics: A class of statistics based on
+    distances", JSPI 143(8) (2013), pp. 1249-1272.
+  - Feuerverger, A., "A consistent test for
+    bivariate dependence", JTSA 14(2) (1993),
+    pp. 129-145.
+
+  LIVE-SMOKE on local pew queue.jsonl (2026-05-03,
+  6 sources, 12,008,314,797 total tokens, 1 dropped
+  below min-tenure-days=14, sort=enTDesc):
+
+      source         tenure  n1   n2   enE             enT             enZ      enDir  enZSigned
+      openclaw       17      8    9    147,850,874.83  626,191,940.46  0.0003   -1     -0.0003
+      claude-code    72      36   36    31,565,852.35  568,185,342.33  0.0000   +1     +0.0000
+      opencode       14      7    7     60,818,473.92  212,864,658.71  0.0001   -1     -0.0001
+      hermes         17      8    9      2,667,988.76   11,299,717.12  0.0002   +1     +0.0002
+      vscode-other   265     132  133         254.89       16,886.34   0.0006    0     +0.0000
+
+  Headline: openclaw scores the largest scaled
+  energy statistic enT = 626,191,940 (raw enE =
+  1.48e8 tokens) with enDir = -1 (median collapsed
+  from 213.8M tokens in the first half to 59.4M in
+  the second), the dominant within-source
+  half-distribution shift in the current corpus.
+  claude-code clocks the second-largest enT despite
+  the smallest median absolute change because its
+  long 72-day tenure (n1 = n2 = 36) inflates the
+  n1*n2/(n1+n2) prefactor.
+
+### Tests
+
+- 28 new tests in
+  `test/dailytokenenergydistancehalves.test.ts`
+  covering input validation, half-split sizes,
+  exact match against a brute-force V-statistic
+  reference (even/odd splits and a 30-sample
+  series), the canonical T = n1*n2/(n1+n2) * E
+  identity, location-invariance, positive-
+  homogeneity of degree 1, half-swap symmetry,
+  sign convention, identical-halves degeneracy,
+  random-trial non-negativity (Szekely & Rizzo
+  2013 Theorem 1), shape-difference detection at
+  equal medians, exact enZ scaling under x -> k*x,
+  source filtering, sort orderings, top cap,
+  determinism, and the support-distance dominance
+  contract vs narrow-shift fixtures.
+
+  Total test count after this release: 10,679
+  passing across 215 test files.
+
 ## 0.6.364 — 2026-05-03
 
 ### Added
