@@ -20276,6 +20276,7 @@ import type { DailyTokenMaxDivergenceHalvesReport } from './dailytokenmaxdiverge
 import type { DailyTokenSymmetricChiSquaredHalvesReport } from './dailytokensymmetricchisquaredhalves.js';
 import type { DailyTokenClarkDistanceHalvesReport } from './dailytokenclarkdistancehalves.js';
 import type { DailyTokenTanejaDivergenceHalvesReport } from './dailytokentanejadivergencehalves.js';
+import type { DailyTokenKumarJohnsonDivergenceHalvesReport } from './dailytokenkumarjohnsondivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23531,6 +23532,89 @@ export function renderDailyTokenTanejaDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: tanejaDivergence >= 0; tanejaDivergence=0 iff p=q on the grid; tanejaMaxAmGmRatio = max_k AM_k/GM_k >= 1 (=1 iff p_k = q_k at every bin); tanejaMaxBin is the largest per-bin Taneja summand AM_k * log(AM_k/GM_k); spread = tanejaDivergence/(K*tanejaMaxBin) in [0, 1] -- approaches 1 iff every bin contributes the same maximal Taneja amount, approaches 1/K = ${(1 / r.gridK).toFixed(6)} iff a single bin dominates. Translation- AND positive-scale-invariant in the data; TANEJA_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKumarJohnsonDivergenceHalves(
+  r: DailyTokenKumarJohnsonDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-kumar-johnson-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}    pmf-floor: ${r.pmfFloor}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED KUMAR-JOHNSON DIVERGENCE KJ = sum_k (p_k^2 - q_k^2)^2 / (2 * (p_k * q_k)^(3/2)), between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-SEVENTH cross-source axis. Kumar & Johnson 2005; Cha 2007 eq. 51. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. kumarJohnsonDivergence >= 0; =0 iff KDE-smoothed halves coincide on the grid. ORTHOGONAL to all 19 prior axes 118-136: unique (p^2-q^2)^2 / GM^3 rational functional; polynomially tail-amplifying where Taneja (axis-136) is logarithmic; degree-(-1) where Clark (axis-135) is bounded; numerator = (p-q)^2 (p+q)^2 (degree 4) over (p*q)^(3/2) (degree 3). Diagnostic kumarJohnsonMaxRelGap = max_k |p-q|/(p+q) in [0, 1] surfaces the most regime-disjoint bin. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Kumar-Johnson divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'kj',
+    'maxBin',
+    'maxRel',
+    'spread',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.kjN1),
+    formatNumber(s.kjN2),
+    s.kjMadPool.toFixed(2),
+    s.kjBandwidth.toFixed(2),
+    s.kumarJohnsonDivergence.toFixed(6),
+    s.kumarJohnsonMaxBin.toFixed(6),
+    s.kumarJohnsonMaxRelGap.toFixed(6),
+    s.kumarJohnsonSpreadRatio.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: kumarJohnsonDivergence >= 0; =0 iff p=q on the grid; kumarJohnsonMaxRelGap = max_k |p_k-q_k|/(p_k+q_k) in [0, 1] (=1 iff at least one bin is regime-disjoint); kumarJohnsonMaxBin is the largest per-bin summand (p_k^2-q_k^2)^2 / (2*(p_k*q_k)^(3/2)); spread = kumarJohnsonDivergence/(K*kumarJohnsonMaxBin) in [0, 1] -- approaches 1 iff every bin contributes the same maximal KJ amount, approaches 1/K = ${(1 / r.gridK).toFixed(6)} iff a single bin dominates. Translation- AND positive-scale-invariant in the data; KJ_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
 
