@@ -2,6 +2,161 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.375 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-THIRTY-SECOND):
+  `pew-insights daily-token-renyi-two-divergence-halves`.
+
+  Per-source KDE-SMOOTHED SYMMETRISED RENYI-2 DIVERGENCE
+  between the FIRST half (n1 = floor(n/2) days) and SECOND
+  half (n2 = n - n1 days) of the gap-filled daily
+  total_tokens series. IDENTICAL KDE setup to axes 126
+  (JSD), 127 (TV), 128 (H), 129 (Delta), 130 (bDist), and
+  131 (J): pooled robust scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid;
+  trapezoidal mass-normalisation to exact pmfs p, q on the
+  K = 257 grid (sum_k p_k = sum_k q_k = 1).
+
+  Renyi-2 divergence (Renyi 1961, "On measures of entropy
+  and information", Proc. 4th Berkeley Symp. on Math. Stat.
+  and Prob. 1: 547-561, eq. (3.5) at order alpha = 2; van
+  Erven & Harremos 2014, "Renyi divergence and
+  Kullback-Leibler divergence", IEEE Trans. Inf. Theory
+  60(7): 3797-3820, Sec. III, eqs. (5), (8) and Theorem 3):
+
+      D_2(p || q)  =  ln( sum_k p_k^2 / q_k )    in nats
+
+  with the exact identity D_2(p || q) = ln(1 + chi^2(p || q))
+  where chi^2 is the Pearson chi-squared sum (p - q)^2 / q
+  (van Erven & Harremos 2014 eq. (8)). Renyi-2 is INHERENTLY
+  ASYMMETRIC; we expose both directions and the symmetrised
+  form
+
+      D_2^sym(p, q)  =  0.5 * ( D_2(p || q) + D_2(q || p) )
+                     =  0.5 * ln( (sum p^2/q) * (sum q^2/p) )
+
+  in [0, +inf), in nats. D_2^sym = 0 iff p === q on the grid;
+  D_2^sym -> +inf as p, q approach disjoint support.
+
+  Per-bin pmf entries are clamped to a numerical floor
+  EPS_PMF = 1e-300 before forming the squared-mass-over-mass
+  ratio to keep the per-bin contribution finite under
+  subnormal-mass tails (Gaussian KDE on a shared finite grid
+  never produces exact zeros, but underflow can drive
+  p^2/q to +inf in floating-point). This is a NUMERICAL
+  guard, not a smoothing.
+
+  STRUCTURAL ORTHOGONALITY. D_2^sym is the
+  log-of-quadratic-mass-moment functional, i.e. the
+  Renyi-2 divergence under the substitution
+  D_2(p||q) = ln(1 + chi^2(p||q)) followed by symmetrisation.
+  This class is not occupied by any prior axis. vs axes
+  118-123 KS/AD/CvM/W1/energy/MMD: CDF-L_inf /
+  tail-weighted CDF-L^2 / CDF-L^2 / quantile-integral /
+  CF-1/t^2 / RKHS spaces respectively; D_2^sym lives in the
+  K = 257 pmf simplex via a log-of-second-moment integral.
+  vs axis-124 qv-Mahalanobis / axis-125 PCA: low-dimensional
+  Euclidean spaces vs Renyi-2 on pmfs. vs axis-126 JSD:
+  both LOG functionals on the IDENTICAL KDE setup, but JSD =
+  0.5*KL(p||m) + 0.5*KL(q||m) uses the MIXTURE m = (p+q)/2
+  inside the log and is BOUNDED by ln 2 in nats; D_2^sym
+  uses the FORWARD pmfs themselves inside a SQUARED-MASS-
+  OVER-MASS ratio inside the log and is UNBOUNDED. vs
+  axis-127 TV: TV is L^1 in pmf coordinates; D_2^sym is
+  log-of-quadratic-moment. Pinsker (1964) gives tvDist^2
+  <= 0.5 * KL <= 0.5 * D_2 (Renyi monotone in alpha) — bound,
+  not monotone. vs axis-128 H: H is L^2 in sqrt-amplitude
+  coordinates. The Renyi-1/2 divergence equals -2*ln(BC) =
+  2*bDist (axis-130) and IS monotone in H, but D_2^sym is
+  the Renyi at alpha = 2 (the OPPOSITE end of the
+  alpha-line) so it is NOT monotone in H. vs axis-129 Delta
+  (triangular discrimination): Delta = sum (p-q)^2/(p+q) is
+  bounded in [0, 2] and algebraic; D_2^sym is logarithmic
+  and unbounded. vs axis-130 bDist: bDist is the Renyi-1/2
+  divergence DIVIDED BY 2 (van Erven & Harremos 2014 eq.
+  (5)): D_{1/2}(p||q) = -2*ln(BC) = 2*bDist, so bDist is
+  the SYMMETRIC Renyi at alpha = 1/2 and D_2^sym is the
+  symmetrised Renyi at alpha = 2 — the same family at
+  OPPOSITE alpha endpoints. Renyi monotonicity in alpha
+  (van Erven & Harremos 2014 Theorem 3) gives D_{1/2} <= KL
+  <= D_2 in EACH DIRECTION, but symmetrised forms BREAK
+  the per-pair monotonicity bound, so 2*bDist <= D_2^sym is
+  a LOOSE bound that is NOT monotone in general. vs
+  axis-131 J (Jeffreys): J = KL(p||q) + KL(q||p) sums two
+  FIRST-MOMENT log-ratios; D_2^sym averages two
+  SECOND-MOMENT log-ratios. The Renyi alpha-line
+  monotonicity gives KL(p||q) <= D_2(p||q) per direction
+  (van Erven & Harremos 2014 Theorem 3), hence J <= 2 *
+  D_2^sym — bound, not monotone. Translation-invariant AND
+  positive-scale-invariant in the data, mirroring axes
+  123/124/125/126/127/128/129/130/131.
+
+  The implementation also exposes the per-direction Pearson
+  chi-squared components chiSquaredForward = sum (p-q)^2/q
+  and chiSquaredReverse = sum (p-q)^2/p (which satisfy the
+  closed-form identity D_2(p||q) = ln(1 + chi^2_fwd) and
+  D_2(q||p) = ln(1 + chi^2_rev)), a directional-asymmetry
+  diagnostic asym = |D_2(p||q) - D_2(q||p)| / (2 * D_2^sym)
+  in [0, 1] (0 = symmetric per-bin contributions, 1 = one
+  direction dominates entirely; defined as 0 when D_2^sym =
+  0), and a monotone normalisation d2Norm = D_2^sym /
+  (D_2^sym + 1) in [0, 1) on the same [0, 1) scale as
+  bDistNormalized (axis-130), deltaNormalized (axis-129),
+  tvDist (axis-127), and jeffreysNormalized (axis-131) for
+  at-a-glance cross-axis comparison.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,134,429,352):
+
+      source             tenure  n1   n2   madPool         h               D2(p||q)    D2(q||p)    D2sym       asym        chi2_fwd                  chi2_rev    d2Norm      tokens
+      -----------------  ------  ---  ---  --------------  --------------  ----------  ----------  ----------  ----------  ------------------------  ----------  ----------  -------------
+      openclaw           17       8    9    59886294.12    30583005.59     37.377881   1.885935    19.631908   0.903935    1.7100454875592268e+16    5.592513    0.951531    2,215,860,612
+      opencode           14       7    7   131088708.42    69595664.65      3.171557   0.805156     1.988357   0.595065   22.844593                  1.237046    0.665368    6,176,174,937
+      claude-code        72      35   36          0.00    402528503.09      0.043004   0.490046     0.266525   0.838650    0.043942                  0.632392    0.210438    3,442,385,788
+      hermes             17       8    9    13138525.44     6709642.04      0.228730   0.198547     0.213639   0.070641    0.257003                  0.219629    0.176031      298,122,288
+      <redacted-vscode>  265     73  132          0.00       70977.97       0.004493   0.014149     0.009321   0.517938    0.004503                  0.014249    0.009235        1,885,727
+
+  Note `openclaw` produces an EXTREME forward-direction
+  chi-squared (chi^2_fwd ~ 1.7e16) while its reverse
+  chi-squared remains bounded at 5.59. This is exactly the
+  Renyi-2 sensitivity hallmark: the FIRST half of the
+  openclaw daily-token series places p mass on bins where
+  the SECOND half's q mass underflows toward EPS_PMF, and
+  the p^2/q ratio integrand BLOWS UP. The corresponding
+  forward Renyi-2 D_2(p||q) = ln(1 + 1.7e16) = 37.38 nats
+  is over an order of magnitude larger than `openclaw`'s
+  Jeffreys J = 8.14 nats reported in axis-131 — confirming
+  that D_2 amplifies disjoint-support behaviour FAR more
+  aggressively than J or KL, exactly as predicted by Renyi
+  alpha-monotonicity (D_2 >= D_1 = KL >= D_{1/2}). The
+  asymmetry diagnostic asym = 0.904 surfaces the same
+  signal: forward and reverse D_2 differ by an order of
+  magnitude, driving asym near 1.
+
+### Refactored
+
+- Added per-direction Pearson chi-squared diagnostics
+  (`chiSquaredForward`, `chiSquaredReverse`) to the
+  `daily-token-renyi-two-divergence-halves` row, plus the
+  `--sort renyiTwoForward` / `renyiTwoReverse` axes for
+  asymmetry-driven slicing. The chi-squared identity
+  `D_2(p||q) = ln(1 + chi^2(p||q))` is now testable against
+  the per-row Renyi-2 forward/reverse values
+  (verified by the test suite).
+
 ## 0.6.374 — 2026-05-03
 
 ### Added
