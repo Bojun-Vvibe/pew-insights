@@ -268,6 +268,20 @@ export interface DailyTokenJeffreysDivergenceHalvesSourceRow {
    */
   jeffreysAsymmetry: number;
   /**
+   * Symmetry-ratio diagnostic: min(klPQ, klQP) / max(klPQ, klQP) in
+   * [0, 1]. The COMPLEMENTARY normalised form to jeffreysAsymmetry:
+   * 1 = the two directional KLs are equal (purely symmetric f-divergence
+   * decomposition); 0 = one direction is degenerate. Defined as 1 when
+   * both klPQ and klQP are 0 (identity case is, by convention,
+   * perfectly symmetric). Useful to flag sources whose symmetric-KL
+   * mass is structurally one-sided versus balanced -- where
+   * jeffreysAsymmetry surfaces the absolute imbalance of (forward -
+   * reverse), this ratio surfaces the magnitude balance regardless of
+   * J's overall scale, so two sources with very different J can be
+   * directly compared on the SHAPE of their KL split.
+   */
+  klSymmetryRatio: number;
+  /**
    * Normalised diagnostic: J / (J + 1) in [0, 1). Monotone-increasing
    * in J; puts J on the same [0, 1) scale as bDistNormalized
    * (axis-130), deltaNormalized (axis-129), hDist (axis-128), and
@@ -356,6 +370,7 @@ export function dailyTokenJeffreysDivergenceHalves(values: number[]): {
   klQP: number;
   jeffreys: number;
   jeffreysAsymmetry: number;
+  klSymmetryRatio: number;
   jeffreysNormalized: number;
 } {
   const n = values.length;
@@ -482,6 +497,11 @@ export function dailyTokenJeffreysDivergenceHalves(values: number[]): {
   const jeffreysNormalized = jeffreys / (jeffreys + 1);
   const jeffreysAsymmetry =
     jeffreys > 0 ? Math.abs(klPQ - klQP) / jeffreys : 0;
+  const klMax = Math.max(klPQ, klQP);
+  const klMin = Math.min(klPQ, klQP);
+  // Identity case (both KLs = 0) is, by convention, perfectly symmetric
+  // (ratio = 1). Otherwise return min/max in [0, 1].
+  const klSymmetryRatio = klMax > 0 ? klMin / klMax : 1;
 
   if (
     !Number.isFinite(klPQ) ||
@@ -509,6 +529,7 @@ export function dailyTokenJeffreysDivergenceHalves(values: number[]): {
     klQP,
     jeffreys,
     jeffreysAsymmetry,
+    klSymmetryRatio,
     jeffreysNormalized,
   };
 }
@@ -690,6 +711,7 @@ export function buildDailyTokenJeffreysDivergenceHalves(
       klQP: result.klQP,
       jeffreys: result.jeffreys,
       jeffreysAsymmetry: result.jeffreysAsymmetry,
+      klSymmetryRatio: result.klSymmetryRatio,
       jeffreysNormalized: result.jeffreysNormalized,
     });
     totalTokensSum += acc.totalTokens;

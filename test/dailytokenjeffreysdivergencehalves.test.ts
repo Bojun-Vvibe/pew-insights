@@ -715,3 +715,74 @@ test('bound: jeffreysNormalized strictly less than 1 even for huge separation', 
   assert.ok(r.jeffreysNormalized < 1);
   assert.ok(r.jeffreysNormalized > 0.5);
 });
+
+// ---------- refactor follow-up: klSymmetryRatio diagnostic ----------
+
+test('klSymmetryRatio: in [0, 1] for non-degenerate halves', () => {
+  const r = dailyTokenJeffreysDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 50, 51, 52, 53, 54, 55, 56, 57,
+  ]);
+  assert.ok(r.klSymmetryRatio >= 0);
+  assert.ok(r.klSymmetryRatio <= 1 + 1e-12);
+});
+
+test('klSymmetryRatio: equals min(klPQ,klQP) / max(klPQ,klQP)', () => {
+  const r = dailyTokenJeffreysDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 50, 51, 52, 53, 54, 55, 56, 57,
+  ]);
+  const expected =
+    Math.min(r.klPQ, r.klQP) / Math.max(r.klPQ, r.klQP);
+  assert.ok(Math.abs(r.klSymmetryRatio - expected) < 1e-12);
+});
+
+test('klSymmetryRatio: identity halves -> 1 (perfect symmetry by convention)', () => {
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenJeffreysDivergenceHalves([...half, ...half]);
+  assert.equal(r.klSymmetryRatio, 1);
+});
+
+test('klSymmetryRatio: reverse-halves preserves the ratio (symmetry-of-symmetry)', () => {
+  const x = [1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107];
+  const xSwap = [100, 101, 102, 103, 104, 105, 106, 107, 1, 2, 3, 4, 5, 6, 7, 8];
+  const r1 = dailyTokenJeffreysDivergenceHalves(x);
+  const r2 = dailyTokenJeffreysDivergenceHalves(xSwap);
+  assert.ok(Math.abs(r1.klSymmetryRatio - r2.klSymmetryRatio) < 1e-12);
+});
+
+test('klSymmetryRatio: translation- and scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12];
+  const r1 = dailyTokenJeffreysDivergenceHalves(x);
+  const r2 = dailyTokenJeffreysDivergenceHalves(
+    x.map((v) => 5 * v + 1000),
+  );
+  assert.ok(Math.abs(r1.klSymmetryRatio - r2.klSymmetryRatio) < 1e-8);
+});
+
+test('klSymmetryRatio: rows expose klSymmetryRatio in [0, 1]', () => {
+  const r = buildDailyTokenJeffreysDivergenceHalves(
+    makeQueueWithTwoSources(),
+    { minTokens: 0 },
+  );
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.klSymmetryRatio));
+    assert.ok(s.klSymmetryRatio >= 0);
+    assert.ok(s.klSymmetryRatio <= 1 + 1e-12);
+  }
+});
+
+test('klSymmetryRatio: complementary to jeffreysAsymmetry (rough monotone-inverse)', () => {
+  // Two sources: one nearly-symmetric, one strongly asymmetric.
+  // For the symmetric one (small shift), symRatio should be high
+  // and asym should be low; for the asymmetric one (large shift to
+  // a single side), the relationship inverts.
+  const sym = dailyTokenJeffreysDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18,
+  ]);
+  // klSymmetryRatio + jeffreysAsymmetry are NOT exactly complementary
+  // (different normalisers), but they should be NEGATIVELY associated:
+  // symRatio = klMin/klMax; asym = |klPQ-klQP|/(klPQ+klQP).
+  // Identity: asym = (1 - symRatio) / (1 + symRatio) for symRatio in
+  // [0, 1] (with klMin = symRatio*klMax, asym = (1-symRatio)/(1+symRatio)).
+  const expectedAsym = (1 - sym.klSymmetryRatio) / (1 + sym.klSymmetryRatio);
+  assert.ok(Math.abs(sym.jeffreysAsymmetry - expectedAsym) < 1e-10);
+});

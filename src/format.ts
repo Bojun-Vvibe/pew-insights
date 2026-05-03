@@ -23068,6 +23068,7 @@ export function renderDailyTokenJeffreysDivergenceHalves(
     'KL(q||p)',
     'J',
     'asym',
+    'symRatio',
     'jNorm',
     'tokens',
   ];
@@ -23085,6 +23086,7 @@ export function renderDailyTokenJeffreysDivergenceHalves(
     s.klQP.toFixed(6),
     s.jeffreys.toFixed(6),
     s.jeffreysAsymmetry.toFixed(6),
+    s.klSymmetryRatio.toFixed(6),
     s.jeffreysNormalized.toFixed(6),
     formatNumber(s.totalTokens),
   ]);
