@@ -20262,6 +20262,7 @@ import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenanderson
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
 import type { DailyTokenWassersteinOneHalvesReport } from './dailytokenwassersteinonehalves.js';
 import type { DailyTokenEnergyDistanceHalvesReport } from './dailytokenenergydistancehalves.js';
+import type { DailyTokenMaximumMeanDiscrepancyHalvesReport } from './dailytokenmaximummeandiscrepancyhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22304,6 +22305,101 @@ export function renderDailyTokenEnergyDistanceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: enE in [0, +inf) with units of tokens (energy kernel d(x,y)=|x-y| is 1-homogeneous); enT = n1*n2/(n1+n2)*enE is the canonical scaled energy statistic with weighted-chi-squared null limit (Szekely & Rizzo 2013 Theorem 2); enZ = sqrt(enE)/pooledMad is dimensionless and cross-source-comparable; enZ approx 0 = halves agree (Szekely & Rizzo 2013 Theorem 1: enE = 0 iff F_A = F_B); enZ >> 1 = halves are several robust-scale units apart in CF-weighted L2 distance. enE is intrinsically UNSIGNED -- enDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); enZSigned = enDir * enZ is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119/120/121. Energy distance lives in CHARACTERISTIC-FUNCTION SPACE while W1 (axis-121) lives in QUANTILE-INTEGRAL space, CvM/AD (axis-120/119) live in PROBABILITY space, and KS (axis-118) lives in pointwise-L_infinity probability space; the four are not monotone images of one another.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMaximumMeanDiscrepancyHalves(
+  r: DailyTokenMaximumMeanDiscrepancyHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-maximum-mean-discrepancy-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MAXIMUM MEAN DISCREPANCY TWO-SAMPLE TEST (Gretton et al. 2012, JMLR 13:723-773) with GAUSSIAN RBF kernel and median-heuristic bandwidth (Garreau-Jitkrittum-Kanagawa 2017 arXiv:1707.07269) comparing FIRST half vs SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-THIRD cross-source axis. Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST in REPRODUCING-KERNEL HILBERT SPACE: mmd2_V = (1/n1^2)*sum k(A,A) + (1/n2^2)*sum k(B,B) - (2/(n1*n2))*sum k(A,B); mmd2_U is the unbiased U-statistic. mmdT = n1*n2/(n1+n2)*mmd2_V is the canonical scaled MMD test statistic with weighted-chi-squared null limit (Gretton et al. 2012 Theorem 12). mmdZ = sqrt(mmd2_V)/pooledMad scale-normalises by pooled robust dispersion to yield a cross-source-comparable EFFECT SIZE; mmdZSigned = sign(median(B)-median(A))*mmdZ. RKHS-MEAN-EMBEDDING-SPACE companion to axis-122 energy distance (CHARACTERISTIC-FUNCTION-SPACE 1/t^2-weighted L2), axis-121 W1 (QUANTILE-INTEGRAL space), axis-120 CvM (PROBABILITY-SPACE L2), axis-119 AD (PROBABILITY-SPACE tail-weighted L2), and axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because MMD with Gaussian kernel weights the squared CF gap by exp(-sigma^2*t^2/2) (Bochner spectral density of the RBF), which is a band-pass filter at scale sigma -- structurally distinct from energy distance's 1/t^2 low-frequency emphasis. Bandwidth via median heuristic makes MMD FULLY SCALE-INVARIANT in the data, in contrast to axis-122's 1-homogeneous behaviour.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MMD two-sample (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'poolMed',
+    'poolMad',
+    'sigma',
+    'mmd2V',
+    'mmd2U',
+    'mmdT',
+    'mmdZ',
+    'mmdDir',
+    'mmdZSigned',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.mmdN1),
+    formatNumber(s.mmdN2),
+    formatNumber(s.mmdMedianA),
+    formatNumber(s.mmdMedianB),
+    formatNumber(s.mmdPooledMedian),
+    formatNumber(s.mmdPooledMad),
+    formatNumber(s.mmdSigma),
+    s.mmd2V.toFixed(6),
+    s.mmd2U.toFixed(6),
+    s.mmdT.toFixed(4),
+    s.mmdZ.toFixed(6),
+    s.mmdDir.toFixed(0),
+    s.mmdZSigned.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: mmd2_V in [0, 1] (Gaussian kernel bounded by 1); mmd2_U in [-1, 1] (unbiased, can be slightly negative); mmdT = n1*n2/(n1+n2)*mmd2_V is the canonical scaled MMD statistic with weighted-chi-squared null limit (Gretton et al. 2012 Theorem 12); mmdZ = sqrt(mmd2_V)/pooledMad is dimensionless and cross-source-comparable; mmdZ approx 0 = halves agree (Gretton et al. 2012 Theorem 5: Gaussian kernel is CHARACTERISTIC, mmd = 0 iff F_A = F_B); mmdZ >> 0 = halves are several robust-scale units apart in RKHS mean-embedding distance per token of pooled dispersion. mmd is intrinsically UNSIGNED (squared norm in H) -- mmdDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); mmdZSigned = mmdDir * mmdZ is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119/120/121/122. MMD lives in RKHS feature space (Gaussian-band-pass weighting in CF terms) while energy distance (axis-122) lives in 1/t^2-weighted CF space, W1 (axis-121) lives in QUANTILE-INTEGRAL space, CvM/AD (axis-120/119) live in PROBABILITY space, and KS (axis-118) lives in pointwise-L_infinity space; the five are not monotone images of one another.)`,
     ),
   );
 

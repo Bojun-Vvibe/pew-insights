@@ -174,6 +174,7 @@ import {
   renderDailyTokenCramerVonMisesHalves,
   renderDailyTokenWassersteinOneHalves,
   renderDailyTokenEnergyDistanceHalves,
+  renderDailyTokenMaximumMeanDiscrepancyHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -510,6 +511,7 @@ import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlin
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
 import { buildDailyTokenWassersteinOneHalves } from './dailytokenwassersteinonehalves.js';
 import { buildDailyTokenEnergyDistanceHalves } from './dailytokenenergydistancehalves.js';
+import { buildDailyTokenMaximumMeanDiscrepancyHalves } from './dailytokenmaximummeandiscrepancyhalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37667,6 +37669,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenEnergyDistanceHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-maximum-mean-discrepancy-halves')
+  .description(
+    "Per-source MAXIMUM MEAN DISCREPANCY TWO-SAMPLE TEST (Gretton et al. 2012, JMLR 13:723-773) with GAUSSIAN RBF kernel and median-heuristic bandwidth (Garreau-Jitkrittum-Kanagawa 2017 arXiv:1707.07269) comparing FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWENTY-THIRD cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST in REPRODUCING-KERNEL HILBERT SPACE: mmd2_V = (1/n1^2)*sum k(A,A) + (1/n2^2)*sum k(B,B) - (2/(n1*n2))*sum k(A,B); mmd2_U is the unbiased U-statistic (can be slightly negative for finite samples). mmdT = n1*n2/(n1+n2)*mmd2_V is the canonical scaled MMD test statistic with weighted-chi-squared null limit (Gretton et al. 2012 Theorem 12). mmdZ = sqrt(mmd2_V)/pooledMad scale-normalises by pooled robust dispersion to yield a cross-source-comparable EFFECT SIZE; mmdZSigned = sign(median(B)-median(A))*mmdZ. RKHS-MEAN-EMBEDDING-SPACE companion to axis-122 energy distance (CHARACTERISTIC-FUNCTION-SPACE 1/t^2-weighted L2), axis-121 W1 (QUANTILE-INTEGRAL space), axis-120 CvM (PROBABILITY-SPACE L2), axis-119 AD (PROBABILITY-SPACE tail-weighted L2), and axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because MMD with Gaussian kernel weights the squared CF gap by exp(-sigma^2*t^2/2) (Bochner spectral density of the RBF), a band-pass filter at scale sigma -- structurally distinct from the 1/t^2 low-frequency emphasis of energy distance. Median-heuristic bandwidth makes MMD FULLY SCALE-INVARIANT in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for asymptotic regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mmdTDesc (default) | mmdT | mmd2V | mmd2VDesc | mmdZ | mmdZDesc | mmdZSigned | mmdZSignedDesc | tokens | tenure | source.',
+    'mmdTDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'mmd2V',
+          'mmd2VDesc',
+          'mmdT',
+          'mmdTDesc',
+          'mmdZ',
+          'mmdZDesc',
+          'mmdZSigned',
+          'mmdZSignedDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMaximumMeanDiscrepancyHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'mmd2V'
+            | 'mmd2VDesc'
+            | 'mmdT'
+            | 'mmdTDesc'
+            | 'mmdZ'
+            | 'mmdZDesc'
+            | 'mmdZSigned'
+            | 'mmdZSignedDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMaximumMeanDiscrepancyHalves(report) + '\n',
           );
         }
       } catch (e) {
