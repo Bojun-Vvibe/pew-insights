@@ -532,3 +532,79 @@ test('lecam: identical halves saturate the lower bound (H = 0)', () => {
   const r = dailyTokenHellingerDistanceHalves([...half, ...half]);
   assert.ok(r.hDist < 1e-10);
 });
+
+// ---------- refactor follow-up: hAngle (Bhattacharyya angle) diagnostic ----------
+
+test('refactor: hAngle in [0, pi/2] and finite', () => {
+  const r = dailyTokenHellingerDistanceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(Number.isFinite(r.hAngle));
+  assert.ok(r.hAngle >= 0);
+  assert.ok(r.hAngle <= Math.PI / 2 + 1e-10);
+});
+
+test('refactor: hAngle ~ 0 for identical halves', () => {
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenHellingerDistanceHalves([...half, ...half]);
+  assert.ok(r.hAngle < 1e-5);
+});
+
+test('refactor: half-angle identity sqrt(2)*sin(hAngle/2) === hDist', () => {
+  const r = dailyTokenHellingerDistanceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  const lhs = Math.SQRT2 * Math.sin(r.hAngle / 2);
+  assert.ok(
+    Math.abs(lhs - r.hDist) < 1e-10,
+    `sqrt(2)*sin(hAngle/2)=${lhs} should equal hDist=${r.hDist}`,
+  );
+});
+
+test('refactor: hAngle === arccos(BC)', () => {
+  const r = dailyTokenHellingerDistanceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(Math.abs(r.hAngle - Math.acos(r.hBhattacharyya)) < 1e-12);
+});
+
+test('refactor: hAngle translation- and positive-scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12];
+  const r1 = dailyTokenHellingerDistanceHalves(x);
+  const r2 = dailyTokenHellingerDistanceHalves(x.map((v) => 5 * v + 1000));
+  assert.ok(Math.abs(r1.hAngle - r2.hAngle) < 1e-8);
+});
+
+test('refactor: hAngle symmetric on swap', () => {
+  const xUp = [1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107];
+  const xDown = [
+    100, 101, 102, 103, 104, 105, 106, 107, 1, 2, 3, 4, 5, 6, 7, 8,
+  ];
+  const rUp = dailyTokenHellingerDistanceHalves(xUp);
+  const rDown = dailyTokenHellingerDistanceHalves(xDown);
+  assert.ok(Math.abs(rUp.hAngle - rDown.hAngle) < 1e-10);
+});
+
+test('refactor: hAngle monotone with shift magnitude', () => {
+  const first = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r10 = dailyTokenHellingerDistanceHalves([
+    ...first,
+    11, 12, 13, 14, 15, 16, 17, 18,
+  ]);
+  const r200 = dailyTokenHellingerDistanceHalves([
+    ...first,
+    201, 202, 203, 204, 205, 206, 207, 208,
+  ]);
+  assert.ok(r10.hAngle < r200.hAngle);
+});
+
+test('refactor: rows expose hAngle', () => {
+  const r = buildDailyTokenHellingerDistanceHalves(makeQueueWithTwoSources(), {
+    minTokens: 0,
+  });
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.hAngle));
+    assert.ok(s.hAngle >= 0);
+    assert.ok(s.hAngle <= Math.PI / 2 + 1e-10);
+  }
+});

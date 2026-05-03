@@ -263,6 +263,21 @@ export interface DailyTokenHellingerDistanceHalvesSourceRow {
   hMaxBinX: number;
   /** Per-bin contribution 0.5*(sqrt p - sqrt q)^2 at hMaxBin (dimensionless). */
   hMaxBinValue: number;
+  /**
+   * Bhattacharyya angle (Riemannian geodesic distance on the
+   * sqrt-pmf unit sphere): hAngle = arccos(hBhattacharyya), in
+   * [0, pi/2]. Diagnostic only. Satisfies the half-angle identity
+   * sqrt(2) * sin(hAngle / 2) = hDist exactly (algebraic
+   * consequence of 2*sin^2(theta/2) = 1 - cos(theta) combined
+   * with hDist^2 = 1 - BC -- the same identity verified by the
+   * test suite).
+   * The angle puts H in its NATURAL Riemannian setting: the
+   * sqrt-pmf vectors live on the unit sphere of R^K_+ (since
+   * sum_k (sqrt p_k)^2 = sum_k p_k = 1) and hAngle is their
+   * arc-length separation. Translation- and positive-scale-
+   * invariant for the same reason as hDist.
+   */
+  hAngle: number;
 }
 
 export interface DailyTokenHellingerDistanceHalvesReport {
@@ -351,6 +366,7 @@ export function dailyTokenHellingerDistanceHalves(values: number[]): {
   hMaxBin: number;
   hMaxBinX: number;
   hMaxBinValue: number;
+  hAngle: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -489,11 +505,13 @@ export function dailyTokenHellingerDistanceHalves(values: number[]): {
   if (bc < 0) bc = 0;
   if (bc > 1) bc = 1;
   const hMaxBinX = gLo + maxBin * dx;
+  const hAngle = Math.acos(bc);
 
   if (
     !Number.isFinite(hDist) ||
     !Number.isFinite(maxBinValue) ||
-    !Number.isFinite(bc)
+    !Number.isFinite(bc) ||
+    !Number.isFinite(hAngle)
   ) {
     throw new Error(
       `dailyTokenHellingerDistanceHalves: non-finite statistic (n=${n})`,
@@ -517,6 +535,7 @@ export function dailyTokenHellingerDistanceHalves(values: number[]): {
     hMaxBin: maxBin,
     hMaxBinX,
     hMaxBinValue: maxBinValue,
+    hAngle,
   };
 }
 
@@ -696,6 +715,7 @@ export function buildDailyTokenHellingerDistanceHalves(
       hMaxBin: result.hMaxBin,
       hMaxBinX: result.hMaxBinX,
       hMaxBinValue: result.hMaxBinValue,
+      hAngle: result.hAngle,
     });
     totalTokensSum += acc.totalTokens;
   }
