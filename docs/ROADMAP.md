@@ -35,3 +35,30 @@
 - `pew-insights diff <since> <until>` — compare two windows.
 - Webhook poster (Slack-formatted digest).
 - Anomaly detection (token spikes, source going silent).
+
+## Cross-source daily-token axis catalogue (recent)
+
+The `pew-insights daily-token-*` family is a long-running suite of
+structurally orthogonal cross-source functionals on the per-day
+`total_tokens` vector. Each axis is required to be NEW relative
+to all prior shipped axes — orthogonality is established by
+witness pairs in the per-axis test suite.
+
+Recent additions (most recent first):
+
+- `daily-token-isoweek-day-of-week-entropy` (axis-150, v0.6.400).
+  Per-source TOKEN-WEIGHTED mean of per-iso-week normalised
+  Shannon entropy of within-week DOW distribution. Headline in
+  `[0, 1]`. v0.6.401 refinement: `effectiveDowCount` (perplexity
+  in `[1, 7]`) + `workweekDelta` (signed deviation from
+  `log2(5)/log2(7)` workdays-uniform baseline).
+- `daily-token-month-end-vs-month-start-ratio` (axis-149,
+  v0.6.397). Intra-MONTH calendar-partition functional.
+- `daily-token-weekend-vs-weekday-ratio` (axis-148). Global
+  intra-WEEK calendar partition.
+- `daily-token-calendar-mask-rle-entropy` (axis-147).
+  Path-dependent on the calendar 0/1 mask.
+- `daily-token-longest-zero-run` (axis-146). Path-dependent on
+  silent-day runs.
+- `daily-token-max-drawdown-rate` (axis-145). Path-dependent
+  drawdown depth.
