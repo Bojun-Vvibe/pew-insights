@@ -2,6 +2,91 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.383 — 2026-05-03
+
+### Added
+
+- `daily-token-k-divergence-halves` —
+  ONE-HUNDRED-AND-FORTIETH cross-source axis. Per-source
+  KDE-smoothed ASYMMETRIC K-DIVERGENCE (Cha 2007 eq. 36;
+  Lin 1991) in BOTH directions between the FIRST and SECOND
+  half of the gap-filled daily total_tokens series:
+
+      K(p || q) = sum_k p_k * log( 2 p_k / (p_k + q_k) )    (forward)
+      K(q || p) = sum_k q_k * log( 2 q_k / (p_k + q_k) )    (reverse)
+
+  Each direction is bounded above by `ln(2) ~= 0.6931472`
+  and `>= 0`, with 0 iff `p === q` on the grid. The JSD
+  sister `kJsd = 0.5 * (kForward + kReverse)` is the
+  bit-exact Jensen-Shannon divergence; axis-140 RECOVERS
+  the directional decomposition that axis-118 JSD collapses
+  by symmetric averaging.
+- Pooled robust scale (`mad_pool = 1.4826 *
+  median(|x - median(x)|)`), Silverman bandwidth
+  (`h = 0.9 * mad_pool * n^(-1/5)`), shared K=257-point
+  grid spanning `[min - 3h, max + 3h]`, Gaussian KDE per
+  half, trapezoidal mass-normalisation to exact pmfs --
+  bit-exact same KDE setup as axes 126-139 for direct
+  cross-axis bandwidth comparability.
+- ASYMMETRIC: ships the directional PAIR (`kForward`,
+  `kReverse`), `kMax = max(forward, reverse)`,
+  `kAsymmetry = |fwd - rev| / (fwd + rev)` in `[0, 1]`,
+  `kJsd = 0.5 * (fwd + rev)`, and per-direction per-bin
+  maxima `kMaxBinFwd` / `kMaxBinRev`.
+- BOUNDED-by-log(2) regime: structurally distinct from
+  axis-139 Neyman pair (asymmetric, polynomial-rational,
+  UNBOUNDED with `1/q` / `1/p` blow-up) and axis-134
+  psChi2 (symmetric, unbounded). K-div remains a robust
+  drift signal in the presence of tail bins that wreck
+  unbounded divergences.
+- Pure helpers exported: `kDivSummand(p, q) = p log(2p/(p+q))`
+  (per-bin SIGNED K-divergence summand; only the SUM over
+  bins is non-negative by Gibbs') and
+  `kDivDirectionalSign(forward, reverse, tol)` returning
+  `{-1, 0, +1}` for the (sign, magnitude) decomposition
+  of the asymmetry alongside `kAsymmetry`.
+- Translation- AND positive-scale-invariant in the data;
+  hard floor `min-tenure-days >= 8`; numerical underflow
+  safeguard `KDIV_PMF_FLOOR = 1e-15`.
+- 35 new tests covering input validation, shape,
+  bounded-by-`ln(2)` per-direction property, identity
+  `kJsd === 0.5 * (kForward + kReverse)`, swap-symmetry of
+  the pair (forward <-> reverse), translation- and
+  positive-scale-invariance, the SIGNED nature of
+  `kDivSummand` (negative when `p < q`), the
+  `kDivDirectionalSign` anti-symmetry, builder filters
+  (`min-tenure-days`, `min-tokens`, `source`), sort key
+  validation, and the `top` cap.
+- CLI sort keys: `kMax` (default desc) | `kMaxDesc` |
+  `kForward` | `kForwardDesc` | `kReverse` | `kReverseDesc`
+  | `kAsymmetry` | `kAsymmetryDesc` | `kJsd` | `kJsdDesc`
+  | `tokens` | `tenure` | `source`.
+
+### Live smoke (queue.jsonl, 2026-05-03)
+
+`pew-insights daily-token-k-divergence-halves --top 8`
+against the local pew queue (6 sources, 12.25B tokens,
+1 dropped below `min-tenure-days=14`):
+
+| source | tenure | n1 | n2 | kFwd | kRev | kMax | asym | kJsd | tokens |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| openclaw | 17 | 8 | 9 | 2.603e-1 | 3.669e-1 | 3.669e-1 | 0.169919 | 3.136e-1 | 2,233,270,113 |
+| opencode | 14 | 7 | 7 | 1.257e-1 | 1.753e-1 | 1.753e-1 | 0.164715 | 1.505e-1 | 6,269,354,373 |
+| hermes | 17 | 8 | 9 | 3.501e-2 | 3.608e-2 | 3.608e-2 | 0.015090 | 3.555e-2 | 303,067,977 |
+| claude-code | 72 | 36 | 36 | 9.789e-3 | 6.666e-3 | 9.789e-3 | 0.189816 | 8.227e-3 | 3,442,385,788 |
+| vscode-copilot | 265 | 132 | 133 | 9.557e-4 | 6.917e-4 | 9.557e-4 | 0.160272 | 8.237e-4 | 1,885,727 |
+
+`openclaw` shows the loudest drift and is REVERSE-dominated
+(`kRev=3.67e-1 > kFwd=2.60e-1`, `kAsymmetry=0.170`) -- the
+SECOND half is the more anomalous one against the FIRST
+half's pmf; `claude-code` is FORWARD-dominated
+(`kFwd=9.79e-3 > kRev=6.67e-3`, asym 0.190) -- the OPPOSITE
+direction. axis-118 JSD would surface only `kJsd` on each
+row and lose the direction; axis-140 surfaces both and
+recovers the per-source drift sign. All `kMax` values are
+well below the `ln(2) ~= 0.6931` analytic ceiling, as
+required.
+
 ## 0.6.382 — 2026-05-03
 
 ### Added
