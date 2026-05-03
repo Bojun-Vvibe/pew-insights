@@ -319,6 +319,110 @@ export function kDivDirectionalSign(
   return diff > 0 ? 1 : -1;
 }
 
+/**
+ * Classify the asymmetry regime of a (forward, reverse)
+ * K-divergence pair into one of four buckets that tell
+ * downstream tooling how much the directional information
+ * matters relative to the symmetric JSD sister.
+ *
+ *   - 'symmetric'         : kAsymmetry < 0.05  (JSD captures
+ *                           essentially all of the signal;
+ *                           the pair adds <5% information)
+ *   - 'mild-asymmetry'    : 0.05 <= asym < 0.25
+ *   - 'strong-asymmetry'  : 0.25 <= asym < 0.75
+ *   - 'one-sided'         : asym >= 0.75 (one direction
+ *                           dwarfs the other; JSD averaging
+ *                           is maximally misleading -- this
+ *                           is the regime where axis-140
+ *                           strictly dominates axis-118 JSD)
+ *
+ * The 'vacuous' regime (both directions = 0, i.e. `p = q`
+ * on the grid) is reported as 'symmetric' with sign 0.
+ *
+ * Returns a structured (regime, sign, asymmetry) triple
+ * suitable for direct rendering in tabular output.
+ *
+ * Identities verified by the test suite:
+ *
+ *   - kDivAsymmetryRegime(a, a) -> 'symmetric', sign 0
+ *   - kDivAsymmetryRegime(0, 0) -> 'symmetric', sign 0
+ *   - kDivAsymmetryRegime(1, 0) -> 'one-sided', sign +1
+ *   - kDivAsymmetryRegime(0, 1) -> 'one-sided', sign -1
+ *   - regime is monotone in `|fwd - rev| / (fwd + rev)`.
+ */
+export type KDivAsymmetryRegime =
+  | 'symmetric'
+  | 'mild-asymmetry'
+  | 'strong-asymmetry'
+  | 'one-sided';
+
+export interface KDivAsymmetryClassification {
+  regime: KDivAsymmetryRegime;
+  sign: -1 | 0 | 1;
+  asymmetry: number;
+}
+
+export function kDivAsymmetryRegime(
+  forward: number,
+  reverse: number,
+): KDivAsymmetryClassification {
+  if (!Number.isFinite(forward) || !Number.isFinite(reverse)) {
+    throw new Error('kDivAsymmetryRegime requires finite inputs');
+  }
+  if (forward < 0 || reverse < 0) {
+    throw new Error('kDivAsymmetryRegime requires non-negative inputs');
+  }
+  const denom = forward + reverse;
+  const asym = denom > 0 ? Math.abs(forward - reverse) / denom : 0;
+  const sign = kDivDirectionalSign(forward, reverse);
+  let regime: KDivAsymmetryRegime;
+  if (asym < 0.05) regime = 'symmetric';
+  else if (asym < 0.25) regime = 'mild-asymmetry';
+  else if (asym < 0.75) regime = 'strong-asymmetry';
+  else regime = 'one-sided';
+  return { regime, sign, asymmetry: asym };
+}
+
+/**
+ * Per-bin JSD decomposition. The JSD on a single bin is
+ *
+ *     jsdBin(p, q) = 0.5 * (kDivSummand(p, q) + kDivSummand(q, p))
+ *                  = 0.5 * ( p log(p/m) + q log(q/m) )
+ *
+ * where `m = (p + q) / 2`. Sum over k recovers the JSD
+ * scalar `kJsd`. Per-bin jsd is non-negative (Gibbs' on the
+ * 2-bin distribution {p, q} with mixture m) -- in contrast
+ * to the SIGNED `kDivSummand`, this symmetric per-bin
+ * primitive is a true non-negative diagnostic suitable for
+ * "which bin is driving the drift" inspection.
+ *
+ * Identities verified by the test suite:
+ *
+ *   - kJsdSummand(p, p) === 0                     (diagonal)
+ *   - kJsdSummand(p, q) >= 0                      (Gibbs')
+ *   - kJsdSummand(p, q) === kJsdSummand(q, p)     (symmetric)
+ *   - kJsdSummand(0, q) === 0.5 * q * log(2)      (limit)
+ *   - kJsdSummand(p, q) <= 0.5 * (p + q) * log(2) (per-bin bound)
+ */
+export function kJsdSummand(p: number, q: number): number {
+  if (!Number.isFinite(p) || !Number.isFinite(q)) {
+    throw new Error('kJsdSummand requires finite inputs');
+  }
+  if (p < 0 || q < 0) {
+    throw new Error('kJsdSummand requires non-negative inputs');
+  }
+  if (p <= 0 && q <= 0) return 0;
+  const pf = p < KDIV_PMF_FLOOR ? KDIV_PMF_FLOOR : p;
+  const qf = q < KDIV_PMF_FLOOR ? KDIV_PMF_FLOOR : q;
+  const m = 0.5 * (pf + qf);
+  // x log(x/m) where x -> 0 has limit 0; the floor handles
+  // it numerically.
+  const tp = p > 0 ? pf * Math.log(pf / m) : 0;
+  const tq = q > 0 ? qf * Math.log(qf / m) : 0;
+  const v = 0.5 * (tp + tq);
+  return v > 0 ? v : 0;
+}
+
 const SQRT_2PI = Math.sqrt(2 * Math.PI);
 
 function gaussianPdf(u: number): number {

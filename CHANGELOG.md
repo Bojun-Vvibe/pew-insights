@@ -87,6 +87,29 @@ recovers the per-source drift sign. All `kMax` values are
 well below the `ln(2) ~= 0.6931` analytic ceiling, as
 required.
 
+### Added (refinement)
+
+- `kDivAsymmetryRegime(forward, reverse)` — classifies the
+  K-divergence pair into one of four regimes
+  (`symmetric` for `kAsymmetry < 0.05`,
+  `mild-asymmetry` for `[0.05, 0.25)`,
+  `strong-asymmetry` for `[0.25, 0.75)`,
+  `one-sided` for `>= 0.75`) plus the directional sign and
+  the bounded asymmetry magnitude. The `one-sided` regime
+  is exactly where axis-140 strictly dominates axis-118 JSD;
+  `symmetric` is exactly where the two carry the same
+  information.
+- `kJsdSummand(p, q) = 0.5 * (p log(p/m) + q log(q/m))` with
+  `m = (p+q)/2` — per-bin JSD primitive, symmetric and
+  non-negative (true Gibbs' on the 2-bin distribution),
+  bounded above by `0.5 * (p + q) * log(2)`. Counterpart
+  to the SIGNED `kDivSummand` for "which bin is driving
+  the symmetric drift" inspection.
+- 14 new tests covering the regime classifier (vacuous,
+  diagonal, one-sided, mild/strong/symmetric ranges) and
+  `kJsdSummand` (symmetry, non-negativity, zero-`p` limit,
+  per-bin upper bound).
+
 ## 0.6.382 — 2026-05-03
 
 ### Added

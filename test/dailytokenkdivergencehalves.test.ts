@@ -374,3 +374,105 @@ test('kdiv builder: empty queue -> empty rows, totals 0', () => {
   assert.equal(r.totalSources, 0);
   assert.equal(r.totalTokens, 0);
 });
+
+// ---------- helper: kDivAsymmetryRegime ----------
+
+import {
+  kDivAsymmetryRegime,
+  kJsdSummand,
+} from '../src/dailytokenkdivergencehalves.js';
+
+test('kDivAsymmetryRegime: identical -> symmetric, sign 0', () => {
+  const r = kDivAsymmetryRegime(0.3, 0.3);
+  assert.equal(r.regime, 'symmetric');
+  assert.equal(r.sign, 0);
+  assert.equal(r.asymmetry, 0);
+});
+
+test('kDivAsymmetryRegime: vacuous (0, 0) -> symmetric', () => {
+  const r = kDivAsymmetryRegime(0, 0);
+  assert.equal(r.regime, 'symmetric');
+  assert.equal(r.sign, 0);
+  assert.equal(r.asymmetry, 0);
+});
+
+test('kDivAsymmetryRegime: forward-only (1, 0) -> one-sided sign +1', () => {
+  const r = kDivAsymmetryRegime(1, 0);
+  assert.equal(r.regime, 'one-sided');
+  assert.equal(r.sign, 1);
+  assert.ok(Math.abs(r.asymmetry - 1) < 1e-12);
+});
+
+test('kDivAsymmetryRegime: reverse-only (0, 1) -> one-sided sign -1', () => {
+  const r = kDivAsymmetryRegime(0, 1);
+  assert.equal(r.regime, 'one-sided');
+  assert.equal(r.sign, -1);
+  assert.ok(Math.abs(r.asymmetry - 1) < 1e-12);
+});
+
+test('kDivAsymmetryRegime: mild range', () => {
+  // asym = 0.1 / 1.0 = 0.1 -> mild
+  const r = kDivAsymmetryRegime(0.55, 0.45);
+  assert.equal(r.regime, 'mild-asymmetry');
+});
+
+test('kDivAsymmetryRegime: strong range', () => {
+  // asym = 0.4 / 1.0 = 0.4 -> strong
+  const r = kDivAsymmetryRegime(0.7, 0.3);
+  assert.equal(r.regime, 'strong-asymmetry');
+});
+
+test('kDivAsymmetryRegime: strict-symmetric below 5%', () => {
+  // asym = 0.02 / 1.0 = 0.02 -> symmetric
+  const r = kDivAsymmetryRegime(0.51, 0.49);
+  assert.equal(r.regime, 'symmetric');
+});
+
+test('kDivAsymmetryRegime: rejects negative inputs', () => {
+  assert.throws(() => kDivAsymmetryRegime(-1, 1), /non-negative/);
+});
+
+// ---------- helper: kJsdSummand ----------
+
+test('kJsdSummand: vanishes on the diagonal', () => {
+  assert.equal(kJsdSummand(0.3, 0.3), 0);
+});
+
+test('kJsdSummand: symmetric', () => {
+  assert.ok(Math.abs(kJsdSummand(0.5, 0.1) - kJsdSummand(0.1, 0.5)) < 1e-15);
+});
+
+test('kJsdSummand: non-negative (Gibbs on 2-bin)', () => {
+  for (const [p, q] of [
+    [0.5, 0.1],
+    [0.1, 0.5],
+    [0.7, 0.2],
+    [0.01, 0.99],
+  ] as Array<[number, number]>) {
+    const v = kJsdSummand(p, q);
+    assert.ok(v >= 0, `kJsdSummand(${p}, ${q}) = ${v} negative`);
+  }
+});
+
+test('kJsdSummand: zero p -> 0.5 * q * log(2) limit', () => {
+  const q = 0.4;
+  const v = kJsdSummand(0, q);
+  assert.ok(Math.abs(v - 0.5 * q * Math.log(2)) < 1e-9);
+});
+
+test('kJsdSummand: per-bin upper bound 0.5 * (p+q) * log(2)', () => {
+  for (const [p, q] of [
+    [0.5, 0.1],
+    [0.7, 0.2],
+    [0.3, 0.3],
+    [0.0, 0.4],
+  ] as Array<[number, number]>) {
+    const v = kJsdSummand(p, q);
+    const bound = 0.5 * (p + q) * Math.log(2);
+    assert.ok(v <= bound + 1e-9, `kJsdSummand(${p}, ${q}) = ${v} > ${bound}`);
+  }
+});
+
+test('kJsdSummand: rejects negative inputs', () => {
+  assert.throws(() => kJsdSummand(-1, 0.3), /non-negative/);
+});
