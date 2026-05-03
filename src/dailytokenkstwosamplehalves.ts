@@ -585,6 +585,18 @@ export function dailyTokenKsTwoSampleHalves(values: number[]): {
   // A-elements <= v and B-elements <= v, then
   // recording the running F_A(v) - F_B(v) AFTER the
   // step (Massey 1951 upper-step convention for ties).
+  //
+  // Worked micro-example to anchor the merged-sweep
+  // logic. Take A = [1, 3], B = [2, 4]:
+  //
+  //   v=1: i=1, j=0 -> F_A=1/2,  F_B=0/2,  diff=+0.5
+  //   v=2: i=1, j=1 -> F_A=1/2,  F_B=1/2,  diff=0
+  //   v=3: i=2, j=1 -> F_A=2/2,  F_B=1/2,  diff=+0.5
+  //   v=4: i=2, j=2 -> F_A=2/2,  F_B=2/2,  diff=0
+  //
+  // ksDPlus=0.5, ksDMinus=0, ksD=0.5, ksDSigned=+0.5
+  // (A puts more mass below the supremum points than
+  // B does, so B is stochastically larger).
   let i = 0;
   let j = 0;
   let ksDPlus = 0;

@@ -214,6 +214,21 @@ test('dailyTokenKsTwoSampleHalves: ksDSigned magnitude = ksD', () => {
   assert.ok(Math.abs(Math.abs(r.ksDSigned) - r.ksD) < 1e-12);
 });
 
+test('dailyTokenKsTwoSampleHalves: worked micro-example A=[1,3], B=[2,4] (n=4 each via padding)', () => {
+  // Use n=8 (4 A + 4 B) so the n>=8 floor is satisfied.
+  // A = [1, 1, 3, 3], B = [2, 2, 4, 4] (each value
+  // doubled to keep the n>=8 floor without altering
+  // the relative ECDF positions). Expected:
+  //   ksDPlus = 0.5 (at v=1 and v=3); ksDMinus = 0;
+  //   ksD = 0.5; ksDSigned = +0.5 (B stochastically
+  //   larger, so second half wins).
+  const r = dailyTokenKsTwoSampleHalves([1, 1, 3, 3, 2, 2, 4, 4]);
+  assert.ok(Math.abs(r.ksD - 0.5) < 1e-12);
+  assert.ok(Math.abs(r.ksDSigned - 0.5) < 1e-12);
+  assert.ok(Math.abs(r.ksDPlus - 0.5) < 1e-12);
+  assert.equal(r.ksDMinus, 0);
+});
+
 // ---------- builder: smoke ----------
 
 test('buildDailyTokenKsTwoSampleHalves: empty queue', () => {
