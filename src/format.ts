@@ -20268,6 +20268,7 @@ import type { DailyTokenPcaProjectionDistanceHalvesReport } from './dailytokenpc
 import type { DailyTokenJensenShannonDivergenceHalvesReport } from './dailytokenjensenshannondivergencehalves.js';
 import type { DailyTokenTotalVariationHalvesReport } from './dailytokentotalvariationhalves.js';
 import type { DailyTokenHellingerDistanceHalvesReport } from './dailytokenhellingerdistancehalves.js';
+import type { DailyTokenTriangularDiscriminationHalvesReport } from './dailytokentriangulardiscriminationhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22839,6 +22840,89 @@ export function renderDailyTokenHellingerDistanceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: hDist in [0, 1] is the Hellinger metric (= sqrt(0.5 * sum (sqrt p - sqrt q)^2)); hDist = 0 iff KDE-smoothed halves coincide; hDist = 1 iff p, q have disjoint support on the grid (BC = 0). hBhattacharyya = sum_k sqrt(p_k * q_k) in [0, 1] satisfies hDist^2 + BC = 1 exactly (algebraic identity). hMaxBinValue is the per-bin contribution 0.5*(sqrt p_k - sqrt q_k)^2 at the argmax bin (bounded above by 0.5). The axis is PERMUTATION-INVARIANT within each half (marginal pmf only). H is sandwiched by TV (axis-127) via H^2 <= tvDist <= sqrt(2)*H but the two axes are NOT monotone images of each other -- H amplifies LOW-MASS bin disagreements (sqrt is concave), while TV is uniform in pmf coordinates. H is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTriangularDiscriminationHalves(
+  r: DailyTokenTriangularDiscriminationHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-triangular-discrimination-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED TRIANGULAR DISCRIMINATION (Le Cam squared / Topsoe squared) between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-NINTH cross-source axis. Weighted L^2 distance in RECIPROCAL-SUM coordinates of KERNEL-DENSITY-SMOOTHED probability mass functions. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half evaluated on the shared grid; trapezoidal mass-normalisation to exact pmfs p, q. delta = sum_k (p_k - q_k)^2 / (p_k + q_k) in [0, 2] (Le Cam 1986 Sec. 16.4; Topsoe 2000; Vajda 2009). sqrt(delta) is a TRUE METRIC on the probability simplex; delta itself is a squared-metric. ORTHOGONAL to all 11 prior axes 118-128: weighted L^2 in reciprocal-sum coordinates, neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis (qv-Mahalanobis), delay-embedded leading-PC projection (PCA), pmf-LOG-RATIO (JSD), pmf-L^1 (TV), nor pmf-SQRT-AMPLITUDE-L^2 (H). Topsoe-Vajda inequalities 4*H^2 <= delta <= 2*tvDist make delta non-monotone in both H and TV. Translation-invariant AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed triangular discrimination (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'delta',
+    'metric',
+    'maxBinX',
+    'maxBinVal',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.deltaN1),
+    formatNumber(s.deltaN2),
+    s.deltaMadPool.toFixed(2),
+    s.deltaBandwidth.toFixed(2),
+    s.delta.toFixed(6),
+    s.deltaMetric.toFixed(6),
+    s.deltaMaxBinX.toFixed(2),
+    s.deltaMaxBinValue.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: delta in [0, 2] is the triangular discrimination (= sum_k (p_k - q_k)^2 / (p_k + q_k)); delta = 0 iff KDE-smoothed halves coincide; delta -> 2 iff p, q have disjoint support on the grid. metric = sqrt(delta) is the true Le Cam metric on the probability simplex (Topsoe 2000 Theorem 4.2). maxBinValue is the per-bin contribution (p_k - q_k)^2 / (p_k + q_k) at the argmax bin. The axis is PERMUTATION-INVARIANT within each half (marginal pmf only). Topsoe-Vajda anchors: 4*H^2 <= delta <= 2*tvDist; delta >= tvDist^2. Delta and TV are NOT monotone images of each other -- delta amplifies bins where BOTH halves have substantial mass per absolute disagreement, vs TV which is uniform in pmf coordinates. Delta is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
