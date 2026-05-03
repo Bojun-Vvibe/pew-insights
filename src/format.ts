@@ -20266,6 +20266,7 @@ import type { DailyTokenMaximumMeanDiscrepancyHalvesReport } from './dailytokenm
 import type { DailyTokenQuantileVectorMahalanobisHalvesReport } from './dailytokenquantilevectormahalanobishalves.js';
 import type { DailyTokenPcaProjectionDistanceHalvesReport } from './dailytokenpcaprojectiondistancehalves.js';
 import type { DailyTokenJensenShannonDivergenceHalvesReport } from './dailytokenjensenshannondivergencehalves.js';
+import type { DailyTokenTotalVariationHalvesReport } from './dailytokentotalvariationhalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22673,6 +22674,87 @@ export function renderDailyTokenJensenShannonDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: jsdBits in [0, 1] (bits, log base 2); jsdDist = sqrt(jsdBits) in [0, 1] is a true metric on the probability simplex; jsdMaxBinValue is the per-bin contribution at the argmax bin (bounded above by 0.5 bit). jsdBits ~ 0 = halves indistinguishable after KDE smoothing; jsdBits close to 1 = halves are essentially disjoint on the support. The axis is PERMUTATION-INVARIANT within each half (depends only on the marginal pmf), distinguishing it from axis-125 PCA-projection which is COVARIANCE-AWARE through the delay-embedding lag structure. JS is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTotalVariationHalves(
+  r: DailyTokenTotalVariationHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-total-variation-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED TOTAL-VARIATION DISTANCE between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-SEVENTH cross-source axis. Class-L^1 (HALF-NORM) DISTANCE on KERNEL-DENSITY-SMOOTHED probability mass functions. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half evaluated on the shared grid; trapezoidal mass-normalisation to exact pmfs p, q. tvDist = 0.5 * sum_k |p_k - q_k| in [0, 1] (Levin & Peres 2017 Markov Chains and Mixing Times Def. 4.1). True L^1-half-norm metric on the probability simplex. ORTHOGONAL to all 9 prior axes 118-126; STRICTLY WEAKER than axis-126 JSD via Pinsker bound tvDist <= sqrt(2*ln2*jsdBits) (Endres-Schindelin 2003 Cor. 5), converse fails. Translation-invariant AND positive-scale-invariant in the data.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed total-variation distance (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'tvDist',
+    'maxBinX',
+    'maxBinVal',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.tvN1),
+    formatNumber(s.tvN2),
+    s.tvMadPool.toFixed(2),
+    s.tvBandwidth.toFixed(2),
+    s.tvDist.toFixed(6),
+    s.tvMaxBinX.toFixed(2),
+    s.tvMaxBinValue.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: tvDist in [0, 1] is the L^1-half-norm metric (= 0.5 * sum |p-q|); tvDist = 0 iff KDE-smoothed halves coincide; tvDist = 1 iff p, q have disjoint support on the grid. tvMaxBinValue is the per-bin contribution 0.5*|p_k - q_k| at the argmax bin (bounded above by 0.5). The axis is PERMUTATION-INVARIANT within each half (marginal pmf only), distinguishing it from axis-125 PCA-projection. TV captures BROAD-AND-SHALLOW pmf disagreement that JSD (axis-126) misses, while JSD captures NARROW-AND-SHARP log-ratio disagreement that TV under-weights. Both axes share the IDENTICAL h, K, and grid for direct comparability. TV is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
