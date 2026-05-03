@@ -2,6 +2,187 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.361 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-EIGHTEENTH):
+  `pew-insights daily-token-ks-two-sample-halves`.
+
+  Per-source KOLMOGOROV-SMIRNOV TWO-SAMPLE TEST
+  comparing the empirical cumulative distribution
+  functions (ECDFs) of the FIRST half (n1 = floor(n/2)
+  days) vs the SECOND half (n2 = n - n1 days) of the
+  gap-filled daily total tokens series. Let
+  x[0..n-1] be the gap-filled daily token series for
+  one source over its tenure, A = x[0..n1-1],
+  B = x[n1..n-1]. Construct the ECDFs (Smirnov 1939,
+  Bulletin Mathematique de l'Universite de Moscou
+  2(2):3-14):
+
+      F_A(t) = (1/n1) * #{i : A_i <= t}
+      F_B(t) = (1/n2) * #{j : B_j <= t}
+
+  The KS two-sample statistic is the supremum of the
+  absolute pointwise difference between the ECDFs:
+
+      ksDPlus  = sup_t  ( F_A(t) - F_B(t) )
+      ksDMinus = sup_t  ( F_B(t) - F_A(t) )
+      ksD      = max( ksDPlus, ksDMinus )
+
+  Computationally the supremum is attained at one of
+  the n pooled order statistics, so we evaluate at
+  each pooled value via a merged sorted-pool sweep
+  (Massey 1951, Journal of the American Statistical
+  Association 46(253):68-78, upper-step convention
+  for tied values).
+
+  Sign convention. We report `ksDSigned`:
+
+      ksDSigned = +ksDPlus   if ksDPlus >= ksDMinus
+                = -ksDMinus  otherwise
+
+  ksDSigned > 0 means F_A is ABOVE F_B at the
+  supremum, i.e. half A puts more mass at or below
+  the threshold than half B does -- B is
+  STOCHASTICALLY LARGER -- daily token mass
+  STOCHASTICALLY GREW from first to second half.
+  ksDSigned < 0 means the second half is
+  STOCHASTICALLY SMALLER (token mass STOCHASTICALLY
+  SHRANK). ksDSigned approx 0 means the ECDFs agree
+  at every pooled order statistic (no detectable
+  distribution shift).
+
+  Under H0 (both halves drawn from the same
+  continuous distribution), the limiting distribution
+  of the scaled KS statistic is the Kolmogorov
+  distribution (Kolmogorov 1933, Giornale dell'Istituto
+  Italiano degli Attuari 4:83-91):
+
+      ksLambda = sqrt( n1 * n2 / (n1 + n2) ) * ksD
+      ksP      = 2 sum_{k=1..inf}
+                 (-1)^(k-1) exp(-2 k^2 ksLambda^2)
+
+  (Press, Teukolsky, Vetterling & Flannery 2007,
+  Numerical Recipes 3rd ed. eq. 14.3.18; the
+  complementary series eq. 14.3.19 handles small
+  lambda regions.) We additionally report a normal-
+  standardised z-equivalent for cross-axis
+  comparability with axes 110-117:
+
+      ksZ = sign(ksDSigned) * |Phi^{-1}(ksP/2)|
+
+  via the Acklam 2003 inverse-normal-CDF rational
+  approximation. ksZ much greater than +1.96 means
+  ksP < 0.05 with second half stochastically larger;
+  ksZ much less than -1.96 means ksP < 0.05 with
+  first half stochastically larger.
+
+  The standard alpha = 0.05 critical value is
+
+      ksDCrit_{0.05} = 1.36 * sqrt( (n1+n2) / (n1*n2) )
+
+  (Massey 1951 Table 1 large-sample asymptote);
+  ksD > ksDCrit05 rejects equal-distribution at the
+  5 % level.
+
+  STRUCTURAL ORTHOGONALITY -- axis-118 is the OMNIBUS
+  DISTRIBUTION-EQUALITY companion to the SPECIFIC-
+  MOMENT halves tests (115/116/117) on the same
+  first/second half partition. It is sensitive to
+  ANY distributional difference between the halves
+  -- LOCATION shift, SCALE shift, SHAPE difference,
+  MULTIMODALITY appearance/disappearance, SKEWNESS
+  asymmetry, TAIL behaviour -- simultaneously and
+  jointly. Distinct from axis-115 Mann-Whitney
+  halves (LOCATION via monotonic ranks; specific
+  functional int F_A dF_B of the ECDF difference);
+  distinct from axis-116 Brown-Forsythe halves
+  (PARAMETRIC F on absolute median deviations,
+  SCALE only); distinct from axis-117 Siegel-Tukey
+  halves (NONPARAMETRIC rank-sum on outward-pair
+  ranks AFTER median-centring, SCALE only). KS does
+  NOT centre, so a pure location shift between halves
+  is detected; conversely a pure shape shift with
+  equal mean and equal variance moves ksD but leaves
+  mwZ / bfZ / stZ near zero. Distinct from axis-114
+  Ljung-Box (multi-lag squared-autocorrelation
+  PORTMANTEAU on Chi-Square null sensitive to SERIAL
+  STRUCTURE; KS is permutation-invariant within each
+  half). Distinct from axes 110/111/113 (TREND
+  statistics on LOCATION over the WHOLE series; KS
+  is unpaired two-sample on a fixed split). Distinct
+  from axis-64 Wald-Wolfowitz median-binarised runs
+  (alternation count with hypergeometric null; KS
+  compares the two halves' full ECDFs). Distinct from
+  the inequality / shape axes (Gini, Atkinson, Theil,
+  ..) which are permutation-invariant functionals of
+  the WHOLE empirical distribution; KS depends on
+  WHICH half each value lands in. Distinct from the
+  spectral axes 84-104 (frequency domain) and DFA /
+  Hurst / fractal axes (multi-scale exponents).
+
+  Headline question: **"For each source, when we
+  split the gap-filled daily token series into a
+  first half (n1 days) and a second half (n2 days),
+  build their empirical CDFs F_A and F_B, and compute
+  ksD = sup_t |F_A(t) - F_B(t)|, does ksD exceed the
+  Massey 1951 alpha = 0.05 critical value
+  1.36 * sqrt((n1+n2) / (n1*n2))?"**
+
+  Reference: Smirnov, N. V., "Estimate of deviation
+  between empirical distribution functions in two
+  independent samples", Bulletin Mathematique de
+  l'Universite de Moscou 2(2) (1939), pp. 3-14;
+  Kolmogorov, A. N., "Sulla determinazione empirica
+  di una legge di distribuzione", Giornale
+  dell'Istituto Italiano degli Attuari 4 (1933), pp.
+  83-91; Massey, F. J., "The Kolmogorov-Smirnov Test
+  for Goodness of Fit", Journal of the American
+  Statistical Association 46(253) (1951), pp. 68-78;
+  Press, Teukolsky, Vetterling & Flannery,
+  "Numerical Recipes", 3rd ed., Cambridge, 2007,
+  sec. 14.3 eqs. 14.3.18-19.
+
+  CLI usage:
+
+      pew-insights daily-token-ks-two-sample-halves
+      pew-insights daily-token-ks-two-sample-halves \
+        --source vscode-other --json
+      pew-insights daily-token-ks-two-sample-halves \
+        --sort ksDDesc
+
+  Live-smoke against ~/.config/pew/queue.jsonl
+  (5 sources surviving min-tokens=1000 / min-tenure-
+  days=14 filters; 1 source dropped below min-
+  tenure-days; sorted by ksDDesc):
+
+      source       n1   n2    ksD     ksDSigned  ksZ      ksP        verdict
+      -----------  ---  ----  ------  ---------  -------  ---------  ----------------------
+      openclaw     8    9     0.7639  -0.7639    -2.4504  1.43e-2    SHRANK   (sig at 0.05)
+      claude-code  36   36    0.5278  +0.5278    +3.9206  8.83e-5    GREW     (sig at 0.05)
+      opencode     7    7     0.4286  -0.4286    -0.6109  5.41e-1    not sig
+      hermes       8    9     0.3333  -0.3333    -0.3393  7.34e-1    not sig
+
+  Two of four classifiable sources reject the equal-
+  distribution null at alpha = 0.05. `claude-code`
+  shows the strongest evidence of GROWTH in
+  distribution (ksZ approx +3.92, second half
+  stochastically larger -- consistent with the
+  positive trend signals already reported by axes
+  108/110/115). `openclaw` shows a SHRINKAGE in
+  distribution (ksZ approx -2.45) -- a signal that
+  the moment-specific halves tests on this dataset
+  understate because openclaw's first half contains
+  a small number of very large tokens-per-day
+  observations that drag the ECDF up at the supremum
+  point, exactly the kind of shape-asymmetry signal
+  that distinguishes axis-118 KS from axes 115/116/117.
+  Critical value at alpha = 0.05 ranges from 0.32
+  (n=72) to 0.73 (n=14) across the four rows.
+
+  Tests: 10543 -> 10579 (+36 tests, all passing).
+
 ## 0.6.360 — 2026-05-03
 
 ### Added
