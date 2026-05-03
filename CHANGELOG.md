@@ -2,6 +2,125 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.372 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-NINTH):
+  `pew-insights daily-token-triangular-discrimination-halves`.
+
+  Per-source KDE-SMOOTHED TRIANGULAR DISCRIMINATION (also
+  known as Le Cam distance squared, or Topsoe distance
+  squared) between the FIRST half (n1 = floor(n/2) days)
+  and SECOND half (n2 = n - n1 days) of the gap-filled
+  daily total_tokens series. IDENTICAL KDE setup to axes
+  126 (JSD), 127 (TV), and 128 (H): pooled robust scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid;
+  trapezoidal mass-normalisation to exact pmfs p, q on the
+  K=257 grid (sum_k p_k = sum_k q_k = 1).
+
+  Triangular discrimination (Le Cam 1986, Asymptotic
+  Methods in Statistical Decision Theory, Sec. 16.4;
+  Topsoe 2000, "Some inequalities for information
+  divergence and related measures of discrimination", IEEE
+  Trans. Info. Theory, 46(4): 1602-1609; Vajda 2009, "On
+  metric divergences of probability measures", Kybernetika
+  45(6): 885-900):
+
+      delta(p, q)  =  sum_k ( p_k - q_k )^2 / ( p_k + q_k )
+
+  with the convention 0^2 / 0 := 0 for any bin where both
+  p_k and q_k vanish. delta in [0, 2]. delta = 0 iff
+  p === q on the grid; delta -> 2 iff p, q have disjoint
+  support on the grid. The square root sqrt(delta) is a
+  TRUE METRIC on the probability simplex (Topsoe 2000
+  Theorem 4.2; Vajda 2009 Eq. 17). The non-squared form
+  delta itself is NOT a metric (it fails the triangle
+  inequality; it is a squared-metric).
+
+  STRUCTURAL ORTHOGONALITY. delta is a WEIGHTED L^2
+  DISTANCE in RECIPROCAL-SUM COORDINATES of KDE-smoothed
+  pmfs -- a class not occupied by any prior axis.
+  vs axes 118-123 KS/AD/CvM/W1/energy/MMD: CDF-L_inf /
+  tail-weighted CDF-L^2 / CDF-L^2 / quantile-integral /
+  CF-1/t^2 / RKHS spaces respectively; delta lives in the
+  K=257 reciprocal-sum-weighted pmf simplex. vs axis-124
+  qv-Mahalanobis: lives in R^9 quantile-coordinate space.
+  vs axis-125 PCA-projection: PCA is COVARIANCE-AWARE
+  through the delay-embedding lag structure; delta is
+  PERMUTATION-INVARIANT within each half. vs axis-126 JSD
+  (KDE-smoothed Jensen-Shannon divergence in bits): both
+  share the IDENTICAL KDE setup but JSD is a LOG-RATIO
+  integral while delta is weighted L^2 in
+  reciprocal-sum coordinates. vs axis-127 TV (KDE-smoothed
+  Total-Variation distance, identical KDE setup): TV is
+  L^1 in pmf coordinates, delta is weighted L^2 in
+  (p_k - q_k)^2 / (p_k + q_k) coordinates. The Topsoe
+  inequality delta <= 2 * tvDist gives an UPPER bound but
+  does not make delta a monotone image of TV. vs axis-128
+  H (KDE-smoothed Hellinger distance, identical KDE setup):
+  H is L^2 in SQRT-AMPLITUDE coordinates of pmfs; delta is
+  weighted L^2 in RECIPROCAL-SUM coordinates of pmfs. The
+  Topsoe inequality
+
+      4 * H(p, q)^2  <=  delta(p, q)  <=  4 * H^2 / (1 - H^2)
+
+  pins delta around 4*H^2 in the SMALL-H regime but lets
+  them diverge for large H. The cross-source ranking can
+  therefore differ. Translation-invariant AND
+  positive-scale-invariant in the data, mirroring axes
+  123/124/125/126/127/128.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,095,279,600):
+
+      source            tenure  n1   n2   madPool         h               delta       metric      maxBinX            maxBinValue
+      ----------------  ------  ---  ---  --------------  --------------  ----------  ----------  -----------------  -----------
+      openclaw          17       8    9    59886294.12    30583005.59     1.009672    1.004824     44824790.94        0.010824
+      opencode          14       7    7   131088708.42    69595664.65     0.420604    0.648540    722175954.54        0.004715
+      hermes            17       8    9    13138525.44     6709642.04     0.104438    0.323168     24381687.14        0.001427
+      claude-code       72      35   36          0.00    402528503.09     0.030175    0.173709   1162559023.62        0.000393
+      <redacted-vscode>  265     73  132   133          0.00         70977.97    0.003127    0.055916        284410.55        0.000057
+
+  Cross-axis comparison vs axis-128 H (same queue, same
+  bandwidth) -- delta ranks the same top source (`openclaw`,
+  delta = 1.0097 vs hDist = 0.6308) but the relative
+  spacing differs sharply: delta of openclaw / hermes is
+  ~9.7x while hDist of openclaw / hermes is only ~3.8x.
+  This is exactly the predicted Topsoe-non-monotonicity:
+  delta amplifies bins where BOTH halves carry mass per
+  unit absolute disagreement (the (p+q) denominator), which
+  in this queue is concentrated in the `openclaw` low-token
+  shoulder.
+
+### Tests
+
+- Test count grew from 10,964 -> 11,014 (+50). New suite
+  `dailytokentriangulardiscriminationhalves` covers
+  primitive validation (sample-size floor, finite checks,
+  zero-variance), shape (K=257 grid, n1/n2 split),
+  bounds and identities (delta in [0,2], deltaMetric
+  = sqrt(delta), translation- and positive-scale
+  invariance, half-swap symmetry, identical-halves give
+  delta = 0), Topsoe anchor checks (well-separated halves
+  saturate near upper bound, identical halves saturate
+  lower bound, true-metric properties), monotonicity
+  (bigger half-shift gives strictly larger delta),
+  determinism, and full builder coverage (input
+  validation, sort keys, source filter, top truncation,
+  drop counters, generatedAt override).
+
 ## 0.6.371 — 2026-05-03
 
 ### Added
