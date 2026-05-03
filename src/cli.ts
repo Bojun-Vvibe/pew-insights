@@ -176,6 +176,7 @@ import {
   renderDailyTokenEnergyDistanceHalves,
   renderDailyTokenMaximumMeanDiscrepancyHalves,
   renderDailyTokenQuantileVectorMahalanobisHalves,
+  renderDailyTokenPcaProjectionDistanceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -514,6 +515,7 @@ import { buildDailyTokenWassersteinOneHalves } from './dailytokenwassersteinoneh
 import { buildDailyTokenEnergyDistanceHalves } from './dailytokenenergydistancehalves.js';
 import { buildDailyTokenMaximumMeanDiscrepancyHalves } from './dailytokenmaximummeandiscrepancyhalves.js';
 import { buildDailyTokenQuantileVectorMahalanobisHalves } from './dailytokenquantilevectormahalanobishalves.js';
+import { buildDailyTokenPcaProjectionDistanceHalves } from './dailytokenpcaprojectiondistancehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37911,6 +37913,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenQuantileVectorMahalanobisHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-pca-projection-distance-halves')
+  .description(
+    "Per-source DELAY-EMBEDDED PCA HALF-CENTROID PROJECTION DISTANCE on the gap-filled daily total_tokens series (ONE-HUNDRED-AND-TWENTY-FIFTH cross-source axis). Class-TWO-SAMPLE LOCATION-SHIFT TEST in the LEADING-PRINCIPAL-COMPONENT SUBSPACE of the DELAY-EMBEDDED phase-space reconstruction (R^3 with d=3, lag=1; Takens 1981 LNM 898:366-381). Embed v_t = (x[t], x[t+1], x[t+2]); pooled covariance C = (1/M)*V_c^T V_c; eigendecompose C = U L U^T (lam_1>=lam_2>=lam_3>=0). pcGap = u_1^T (mu_B - mu_A); pcZ = pcGap / sqrt(lam_1) is the dimensionless cross-source-comparable signed effect size; pcT = m1*m2/(m1+m2)*pcZ^2 is the canonical scaled multivariate two-sample statistic (Hotelling 1931 Ann. Math. Statist. 2(3):360-378; Anderson 2003 §5.2). COVARIANCE-AWARE through the delay-embedding lag structure -- ORTHOGONAL to all permutation-invariant marginal axes (118-124 KS/AD/CvM/W1/energy/MMD/qv-Mahalanobis) because a time-permuted half preserves marginal but changes lam_i. Translation-invariant AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (M=n-2>=6, m1,m2>=3). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: pcTDesc (default) | pcT | pcZ | pcZDesc | pcZAbs | pcZAbsDesc | pcVarExplained1 | pcVarExplained1Desc | tokens | tenure | source.',
+    'pcTDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'pcT',
+          'pcTDesc',
+          'pcZ',
+          'pcZDesc',
+          'pcZAbs',
+          'pcZAbsDesc',
+          'pcVarExplained1',
+          'pcVarExplained1Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPcaProjectionDistanceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'pcT'
+            | 'pcTDesc'
+            | 'pcZ'
+            | 'pcZDesc'
+            | 'pcZAbs'
+            | 'pcZAbsDesc'
+            | 'pcVarExplained1'
+            | 'pcVarExplained1Desc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPcaProjectionDistanceHalves(report) + '\n',
           );
         }
       } catch (e) {

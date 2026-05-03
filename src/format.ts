@@ -20264,6 +20264,7 @@ import type { DailyTokenWassersteinOneHalvesReport } from './dailytokenwasserste
 import type { DailyTokenEnergyDistanceHalvesReport } from './dailytokenenergydistancehalves.js';
 import type { DailyTokenMaximumMeanDiscrepancyHalvesReport } from './dailytokenmaximummeandiscrepancyhalves.js';
 import type { DailyTokenQuantileVectorMahalanobisHalvesReport } from './dailytokenquantilevectormahalanobishalves.js';
+import type { DailyTokenPcaProjectionDistanceHalvesReport } from './dailytokenpcaprojectiondistancehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22499,6 +22500,95 @@ export function renderDailyTokenQuantileVectorMahalanobisHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: d2Diag in [0, +inf) (squared distance, dimensionless after dividing by k*iqr_pool^2); qvT = n1*n2/(n1+n2)*d2Diag is the canonical scaled multivariate two-sample statistic; qvZ = sqrt(d2Diag) is dimensionless and cross-source-comparable; qvZ approx 0 = halves agree at every interior grid quantile; qvZ >> 0 = halves are several iqr_pool units apart on average per quantile; qvLinf is the worst single-quantile standardised gap (in iqr_pool units), and argmaxP names the probability where it occurs. The axis is INSENSITIVE BY DESIGN to the extreme tails p<0.1 and p>0.9. d2Diag is invariant under translation x -> x+c AND positive rescaling x -> k*x (k>0); this matches axis-123 MMD with median-heuristic bandwidth and contrasts with axis-122 energy distance and axis-121 W1, both 1-homogeneous in the data. qv-Mahalanobis lives in finite-dimensional R^9; MMD lives in infinite-dimensional RKHS; energy distance lives in 1/t^2-weighted CF space; W1 in quantile-integral space; CvM/AD in probability-space L2/tail-weighted-L2; KS in pointwise-L_infinity space; the six are not monotone images of one another.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPcaProjectionDistanceHalves(
+  r: DailyTokenPcaProjectionDistanceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-pca-projection-distance-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    embed: dim=${r.embeddingDim} lag=${r.embeddingLag}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DELAY-EMBEDDED PCA HALF-CENTROID PROJECTION DISTANCE on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-TWENTY-FIFTH cross-source axis. Class-TWO-SAMPLE LOCATION-SHIFT TEST in the LEADING-PRINCIPAL-COMPONENT SUBSPACE of the DELAY-EMBEDDED phase-space reconstruction (R^3 with d=3, lag=1). Embed v_t = (x[t], x[t+1], x[t+2]) for t in 0..M-1 (M = n - 2). Pooled centroid mu_pool, pooled covariance C = (1/M)*V_c^T V_c. Eigendecompose C = U L U^T (lam_1>=lam_2>=lam_3>=0). Project half centroids onto u_1: pcGap = u_1^T (mu_B - mu_A); standardise by sqrt(lam_1) -> pcZ. pcT = m1*m2/(m1+m2)*pcZ^2 is the canonical scaled multivariate two-sample statistic (Hotelling 1931 Ann. Math. Statist. 2(3):360-378; Anderson 2003 §5.2; Takens 1981 LNM 898:366-381 for the delay-embedding). COVARIANCE-AWARE: depends on the JOINT distribution of (x[t], x[t+1], x[t+2]) through the lag structure, distinguishing it from all permutation-invariant marginal axes (118-124 KS/AD/CvM/W1/energy/MMD/qv-Mahalanobis). Translation-invariant AND positive-scale-invariant in the data.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source delay-embedded PCA half-centroid projection (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'M',
+    'm1',
+    'm2',
+    'lam1',
+    'lam2',
+    'lam3',
+    'var1',
+    'var12',
+    'pcGap',
+    'pcZ',
+    'pcT',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.pcM),
+    formatNumber(s.pcM1),
+    formatNumber(s.pcM2),
+    s.pcEigenvalues[0]!.toFixed(2),
+    s.pcEigenvalues[1]!.toFixed(2),
+    s.pcEigenvalues[2]!.toFixed(2),
+    s.pcVarExplained1.toFixed(4),
+    s.pcVarExplained2.toFixed(4),
+    s.pcGap.toFixed(2),
+    s.pcZ.toFixed(6),
+    s.pcT.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: pcZ in (-inf,+inf), dimensionless and signed by sign(pcGap); pcT in [0,+inf) is sign-invariant; var1 = lam_1/sum(lam) is variance explained by the leading PC. pcZ ~ 0 = half centroids coincide along u_1; |pcZ| >> 1 = halves are several pooled-leading-PC stddevs apart. The axis is COVARIANCE-AWARE through the delay-embedding lag structure: a time-permuted half (same marginal, different order) gives the same KS/AD/CvM/W1/energy/MMD/d2Diag but a different lam_i and pcZ. pcZ is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
