@@ -2,6 +2,92 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.379 — 2026-05-03
+
+### Added
+
+- `daily-token-taneja-divergence-halves` —
+  ONE-HUNDRED-AND-THIRTY-SIXTH cross-source axis. Per-source
+  KDE-SMOOTHED TANEJA AM-GM DIVERGENCE
+  `T(p, q) = sum_k AM_k * log(AM_k / GM_k)` where
+  `AM_k = (p_k + q_k)/2` and `GM_k = sqrt(p_k * q_k)`,
+  between the FIRST and SECOND half of the gap-filled daily
+  total_tokens series (Taneja 1989/2005; Cha 2007 eq. 30).
+  Identical KDE setup to axes 126-135 (pooled robust scale
+  `mad_pool = 1.4826*median(|x-median(x)|)`; Silverman
+  bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared
+  K=257-point grid spanning `[min-3h, max+3h]`; Gaussian
+  KDE per half; trapezoidal mass-normalisation to exact
+  pmfs `p, q`). `tanejaDivergence >= 0`;
+  `tanejaDivergence = 0` iff KDE-smoothed halves coincide
+  on the grid.
+
+  ORTHOGONAL to all 18 prior axes 118-135: unique
+  LOG-OF-AM-OVER-GM contrast weighted by AM. The summand
+  `AM_k * log(AM_k / GM_k)` is ZERO iff `p_k == q_k` at
+  the bin and grows with the INEQUALITY between `p_k`
+  and `q_k` regardless of which side is larger. f-divergence
+  with `f(t) = ((1+t)/2) * log((1+t)/(2*sqrt(t)))`;
+  symmetric under swap of `p, q`. vs axis-122 Bhattacharyya
+  (linear in `sqrt(p*q)`): Taneja contrasts AM and GM via
+  a LOG so two pmfs with the same total Bhatt overlap can
+  have very different Taneja scores depending on HOW the
+  disagreement is distributed. vs axis-129 triangular Delta
+  (`(p-q)^2/(p+q)`): Taneja saturates LOGARITHMICALLY in
+  per-bin asymmetry while Delta saturates LINEARLY. vs
+  axis-135 Clark (bin-wise BOUNDED in `[0, 1]^2` before
+  squaring): Taneja is bin-wise UNBOUNDED above
+  (logarithmic in `p/q -> 0`). vs axis-134 psChi2
+  (polynomially divergent at `p, q -> 0`): Taneja grows
+  only LOGARITHMICALLY at the tails — much more
+  tail-tolerant than psChi2 while still more aggressive
+  than the bounded Clark ceiling. vs axis-118 JSD: JSD
+  uses the midpoint pmf as the reference inside KL; Taneja
+  uses the SAME midpoint AS A WEIGHT on a DIFFERENT log
+  gap (AM vs GM, not p vs midpoint), and is unbounded
+  while JSD is bounded by `log(2)`.
+
+  Diagnostic field `tanejaMaxAmGmRatio = max_k AM_k/GM_k`
+  is `>= 1` (with equality iff `p_k = q_k` at every bin)
+  and surfaces the largest per-bin AM/GM gap.
+  `tanejaMaxBin` is the largest per-bin Taneja summand.
+  `tanejaSpreadRatio = tanejaDivergence / (K * tanejaMaxBin)`
+  in `[0, 1]` approaches 1 iff every bin contributes the
+  same maximal Taneja amount (broad asymmetry) and
+  approaches `1/K = 0.003891` iff a single bin dominates;
+  defined as 0 in the vacuous case where halves coincide.
+
+  Numerical floor `TANEJA_PMF_FLOOR = 1e-15` is a no-op
+  IEEE-754 underflow safeguard for the `sqrt(p*q)`
+  denominator in pathological tail bins; same floor as
+  axes 134/135 for cross-axis numerical comparability.
+
+  Translation-invariant AND positive-scale-invariant in
+  the data (data and bandwidth scale together; pmfs
+  unchanged). Pure builder; wall clock only via
+  `opts.generatedAt`.
+
+  Live smoke against `~/.config/pew/queue.jsonl`
+  (6 sources scored, 1 below min-tenure-days, sorted by
+  `tanejaDesc`):
+
+  | source | tenure | n1 | n2 | tanejaDivergence | tanejaMaxBin | tanejaMaxAmGmRatio | tanejaSpreadRatio |
+  |---|---|---|---|---|---|---|---|
+  | openclaw | 17 | 8 | 9 | 1.662149 | 0.021214 | 856136.83 | 0.304866 |
+  | opencode | 14 | 7 | 7 | 0.259542 | 0.003310 | 273.50 | 0.305128 |
+  | hermes | 17 | 8 | 9 | 0.027889 | 0.000403 | 2.00 | 0.269192 |
+  | claude-code | 72 | 36 | 36 | (KDE proceeds; surfaces below) | | | |
+
+  CLI:
+
+  ```
+  pew-insights daily-token-taneja-divergence-halves \
+    [--since ISO] [--until ISO] [--source NAME] \
+    [--min-tokens N=1000] [--min-tenure-days N=14] \
+    [--top N=0] [--sort tanejaDesc|taneja|maxBin|maxBinDesc|tokens|tenure|source] \
+    [--json]
+  ```
+
 ## 0.6.378 — 2026-05-03
 
 ### Added
