@@ -342,3 +342,91 @@ test('builder: minDays must be >= 1', () => {
     }),
   );
 });
+
+// --- v0.6.396 refinement: weekendShareDelta + weekendDensityLogLift -------
+
+test('refinement: weekendShareDelta = 0 for perfectly baseline source', () => {
+  const days = [
+    '2026-05-04', // Mon
+    '2026-05-05', // Tue
+    '2026-05-06', // Wed
+    '2026-05-07', // Thu
+    '2026-05-08', // Fri
+    '2026-05-09', // Sat
+    '2026-05-10', // Sun
+  ];
+  const r = buildDailyTokenWeekendWeekdayRatio(
+    days.map((d) => ql(d + 'T00:00:00Z', 'bal', 1000)),
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.weekendShareDelta) < 1e-12);
+});
+
+test('refinement: weekendShareDelta sign matches weekend tilt', () => {
+  // Pure weekday (regime weekend-blind) -> share=0 -> delta = -2/7
+  const r = buildDailyTokenWeekendWeekdayRatio(
+    [
+      ql('2026-05-04T00:00:00Z', 'wkdy', 1000),
+      ql('2026-05-05T00:00:00Z', 'wkdy', 1000),
+    ],
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.weekendShareDelta - -2 / 7) < 1e-12);
+  assert.ok(s.weekendShareDelta < 0);
+});
+
+test('refinement: weekendDensityLogLift = 0 at uniform per-day intensity', () => {
+  // Mon..Sun all 1000 -> densityRatio = 1 -> logLift = 0
+  const days = [
+    '2026-05-04',
+    '2026-05-05',
+    '2026-05-06',
+    '2026-05-07',
+    '2026-05-08',
+    '2026-05-09',
+    '2026-05-10',
+  ];
+  const r = buildDailyTokenWeekendWeekdayRatio(
+    days.map((d) => ql(d + 'T00:00:00Z', 'u', 1000)),
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.weekendDensityLogLift as number) < 1e-12);
+});
+
+test('refinement: weekendDensityLogLift = +ln(2) when weekend intensity is 2x weekday', () => {
+  // 5 weekdays at 1000 each (intensity 1000), 2 weekend days at 2000 each (intensity 2000).
+  const r = buildDailyTokenWeekendWeekdayRatio(
+    [
+      ql('2026-05-04T00:00:00Z', 's', 1000),
+      ql('2026-05-05T00:00:00Z', 's', 1000),
+      ql('2026-05-06T00:00:00Z', 's', 1000),
+      ql('2026-05-07T00:00:00Z', 's', 1000),
+      ql('2026-05-08T00:00:00Z', 's', 1000),
+      ql('2026-05-09T00:00:00Z', 's', 2000),
+      ql('2026-05-10T00:00:00Z', 's', 2000),
+    ],
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.ok(Math.abs((s.densityRatio as number) - 2) < 1e-12);
+  assert.ok(
+    Math.abs((s.weekendDensityLogLift as number) - Math.log(2)) < 1e-12,
+  );
+});
+
+test('refinement: weekendDensityLogLift = null when densityRatio is null', () => {
+  // Pure-weekend tight span -> densityRatio = null -> logLift = null
+  const r = buildDailyTokenWeekendWeekdayRatio(
+    [
+      ql('2026-05-02T00:00:00Z', 'wknd', 1000),
+      ql('2026-05-03T00:00:00Z', 'wknd', 1000),
+    ],
+    { generatedAt: GEN },
+  );
+  const s = r.sources[0]!;
+  assert.equal(s.densityRatio, null);
+  assert.equal(s.weekendDensityLogLift, null);
+});

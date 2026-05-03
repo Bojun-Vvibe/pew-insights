@@ -218,6 +218,28 @@ export interface DailyTokenWeekendWeekdayRatioSourceRow {
    * weekdayCalendarDayCount = 0 OR weekdayTokens = 0.
    */
   densityRatio: number | null;
+  /**
+   * Refinement (v0.6.396): signed deviation of `weekendShare`
+   * from the natural calendar baseline 2/7 (~= 0.2857).
+   *   = weekendShare - 2/7
+   * Always defined and finite, in [-2/7, +5/7]. 0 = perfectly
+   * baseline-balanced; positive = weekend-tilted; negative =
+   * weekday-tilted. Lets you rank-order sources by EXCESS
+   * weekend tilt independent of the absolute share.
+   */
+  weekendShareDelta: number;
+  /**
+   * Refinement (v0.6.396): signed log-density-lift, the
+   * natural-log of `densityRatio`, capturing weekend-day vs
+   * weekday-day INTENSITY in log-units (more comparable across
+   * sources than the raw ratio when `densityRatio` is near 0
+   * or very large). `null` exactly when `densityRatio` is null
+   * or zero.
+   *   = ln(densityRatio)
+   * 0 = uniform per-day intensity; +ln(2) = weekend-day
+   * intensity is 2x weekday-day; -ln(2) = half.
+   */
+  weekendDensityLogLift: number | null;
   weekendRegime: DailyTokenWeekendRegime;
   meanDailyTokens: number;
   degenerate: boolean;
@@ -508,6 +530,11 @@ export function buildDailyTokenWeekendWeekdayRatio(
       weekdayShare,
       ratio,
       densityRatio,
+      weekendShareDelta: weekendShare - 2 / 7,
+      weekendDensityLogLift:
+        densityRatio !== null && densityRatio > 0
+          ? Math.log(densityRatio)
+          : null,
       weekendRegime,
       meanDailyTokens: meanDaily,
       degenerate,

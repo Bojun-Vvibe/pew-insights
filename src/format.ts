@@ -24494,8 +24494,10 @@ export function renderDailyTokenWeekendWeekdayRatio(
     'wkndTokens',
     'wkdyTokens',
     'wkndShare',
+    'shareDelta',
     'ratio',
     'densityRatio',
+    'logLift',
     'regime',
     'meanDaily',
     'tokens',
@@ -24512,8 +24514,13 @@ export function renderDailyTokenWeekendWeekdayRatio(
     formatNumber(s.weekendTokens),
     formatNumber(s.weekdayTokens),
     s.weekendShare.toFixed(4),
+    (s.weekendShareDelta >= 0 ? '+' : '') + s.weekendShareDelta.toFixed(4),
     s.ratio === null ? '\u2014' : s.ratio.toFixed(4),
     s.densityRatio === null ? '\u2014' : s.densityRatio.toFixed(4),
+    s.weekendDensityLogLift === null
+      ? '\u2014'
+      : (s.weekendDensityLogLift >= 0 ? '+' : '') +
+        s.weekendDensityLogLift.toFixed(4),
     s.weekendRegime,
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),

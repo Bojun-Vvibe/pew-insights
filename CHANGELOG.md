@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.396 — 2026-05-04
+
+### Added
+
+- `daily-token-weekend-vs-weekday-ratio` REFINEMENT — two new
+  per-row derived fields:
+  - `weekendShareDelta` = `weekendShare - 2/7` (signed
+    deviation from the natural calendar baseline `2/7 ~=
+    0.2857`). Always defined and finite, in `[-2/7, +5/7]`.
+    `0` = perfectly baseline-balanced; positive = weekend-
+    tilted; negative = weekday-tilted. Lets you rank-order
+    sources by EXCESS weekend tilt independent of the
+    absolute share.
+  - `weekendDensityLogLift` = `ln(densityRatio)`. `null`
+    exactly when `densityRatio` is null or zero. `0` =
+    uniform per-day intensity across the two parities;
+    `+ln(2)` = weekend-day intensity is 2x weekday-day;
+    `-ln(2)` = half. The log form is more comparable
+    across sources than the raw ratio when intensity ranges
+    span multiple orders of magnitude.
+- 5 additional unit tests covering the refinement: zero-delta
+  at perfect baseline, sign of delta on pure-weekday source,
+  zero-log-lift at uniform intensity, `+ln(2)` lift at 2x
+  weekend intensity, and `null` log-lift propagation when
+  `densityRatio` is itself `null`.
+- Renderer surfaces `shareDelta` and `logLift` columns next
+  to `wkndShare`, `ratio`, and `densityRatio`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Re-running the live smoke with the refinement columns
+populated:
+
+| source       | wkndShare | shareDelta | ratio  | densityRatio | logLift  | regime          |
+|--------------|-----------|------------|--------|--------------|----------|-----------------|
+| openclaw     |    0.3493 |    +0.0636 | 0.5368 |       0.9842 |  -0.0160 | balanced        |
+| hermes       |    0.3054 |    +0.0197 | 0.4398 |       0.8062 |  -0.2154 | balanced        |
+| opencode     |    0.2886 |    +0.0029 | 0.4056 |       1.0140 |  +0.0139 | balanced        |
+| claude-code  |    0.2699 |    -0.0158 | 0.3696 |       0.9611 |  -0.0397 | weekday-leaning |
+| codex        |    0.1897 |    -0.0960 | 0.2342 |       0.7025 |  -0.3531 | weekday-leaning |
+| (src-1)      |    0.0399 |    -0.2458 | 0.0416 |       0.1033 |  -2.2697 | weekday-heavy   |
+
+`shareDelta` and `logLift` separate the three balanced
+sources cleanly: `opencode` is the closest to baseline
+(`shareDelta = +0.003`, `logLift = +0.014`), `openclaw` has
+the largest positive weekend tilt of the fleet
+(`shareDelta = +0.064`), and the lone weekday-heavy source
+posts a `logLift` of `-2.27` — i.e. `e^-2.27 ~= 0.10`
+weekend-day intensity ratio, an order of magnitude below
+the rest.
+
 ## 0.6.395 — 2026-05-04
 
 ### Added
