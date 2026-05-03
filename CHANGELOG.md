@@ -2,6 +2,115 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.393 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-longest-zero-run` — per-source
+  LONGEST CONTIGUOUS RUN OF ZERO-ACTIVITY UTC DAYS within
+  the source's calendar span `[firstActiveDay, lastActiveDay]`
+  (ONE-HUNDRED-AND-FORTY-SIXTH cross-source axis). Build a
+  0/1 calendar mask over the active span, count the longest
+  consecutive stretch of zero (silent) days. SECOND
+  PATH-DEPENDENT cross-source daily-token axis (after
+  axis-145 max-drawdown-rate). Range `[0, spanDays - 2]`;
+  `0` iff the source was active every UTC day in the span.
+- Structurally orthogonal to ALL prior daily-token axes:
+  - vs the permutation-invariant inequality / diversity
+    family (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover,
+    Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson,
+    Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+    FGT, GE family, Var-of-Logs, Log-MAD, Zenga, S-Gini,
+    Hill-tail, decile-share-gap, quintile-share-ratio,
+    percentile-gap-ratio, top-4-CR, ...): those see only
+    the active-day MULTISET; they cannot see CALENDAR GAPS.
+    A source `D=[5000, 5000]` on day-1+day-2 vs the same
+    `D=[5000, 5000]` on day-1+day-30 has identical Gini=0,
+    HHI=0.5, Pielou J=1, CR4=1 — but `longestZeroRun = 0`
+    vs `28`, a 28-day-spread no permutation-invariant axis
+    can express. Witness shipped in test suite.
+  - vs axis-145 max-drawdown-rate (the only other
+    path-dependent functional): MDD measures DEPTH on the
+    active-day vector (worst peak-to-trough proportional
+    drop); longest-zero-run measures DURATION on the
+    calendar-day vector (longest pure-silence stretch).
+    Cross-table: source U=`[100,100,100,100,100]` adjacent
+    -> MDD=0, LZR=0 (boring, agree); source V=`[100,1,100]`
+    adjacent -> MDD=0.99, LZR=0 (depth without duration);
+    source W=`[100,100]` day-1 + day-30 -> MDD=0,
+    LZR=28 (duration without depth); source X=`[100,1]`
+    day-1 + day-30 -> MDD=0.99, LZR=28 (both fire). Each
+    axis pinpoints a different facet.
+- Per-row refinement diagnostics shipped with the initial
+  axis: `spanDays`, `longestZeroRunShare`
+  (`= longestZeroRun / spanDays`), `totalZeroDays`,
+  `zeroRunCount` (number of disjoint silent stretches),
+  `longestZeroRunStartDay`, `longestZeroRunEndDay`.
+- CLI flags: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 2), `--top`, `--sort`
+  (`longestZeroRun (default) | longestZeroRunShare | totalZeroDays | spanDays | tokens | days | source | meanDaily`),
+  `--min-longest-zero-run` (non-negative integer filter),
+  `--json`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Invoked `pew-insights daily-token-longest-zero-run --top 6`
+on the live local pew queue (6 sources, 13.16B total tokens):
+
+| source       | days | span | longestZeroRun | shareOfSpan | totalZero | runs | runStart   | runEnd     |
+|--------------|------|------|----------------|-------------|-----------|------|------------|------------|
+| (src-1)      |   73 |  265 |             23 |      0.0868 |       192 |   36 | 2026-03-21 | 2026-04-12 |
+| claude-code  |   35 |   72 |             12 |      0.1667 |        37 |   10 | 2026-02-13 | 2026-02-24 |
+| codex        |    8 |    8 |              0 |      0.0000 |         0 |    0 | —          | —          |
+| hermes       |   17 |   17 |              0 |      0.0000 |         0 |    0 | —          | —          |
+| openclaw     |   17 |   17 |              0 |      0.0000 |         0 |    0 | —          | —          |
+| opencode     |   14 |   14 |              0 |      0.0000 |         0 |    0 | —          | —          |
+|--------------|------|------|----------------|-------------|-----------|------|------------|------------|
+
+Top result `(src-1)` has a 265-day calendar span with
+73 active days; the worst silent stretch is 23 consecutive
+days (2026-03-21 -> 2026-04-12) and there are 36 disjoint
+silent stretches totalling 192 zero-days — a HIGHLY
+INTERMITTENT profile (`totalZeroDays / spanDays = 0.72`,
+i.e. 72% of the span was silent). `claude-code` is also
+intermittent (37 zero-days over a 72-day span -> 0.51
+silence fraction) but its worst run is half as long
+(12 days). The four newer sources `codex`, `hermes`,
+`openclaw`, `opencode` are all `longestZeroRun = 0` —
+they have been active every UTC day since their debut.
+This is exactly the LIVE-vs-INTERMITTENT bifurcation the
+new axis is designed to surface.
+
+Cross-axis sanity vs axis-145 (max-drawdown-rate) on the
+same live data: `(src-1)` has axis-145 MDD `0.9984`
+(catastrophic) AND axis-146 LZR `23` (long dormancy) —
+both fire, but they pinpoint DIFFERENT calendar
+positions: MDD's worst pair is `2025-10-13 -> 2026-02-24`
+(43-day drop), while LZR's worst stretch is
+`2026-03-21 -> 2026-04-12` (a separate, later silence
+window). Two co-fired diagnostics naming non-overlapping
+events. `codex` / `hermes` / `openclaw` / `opencode`
+have non-trivial axis-145 MDDs (0.97, 0.90, 0.88, 0.54
+respectively) but axis-146 LZR `0`, demonstrating the
+DEPTH-without-DURATION cell of the cross-table.
+
+### Tests
+
+- Test count grew from 11956 to 11976 (+20). New suite:
+  `dailytokenlongestzerorun`. Coverage: empty mask /
+  all-ones / all-zeros / closed-form
+  `[1,0,0,1,0,0,0,1] -> longest=3, runs=2, total=5`,
+  tie-break first-occurrence-wins, no-gap source,
+  single-28-day-gap source, two-gap source picks longest
+  and counts both, orthogonality witness vs Gini/HHI/Pielou
+  (same active-day multiset, different calendar gaps,
+  different LZR), hour-of-day collapse to UTC days,
+  rejection of zero / negative `total_tokens`, invalid
+  hour_start handling, `--top` after sort, `--source`
+  filter accounting, `--min-longest-zero-run` filter,
+  `--min-tokens` filter, `--sort longestZeroRunShare`,
+  full option validation.
+
 ## 0.6.392 — 2026-05-04
 
 ### Added
