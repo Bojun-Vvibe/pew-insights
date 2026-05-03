@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.368 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-FIFTH):
+  `pew-insights daily-token-pca-projection-distance-halves`.
+
+  Per-source DELAY-EMBEDDED PCA HALF-CENTROID
+  PROJECTION DISTANCE on the gap-filled daily total_tokens
+  series. Form delay-embedded vectors of dimension d = 3
+  with lag = 1 (Takens 1981 LNM 898:366-381):
+
+      v_t = ( x[t], x[t+1], x[t+2] )    for t in 0..M-1
+      M   = n - 2
+
+  Pooled centroid mu_pool, pooled covariance
+
+      C  =  ( 1 / M ) * V_c^T V_c
+
+  (population scaling, deterministic). Eigendecompose
+  C = U L U^T with lam_1 >= lam_2 >= lam_3 >= 0 (PSD by
+  construction) using the closed-form trigonometric
+  algorithm for symmetric 3x3 matrices (Smith 1961
+  Comm. ACM 4(4):168). Project the half centroids onto
+  the leading principal component:
+
+      pcGap  =  u_1^T ( mu_B - mu_A )
+      pcZ    =  pcGap / sqrt(lam_1)
+
+  pcZ is dimensionless, signed, and CROSS-SOURCE-
+  COMPARABLE. Canonical scaled multivariate two-sample
+  statistic
+
+      pcT  =  ( m1 * m2 / (m1 + m2) ) * pcZ^2
+
+  (Hotelling 1931 Ann. Math. Statist. 2(3):360-378;
+  Anderson 2003 §5.2). Variance-explained diagnostics
+  pcVarExplained1 = lam_1 / sum(lam), pcVarExplained2 =
+  (lam_1 + lam_2) / sum(lam). Per-PC standardised gap
+  vector pcStdGapByAxis[i] = u_i^T(mu_B - mu_A) /
+  sqrt(lam_i) for i in {0,1,2}.
+
+  STRUCTURAL ORTHOGONALITY. PCA-projection is COVARIANCE-
+  AWARE through the delay-embedding lag structure: it
+  depends on the JOINT distribution of (x[t], x[t+1],
+  x[t+2]). A time-permuted half preserves every marginal
+  axis (118 KS, 119 AD, 120 CvM, 121 W1, 122 energy,
+  123 MMD, 124 qv-Mahalanobis) but changes the eigenvalues
+  lam_i and the leading PC u_1, hence pcZ. This is the
+  FIRST half-vs-half axis to use a LAGGED-COORDINATE
+  PHASE-SPACE RECONSTRUCTION. The metric is rotated into
+  the data-driven principal-component basis (vs axis-124's
+  diagonal pooled-IQR basis in quantile coordinates).
+  Translation-invariant AND positive-scale-invariant in
+  the data, mirroring axes 123/124 and unlike axes 121/122
+  which are 1-homogeneous.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,050,896,473):
+
+      source  tenure  M    m1  m2  lam1            var1    pcGap          pcZ        pcT
+      ------  ------  ---  --  --  --------------  ------  -------------  ---------  -------
+      A       17      15    7   8  1.7266e+16      0.6119  -2.3825e+08    -1.813161  12.2735
+      B       72      70   35  35  4.1845e+16      0.5742   1.6030e+08     0.783641  10.7466
+      C       14      12    6   6  3.5105e+16      0.5868   1.2327e+08     0.657900   1.2985
+      D      265     263  131 132  9.1137e+08      0.4130  -4.4396e+02    -0.014706   0.0142
+      E       17      15    7   8  1.4870e+14      0.5103   5.5244e+05     0.045304   0.0077
+
+  References:
+  - Takens, F., "Detecting strange attractors in
+    turbulence", in Dynamical Systems and Turbulence,
+    Warwick 1980, Lecture Notes in Mathematics 898,
+    Springer (1981), pp. 366-381.
+  - Hotelling, H., "Analysis of a complex of statistical
+    variables into principal components", Journal of
+    Educational Psychology 24 (1933), pp. 417-441 and
+    498-520.
+  - Anderson, T. W., An Introduction to Multivariate
+    Statistical Analysis, 3rd ed., Wiley (2003), §5.2,
+    §11.
+  - Smith, O. K., "Eigenvalues of a symmetric 3x3 matrix",
+    Communications of the ACM 4(4) (1961), p. 168.
+
 ## 0.6.367 — 2026-05-03
 
 ### Added
