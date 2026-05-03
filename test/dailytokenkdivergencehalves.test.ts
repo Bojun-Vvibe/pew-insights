@@ -476,3 +476,58 @@ test('kJsdSummand: per-bin upper bound 0.5 * (p+q) * log(2)', () => {
 test('kJsdSummand: rejects negative inputs', () => {
   assert.throws(() => kJsdSummand(-1, 0.3), /non-negative/);
 });
+
+// ---------- helper: kDivSaturation ----------
+
+import { kDivSaturation } from '../src/dailytokenkdivergencehalves.js';
+
+test('kDivSaturation: 0 -> 0', () => {
+  assert.equal(kDivSaturation(0), 0);
+});
+
+test('kDivSaturation: ln(2) -> 1', () => {
+  assert.ok(Math.abs(kDivSaturation(KDIV_UPPER_BOUND) - 1) < 1e-12);
+});
+
+test('kDivSaturation: 0.5 * ln(2) -> 0.5', () => {
+  assert.ok(Math.abs(kDivSaturation(0.5 * KDIV_UPPER_BOUND) - 0.5) < 1e-12);
+});
+
+test('kDivSaturation: tiny overshoot capped to 1', () => {
+  // upstream pmf reconstruction may yield kMax = ln(2) + 1e-13
+  assert.equal(kDivSaturation(KDIV_UPPER_BOUND + 1e-13), 1);
+});
+
+test('kDivSaturation: monotone non-decreasing', () => {
+  const a = kDivSaturation(0.1);
+  const b = kDivSaturation(0.2);
+  const c = kDivSaturation(0.4);
+  assert.ok(a <= b);
+  assert.ok(b <= c);
+});
+
+test('kDivSaturation: rejects gross overshoot', () => {
+  assert.throws(() => kDivSaturation(KDIV_UPPER_BOUND * 2), /sentinel/);
+});
+
+test('kDivSaturation: rejects negative', () => {
+  assert.throws(() => kDivSaturation(-0.1), /non-negative/);
+});
+
+test('kDivSaturation: rejects NaN', () => {
+  assert.throws(() => kDivSaturation(NaN), /finite/);
+});
+
+test('kdiv builder: every row reports kSaturation in [0, 1]', () => {
+  const r = buildDailyTokenKDivergenceHalves(makeQueue(), {
+    minTokens: 100,
+    minTenureDays: 14,
+  });
+  for (const s of r.sources) {
+    assert.ok(s.kSaturation >= 0 && s.kSaturation <= 1);
+    // Monotone in kMax (linear scale): consistent ratio.
+    assert.ok(
+      Math.abs(s.kSaturation - s.kMax / KDIV_UPPER_BOUND) < 1e-12 || s.kSaturation === 1,
+    );
+  }
+});

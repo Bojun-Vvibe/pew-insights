@@ -246,6 +246,8 @@ export interface DailyTokenKDivergenceHalvesSourceRow {
   kMaxBinFwd: number;
   /** Largest per-bin reverse summand q_k log(2 q_k / (p_k + q_k)), >= 0. */
   kMaxBinRev: number;
+  /** kMax / ln(2), in [0, 1]; saturation against analytic ceiling. */
+  kSaturation: number;
 }
 
 export interface DailyTokenKDivergenceHalvesReport {
@@ -285,6 +287,44 @@ export const KDIV_GRID_EXTENSION_H = 3;
 export const KDIV_PMF_FLOOR = 1e-15;
 /** Theoretical upper bound on K(p||q) per direction: ln(2). */
 export const KDIV_UPPER_BOUND = Math.log(2);
+
+/**
+ * Saturation indicator: ratio of `kMax` to the theoretical
+ * upper bound `ln(2)`, in `[0, 1]`. A value near 1 means the
+ * loudest direction is approaching the analytic ceiling --
+ * a regime where the bounded K-divergence is itself losing
+ * resolution and unbounded asymmetric divergences (axis-139
+ * Neyman) carry strictly more discrimination. A value near
+ * 0 means the drift is well below saturation and K-div is
+ * comfortably in its informative regime.
+ *
+ * Identities verified by the test suite:
+ *
+ *   - kDivSaturation(0)         === 0
+ *   - kDivSaturation(KDIV_UPPER_BOUND) === 1
+ *   - kDivSaturation(0.5 * KDIV_UPPER_BOUND) === 0.5
+ *   - monotone non-decreasing in `kMax`.
+ *
+ * Capped at 1 to absorb tiny numerical overshoot from
+ * trapezoidal pmf reconstruction; rejects inputs above
+ * `KDIV_UPPER_BOUND * (1 + 1e-6)` as a sentinel that
+ * something upstream is wrong.
+ */
+export function kDivSaturation(kMax: number): number {
+  if (!Number.isFinite(kMax)) {
+    throw new Error('kDivSaturation requires finite input');
+  }
+  if (kMax < 0) {
+    throw new Error('kDivSaturation requires non-negative input');
+  }
+  if (kMax > KDIV_UPPER_BOUND * (1 + 1e-6)) {
+    throw new Error(
+      `kDivSaturation: kMax=${kMax} exceeds ln(2) sentinel; upstream pipeline is wrong`,
+    );
+  }
+  const r = kMax / KDIV_UPPER_BOUND;
+  return r > 1 ? 1 : r;
+}
 
 /**
  * Directional sign diagnostic: returns +1 iff the FORWARD
@@ -854,6 +894,7 @@ export function buildDailyTokenKDivergenceHalves(
       kJsd: result.kJsd,
       kMaxBinFwd: result.kMaxBinFwd,
       kMaxBinRev: result.kMaxBinRev,
+      kSaturation: kDivSaturation(result.kMax),
     });
     totalTokensSum += acc.totalTokens;
   }

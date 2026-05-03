@@ -23855,6 +23855,7 @@ export function renderDailyTokenKDivergenceHalves(
     'jsd',
     'mxFwd',
     'mxRev',
+    'sat',
     'tokens',
   ];
   const rowsOut: string[][] = r.sources.map((s) => [
@@ -23874,6 +23875,7 @@ export function renderDailyTokenKDivergenceHalves(
     s.kJsd.toExponential(3),
     s.kMaxBinFwd.toExponential(3),
     s.kMaxBinRev.toExponential(3),
+    s.kSaturation.toFixed(4),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));
