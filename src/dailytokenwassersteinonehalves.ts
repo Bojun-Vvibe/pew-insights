@@ -332,6 +332,51 @@ function medianSorted(sorted: number[]): number {
 }
 
 /**
+ * Robust pooled-dispersion scale used to convert the
+ * raw L1 transport cost wassW1 into a dimensionless,
+ * cross-source-comparable effect size wassZ.
+ *
+ * Returns the median absolute deviation about the
+ * pooled median (Hampel 1974, Journal of the American
+ * Statistical Association 69(346):383-393), with a
+ * deterministic fallback to the population stddev
+ * when MAD collapses to 0 -- which happens for
+ * sparse zero-heavy daily token series where >= 50 %
+ * of the days are gap-filled zeros (so the pooled
+ * median IS 0 and over half the absolute deviations
+ * are 0 too). The upstream zero-variance guard has
+ * already filtered out fully-constant series, so
+ * stddev > 0 here.
+ *
+ * Inputs are mutated-free: `pooledSorted` is the
+ * caller-owned ascending-sorted pooled sample, used
+ * to compute the median; the returned scale is
+ * derived from a fresh sorted copy of |x - median|.
+ *
+ * Throws if BOTH MAD and stddev are zero (cannot
+ * happen given the upstream guard, but kept as a
+ * defensive invariant).
+ */
+function pooledRobustScale(
+  pooledSorted: number[],
+  pooledMedian: number,
+  stddev: number,
+): { mad: number; scale: number } {
+  const absDevSorted = pooledSorted
+    .map((v) => Math.abs(v - pooledMedian))
+    .sort((p, q) => p - q);
+  const mad = medianSorted(absDevSorted);
+  let scale = mad;
+  if (scale === 0) scale = stddev;
+  if (scale === 0) {
+    throw new Error(
+      `pooledRobustScale: both MAD and stddev are 0 (n=${pooledSorted.length})`,
+    );
+  }
+  return { mad, scale };
+}
+
+/**
  * Wasserstein-1 distance between two empirical
  * distributions on the real line, computed via the
  * quantile-integral form on the merged grid of step
@@ -481,26 +526,11 @@ export function dailyTokenWassersteinOneHalves(values: number[]): {
 
   const pooledSorted = values.slice().sort((p, q) => p - q);
   const wassPooledMedian = medianSorted(pooledSorted);
-  const absDevSorted = pooledSorted
-    .map((v) => Math.abs(v - wassPooledMedian))
-    .sort((p, q) => p - q);
-  let wassPooledMad = medianSorted(absDevSorted);
-  // When more than half the pooled sample lies on the
-  // pooled median (common for sparse zero-heavy daily
-  // token series where >= 50 % of days are gap-filled
-  // zeros), MAD collapses to 0 and would render wassZ
-  // undefined. Fall back to the population stddev,
-  // which is guaranteed positive here because the
-  // upstream zero-variance guard has already filtered
-  // out constant series.
-  if (wassPooledMad === 0) {
-    wassPooledMad = stddev;
-  }
-  if (wassPooledMad === 0) {
-    throw new Error(
-      `dailyTokenWassersteinOneHalves: zero pooled MAD and zero stddev (n=${n})`,
-    );
-  }
+  const { scale: wassPooledMad } = pooledRobustScale(
+    pooledSorted,
+    wassPooledMedian,
+    stddev,
+  );
 
   const wassW1 = wasserstein1OneDim(aSorted, bSorted);
   const wassZ = wassW1 / wassPooledMad;
