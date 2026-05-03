@@ -282,6 +282,41 @@ function median(values: number[]): number {
 }
 
 /**
+ * Pure per-bin Taneja summand. Exposed for downstream tooling that
+ * wants to inspect the bin-wise contribution without re-running the
+ * full KDE pipeline.
+ *
+ *     tanejaSummand(p, q) = AM * log(AM / GM)
+ *     where AM = (p + q) / 2, GM = sqrt(p * q)
+ *
+ * Both `p` and `q` are floored at TANEJA_PMF_FLOOR to keep the AM/GM
+ * ratio well-defined under IEEE-754 underflow at extreme tail bins.
+ * The AM/GM ratio is clamped at 1 (its mathematical lower bound) to
+ * defuse floating-point dust just below 1.
+ *
+ * Identities verified by the test suite:
+ *
+ *   - tanejaSummand(p, q) === tanejaSummand(q, p)  (symmetric)
+ *   - tanejaSummand(p, p) === 0                     (vanishes on equal)
+ *   - tanejaSummand(p, q) >= 0                      (AM >= GM)
+ */
+export function tanejaSummand(p: number, q: number): number {
+  if (!Number.isFinite(p) || !Number.isFinite(q)) {
+    throw new Error('tanejaSummand requires finite inputs');
+  }
+  if (p < 0 || q < 0) {
+    throw new Error('tanejaSummand requires non-negative inputs');
+  }
+  const pf = p < TANEJA_PMF_FLOOR ? TANEJA_PMF_FLOOR : p;
+  const qf = q < TANEJA_PMF_FLOOR ? TANEJA_PMF_FLOOR : q;
+  const am = 0.5 * (pf + qf);
+  const gm = Math.sqrt(pf * qf);
+  const ratio = am / gm;
+  const safeRatio = ratio >= 1 ? ratio : 1;
+  return am * Math.log(safeRatio);
+}
+
+/**
  * KDE-smoothed Taneja AM-GM divergence between halves.
  *
  * EXACT IDENTITIES preserved (verified by the test suite):
@@ -426,6 +461,9 @@ export function dailyTokenTanejaDivergenceHalves(values: number[]): {
     if (term > maxBin) maxBin = term;
     if (safeRatio > maxRatio) maxRatio = safeRatio;
   }
+  // The pure `tanejaSummand(p, q)` helper exposes the same per-bin
+  // computation for downstream tooling; we keep the inlined hot loop
+  // here to avoid per-bin function-call overhead on the K=257 grid.
 
   const tanejaDivergence = sum;
   const tanejaMaxBin = maxBin;

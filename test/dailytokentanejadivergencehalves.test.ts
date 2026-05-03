@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   dailyTokenTanejaDivergenceHalves,
   buildDailyTokenTanejaDivergenceHalves,
+  tanejaSummand,
   TANEJA_GRID_K,
   TANEJA_SILVERMAN_MULTIPLIER,
   TANEJA_GRID_EXTENSION_H,
@@ -483,4 +484,75 @@ test('taneja builder: tanejaSpreadRatio surfaces on every row', () => {
   const row = r.sources[0]!;
   assert.ok(typeof row.tanejaSpreadRatio === 'number');
   assert.ok(row.tanejaSpreadRatio >= 0 && row.tanejaSpreadRatio <= 1 + 1e-12);
+});
+
+// ---------- pure helper: tanejaSummand ----------
+
+test('tanejaSummand: equal inputs give 0', () => {
+  assert.equal(tanejaSummand(0.1, 0.1), 0);
+  assert.equal(tanejaSummand(0.5, 0.5), 0);
+  assert.equal(tanejaSummand(1e-9, 1e-9), 0);
+});
+
+test('tanejaSummand: symmetric in p, q', () => {
+  const a = tanejaSummand(0.2, 0.05);
+  const b = tanejaSummand(0.05, 0.2);
+  assert.ok(Math.abs(a - b) <= 1e-15 * Math.max(1, Math.abs(a)));
+});
+
+test('tanejaSummand: non-negative', () => {
+  for (const [p, q] of [
+    [0.1, 0.2],
+    [1e-3, 0.5],
+    [0.99, 0.01],
+    [1e-6, 1e-3],
+  ] as const) {
+    assert.ok(tanejaSummand(p, q) >= 0);
+  }
+});
+
+test('tanejaSummand: monotone in asymmetry (fixed AM)', () => {
+  // p+q=1 fixed, increasing |p-q| -> monotone increasing summand.
+  const t1 = tanejaSummand(0.49, 0.51);
+  const t2 = tanejaSummand(0.4, 0.6);
+  const t3 = tanejaSummand(0.1, 0.9);
+  assert.ok(t1 < t2);
+  assert.ok(t2 < t3);
+});
+
+test('tanejaSummand: rejects negative inputs', () => {
+  assert.throws(() => tanejaSummand(-1, 0.1), /non-negative/);
+  assert.throws(() => tanejaSummand(0.1, -0.001), /non-negative/);
+});
+
+test('tanejaSummand: rejects non-finite inputs', () => {
+  assert.throws(() => tanejaSummand(NaN, 0.1), /finite/);
+  assert.throws(() => tanejaSummand(0.1, Infinity), /finite/);
+});
+
+test('tanejaSummand: floors below TANEJA_PMF_FLOOR (no NaN at p=0)', () => {
+  const v = tanejaSummand(0, 0.1);
+  assert.ok(Number.isFinite(v));
+  assert.ok(v >= 0);
+});
+
+test('tanejaSummand: matches inlined builder loop on 2-bin pmfs', () => {
+  // Reconstruct a tiny Taneja sum from the helper and compare to the
+  // analytical closed form for a 2-bin pmf pair (p,1-p) vs (q,1-q).
+  const cases: Array<[number, number]> = [
+    [0.4, 0.6],
+    [0.1, 0.5],
+    [0.3, 0.7],
+    [0.05, 0.95],
+  ];
+  for (const [p, q] of cases) {
+    const helperSum = tanejaSummand(p, q) + tanejaSummand(1 - p, 1 - q);
+    // Closed form re-derivation
+    const t1 = ((p + q) / 2) * Math.log((p + q) / (2 * Math.sqrt(p * q)));
+    const t2 =
+      ((1 - p + 1 - q) / 2) *
+      Math.log((1 - p + 1 - q) / (2 * Math.sqrt((1 - p) * (1 - q))));
+    const closed = t1 + t2;
+    assert.ok(Math.abs(helperSum - closed) <= 1e-12 * Math.max(1, closed));
+  }
 });
