@@ -114,6 +114,7 @@ import {
   renderDailyTokenMidSpreadRatio,
   renderDailyTokenDecileShareGap,
   renderDailyTokenQuintileShareRatio,
+  renderDailyTokenTopFourConcentrationRatio,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -548,6 +549,7 @@ import { buildDailyTokenTopsoeDivergenceHalves } from './dailytokentopsoediverge
 import { buildDailyTokenNeymanChiSquaredHalves } from './dailytokenneymanchisquaredhalves.js';
 import { buildDailyTokenKDivergenceHalves } from './dailytokenkdivergencehalves.js';
 import { buildDailyTokenPearsonSecondSkewness } from './dailytokenpearsonsecondskewness.js';
+import { buildDailyTokenTopFourConcentrationRatio } from './dailytokentopfourconcentrationratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -39859,6 +39861,133 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenPearsonSecondSkewness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-top-four-concentration-ratio')
+  .description(
+    "Per-source TOP-4 CONCENTRATION RATIO CR4 = sum of the 4 largest D_i / sum of all D_i on per-day total_tokens (ONE-HUNDRED-AND-FORTY-SECOND cross-source axis). Canonical IO concentration measure (Bain 1956). Range [4/n, 1]; lower bound iff perfectly flat, upper bound iff total mass in the top-4 set. ABSOLUTE-cut sparse functional (k=4 fixed) -- structurally orthogonal to QSR/DSG (axes 61/62, RELATIVE quintile/decile cut k=ceil(0.20n)/ceil(0.10n) which scales with n) and to the full-Lorenz inequality family (axes 32-57, mean-normalised integrals). Per row: cr4, lowerBound = 4/n, slack = cr4 - lowerBound.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 5). CR4 degenerate for n<5 (top-4 set covers everything).',
+    '5',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: cr4 (default) | tokens | days | source | meanDaily | topMass | lowerBound. Applied before --top.',
+    'cr4',
+  )
+  .option(
+    '--min-cr4 <x>',
+    'display filter: hide non-degenerate rows whose cr4 is strictly below this value (must be in [0, 1]). Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minCr4?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 5) {
+          throw new Error(
+            `--min-days must be an integer >= 5 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minCr4: number | null = null;
+        if (opts.minCr4 !== undefined) {
+          const mv = Number.parseFloat(opts.minCr4);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-cr4 must be a finite number in [0, 1] (got ${opts.minCr4})`,
+            );
+          }
+          minCr4 = mv;
+        }
+        const validSorts = [
+          'cr4',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+          'topMass',
+          'lowerBound',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenTopFourConcentrationRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minCr4,
+          sort: opts.sort as
+            | 'cr4'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily'
+            | 'topMass'
+            | 'lowerBound',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenTopFourConcentrationRatio(report) + '\n',
           );
         }
       } catch (e) {

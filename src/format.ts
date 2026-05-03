@@ -17214,6 +17214,7 @@ import type { DailyTokenIqrOverMedianReport } from './dailytokeniqrovermedian.js
 import type { DailyTokenMidSpreadRatioReport } from './dailytokenmidspreadratio.js';
 import type { DailyTokenDecileShareGapReport } from './dailytokendecilesharegap.js';
 import type { DailyTokenQuintileShareRatioReport } from './dailytokenquintileshareratio.js';
+import type { DailyTokenTopFourConcentrationRatioReport } from './dailytokentopfourconcentrationratio.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -23957,6 +23958,75 @@ export function renderDailyTokenKDivergenceHalves(
       `(reference anchors: 0 <= kForward, kReverse <= ln(2) ~= ${r.upperBound.toFixed(7)}; both = 0 iff p = q on the grid. kMax = max(forward, reverse). kAsymmetry = |fwd-rev|/(fwd+rev) in [0, 1]: 0 iff fwd === rev (perfectly symmetric drift; same information as axis-118 JSD); 1 iff one direction is identically zero (the regime JSD symmetrisation collapses). kJsd = 0.5*(kFwd + kRev) is the bit-exact JSD sister. axis-140 ships the DIRECTIONAL PAIR; axis-118 JSD ships only the symmetric mean. Translation- AND positive-scale-invariant in the data; KDIV_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTopFourConcentrationRatio(
+  r: DailyTokenTopFourConcentrationRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-top-four-concentration-ratio'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-cr4: ${r.minCr4 === null ? '\u2014' : r.minCr4}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinCr4)} below min-cr4, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CR4 = sum of the 4 largest D_i / sum of all D_i, on the per-day total_tokens vector. Range [4/n, 1]; lower bound iff perfectly flat, upper bound iff total mass in the top-4 set. Canonical IO concentration measure (Bain 1956). ABSOLUTE-cut sparse functional (k=4 fixed) -- orthogonal to QSR/DSG (relative quintile/decile cut) and to the full-Lorenz inequality family (mean-normalised integrals).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source CR4 (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'cr4',
+    'lowerBound',
+    'slack',
+    'topMass',
+    'maxDay',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    s.cr4.toFixed(6),
+    s.lowerBound.toFixed(6),
+    s.slack.toFixed(6),
+    formatNumber(Math.round(s.topMass)),
+    s.maxDay,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
 
   return lines.join('\n').replace(/\n+$/, '');
 }
