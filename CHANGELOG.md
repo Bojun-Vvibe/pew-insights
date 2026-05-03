@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.386 — 2026-05-04
+
+### Added
+
+- `daily-token-top-four-concentration-ratio` —
+  ONE-HUNDRED-AND-FORTY-SECOND cross-source axis. Per-source
+  TOP-4 CONCENTRATION RATIO of the per-day total_tokens
+  distribution (Bain 1956; Hannah & Kay 1977):
+
+      CR4 = (sum of the 4 largest D_i) / (sum of all D_i)
+
+  where `D = (D_1, ..., D_n)` is the per-source per-day
+  total_tokens vector. CR4 lives in `[4/n, 1]` for `n >= 4`
+  (lower bound iff perfectly flat, upper bound iff total
+  mass in the top-4 set). Headline question: **what
+  fraction of a source's total token mass lives in its
+  four busiest UTC days?**
+- ABSOLUTE-cut sparse functional (`k = 4` fixed). Structurally
+  orthogonal to QSR / DSG (axes 61, 62) which use a RELATIVE
+  cut `k = ceil(0.20*n)` / `ceil(0.10*n)` that scales with `n`.
+  Orthogonal to the full-Lorenz inequality family (axes 32-57:
+  Gini, S-Gini, Atkinson, Theil, GE, Hoover, Pietra,
+  Bonferroni, Mehran, Wolfson, Foster-Wolfson, Palma,
+  Kolm-Pollak, Chakravarty, Amato, Esteban-Ray, FGT,
+  Var-of-Logs, Log-MAD) which all integrate over the FULL
+  Lorenz curve and divide by the MEAN. Orthogonal to the
+  divergence-of-halves family (axes 118-140) which compares
+  halves of the day vector — CR4 is permutation-invariant on
+  the WHOLE vector.
+- Pure helper exported: `topFourConcentrationRatioOfVector`
+  returning `{ cr4, topMass, total, mean, lowerBound, slack,
+  degenerate }` on a strictly-positive numeric vector. Throws
+  on negative, zero, or non-finite input. Marks `degenerate`
+  for `n < 5` (top-4 set covers everything).
+- Per-row diagnostics: `cr4`, `lowerBound = 4/n`,
+  `slack = cr4 - lowerBound` (how far above the flat-floor),
+  plus `topMass`, `maxDay`, `meanDailyTokens`.
+- CLI sort keys: `cr4` (default) | `tokens` | `days` |
+  `source` | `meanDaily` | `topMass` | `lowerBound`. Display
+  filter `--min-cr4` in `[0, 1]`.
+- 17 new tests covering: empty / closed-form `[1..10]` →
+  `34/55` / flat-vector lower-bound attainment / upper-bound
+  saturation / scale invariance / permutation invariance /
+  negative-zero-NaN guards / `n<5` degenerate flag /
+  rank-flip witness vs Gini-style measures / builder
+  validation (`minDays<5`, `minCr4∉[0,1]`) / per-source row
+  emission / sparse-source drop / sort=cr4 ordering /
+  `--min-cr4` filter.
+
+### Live smoke (`~/.config/pew/queue.jsonl`, 2026-05-04)
+
+`pew-insights daily-token-top-four-concentration-ratio --json`
+against the local pew queue (6 sources, ~13.09B tokens; one
+source name redacted as `vscode-<src-d>`):
+
+| source           | nDays | cr4      | lowerBound | slack    |
+| ---              | ---   | ---      | ---        | ---      |
+| codex            |     8 | 0.897674 | 0.500000   | 0.397674 |
+| claude-code      |    35 | 0.669198 | 0.114286   | 0.554912 |
+| openclaw         |    17 | 0.495747 | 0.235294   | 0.260452 |
+| vscode-<src-d>   |    73 | 0.412922 | 0.054795   | 0.358127 |
+| opencode         |    14 | 0.400196 | 0.285714   | 0.114482 |
+| hermes           |    17 | 0.395955 | 0.235294   | 0.160660 |
+
+Top-3 by CR4: `codex` (0.8977 — almost 90% of total token
+mass concentrated in 4 of 8 active days; expected since
+`n=8` forces `lowerBound = 0.5`), `claude-code` (0.6692 —
+67% of a 35-day, 3.44B-token history concentrated in 4 days;
+`slack = 0.555` is the largest in the table, indicating
+extreme top-heavy clumping relative to its long tail),
+`openclaw` (0.4957 — moderate concentration). `opencode` is
+the LEAST concentrated relative to its own bound
+(`slack = 0.114`, only 11pp above the flat-floor of 0.286)
+— its 6.3B tokens are the most evenly spread across its 14
+active days. Every source non-degenerate (`n >= 5`).
+
 ## 0.6.385 — 2026-05-04
 
 ### Added
