@@ -96,6 +96,53 @@ RLE-H=4.04 (shattered with a 12-day worst gap). The four
 continuous sources read 0 on BOTH LZR and RLE-H, agreeing
 on "no fragmentation, no dormancy".
 
+### Refinement (v0.6.394)
+
+- Added three diagnostic fields to every row:
+  - `entropyDeficitBits = log2(segmentCount) - rleEntropyBits`
+    in `[0, log2(K)]`. Equals 0 iff the segment-length
+    distribution is perfectly uniform; large values mean
+    the partition is dominated by one big segment.
+  - `dominantSegmentShare = longestSegmentLength / spanDays`
+    in `[1/spanDays, 1]`. Direct readout of how much of
+    the calendar span is occupied by the single longest
+    stretch (active OR silent).
+  - `dominantSegmentKind` ∈ {`active`, `silent`, `none`}.
+    Crucial separator: identical `dominantSegmentShare`
+    means OPPOSITE operational stories depending on whether
+    the dominator is an active streak (live source with
+    surrounding noise) or a silent stretch (dead source
+    bracketed by brief activity). Tie-break: earliest
+    segment wins.
+
+### Live-smoke refinement (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+| source       | rleEntropyBits | deficitBits | longestSeg | domShare | domKind | regime     |
+|--------------|----------------|-------------|------------|----------|---------|------------|
+| (src-1)      |         5.5330 |      0.6568 |         23 |   0.0868 | silent  | pulverised |
+| claude-code  |         4.0394 |      0.3529 |         12 |   0.1667 | silent  | shattered  |
+| codex        |         0.0000 |      0.0000 |          8 |   1.0000 | active  | continuous |
+| hermes       |         0.0000 |      0.0000 |         17 |   1.0000 | active  | continuous |
+| openclaw     |         0.0000 |      0.0000 |         17 |   1.0000 | active  | continuous |
+| opencode     |         0.0000 |      0.0000 |         14 |   1.0000 | active  | continuous |
+
+Refinement sharpens the read on `(src-1)` and `claude-code`:
+both have `dominantSegmentKind = silent`, meaning their
+single longest stretch is a SILENCE (the dormancy is the
+defining feature, not any extended live streak). `(src-1)`
+deficit = 0.66 bits (out of log2(73) = 6.19 bits possible)
+i.e. the partition is ~89% as uniform as the maximum-entropy
+arrangement — fragmentation is broad and even, not
+collapsed onto one big silence. `claude-code` deficit = 0.35
+bits (out of log2(21) = 4.39 bits possible) — even more
+uniform fragmentation. The four newer sources (`codex`,
+`hermes`, `openclaw`, `opencode`) all read
+`domShare = 1.0`, `domKind = active`, `deficit = 0` —
+single 100% active segment, perfect continuity. Cross-axis
+agreement: `domKind = silent` rows are exactly the same
+rows as `regime ∈ {shattered, pulverised}`, confirming the
+two diagnostic surfaces tell a consistent story.
+
 ## 0.6.393 — 2026-05-04
 
 ### Added

@@ -165,6 +165,39 @@ export interface DailyTokenCalendarMaskRleEntropySourceRow {
   /** Length of the shortest segment in the RLE. */
   shortestSegmentLength: number;
   /**
+   * Refinement (v0.6.394): entropy deficit in bits, defined as
+   * `log2(segmentCount) - rleEntropyBits`. In `[0, log2(K)]`.
+   * Equals 0 iff every segment is identical length (perfectly
+   * uniform partition); large values mean one (or a few)
+   * segments dominate the span. Complements rleEntropyBits
+   * (the absolute scale) with a CONCENTRATION reading on the
+   * same units. For segmentCount = 1, defined as 0.
+   */
+  entropyDeficitBits: number;
+  /**
+   * Refinement (v0.6.394): share of the calendar span occupied
+   * by the single LONGEST segment (`longestSegmentLength /
+   * spanDays`) in `[1/spanDays, 1]`. 1 iff the source is
+   * perfectly continuous. Complements rleEntropyBits with a
+   * direct readout of how dominated the calendar mask is by
+   * its single biggest stretch (active OR silent), independent
+   * of how many smaller stretches exist alongside it.
+   */
+  dominantSegmentShare: number;
+  /**
+   * Refinement (v0.6.394): which TYPE the dominant (longest)
+   * segment is — 'active' or 'silent'. Crucial separator: a
+   * source with longestSegment = 50 days that is ACTIVE looks
+   * like a long live streak with surrounding noise; a source
+   * with longestSegment = 50 days that is SILENT looks like a
+   * dead source bracketed by brief activity. Same scalar
+   * `dominantSegmentShare`, opposite operational meaning. Tie-
+   * break (rare, exact length collision): the EARLIER segment
+   * wins, matching the deterministic-tie convention used
+   * throughout the codebase.
+   */
+  dominantSegmentKind: 'active' | 'silent' | 'none';
+  /**
    * Refinement (v0.6.394): structural label binning the
    * fragmentation profile into five regimes:
    *   - 'continuous'   : segmentCount = 1 (no calendar gaps).
@@ -410,10 +443,21 @@ export function buildDailyTokenCalendarMaskRleEntropy(
     const hNorm = hMax > 0 ? h / hMax : 0;
     let longest = 0;
     let shortest = segmentCount > 0 ? rle[0] as number : 0;
-    for (const l of rle) {
-      if (l > longest) longest = l;
+    let longestIdx = 0;
+    for (let i = 0; i < rle.length; i += 1) {
+      const l = rle[i] as number;
+      if (l > longest) {
+        longest = l;
+        longestIdx = i;
+      }
       if (l < shortest) shortest = l;
     }
+    const entropyDeficitBits = hMax > 0 ? hMax - h : 0;
+    const dominantSegmentShare = spanDays > 0 ? longest / spanDays : 0;
+    let dominantSegmentKind: 'active' | 'silent' | 'none';
+    if (segmentCount === 0) dominantSegmentKind = 'none';
+    else if (longestIdx % 2 === 0) dominantSegmentKind = 'active';
+    else dominantSegmentKind = 'silent';
     const degenerate = spanDays < 2;
     let meanDaily = 0;
     for (const v of acc.perDay.values()) meanDaily += v;
@@ -452,6 +496,9 @@ export function buildDailyTokenCalendarMaskRleEntropy(
       rleEntropyNormalised: hNorm,
       longestSegmentLength: longest,
       shortestSegmentLength: shortest,
+      entropyDeficitBits,
+      dominantSegmentShare,
+      dominantSegmentKind,
       fragmentationRegime,
       meanDailyTokens: meanDaily,
       degenerate,

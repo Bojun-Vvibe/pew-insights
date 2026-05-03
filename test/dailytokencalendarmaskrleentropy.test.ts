@@ -342,3 +342,78 @@ test('build: invalid minTokens throws', () => {
     }),
   );
 });
+
+test('refinement: entropyDeficitBits = log2(K) - H, zero for uniform partitions', () => {
+  // 4 equal segments -> H = 2, log2(4) = 2 -> deficit = 0
+  const queue = [
+    ql('2026-01-01T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-03T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-05T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-07T00:00:00.000Z', 'A', 5000),
+  ];
+  const r = buildDailyTokenCalendarMaskRleEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  // mask = [1,0,1,0,1,0,1] -> 7 segments all length 1 -> uniform
+  assert.equal(s.segmentCount, 7);
+  assert.ok(Math.abs(s.entropyDeficitBits) < 1e-12, `deficit=${s.entropyDeficitBits}`);
+});
+
+test('refinement: entropyDeficitBits > 0 when one segment dominates', () => {
+  const queue = [
+    ql('2026-01-01T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-30T00:00:00.000Z', 'A', 5000),
+  ];
+  const r = buildDailyTokenCalendarMaskRleEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  // mask 30 days, segments [1,28,1] -> H ~0.42, log2(3)=1.585 -> deficit ~1.16
+  assert.ok(s.entropyDeficitBits > 1, `deficit=${s.entropyDeficitBits}`);
+});
+
+test('refinement: dominantSegmentShare and kind for active dominator', () => {
+  const queue = [
+    // mask: [1,1,1,1,1,1,1,1,1,1,0,0,1] -> 10-active dominates
+    ql('2026-01-01T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-02T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-03T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-04T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-05T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-06T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-07T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-08T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-09T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-10T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-13T00:00:00.000Z', 'A', 5000),
+  ];
+  const r = buildDailyTokenCalendarMaskRleEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.equal(s.spanDays, 13);
+  assert.equal(s.longestSegmentLength, 10);
+  assert.equal(s.dominantSegmentKind, 'active');
+  assert.ok(Math.abs(s.dominantSegmentShare - 10 / 13) < 1e-12);
+});
+
+test('refinement: dominantSegmentKind=silent when worst gap dominates', () => {
+  // mask 30 days, [1,28,1] -> longest seg is the 28-day silent
+  const queue = [
+    ql('2026-01-01T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-30T00:00:00.000Z', 'A', 5000),
+  ];
+  const r = buildDailyTokenCalendarMaskRleEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.equal(s.dominantSegmentKind, 'silent');
+  assert.equal(s.longestSegmentLength, 28);
+  assert.ok(Math.abs(s.dominantSegmentShare - 28 / 30) < 1e-12);
+});
+
+test('refinement: continuous source has dominantSegmentShare=1, kind=active', () => {
+  const queue = [
+    ql('2026-01-01T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-02T00:00:00.000Z', 'A', 5000),
+    ql('2026-01-03T00:00:00.000Z', 'A', 5000),
+  ];
+  const r = buildDailyTokenCalendarMaskRleEntropy(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.equal(s.dominantSegmentShare, 1);
+  assert.equal(s.dominantSegmentKind, 'active');
+  assert.equal(s.entropyDeficitBits, 0);
+});
