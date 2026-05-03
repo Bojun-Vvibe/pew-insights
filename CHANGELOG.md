@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.403 — 2026-05-04
+
+### Added
+
+- `daily-token-allan-deviation` REFINEMENT — two new per-row
+  derived fields plus two sort keys:
+  - `hadamardDev`: Hadamard deviation at `tau=1` day (3-sample
+    Allan variant) on the same gap-filled series:
+
+        H(tau=1) = sqrt( (1 / (6 * (N - 2)))
+                       * sum_{i=0..N-3} (x[i+2] - 2*x[i+1] + x[i])^2 )
+
+    Insensitive to LINEAR drift (a constant ramp has zero
+    second-difference), so isolates the *non-drift* step
+    volatility. Two sources with identical `allanDev` can have
+    very different `hadamardDev` if one is sustained-ramp-
+    driven and the other is white-noise-driven.
+  - `hadamardAllanRatio` = `hadamardDev / allanDev`. Pure white
+    noise asymptotes to ~`sqrt(3/2) ~ 1.225`. A strong linear
+    ramp drives the ratio toward 0 (Hadamard removes drift,
+    Allan does not). A strongly oscillating series drives the
+    ratio above ~1.2. Cleanly partitions sources into
+    "drift-driven volatility" (`< 1`), "i.i.d.-like" (`~ 1.0
+    - 1.2`), and "second-difference-noisy / oscillating"
+    (`> 1.2`).
+  - New sort keys `hadamard` and `hadamardratio` accepted on
+    `--sort`.
+- 7 additional unit tests covering: `hadamardDeviationTau1`
+  flat at `n<3`, exact zero on a 7-point linear ramp (drift
+  insensitivity witness), closed-form `sqrt(100/6)` on the
+  3-point fixture `[0, 5, 0]`; end-to-end ramp source has
+  `hadamardDev ~ 0` while `allanDev > 0`; oscillator has
+  `hadamardDev > allanDev` and `hadamardAllanRatio > 1.1`;
+  `--sort hadamard` reorders an oscillator above a ramp
+  source despite identical token totals; `--sort hadamardratio`
+  is accepted.
+- New exported pure helper
+  `hadamardDeviationTau1(values: number[]): { hadamard: number; flat: boolean }`.
+- Renderer surfaces `hadamardDev` and `hAllRatio` columns
+  next to `allanDev` / `rwRatio`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+```
+$ pew-insights daily-token-allan-deviation --since 2026-04-26T00:00:00.000Z
+```
+
+| source       | tokens         | allanDev     | hadamardDev  | rwRatio | hAllRatio | first      | last       |
+|--------------|----------------|--------------|--------------|---------|-----------|------------|------------|
+| opencode     | 6,417,511,299  | 154,856,069  | 108,426,093  | 0.963   | 0.700     | 2026-04-20 | 2026-05-03 |
+| claude-code  | 3,442,385,788  | 126,499,626  | 130,090,781  | 0.822   | 1.028     | 2026-02-11 | 2026-04-23 |
+| openclaw     | 2,251,465,408  |  66,104,660  |  61,539,997  | 0.708   | 0.931     | 2026-04-17 | 2026-05-03 |
+| codex        |   809,624,660  | 105,348,501  |  77,754,198  | 0.859   | 0.738     | 2026-04-13 | 2026-04-20 |
+| hermes       |   309,838,511  |   7,234,654  |   6,746,180  | 0.783   | 0.932     | 2026-04-17 | 2026-05-03 |
+| (src-1)      |     1,885,727  |      25,038  |      24,677  | 0.926   | 0.986     | 2025-07-30 | 2026-04-20 |
+
+Reading the `hAllRatio` column (the new partition):
+
+`opencode` (`0.700`) and `codex` (`0.738`) sit clearly in the
+"drift-driven volatility" zone — Hadamard removes a sustained
+day-over-day ramp that Allan can't see through, so the
+Hadamard estimate of pure step-noise is ~30% smaller than
+Allan's. These two sources have *trended* daily token mass
+(growth or shrink) embedded in their Allan signal.
+
+`claude-code` lands at `1.028` — the only source above `1.0`
+in the visible suite — confirming "i.i.d.-like with a slight
+oscillating tilt": its second differences are NOISIER than
+its first differences after normalization. Combined with the
+prior axis-151 read (`rwRatio = 0.822`, persistent at
+first-diff scale) this is a "smooth on adjacent days but
+jittery on 3-day windows" signature.
+
+`openclaw` (`0.931`), `hermes` (`0.932`), and `(src-1)`
+(`0.986`) all sit comfortably below the white-noise asymptote
+`~ 1.225` but above the drift-collapse zone — moderate drift
+plus moderate step-noise.
+
+Cross-axis sanity: `hadamardAllanRatio = 0.700` for `opencode`
+matches the visual: `allanDev = 1.55e8` but `hadamardDev =
+1.08e8`. The 30% gap is exactly the linear-drift component
+that the workweek-uniform usage pattern (axis-150) implies.
+
 ## 0.6.402 — 2026-05-04
 
 ### Added

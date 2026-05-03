@@ -6754,7 +6754,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: tokens | allan | allanrel | rwratio | ndays (default tokens). Applied before --top.',
+    'sort key: tokens | allan | allanrel | rwratio | hadamard | hadamardratio | ndays (default tokens). Applied before --top.',
     'tokens',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -6782,9 +6782,9 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
-        const sort = opts.sort as 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'ndays';
-        if (!['tokens', 'allan', 'allanrel', 'rwratio', 'ndays'].includes(sort)) {
-          throw new Error(`--sort must be one of tokens|allan|allanrel|rwratio|ndays (got ${opts.sort})`);
+        const sort = opts.sort as 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'hadamard' | 'hadamardratio' | 'ndays';
+        if (!['tokens', 'allan', 'allanrel', 'rwratio', 'hadamard', 'hadamardratio', 'ndays'].includes(sort)) {
+          throw new Error(`--sort must be one of tokens|allan|allanrel|rwratio|hadamard|hadamardratio|ndays (got ${opts.sort})`);
         }
         const queue = await readQueue(paths);
         const report = buildDailyTokenAllanDeviation(queue, {

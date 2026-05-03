@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert';
 import {
   buildDailyTokenAllanDeviation,
   allanDeviationTau1,
+  hadamardDeviationTau1,
 } from '../src/dailytokenallandeviation.js';
 import type { QueueLine } from '../src/types.js';
 
@@ -344,4 +345,75 @@ test('daily-token-allan-deviation: aggregates multiple rows per day', () => {
   // Day 1 = 100, day 2 = 200, day 3 = 300. diffs: 100, 100. sumSq=20000
   // sigma_a = sqrt(20000 / (2*2)) = sqrt(5000)
   assert.ok(Math.abs(s.allanDev - Math.sqrt(5000)) < 1e-9);
+});
+
+// ---- hadamard refinement ---------------------------------------------------
+
+test('hadamardDeviationTau1: flat for n<3', () => {
+  assert.deepEqual(hadamardDeviationTau1([]), { hadamard: 0, flat: true });
+  assert.deepEqual(hadamardDeviationTau1([1]), { hadamard: 0, flat: true });
+  assert.deepEqual(hadamardDeviationTau1([1, 2]), { hadamard: 0, flat: true });
+});
+
+test('hadamardDeviationTau1: linear ramp -> 0 (drift insensitivity)', () => {
+  // Pure linear ramp has zero second differences.
+  const r = hadamardDeviationTau1([10, 20, 30, 40, 50, 60, 70]);
+  assert.equal(r.flat, false);
+  assert.ok(Math.abs(r.hadamard) < 1e-12);
+});
+
+test('hadamardDeviationTau1: closed-form 3-point', () => {
+  // [0, 5, 0]: second diff = 0 - 2*5 + 0 = -10 -> sumSq=100. H = sqrt(100 / (6*1)) = sqrt(100/6).
+  const r = hadamardDeviationTau1([0, 5, 0]);
+  assert.equal(r.flat, false);
+  assert.ok(Math.abs(r.hadamard - Math.sqrt(100 / 6)) < 1e-12);
+});
+
+test('daily-token-allan-deviation: linear ramp source -> hadamardDev ~ 0 but allanDev > 0', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'a', 100),
+    ql('2026-04-02T00:00:00.000Z', 'a', 200),
+    ql('2026-04-03T00:00:00.000Z', 'a', 300),
+    ql('2026-04-04T00:00:00.000Z', 'a', 400),
+    ql('2026-04-05T00:00:00.000Z', 'a', 500),
+  ];
+  const r = buildDailyTokenAllanDeviation(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.ok(s.allanDev > 0, 'allanDev must be positive on a non-constant ramp');
+  assert.ok(Math.abs(s.hadamardDev) < 1e-9, `hadamardDev should be ~0 on linear ramp, got ${s.hadamardDev}`);
+  assert.equal(s.flatHadamardRatio, false);
+  assert.ok(Math.abs(s.hadamardAllanRatio) < 1e-9);
+});
+
+test('daily-token-allan-deviation: oscillating source -> hadamardDev > allanDev', () => {
+  // [0, 100, 0, 100, 0, 100, 0]: alternating, second diffs = +/- 200 each.
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 7; d++) {
+    const day = `2026-04-0${d}T00:00:00.000Z`;
+    queue.push(ql(day, 'a', d % 2 === 0 ? 100 : 1));
+  }
+  const r = buildDailyTokenAllanDeviation(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.ok(s.hadamardDev > s.allanDev, `hadamardDev ${s.hadamardDev} should exceed allanDev ${s.allanDev} on oscillator`);
+  assert.ok(s.hadamardAllanRatio > 1.1);
+});
+
+test('daily-token-allan-deviation: sort=hadamard reorders by hadamardDev desc', () => {
+  // Source a: ramp -> hadamard ~ 0
+  // Source b: oscillator -> hadamard high
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 6; d++) {
+    const day = `2026-04-0${d}T00:00:00.000Z`;
+    queue.push(ql(day, 'a', d * 100));
+    queue.push(ql(day, 'b', d % 2 === 0 ? 100 : 1));
+  }
+  const r = buildDailyTokenAllanDeviation(queue, { sort: 'hadamard', generatedAt: GEN });
+  assert.equal(r.sources[0]!.source, 'b');
+  assert.equal(r.sources[1]!.source, 'a');
+});
+
+test('daily-token-allan-deviation: rejects bad sort hadamardratio variants', () => {
+  // Smoke that the new sort key is accepted.
+  const r = buildDailyTokenAllanDeviation([], { sort: 'hadamardratio', generatedAt: GEN });
+  assert.equal(r.sort, 'hadamardratio');
 });

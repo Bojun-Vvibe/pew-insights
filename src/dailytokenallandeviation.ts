@@ -139,7 +139,7 @@ export interface DailyTokenAllanDeviationOptions {
    *   - 'ndays':            nFilledDays desc, source asc.
    * The `top` cap is applied AFTER the sort.
    */
-  sort?: 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'ndays';
+  sort?: 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'hadamard' | 'hadamardratio' | 'ndays';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -190,6 +190,34 @@ export interface DailyTokenAllanDeviationSourceRow {
   randomWalkAllanRatio: number;
   /** True iff randomWalkAllanRatio is undefined (stddev=0) and reported as 0. */
   flatRwRatio: boolean;
+  /**
+   * Hadamard deviation at tau=1 day on the gap-filled series.
+   *
+   *     H(tau=1) = sqrt( (1 / (6 * (N - 2)))
+   *                    * sum_{i=0..N-3} (x[i+2] - 2*x[i+1] + x[i])^2 )
+   *
+   * The 3-sample variant of Allan deviation. Insensitive to LINEAR
+   * drift in the underlying series (a constant linear trend has
+   * second-difference zero), so isolates the *non-drift* step
+   * volatility. Allan and Hadamard agree for purely random series
+   * and diverge whenever a source carries a sustained ramp.
+   * Reported as 0 with `flatHadamard: true` when N < 3.
+   */
+  hadamardDev: number;
+  /** True iff hadamardDev is undefined (N < 3) and reported as 0. */
+  flatHadamard: boolean;
+  /**
+   * hadamardDev / allanDev. Dimensionless. Pure-random series
+   * have ratio ~ 1.225 (asymptotic factor sqrt(3/2)); a strong
+   * linear ramp drives the ratio toward 0 (Hadamard removes
+   * drift, Allan does not); a strongly oscillating / second-
+   * differences-noisy series drives it well above sqrt(3/2).
+   * Reported as 0 with `flatHadamardRatio: true` when allanDev
+   * = 0 or hadamardDev is undefined.
+   */
+  hadamardAllanRatio: number;
+  /** True iff hadamardAllanRatio is undefined and reported as 0. */
+  flatHadamardRatio: boolean;
   /** ISO date (YYYY-MM-DD) of the source's first active day. */
   firstActiveDay: string;
   /** ISO date (YYYY-MM-DD) of the source's last active day. */
@@ -202,7 +230,7 @@ export interface DailyTokenAllanDeviationReport {
   windowEnd: string | null;
   minDays: number;
   top: number;
-  sort: 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'ndays';
+  sort: 'tokens' | 'allan' | 'allanrel' | 'rwratio' | 'hadamard' | 'hadamardratio' | 'ndays';
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -250,6 +278,24 @@ export function allanDeviationTau1(values: number[]): { allan: number; flat: boo
   return { allan: Math.sqrt(sumSq / (2 * (n - 1))), flat: false };
 }
 
+/**
+ * Hadamard deviation at tau=1 sample (3-sample variant of Allan).
+ *
+ *   H^2 = (1 / (6 * (N - 2))) * sum_{i=0..N-3} (x[i+2] - 2*x[i+1] + x[i])^2
+ *
+ * Insensitive to linear drift. Returns 0 with flat=true when N < 3.
+ */
+export function hadamardDeviationTau1(values: number[]): { hadamard: number; flat: boolean } {
+  const n = values.length;
+  if (n < 3) return { hadamard: 0, flat: true };
+  let sumSq = 0;
+  for (let i = 0; i < n - 2; i++) {
+    const d = values[i + 2]! - 2 * values[i + 1]! + values[i]!;
+    sumSq += d * d;
+  }
+  return { hadamard: Math.sqrt(sumSq / (6 * (n - 2))), flat: false };
+}
+
 function addDays(ymd: string, days: number): string {
   const ms = Date.parse(`${ymd}T00:00:00.000Z`);
   const next = new Date(ms + days * 86_400_000);
@@ -275,8 +321,8 @@ export function buildDailyTokenAllanDeviation(
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
   const sort = opts.sort ?? 'tokens';
-  if (!['tokens', 'allan', 'allanrel', 'rwratio', 'ndays'].includes(sort)) {
-    throw new Error(`sort must be one of tokens|allan|allanrel|rwratio|ndays (got ${opts.sort})`);
+  if (!['tokens', 'allan', 'allanrel', 'rwratio', 'hadamard', 'hadamardratio', 'ndays'].includes(sort)) {
+    throw new Error(`sort must be one of tokens|allan|allanrel|rwratio|hadamard|hadamardratio|ndays (got ${opts.sort})`);
   }
   const sourceFilter = opts.source ?? null;
   if (sourceFilter !== null && typeof sourceFilter !== 'string') {
@@ -364,6 +410,7 @@ export function buildDailyTokenAllanDeviation(
     const mean = popMean(filled);
     const stddev = popStddev(filled, mean);
     const a = allanDeviationTau1(filled);
+    const h = hadamardDeviationTau1(filled);
 
     // First-difference summary (mean abs + max abs + arg-max landing day).
     let sumAbs = 0;
@@ -385,6 +432,8 @@ export function buildDailyTokenAllanDeviation(
     const flatRel = mean === 0;
     const randomWalkAllanRatio = stddev === 0 ? 0 : a.allan / stddev;
     const flatRwRatio = stddev === 0;
+    const hadamardAllanRatio = h.flat || a.allan === 0 ? 0 : h.hadamard / a.allan;
+    const flatHadamardRatio = h.flat || a.allan === 0;
 
     rows.push({
       source: src,
@@ -402,6 +451,10 @@ export function buildDailyTokenAllanDeviation(
       flatRel,
       randomWalkAllanRatio,
       flatRwRatio,
+      hadamardDev: h.hadamard,
+      flatHadamard: h.flat,
+      hadamardAllanRatio,
+      flatHadamardRatio,
       firstActiveDay: first,
       lastActiveDay: last,
     });
@@ -418,6 +471,12 @@ export function buildDailyTokenAllanDeviation(
         break;
       case 'rwratio':
         primary = b.randomWalkAllanRatio - a.randomWalkAllanRatio;
+        break;
+      case 'hadamard':
+        primary = b.hadamardDev - a.hadamardDev;
+        break;
+      case 'hadamardratio':
+        primary = b.hadamardAllanRatio - a.hadamardAllanRatio;
         break;
       case 'ndays':
         primary = b.nFilledDays - a.nFilledDays;
