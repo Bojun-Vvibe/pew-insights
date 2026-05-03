@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.363 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTIETH):
+  `pew-insights daily-token-cramer-von-mises-halves`.
+
+  Per-source CRAMER-VON MISES TWO-SAMPLE TEST
+  comparing the empirical cumulative distribution
+  functions (ECDFs) of the FIRST half (n1 = floor(n/2)
+  days) vs the SECOND half (n2 = n - n1 days) of the
+  gap-filled daily total_tokens series, using the
+  Anderson 1962 closed form on pooled ranks
+  (Schmid & Trede 1995 midrank tie convention):
+
+      U  = n1 * sum_{i=1..n1} ( r_i - i )^2 +
+           n2 * sum_{j=1..n2} ( s_j - j )^2
+
+      T  = U / ( n1 * n2 * N ) -
+           ( 4 * n1 * n2 - 1 ) / ( 6 * N )
+
+  where r_1 < ... < r_{n1} are the pooled ranks of
+  the sorted A-sample and s_1 < ... < s_{n2} the
+  pooled ranks of the sorted B-sample. The integrand
+  is the squared ECDF gap weighted UNIFORMLY over
+  the pooled measure dH_N (in CONTRAST to axis-119
+  Anderson-Darling, whose 1/(H_N(1-H_N)) weight
+  amplifies the tails). Standardised to a unit-
+  variance score via the Anderson 1962 Theorem 2
+  closed-form H0 moments:
+
+      meanH0  =  1/6 + 1/(6*N)
+      varH0   =  ((N+1)/(45*N^2)) *
+                 (4*n1*n2*N - 3*(n1^2 + n2^2) -
+                  2*n1*n2) / (4*n1*n2)
+      cvmT    =  ( T - meanH0 ) / sqrt(varH0)
+
+  Right-tail p-value cvmP from log-linear interpolation
+  of Anderson 1962 Table 1 anchors on the
+  UNSTANDARDISED T (T_0.25=0.20939, T_0.10=0.34730,
+  T_0.05=0.46136, T_0.025=0.58061, T_0.01=0.74346).
+  Sign-direction indicator
+  cvmDir = sign(median(B) - median(A)) drives the
+  convention cvmZSigned = cvmDir * |cvmT| for
+  cross-axis comparability with axes 115/116/117/118/
+  119.
+
+  STRUCTURAL ORTHOGONALITY. CvM is the UNWEIGHTED L2
+  partner to axis-119 AD's TAIL-WEIGHTED L2 (uniform
+  weight on dH_N vs the inverse-variance weight that
+  explodes near 0 and 1) AND the INTEGRATED L2
+  partner to axis-118 KS's POINTWISE L_infinity
+  sup-norm. They are NOT monotone transforms of each
+  other: a many-small-gaps configuration with bounded
+  pointwise discrepancy gives small KS but large CvM,
+  while a single large pointwise spike gives large KS
+  but moderate CvM; bulk-shifted halves give large
+  CvM at moderate AD while concentrated tail-mass
+  shifts give moderate CvM at large AD. Distinct from
+  axis-117 Siegel-Tukey (rank-invariant SCALE only
+  after median-centring), axis-116 Brown-Forsythe
+  (parametric SCALE only), axis-115 Mann-Whitney
+  (LOCATION/stochastic-dominance only).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (5 sources kept, 1 dropped below min-tenure-days):
+
+      claude-code      cvmStat=1.5502  cvmT=  9.3320  cvmDir=+1  cvmZSigned= +9.3320  cvmP=1.07e-04
+      openclaw         cvmStat=0.9861  cvmT=  5.6210  cvmDir=-1  cvmZSigned= -5.6210  cvmP=2.55e-03
+      vscode-other     cvmStat=0.4259  cvmT=  1.7378  cvmDir= 0  cvmZSigned=  0.0000  cvmP=6.20e-02
+      opencode         cvmStat=0.1990  cvmT=  0.1429  cvmDir=-1  cvmZSigned= -0.1429  cvmP=1.00e+00
+      hermes           cvmStat=0.1291  cvmT= -0.3290  cvmDir=+1  cvmZSigned= +0.3290  cvmP=1.00e+00
+
+  (claude-code n1=n2=36 over a 72-day gap-filled
+  tenure shows a strong distributional shift between
+  halves, with cvmStat = 1.5502 well above the
+  Anderson 1962 alpha = 0.05 critical value
+  T_0.05 = 0.46136; openclaw n1=8, n2=9 over 17 days
+  shows a clean second-half decline driven by the
+  median(A) = 213.79M -> median(B) = 59.42M drop;
+  vscode-other sits just below the alpha = 0.05
+  threshold but with cvmDir = 0 because both halves
+  share median(A) = median(B) = 0; opencode and
+  hermes are below H0 mean and report cvmP = 1.)
+
+  Default sort `cvmStatDesc` ranks by raw CvM
+  statistic; flag `--sort cvmTDesc` ranks by
+  standardised score. JSON mode emits the full
+  per-source structure for downstream tooling. New
+  flags mirror the axes-115/116/117/118/119 surface
+  for cross-axis comparability:
+
+      --since <iso>            inclusive ISO lower bound
+      --until <iso>            exclusive ISO upper bound
+      --source <name>          single-source filter
+      --min-tokens <n>         hide sparse sources (default 1000)
+      --min-tenure-days <n>    hard floor 8 (default 14)
+      --top <n>                cap rows after sort (default 0)
+      --sort <key>             cvmStatDesc (default) | cvmStat |
+                               cvmT | cvmTDesc | cvmZSigned |
+                               cvmZSignedDesc | cvmP | cvmPDesc |
+                               tokens | tenure | source
+      --json                   emit JSON instead of pretty report
+
+
 ## 0.6.362 — 2026-05-03
 
 ### Added
