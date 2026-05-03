@@ -22982,6 +22982,7 @@ export function renderDailyTokenBhattacharyyaDistanceHalves(
     'h',
     'BC',
     'bDist',
+    'bcAngle',
     'bDistNorm',
     'tokens',
   ];
@@ -22997,6 +22998,7 @@ export function renderDailyTokenBhattacharyyaDistanceHalves(
     s.bDistBandwidth.toFixed(2),
     s.bcCoefficient.toFixed(6),
     s.bDist.toFixed(6),
+    s.bcAngle.toFixed(6),
     s.bDistNormalized.toFixed(6),
     formatNumber(s.totalTokens),
   ]);

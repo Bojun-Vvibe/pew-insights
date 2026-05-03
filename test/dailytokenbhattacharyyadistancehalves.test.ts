@@ -599,3 +599,61 @@ test('cauchy-schwarz: BC >= 0 for non-negative pmfs', () => {
   ]);
   assert.ok(r.bcCoefficient >= 0);
 });
+
+// ---------- bcAngle Riemannian diagnostic ----------
+
+test('bcAngle: equals arccos(bcCoefficient)', () => {
+  const r = dailyTokenBhattacharyyaDistanceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 50, 51, 52, 53, 54, 55, 56, 57,
+  ]);
+  assert.ok(Math.abs(r.bcAngle - Math.acos(r.bcCoefficient)) < 1e-12);
+});
+
+test('bcAngle: in [0, pi/2] for proper pmfs', () => {
+  const r = dailyTokenBhattacharyyaDistanceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(r.bcAngle >= 0);
+  assert.ok(r.bcAngle <= Math.PI / 2 + 1e-12);
+});
+
+test('bcAngle: 0 for identical halves (BC=1)', () => {
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenBhattacharyyaDistanceHalves([...half, ...half]);
+  assert.ok(r.bcAngle < 1e-4, `bcAngle=${r.bcAngle}`);
+});
+
+test('bcAngle: translation- and positive-scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12];
+  const r1 = dailyTokenBhattacharyyaDistanceHalves(x);
+  const r2 = dailyTokenBhattacharyyaDistanceHalves(
+    x.map((v) => 5 * v + 1000),
+  );
+  assert.ok(Math.abs(r1.bcAngle - r2.bcAngle) < 1e-8);
+});
+
+test('bcAngle: rows expose bcAngle in [0, pi/2]', () => {
+  const r = buildDailyTokenBhattacharyyaDistanceHalves(
+    makeQueueWithTwoSources(),
+    { minTokens: 0 },
+  );
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.bcAngle));
+    assert.ok(s.bcAngle >= 0);
+    assert.ok(s.bcAngle <= Math.PI / 2 + 1e-12);
+    assert.ok(Math.abs(s.bcAngle - Math.acos(s.bcCoefficient)) < 1e-12);
+  }
+});
+
+test('bcAngle: monotone-decreasing in BC (bigger separation -> larger angle)', () => {
+  const first = [1, 2, 3, 4, 5, 6, 7, 8];
+  const small = dailyTokenBhattacharyyaDistanceHalves([
+    ...first,
+    9, 10, 11, 12, 13, 14, 15, 16,
+  ]);
+  const big = dailyTokenBhattacharyyaDistanceHalves([
+    ...first,
+    100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(big.bcAngle > small.bcAngle);
+});

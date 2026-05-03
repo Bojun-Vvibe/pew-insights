@@ -258,6 +258,18 @@ export interface DailyTokenBhattacharyyaDistanceHalvesSourceRow {
   /** Bhattacharyya distance bDist = -ln(BC) in [0, +inf). */
   bDist: number;
   /**
+   * Bhattacharyya angle bcAngle = arccos(BC) in [0, pi/2] radians
+   * (Bhattacharyya 1943; Cha 2007 "Comprehensive Survey on
+   * Distance/Similarity Measures between Probability Density
+   * Functions"). UNLIKE bDist, bcAngle IS a true METRIC on the
+   * probability simplex (the spherical/great-circle metric in
+   * sqrt-amplitude coordinates). Diagnostic only -- mirrors the
+   * hAngle field shipped on axis-128 for at-a-glance Riemannian
+   * comparison. Translation- and positive-scale-invariant in
+   * the data for the same reason as BC and bDist.
+   */
+  bcAngle: number;
+  /**
    * Normalised diagnostic: 1 - exp(-bDist) = 1 - BC = H^2 in [0, 1].
    * Puts bDist on the same [0, 1] scale as hDist^2 (axis-128) and
    * deltaNormalized (axis-129) for at-a-glance cross-axis comparison.
@@ -340,6 +352,7 @@ export function dailyTokenBhattacharyyaDistanceHalves(values: number[]): {
   bDistGridK: number;
   bcCoefficient: number;
   bDist: number;
+  bcAngle: number;
   bDistNormalized: number;
 } {
   const n = values.length;
@@ -456,6 +469,11 @@ export function dailyTokenBhattacharyyaDistanceHalves(values: number[]): {
 
   const bcSafe = bc < BDIST_BC_FLOOR ? BDIST_BC_FLOOR : bc;
   const bDist = -Math.log(bcSafe);
+  // Clamp BC into [-1, 1] for arccos numerical safety (already in
+  // [0, 1] from the clamp above; this guards against floating-point
+  // 1 + 1e-16 type overshoots).
+  const bcForArccos = bc > 1 ? 1 : bc < -1 ? -1 : bc;
+  const bcAngle = Math.acos(bcForArccos);
   const bDistNormalized = 1 - bc;
 
   if (!Number.isFinite(bc) || !Number.isFinite(bDist)) {
@@ -478,6 +496,7 @@ export function dailyTokenBhattacharyyaDistanceHalves(values: number[]): {
     bDistGridK: K,
     bcCoefficient: bc,
     bDist,
+    bcAngle,
     bDistNormalized,
   };
 }
@@ -655,6 +674,7 @@ export function buildDailyTokenBhattacharyyaDistanceHalves(
       bDistGridK: result.bDistGridK,
       bcCoefficient: result.bcCoefficient,
       bDist: result.bDist,
+      bcAngle: result.bcAngle,
       bDistNormalized: result.bDistNormalized,
     });
     totalTokensSum += acc.totalTokens;
