@@ -20270,6 +20270,7 @@ import type { DailyTokenTotalVariationHalvesReport } from './dailytokentotalvari
 import type { DailyTokenHellingerDistanceHalvesReport } from './dailytokenhellingerdistancehalves.js';
 import type { DailyTokenTriangularDiscriminationHalvesReport } from './dailytokentriangulardiscriminationhalves.js';
 import type { DailyTokenBhattacharyyaDistanceHalvesReport } from './dailytokenbhattacharyyadistancehalves.js';
+import type { DailyTokenJeffreysDivergenceHalvesReport } from './dailytokenjeffreysdivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23007,6 +23008,91 @@ export function renderDailyTokenBhattacharyyaDistanceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: BC in [0, 1] is the Bhattacharyya coefficient = sum_k sqrt(p_k*q_k); BC=1 iff KDE-smoothed halves coincide; BC->0 iff p, q have disjoint support on the grid. bDist = -ln(BC) in [0, +inf); bDist=0 iff halves identical; bDist diverges as BC->0. bDistNorm = 1 - BC = H^2 in [0, 1] is a diagnostic on the same [0, 1] scale as deltaNormalized (axis-129) and tvDist (axis-127). bDist is permutation-invariant within each half. Topsoe-Pinsker anchors: 1 - BC >= H^2/2 (when H is small); BC >= 1 - 0.5*tvDist. bDist is invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenJeffreysDivergenceHalves(
+  r: DailyTokenJeffreysDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-jeffreys-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED JEFFREYS DIVERGENCE J = sum_k (p_k - q_k) * ln(p_k/q_k) = KL(p||q) + KL(q||p) between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-FIRST cross-source axis. The SYMMETRIC SUM of two pairwise KL divergences (Jeffreys 1946; Kullback & Leibler 1951). Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. J in [0, +inf), in nats. ORTHOGONAL to all 13 prior axes 118-130: linear-in-(p-q), log-in-ratio f-divergence with f(t) = (t-1)*ln(t); neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis, PCA-projection, Shannon-mixture log-ratio (JSD: bounded by ln 2; J unbounded), pmf-L^1 (TV), pmf-SQRT-AMPLITUDE-L^2 (H), pmf-RECIPROCAL-SUM-WEIGHTED-L^2 (Delta), nor LOG-of-SQRT-AMPLITUDE-INNER-PRODUCT (bDist). Lin (1991) bound: JSD <= J/4 in nats; not monotone. Translation-invariant AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Jeffreys divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'KL(p||q)',
+    'KL(q||p)',
+    'J',
+    'asym',
+    'jNorm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.jeffreysN1),
+    formatNumber(s.jeffreysN2),
+    s.jeffreysMadPool.toFixed(2),
+    s.jeffreysBandwidth.toFixed(2),
+    s.klPQ.toFixed(6),
+    s.klQP.toFixed(6),
+    s.jeffreys.toFixed(6),
+    s.jeffreysAsymmetry.toFixed(6),
+    s.jeffreysNormalized.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: J in [0, +inf) is the Jeffreys (symmetric KL) divergence in nats; J = 0 iff KDE-smoothed halves coincide; J -> +inf as p, q approach disjoint support. asym = |KL(p||q) - KL(q||p)| / J in [0, 1] is the directional-asymmetry diagnostic (0 = symmetric per-bin contributions; 1 = one direction dominates entirely). jNorm = J/(J+1) in [0, 1) is a monotone normalisation on the same [0, 1) scale as bDistNormalized (axis-130), deltaNormalized (axis-129), tvDist (axis-127). Lin (1991) bound: JSD <= J/4 in nats. Pinsker (1964): tvDist^2 <= 0.5 * J. J is permutation-invariant within each half AND invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 
