@@ -471,3 +471,122 @@ test('builder: ws=14 splits 28-day Feb cleanly into start+end with no mid', () =
   assert.equal(s.midTokens, 0);
   assert.equal(s.midActiveDayCount, 0);
 });
+
+// --- v0.6.398 refinement: endShareDelta and endStartDensityLogLift -------
+
+test('refinement: balanced source has endShareDelta = 0 and logLift = 0', () => {
+  const lines: QueueLine[] = [
+    ql('2026-01-01T12:00:00Z', 'a', 5000),
+    ql('2026-01-31T12:00:00Z', 'a', 5000),
+  ];
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.endShareDelta, 0);
+  assert.equal(s.endStartDensityLogLift, 0);
+});
+
+test('refinement: pure month-end source has endShareDelta = +0.5 and logLift null', () => {
+  // pure-end source: startTokens=0 -> densityRatio=null -> logLift=null.
+  const lines: QueueLine[] = [];
+  for (let d = 25; d <= 31; d += 1) {
+    lines.push(ql(`2026-01-${d}T12:00:00Z`, 'a', 1000));
+  }
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.endShareDelta, 0.5);
+  assert.equal(s.endStartDensityLogLift, null);
+});
+
+test('refinement: pure month-start source has endShareDelta = -0.5', () => {
+  const lines: QueueLine[] = [];
+  for (let d = 1; d <= 7; d += 1) {
+    const dd = String(d).padStart(2, '0');
+    lines.push(ql(`2026-01-${dd}T12:00:00Z`, 'a', 1000));
+  }
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.equal(s.endShareDelta, -0.5);
+});
+
+test('refinement: 2x end-day intensity gives logLift = +ln(2)', () => {
+  // Span Jan-01..Jan-31 -> 7 start cal days, 7 end cal days, 17 mid.
+  // Put 1000 tokens on Jan-01 (start, 1 active start day; raw rate =
+  // 1000 / 7 over span). Put 2000 tokens on Jan-31 (end, raw rate =
+  // 2000 / 7). densityRatio = (2000/7) / (1000/7) = 2; logLift = ln(2).
+  const lines: QueueLine[] = [
+    ql('2026-01-01T12:00:00Z', 'a', 1000),
+    ql('2026-01-31T12:00:00Z', 'a', 2000),
+  ];
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.densityRatio! - 2) < 1e-9);
+  assert.ok(Math.abs(s.endStartDensityLogLift! - Math.log(2)) < 1e-9);
+  assert.ok(s.endShareDelta > 0);
+});
+
+test('refinement: half end-day intensity gives logLift = -ln(2)', () => {
+  const lines: QueueLine[] = [
+    ql('2026-01-01T12:00:00Z', 'a', 2000),
+    ql('2026-01-31T12:00:00Z', 'a', 1000),
+  ];
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+  });
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.endStartDensityLogLift! - -Math.log(2)) < 1e-9);
+  assert.ok(s.endShareDelta < 0);
+});
+
+test('refinement: source-asc tie-breaker on equal endShare', () => {
+  // Two sources with identical endShare = 0.5 (balanced). Tie-break by
+  // source name ascending.
+  const lines: QueueLine[] = [
+    ql('2026-01-01T12:00:00Z', 'zebra', 1000),
+    ql('2026-01-31T12:00:00Z', 'zebra', 1000),
+    ql('2026-01-01T12:00:00Z', 'alpha', 1000),
+    ql('2026-01-31T12:00:00Z', 'alpha', 1000),
+  ];
+  const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+    generatedAt: GEN,
+    sort: 'endShare',
+  });
+  assert.equal(r.sources.length, 2);
+  // Both have endShare=0.5. Tie-break: 'alpha' < 'zebra' (asc).
+  assert.equal(r.sources[0]!.source, 'alpha');
+  assert.equal(r.sources[1]!.source, 'zebra');
+});
+
+test('refinement: endShareDelta range is bounded to [-0.5, +0.5]', () => {
+  // Sweep a few synthetic ratios and confirm bounds.
+  const cases: Array<[number, number]> = [
+    [0, 1000],
+    [1000, 0],
+    [500, 500],
+    [100, 900],
+    [900, 100],
+  ];
+  for (const [s0, e0] of cases) {
+    const lines: QueueLine[] = [];
+    if (s0 > 0) lines.push(ql('2026-01-01T12:00:00Z', 'x', s0));
+    if (e0 > 0) lines.push(ql('2026-01-31T12:00:00Z', 'x', e0));
+    if (lines.length < 2) {
+      // Need >= minDays=2 distinct days. Pad with mid day worth 1.
+      lines.push(ql('2026-01-15T12:00:00Z', 'x', 1));
+    }
+    const r = buildDailyTokenMonthEndVsMonthStartRatio(lines, {
+      generatedAt: GEN,
+      minTokens: 1,
+    });
+    const s = r.sources[0]!;
+    assert.ok(s.endShareDelta >= -0.5 - 1e-12);
+    assert.ok(s.endShareDelta <= 0.5 + 1e-12);
+  }
+});

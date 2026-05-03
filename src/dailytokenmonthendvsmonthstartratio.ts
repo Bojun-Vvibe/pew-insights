@@ -227,6 +227,29 @@ export interface DailyTokenMonthEndVsMonthStartRatioSourceRow {
    */
   endStartRatio: number | null;
   /**
+   * Refinement (v0.6.398): signed deviation of `endShare` from
+   * the natural bucket-equal baseline 0.5 (since START and END
+   * have identical bucket widths by design).
+   *   = endShare - 0.5
+   * Always defined and finite, in `[-0.5, +0.5]`. 0 = perfectly
+   * balanced; positive = end-tilted; negative = start-tilted.
+   * Lets you rank-order sources by EXCESS end tilt independent
+   * of the absolute share.
+   */
+  endShareDelta: number;
+  /**
+   * Refinement (v0.6.398): signed log-density-lift, the
+   * natural-log of `densityRatio`, capturing END-day vs
+   * START-day INTENSITY in log-units (more comparable across
+   * sources than the raw ratio when `densityRatio` is near 0
+   * or very large). `null` exactly when `densityRatio` is null
+   * or zero.
+   *   = ln(densityRatio)
+   * 0 = uniform per-day intensity; +ln(2) = end-day intensity
+   * is 2x start-day; -ln(2) = half.
+   */
+  endStartDensityLogLift: number | null;
+  /**
    * Calendar-density-corrected ratio:
    *   (endTokens / endCalendarDayCount) /
    *   (startTokens / startCalendarDayCount)
@@ -562,6 +585,11 @@ export function buildDailyTokenMonthEndVsMonthStartRatio(
       startShare,
       endStartRatio,
       densityRatio,
+      endShareDelta: endShare - 0.5,
+      endStartDensityLogLift:
+        densityRatio !== null && densityRatio > 0
+          ? Math.log(densityRatio)
+          : null,
       monthEdgeRegime,
       meanDailyTokens: meanDaily,
       degenerate,

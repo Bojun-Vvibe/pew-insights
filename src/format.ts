@@ -24589,8 +24589,10 @@ export function renderDailyTokenMonthEndVsMonthStartRatio(
     'endTokens',
     'midTokens',
     'endShare',
+    'shareDelta',
     'endStartRatio',
     'densityRatio',
+    'logLift',
     'regime',
     'meanDaily',
     'tokens',
@@ -24609,8 +24611,13 @@ export function renderDailyTokenMonthEndVsMonthStartRatio(
     formatNumber(s.endTokens),
     formatNumber(s.midTokens),
     s.endShare.toFixed(4),
+    (s.endShareDelta >= 0 ? '+' : '') + s.endShareDelta.toFixed(4),
     s.endStartRatio === null ? '\u2014' : s.endStartRatio.toFixed(4),
     s.densityRatio === null ? '\u2014' : s.densityRatio.toFixed(4),
+    s.endStartDensityLogLift === null
+      ? '\u2014'
+      : (s.endStartDensityLogLift >= 0 ? '+' : '') +
+        s.endStartDensityLogLift.toFixed(4),
     s.monthEdgeRegime,
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
