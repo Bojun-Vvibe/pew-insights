@@ -20257,6 +20257,7 @@ import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
+import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21840,6 +21841,99 @@ export function renderDailyTokenSiegelTukeyHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: stZ approx 0 = halves equally dispersed; stZ > +1.96 = second half more dispersed (DISPERSION GREW); stZ < -1.96 = first half more dispersed (DISPERSION SHRANK). |stZ| > 1.96 = significant scale-shift between halves at alpha = 0.05 (two-sided, Mann-Whitney normal approximation). Siegel-Tukey is the rank-based nonparametric companion of axis-116 Brown-Forsythe: both target SCALE-SHIFT on the same first/second half partition, but axis-116 is parametric on absolute deviations while axis-117 is rank-invariant on outward-pair ranks. They can disagree under heavy-tailed contamination -- a few large outliers in the second half drive bfZ but not stZ.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKsTwoSampleHalves(
+  r: DailyTokenKsTwoSampleHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-ks-two-sample-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KOLMOGOROV-SMIRNOV TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-EIGHTEENTH cross-source axis. Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST (Smirnov 1939, Bulletin Mathematique de l'Universite de Moscou 2(2):3-14; Kolmogorov 1933, Giornale dell'Istituto Italiano degli Attuari 4:83-91; Massey 1951, Journal of the American Statistical Association 46(253):68-78): ksD = sup_t |F_A(t) - F_B(t)|; ksDSigned in [-1,+1] with positive = second half stochastically larger; ksLambda = sqrt(n1*n2/(n1+n2)) * ksD; ksP = 2 sum_{k>=1} (-1)^(k-1) exp(-2 k^2 ksLambda^2); ksZ = sign(ksDSigned) * |Phi^{-1}(ksP/2)|. OMNIBUS distribution-equality companion to the SPECIFIC-MOMENT halves tests: distinct from axis-115 Mann-Whitney halves (LOCATION shift only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring) -- KS detects ANY pointwise ECDF gap simultaneously: location, scale, shape, multimodality, skewness, tail behaviour. A few large outliers concentrated in one half drive ksD without necessarily moving mwZ / bfZ / stZ; a pure shape change with equal mean and equal variance moves ksD but leaves mwZ / bfZ / stZ near zero.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KS two-sample (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'ksD+',
+    'ksD-',
+    'ksD',
+    'ksDSigned',
+    'ksLambda',
+    'ksP',
+    'ksZ',
+    'crit05',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.ksN1),
+    formatNumber(s.ksN2),
+    formatNumber(s.ksMedianA),
+    formatNumber(s.ksMedianB),
+    s.ksDPlus.toFixed(4),
+    s.ksDMinus.toFixed(4),
+    s.ksD.toFixed(4),
+    s.ksDSigned.toFixed(4),
+    s.ksLambda.toFixed(4),
+    s.ksP.toExponential(3),
+    s.ksZ.toFixed(4),
+    s.ksDCrit05.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: ksD approx 0 = ECDFs agree at every pooled order statistic; ksD > ksDCrit05 (= 1.36*sqrt((n1+n2)/(n1*n2)), Massey 1951 Table 1) rejects equal-distribution at alpha = 0.05; |ksZ| > 1.96 = significant distributional shift at alpha = 0.05 (two-sided). Sign convention: ksDSigned > 0 / ksZ > 0 = SECOND half stochastically LARGER (token mass STOCHASTICALLY GREW); ksDSigned < 0 / ksZ < 0 = SECOND half stochastically SMALLER (token mass STOCHASTICALLY SHRANK). KS is the OMNIBUS distribution-equality companion of axes 115/116/117: it can fire when the moment-specific tests do not (pure shape change), and it can stay quiet when they fire (e.g. tied medians and tied variances with skew flip would surface in axis-117 / axis-116 less dramatically than in KS, while pure constant location shift fires both 115 and KS).)`,
     ),
   );
 

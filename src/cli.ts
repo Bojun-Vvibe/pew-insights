@@ -169,6 +169,7 @@ import {
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
+  renderDailyTokenKsTwoSampleHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -500,6 +501,7 @@ import { buildDailyTokenLjungBoxQTest } from './dailytokenljungboxqtest.js';
 import { buildDailyTokenMannWhitneyHalves } from './dailytokenmannwhitneyhalves.js';
 import { buildDailyTokenBrownForsythHalves } from './dailytokenbrownforsythhalves.js';
 import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.js';
+import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37068,6 +37070,128 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSiegelTukeyHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-ks-two-sample-halves')
+  .description(
+    "Per-source KOLMOGOROV-SMIRNOV TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTEENTH cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST (Smirnov 1939, Bulletin Mathematique de l'Universite de Moscou 2(2):3-14; Kolmogorov 1933, Giornale dell'Istituto Italiano degli Attuari 4:83-91; Massey 1951, Journal of the American Statistical Association 46(253):68-78): ksD = sup_t |F_A(t) - F_B(t)|, ksDSigned in [-1,+1] with positive = second half stochastically larger, ksLambda = sqrt(n1*n2/(n1+n2))*ksD, ksP = 2 sum_{k>=1} (-1)^(k-1) exp(-2 k^2 ksLambda^2), ksZ = sign(ksDSigned)*|Phi^{-1}(ksP/2)|. OMNIBUS distribution-equality test: distinct from axis-115 Mann-Whitney halves (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring). KS detects ANY ECDF gap (location, scale, shape, multimodality, skew, tails) simultaneously.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for Massey 1951 calibrated regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: ksDDesc (default) | ksD | ksDSigned | ksDSignedDesc | ksZ | ksZDesc | ksZAbs | ksZAbsDesc | ksP | ksPDesc | tokens | tenure | source.',
+    'ksDDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'ksD',
+          'ksDDesc',
+          'ksDSigned',
+          'ksDSignedDesc',
+          'ksZ',
+          'ksZDesc',
+          'ksZAbs',
+          'ksZAbsDesc',
+          'ksP',
+          'ksPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKsTwoSampleHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'ksD'
+            | 'ksDDesc'
+            | 'ksDSigned'
+            | 'ksDSignedDesc'
+            | 'ksZ'
+            | 'ksZDesc'
+            | 'ksZAbs'
+            | 'ksZAbsDesc'
+            | 'ksP'
+            | 'ksPDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenKsTwoSampleHalves(report) + '\n',
           );
         }
       } catch (e) {
