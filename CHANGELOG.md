@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.391 — 2026-05-04
+
+### Added
+
+- axis-144 refinement: `evennessRegime`, `shannonCompleteness`,
+  and `tailWeightGap` per-row diagnostic fields on
+  `daily-token-pielou-evenness`. All three are pure-compute
+  derivations from existing fields -- no new I/O, no new knobs,
+  no new CLI flags.
+- `evennessRegime` structural label binning Pielou J:
+  `'uniform'` (`J >= 0.90`), `'even'` (`[0.75, 0.90)`),
+  `'concentrated'` (`[0.50, 0.75)`), `'monopolised'`
+  (`< 0.50`), `'degenerate'` (`n < 2`). The bands are chosen
+  to match the cross-source profile observed on the live pew
+  queue (`J in [0.66, 0.97]`).
+- `shannonCompleteness = effectiveDaysShannon / nDays` in
+  `(0, 1]` -- the FRACTION of a source's calendar-active days
+  that are "effectively contributing" under Shannon (q=1) Hill
+  weighting. Algebraically equivalent to `exp(H - ln(n)) =
+  exp(-(1 - J) * ln(n))`, so it is a monotone bijection of J
+  once n is fixed but carries an ABSOLUTE COUNT-SCALE meaning
+  J does not. A source with `shanComp = 0.4` has a Shannon-
+  effective day count of 40% of its active calendar regardless
+  of whether n=8 or n=73.
+- `tailWeightGap = effectiveDaysShannon - 1/HHI` in effective
+  days. ALWAYS `>= 0` because Hill numbers are non-increasing
+  in q. Equality at 0 iff the daily mass is perfectly flat. A
+  LARGE gap means the source's mass is carried by a heavy
+  EVEN TAIL of small busy days that Shannon (q=1) credits
+  but inverse-Simpson (q=2) suppresses; a SMALL gap means the
+  active days are mostly comparable in mass. This metric makes
+  the cross-q Hill profile a single scalar per source.
+- 5 new tests covering: flat 3-day -> `regime='uniform'`,
+  `shanComp=1`, `tailGap=0` exactly; monopoly-ish vector ->
+  `regime='monopolised'`; Hill-number ordering invariant
+  `effectiveDaysShannon >= 1/HHI` on five vectors; algebraic
+  identity `shanComp == exp(H - ln(n))` to 1e-14; band-edge
+  detection on constructed near-flat / spike-bearing sources.
+- Renderer surfaces `regime`, `shanComp`, and `tailGap`
+  columns alongside `evenness` and `nEffShan`.
+
+### Live smoke (queue.jsonl, post-refinement, 2026-05-04)
+
+`pew-insights daily-token-pielou-evenness` against the local
+pew queue (6 sources, 13.13B tokens; one source name redacted
+as `vscode-<src-d>`):
+
+| source         | days | J      | regime       | nEffShan | shanComp | tailGap |
+| ---            | ---  | ---    | ---          | ---      | ---      | ---     |
+| opencode       | 14   | 0.9658 | uniform      | 12.793   | 0.9138   |  0.431  |
+| hermes         | 17   | 0.9484 | uniform      | 14.686   | 0.8639   |  1.232  |
+| openclaw       | 17   | 0.9196 | uniform      | 13.537   | 0.7963   |  2.229  |
+| vscode-<src-d> | 73   | 0.7775 | even         | 28.104   | 0.3850   | 10.922  |
+| codex          |  8   | 0.7039 | concentrated |  4.322   | 0.5403   |  1.083  |
+| claude-code    | 35   | 0.6654 | concentrated | 10.651   | 0.3043   |  4.311  |
+
+Reading: the regime classifier SEPARATES the field into three
+clusters that single-scalar J obscures. The top three
+(`opencode`, `hermes`, `openclaw`) are all `'uniform'` (J >=
+0.92), their daily mass is essentially evenly spread.
+`vscode-<src-d>` is `'even'` -- still well-spread but with a
+detectable lean. `codex` and `claude-code` are
+`'concentrated'` -- a clear minority of days drives most of
+the mass. NO source on the live queue is `'monopolised'`.
+
+`shannonCompleteness` reveals an asymmetry that J alone hides:
+`opencode`'s 14 active days have a Shannon-effective count of
+0.91 -- nearly all of them contribute. `vscode-<src-d>`'s 73
+active days have shanComp=0.39 -- only 38.5% of its calendar
+coverage is "effectively contributing" under Shannon weighting,
+i.e. it has a long tail of light days. `claude-code`'s 35 days
+shows shanComp=0.30 -- the LOWEST on the queue, despite J only
+being mid-pack -- meaning its concentration is structurally
+driven by both peak-day dominance AND a long tail of negligible
+days.
+
+`tailWeightGap` is the most discriminating diagnostic. The
+top three sources show GAPS BELOW 2.3 effective days
+(opencode: 0.43, hermes: 1.23, openclaw: 2.23) -- their
+Shannon and Simpson views agree closely. `claude-code` shows
+gap=4.31 -- moderate tail-weight asymmetry. `vscode-<src-d>`
+shows gap=10.92 -- by far the LARGEST on the queue, and the
+single most informative diagnostic on the table: its 73-day
+history carries a HEAVY EVEN TAIL of small busy days that
+Shannon (q=1) credits as 28.1 effective days but inverse-
+Simpson (q=2) suppresses to only 17.2. The 10.9-day gap is
+exactly the cross-q signal that motivated reporting both
+Hill numbers in the first place. Algebraic identity
+`shanComp == exp(H - ln(n))` reproduced bit-exactly on every
+row, as the test asserts.
+
 ## 0.6.390 — 2026-05-04
 
 ### Added
