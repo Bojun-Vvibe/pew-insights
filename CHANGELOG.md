@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.362 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-NINETEENTH):
+  `pew-insights daily-token-anderson-darling-halves`.
+
+  Per-source ANDERSON-DARLING TWO-SAMPLE TEST
+  comparing the empirical cumulative distribution
+  functions (ECDFs) of the FIRST half (n1 = floor(n/2)
+  days) vs the SECOND half (n2 = n - n1 days) of the
+  gap-filled daily total_tokens series, using the
+  Pettitt 1976 / Scholz & Stephens 1987 closed-form
+  on pooled order statistics:
+
+      adA2 = ((N - 1) / (n1 * n2)) *
+             sum_{i=1..N-1}
+               (N * M_Ai - i * n1)^2 / (i * (N - i))
+
+  where M_Ai is the count of A-elements at or below
+  the i-th pooled order statistic. The integrand is
+  the squared ECDF gap weighted by 1 / (H_N (1 - H_N)),
+  which AMPLIFIES tail discrepancies. Standardised to
+  unit variance via the Scholz-Stephens 1987 eq. (5)
+  closed-form H0 variance:
+
+      adT = (adA2 - 1) / sqrt(varH0)
+
+  with the H0 mean exactly 1 (S&S 1987 eq. 4 with
+  k = 2). Right-tail p-value adP from log-linear
+  interpolation of S&S 1987 Table 1 critical anchors
+  (t_0.25=0.325, t_0.10=1.226, t_0.05=1.960,
+  t_0.025=2.719, t_0.01=3.752). Sign-direction
+  indicator adDir = sign(median(B) - median(A))
+  drives the convention adZSigned = adDir * |adT|
+  for cross-axis comparability.
+
+  STRUCTURAL ORTHOGONALITY. AD is the TAIL-WEIGHTED
+  L2 companion to axis-118 KS sup-norm: the
+  inverse-variance weight 1/(H_N(1-H_N)) explodes
+  near 0 and 1 so tail-mass differences dominate,
+  while KS uses uniform weight and only sees the
+  largest pointwise gap. They are NOT a monotone
+  transform of each other. Distinct from axis-117
+  Siegel-Tukey (rank-invariant SCALE only after
+  median-centring), axis-116 Brown-Forsythe
+  (parametric SCALE only), axis-115 Mann-Whitney
+  (LOCATION/stochastic-dominance only).
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (5 sources kept, 1 dropped below min-tenure-days):
+
+      claude-code      adA2=415.93  adT=559.23  adDir=+1  adZSigned=+559.23  adP=1.04e-216
+      vscode-copilot   adA2=173.13  adT=227.71  adDir= 0  adZSigned=   0.00  adP=5.33e-89
+      openclaw         adA2= 76.62  adT=110.30  adDir=-1  adZSigned=-110.30  adP=9.01e-44
+      hermes           adA2= 14.24  adT= 19.31  adDir=+1  adZSigned= +19.31  adP=1.01e-08
+      opencode         adA2= 13.70  adT= 18.93  adDir=-1  adZSigned= -18.93  adP=1.42e-08
+
+  Every kept source has adT >> 1.96 (S&S 1987 Table 1
+  alpha=0.05 critical), so the AD omnibus rejects
+  equal-distribution-of-halves at far below alpha=0.05
+  for all five. The amplitude ranking is dominated by
+  `claude-code` (n=72 days, large mass concentrated
+  in the second half driving both a tail and a
+  location shift), `vscode-copilot` (n=265 days,
+  long sparse tenure with the second half showing
+  bursty tail mass even though medians tie at 0
+  giving adDir=0), then `openclaw` (recent 17-day
+  tenure with first-half-larger median).
+
+### Tests
+
+- Test count grew from 10,576 -> 10,604 (+28 cases).
+  New suite `dailytokenandersondarlinghalves.test.ts`
+  covers input validation, half-split sizes, clean
+  step shift, location/positive-scale invariances,
+  half-swap invariance with adDir sign flip,
+  identical-halves null, exact H0 mean = 1 and
+  critical value 1.96, adA2 >= 0 always, builder
+  filters, sort orderings, top cap, determinism, and
+  structural orthogonality vs KS (tail outlier
+  amplified).
+
 ## 0.6.361 — 2026-05-03
 
 ### Added
