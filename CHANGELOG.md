@@ -2,6 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.380 — 2026-05-03
+
+### Added
+
+- `daily-token-kumar-johnson-divergence-halves` —
+  ONE-HUNDRED-AND-THIRTY-SEVENTH cross-source axis. Per-source
+  KDE-SMOOTHED KUMAR-JOHNSON DIVERGENCE
+  `KJ(p, q) = sum_k (p_k^2 - q_k^2)^2 / (2 * (p_k * q_k)^(3/2))`,
+  between the FIRST and SECOND half of the gap-filled daily
+  total_tokens series (Kumar & Johnson 2005; Cha 2007 eq. 51).
+  Identical KDE setup to axes 126-136 (pooled robust scale
+  `mad_pool = 1.4826*median(|x-median(x)|)`; Silverman
+  bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared K=257-point
+  grid spanning `[min-3h, max+3h]`; Gaussian KDE per half;
+  trapezoidal mass-normalisation to exact pmfs `p, q`).
+  `kumarJohnsonDivergence >= 0`; `= 0` iff KDE-smoothed halves
+  coincide on the grid.
+
+  ORTHOGONAL to all 19 prior axes 118-136: unique
+  `(p^2 - q^2)^2 / (p*q)^(3/2)` rational functional. The
+  numerator factors as `(p-q)^2 * (p+q)^2` — a per-bin
+  SQUARED ABSOLUTE GAP times a per-bin SQUARED ARITHMETIC
+  MEAN — over the 3/2-power of the per-bin GEOMETRIC MEAN.
+  Total degree -1 in `(p, q)` (numerator degree 4, denominator
+  degree 3); per-bin tail blow-up rate `1/min(p, q)^(3/2)`.
+  vs axis-134 psChi2 (`(p-q)^2 (p+q)/(p*q)`, tail rate
+  `1/min`): KJ is more aggressive on extreme tail bins
+  (`1/min^(3/2)` vs `1/min`). vs axis-136 Taneja
+  (`AM*log(AM/GM)`): Taneja is LOGARITHMIC in the AM/GM
+  ratio while KJ is POLYNOMIAL — Taneja saturates
+  logarithmically as `AM/GM -> infty`, KJ saturates as a
+  power of `(p^2-q^2)^2 / GM^3`. vs axis-129 triangular
+  Delta (bounded above by 2): KJ is unbounded above as
+  `min(p, q) -> 0`. vs axis-122 Bhattacharyya (linear in
+  `sqrt(p*q)`, bounded in `[0, 1]`): KJ is rational in
+  `sqrt(p*q)` and unbounded above. vs axis-135 Clark
+  (bin-wise BOUNDED in `[0, 1]` before root-sum): KJ is
+  bin-wise UNBOUNDED. vs axis-118 JSD (mean of two KLs,
+  bounded by `log(2)`): KJ is polynomial in `(p, q)` and
+  unbounded.
+
+  Symmetric under swap of `p, q` (numerator even in `(p-q)`,
+  denominator even in `(p, q)`). Translation- AND
+  positive-scale-invariant in the data (data and bandwidth
+  scale together; pmfs unchanged). Diagnostics:
+  `kumarJohnsonMaxBin` (largest per-bin summand),
+  `kumarJohnsonMaxRelGap = max_k |p_k-q_k|/(p_k+q_k)` in
+  `[0, 1]` surfaces the most regime-disjoint bin
+  (`maxRelGap ~ 1` iff at least one bin is regime-disjoint
+  — one half put effectively zero mass while the other
+  did not), and `kumarJohnsonSpreadRatio = KJ / (K * maxBin)`
+  in `[0, 1]` (cross-source-comparable spread; approaches
+  `1/K = 0.003891` iff a single bin dominates, approaches
+  `1` iff every bin contributes the same maximal KJ amount).
+
+  Pure helper `kumarJohnsonSummand(p, q) = (p^2-q^2)^2 / (2*(p*q)^(3/2))`
+  exposed for downstream tooling, with `KJ_PMF_FLOOR = 1e-15`
+  numerical underflow safeguard (no-op for any genuine KDE
+  pmf). Caveats: KJ is symmetric and non-negative but NOT
+  a metric (no triangle inequality; Cha 2007).
+
+  Live smoke against `~/.config/pew/queue.jsonl` (4 clean
+  cross-source rows, sorted by `kjDesc`):
+
+  ```
+  source       tenure  kj             maxBin         maxRel    spread     tokens
+  openclaw     17      6.185318e+16   7.074975e+15   1.000000  0.034018   2,226,185,198
+  opencode     14      1.573035e+05   1.795879e+04   0.999998  0.034082   6,234,610,106
+  claude-code  72      5.016725e+00   2.060065e-01   0.999054  0.094756   3,442,385,788
+  hermes       17      5.505462e-01   7.405665e-03   0.866259  0.289265     301,623,050
+  ```
+
+  Reading: `openclaw` and `opencode` both saturate
+  `maxRelGap = 1` indicating at least one regime-disjoint
+  bin between the two halves; the absolute KJ values reflect
+  the polynomial tail amplification of the
+  `(p^2-q^2)^2 / (p*q)^(3/2)` functional applied at the
+  (raw-token) bandwidth scale of each source. `hermes` has
+  the largest `spreadRatio = 0.289` indicating a more
+  evenly-distributed KJ mass across bins; `claude-code`
+  with the longest tenure (72d) sits in the middle on
+  `spread = 0.095` while `openclaw` / `opencode` (shorter
+  tenure, more bimodal halves) have the most concentrated
+  KJ mass (`spread ~ 0.034`).
+
+### Changed
+
+- Bumped version to 0.6.380.
+
 ## 0.6.379 — 2026-05-03
 
 ### Added
