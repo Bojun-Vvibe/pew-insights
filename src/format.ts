@@ -23422,6 +23422,7 @@ export function renderDailyTokenClarkDistanceHalves(
     'clarkN',
     'meanRel',
     'maxRel',
+    'spread',
     'tokens',
   ];
   const rowsOut: string[][] = r.sources.map((s) => [
@@ -23438,6 +23439,7 @@ export function renderDailyTokenClarkDistanceHalves(
     s.clarkNormalised.toFixed(6),
     s.clarkMeanRelGap.toFixed(6),
     s.clarkMaxRelGap.toFixed(6),
+    s.clarkSpreadRatio.toFixed(6),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

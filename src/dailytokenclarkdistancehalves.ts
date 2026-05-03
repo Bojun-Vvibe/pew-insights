@@ -218,6 +218,18 @@ export interface DailyTokenClarkDistanceHalvesSourceRow {
   clarkMeanRelGap: number;
   /** max_k |r_k| in [0, 1]; saturates iff one bin is regime-disjoint. */
   clarkMaxRelGap: number;
+  /**
+   * Spread diagnostic clarkDistance / (sqrt(K) * clarkMaxRelGap) in [0, 1].
+   * Approaches 1 iff the per-bin relative gaps are uniformly large across
+   * the grid (broad, evenly-spread disagreement); approaches 0 iff the
+   * Clark mass is concentrated in a small number of saturated bins
+   * (sparse disagreement). Defined as 0 when clarkMaxRelGap === 0
+   * (vacuous case where halves coincide). Cross-source-comparable:
+   * INDEPENDENT of overall divergence magnitude — disambiguates whether
+   * a high Clark distance comes from MANY moderately-disagreeing bins
+   * or FEW saturated bins, complementing the maxRel sup-norm view.
+   */
+  clarkSpreadRatio: number;
 }
 
 export interface DailyTokenClarkDistanceHalvesReport {
@@ -298,6 +310,7 @@ export function dailyTokenClarkDistanceHalves(values: number[]): {
   clarkNormalised: number;
   clarkMeanRelGap: number;
   clarkMaxRelGap: number;
+  clarkSpreadRatio: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -416,12 +429,15 @@ export function dailyTokenClarkDistanceHalves(values: number[]): {
   const clarkNormalised = clarkDistance / Math.sqrt(K);
   const clarkMeanRelGap = sumAbs / K;
   const clarkMaxRelGap = maxAbs;
+  const clarkSpreadRatio =
+    clarkMaxRelGap > 0 ? clarkDistance / (Math.sqrt(K) * clarkMaxRelGap) : 0;
 
   if (
     !Number.isFinite(clarkDistance) ||
     !Number.isFinite(clarkNormalised) ||
     !Number.isFinite(clarkMeanRelGap) ||
-    !Number.isFinite(clarkMaxRelGap)
+    !Number.isFinite(clarkMaxRelGap) ||
+    !Number.isFinite(clarkSpreadRatio)
   ) {
     throw new Error(
       `dailyTokenClarkDistanceHalves: non-finite statistic (n=${n})`,
@@ -444,6 +460,7 @@ export function dailyTokenClarkDistanceHalves(values: number[]): {
     clarkNormalised,
     clarkMeanRelGap,
     clarkMaxRelGap,
+    clarkSpreadRatio,
   };
 }
 
@@ -619,6 +636,7 @@ export function buildDailyTokenClarkDistanceHalves(
       clarkNormalised: result.clarkNormalised,
       clarkMeanRelGap: result.clarkMeanRelGap,
       clarkMaxRelGap: result.clarkMaxRelGap,
+      clarkSpreadRatio: result.clarkSpreadRatio,
     });
     totalTokensSum += acc.totalTokens;
   }

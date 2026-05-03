@@ -473,3 +473,37 @@ test('clark builder: pure builder is deterministic w.r.t. fixed generatedAt', ()
   });
   assert.deepEqual(r1, r2);
 });
+
+// ---------- diagnostic: clarkSpreadRatio ----------
+
+test('clark primitive: clarkSpreadRatio in [0, 1]', () => {
+  const r = dailyTokenClarkDistanceHalves([1, 2, 3, 4, 100, 200, 300, 400]);
+  assert.ok(r.clarkSpreadRatio >= 0 && r.clarkSpreadRatio <= 1 + 1e-12);
+});
+
+test('clark primitive: clarkSpreadRatio identity sqrt(K)*maxRel*spread === clark', () => {
+  const r = dailyTokenClarkDistanceHalves([1, 2, 3, 4, 100, 200, 300, 400]);
+  const reconstructed =
+    Math.sqrt(r.clarkGridK) * r.clarkMaxRelGap * r.clarkSpreadRatio;
+  assert.ok(
+    Math.abs(reconstructed - r.clarkDistance) <=
+      1e-10 * Math.max(1, r.clarkDistance),
+  );
+});
+
+test('clark primitive: identical halves give clarkSpreadRatio === 0 (vacuous case)', () => {
+  const r = dailyTokenClarkDistanceHalves([1, 2, 3, 4, 1, 2, 3, 4]);
+  assert.equal(r.clarkSpreadRatio, 0);
+});
+
+test('clark builder: clarkSpreadRatio surfaces on every row', () => {
+  const queue = makeQueue('alpha', 16);
+  const r = buildDailyTokenClarkDistanceHalves(queue, {
+    generatedAt: 'X',
+    minTokens: 1,
+  });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  assert.ok(typeof row.clarkSpreadRatio === 'number');
+  assert.ok(row.clarkSpreadRatio >= 0 && row.clarkSpreadRatio <= 1 + 1e-12);
+});
