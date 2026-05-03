@@ -118,6 +118,7 @@ import {
   renderDailyTokenHerfindahlHirschmanIndex,
   renderDailyTokenPielouEvenness,
   renderDailyTokenMaxDrawdownRate,
+  renderDailyTokenLongestZeroRun,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -556,6 +557,7 @@ import { buildDailyTokenTopFourConcentrationRatio } from './dailytokentopfourcon
 import { buildDailyTokenHerfindahlHirschmanIndex } from './dailytokenherfindahlhirschmanindex.js';
 import { buildDailyTokenPielouEvenness } from './dailytokenpielouevenness.js';
 import { buildDailyTokenMaxDrawdownRate } from './dailytokenmaxdrawdownrate.js';
+import { buildDailyTokenLongestZeroRun } from './dailytokenlongestzerorun.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40377,6 +40379,136 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMaxDrawdownRate(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-longest-zero-run')
+  .description(
+    "Per-source LONGEST CONTIGUOUS RUN OF ZERO-ACTIVITY UTC DAYS within the source's calendar span [firstActiveDay, lastActiveDay] (ONE-HUNDRED-AND-FORTY-SIXTH cross-source axis). Build a 0/1 calendar mask over the active span, count the longest consecutive run of zero days. SECOND PATH-DEPENDENT cross-source daily-token axis (after axis-145 max-drawdown-rate). Structurally orthogonal to all permutation-invariant share / inequality / diversity functionals (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover, ...) which see only the active-day multiset and have no concept of calendar gaps. Orthogonal to axis-145 MDD: MDD measures DEPTH (worst peak-to-trough drop on the active-day vector), longest-zero-run measures DURATION (longest pure-silence stretch on the calendar-day vector). Per row: spanDays, longestZeroRun, longestZeroRunShare, totalZeroDays, zeroRunCount, longestZeroRunStartDay, longestZeroRunEndDay.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). longest-zero-run is well-defined for nDays=1 (=0) but uninteresting.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: longestZeroRun (default) | longestZeroRunShare | totalZeroDays | spanDays | tokens | days | source | meanDaily. Applied before --top.',
+    'longestZeroRun',
+  )
+  .option(
+    '--min-longest-zero-run <n>',
+    'display filter: hide rows whose longestZeroRun is strictly below this non-negative integer. Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minLongestZeroRun?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be an integer >= 1 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minLongestZeroRun: number | null = null;
+        if (opts.minLongestZeroRun !== undefined) {
+          const mv = Number.parseInt(opts.minLongestZeroRun, 10);
+          if (!Number.isInteger(mv) || mv < 0) {
+            throw new Error(
+              `--min-longest-zero-run must be a non-negative integer (got ${opts.minLongestZeroRun})`,
+            );
+          }
+          minLongestZeroRun = mv;
+        }
+        const validSorts = [
+          'longestZeroRun',
+          'longestZeroRunShare',
+          'totalZeroDays',
+          'spanDays',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLongestZeroRun(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minLongestZeroRun,
+          sort: opts.sort as
+            | 'longestZeroRun'
+            | 'longestZeroRunShare'
+            | 'totalZeroDays'
+            | 'spanDays'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLongestZeroRun(report) + '\n',
           );
         }
       } catch (e) {

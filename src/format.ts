@@ -17295,6 +17295,7 @@ import type { DailyTokenTopFourConcentrationRatioReport } from './dailytokentopf
 import type { DailyTokenHerfindahlHirschmanIndexReport } from './dailytokenherfindahlhirschmanindex.js';
 import type { DailyTokenPielouEvennessReport } from './dailytokenpielouevenness.js';
 import type { DailyTokenMaxDrawdownRateReport } from './dailytokenmaxdrawdownrate.js';
+import type { DailyTokenLongestZeroRunReport } from './dailytokenlongestzerorun.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24263,6 +24264,81 @@ export function renderDailyTokenMaxDrawdownRate(
     formatNumber(s.maxDrawdownDurationDays),
     s.recovered ? 'yes' : 'no',
     s.partialRecoveryRatio.toFixed(4),
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenLongestZeroRun(
+  r: DailyTokenLongestZeroRunReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-longest-zero-run'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-longest-zero-run: ${r.minLongestZeroRun === null ? '\u2014' : r.minLongestZeroRun}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinLongestZeroRun)} below min-longest-zero-run, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LONGEST CONTIGUOUS RUN OF ZERO-ACTIVITY UTC DAYS within the calendar span [firstDay, lastDay]. PATH-DEPENDENT duration functional on the calendar-day vector. Structurally orthogonal to all permutation-invariant share / inequality / diversity functionals which only see the active-day multiset, and orthogonal to axis-145 max-drawdown-rate which measures DEPTH on the active-day vector while this measures DURATION on the calendar-day vector.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source longest zero run (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'span',
+    'longestZeroRun',
+    'shareOfSpan',
+    'totalZero',
+    'runs',
+    'runStart',
+    'runEnd',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.spanDays),
+    formatNumber(s.longestZeroRun),
+    s.longestZeroRunShare.toFixed(4),
+    formatNumber(s.totalZeroDays),
+    formatNumber(s.zeroRunCount),
+    s.longestZeroRunStartDay || '\u2014',
+    s.longestZeroRunEndDay || '\u2014',
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);
