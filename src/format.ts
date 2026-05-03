@@ -23592,6 +23592,7 @@ export function renderDailyTokenKumarJohnsonDivergenceHalves(
     'maxBin',
     'maxRel',
     'spread',
+    'perBin',
     'tokens',
   ];
   const rowsOut: string[][] = r.sources.map((s) => [
@@ -23608,6 +23609,7 @@ export function renderDailyTokenKumarJohnsonDivergenceHalves(
     s.kumarJohnsonMaxBin.toFixed(6),
     s.kumarJohnsonMaxRelGap.toFixed(6),
     s.kumarJohnsonSpreadRatio.toFixed(6),
+    s.kumarJohnsonPerBinAverage.toFixed(6),
     formatNumber(s.totalTokens),
   ]);
   lines.push(renderTableLocal(headers, rowsOut));

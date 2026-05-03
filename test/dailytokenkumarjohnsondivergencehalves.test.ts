@@ -696,3 +696,68 @@ test('kj builder: deterministic across two runs', () => {
   });
   assert.deepEqual(r1, r2);
 });
+
+// ---------- refinement: kumarJohnsonPerBinAverage ----------
+
+test('kj primitive: kumarJohnsonPerBinAverage equals divergence / K', () => {
+  const r = dailyTokenKumarJohnsonDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+  ]);
+  const expected = r.kumarJohnsonDivergence / KJ_GRID_K;
+  assert.ok(Math.abs(r.kumarJohnsonPerBinAverage - expected) < 1e-12);
+});
+
+test('kj primitive: kumarJohnsonPerBinAverage non-negative', () => {
+  const r = dailyTokenKumarJohnsonDivergenceHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+  ]);
+  assert.ok(r.kumarJohnsonPerBinAverage >= 0);
+});
+
+test('kj primitive: kumarJohnsonPerBinAverage finite on bimodal halves', () => {
+  const xs = [
+    1, 1, 2, 2, 3, 3, 4, 4, 100, 200, 300, 400, 500, 600, 700, 800,
+  ];
+  const r = dailyTokenKumarJohnsonDivergenceHalves(xs);
+  assert.ok(Number.isFinite(r.kumarJohnsonPerBinAverage));
+});
+
+test('kj primitive: kumarJohnsonPerBinAverage translation invariant', () => {
+  const xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const r1 = dailyTokenKumarJohnsonDivergenceHalves(xs);
+  const r2 = dailyTokenKumarJohnsonDivergenceHalves(xs.map((x) => x + 500));
+  assert.ok(Math.abs(r1.kumarJohnsonPerBinAverage - r2.kumarJohnsonPerBinAverage) < 1e-9);
+});
+
+test('kj primitive: kumarJohnsonPerBinAverage scale invariant', () => {
+  const xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const r1 = dailyTokenKumarJohnsonDivergenceHalves(xs);
+  const r2 = dailyTokenKumarJohnsonDivergenceHalves(xs.map((x) => x * 3.25));
+  assert.ok(Math.abs(r1.kumarJohnsonPerBinAverage - r2.kumarJohnsonPerBinAverage) < 1e-9);
+});
+
+test('kj builder: every row has finite non-negative perBinAverage', () => {
+  const lines: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    lines.push(ql(dayIso(i), 'src-a', 1000 + i * 100 + (i % 3) * 50));
+  }
+  for (let i = 0; i < 15; i += 1) {
+    lines.push(ql(dayIso(i), 'src-b', 500 + (i % 4) * 25));
+  }
+  for (let i = 15; i < 30; i += 1) {
+    lines.push(ql(dayIso(i), 'src-b', 5000 + (i % 5) * 100));
+  }
+  const r = buildDailyTokenKumarJohnsonDivergenceHalves(lines, {
+    minTokens: 1000,
+    minTenureDays: 14,
+  });
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.kumarJohnsonPerBinAverage));
+    assert.ok(s.kumarJohnsonPerBinAverage >= 0);
+    assert.ok(
+      Math.abs(
+        s.kumarJohnsonPerBinAverage - s.kumarJohnsonDivergence / KJ_GRID_K,
+      ) < 1e-9,
+    );
+  }
+});

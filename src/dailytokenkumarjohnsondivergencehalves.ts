@@ -233,6 +233,19 @@ export interface DailyTokenKumarJohnsonDivergenceHalvesSourceRow {
    * INDEPENDENT of overall divergence magnitude.
    */
   kumarJohnsonSpreadRatio: number;
+  /**
+   * Cross-source-comparable scale-free magnitude diagnostic
+   * `kjPerBinAverage = kumarJohnsonDivergence / K` -- the
+   * MEAN per-bin Kumar-Johnson summand on the K=257-point
+   * grid. While `kumarJohnsonDivergence` itself is
+   * translation- AND positive-scale-invariant in the data,
+   * its absolute magnitude depends on the per-source pmf
+   * profile (denominator `(p*q)^(3/2)` blows up on tail
+   * bins). Dividing by K gives a per-bin reading that is
+   * directly comparable across sources at the SAME grid
+   * resolution. >= 0; equals 0 iff `p == q` on every bin.
+   */
+  kumarJohnsonPerBinAverage: number;
 }
 
 export interface DailyTokenKumarJohnsonDivergenceHalvesReport {
@@ -346,6 +359,7 @@ export function dailyTokenKumarJohnsonDivergenceHalves(values: number[]): {
   kumarJohnsonMaxBin: number;
   kumarJohnsonMaxRelGap: number;
   kumarJohnsonSpreadRatio: number;
+  kumarJohnsonPerBinAverage: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -474,12 +488,14 @@ export function dailyTokenKumarJohnsonDivergenceHalves(values: number[]): {
     kumarJohnsonMaxBin > 0
       ? kumarJohnsonDivergence / (K * kumarJohnsonMaxBin)
       : 0;
+  const kumarJohnsonPerBinAverage = kumarJohnsonDivergence / K;
 
   if (
     !Number.isFinite(kumarJohnsonDivergence) ||
     !Number.isFinite(kumarJohnsonMaxBin) ||
     !Number.isFinite(kumarJohnsonMaxRelGap) ||
-    !Number.isFinite(kumarJohnsonSpreadRatio)
+    !Number.isFinite(kumarJohnsonSpreadRatio) ||
+    !Number.isFinite(kumarJohnsonPerBinAverage)
   ) {
     throw new Error(
       `dailyTokenKumarJohnsonDivergenceHalves: non-finite statistic (n=${n})`,
@@ -502,6 +518,7 @@ export function dailyTokenKumarJohnsonDivergenceHalves(values: number[]): {
     kumarJohnsonMaxBin,
     kumarJohnsonMaxRelGap,
     kumarJohnsonSpreadRatio,
+    kumarJohnsonPerBinAverage,
   };
 }
 
@@ -677,6 +694,7 @@ export function buildDailyTokenKumarJohnsonDivergenceHalves(
       kumarJohnsonMaxBin: result.kumarJohnsonMaxBin,
       kumarJohnsonMaxRelGap: result.kumarJohnsonMaxRelGap,
       kumarJohnsonSpreadRatio: result.kumarJohnsonSpreadRatio,
+      kumarJohnsonPerBinAverage: result.kumarJohnsonPerBinAverage,
     });
     totalTokensSum += acc.totalTokens;
   }
