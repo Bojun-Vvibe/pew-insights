@@ -127,7 +127,11 @@
  * Headline question:
  * **"Does this source actually grind on weekends, or is it a
  *   pure weekday workhorse?"** -- answered as a single per-source
- *   ratio that ranks cleanly across the suite.
+ *   ratio that ranks cleanly across the suite. Pair with
+ *   `weekendShareDelta` (excess tilt vs the 2/7 calendar baseline)
+ *   and `weekendDensityLogLift` (log-form of the
+ *   calendar-density-corrected intensity ratio) for cross-source
+ *   ranking that is robust to span-asymmetry artefacts.
  *
  * Determinism: pure builder. Wall clock only via opts.generatedAt.
  */
