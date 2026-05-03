@@ -20258,6 +20258,7 @@ import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyh
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
+import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -21934,6 +21935,99 @@ export function renderDailyTokenKsTwoSampleHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: ksD approx 0 = ECDFs agree at every pooled order statistic; ksD > ksDCrit05 (= 1.36*sqrt((n1+n2)/(n1*n2)), Massey 1951 Table 1) rejects equal-distribution at alpha = 0.05; |ksZ| > 1.96 = significant distributional shift at alpha = 0.05 (two-sided). Sign convention: ksDSigned > 0 / ksZ > 0 = SECOND half stochastically LARGER (token mass STOCHASTICALLY GREW); ksDSigned < 0 / ksZ < 0 = SECOND half stochastically SMALLER (token mass STOCHASTICALLY SHRANK). KS is the OMNIBUS distribution-equality companion of axes 115/116/117: it can fire when the moment-specific tests do not (pure shape change), and it can stay quiet when they fire (e.g. tied medians and tied variances with skew flip would surface in axis-117 / axis-116 less dramatically than in KS, while pure constant location shift fires both 115 and KS).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenAndersonDarlingHalves(
+  r: DailyTokenAndersonDarlingHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-anderson-darling-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ANDERSON-DARLING TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETEENTH cross-source axis. Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST with TAIL EMPHASIS (Anderson & Darling 1952, Annals of Mathematical Statistics 23(2):193-212; Pettitt 1976, Biometrika 63(1):161-168; Scholz & Stephens 1987, Journal of the American Statistical Association 82(399):918-924): adA2 = ((N-1)/(n1*n2)) * sum_{i=1..N-1} (N*M_Ai - i*n1)^2 / (i*(N-i)) integrates the squared ECDF gap weighted by 1/(H_N(1-H_N)) which AMPLIFIES tail discrepancies; adT = (adA2 - 1) / sqrt(varH0) standardised via Scholz-Stephens 1987 eq. 5 closed form; adP from S&S 1987 Table 1 log-linear interpolation; adZSigned = sign(median(B)-median(A)) * |adT|. TAIL-WEIGHTED L2 companion to axis-118 KS (sup-norm uniform-weight): a half whose extreme order statistics differ from the other is amplified in AD even when central ECDFs agree, while a localised mid-distribution gap that drives KS need not move AD much. Distinct from axis-115 Mann-Whitney (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Anderson-Darling two-sample (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'adA2',
+    'meanH0',
+    'varH0',
+    'adT',
+    'adP',
+    'adDir',
+    'adZSigned',
+    'crit05',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.adN1),
+    formatNumber(s.adN2),
+    formatNumber(s.adMedianA),
+    formatNumber(s.adMedianB),
+    s.adA2.toFixed(4),
+    s.adMeanH0.toFixed(4),
+    s.adVarH0.toFixed(4),
+    s.adT.toFixed(4),
+    s.adP.toExponential(3),
+    s.adDir.toFixed(0),
+    s.adZSigned.toFixed(4),
+    s.adTCrit05.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: adA2 approx 1 = ECDFs agree under H0 (E[adA2] = k - 1 = 1 for k = 2 samples, Scholz & Stephens 1987 eq. 4); adT > 1.960 (S&S 1987 Table 1, k=2, alpha=0.05) rejects equal-distribution at the 5 % level; adP < 0.05 = significant distributional shift; adP from log-linear interpolation of S&S 1987 Table 1 anchors (t_0.25=0.325, t_0.10=1.226, t_0.05=1.960, t_0.025=2.719, t_0.01=3.752). adA2 is intrinsically UNSIGNED -- adDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); adZSigned = adDir * |adT| is a CONVENTION for cross-axis comparability with axes 115/116/117/118. AD is the TAIL-WEIGHTED L2 companion to axis-118 KS sup-norm: the inverse-variance weight 1/(H_N(1-H_N)) explodes near 0 and 1 so tail-mass differences dominate, while KS is uniform-weight and sees only the largest pointwise gap.)`,
     ),
   );
 

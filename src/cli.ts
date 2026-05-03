@@ -170,6 +170,7 @@ import {
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
   renderDailyTokenKsTwoSampleHalves,
+  renderDailyTokenAndersonDarlingHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -502,6 +503,7 @@ import { buildDailyTokenMannWhitneyHalves } from './dailytokenmannwhitneyhalves.
 import { buildDailyTokenBrownForsythHalves } from './dailytokenbrownforsythhalves.js';
 import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
+import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37192,6 +37194,123 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKsTwoSampleHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-anderson-darling-halves')
+  .description(
+    "Per-source ANDERSON-DARLING TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-NINETEENTH cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST with TAIL EMPHASIS (Anderson & Darling 1952, Annals of Mathematical Statistics 23(2):193-212; Pettitt 1976, Biometrika 63(1):161-168; Scholz & Stephens 1987, Journal of the American Statistical Association 82(399):918-924): adA2 = ((N-1)/(n1*n2)) * sum_{i=1..N-1} (N*M_Ai - i*n1)^2 / (i*(N-i)) integrates the squared ECDF gap weighted by 1/(H_N(1-H_N)) which AMPLIFIES tail discrepancies; adT = (adA2 - 1)/sqrt(varH0) standardised via Scholz-Stephens 1987 eq. 5 closed form; adP from S&S 1987 Table 1 log-linear interpolation; adZSigned = sign(median(B)-median(A)) * |adT|. TAIL-WEIGHTED L2 companion to axis-118 KS sup-norm: a half whose extreme order statistics differ from the other is amplified in AD even when central ECDFs agree, while a localised mid-distribution gap that drives KS need not move AD much. Distinct from axis-115 Mann-Whitney (LOCATION only), axis-116 Brown-Forsythe (parametric SCALE only), axis-117 Siegel-Tukey (rank-invariant SCALE only after median-centring).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for Scholz-Stephens 1987 calibrated regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: adA2Desc (default) | adA2 | adT | adTDesc | adZSigned | adZSignedDesc | adP | adPDesc | tokens | tenure | source.',
+    'adA2Desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'adA2',
+          'adA2Desc',
+          'adT',
+          'adTDesc',
+          'adZSigned',
+          'adZSignedDesc',
+          'adP',
+          'adPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAndersonDarlingHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'adA2'
+            | 'adA2Desc'
+            | 'adT'
+            | 'adTDesc'
+            | 'adZSigned'
+            | 'adZSignedDesc'
+            | 'adP'
+            | 'adPDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenAndersonDarlingHalves(report) + '\n',
           );
         }
       } catch (e) {
