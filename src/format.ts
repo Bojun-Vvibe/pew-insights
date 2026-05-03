@@ -23329,8 +23329,10 @@ export function renderDailyTokenSymmetricChiSquaredHalves(
     'madPool',
     'h',
     'psChi2',
+    'psChi2B',
     'pearsonF',
     'pearsonR',
+    'fwdShare',
     'asym',
     'tokens',
   ];
@@ -23345,8 +23347,10 @@ export function renderDailyTokenSymmetricChiSquaredHalves(
     s.psChiMadPool.toFixed(2),
     s.psChiBandwidth.toFixed(2),
     s.psChi2.toFixed(6),
+    s.psChi2Bounded.toFixed(6),
     s.pearsonForward.toFixed(6),
     s.pearsonReverse.toFixed(6),
+    s.pearsonForwardShare.toFixed(4),
     Number.isFinite(s.pearsonAsymmetryRatio)
       ? s.pearsonAsymmetryRatio.toFixed(4)
       : 'inf',

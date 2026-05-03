@@ -145,6 +145,47 @@ test('psChi primitive: identical halves give psChi2 ~ 0', () => {
   assert.ok(r.psChi2 < 1e-20);
   // Forward and reverse Pearson are both ~0 => asymmetry ratio == 1 by convention.
   assert.equal(r.pearsonAsymmetryRatio, 1);
+  // Bounded form approaches 0; forward share defined as 0.5 in vacuous case.
+  assert.ok(r.psChi2Bounded < 1e-20);
+  assert.equal(r.pearsonForwardShare, 0.5);
+});
+
+test('psChi primitive: psChi2Bounded in [0, 1) and monotone in psChi2', () => {
+  const mild = dailyTokenSymmetricChiSquaredHalves([
+    100, 110, 120, 130, 140, 150, 160, 170,
+  ]);
+  const severe = dailyTokenSymmetricChiSquaredHalves([
+    100, 110, 120, 130, 1000, 1100, 1200, 1300,
+  ]);
+  assert.ok(mild.psChi2Bounded >= 0 && mild.psChi2Bounded < 1);
+  assert.ok(severe.psChi2Bounded >= 0 && severe.psChi2Bounded < 1);
+  assert.ok(severe.psChi2Bounded > mild.psChi2Bounded);
+  // Identity check: psChi2Bounded === psChi2 / (1 + psChi2).
+  assert.ok(
+    Math.abs(mild.psChi2Bounded - mild.psChi2 / (1 + mild.psChi2)) <= 1e-12,
+  );
+});
+
+test('psChi primitive: pearsonForwardShare in [0, 1] and decomposes psChi2', () => {
+  const r = dailyTokenSymmetricChiSquaredHalves([1, 2, 3, 4, 100, 200, 300, 400]);
+  assert.ok(r.pearsonForwardShare >= 0 && r.pearsonForwardShare <= 1);
+  // Identity check: pearsonForwardShare === pearsonForward / psChi2 when psChi2 > 0.
+  assert.ok(
+    Math.abs(r.pearsonForwardShare - r.pearsonForward / r.psChi2) <= 1e-12,
+  );
+});
+
+test('psChi primitive: half-swap flips forward share around 0.5', () => {
+  const base = [1, 2, 3, 4, 50, 60, 70, 80, 9, 10, 11, 12];
+  const n = base.length;
+  const n1 = Math.floor(n / 2);
+  const swapped = base.slice(n1).concat(base.slice(0, n1));
+  const r0 = dailyTokenSymmetricChiSquaredHalves(base);
+  const r1 = dailyTokenSymmetricChiSquaredHalves(swapped);
+  // forward(swapped) ~ reverse(original) => share(swapped) === 1 - share(original).
+  assert.ok(
+    Math.abs((1 - r0.pearsonForwardShare) - r1.pearsonForwardShare) <= 1e-12,
+  );
 });
 
 test('psChi primitive: large half-vs-half drift gives larger psChi2 than mild drift', () => {

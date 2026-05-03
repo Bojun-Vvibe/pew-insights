@@ -227,6 +227,24 @@ export interface DailyTokenSymmetricChiSquaredHalvesSourceRow {
   pearsonReverse: number;
   /** max(F, R) / min(F, R) in [1, +inf); 1 when both zero. */
   pearsonAsymmetryRatio: number;
+  /**
+   * Bounded rescaling psChi2 / (1 + psChi2) in [0, 1).
+   * Cross-source-comparable when psChi2 spans many orders of magnitude
+   * (e.g. one source has tail-disjoint regime with psChi2 ~ 1e10 and
+   * another has psChi2 ~ 0.5; the raw scale obscures the second
+   * source's drift in any sort/rank). 0 iff p === q on the grid;
+   * approaches 1 as psChi2 -> +inf.
+   */
+  psChi2Bounded: number;
+  /**
+   * Directional decomposition pearsonForward / psChi2 in [0, 1];
+   * 0.5 iff forward and reverse Pearson are equal (symmetric per-bin
+   * disagreement), > 0.5 iff forward dominates (first half has tail
+   * mass the second half does not), < 0.5 iff reverse dominates
+   * (second half has tail mass the first does not). Defined as 0.5
+   * when psChi2 === 0 (vacuous symmetric case).
+   */
+  pearsonForwardShare: number;
 }
 
 export interface DailyTokenSymmetricChiSquaredHalvesReport {
@@ -307,6 +325,8 @@ export function dailyTokenSymmetricChiSquaredHalves(values: number[]): {
   pearsonForward: number;
   pearsonReverse: number;
   pearsonAsymmetryRatio: number;
+  psChi2Bounded: number;
+  pearsonForwardShare: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -440,6 +460,9 @@ export function dailyTokenSymmetricChiSquaredHalves(values: number[]): {
     );
   }
 
+  const psChi2Bounded = psChi2 / (1 + psChi2);
+  const pearsonForwardShare = psChi2 > 0 ? pearsonForward / psChi2 : 0.5;
+
   return {
     mean: mu,
     stddev,
@@ -456,6 +479,8 @@ export function dailyTokenSymmetricChiSquaredHalves(values: number[]): {
     pearsonForward,
     pearsonReverse,
     pearsonAsymmetryRatio,
+    psChi2Bounded,
+    pearsonForwardShare,
   };
 }
 
@@ -633,6 +658,8 @@ export function buildDailyTokenSymmetricChiSquaredHalves(
       pearsonForward: result.pearsonForward,
       pearsonReverse: result.pearsonReverse,
       pearsonAsymmetryRatio: result.pearsonAsymmetryRatio,
+      psChi2Bounded: result.psChi2Bounded,
+      pearsonForwardShare: result.pearsonForwardShare,
     });
     totalTokensSum += acc.totalTokens;
   }
