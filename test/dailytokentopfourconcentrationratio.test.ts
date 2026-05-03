@@ -184,3 +184,78 @@ test('builder: minCr4 filter drops below-threshold sources', () => {
   assert.equal(r.sources.length, 0);
   assert.equal(r.droppedBelowMinCr4, 1);
 });
+
+// ---- refinement: concentrationRegime + normalisedSlack ----------------
+
+test('refinement: flat vector -> low regime, normalisedSlack ~ 0', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 8; d += 1) {
+    queue.push(ql(`2026-05-0${d}T10:00:00Z`, 'flat', 1000));
+  }
+  const r = buildDailyTokenTopFourConcentrationRatio(queue, {
+    minTokens: 1,
+    minDays: 5,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.concentrationRegime, 'low');
+  assert.ok(row.normalisedSlack < 1e-12);
+});
+
+test('refinement: top-heavy vector -> high regime, normalisedSlack -> 1', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 4; d += 1) {
+    queue.push(ql(`2026-05-0${d}T10:00:00Z`, 'spike', 1000000));
+  }
+  for (let d = 5; d <= 10; d += 1) {
+    queue.push(ql(`2026-05-${String(d).padStart(2, '0')}T10:00:00Z`, 'spike', 1));
+  }
+  const r = buildDailyTokenTopFourConcentrationRatio(queue, {
+    minTokens: 1,
+    minDays: 5,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.concentrationRegime, 'high');
+  assert.ok(row.normalisedSlack > 0.99);
+});
+
+test('refinement: normalisedSlack = slack / (1 - lowerBound) closed-form', () => {
+  // n=10, vector [1..10]: cr4=34/55, lowerBound=0.4, slack = 34/55 - 0.4
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 10; d += 1) {
+    queue.push(
+      ql(`2026-05-${String(d).padStart(2, '0')}T10:00:00Z`, 'tri', d * 1000),
+    );
+  }
+  const r = buildDailyTokenTopFourConcentrationRatio(queue, {
+    minTokens: 1,
+    minDays: 5,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  const expected = (34 / 55 - 0.4) / (1 - 0.4);
+  assert.ok(Math.abs(row.normalisedSlack - expected) < 1e-12);
+});
+
+test('refinement: medium regime in [1/3, 2/3) of headroom', () => {
+  // construct so that normalisedSlack ~ 0.5: top-4 mass ~50% of available headroom
+  // n=10, lowerBound=0.4, headroom=0.6, target slack=0.3 -> cr4=0.7
+  // top-4 = 0.7 * total. 4 days at value 7, 6 days at value 2: total=4*7+6*2=40
+  // top-4 = 28; cr4 = 28/40 = 0.7. slack = 0.3. normSlack = 0.5.
+  const queue: QueueLine[] = [];
+  const vals = [7, 7, 7, 7, 2, 2, 2, 2, 2, 2];
+  for (let d = 0; d < 10; d += 1) {
+    queue.push(
+      ql(`2026-05-${String(d + 1).padStart(2, '0')}T10:00:00Z`, 'mid', vals[d]! * 1000),
+    );
+  }
+  const r = buildDailyTokenTopFourConcentrationRatio(queue, {
+    minTokens: 1,
+    minDays: 5,
+    generatedAt: GEN,
+  });
+  const row = r.sources[0]!;
+  assert.equal(row.concentrationRegime, 'medium');
+  assert.ok(Math.abs(row.normalisedSlack - 0.5) < 1e-12);
+});

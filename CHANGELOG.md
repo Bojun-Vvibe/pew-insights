@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.387 — 2026-05-04
+
+### Added
+
+- axis-142 refinement: `concentrationRegime` and
+  `normalisedSlack` per-row diagnostic fields.
+  `normalisedSlack = slack / (1 - lowerBound)` in `[0, 1]` is
+  the SLACK NORMALISED BY THE AVAILABLE HEADROOM. Cross-source
+  comparable: a source with `n=8` (lowerBound=0.5,
+  headroom=0.5) and a source with `n=35` (lowerBound=0.114,
+  headroom=0.886) can now be ranked on the SAME `[0,1]` scale,
+  which raw `cr4` cannot do because its floor depends on `n`.
+  `concentrationRegime` bins the normalised slack into
+  `'low'` (`< 1/3`), `'medium'` (`[1/3, 2/3)`), `'high'`
+  (`>= 2/3`); `'degenerate'` for `n < 5`. Pure compute from
+  existing fields, no new I/O, no new knobs, no new CLI flags.
+- 4 new tests covering: flat-vector → `low` regime with
+  `normalisedSlack ~ 0`; top-heavy spike → `high` regime with
+  `normalisedSlack -> 1`; closed-form `normalisedSlack` for
+  `D = [1..10]` (= `(34/55 - 0.4) / 0.6` = `0.36363... `);
+  hand-tuned `medium` regime witness at exactly `normSlack
+  = 0.5`.
+- Renderer surfaces `normSlack` and `regime` columns alongside
+  `cr4` / `lowerBound` / `slack`.
+
+### Live smoke (`~/.config/pew/queue.jsonl`, post-refinement, 2026-05-04)
+
+`pew-insights daily-token-top-four-concentration-ratio --json`
+against the local pew queue (6 sources; one source name redacted
+as `vscode-<src-d>`):
+
+| source           | cr4      | normSlack | regime     |
+| ---              | ---      | ---       | ---        |
+| codex            | 0.897674 | 0.7953    | **high**   |
+| claude-code      | 0.669198 | 0.6265    | medium     |
+| openclaw         | 0.495747 | 0.3406    | medium     |
+| vscode-<src-d>   | 0.412922 | 0.3789    | medium     |
+| opencode         | 0.400196 | 0.1603    | low        |
+| hermes           | 0.395955 | 0.2101    | low        |
+
+The normalised view re-orders the table relative to raw `cr4`:
+`claude-code` (cr4=0.669, raw rank #2) becomes the runaway
+leader on `normSlack` once you account for its much larger
+headroom (`n=35`, lowerBound=0.114). `codex` is the only source
+in the **HIGH** regime (`normSlack >= 2/3`) — even after
+normalising, 4 of its 8 active days carry ~80% of available
+non-floor mass. `opencode` and `hermes` slip to the **LOW**
+regime: their per-day token mass is genuinely close to flat.
+The headroom-normalised view answers *"how unequal is this
+source RELATIVE TO WHAT IT COULD HAVE BEEN given its
+day-count"*, which the raw `cr4` (where small-n sources are
+inflated by the `4/n` floor) cannot answer.
+
 ## 0.6.386 — 2026-05-04
 
 ### Added

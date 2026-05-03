@@ -118,6 +118,26 @@ export interface DailyTokenTopFourConcentrationRatioSourceRow {
   cr4: number;
   lowerBound: number;
   slack: number;
+  /**
+   * Refinement: classification of concentration intensity based on
+   * the SLACK NORMALISED BY THE AVAILABLE HEADROOM (1 - lowerBound).
+   * normalisedSlack = slack / (1 - lowerBound) in [0, 1]. Bins:
+   *   - 'low'    : normalisedSlack < 1/3 (close to flat-floor)
+   *   - 'medium' : 1/3 <= normalisedSlack < 2/3
+   *   - 'high'   : normalisedSlack >= 2/3 (top-heavy clumping)
+   * For the degenerate row (n<5) lowerBound = 1 so headroom = 0;
+   * we report 'degenerate'.
+   */
+  concentrationRegime: 'low' | 'medium' | 'high' | 'degenerate';
+  /**
+   * Refinement: slack normalised by the available headroom
+   * (1 - lowerBound) in [0, 1]. Cross-source comparable: a source
+   * with n=8 (lowerBound=0.5, headroom=0.5) vs a source with n=35
+   * (lowerBound=0.114, headroom=0.886) can now be ranked on the
+   * SAME [0,1] scale. 0 = at the flat-floor, 1 = top-4 carries
+   * 100% of mass. NaN-safe: 0 if degenerate.
+   */
+  normalisedSlack: number;
   meanDailyTokens: number;
   degenerate: boolean;
   maxDailyTokens: number;
@@ -324,6 +344,17 @@ export function buildDailyTokenTopFourConcentrationRatio(
       }
     }
     const r = topFourConcentrationRatioOfVector(values);
+    const headroom = 1 - r.lowerBound;
+    let normalisedSlack = 0;
+    let concentrationRegime: 'low' | 'medium' | 'high' | 'degenerate';
+    if (r.degenerate || headroom <= 0) {
+      concentrationRegime = 'degenerate';
+    } else {
+      normalisedSlack = Math.max(0, Math.min(1, r.slack / headroom));
+      if (normalisedSlack < 1 / 3) concentrationRegime = 'low';
+      else if (normalisedSlack < 2 / 3) concentrationRegime = 'medium';
+      else concentrationRegime = 'high';
+    }
     rows.push({
       source: src,
       totalTokens: acc.totalTokens,
@@ -334,6 +365,8 @@ export function buildDailyTokenTopFourConcentrationRatio(
       cr4: r.cr4,
       lowerBound: r.lowerBound,
       slack: r.slack,
+      concentrationRegime,
+      normalisedSlack,
       meanDailyTokens: r.mean,
       degenerate: r.degenerate,
       maxDailyTokens: Math.max(0, maxDailyTokens),
