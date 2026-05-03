@@ -4,6 +4,7 @@ import {
   dailyTokenNeymanChiSquaredHalves,
   buildDailyTokenNeymanChiSquaredHalves,
   neymanSummand,
+  neymanDirectionalSign,
   NEYMAN_GRID_K,
   NEYMAN_SILVERMAN_MULTIPLIER,
   NEYMAN_GRID_EXTENSION_H,
@@ -699,4 +700,84 @@ test('builder: per-row diagnostics finite', () => {
     assert.ok(Number.isFinite(s.neymanMaxBinFwd));
     assert.ok(Number.isFinite(s.neymanMaxBinRev));
   }
+});
+
+// ---------- pure helper: neymanDirectionalSign ----------
+
+test('neymanDirectionalSign: equal inputs yield 0', () => {
+  assert.equal(neymanDirectionalSign(0, 0), 0);
+  assert.equal(neymanDirectionalSign(1.5, 1.5), 0);
+  assert.equal(neymanDirectionalSign(1e10, 1e10), 0);
+});
+
+test('neymanDirectionalSign: forward > reverse yields +1', () => {
+  assert.equal(neymanDirectionalSign(2, 1), 1);
+  assert.equal(neymanDirectionalSign(1e10, 5), 1);
+});
+
+test('neymanDirectionalSign: reverse > forward yields -1', () => {
+  assert.equal(neymanDirectionalSign(1, 2), -1);
+  assert.equal(neymanDirectionalSign(5, 1e10), -1);
+});
+
+test('neymanDirectionalSign: anti-symmetric in arguments', () => {
+  for (const [a, b] of [
+    [1, 5],
+    [10, 0.5],
+    [1e6, 3.14],
+  ]) {
+    assert.equal(
+      neymanDirectionalSign(a, b),
+      -neymanDirectionalSign(b, a),
+    );
+  }
+});
+
+test('neymanDirectionalSign: tol absorbs near-equal inputs', () => {
+  // within tolerance => 0
+  assert.equal(neymanDirectionalSign(1.0, 1.0 + 1e-15, 1e-12), 0);
+  // outside tolerance => sign emerges
+  assert.equal(neymanDirectionalSign(1.0, 1.0 + 1e-9, 1e-12), -1);
+});
+
+test('neymanDirectionalSign: rejects negative forward', () => {
+  assert.throws(() => neymanDirectionalSign(-1, 1), /non-negative/);
+});
+
+test('neymanDirectionalSign: rejects negative reverse', () => {
+  assert.throws(() => neymanDirectionalSign(1, -1), /non-negative/);
+});
+
+test('neymanDirectionalSign: rejects NaN', () => {
+  assert.throws(() => neymanDirectionalSign(NaN, 1), /finite/);
+  assert.throws(() => neymanDirectionalSign(1, NaN), /finite/);
+});
+
+test('neymanDirectionalSign: rejects Infinity', () => {
+  assert.throws(() => neymanDirectionalSign(Infinity, 1), /finite/);
+});
+
+test('neymanDirectionalSign: rejects negative tol', () => {
+  assert.throws(() => neymanDirectionalSign(1, 2, -0.1), /tol/);
+});
+
+test('neymanDirectionalSign: matches sign(neymanForward - neymanReverse) on real series', () => {
+  // openclaw-like: forward-dominated extreme
+  const r = dailyTokenNeymanChiSquaredHalves([
+    1, 2, 3, 4, 100, 200, 300, 400,
+  ]);
+  const sgn = neymanDirectionalSign(r.neymanForward, r.neymanReverse);
+  if (r.neymanForward > r.neymanReverse) assert.equal(sgn, 1);
+  else if (r.neymanForward < r.neymanReverse) assert.equal(sgn, -1);
+  else assert.equal(sgn, 0);
+});
+
+test('neymanDirectionalSign: full decomposition with neymanAsymmetry', () => {
+  // verify (sign, asym) fully encode the directional structure
+  const r = dailyTokenNeymanChiSquaredHalves([
+    1, 2, 3, 4, 100, 200, 300, 400,
+  ]);
+  const sgn = neymanDirectionalSign(r.neymanForward, r.neymanReverse);
+  // when sign != 0, asym should be > 0
+  if (sgn !== 0) assert.ok(r.neymanAsymmetry > 0);
 });

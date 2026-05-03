@@ -282,6 +282,51 @@ export const NEYMAN_GRID_EXTENSION_H = 3;
 /** Numerical underflow floor on pmf bins to keep (p-q)^2/q finite. */
 export const NEYMAN_PMF_FLOOR = 1e-15;
 
+/**
+ * Directional sign diagnostic: returns +1 iff the FORWARD
+ * direction `N(p||q)` strictly dominates the REVERSE
+ * direction `N(q||p)` by more than `tol` (default 1e-12),
+ * -1 iff the REVERSE dominates by more than `tol`, 0 iff
+ * the two are within `tol` of each other (symmetric drift,
+ * the regime where axis-134 psChi2 carries the same
+ * information as either direction).
+ *
+ * Pure scalar helper -- a complement to `neymanAsymmetry`
+ * which is the bounded MAGNITUDE of the asymmetry. Together
+ * they fully decompose the directional asymmetry into
+ * `(sign, magnitude)`:
+ *
+ *     forward-dominated:  sign = +1, asym in (0, 1]
+ *     reverse-dominated:  sign = -1, asym in (0, 1]
+ *     symmetric:          sign =  0, asym near 0
+ *
+ * Identities verified by the test suite:
+ *
+ *   - neymanDirectionalSign(a, a) === 0
+ *   - neymanDirectionalSign(a, b) === -neymanDirectionalSign(b, a)
+ *   - neymanDirectionalSign(2, 1) === 1
+ *   - neymanDirectionalSign(1, 2) === -1
+ *   - neymanDirectionalSign(0, 0) === 0
+ */
+export function neymanDirectionalSign(
+  forward: number,
+  reverse: number,
+  tol = 1e-12,
+): -1 | 0 | 1 {
+  if (!Number.isFinite(forward) || !Number.isFinite(reverse)) {
+    throw new Error('neymanDirectionalSign requires finite inputs');
+  }
+  if (forward < 0 || reverse < 0) {
+    throw new Error('neymanDirectionalSign requires non-negative inputs');
+  }
+  if (!Number.isFinite(tol) || tol < 0) {
+    throw new Error('neymanDirectionalSign requires non-negative finite tol');
+  }
+  const diff = forward - reverse;
+  if (Math.abs(diff) <= tol) return 0;
+  return diff > 0 ? 1 : -1;
+}
+
 const SQRT_2PI = Math.sqrt(2 * Math.PI);
 
 function gaussianPdf(u: number): number {
