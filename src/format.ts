@@ -20271,6 +20271,7 @@ import type { DailyTokenHellingerDistanceHalvesReport } from './dailytokenhellin
 import type { DailyTokenTriangularDiscriminationHalvesReport } from './dailytokentriangulardiscriminationhalves.js';
 import type { DailyTokenBhattacharyyaDistanceHalvesReport } from './dailytokenbhattacharyyadistancehalves.js';
 import type { DailyTokenJeffreysDivergenceHalvesReport } from './dailytokenjeffreysdivergencehalves.js';
+import type { DailyTokenRenyiTwoDivergenceHalvesReport } from './dailytokenrenyitwodivergencehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23095,6 +23096,95 @@ export function renderDailyTokenJeffreysDivergenceHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: J in [0, +inf) is the Jeffreys (symmetric KL) divergence in nats; J = 0 iff KDE-smoothed halves coincide; J -> +inf as p, q approach disjoint support. asym = |KL(p||q) - KL(q||p)| / J in [0, 1] is the directional-asymmetry diagnostic (0 = symmetric per-bin contributions; 1 = one direction dominates entirely). jNorm = J/(J+1) in [0, 1) is a monotone normalisation on the same [0, 1) scale as bDistNormalized (axis-130), deltaNormalized (axis-129), tvDist (axis-127). Lin (1991) bound: JSD <= J/4 in nats. Pinsker (1964): tvDist^2 <= 0.5 * J. J is permutation-invariant within each half AND invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenRenyiTwoDivergenceHalves(
+  r: DailyTokenRenyiTwoDivergenceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-renyi-two-divergence-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED SYMMETRISED RENYI-2 DIVERGENCE D_2^sym(p,q) = 0.5*(D_2(p||q) + D_2(q||p)) = 0.5*(ln(sum p^2/q) + ln(sum q^2/p)) between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-SECOND cross-source axis. The Renyi divergence at order alpha=2 (Renyi 1961; van Erven & Harremos 2014, IEEE Trans. Inf. Theory 60(7): 3797-3820), with identity D_2(p||q) = ln(1 + chi^2(p||q)) where chi^2 is the Pearson chi-squared sum (p-q)^2/q. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. D_2^sym in [0, +inf), in nats. ORTHOGONAL to all 14 prior axes 118-131: log-of-quadratic-mass-moment is neither sup-norm CDF (KS), tail-weighted CDF-L^2 (AD), unweighted CDF-L^2 (CvM), quantile-integral (W1), CF-1/t^2 (energy), RKHS-distance (MMD), quantile-Mahalanobis, PCA-projection, log-of-mixture-bounded-by-ln2 (JSD), pmf-L^1 (TV), pmf-SQRT-AMPLITUDE-L^2 (H), pmf-RECIPROCAL-SUM-WEIGHTED-L^2 (Delta), LOG-of-SQRT-AMPLITUDE-INNER-PRODUCT (bDist = Renyi-1/2/2), nor LINEAR-(p-q)-WEIGHTED LOG-RATIO (J = sum of two KLs = sum of two Renyi-1's). Renyi monotonicity in alpha (van Erven & Harremos 2014 Theorem 3) gives D_2 >= D_1 = KL >= D_{1/2} per-direction, but symmetrisation breaks per-pair monotonicity bounds, so D_2^sym is NOT a monotone image of bDist (axis-130) or J (axis-131). Translation-invariant AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed symmetrised Renyi-2 divergence (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'D2(p||q)',
+    'D2(q||p)',
+    'D2sym',
+    'asym',
+    'chi2_fwd',
+    'chi2_rev',
+    'd2Norm',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.renyiTwoN1),
+    formatNumber(s.renyiTwoN2),
+    s.renyiTwoMadPool.toFixed(2),
+    s.renyiTwoBandwidth.toFixed(2),
+    s.renyiTwoForward.toFixed(6),
+    s.renyiTwoReverse.toFixed(6),
+    s.renyiTwoSym.toFixed(6),
+    s.renyiTwoAsymmetry.toFixed(6),
+    s.chiSquaredForward.toFixed(6),
+    s.chiSquaredReverse.toFixed(6),
+    s.renyiTwoNormalized.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: D_2^sym in [0, +inf) is the symmetrised Renyi-2 divergence in nats; D_2^sym = 0 iff KDE-smoothed halves coincide; D_2^sym -> +inf as p, q approach disjoint support. asym = |D_2(p||q) - D_2(q||p)| / (2*D_2^sym) in [0, 1] is the directional-asymmetry diagnostic. chi^2_fwd = sum (p-q)^2/q (forward Pearson chi^2); chi^2_rev = sum (p-q)^2/p (reverse); D_2(p||q) = ln(1 + chi^2_fwd) by van Erven & Harremos (2014) eq. (8). d2Norm = D_2^sym/(D_2^sym+1) in [0, 1) is a monotone normalisation on the same scale as bDistNormalized (axis-130), deltaNormalized (axis-129), tvDist (axis-127), jeffreysNormalized (axis-131). Renyi monotonicity per direction: D_2 >= KL = D_1 >= D_{1/2} = 2*bDist (van Erven & Harremos 2014 Theorem 3). D_2^sym is permutation-invariant within each half AND invariant under translation x -> x+c AND positive rescaling x -> k*x.)`,
     ),
   );
 

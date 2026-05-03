@@ -183,6 +183,7 @@ import {
   renderDailyTokenTriangularDiscriminationHalves,
   renderDailyTokenBhattacharyyaDistanceHalves,
   renderDailyTokenJeffreysDivergenceHalves,
+  renderDailyTokenRenyiTwoDivergenceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -528,6 +529,7 @@ import { buildDailyTokenHellingerDistanceHalves } from './dailytokenhellingerdis
 import { buildDailyTokenTriangularDiscriminationHalves } from './dailytokentriangulardiscriminationhalves.js';
 import { buildDailyTokenBhattacharyyaDistanceHalves } from './dailytokenbhattacharyyadistancehalves.js';
 import { buildDailyTokenJeffreysDivergenceHalves } from './dailytokenjeffreysdivergencehalves.js';
+import { buildDailyTokenRenyiTwoDivergenceHalves } from './dailytokenrenyitwodivergencehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -38710,6 +38712,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenJeffreysDivergenceHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-renyi-two-divergence-halves')
+  .description(
+    "Per-source KDE-SMOOTHED SYMMETRISED RENYI-2 DIVERGENCE D_2^sym(p,q) = 0.5*(ln(sum p^2/q) + ln(sum q^2/p)) between the FIRST and SECOND half of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-THIRTY-SECOND cross-source axis). The Renyi divergence at order alpha=2 (Renyi 1961; van Erven & Harremos 2014); identity D_2(p||q) = ln(1 + chi^2(p||q)). Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. D_2^sym in [0, +inf), in nats. ORTHOGONAL to all 14 prior axes 118-131. Translation-invariant AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: renyiTwoSymDesc (default) | renyiTwoSym | renyiTwoForward | renyiTwoForwardDesc | renyiTwoReverse | renyiTwoReverseDesc | tokens | tenure | source.',
+    'renyiTwoSymDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'renyiTwoSym',
+          'renyiTwoSymDesc',
+          'renyiTwoForward',
+          'renyiTwoForwardDesc',
+          'renyiTwoReverse',
+          'renyiTwoReverseDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenRenyiTwoDivergenceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'renyiTwoSym'
+            | 'renyiTwoSymDesc'
+            | 'renyiTwoForward'
+            | 'renyiTwoForwardDesc'
+            | 'renyiTwoReverse'
+            | 'renyiTwoReverseDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenRenyiTwoDivergenceHalves(report) + '\n',
           );
         }
       } catch (e) {
