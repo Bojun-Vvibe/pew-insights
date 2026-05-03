@@ -2,6 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.367 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-FOURTH):
+  `pew-insights daily-token-quantile-vector-mahalanobis-halves`.
+
+  Per-source QUANTILE-VECTOR DIAGONAL-MAHALANOBIS
+  TWO-SAMPLE TEST comparing the EMPIRICAL QUANTILE
+  VECTORS of the FIRST half (n1 = floor(n/2) days) vs
+  SECOND half (n2 = n - n1 days) of the gap-filled daily
+  total_tokens series at the FIXED interior probability
+  grid
+
+      P  =  ( 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 )
+
+  using Hyndman-Fan TYPE-7 LINEAR-INTERPOLATION sample
+  quantiles (Hyndman & Fan 1996, Amer. Statist. 50(4):
+  361-365; matches R `quantile(., type=7)` and
+  `numpy.quantile` defaults).
+
+  Diagonal-Mahalanobis squared distance on the quantile
+  vector
+
+      d2Diag  =  ( 1 / (k * iqr_pool^2) )
+                 * sum_{i=1..k} ( q_B[i] - q_A[i] )^2
+
+  is dimensionless after normalisation by the pooled IQR
+  squared and is the MEAN SQUARED PER-QUANTILE GAP in
+  iqr_pool units. Canonical scaled multivariate two-sample
+  statistic
+
+      qvT  =  ( n1 * n2 / (n1 + n2) ) * d2Diag
+
+  (Hotelling 1931 Ann. Math. Statist. 2(3):360-378;
+  Anderson 2003 Intro. to Multivariate Stat. Analysis,
+  3rd ed., §5.2). Cross-source-comparable effect sizes:
+
+      qvZ        =  sqrt( d2Diag )
+      qvDir      =  sign( median(B) - median(A) )
+      qvZSigned  =  qvDir * qvZ
+
+  L_infinity diagnostic (worst-quantile standardised gap)
+
+      qvLinf  =  max_i ( | q_B[i] - q_A[i] | / iqr_pool )
+
+  with `qvLinfArgmax` exposing WHICH grid probability
+  contributes the worst standardised gap.
+
+  STRUCTURAL ORTHOGONALITY. qv-Mahalanobis lives in
+  FINITE-DIMENSIONAL QUANTILE-VECTOR SPACE (R^9) with
+  diagonal pooled-IQR^2 metric. This is STRUCTURALLY
+  DISTINCT from axis-123 MMD (infinite-dim RKHS, Gaussian
+  band-pass spectral filter), axis-122 energy distance
+  (CF-space 1/t^2-weighted L2), axis-121 W1 (quantile-
+  INTEGRAL space, no normalisation, 1-homogeneous in the
+  data), axis-120 CvM (probability-space L2), axis-119
+  AD (probability-space tail-weighted L2), axis-118 KS
+  (probability-space L_infinity). A change confined to
+  the gap between two adjacent grid probabilities can
+  move MMD or energy distance substantially while leaving
+  d2Diag identically zero. The fixed grid {0.1,..,0.9}
+  excludes the boundary probabilities 0 and 1, so the
+  axis is INSENSITIVE BY DESIGN to extreme outliers
+  beyond the 10th / 90th pooled percentile. Translation-
+  invariant AND positive-scale-invariant in the data,
+  mirroring axis-123 MMD with median-heuristic bandwidth
+  and unlike axes 121/122 which are 1-homogeneous.
+
+  References:
+  - Hyndman, R. J. and Fan, Y., "Sample quantiles in
+    statistical packages", The American Statistician
+    50(4) (1996), pp. 361-365.
+  - Hotelling, H., "The generalization of Student's
+    ratio", The Annals of Mathematical Statistics 2(3)
+    (1931), pp. 360-378.
+  - Anderson, T. W., An Introduction to Multivariate
+    Statistical Analysis, 3rd ed., Wiley (2003), §5.2.
+
+  Live-smoke against `~/.config/pew/queue.jsonl`
+  (top 6, sort qvTDesc; source labels normalised):
+
+      sources: 6 (shown 5)    tokens: 12,039,080,394
+      min-tokens: 1,000    min-tenure-days: 14
+      sort: qvTDesc
+      probability grid: { 0.10, 0.20, 0.30, 0.40, 0.50,
+                          0.60, 0.70, 0.80, 0.90 }
+      dropped: 1 below min-tenure-days
+
+      source        tenure  n1   n2   d2Diag    qvT      qvZ       qvDir  qvZSigned  qvLinf    argmaxP
+      vscode-other  265     132  133  7.405816  490.6284 2.721363   0      0.000000  7.119572   0.90
+      claude-code    72      36   36 13.467987  242.4238 3.669876  +1      3.669876 10.215809   0.90
+      openclaw       17       8    9  0.935583    3.9625 0.967256  -1     -0.967256  1.371293   0.90
+      opencode       14       7    7  0.475392    1.6639 0.689487  -1     -0.689487  1.007042   0.80
+      hermes         17       8    9  0.152394    0.6454 0.390376  +1      0.390376  0.645877   0.40
+
+  Reading. The two largest scaled statistics qvT
+  (vscode-other 490.63; claude-code 242.42) are dominated
+  by their long tenures (n1, n2 in the hundreds for
+  vscode-other and the mid-30s for claude-code) -- the
+  effect-size column qvZ tells the cross-source-comparable
+  story: claude-code 3.67 is the largest standardised
+  RKHS-free quantile-vector gap, vscode-other 2.72 is
+  next, and the three short-tenure sources (openclaw,
+  opencode, hermes) all sit below 1.0 standard pooled-IQR
+  unit. The argmax probability is 0.90 for the top three
+  rows -- the right tail of each source's daily-token
+  distribution moved the most between the first and
+  second half of its tenure. hermes is the outlier whose
+  worst gap is at the median (p=0.40), reflecting a
+  central-mass shift rather than a tail one. qvDir is 0
+  for vscode-other because both half-medians are 0
+  (a long flat-tail tenure with sparse positive mass);
+  the unsigned qvZ still captures the genuine
+  distributional difference at higher quantiles.
+
+  Tested with 46 new tests (10705 -> 10751 tests, all
+  green): primitive identities (translation-invariance,
+  positive-scale-invariance, identical-halves floor,
+  swap symmetry, qvT scaling identity, qvZ = sqrt(d2Diag)),
+  Hyndman-Fan TYPE-7 quantile and pooled-IQR exactness
+  vs a brute-force reference on 16- and 30-sample series,
+  qvLinf bounds and argmax range, fixed probability grid
+  contract (length, contents, frozen-ness, exclusion of
+  0 and 1), full input-validation rejection paths, and
+  builder-level filtering, dropped-counter accounting,
+  sort-key acceptance, gap-filled tenure inflation,
+  generatedAt override, and empty-queue path.
+
 ## 0.6.366 — 2026-05-03
 
 ### Added
