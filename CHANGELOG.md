@@ -2,6 +2,151 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.366 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-THIRD):
+  `pew-insights daily-token-maximum-mean-discrepancy-halves`.
+
+  Per-source MAXIMUM MEAN DISCREPANCY TWO-SAMPLE
+  TEST (Gretton et al. 2012, JMLR 13:723-773) with
+  GAUSSIAN RBF kernel and median-heuristic
+  bandwidth (Garreau, Jitkrittum, Kanagawa 2017
+  arXiv:1707.07269) comparing the empirical
+  distributions of the FIRST half (n1 = floor(n/2)
+  days) vs the SECOND half (n2 = n - n1 days) of
+  the gap-filled daily total_tokens series.
+
+  Let H be the Reproducing Kernel Hilbert Space
+  induced by the Gaussian kernel
+  k(x, y) = exp( - (x - y)^2 / (2 * sigma^2) )
+  with feature map phi: R -> H. The mean
+  embedding mu_F = E_{X~F}[phi(X)] in H, and
+
+      MMD^2(F_A, F_B) = || mu_A - mu_B ||_H^2
+                      = E[k(X, X')] + E[k(Y, Y')]
+                        - 2 * E[k(X, Y)]
+
+  with biased V-statistic estimator
+
+      mmd2_V = (1/n1^2)   * sum_{i,j} k(A_i, A_j)
+             + (1/n2^2)   * sum_{i,j} k(B_i, B_j)
+             - (2/(n1*n2))* sum_{i,j} k(A_i, B_j)
+
+  and unbiased U-statistic estimator (uses only
+  off-diagonal pairs within each half). Both are
+  reported. Bandwidth sigma is set by the median
+  heuristic on the pooled sample's pairwise
+  squared distances (Garreau-Jitkrittum-Kanagawa
+  2017).
+
+  Canonical scaled MMD test statistic:
+
+      mmdT  =  ( n1 * n2 / (n1 + n2) ) * mmd2_V
+
+  with weighted-chi-squared null limit (Gretton
+  et al. 2012 Theorem 12). Cross-source-comparable
+  effect size:
+
+      mmdZ        =  sqrt(mmd2_V) / pooledMad
+      mmdZSigned  =  sign(median(B) - median(A)) * mmdZ
+
+  STRUCTURAL ORTHOGONALITY. MMD with Gaussian
+  kernel weights the squared characteristic-
+  function gap by exp(-sigma^2 * t^2 / 2), the
+  Bochner spectral density of the RBF -- a
+  band-pass filter at scale sigma. This is
+  STRUCTURALLY DISTINCT from axis-122 (energy
+  distance) which uses 1/t^2 low-frequency
+  emphasis, axis-121 (W1) in QUANTILE-INTEGRAL
+  space, axis-120 (CvM) in PROBABILITY-SPACE L2,
+  axis-119 (AD) in PROBABILITY-SPACE
+  tail-weighted L2, and axis-118 (KS) in
+  PROBABILITY-SPACE L_infinity. Two distributions
+  with identical energy distance can have very
+  different MMD if their CF gap is concentrated
+  at frequencies in vs outside the Gaussian
+  band. The Gaussian kernel is CHARACTERISTIC
+  (Sriperumbudur et al. 2010, JMLR 11:1517-1561,
+  Theorem 23), so the mean embedding is INJECTIVE
+  on the space of probability measures and
+  mmd2 = 0 iff F_A = F_B (Gretton et al. 2012
+  Theorem 5). Median-heuristic bandwidth makes
+  MMD FULLY SCALE-INVARIANT in the data, in
+  contrast to axis-122's 1-homogeneous behaviour.
+
+  References:
+  - Gretton, A., Borgwardt, K. M., Rasch, M.,
+    Scholkopf, B., and Smola, A., "A kernel
+    two-sample test", JMLR 13 (2012),
+    pp. 723-773.
+  - Sriperumbudur, B. K., Gretton, A., Fukumizu,
+    K., Scholkopf, B., and Lanckriet, G. R. G.,
+    "Hilbert space embeddings and metrics on
+    probability measures", JMLR 11 (2010),
+    pp. 1517-1561.
+  - Garreau, D., Jitkrittum, W., and Kanagawa,
+    M., "Large sample analysis of the median
+    heuristic", arXiv:1707.07269 (2017).
+
+  LIVE-SMOKE on local pew queue.jsonl (2026-05-03,
+  6 sources, 12,021,747,864 total tokens, 1
+  dropped below min-tenure-days=14, sort=mmdTDesc):
+
+      source         tenure  n1   n2   sigma          mmd2V     mmd2U     mmdT    mmdZ
+      claude-code    72      36   36     7,479,010.44  0.267911  0.241520  4.8224  0.000000
+      openclaw       17      8    9     55,747,289.15  0.614173  0.499000  2.6012  0.000000
+      hermes         17      8    9      7,095,970.46  0.233561  0.099048  0.9892  0.000000
+      opencode       14      7    7    120,062,654.98  0.187637  0.026109  0.6567  0.000000
+      vscode-other   265     132  133      27,024.44   0.002984  0.001237  0.1977  0.000002
+
+  Headline: claude-code scores the largest scaled
+  MMD statistic mmdT = 4.8224 (raw mmd2_V = 0.268
+  in [0, 2]) despite both halves having a near-
+  zero median (median embedding shift is small
+  but the bandpass picks up substantial RKHS-
+  norm distance from the bimodal distribution of
+  daily totals). openclaw posts the largest raw
+  mmd2_V = 0.614, indicating ~62% of the
+  Gaussian-bandpass-weighted CF gap mass between
+  halves -- the most pronounced
+  full-distribution shift in the corpus. mmdT
+  trades raw mmd2_V against the n1*n2/(n1+n2)
+  prefactor, which is why claude-code's longer
+  tenure (n1 = n2 = 36) outranks openclaw's
+  larger raw discrepancy. The mmdZ values are
+  near zero because the pooled MAD scales (in
+  raw token units) are several orders of
+  magnitude larger than sqrt(mmd2_V) which is
+  bounded by sqrt(2); MMD's effect-size in
+  tokens-per-MAD is dominated by the kernel-
+  bounded numerator.
+
+### Tests
+
+- 22 new tests in
+  `test/dailytokenmaximummeandiscrepancyhalves.test.ts`
+  covering input validation, half-split sizes,
+  exact match against a brute-force MMD
+  V-statistic and U-statistic reference (8- and
+  30-sample series), the canonical
+  T = n1*n2/(n1+n2) * mmd2_V identity,
+  location-invariance, scale-invariance under
+  x -> k*x via the median-heuristic bandwidth
+  rescaling (the structural difference vs
+  axis-122 energy distance), half-swap symmetry,
+  sign convention, identical-halves degeneracy,
+  random-trial bounds (mmd2_V in [0, 2] for
+  Gaussian kernel V-statistic), shape-difference
+  detection at equal medians, sigma positivity,
+  source filtering, sort orderings, top cap,
+  determinism, and bandpass behaviour on wide vs
+  narrow shift fixtures.
+
+  Total test count after this release: 10,705
+  passing across 216 test files.
+
 ## 0.6.365 — 2026-05-03
 
 ### Added
