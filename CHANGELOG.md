@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.369 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-SIXTH):
+  `pew-insights daily-token-jensen-shannon-divergence-halves`.
+
+  Per-source KDE-SMOOTHED JENSEN-SHANNON DIVERGENCE between
+  the FIRST half (n1 = floor(n/2) days) and SECOND half
+  (n2 = n - n1 days) of the gap-filled daily total_tokens
+  series. Pooled robust scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid
+
+      f_A(g_k)  =  (1 / (n1*h)) * sum_{a in A} phi((g_k - a)/h)
+      f_B(g_k)  =  (1 / (n2*h)) * sum_{b in B} phi((g_k - b)/h)
+
+  with phi(u) = (1/sqrt(2*pi))*exp(-u^2/2). Trapezoidal mass-
+  normalisation to exact pmfs p, q on the K=257 grid:
+
+      w_k       =  dx if 0 < k < K-1 else dx/2
+      p_k       =  w_k * f_A(g_k) / Z_A,    Z_A = sum_k w_k*f_A(g_k)
+      q_k       =  w_k * f_B(g_k) / Z_B
+
+  Jensen-Shannon divergence in BITS (log base 2; Lin 1991
+  IEEE Trans. Info. Theory 37(1):145-151):
+
+      m_k       =  0.5 * (p_k + q_k)
+      jsdBits   =  0.5 * ( sum_k p_k*log2(p_k/m_k)
+                         + sum_k q_k*log2(q_k/m_k) )
+
+  jsdBits in [0, 1] -- bounded above by 1 because each KL
+  term is bounded by log2(2) = 1 (Lin 1991 §II; Endres &
+  Schindelin 2003 IEEE Trans. Info. Theory 49(7):1858-1860,
+  Theorem 1). The square-root jsdDist = sqrt(jsdBits) is a
+  TRUE METRIC on the probability simplex (Endres & Schindelin
+  2003, Theorem 2): symmetric, non-negative, zero iff
+  p === q, AND satisfies the triangle inequality. jsdDist
+  in [0, 1].
+
+  STRUCTURAL ORTHOGONALITY. JS is an INFORMATION-THEORETIC
+  SYMMETRIC DIVERGENCE living in PROBABILITY-MASS space
+  with LOG-RATIO weighting -- a class not occupied by any
+  prior axis. vs axes 118-123 KS/AD/CvM/W1/energy/MMD: those
+  live in CDF-L_infinity / tail-weighted CDF-L^2 / CDF-L^2 /
+  quantile-integral / 1/t^2-CF / RKHS spaces respectively;
+  JS is a pmf-log-ratio integral that AMPLIFIES regions
+  where one density is large and the other small. vs axis-
+  124 qv-Mahalanobis: lives in R^9 quantile-coordinate
+  space, JS in K=257 pmf-coordinate space. vs axis-125
+  PCA-projection: PCA is COVARIANCE-AWARE through the
+  delay-embedding lag structure (joint distribution of
+  (x[t], x[t+1], x[t+2])); JS is PERMUTATION-INVARIANT
+  within each half (depends only on the marginal pmf). A
+  time-permuted half preserves jsdBits exactly but changes
+  pcZ. Translation-invariant AND positive-scale-invariant
+  in the data, mirroring axes 123/124/125.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,058,839,776):
+
+      source          tenure  n1   n2   madPool         h               jsdBits     jsdDist     maxBinX           maxBinVal
+      --------------  ------  ---  ---  --------------  --------------  ----------  ----------  ----------------  ----------
+      openclaw        17       8    9    59886294.12    30583005.59     0.457773    0.676589      235639125.68    0.004303
+      opencode        14       7    7   131088708.42    69595664.65     0.152517    0.390535      726569297.96    0.001998
+      hermes          17       8    9    13138525.44     6709642.04     0.041240    0.203076       10980991.21    0.000524
+      claude-code     72      36   36           0.00   402528503.09     0.011870    0.108948     1203190072.75    0.000153
+      vscode-copilot  265    132  133           0.00       70977.97     0.001188    0.034473         287014.45    0.000021
+
+  References:
+  - Lin, J., "Divergence measures based on the Shannon
+    entropy", IEEE Transactions on Information Theory
+    37(1) (1991), pp. 145-151.
+  - Endres, D. M. and Schindelin, J. E., "A new metric for
+    probability distributions", IEEE Transactions on
+    Information Theory 49(7) (2003), pp. 1858-1860.
+  - Silverman, B. W., Density Estimation for Statistics and
+    Data Analysis, Chapman & Hall (1986), eq. 3.31.
+  - Wand, M. P. and Jones, M. C., Kernel Smoothing, Chapman
+    & Hall (1995), §2.7.
+
 ## 0.6.368 — 2026-05-03
 
 ### Added
