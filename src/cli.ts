@@ -186,6 +186,7 @@ import {
   renderDailyTokenRenyiTwoDivergenceHalves,
   renderDailyTokenMaxDivergenceHalves,
   renderDailyTokenSymmetricChiSquaredHalves,
+  renderDailyTokenClarkDistanceHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -534,6 +535,7 @@ import { buildDailyTokenJeffreysDivergenceHalves } from './dailytokenjeffreysdiv
 import { buildDailyTokenRenyiTwoDivergenceHalves } from './dailytokenrenyitwodivergencehalves.js';
 import { buildDailyTokenMaxDivergenceHalves } from './dailytokenmaxdivergencehalves.js';
 import { buildDailyTokenSymmetricChiSquaredHalves } from './dailytokensymmetricchisquaredhalves.js';
+import { buildDailyTokenClarkDistanceHalves } from './dailytokenclarkdistancehalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -39050,6 +39052,116 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSymmetricChiSquaredHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-clark-distance-halves')
+  .description(
+    "Per-source KDE-SMOOTHED CLARK DISTANCE clarkDistance = sqrt(sum_k ((p_k-q_k)/(p_k+q_k))^2) between the FIRST and SECOND half of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-THIRTY-FIFTH cross-source axis). Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. clarkDistance in [0, sqrt(K)]; clarkNormalised = clarkDistance/sqrt(K) in [0, 1] (cross-grid-comparable). ORTHOGONAL to all 17 prior axes 118-134: unique NORMALISED L^2 of the per-bin RELATIVE pmf gap (summand ((p-q)/(p+q))^2); diametrically opposite tail policy to sup-norm maxDiv (axis-133, absolute-gap L^infinity) and psChi2 (axis-134, polynomially divergent at p,q->0); BOUNDED while psChi2 is unbounded. Diagnostic clarkMaxRelGap = max_k|r_k| in [0, 1] flags one-bin regime-disjointness. Translation- AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: clarkDesc (default) | clark | maxRel | maxRelDesc | tokens | tenure | source.',
+    'clarkDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'clark',
+          'clarkDesc',
+          'maxRel',
+          'maxRelDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenClarkDistanceHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'clark'
+            | 'clarkDesc'
+            | 'maxRel'
+            | 'maxRelDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenClarkDistanceHalves(report) + '\n',
           );
         }
       } catch (e) {

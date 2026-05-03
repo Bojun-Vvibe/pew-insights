@@ -20274,6 +20274,7 @@ import type { DailyTokenJeffreysDivergenceHalvesReport } from './dailytokenjeffr
 import type { DailyTokenRenyiTwoDivergenceHalvesReport } from './dailytokenrenyitwodivergencehalves.js';
 import type { DailyTokenMaxDivergenceHalvesReport } from './dailytokenmaxdivergencehalves.js';
 import type { DailyTokenSymmetricChiSquaredHalvesReport } from './dailytokensymmetricchisquaredhalves.js';
+import type { DailyTokenClarkDistanceHalvesReport } from './dailytokenclarkdistancehalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -23361,6 +23362,89 @@ export function renderDailyTokenSymmetricChiSquaredHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: psChi2 in [0, +inf) is the additive symmetric chi-squared divergence sum_k (p_k-q_k)^2 (p_k+q_k)/(p_k q_k) between the KDE-smoothed half-pmfs; psChi2=0 iff p=q on the grid. Equivalent to pearsonF + pearsonR where pearsonF = sum_k (p_k-q_k)^2/q_k (forward Pearson p->q) and pearsonR = sum_k (p_k-q_k)^2/p_k (reverse Pearson q->p). asym = max(pearsonF, pearsonR) / min(...) in [1, +inf); asym=1 means symmetric divergence, asym>>1 means one half visits a token-volume regime the other does not. Translation- AND positive-scale-invariant in the data; PSCHI_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenClarkDistanceHalves(
+  r: DailyTokenClarkDistanceHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-clark-distance-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    grid-K: ${r.gridK}    silverman-mult: ${r.silvermanMultiplier}    pmf-floor: ${r.pmfFloor}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KDE-SMOOTHED CLARK DISTANCE clarkDistance = sqrt(sum_k ((p_k-q_k)/(p_k+q_k))^2) between the FIRST and SECOND half of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-THIRTY-FIFTH cross-source axis. Clark 1952. Pooled robust scale mad_pool = 1.4826*median(|x-median(x)|); Silverman bandwidth h = 0.9*mad_pool*n^(-1/5); shared K=257-point grid spanning [min-3h, max+3h]; Gaussian KDE per half; trapezoidal mass-normalisation to exact pmfs p, q. clarkDistance in [0, sqrt(K)]; clarkDistance=0 iff KDE-smoothed halves coincide on the grid; clarkNormalised = clarkDistance/sqrt(K) in [0, 1] for cross-grid comparability. ORTHOGONAL to all 17 prior axes 118-134: unique NORMALISED L^2 of the per-bin RELATIVE pmf gap; diametrically opposite tail policy to sup-norm maxDiv (axis-133) and psChi2 (axis-134); BOUNDED while psChi2 is unbounded. Diagnostic clarkMaxRelGap flags one-bin regime-disjointness. Translation- AND positive-scale-invariant in the data.`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KDE-smoothed Clark distance (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'madPool',
+    'h',
+    'clark',
+    'clarkN',
+    'meanRel',
+    'maxRel',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.clarkN1),
+    formatNumber(s.clarkN2),
+    s.clarkMadPool.toFixed(2),
+    s.clarkBandwidth.toFixed(2),
+    s.clarkDistance.toFixed(6),
+    s.clarkNormalised.toFixed(6),
+    s.clarkMeanRelGap.toFixed(6),
+    s.clarkMaxRelGap.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: clarkDistance in [0, sqrt(K)] where K=${r.gridK} so ceiling = ${Math.sqrt(r.gridK).toFixed(4)}; clarkDistance=0 iff p=q on the grid; clarkNormalised in [0, 1] (rescaled cross-grid). meanRel = (1/K)*sum_k |r_k| where r_k = (p_k-q_k)/(p_k+q_k) in [-1, 1]. maxRel = max_k |r_k| in [0, 1]; maxRel ~ 1 means at least one bin is regime-disjoint (one half put effectively zero mass while the other did not). Translation- AND positive-scale-invariant in the data; CLARK_PMF_FLOOR=1e-15 is a numerical underflow safeguard.)`,
     ),
   );
 
