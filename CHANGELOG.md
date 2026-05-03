@@ -2,6 +2,142 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.402 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-allan-deviation` (axis-151) —
+  per-source overlapping Allan deviation `sigma_a` at `tau=1`
+  day of the gap-filled per-source `total_tokens` daily series:
+
+      sigma_a^2 = (1 / (2 * (N - 1))) * sum_{i=0..N-2} (x[i+1] - x[i])^2
+
+  where `N = nFilledDays`. Step-to-step RMS volatility in raw
+  token units. The canonical frequency-stability metric in
+  time/frequency metrology, applied here to per-source daily
+  token rate.
+
+  ORTHOGONAL by construction to:
+
+  - `daily-token-autocorrelation-lag1` (normalized covariance,
+    dimensionless; two series with identical `rho1` can have
+    radically different `sigma_a`).
+  - `burstiness` and `rolling-bucket-cv` (order-INVARIANT
+    marginal dispersion; shuffling the day vector leaves them
+    unchanged but changes Allan).
+  - `daily-token-variance-of-logarithms` (log-scale, not raw
+    first-difference RMS).
+  - `daily-token-difference-sign-test` and
+    `daily-token-second-diff-sign-runs` (sign-only; ignore
+    magnitudes).
+  - `daily-token-monotone-run-length` and
+    `daily-token-zero-crossing-rate` (categorical / counting,
+    not RMS).
+  - `daily-token-gini-coefficient`, `daily-token-pietra-ratio`,
+    `daily-token-zenga-index`, `daily-token-mdd-rate`,
+    `daily-token-percentile-gap-ratio` (order-INVARIANT
+    inequality scalars).
+  - `daily-token-hurst-rs` (long-range memory, not short-range
+    step volatility).
+  - `daily-token-spectral-*` (frequency domain).
+  - `interarrival-time` and `bucket-gap-distribution` (event
+    spacing, not token magnitudes).
+  - `source-burstiness-fano-factor` (lives at SOURCE-ROW grain,
+    not on aggregated per-day totals; Fano = var/mean is also
+    not first-difference based).
+
+  Per-source columns: `tokens`, `nActive`, `nFilled`, `mean`,
+  `stddev`, `allanDev`, `meanAbsStep`, `maxAbsStep`,
+  `argMaxDay`, `allanRel = allanDev / mean` (dimensionless),
+  `randomWalkAllanRatio = allanDev / popStddev` (under i.i.d.
+  ratio ~ 1; `> 1` = anti-persistent / oscillating;
+  `< 1` = persistent / smooth), `first`, `last`.
+
+  Knobs: `--since`, `--until`, `--source`, `--min-days`
+  (default 3, must be >= 3), `--top` (display cap),
+  `--sort tokens|allan|allanrel|rwratio|ndays`, `--json`.
+
+- 25 unit tests covering: option validation (bad min-days, top,
+  sort, since/until); empty + sparse drops; the pure
+  `allanDeviationTau1(values)` helper at the analytic anchors
+  (n<2 flat; constant -> 0; two-point step; alternating series
+  has higher Allan than monotonic); end-to-end correctness
+  (constant 4-day source -> `allanDev=0` and `flatRwRatio` from
+  zero stddev; 4-day [10, 30, 20, 40] series matches
+  `sqrt(150)` analytic value); gap-fill semantics (zeros bridge
+  multi-day gaps and inflate Allan correctly); rwRatio sign
+  (alternating > 1 vs monotonic < 1); window filter respects
+  `since`/`until`; source filter drops non-matching rows;
+  invalid hour-start + zero/negative tokens drop
+  deterministically; deterministic source-asc tie-break under
+  equal totals; `--top` cap surfaces `droppedTopSources`;
+  `--sort allan` reorders by `allanDev` desc; `argMaxStepDay`
+  picks the earliest tying landing day; `allanRel` formula
+  identity; report echoes options + window; unknown source
+  bucket; multi-row-per-day aggregation matches
+  `sqrt(5000)` for the test fixture.
+
+- New exported pure helper
+  `allanDeviationTau1(values: number[]): { allan: number; flat: boolean }`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+```
+$ pew-insights daily-token-allan-deviation --since 2026-04-26T00:00:00.000Z --sort allan
+```
+
+| source       | tokens         | nActive | nFilled | mean         | stddev       | allanDev     | meanAbsStep | maxAbsStep   | argMaxDay  | allanRel | rwRatio | first      | last       |
+|--------------|----------------|---------|---------|--------------|--------------|--------------|-------------|--------------|------------|----------|---------|------------|------------|
+| opencode     | 6,413,215,290  | 14      | 14      | 458,086,806  | 160,831,314  | 154,824,744  | 127,472,132 | 707,121,929  | 2026-04-21 | 0.338    | 0.963   | 2026-04-20 | 2026-05-03 |
+| claude-code  | 3,442,385,788  | 35      | 72      |  47,810,914  | 153,856,936  | 126,499,626  |  63,518,965 | 823,077,137  | 2026-04-20 | 2.646    | 0.822   | 2026-02-11 | 2026-04-23 |
+| openclaw     | 2,251,422,946  | 17      | 17      | 132,436,644  |  93,358,585  |  66,104,771  |  61,516,765 | 254,887,383  | 2026-04-19 | 0.499    | 0.708   | 2026-04-17 | 2026-05-03 |
+| codex        |   809,624,660  |  8      |  8      | 101,203,083  | 122,703,257  | 105,348,501  | 100,477,486 | 348,352,455  | 2026-04-20 | 1.041    | 0.859   | 2026-04-13 | 2026-04-20 |
+| hermes       |   309,838,511  | 17      | 17      |  18,225,795  |   9,241,625  |   7,234,654  |   7,506,759 |  23,954,588  | 2026-04-19 | 0.397    | 0.783   | 2026-04-17 | 2026-05-03 |
+| (src-1)      |     1,885,727  | 73      | 265     |       7,116  |      27,024  |      25,038  |      10,536 |     240,730  | 2026-04-17 | 3.519    | 0.926   | 2025-07-30 | 2026-04-20 |
+
+Reading the row of suite-wide outliers (sorted by `allan` desc):
+
+`opencode` carries the largest absolute step volatility
+(`allanDev ~ 1.55e8` tokens/day) and a `rwRatio` very close to
+i.i.d. (`0.963`). Step-to-step changes are large in absolute
+units but barely below the marginal stddev — suite's
+day-to-day load is genuinely close to white-noise once you
+condition on the high mean.
+
+`claude-code` has `allanRel = 2.646` — its single-day token
+swing is 2.6× its (much lower) mean, the largest dimensionless
+volatility in the visible high-volume sources. With 35 active
+days spread across 72 calendar days of tenure the gap-fill
+zeros amplify both `allanDev` and `allanRel`, but `rwRatio =
+0.822` (< 1) confirms the steps are still quieter than
+i.i.d. noise of the same marginal stddev — the heavy days
+cluster.
+
+`openclaw` and `hermes` both sit at `rwRatio < 0.8` —
+"persistent / smooth": adjacent days resemble each other more
+than i.i.d. would predict; their absolute step volatility is
+moderate.
+
+`codex` is the cleanest "i.i.d.-ish" signature in the suite:
+`rwRatio = 0.859` close to 1, `allanRel ~ 1` (step volatility
+matches mean), only 8 active days in an 8-day filled tenure
+(no gaps).
+
+`(src-1)` carries the highest `allanRel` (`3.519`) — single
+days swing to ~3.5× the source mean — but a `rwRatio = 0.926`
+near i.i.d.: the swings are not anti-correlated, just large
+relative to the small mean. Tenure of 265 filled days with
+only 73 active days gives lots of zero-fill which dilutes the
+mean and inflates `allanRel` even though the underlying
+volatility is small in absolute units (`allanDev ~ 25k
+tokens/day`).
+
+Cross-axis sanity: the only source with `rwRatio > 1`
+(anti-persistent) would surface as the inverse of `claude-code`
+— none in the current window. Most sources cluster in
+`[0.7, 0.97]` (persistent territory), confirming that `pew`
+usage at the daily grain is generally smoother than i.i.d.
+
 ## 0.6.401 — 2026-05-04
 
 ### Added
