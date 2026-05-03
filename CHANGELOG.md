@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.388 — 2026-05-04
+
+### Added
+
+- `daily-token-herfindahl-hirschman-index` —
+  ONE-HUNDRED-AND-FORTY-THIRD cross-source axis. Per-source
+  HERFINDAHL-HIRSCHMAN INDEX of the per-day total_tokens
+  distribution (Hirschman 1945; Herfindahl 1950):
+
+      HHI = sum_i s_i^2,    s_i = D_i / sum_j D_j
+
+  where `D = (D_1, ..., D_n)` is the per-source per-day
+  total_tokens vector. HHI lives in `[1/n, 1]` (lower bound
+  iff perfectly flat, upper bound iff one-day monopoly).
+  Headline question: **how concentrated is a source's total
+  token mass across its active UTC days, weighted by squared
+  daily share?**
+- DENSE QUADRATIC functional. Structurally orthogonal to CR4
+  (axis-142) which is a SPARSE PIECEWISE-LINEAR functional on
+  a fixed top-4 set: HHI is QUADRATIC in shares so a single
+  large day contributes its squared share to the metric and
+  HHI is therefore strictly more spike-sensitive than CR4 is
+  within the top-k mass band. Orthogonal to the full-Lorenz
+  inequality family (axes 32-57) which all normalise by the
+  MEAN and integrate against the Lorenz curve in `L^1`; HHI
+  normalises by the SUM and aggregates SQUARED shares in
+  `L^2`. Orthogonal to QSR/DSG (axes 61, 62) which are ratios
+  of QUANTILE MASSES; HHI depends only on the MULTISET of
+  shares. Orthogonal to the divergence-of-halves family
+  (axes 118-140) which compares halves of the day vector;
+  HHI is permutation-invariant on the WHOLE vector.
+- Pure helper exported: `herfindahlHirschmanIndexOfVector`
+  returning `{ hhi, total, mean, lowerBound, slack,
+  normalisedHhi, effectiveDays, maxShare, degenerate }` on a
+  strictly-positive numeric vector. Throws on negative, zero,
+  or non-finite input. Marks `degenerate` for `n < 2`.
+- Per-row diagnostics: `hhi`, `lowerBound = 1/n`, `slack`,
+  `normalisedHhi = (hhi - 1/n) / (1 - 1/n)` in `[0, 1]` for
+  cross-source comparability, `effectiveDays = 1/hhi` (the
+  inverse-Simpson "equally-busy day count" -- a flat n-day
+  vector has `N_eff = n`, a one-day monopoly has `N_eff = 1`),
+  `maxShare`, plus a DOJ-style `concentrationRegime` band
+  (`low` < 0.15, `moderate` in `[0.15, 0.25)`, `high` >= 0.25
+  on the `normalisedHhi` scale; `degenerate` for `n < 2`).
+- CLI sort keys: `hhi` (default) | `tokens` | `days` |
+  `source` | `meanDaily` | `lowerBound` | `normalisedHhi` |
+  `effectiveDays`. Display filter `--min-hhi` in `[0, 1]`.
+- 24 new tests covering: empty / `n=1` degenerate / closed-
+  form `[1..10]` -> `385/3025` / flat-vector lower-bound
+  attainment / monopoly upper-bound saturation / scale
+  invariance / permutation invariance / negative-zero-NaN
+  guards / rank-flip witness vs CR4 demonstrating HHI's
+  quadratic spike-sensitivity / `maxShare` correctness /
+  builder validation (`minDays<2`, `minHhi` outside `[0,1]`,
+  unknown sort) / per-source row emission / sparse-source
+  drop / `sort=hhi` ordering / `--min-hhi` filter / all
+  refinement fields (low/moderate/high regime classification,
+  `normalisedHhi` closed-form, `effectiveDays = 1/hhi`,
+  `maxShare` from row data).
+
+### Live smoke (`~/.config/pew/queue.jsonl`, 2026-05-04)
+
+`pew-insights daily-token-herfindahl-hirschman-index --json`
+against the local pew queue (6 sources, ~13.11B tokens; one
+source name redacted as `vscode-<src-d>`):
+
+| source           | nDays | hhi      | lowerBound | normHhi | nEff   | regime   |
+| ---              | ---   | ---      | ---        | ---     | ---    | ---      |
+| codex            |     8 | 0.308753 | 0.125000   |  0.2100 |  3.239 | moderate |
+| claude-code      |    35 | 0.157718 | 0.028571   |  0.1329 |  6.340 | low      |
+| openclaw         |    17 | 0.088638 | 0.058824   |  0.0317 | 11.282 | low      |
+| opencode         |    14 | 0.081044 | 0.071429   |  0.0104 | 12.339 | low      |
+| hermes           |    17 | 0.074387 | 0.058824   |  0.0165 | 13.443 | low      |
+| vscode-<src-d>   |    73 | 0.058199 | 0.013699   |  0.0451 | 17.182 | low      |
+
+Top-3 by HHI: `codex` (0.3088, regime=`moderate`, N_eff~3.24
+out of 8 active days; `maxShare = 0.481` -- a single day
+holds 48% of the source's total mass which alone contributes
+0.232 to HHI), `claude-code` (0.1577, `low` band but the
+largest absolute slack 0.129; `maxShare = 0.306`, single
+peak day = 1.052B tokens out of 3.44B), `openclaw` (0.0886,
+`low`, N_eff~11.3 of 17). HHI's quadratic kernel reorders
+the field vs CR4 (axis-142): `vscode-<src-d>` is at the
+BOTTOM by HHI (0.058) but was MIDDLE by CR4 (0.413) because
+its 73-day series spreads quadratic mass thinly across many
+days even though four busy days still dominate the top-4
+sum. `codex`'s LEAD by HHI (0.309 vs the next 0.158 -- a
+2x gap) is much wider than its CR4 lead (0.898 vs 0.669,
+a 1.3x gap), confirming HHI is strictly more spike-sensitive
+than CR4 within the same dataset. Every source non-degenerate.
+
 ## 0.6.387 — 2026-05-04
 
 ### Added
