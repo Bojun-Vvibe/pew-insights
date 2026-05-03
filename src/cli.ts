@@ -175,6 +175,7 @@ import {
   renderDailyTokenWassersteinOneHalves,
   renderDailyTokenEnergyDistanceHalves,
   renderDailyTokenMaximumMeanDiscrepancyHalves,
+  renderDailyTokenQuantileVectorMahalanobisHalves,
   renderSourceHourTopKMassShare,
   renderCumulativeTokensMidpoint,
   renderSourceIoRatioStability,
@@ -512,6 +513,7 @@ import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmisesh
 import { buildDailyTokenWassersteinOneHalves } from './dailytokenwassersteinonehalves.js';
 import { buildDailyTokenEnergyDistanceHalves } from './dailytokenenergydistancehalves.js';
 import { buildDailyTokenMaximumMeanDiscrepancyHalves } from './dailytokenmaximummeandiscrepancyhalves.js';
+import { buildDailyTokenQuantileVectorMahalanobisHalves } from './dailytokenquantilevectormahalanobishalves.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -37787,6 +37789,128 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMaximumMeanDiscrepancyHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-quantile-vector-mahalanobis-halves')
+  .description(
+    "Per-source QUANTILE-VECTOR DIAGONAL-MAHALANOBIS TWO-SAMPLE TEST comparing the EMPIRICAL QUANTILE VECTORS of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series at probabilities {0.1, 0.2, ..., 0.9} (ONE-HUNDRED-AND-TWENTY-FOURTH cross-source axis). Class-TWO-SAMPLE-DISTRIBUTION-EQUALITY-TEST in FINITE-DIMENSIONAL QUANTILE-VECTOR SPACE (R^9) with diagonal-Mahalanobis-style metric using the pooled-IQR scale: d2Diag = (1/(k*iqr_pool^2)) * sum_i (q_B[i]-q_A[i])^2 is the dimensionless mean squared per-quantile gap in iqr_pool^2 units. qvT = n1*n2/(n1+n2)*d2Diag is the canonical scaled multivariate two-sample statistic (Hotelling 1931 Ann. Math. Statist. 2(3):360-378; Anderson 2003 §5.2). qvZ = sqrt(d2Diag) is the cross-source-comparable EFFECT SIZE; qvZSigned = sign(median(B)-median(A))*qvZ. qvLinf = max_i |q_B[i]-q_A[i]| / iqr_pool is the L_infinity standardised quantile gap diagnostic. Sample quantiles use Hyndman-Fan TYPE-7 LINEAR-INTERPOLATION (Hyndman & Fan 1996, Amer. Statist. 50(4):361-365). FINITE-DIMENSIONAL companion to axis-123 MMD (INFINITE-DIM RKHS), axis-122 energy distance (CHARACTERISTIC-FUNCTION-SPACE 1/t^2-weighted L2), axis-121 W1 (QUANTILE-INTEGRAL space), axis-120 CvM (PROBABILITY-SPACE L2), axis-119 AD (PROBABILITY-SPACE tail-weighted L2), axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because qv-Mahalanobis SAMPLES the inverse CDF on a FIXED 9-POINT INTERIOR GRID with diagonal pooled-IQR^2 normalisation. Translation-invariant AND positive-scale-invariant in the data.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for sample-quantile interpolation regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: qvTDesc (default) | qvT | d2Diag | d2DiagDesc | qvZ | qvZDesc | qvZSigned | qvZSignedDesc | qvLinf | qvLinfDesc | tokens | tenure | source.',
+    'qvTDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'd2Diag',
+          'd2DiagDesc',
+          'qvT',
+          'qvTDesc',
+          'qvZ',
+          'qvZDesc',
+          'qvZSigned',
+          'qvZSignedDesc',
+          'qvLinf',
+          'qvLinfDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenQuantileVectorMahalanobisHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'd2Diag'
+            | 'd2DiagDesc'
+            | 'qvT'
+            | 'qvTDesc'
+            | 'qvZ'
+            | 'qvZDesc'
+            | 'qvZSigned'
+            | 'qvZSignedDesc'
+            | 'qvLinf'
+            | 'qvLinfDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenQuantileVectorMahalanobisHalves(report) + '\n',
           );
         }
       } catch (e) {

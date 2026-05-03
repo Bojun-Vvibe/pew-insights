@@ -20263,6 +20263,7 @@ import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervon
 import type { DailyTokenWassersteinOneHalvesReport } from './dailytokenwassersteinonehalves.js';
 import type { DailyTokenEnergyDistanceHalvesReport } from './dailytokenenergydistancehalves.js';
 import type { DailyTokenMaximumMeanDiscrepancyHalvesReport } from './dailytokenmaximummeandiscrepancyhalves.js';
+import type { DailyTokenQuantileVectorMahalanobisHalvesReport } from './dailytokenquantilevectormahalanobishalves.js';
 
 export function renderDailyTokenSpectralRenyi2Entropy(
   r: DailyTokenSpectralRenyi2EntropyReport,
@@ -22400,6 +22401,104 @@ export function renderDailyTokenMaximumMeanDiscrepancyHalves(
   lines.push(
     chalk.dim(
       `(reference anchors: mmd2_V in [0, 1] (Gaussian kernel bounded by 1); mmd2_U in [-1, 1] (unbiased, can be slightly negative); mmdT = n1*n2/(n1+n2)*mmd2_V is the canonical scaled MMD statistic with weighted-chi-squared null limit (Gretton et al. 2012 Theorem 12); mmdZ = sqrt(mmd2_V)/pooledMad is dimensionless and cross-source-comparable; mmdZ approx 0 = halves agree (Gretton et al. 2012 Theorem 5: Gaussian kernel is CHARACTERISTIC, mmd = 0 iff F_A = F_B); mmdZ >> 0 = halves are several robust-scale units apart in RKHS mean-embedding distance per token of pooled dispersion. mmd is intrinsically UNSIGNED (squared norm in H) -- mmdDir indicates which half has the larger median (+1 = second half larger; -1 = first half larger; 0 = tied); mmdZSigned = mmdDir * mmdZ is a CONVENTION for cross-axis comparability with axes 115/116/117/118/119/120/121/122. MMD lives in RKHS feature space (Gaussian-band-pass weighting in CF terms) while energy distance (axis-122) lives in 1/t^2-weighted CF space, W1 (axis-121) lives in QUANTILE-INTEGRAL space, CvM/AD (axis-120/119) live in PROBABILITY space, and KS (axis-118) lives in pointwise-L_infinity space; the five are not monotone images of one another.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenQuantileVectorMahalanobisHalves(
+  r: DailyTokenQuantileVectorMahalanobisHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-quantile-vector-mahalanobis-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroIqr)} zero-pooled-iqr, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `probability grid: { ${r.probabilityGrid.map((p) => p.toFixed(2)).join(', ')} }`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `(per-source QUANTILE-VECTOR DIAGONAL-MAHALANOBIS TWO-SAMPLE TEST comparing the EMPIRICAL QUANTILE VECTORS of the FIRST half vs SECOND half of the gap-filled daily total_tokens series at probabilities {0.1,..,0.9}. ONE-HUNDRED-AND-TWENTY-FOURTH cross-source axis. Class-TWO-SAMPLE-DISTRIBUTION-EQUALITY-TEST in FINITE-DIMENSIONAL QUANTILE-VECTOR SPACE (R^9) with diagonal-Mahalanobis-style metric using the pooled-IQR scale. d2Diag = (1/(k*iqr_pool^2)) * sum_i (q_B[i]-q_A[i])^2 is the dimensionless mean squared per-quantile gap in iqr_pool^2 units. qvT = n1*n2/(n1+n2)*d2Diag is the canonical scaled multivariate two-sample statistic (Hotelling 1931 Ann. Math. Statist. 2(3):360-378; Anderson 2003 §5.2). qvZ = sqrt(d2Diag) is the cross-source-comparable EFFECT SIZE; qvZSigned = sign(median(B)-median(A))*qvZ. qvLinf = max_i |q_B[i]-q_A[i]| / iqr_pool is the L_infinity standardised quantile gap diagnostic. Sample quantiles use Hyndman-Fan TYPE-7 LINEAR-INTERPOLATION (Hyndman & Fan 1996, Amer. Statist. 50(4):361-365; matches R quantile() type=7 default and numpy.quantile default). FIXED probability grid {0.1,0.2,..,0.9} is required for cross-source comparability and EXCLUDES the boundary probabilities 0 and 1 (sample-min and sample-max instability). FINITE-DIMENSIONAL companion to axis-123 MMD (INFINITE-DIM RKHS), axis-122 energy distance (CHARACTERISTIC-FUNCTION-SPACE 1/t^2-weighted L2), axis-121 W1 (QUANTILE-INTEGRAL space), axis-120 CvM (PROBABILITY-SPACE L2), axis-119 AD (PROBABILITY-SPACE tail-weighted L2), axis-118 KS (PROBABILITY-SPACE L_infinity); ORTHOGONAL because qv-Mahalanobis SAMPLES the inverse CDF on a FIXED 9-POINT INTERIOR GRID with diagonal pooled-IQR^2 normalisation, whereas axis-121 W1 INTEGRATES |F_A^{-1}-F_B^{-1}| continuously over [0,1] without normalisation. Translation-invariant AND positive-scale-invariant in the data, like axis-123 MMD with median-heuristic bandwidth and unlike axes 121/122 which are 1-homogeneous.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source quantile-vector diagonal-Mahalanobis (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'iqrPool',
+    'd2Diag',
+    'qvT',
+    'qvZ',
+    'qvDir',
+    'qvZSigned',
+    'qvLinf',
+    'argmaxP',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.qvN1),
+    formatNumber(s.qvN2),
+    formatNumber(s.qvMedianA),
+    formatNumber(s.qvMedianB),
+    formatNumber(s.qvIqrPool),
+    s.qvD2Diag.toFixed(6),
+    s.qvT.toFixed(4),
+    s.qvZ.toFixed(6),
+    s.qvDir.toFixed(0),
+    s.qvZSigned.toFixed(6),
+    s.qvLinf.toFixed(6),
+    (r.probabilityGrid[s.qvLinfArgmax] ?? Number.NaN).toFixed(2),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchors: d2Diag in [0, +inf) (squared distance, dimensionless after dividing by k*iqr_pool^2); qvT = n1*n2/(n1+n2)*d2Diag is the canonical scaled multivariate two-sample statistic; qvZ = sqrt(d2Diag) is dimensionless and cross-source-comparable; qvZ approx 0 = halves agree at every interior grid quantile; qvZ >> 0 = halves are several iqr_pool units apart on average per quantile; qvLinf is the worst single-quantile standardised gap (in iqr_pool units), and argmaxP names the probability where it occurs. The axis is INSENSITIVE BY DESIGN to the extreme tails p<0.1 and p>0.9. d2Diag is invariant under translation x -> x+c AND positive rescaling x -> k*x (k>0); this matches axis-123 MMD with median-heuristic bandwidth and contrasts with axis-122 energy distance and axis-121 W1, both 1-homogeneous in the data. qv-Mahalanobis lives in finite-dimensional R^9; MMD lives in infinite-dimensional RKHS; energy distance lives in 1/t^2-weighted CF space; W1 in quantile-integral space; CvM/AD in probability-space L2/tail-weighted-L2; KS in pointwise-L_infinity space; the six are not monotone images of one another.)`,
     ),
   );
 
