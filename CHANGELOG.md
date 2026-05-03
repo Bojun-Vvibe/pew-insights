@@ -2,6 +2,104 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.382 — 2026-05-03
+
+### Added
+
+- `daily-token-neyman-chi-squared-halves` —
+  ONE-HUNDRED-AND-THIRTY-NINTH cross-source axis. Per-source
+  KDE-SMOOTHED ASYMMETRIC NEYMAN CHI-SQUARED in BOTH
+  directions: forward `N(p||q) = sum_k (p_k - q_k)^2/q_k`
+  and reverse `N(q||p) = sum_k (q_k - p_k)^2/p_k`, between
+  the FIRST and SECOND half of the gap-filled daily
+  total_tokens series (Neyman 1949; Cha 2007 eq. 12).
+  Identical KDE setup to axes 126-138 (pooled robust scale
+  `mad_pool = 1.4826*median(|x-median(x)|)`; Silverman
+  bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared K=257-point
+  grid spanning `[min-3h, max+3h]`; Gaussian KDE per half;
+  trapezoidal mass-normalisation to exact pmfs `p, q`).
+
+  ASYMMETRIC: ships the directional pair plus the bounded
+  asymmetry diagnostic
+  `neymanAsymmetry = |N_pq - N_qp| / (N_pq + N_qp)` in
+  `[0, 1]` -- 0 iff both directions match (the regime
+  where axis-134 psChi2 carries the full information),
+  1 iff one direction is identically zero (the regime
+  axis-134's symmetrisation collapses).
+
+  ORTHOGONAL to all 21 prior axes 118-138: every prior
+  half-vs-half axis ships either a SYMMETRIC scalar (KS,
+  AD, CvM, W1, energy, MMD, qv-Mahalanobis, PCA, JSD, TV,
+  H, bDist, delta, AOV, Hoeffding-D, SE, max-div, Clark,
+  Taneja, KJ, Topsoe) or a SYMMETRISED scalar (axis-134
+  psChi2 = `(p-q)^2(p+q)/(pq) = (p-q)^2(1/p + 1/q)` =
+  `N(p||q) + N(q||p)`). axis-139 is the first to surface
+  the DIRECTIONAL PAIR: when `neymanAsymmetry > 0` the
+  pair carries genuinely new information beyond psChi2.
+  vs axis-138 Topsoe (logarithmic, symmetric, bounded by
+  `2*log(2)`): Neyman is rational, asymmetric, unbounded.
+  vs axis-118 JSD: JSD is logarithmic and bounded; Neyman
+  is rational and unbounded with `1/q` (forward) or `1/p`
+  (reverse) tail blow-up.
+
+  Diagnostics: `neymanMax` (the louder direction);
+  `neymanMaxBinFwd`, `neymanMaxBinRev` (largest per-bin
+  contribution in each direction; surface the most
+  discriminating bin separately for the two reference
+  pmfs).
+
+  Pure helper `neymanSummand(p, q) = (p - q)^2 / q` exposed
+  for downstream tooling (forward direction; both inputs
+  floored at `NEYMAN_PMF_FLOOR = 1e-15`). Verifies the
+  identity `neymanSummand(p, p) === 0` and the asymmetric
+  `neymanSummand(p, q) !== neymanSummand(q, p)` in general.
+
+  Translation- AND positive-scale-invariant in the data
+  (data and bandwidth scale together; pmfs unchanged).
+  Symmetric under HALF SWAP only via swap of forward and
+  reverse (the asymmetric scalar is preserved across
+  `[A, B] -> [B, A]`; the directional sign is by
+  convention reset on swap).
+
+  Live smoke (~/.config/pew/queue.jsonl, 12.2B tokens,
+  6 sources, 1 dropped below 14d tenure):
+  `openclaw : neymanForward = 8.94e10, neymanReverse =
+  4.29, neymanMax = 8.94e10, neymanAsymmetry = 1.000` --
+  the most asymmetric source by 8 orders of magnitude:
+  the FIRST half (Apr 17-24) had so little mass on the
+  bins where the SECOND half (Apr 25-May 03) put its
+  weight that scoring (p-q)^2/q on the SECOND-half
+  reference blew up to 1e10. axis-134 psChi2 collapsed
+  this into a single symmetric magnitude; axis-139 surfaces
+  WHICH direction is responsible. `opencode : neymanForward
+  = 5132.72, neymanReverse = 1.26, neymanMax = 5132.72,
+  neymanAsymmetry = 0.9995` -- a 4000x asymmetry, same
+  story (early half put zero mass on bins the late half
+  occupied). `hermes : neymanForward = 0.351, neymanReverse
+  = 0.299, neymanMax = 0.351, neymanAsymmetry = 0.0792` --
+  near-symmetric small drift; psChi2's symmetrisation
+  carries essentially the same information as either
+  direction here. `claude-code : neymanAsymmetry = 0.870`
+  (REVERSE-dominated: the late half had bins the early
+  half did not -- the OPPOSITE direction from openclaw/
+  opencode); `vscode-copilot : neymanAsymmetry = 0.520`
+  (mid-range asymmetry).
+
+  CLI:
+
+      pew-insights daily-token-neyman-chi-squared-halves
+      pew-insights daily-token-neyman-chi-squared-halves \
+          --source openclaw --json
+      pew-insights daily-token-neyman-chi-squared-halves \
+          --sort neymanAsymmetryDesc
+
+  References: Neyman, J. (1949). Contribution to the
+  theory of the chi-square test. Proc. First Berkeley
+  Symp. Math. Stat. and Prob., 239-273. Cha, S.-H. (2007).
+  Comprehensive Survey on Distance/Similarity Measures
+  between Probability Density Functions. Int. J. Math.
+  Models and Methods in Applied Sciences 1(4), eq. 12.
+
 ## 0.6.381 — 2026-05-03
 
 ### Added
