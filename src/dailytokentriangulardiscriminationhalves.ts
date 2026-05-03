@@ -275,6 +275,14 @@ export interface DailyTokenTriangularDiscriminationHalvesSourceRow {
   deltaMaxBinX: number;
   /** Per-bin contribution (p_k - q_k)^2 / (p_k + q_k) at deltaMaxBin. */
   deltaMaxBinValue: number;
+  /**
+   * Normalised triangular discrimination deltaNormalized = delta / 2,
+   * in [0, 1]. Diagnostic only -- puts delta on the same [0, 1] scale
+   * as hDist (axis-128) and tvDist (axis-127) for at-a-glance
+   * cross-axis comparison. Translation- and positive-scale-invariant
+   * for the same reason as delta.
+   */
+  deltaNormalized: number;
 }
 
 export interface DailyTokenTriangularDiscriminationHalvesReport {
@@ -361,6 +369,7 @@ export function dailyTokenTriangularDiscriminationHalves(values: number[]): {
   deltaMaxBin: number;
   deltaMaxBinX: number;
   deltaMaxBinValue: number;
+  deltaNormalized: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -523,6 +532,7 @@ export function dailyTokenTriangularDiscriminationHalves(values: number[]): {
     deltaMaxBin: maxBin,
     deltaMaxBinX,
     deltaMaxBinValue: maxBinValue,
+    deltaNormalized: dSum / 2,
   };
 }
 
@@ -702,6 +712,7 @@ export function buildDailyTokenTriangularDiscriminationHalves(
       deltaMaxBin: result.deltaMaxBin,
       deltaMaxBinX: result.deltaMaxBinX,
       deltaMaxBinValue: result.deltaMaxBinValue,
+      deltaNormalized: result.deltaNormalized,
     });
     totalTokensSum += acc.totalTokens;
   }

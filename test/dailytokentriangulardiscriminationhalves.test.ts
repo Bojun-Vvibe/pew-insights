@@ -525,3 +525,42 @@ test('refactor: rows expose deltaMetric in [0, sqrt(2)]', () => {
     assert.ok(s.deltaMetric <= Math.SQRT2 + 1e-10);
   }
 });
+
+// ---------- diagnostic: deltaNormalized in [0, 1] ----------
+
+test('diagnostic: deltaNormalized === delta / 2 in [0, 1]', () => {
+  const r = dailyTokenTriangularDiscriminationHalves([
+    1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103, 104, 105, 106, 107,
+  ]);
+  assert.ok(Math.abs(r.deltaNormalized - r.delta / 2) < 1e-12);
+  assert.ok(r.deltaNormalized >= 0);
+  assert.ok(r.deltaNormalized <= 1 + 1e-12);
+});
+
+test('diagnostic: deltaNormalized is 0 for identical halves', () => {
+  const half = [1, 2, 3, 4, 5, 6, 7, 8];
+  const r = dailyTokenTriangularDiscriminationHalves([...half, ...half]);
+  assert.ok(r.deltaNormalized < 1e-10);
+});
+
+test('diagnostic: deltaNormalized translation- and scale-invariant', () => {
+  const x = [1, 4, 2, 9, 5, 7, 3, 6, 8, 10, 11, 12];
+  const r1 = dailyTokenTriangularDiscriminationHalves(x);
+  const r2 = dailyTokenTriangularDiscriminationHalves(
+    x.map((v) => 5 * v + 1000),
+  );
+  assert.ok(Math.abs(r1.deltaNormalized - r2.deltaNormalized) < 1e-8);
+});
+
+test('diagnostic: rows expose deltaNormalized in [0, 1]', () => {
+  const r = buildDailyTokenTriangularDiscriminationHalves(
+    makeQueueWithTwoSources(),
+    { minTokens: 0 },
+  );
+  for (const s of r.sources) {
+    assert.ok(Number.isFinite(s.deltaNormalized));
+    assert.ok(s.deltaNormalized >= 0);
+    assert.ok(s.deltaNormalized <= 1 + 1e-12);
+    assert.ok(Math.abs(s.deltaNormalized - s.delta / 2) < 1e-12);
+  }
+});
