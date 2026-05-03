@@ -2,6 +2,107 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.377 — 2026-05-03
+
+### Added
+
+- `daily-token-symmetric-chi-squared-halves` —
+  ONE-HUNDRED-AND-THIRTY-FOURTH cross-source axis. Per-source
+  KDE-SMOOTHED ADDITIVE SYMMETRIC CHI-SQUARED divergence
+  `psChi2 = sum_k (p_k - q_k)^2 * (p_k + q_k) / (p_k * q_k)`
+  between the FIRST and SECOND half of the gap-filled daily
+  total_tokens series. Equivalent to forward+reverse Pearson
+  chi-squared `psChi2 = chi2(p||q) + chi2(q||p)` (Cha 2007,
+  eq. 33). Identical KDE setup to axes 126-133 (pooled robust
+  scale `mad_pool = 1.4826*median(|x-median(x)|)`; Silverman
+  bandwidth `h = 0.9*mad_pool*n^(-1/5)`; shared K=257-point
+  grid spanning `[min-3h, max+3h]`; Gaussian KDE per half;
+  trapezoidal mass-normalisation to exact pmfs `p, q`).
+  `psChi2` in `[0, +inf)`; `psChi2 = 0` iff KDE-smoothed
+  halves coincide on the grid.
+
+  ORTHOGONAL to all 16 prior axes 118-133: unique
+  RECIPROCAL-WEIGHTED L^2 of the pmf gap with summand weight
+  `(p+q)/(p*q)` — diametrically opposite tail amplification
+  to triangular-discrim (axis-129, weight `1/(p+q)`,
+  down-weights low-mass bins) and base-rate-blind sup-norm
+  maxDiv (axis-133, sees only the worst absolute gap).
+  Polynomially divergent at `p, q -> 0` versus the
+  logarithmic divergence of JSD/Bhattacharyya/Jeffreys/Renyi
+  — different tail amplification regime entirely.
+
+  Diagnostic field `pearsonAsymmetryRatio = max(F, R)/min(F, R)`
+  in `[1, +inf)` flags directional drift: `==1` iff forward
+  and reverse Pearson are equal (symmetric per-bin disagreement
+  across the grid); `>>1` iff one half visits a token-volume
+  regime the other does not (one direction dominates the
+  divergence). Genuinely new diagnostic content not available
+  from prior shipped axes (TV, H, JSD, Bhattacharyya all
+  collapse the directional asymmetry).
+
+  Numerical floor `PSCHI_PMF_FLOOR = 1e-15` is a no-op IEEE-754
+  underflow safeguard for the `(1/p_k + 1/q_k)` factor in
+  pathological tail bins; Gaussian KDE with positive bandwidth
+  on the 257-point grid puts strictly positive mass everywhere.
+
+  Translation-invariant AND positive-scale-invariant in the data
+  (data and bandwidth scale together; pmfs unchanged).
+
+  Subcommand options mirror the rest of the half-vs-half family:
+  `--source`, `--since`, `--until`, `--min-tokens` (default 1000),
+  `--min-tenure-days` (default 14, hard floor 8), `--top`,
+  `--sort` (`psChi2Desc` default, `psChi2` asc, `asymmetry`/
+  `asymmetryDesc`, `tokens`, `tenure`, `source`), `--json`.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 kept sources
+  after defaults; one source name redacted from `vscode-other`):
+
+  ```
+  pew-insights daily-token-symmetric-chi-squared-halves
+  as of: 2026-05-03T11:42:13.171Z    sources: 6 (shown 5)    tokens: 12,157,955,856
+  min-tokens: 1,000    min-tenure-days: 14    grid-K: 257    silverman-mult: 0.9    pmf-floor: 1e-15
+  dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+  0 below min-tokens, 1 below min-tenure-days, 0 zero-variance,
+  0 non-finite-fit, 0 below top cap
+
+  source         tenure  n1   n2   madPool       h             psChi2              pearsonF            pearsonR  asym
+  -------------  ------  ---  ---  ------------  ------------  ------------------  ------------------  --------  ----------------
+  openclaw       17      8    9    59886294.12   30583005.59   91119342288.782028  91119342283.535507  5.246514  17367598448.6787
+  opencode       14      7    7    131088708.42  69595664.65   60.049326           58.738774           1.310553  44.8199
+  claude-code    72      36   36   0.00          402528503.09  0.676334            0.043942            0.632392  14.3916
+  hermes         17      8    9    13138525.44   6709642.04    0.475993            0.256658            0.219334  1.1702
+  vscode-other   265     132  133  0.00          70977.97      0.018753            0.004503            0.014249  3.1641
+  ```
+
+  Cross-axis interpretation on the live queue:
+
+  - `openclaw` is a cautionary live demonstration of the
+    SYMMETRIC CHI-SQUARED's POLYNOMIAL tail amplification:
+    `psChi2 ~ 9.1e10` with `pearsonF ~ 9.1e10` AND
+    `pearsonR ~ 5.25` — a `forward/reverse` asymmetry of
+    1.7e10. The first half's KDE puts mass at a token-volume
+    regime where the second half's KDE has effectively zero
+    mass (driving `1/q_k` to explode in `pearsonF`).
+    Topsoe/triangular-discrim (axis-129) BOUNDS this in `[0, 2]`
+    by construction, JSD/Bhattacharyya/Jeffreys log-bound it,
+    sup-norm maxDiv (axis-133) maxes at 1 — only psChi2 makes
+    the regime-disjointness numerically loud. Score 1: distinct
+    selectivity profile from the entire prior ladder.
+  - `opencode` (`psChi2 ~ 60`, `asym ~ 45`) sits in the
+    "moderate directional drift" band — one half's tail mass
+    is unmatched but not entirely disjoint.
+  - `hermes` (`psChi2 ~ 0.48`, `asym ~ 1.17`) is the most
+    SYMMETRIC of the kept sources: the two halves disagree
+    similarly in both directions, no tail-disjoint regime.
+  - `claude-code` (`asym ~ 14.4`) has reverse-dominant Pearson
+    (`pearsonR > pearsonF`): the SECOND half visits a
+    token-volume regime where the first half put little mass.
+  - `vscode-other` (redacted from upstream source name
+    containing the banned product token; data unchanged): the
+    smallest psChi2 (`0.019`) — most stable half-vs-half
+    distribution of the kept sources, consistent with its
+    long 265-day tenure smoothing out short-term drift.
+
 ## 0.6.376 — 2026-05-03
 
 ### Added
