@@ -234,3 +234,95 @@ test('builder: deterministic with fixed generatedAt', () => {
   const r2 = buildDailyTokenPielouEvenness(queue, { generatedAt: GEN });
   assert.deepEqual(r1, r2);
 });
+
+test('refinement: flat 3-day -> regime=uniform, shanComp=1, tailGap=0', () => {
+  const queue: QueueLine[] = [
+    ql('2026-05-01T00:00:00Z', 'a', 3000),
+    ql('2026-05-02T00:00:00Z', 'a', 3000),
+    ql('2026-05-03T00:00:00Z', 'a', 3000),
+  ];
+  const r = buildDailyTokenPielouEvenness(queue, { generatedAt: GEN });
+  const row = r.sources[0];
+  assert.equal(row.evennessRegime, 'uniform');
+  assert.ok(Math.abs(row.shannonCompleteness - 1) < 1e-12);
+  assert.ok(Math.abs(row.tailWeightGap) < 1e-12);
+});
+
+test('refinement: monopoly-ish vector -> regime=monopolised', () => {
+  const queue: QueueLine[] = [
+    ql('2026-05-01T00:00:00Z', 'a', 1000000),
+    ql('2026-05-02T00:00:00Z', 'a', 1),
+    ql('2026-05-03T00:00:00Z', 'a', 1),
+  ];
+  const r = buildDailyTokenPielouEvenness(queue, { generatedAt: GEN });
+  const row = r.sources[0];
+  assert.equal(row.evennessRegime, 'monopolised');
+  assert.ok(row.evenness < 0.5);
+});
+
+test('refinement: Hill-number ordering -- effectiveDaysShannon >= 1/HHI', () => {
+  // Hill numbers are non-increasing in q for any vector,
+  // so q=1 (Shannon) >= q=2 (Simpson) -> tailWeightGap >= 0.
+  const cases: number[][] = [
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    [50, 50, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
+    [30, 30, 30, 1, 1, 1, 1, 1, 1, 1],
+    [100, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [5, 5, 5, 5, 5, 5, 5, 5, 5, 5], // flat -> gap == 0 exactly
+  ];
+  for (const c of cases) {
+    const r = pielouEvennessOfVector(c);
+    let ssq = 0;
+    let total = 0;
+    for (const v of c) total += v;
+    for (const v of c) {
+      const s = v / total;
+      ssq += s * s;
+    }
+    const inverseSimpson = 1 / ssq;
+    assert.ok(
+      r.effectiveDaysShannon + 1e-12 >= inverseSimpson,
+      `Hill q=1 < q=2 violated for ${c}: shannon=${r.effectiveDaysShannon} simpson=${inverseSimpson}`,
+    );
+  }
+});
+
+test('refinement: shannonCompleteness == exp(H - ln(n)) algebraic identity', () => {
+  const queue: QueueLine[] = [
+    ql('2026-05-01T00:00:00Z', 'a', 100),
+    ql('2026-05-02T00:00:00Z', 'a', 200),
+    ql('2026-05-03T00:00:00Z', 'a', 300),
+    ql('2026-05-04T00:00:00Z', 'a', 1000),
+  ];
+  const r = buildDailyTokenPielouEvenness(queue, { generatedAt: GEN });
+  const row = r.sources[0];
+  const expected = Math.exp(row.shannonEntropy - Math.log(row.nDays));
+  assert.ok(Math.abs(row.shannonCompleteness - expected) < 1e-14);
+});
+
+test('refinement: evennessRegime band boundaries', () => {
+  // J ~ 0.9 boundary ('uniform' vs 'even') and J ~ 0.75 ('even' vs 'concentrated').
+  // Construct vectors targeting J just above / below each band edge.
+  const queue: QueueLine[] = [
+    // near-flat 4-day: J ~ 0.99 -> 'uniform'
+    ql('2026-05-01T00:00:00Z', 'u', 1000),
+    ql('2026-05-02T00:00:00Z', 'u', 1000),
+    ql('2026-05-03T00:00:00Z', 'u', 1000),
+    ql('2026-05-04T00:00:00Z', 'u', 1100),
+    // 'concentrated' band: 4 days with one moderate spike
+    ql('2026-05-01T00:00:00Z', 'c', 1000),
+    ql('2026-05-02T00:00:00Z', 'c', 1000),
+    ql('2026-05-03T00:00:00Z', 'c', 1000),
+    ql('2026-05-04T00:00:00Z', 'c', 5000),
+  ];
+  const r = buildDailyTokenPielouEvenness(queue, { generatedAt: GEN });
+  const u = r.sources.find((s) => s.source === 'u')!;
+  const c = r.sources.find((s) => s.source === 'c')!;
+  assert.equal(u.evennessRegime, 'uniform');
+  // 'c' must land in 'even' or 'concentrated', not 'uniform' or 'monopolised'.
+  assert.ok(
+    c.evennessRegime === 'even' || c.evennessRegime === 'concentrated',
+    `unexpected regime ${c.evennessRegime}`,
+  );
+  assert.ok(c.evenness < u.evenness);
+});
