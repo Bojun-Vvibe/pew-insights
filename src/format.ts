@@ -24245,6 +24245,7 @@ export function renderDailyTokenMaxDrawdownRate(
     'troughTok',
     'durDays',
     'recovered',
+    'prr',
     'meanDaily',
     'tokens',
   ];
@@ -24261,6 +24262,7 @@ export function renderDailyTokenMaxDrawdownRate(
     formatNumber(s.troughDailyTokens),
     formatNumber(s.maxDrawdownDurationDays),
     s.recovered ? 'yes' : 'no',
+    s.partialRecoveryRatio.toFixed(4),
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);

@@ -254,3 +254,46 @@ test('builder: top-N applied after sort', () => {
   assert.equal(r.sources[1].source, 'mid');
   assert.equal(r.droppedTopSources, 1);
 });
+
+test('builder: partialRecoveryRatio = 0 at trough, 1 at peak, intermediate scales linearly', () => {
+  // Series: peak=10000, trough=2000 -> drop 8000.
+  // prr = (last - 2000) / 8000.
+  // Case A: last == trough (2000) -> prr = 0
+  // Case B: last == peak (10000) -> prr = 1, recovered = true
+  // Case C: last == 6000 -> prr = 0.5, recovered = false
+  const cases: Array<[string, number, number, number, boolean]> = [
+    ['at-trough', 2000, 0, 0, false],
+    ['at-peak', 10000, 1, 1, true],
+    ['half', 6000, 0.5, 0.5, false],
+    ['overshoot', 14000, 1.5, 1.5, true],
+  ];
+  for (const [src, lastVal, expectedPrr, _e2, expectedRec] of cases) {
+    const queue: QueueLine[] = [
+      ql('2026-04-01T00:00:00.000Z', src, 10000),
+      ql('2026-04-02T00:00:00.000Z', src, 2000),
+      ql('2026-04-03T00:00:00.000Z', src, lastVal),
+    ];
+    const r = buildDailyTokenMaxDrawdownRate(queue, { generatedAt: GEN });
+    assert.equal(r.sources.length, 1, `case ${src}`);
+    const row = r.sources[0]!;
+    assert.ok(
+      Math.abs(row.partialRecoveryRatio - expectedPrr) < 1e-12,
+      `case ${src}: expected prr ${expectedPrr}, got ${row.partialRecoveryRatio}`,
+    );
+    assert.equal(row.recovered, expectedRec, `case ${src} recovered`);
+  }
+});
+
+test('builder: partialRecoveryRatio is 0 for monotone-up (no drawdown)', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'src', 5000),
+    ql('2026-04-02T00:00:00.000Z', 'src', 7000),
+    ql('2026-04-03T00:00:00.000Z', 'src', 9000),
+  ];
+  const r = buildDailyTokenMaxDrawdownRate(queue, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  assert.equal(row.maxDrawdownRate, 0);
+  assert.equal(row.partialRecoveryRatio, 0);
+  assert.equal(row.drawdownRegime, 'flat');
+});

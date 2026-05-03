@@ -180,6 +180,34 @@ export interface DailyTokenMaxDrawdownRateSourceRow {
    */
   recovered: boolean;
   /**
+   * Refinement: PARTIAL RECOVERY RATIO of the worst drawdown,
+   *
+   *     prr = (D_last - D_trough) / (D_peak - D_trough)
+   *
+   * where `D_last` is the per-day total_tokens on the source's
+   * most recent active day (`lastDay`), `D_trough` is the
+   * trough-of-worst-drawdown, and `D_peak` is the peak-of-
+   * worst-drawdown. Values:
+   *   - `0`  : source still sitting AT the trough level.
+   *   - `1`  : source has fully returned to the peak level.
+   *   - `> 1`: source has overshot the prior peak (broke a new
+   *            ATH after the worst drawdown).
+   *   - `< 0`: source has gone BELOW the worst-drawdown trough
+   *            (a fresh, even-worse low has occurred since,
+   *            though by definition this only happens when the
+   *            new low does NOT pair with a strictly-larger
+   *            running peak that would have beaten the recorded
+   *            MDD itself).
+   *   - `0` for degenerate / no-drawdown rows (peak == trough).
+   *
+   * `recovered` is the BOOLEAN coarsening (`prr >= 1`); `prr`
+   * is the SCALAR refinement giving "how much of the way back"
+   * — useful for separating sources that are still in deep
+   * recovery (`prr ~ 0.1`) from sources that almost made it
+   * back (`prr ~ 0.9`) but technically did not cross the line.
+   */
+  partialRecoveryRatio: number;
+  /**
    * Refinement: structural label binning maxDrawdownRate into
    * five bands. Cutoffs chosen to match financial-risk
    * convention (50% drawdown = "severe", 90% = "catastrophic")
@@ -470,6 +498,14 @@ export function buildDailyTokenMaxDrawdownRate(
     let mean = 0;
     for (const v of values) mean += v;
     mean = mean / values.length;
+    // partialRecoveryRatio: (D_last - D_trough) / (D_peak - D_trough).
+    // Defined only when peak > trough (i.e. there is an actual
+    // drawdown to recover from). For degenerate / flat rows, 0.
+    let prr = 0;
+    if (!r.degenerate && r.peakValue > r.troughValue) {
+      const lastValue = values[values.length - 1] as number;
+      prr = (lastValue - r.troughValue) / (r.peakValue - r.troughValue);
+    }
     rows.push({
       source: src,
       totalTokens: acc.totalTokens,
@@ -483,6 +519,7 @@ export function buildDailyTokenMaxDrawdownRate(
       troughDailyTokens: r.degenerate ? 0 : r.troughValue,
       maxDrawdownDurationDays: durationDays,
       recovered: r.recovered,
+      partialRecoveryRatio: prr,
       drawdownRegime: regime,
       meanDailyTokens: mean,
       degenerate: r.degenerate,
