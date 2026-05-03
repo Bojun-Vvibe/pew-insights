@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.370 — 2026-05-03
+
+### Added
+
+- New cross-source axis (ONE-HUNDRED-AND-TWENTY-SEVENTH):
+  `pew-insights daily-token-total-variation-halves`.
+
+  Per-source KDE-SMOOTHED TOTAL-VARIATION DISTANCE between
+  the FIRST half (n1 = floor(n/2) days) and SECOND half
+  (n2 = n - n1 days) of the gap-filled daily total_tokens
+  series. IDENTICAL KDE setup to axis-126 JSD: pooled
+  robust scale
+
+      med_pool  =  median(x)
+      mad_pool  =  1.4826 * median( |x - med_pool| )
+
+  Silverman bandwidth (Silverman 1986 eq. 3.31)
+
+      h  =  0.9 * mad_pool * n^(-1/5)
+
+  Shared K = 257-point evaluation grid spanning
+  [min(x) - 3*h, max(x) + 3*h] (Wand & Jones 1995 §2.7).
+  Gaussian KDE per half evaluated on the shared grid;
+  trapezoidal mass-normalisation to exact pmfs p, q on the
+  K=257 grid (sum_k p_k = sum_k q_k = 1).
+
+  Total-variation distance (Levin & Peres 2017, Markov
+  Chains and Mixing Times, Definition 4.1):
+
+      tvDist  =  0.5 * sum_k | p_k - q_k |
+
+  tvDist in [0, 1]. tvDist = 0 iff p === q on the grid;
+  tvDist = 1 iff p, q have disjoint support on the grid.
+  TRUE METRIC on the probability simplex (sym., non-neg.,
+  identity of indiscernibles, triangle inequality from
+  L^1).
+
+  STRUCTURAL ORTHOGONALITY. TV is an L^1-HALF-NORM
+  DISTANCE on KDE-smoothed pmfs -- a class not occupied by
+  any prior axis. vs axes 118-123 KS/AD/CvM/W1/energy/MMD:
+  CDF-L_inf / tail-weighted CDF-L^2 / CDF-L^2 / quantile-
+  integral / CF-1/t^2 / RKHS spaces respectively; TV lives
+  in pmf-L^1 space. vs axis-124 qv-Mahalanobis: lives in
+  R^9 quantile-coordinate space, TV in K=257 pmf-coordinate
+  space. vs axis-125 PCA-projection: PCA is COVARIANCE-
+  AWARE through the delay-embedding lag structure; TV is
+  PERMUTATION-INVARIANT within each half. vs axis-126 JSD
+  (most important): both share the IDENTICAL KDE setup
+  (h, K, grid, trapezoidal weights) but JSD is a LOG-RATIO
+  integral while TV is the L^1 HALF-NORM. Pinsker bound
+  tvDist <= sqrt(2 * ln(2) * jsdBits) (Endres & Schindelin
+  2003 IEEE Trans. Info. Theory 49(7):1858-1860, Cor. 5)
+  shows TV is bounded by a JSD-derived quantity, but the
+  CONVERSE FAILS -- TV is a strictly weaker signal that
+  captures BROAD-AND-SHALLOW pmf disagreement, while JSD
+  captures NARROW-AND-SHARP log-ratio disagreement near
+  zero-mass regions. The two axes therefore are not monotone
+  images of each other and the cross-source ranking can
+  differ. Translation-invariant AND positive-scale-invariant
+  in the data, mirroring axes 123/124/125/126.
+
+  Live smoke against `~/.config/pew/queue.jsonl` (5 of 6
+  sources retained; 1 dropped by min-tenure-days = 14;
+  total tokens 12,066,479,112):
+
+      source         tenure  n1   n2   madPool         h               tvDist     maxBinX           maxBinValue
+      -------------  ------  ---  ---  --------------  --------------  ---------  ----------------  -----------
+      openclaw       17       8    9    59886294.12    30583005.59     0.635681      52883410.94    0.007892
+      opencode       14       7    7   131088708.42    69595664.65     0.378239     405855227.90    0.004746
+      hermes         17       8    9    13138525.44     6709642.04     0.204867      10980991.21    0.002348
+      claude-code    72      36   36          0.00    402528503.09     0.072556    -245984013.07    0.000677
+      vscode-other   265    132  133          0.00         70977.97    0.015223          83910.43    0.000181
+
+  Cross-axis comparison vs axis-126 JSD (same queue, same
+  bandwidth) -- TV ranks the same top three sources but the
+  GAPS between them are different: openclaw's tvDist 0.636
+  vs jsdBits 0.458 sits ~1.39x above the JSD ratio,
+  reflecting the fact that openclaw's half-shift produces
+  a BROAD pmf disagreement (large L^1 amplitude across many
+  bins) rather than a narrow log-ratio spike. opencode by
+  contrast shows tvDist 0.378 vs jsdBits 0.153 (~2.47x):
+  TV again amplifies broad disagreement that JSD's log-ratio
+  weighting under-counts. This is the Pinsker-bound regime
+  acting as a measurement instrument, not a redundancy.
+
+  All 45 new tests pass (10850 -> 10895 total).
+
 ## 0.6.369 — 2026-05-03
 
 ### Added
