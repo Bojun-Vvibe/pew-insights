@@ -2,6 +2,110 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.395 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-weekend-vs-weekday-ratio` —
+  per-source RATIO of WEEKEND-DAY tokens to WEEKDAY tokens
+  on the per-day `total_tokens` vector
+  (ONE-HUNDRED-AND-FORTY-EIGHTH cross-source axis). UTC
+  weekday classification: Sat/Sun = weekend, Mon-Fri =
+  weekday. Headline scalar `ratio = weekendTokens /
+  weekdayTokens` plus the symmetric forms `weekendShare =
+  weekendTokens / (weekendTokens + weekdayTokens)` and
+  `weekdayShare = 1 - weekendShare`. A
+  calendar-density-corrected sibling `densityRatio =
+  (weekendTokens / weekendCalendarDayCount) /
+  (weekdayTokens / weekdayCalendarDayCount)` rebases against
+  how many of each parity actually exist in the active span;
+  uniform per-day intensity gives `densityRatio = 1.0` even
+  when raw `ratio = 2/5`.
+- FIRST CALENDAR-PARTITION cross-source daily-token axis.
+  Structurally orthogonal to all 147 prior axes:
+  - vs the permutation-invariant inequality / diversity
+    family (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover,
+    Pietra, Bonferroni, Mehran, Wolfson, Foster-Wolfson,
+    Palma, Kolm-Pollak, Chakravarty, Amato, Esteban-Ray,
+    FGT, GE family, Var-of-Logs, Log-MAD, Zenga, S-Gini,
+    Hill-tail, decile-share-gap, quintile-share-ratio,
+    percentile-gap-ratio, top-4-CR, ...): those see only
+    the active-day VALUE multiset and cannot see which day
+    of week each value landed on. Two sources with identical
+    daily multisets but values shuffled across calendar days
+    have identical Gini/HHI/Pielou/CR4 and any
+    weekend/weekday ratio in `[0, +inf]`. Witness `D=[1000,
+    1000]` on `(Sat, Sun)` vs `(Mon, Tue)`: same multiset,
+    `ratio = +inf` vs `0`. Test shipped.
+  - vs the path-dependent family (axis-145 max-drawdown-rate,
+    axis-146 longest-zero-run, axis-147 calendar-mask-RLE-
+    entropy): those are sequence functionals on the
+    active-day ORDER or the calendar 0/1 MASK; they don't
+    know which day-of-week any position represents. A
+    source can have `MDD = 0`, `LZR = 0`, `RLE-H = 0`
+    (continuous, monotone, single segment) and still take
+    any weekend/weekday ratio depending on which weekday
+    `firstActiveDay` landed on.
+  - vs the autocorrelation family (Pearson lag-1, lag-7,
+    Kendall-tau, Spearman): autocorrelation measures
+    POSITION-relative dependence. AC at lag-7 is the
+    closest neighbour but distinct: it measures dependence
+    between same-DOW pairs across weeks; weekend/weekday
+    ratio is the average MASS PARTITION across two sets of
+    weekdays. A perfectly DOW-uniform series has AC(7) ~
+    1.0 and `ratio = 2/5`; a `[0,0,0,0,0,X,X]`-every-week
+    series has AC(7) ~ 1.0 AND `ratio = +inf`.
+  - vs the existing `weekend-vs-weekday` PER-MODEL split
+    in `weekendvsweekday.ts`: that report aggregates by
+    normalised model name (two sources running the same
+    model collapse together). Axis-148 is the proper
+    cross-source sibling that ranks alongside the other
+    147 cross-source daily-token axes.
+- Per-row diagnostics: `weekendActiveDayCount`,
+  `weekdayActiveDayCount`, `weekendCalendarDayCount`,
+  `weekdayCalendarDayCount`, `weekendTokens`, `weekdayTokens`,
+  `weekendShare`, `weekdayShare`, `ratio` (null on
+  `weekdayTokens = 0`), `densityRatio` (null when either
+  parity is calendar-empty), `weekendRegime` (one of
+  `weekday-only` / `weekday-heavy` / `weekday-leaning` /
+  `balanced` / `weekend-leaning` / `weekend-heavy` /
+  `weekend-only` / `weekend-blind` / `weekday-blind` /
+  `degenerate`).
+- CLI flags: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 2), `--top`,
+  `--sort` (`weekendShare` (default) | `weekdayShare` |
+  `ratio` | `densityRatio` | `weekendTokens` |
+  `weekdayTokens` | `tokens` | `days` | `source` |
+  `meanDaily`), `--min-weekend-share` (filter in `[0, 1]`),
+  `--json`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Invoked `pew-insights daily-token-weekend-vs-weekday-ratio
+--top 6` on the live local pew queue (6 sources, 13.18B
+total tokens):
+
+| source       | days | wkndDays | wkdyDays | wkndCalDays | wkdyCalDays | wkndTokens     | wkdyTokens     | wkndShare | ratio  | densityRatio | regime          |
+|--------------|------|----------|----------|-------------|-------------|----------------|----------------|-----------|--------|--------------|-----------------|
+| openclaw     |   17 |        6 |       11 |           6 |          11 |    785,946,733 |  1,464,160,981 |    0.3493 | 0.5368 |       0.9841 | balanced        |
+| hermes       |   17 |        6 |       11 |           6 |          11 |     94,007,594 |    214,078,081 |    0.3051 | 0.4391 |       0.8051 | balanced        |
+| opencode     |   14 |        4 |       10 |           4 |          10 |  1,834,738,551 |  4,533,385,684 |    0.2881 | 0.4047 |       1.0118 | balanced        |
+| claude-code  |   35 |        2 |       33 |          20 |          52 |    929,045,420 |  2,513,340,368 |    0.2699 | 0.3696 |       0.9611 | weekday-leaning |
+| codex        |    8 |        2 |        6 |           2 |           6 |    153,617,512 |    656,007,148 |    0.1897 | 0.2342 |       0.7025 | weekday-leaning |
+| (src-1)      |   73 |        4 |       69 |          76 |         189 |         75,238 |      1,810,489 |    0.0399 | 0.0416 |       0.1033 | weekday-heavy   |
+
+Top-3 sources cluster tightly in the `balanced` regime
+(`weekendShare` `0.288..0.349`, all near the 2/7 ~= 0.2857
+calendar baseline) with `densityRatio` near 1.0 — they
+spend tokens at roughly the SAME per-day intensity on
+weekends and weekdays. `claude-code` and `codex` lean
+weekday but only mildly (`densityRatio` `0.96` and `0.70`
+respectively); the lone WEEKDAY-HEAVY source `(src-1)`
+posts a `densityRatio` of just `0.10`, i.e. weekend-day
+intensity is ten times lower than weekday intensity — a
+clearly different operating profile from the rest of the
+fleet.
+
 ## 0.6.394 — 2026-05-04
 
 ### Added

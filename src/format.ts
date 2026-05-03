@@ -17297,6 +17297,7 @@ import type { DailyTokenPielouEvennessReport } from './dailytokenpielouevenness.
 import type { DailyTokenMaxDrawdownRateReport } from './dailytokenmaxdrawdownrate.js';
 import type { DailyTokenLongestZeroRunReport } from './dailytokenlongestzerorun.js';
 import type { DailyTokenCalendarMaskRleEntropyReport } from './dailytokencalendarmaskrleentropy.js';
+import type { DailyTokenWeekendWeekdayRatioReport } from './dailytokenweekendweekdayratio.js';
 import type { DailyTokenMadOverMedianReport } from './dailytokenmadovermedian.js';
 import type { DailyTokenRunsTestZReport } from './dailytokenrunstestz.js';
 import type { DailyTokenHillTailIndexReport } from './dailytokenhilltailindex.js';
@@ -24431,6 +24432,89 @@ export function renderDailyTokenCalendarMaskRleEntropy(
     s.dominantSegmentShare.toFixed(4),
     s.dominantSegmentKind,
     s.fragmentationRegime,
+    formatNumber(Math.round(s.meanDailyTokens)),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rows));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWeekendWeekdayRatio(
+  r: DailyTokenWeekendWeekdayRatioReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-weekend-vs-weekday-ratio'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-days: ${formatNumber(r.minDays)}    min-weekend-share: ${r.minWeekendShare === null ? '\u2014' : r.minWeekendShare}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinDays)} below min-days, ${formatNumber(r.droppedBelowMinWeekendShare)} below min-weekend-share, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CALENDAR-PARTITION ratio of weekend vs weekday daily tokens. UTC weekday classification: Sat/Sun = weekend. ratio = weekendTokens / weekdayTokens; densityRatio = (weekendTokens / weekendCalDays) / (weekdayTokens / weekdayCalDays); weekendShare = weekendTokens / (weekendTokens + weekdayTokens). Calendar-baseline-uniform sources have ratio = 2/5 and densityRatio = 1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source weekend-vs-weekday split (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'days',
+    'wkndDays',
+    'wkdyDays',
+    'wkndCalDays',
+    'wkdyCalDays',
+    'wkndTokens',
+    'wkdyTokens',
+    'wkndShare',
+    'ratio',
+    'densityRatio',
+    'regime',
+    'meanDaily',
+    'tokens',
+  ];
+  const rows: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstDay,
+    s.lastDay,
+    formatNumber(s.nDays),
+    formatNumber(s.weekendActiveDayCount),
+    formatNumber(s.weekdayActiveDayCount),
+    formatNumber(s.weekendCalendarDayCount),
+    formatNumber(s.weekdayCalendarDayCount),
+    formatNumber(s.weekendTokens),
+    formatNumber(s.weekdayTokens),
+    s.weekendShare.toFixed(4),
+    s.ratio === null ? '\u2014' : s.ratio.toFixed(4),
+    s.densityRatio === null ? '\u2014' : s.densityRatio.toFixed(4),
+    s.weekendRegime,
     formatNumber(Math.round(s.meanDailyTokens)),
     formatNumber(s.totalTokens),
   ]);

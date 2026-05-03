@@ -120,6 +120,7 @@ import {
   renderDailyTokenMaxDrawdownRate,
   renderDailyTokenLongestZeroRun,
   renderDailyTokenCalendarMaskRleEntropy,
+  renderDailyTokenWeekendWeekdayRatio,
   renderDailyTokenMadOverMedian,
   renderDailyTokenRunsTestZ,
   renderDailyTokenHillTailIndex,
@@ -560,6 +561,7 @@ import { buildDailyTokenPielouEvenness } from './dailytokenpielouevenness.js';
 import { buildDailyTokenMaxDrawdownRate } from './dailytokenmaxdrawdownrate.js';
 import { buildDailyTokenLongestZeroRun } from './dailytokenlongestzerorun.js';
 import { buildDailyTokenCalendarMaskRleEntropy } from './dailytokencalendarmaskrleentropy.js';
+import { buildDailyTokenWeekendWeekdayRatio } from './dailytokenweekendweekdayratio.js';
 import { buildSourceHourTopKMassShare } from './sourcehourofdaytopkmassshare.js';
 import { buildDailyTokenZscoreExtremes } from './dailytokenzscoreextremes.js';
 import { buildCumulativeTokensMidpoint } from './cumulativetokensmidpoint.js';
@@ -40640,6 +40642,139 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCalendarMaskRleEntropy(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-weekend-vs-weekday-ratio')
+  .description(
+    "Per-source RATIO of WEEKEND-DAY tokens to WEEKDAY tokens on the per-day total_tokens vector (ONE-HUNDRED-AND-FORTY-EIGHTH cross-source axis). FIRST CALENDAR-PARTITION cross-source daily-token axis. Structurally orthogonal to all permutation-invariant inequality / diversity functionals (Gini, HHI, Pielou, CR4, Atkinson, Theil, Hoover, ...) which see only the active-day multiset and have no concept of which day-of-week each value landed on. Orthogonal to the path-dependent family (axis-145 MDD, axis-146 longest-zero-run, axis-147 RLE-entropy) which are sequence functionals on the ACTIVE-DAY ORDER or CALENDAR MASK and don't know which weekday any position represents. Per row: weekendTokens, weekdayTokens, weekendShare, weekdayShare, ratio, densityRatio (calendar-density-corrected), weekendRegime.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows whose nDays is below n (default 2). Ratio is well-defined for nDays=1 but degenerate.',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: weekendShare (default) | weekdayShare | ratio | densityRatio | weekendTokens | weekdayTokens | tokens | days | source | meanDaily. Applied before --top.',
+    'weekendShare',
+  )
+  .option(
+    '--min-weekend-share <f>',
+    'display filter: hide rows whose weekendShare is strictly below this fraction in [0, 1]. Default null = no filter.',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        minWeekendShare?: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 1) {
+          throw new Error(
+            `--min-days must be an integer >= 1 (got ${opts.minDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(
+            `--top must be a non-negative integer (got ${opts.top})`,
+          );
+        }
+        let minWeekendShare: number | null = null;
+        if (opts.minWeekendShare !== undefined) {
+          const mv = Number.parseFloat(opts.minWeekendShare);
+          if (!Number.isFinite(mv) || mv < 0 || mv > 1) {
+            throw new Error(
+              `--min-weekend-share must be a finite number in [0, 1] (got ${opts.minWeekendShare})`,
+            );
+          }
+          minWeekendShare = mv;
+        }
+        const validSorts = [
+          'weekendShare',
+          'weekdayShare',
+          'ratio',
+          'densityRatio',
+          'weekendTokens',
+          'weekdayTokens',
+          'tokens',
+          'days',
+          'source',
+          'meanDaily',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWeekendWeekdayRatio(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minDays,
+          top,
+          minWeekendShare,
+          sort: opts.sort as
+            | 'weekendShare'
+            | 'weekdayShare'
+            | 'ratio'
+            | 'densityRatio'
+            | 'weekendTokens'
+            | 'weekdayTokens'
+            | 'tokens'
+            | 'days'
+            | 'source'
+            | 'meanDaily',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWeekendWeekdayRatio(report) + '\n',
           );
         }
       } catch (e) {
