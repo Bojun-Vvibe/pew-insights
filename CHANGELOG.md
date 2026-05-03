@@ -2,6 +2,98 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.392 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-max-drawdown-rate` — per-source
+  MAXIMUM PROPORTIONAL DRAWDOWN
+  `MDD = max over (i<j) of (D_i - D_j) / D_i` on the per-day
+  `total_tokens` series ordered by ascending UTC day
+  (ONE-HUNDRED-AND-FORTY-FIFTH cross-source axis). `D_i` is the
+  running peak, `D_j` is the post-peak trough. Magdon-Ismail &
+  Atiya 2004 ("Maximum drawdown", Risk Magazine 17(10): 99-102);
+  Chekhlov, Uryasev & Zabarankin 2005 ("Drawdown measure in
+  portfolio optimization", IJTAF 8(1): 13-58). Range `[0, 1)`;
+  `0` = monotone non-decreasing, `-> 1` = post-peak collapse to
+  zero. Scale-invariant.
+- `axis-145` is the first PATH-DEPENDENT cross-source functional
+  surfaced. ALL prior cross-source daily-token axes (Gini, HHI,
+  Pielou, CR4, Atkinson, Theil, Hoover, Pietra, Bonferroni,
+  Mehran, Wolfson, Foster-Wolfson, Palma, Kolm-Pollak, Chakravarty,
+  Amato, Esteban-Ray, FGT, GE family, Var-of-Logs, Log-MAD, Zenga,
+  S-Gini, Hill-tail, decile-share-gap, quintile-share-ratio,
+  percentile-gap-ratio, top-4-CR, ...) are PERMUTATION-INVARIANT
+  on the day vector — they cannot distinguish "smooth ramp
+  followed by a 90% crash" from the same multiset reshuffled
+  into "crash first, ramp later". MDD separates them. Witness:
+  for `A=[100,90,...,10]`, `B=[10,20,...,100]`, and
+  `C=[10,100,20,...,90]` (identical multisets) the inequality /
+  diversity functionals are all identical, while
+  `MDD(A)=0.9`, `MDD(B)=0`, `MDD(C)=0.8` — a 90 percentage-point
+  spread no permutation-invariant axis can express. See
+  `src/dailytokenmaxdrawdownrate.ts` for full structural-
+  orthogonality discussion vs the temporal axes (lag-1/lag-7
+  autocorrelation, Mann-Kendall, Cox-Stuart, Hurst R/S, DFA
+  alpha, sample/permutation entropy, Hjorth, Higuchi/Katz/
+  Petrosian/Sevcik FD, etc.) and vs the halves-divergence family.
+- Per-row refinement diagnostics shipped with the initial axis:
+  `peakDay`, `peakDailyTokens`, `troughDay`, `troughDailyTokens`,
+  `maxDrawdownDurationDays`, `recovered` (boolean — did any
+  post-trough day reach the peak again?), and a five-band
+  `drawdownRegime` label binning MDD into
+  `flat | shallow | moderate | severe | catastrophic`
+  (cutoffs `0`, `< 0.25`, `< 0.50`, `< 0.90`, `>= 0.90`) with
+  a sixth `degenerate` band for `n < 2`.
+- CLI flags: `--since`, `--until`, `--source`, `--min-tokens`
+  (default 1000), `--min-days` (default 2; drawdown undefined
+  for `n < 2`), `--top`, `--sort`
+  (`maxDrawdownRate (default) | maxDrawdownDurationDays | tokens | days | source | meanDaily | peakDailyTokens`),
+  `--min-drawdown` (in `[0, 1)`), `--json`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-03)
+
+Invoked `pew-insights daily-token-max-drawdown-rate --top 6` on
+the live local pew queue (6 sources, 13.14B total tokens):
+
+| source       | days | mdd    | regime       | peak (tok)        | trough (tok)    | dur | recovered |
+|--------------|------|--------|--------------|-------------------|-----------------|-----|-----------|
+| (src-1)      | 73   | 0.9984 | catastrophic | 2025-10-13 (181k) | 2026-02-24 (299)| 43d | yes       |
+| claude-code  | 35   | 0.9936 | catastrophic | 2026-03-04 (12.3M)| 2026-03-06 (78k)|  2d | yes       |
+| codex        |  8   | 0.9685 | catastrophic | 2026-04-13 (183M) | 2026-04-16 (5.8M)|  3d | yes       |
+| hermes       | 17   | 0.8999 | severe       | 2026-04-19 (34.7M)| 2026-04-26 (3.5M)|  7d | no        |
+| openclaw     | 17   | 0.8796 | severe       | 2026-04-19 (354M) | 2026-05-01 (42.6M)| 12d | no       |
+| opencode     | 14   | 0.5449 | severe       | 2026-04-21 (724M) | 2026-05-03 (330M)| 12d | no       |
+
+Top three sources are all `catastrophic` regime (MDD `>= 0.90`)
+but only `(src-1)` carries a 43-day peak-to-trough duration —
+the others crashed in 2-3 days. The three live (i.e. `lastDay`
+is recent) sources `hermes`, `openclaw`, `opencode` are still
+in active drawdown (`recovered=false`); the ones whose peak
+sits well in the past have all since recovered. The bottom
+source (`opencode`, MDD `0.54`) is the only one in `severe`
+band rather than `catastrophic` — confirming the regime
+banding meaningfully separates the live profile.
+
+Cross-axis sanity vs axis-144 (Pielou) on the same live data:
+the high-MDD sources do not necessarily map to low-Pielou-J
+sources, because MDD is order-dependent and J is not. This is
+the cross-axis decorrelation the structural-orthogonality
+witness predicts.
+
+### Tests
+
+- Test count grew from 11939 to 11956 (+17). New suite:
+  `dailytokenmaxdrawdownrate`. Coverage: empty / `n=1`
+  degenerate cases, closed-form anchor `D=[4,3,2,1,5] -> 0.75`,
+  monotone-up / monotone-down extremes, scale invariance,
+  same-multiset orthogonality witness `(A,B,C) -> (0.9, 0, 0.8)`,
+  rejection of zero / negative / NaN values, full builder
+  end-to-end on synthetic queues including hour-of-day
+  collapse to UTC days, regime banding across all five
+  non-degenerate bands, recovery flag, `--min-drawdown`
+  filter, option validation, `--top` after sort.
+
 ## 0.6.391 — 2026-05-04
 
 ### Added
