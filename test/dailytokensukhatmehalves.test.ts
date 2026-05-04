@@ -267,3 +267,131 @@ test('buildDailyTokenSukhatmeHalves: top-cap surfaces droppedTopSources', () => 
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedTopSources, 1);
 });
+
+// ---------- aggregateSukhatmeHalves ----------
+
+import {
+  aggregateSukhatmeHalves,
+  labelSukhatmeHalvesRow,
+} from '../src/dailytokensukhatmehalves.js';
+
+test('aggregateSukhatmeHalves: empty input gives null aggregate', () => {
+  const r = aggregateSukhatmeHalves([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.stoufferZ, 0);
+  assert.equal(r.stoufferTwoSidedPValue, 1);
+  assert.ok(Number.isNaN(r.meanSukhatmeZ));
+});
+
+test('aggregateSukhatmeHalves: single row Stouffer = its own Z', () => {
+  const r = aggregateSukhatmeHalves([
+    { sukhatmeZ: 2.5, sukhatmePValue: 0.0124, sukhatmeVarS: 100, nTenureDays: 30 },
+  ]);
+  assert.ok(Math.abs(r.stoufferZ - 2.5) < 1e-12);
+  assert.equal(r.rowsUsed, 1);
+  assert.ok(Math.abs(r.meanSukhatmeZ - 2.5) < 1e-12);
+  assert.ok(Math.abs(r.tenureWeightedMeanSukhatmeZ - 2.5) < 1e-12);
+});
+
+test('aggregateSukhatmeHalves: Stouffer formula sum / sqrt(m)', () => {
+  const rows = [
+    { sukhatmeZ: 1.0, sukhatmePValue: 0.31, sukhatmeVarS: 50, nTenureDays: 20 },
+    { sukhatmeZ: 2.0, sukhatmePValue: 0.045, sukhatmeVarS: 80, nTenureDays: 40 },
+    { sukhatmeZ: 3.0, sukhatmePValue: 0.0027, sukhatmeVarS: 120, nTenureDays: 60 },
+  ];
+  const r = aggregateSukhatmeHalves(rows);
+  assert.ok(Math.abs(r.stoufferZ - 6 / Math.sqrt(3)) < 1e-12);
+  assert.equal(r.rowsUsed, 3);
+});
+
+test('aggregateSukhatmeHalves: opposite-sign Z cancel correctly', () => {
+  const r = aggregateSukhatmeHalves([
+    { sukhatmeZ: 2.0, sukhatmePValue: 0.045, sukhatmeVarS: 50, nTenureDays: 20 },
+    { sukhatmeZ: -2.0, sukhatmePValue: 0.045, sukhatmeVarS: 50, nTenureDays: 20 },
+  ]);
+  assert.ok(Math.abs(r.stoufferZ) < 1e-12);
+  assert.ok(Math.abs(r.stoufferTwoSidedPValue - 1) < 1e-7);
+});
+
+test('aggregateSukhatmeHalves: skips malformed rows', () => {
+  const r = aggregateSukhatmeHalves([
+    { sukhatmeZ: 1.0, sukhatmePValue: 0.3, sukhatmeVarS: 50, nTenureDays: 20 },
+    { sukhatmeZ: Number.NaN, sukhatmePValue: 0.5, sukhatmeVarS: 50, nTenureDays: 20 },
+    { sukhatmeZ: 2.0, sukhatmePValue: 0, sukhatmeVarS: 50, nTenureDays: 20 },
+    { sukhatmeZ: 2.0, sukhatmePValue: 0.5, sukhatmeVarS: -1, nTenureDays: 20 },
+    { sukhatmeZ: 2.0, sukhatmePValue: 0.5, sukhatmeVarS: 50, nTenureDays: 0 },
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  assert.equal(r.rowsSkipped, 4);
+});
+
+test('aggregateSukhatmeHalves: tenure-weighted mean weighting', () => {
+  const r = aggregateSukhatmeHalves([
+    { sukhatmeZ: 1.0, sukhatmePValue: 0.3, sukhatmeVarS: 50, nTenureDays: 100 },
+    { sukhatmeZ: 5.0, sukhatmePValue: 1e-7, sukhatmeVarS: 50, nTenureDays: 1 },
+  ]);
+  // Tenure-weighted = (100*1 + 1*5) / 101 ~ 1.0396
+  assert.ok(Math.abs(r.tenureWeightedMeanSukhatmeZ - 105 / 101) < 1e-12);
+  // Unweighted mean = 3
+  assert.ok(Math.abs(r.meanSukhatmeZ - 3) < 1e-12);
+});
+
+// ---------- labelSukhatmeHalvesRow ----------
+
+test('labelSukhatmeHalvesRow: second decisively more dispersed', () => {
+  assert.equal(
+    labelSukhatmeHalvesRow({ sukhatmeZ: 3.5, sukhatmePValue: 0.0005 }),
+    'second-decisively-more-dispersed',
+  );
+});
+
+test('labelSukhatmeHalvesRow: first decisively more dispersed', () => {
+  assert.equal(
+    labelSukhatmeHalvesRow({ sukhatmeZ: -3.5, sukhatmePValue: 0.0005 }),
+    'first-decisively-more-dispersed',
+  );
+});
+
+test('labelSukhatmeHalvesRow: second leans more dispersed (alpha <= p < 2*alpha)', () => {
+  assert.equal(
+    labelSukhatmeHalvesRow({ sukhatmeZ: 1.7, sukhatmePValue: 0.07 }),
+    'second-leans-more-dispersed',
+  );
+});
+
+test('labelSukhatmeHalvesRow: first leans more dispersed', () => {
+  assert.equal(
+    labelSukhatmeHalvesRow({ sukhatmeZ: -1.7, sukhatmePValue: 0.07 }),
+    'first-leans-more-dispersed',
+  );
+});
+
+test('labelSukhatmeHalvesRow: no evidence', () => {
+  assert.equal(
+    labelSukhatmeHalvesRow({ sukhatmeZ: 0.5, sukhatmePValue: 0.6 }),
+    'no-evidence-of-dispersion-shift',
+  );
+});
+
+test('labelSukhatmeHalvesRow: custom alpha', () => {
+  // alpha=0.01 => lean threshold is 0.02; p=0.015 falls in the lean zone.
+  assert.equal(
+    labelSukhatmeHalvesRow({ sukhatmeZ: 2.4, sukhatmePValue: 0.015 }, 0.01),
+    'second-leans-more-dispersed',
+  );
+});
+
+test('labelSukhatmeHalvesRow: throws on bad inputs', () => {
+  assert.throws(() =>
+    labelSukhatmeHalvesRow({ sukhatmeZ: Number.NaN, sukhatmePValue: 0.5 }),
+  );
+  assert.throws(() =>
+    labelSukhatmeHalvesRow({ sukhatmeZ: 1, sukhatmePValue: 1.5 }),
+  );
+  assert.throws(() =>
+    labelSukhatmeHalvesRow({ sukhatmeZ: 1, sukhatmePValue: 0.5 }, 0.6),
+  );
+  assert.throws(() =>
+    labelSukhatmeHalvesRow({ sukhatmeZ: 1, sukhatmePValue: 0.5 }, 0),
+  );
+});
