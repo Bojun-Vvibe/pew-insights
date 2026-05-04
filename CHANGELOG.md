@@ -2,6 +2,115 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.414 — 2026-05-04
+
+### Added — axis-157: `daily-token-adf-unit-root` (Augmented Dickey-Fuller unit-root test)
+
+Per-source ADF level-with-constant unit-root test on the gap-filled
+daily `total_tokens` series. The structural inverse of axis-156 KPSS:
+where KPSS tests H0 = stationary, ADF tests H0 = unit root (I(1)).
+Together they form the canonical (KPSS, ADF) cross-tabulation used in
+applied unit-root analysis.
+
+```
+Regression (level-with-constant, "tau_mu"):
+
+    dx[t] = alpha + rho * x[t-1] + sum_{j=1..p} phi[j] * dx[t-j] + eps[t]
+
+ADF tau statistic = rho_hat / SE(rho_hat)         (OLS t-ratio for rho)
+
+Lag selection: deterministic Schwert (1989) max-lag rule
+    pMax = min(floor(12 * (n/100)^0.25), floor((n - 1) / 4))
+
+Cutoffs (Hamilton 1994 Table B.6, asymptotic DF tau_mu):
+    10%: -2.570    5%: -2.860    1%: -3.430
+
+Reject H0 when tau is *more negative* than the cutoff.
+Rejection means evidence FOR stationarity around a constant mean.
+```
+
+**Verdict polarity is intentionally inverted vs axis-156 KPSS.** KPSS
+labels something `nonstationary` when it rejects the stationarity
+null; ADF labels something `stationary` when it rejects the unit-root
+null. Joint stratification:
+
+```
+    KPSS=stationary     + ADF=stationary    : strong stationarity
+    KPSS=stationary     + ADF=unit-root     : underpowered ADF
+    KPSS=nonstationary  + ADF=stationary    : conflicting evidence
+    KPSS=nonstationary  + ADF=unit-root     : strong unit-root
+```
+
+**Why structurally orthogonal to axis-156 (and the other 155 axes):**
+
+- axis-156 KPSS is a *functional-CLT integrand* (sum of squared
+  partial sums divided by Bartlett-HAC long-run variance). axis-157
+  ADF is a *finite-AR OLS regression t-ratio* on the lagged-level
+  coefficient. Same series, dual hypotheses, completely different
+  statistical machinery.
+- axis-155 buishand-range, axis-154 pettitt, axis-153 cusum: range,
+  rank-break, and sup-norm partial-sum statistics; none fit an AR
+  model or test the I(0) vs I(1) distinction.
+- Autocorrelation tests (lag-1, lag-7, kendall/spearman, ljung-box):
+  serial-correlation summaries on the level series. ADF instead
+  regresses *first differences* on the lagged level — a fundamentally
+  different parametric quantity (long-run vs short-run behavior).
+- DFA-alpha, hurst-rs: continuous long-memory exponents; ADF asks
+  the discrete I(0) vs I(1) question with concrete tabulated cutoffs.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (one source
+name redacted to keep the CHANGELOG free of product-name strings;
+ADF is computed on the raw series so live values are unaffected):
+
+```
+per-source ADF unit-root test (sorted by tokens)
+source        tokens         nActive nFilled tau     rho        rhoSe    lags pMax nReg pApprox verdict
+------------  -------------  ------- ------- ------- ---------- -------- ---- ---- ---- ------- -------------------
+opencode      6,508,732,770  15      15      1.3605  1.153e+0   8.473e-1 3    3    11   0.9900  unit-root
+claude-code   3,442,385,788  35      72      -0.1061 -1.041e-1  9.809e-1 11   11   60   0.9533  unit-root
+openclaw      2,263,860,857  18      18      -0.5654 -1.349e-1  2.386e-1 4    4    13   0.7942  unit-root
+hermes        314,017,022    18      18      -2.1216 -1.005e+0  4.735e-1 4    4    13   0.2553  unit-root
+vsc-redacted  1,885,727      73      265     -3.6878 -8.308e-1  2.253e-1 15   15   249  0.0048  strongly-stationary
+```
+
+**Reading the live-smoke against the axis-156 KPSS result from v0.6.413:**
+
+- `vsc-redacted`: ADF tau = -3.6878 < -3.43 → `strongly-stationary`
+  (reject H0 = unit-root at 1%). KPSS in v0.6.413 also said
+  `stationary` for this source. **Joint verdict: strong stationarity.**
+  This source has the longest gap-filled tenure (265 days) so both
+  tests have power.
+- `hermes`: ADF tau = -2.1216 → `unit-root` (cannot reject H0 at
+  10%). KPSS in v0.6.413 also said `stationary` (eta = 0.0783, well
+  below 0.347). **Joint verdict: underpowered ADF / KPSS-strong
+  stationarity.** Only 18 gap-filled days; ADF Schwert pMax = 4
+  consumes a lot of the regression budget (nReg = 13), so ADF
+  rejection power is low. This is the canonical case where KPSS is
+  the stronger test on short series.
+- `claude-code`: ADF tau = -0.1061 → `unit-root` (no rejection).
+  KPSS in v0.6.413 said `nonstationary` (eta = 0.6042, pApprox =
+  0.0211). **Joint verdict: strong unit-root.** Both tests agree the
+  series is integrated of order 1 (or close to it) — long memory of
+  the level. nReg = 60 here so ADF has good power to reject if there
+  were genuine mean-reversion.
+- `openclaw`: ADF tau = -0.5654 → `unit-root`. KPSS in v0.6.413 said
+  `nonstationary` (eta = 0.4757, pApprox = 0.0462). **Joint verdict:
+  unit-root**, consistent with claude-code.
+- `opencode`: ADF tau = +1.3605 (positive!) → `unit-root` (rho
+  estimate is *positive*, indicating an explosive-AR-like sign on a
+  very short n=15 series; ADF regression does not constrain rho to
+  be in [-1, 0]). KPSS in v0.6.413 said `stationary` with
+  `hacInflationRatio = 0.853`. **Joint verdict: conflicting evidence
+  on a tenure too short for either test to be trusted** — opencode
+  is the newest source in the queue (15 active days, Schwert pMax =
+  3), at the lower limit of where ADF makes sense.
+
+The (KPSS, ADF) cross-tab on real data thus splits the sources into
+three clean operational classes: (1) strong stationarity (vsc), (2)
+strong unit-root (claude-code, openclaw), and (3) underpowered /
+conflicting (hermes, opencode), exactly as the joint test framework
+predicts.
+
 ## 0.6.413 — 2026-05-04
 
 ### Refined — axis-156: `hacInflationRatio` + `pApprox` (HAC diagnostic + interpolated p-value)
