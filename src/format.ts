@@ -20632,6 +20632,7 @@ import type { DailyTokenYuenWelchHalvesReport } from './dailytokenyuenwelchhalve
 import type { DailyTokenSavageHalvesReport } from './dailytokensavagehalves.js';
 import type { DailyTokenBwsHalvesReport } from './dailytokenbaumgartnerweisschindlerhalves.js';
 import type { DailyTokenHlShiftHalvesReport } from './dailytokenhodgeslehmannshifthalves.js';
+import type { DailyTokenVarghaDelaneyHalvesReport } from './dailytokenvarghadelaneyhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27739,6 +27740,95 @@ export function renderDailyTokenHlShiftHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: hlCiExcludesZero === true at the chosen alpha is the EXACT distribution-free analogue of rejecting the Mann-Whitney H0 of identical distribution; combined with hlDelta it gives BOTH the binary decision AND the effect size in original token units. Cross-axis with axis-115 MW: should agree on the binary decision under pure-location-shift; with axis-185 BWS: BWS may reject when hlCiExcludesZero === false (pure-scale departure invisible to a shift estimator). The CI WIDTH hlCiWidth is itself diagnostic: very wide CIs flag sources whose two halves are individually high-variance even when the median shift is large.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenVarghaDelaneyHalves(
+  r: DailyTokenVarghaDelaneyHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-vargha-delaney-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source VARGHA-DELANEY 2000 A12 PROBABILITY-OF-SUPERIORITY EFFECT-SIZE STATISTIC. A12 = (1/(n1*n2)) * sum [ind(y > x) + 0.5*ind(y == x)] in [0, 1]; A12 = 0.5 means stochastic equality, A12 > 0.5 means SECOND half stochastically larger. Brunner-Munzel 2000 closed-form asymptotic SE; 95% CI = A12 +/- 1.96 SE clamped to [0, 1]. Magnitude bucket (Vargha-Delaney 2000 Table 3): negligible (|A12-.5|<.06), small (<.14), medium (<.21), large. ONE-HUNDRED-AND-EIGHTY-SEVENTH cross-source axis. STRUCTURALLY ORTHOGONAL: vs axis-115 MW (test stat with p-value); A12 is an EFFECT-SIZE in [0, 1] with PROBABILISTIC INTERPRETATION. vs axis-186 HL (point estimator in token units); A12 is SCALE-FREE and DIRECTLY COMPARABLE across sources of very different volume. Refs: Vargha-Delaney 2000 J. Educational and Behavioral Statistics 25(2):101-132; Brunner-Munzel 2000 Biometrics 56:1129-1135.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Vargha-Delaney A12 probability-of-superiority effect size (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'A12',
+    'A12-.5',
+    'SE',
+    'CI low',
+    'CI high',
+    'sign',
+    'magnitude',
+    'CI excl .5',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.vdN1),
+    formatNumber(s.vdN2),
+    s.vdA12.toFixed(4),
+    (s.vdA12Centered >= 0 ? '+' : '') + s.vdA12Centered.toFixed(4),
+    s.vdSe.toFixed(4),
+    s.vdCiLow.toFixed(4),
+    s.vdCiHigh.toFixed(4),
+    s.vdSign === 1 ? '+' : s.vdSign === -1 ? '-' : '0',
+    s.vdMagnitude,
+    s.vdCiExcludesHalf ? 'YES' : 'no',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: A12 = 0.5 is the no-effect anchor (stochastic equality). vdCiExcludesHalf === true is the asymptotic Brunner-Munzel 2000 analogue of rejecting H0: P(Y>X)+0.5P(Y==X) = 0.5 at alpha=0.05. magnitude bucket gives Cohen-style verbal effect-size: a 'large' A12 with vdCiExcludesHalf === true is a both-meaningful-and-statistically-significant SECOND-half-larger reading. Cross-axis vs axis-115 MW: deterministic A12 = U2/(n1*n2), so the BINARY rejection decision agrees but the EFFECT-SIZE interpretation is unique to A12. vs axis-186 HL: HL gives shift in tokens, A12 gives probability-of-superiority; together they characterise BOTH the size AND the direction of the location effect on independent scales.)`,
     ),
   );
 

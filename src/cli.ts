@@ -213,6 +213,7 @@ import {
   renderDailyTokenSavageHalves,
   renderDailyTokenBwsHalves,
   renderDailyTokenHlShiftHalves,
+ renderDailyTokenVarghaDelaneyHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -697,9 +698,13 @@ import {
   type DailyTokenBwsHalvesSort,
 } from './dailytokenbaumgartnerweisschindlerhalves.js';
 import {
-  buildDailyTokenHodgesLehmannShiftHalves,
-  type DailyTokenHlShiftHalvesSort,
+ buildDailyTokenHodgesLehmannShiftHalves,
+ type DailyTokenHlShiftHalvesSort,
 } from './dailytokenhodgeslehmannshifthalves.js';
+import {
+ buildDailyTokenVarghaDelaneyHalves,
+ type DailyTokenVarghaDelaneyHalvesSort,
+} from './dailytokenvarghadelaneyhalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -44873,6 +44878,105 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHlShiftHalves(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-vargha-delaney-halves')
+  .description(
+    "Per-source VARGHA-DELANEY 2000 A12 PROBABILITY-OF-SUPERIORITY EFFECT-SIZE STATISTIC between the first half (n1 = floor(n/2) days) and the second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTY-SEVENTH cross-source axis). A12 = (1/(n1*n2)) * sum [ind(y > x) + 0.5*ind(y == x)] in [0, 1]; A12 = 0.5 means stochastic equality, A12 > 0.5 means SECOND half stochastically larger (preserves SECOND-half-positive cross-axis convention). Brunner-Munzel 2000 closed-form asymptotic SE; 95% CI = A12 +/- 1.96 SE clamped to [0, 1]. Magnitude bucket (Vargha-Delaney 2000 Table 3): negligible (|A12-0.5|<0.06), small (<0.14), medium (<0.21), large. STRUCTURALLY ORTHOGONAL: vs axis-115 MANN-WHITNEY (test stat with p-value); A12 is an EFFECT-SIZE in [0, 1] with PROBABILISTIC INTERPRETATION. vs axis-186 HL (point estimator in token units); A12 is SCALE-FREE and DIRECTLY COMPARABLE across sources of very different volume. Refs: Vargha-Delaney 2000 *J. Educational and Behavioral Statistics* 25(2):101-132; Brunner-Munzel 2000 *Biometrics* 56:1129-1135.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16. Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: a12CenteredAbsDesc (default) | a12 | a12Desc | tokens | tenure | source.',
+    'a12CenteredAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'a12',
+          'a12Desc',
+          'a12CenteredAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenVarghaDelaneyHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenVarghaDelaneyHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenVarghaDelaneyHalves(report) + '\n');
         }
       } catch (e) {
         die(e);
