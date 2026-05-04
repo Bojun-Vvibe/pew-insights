@@ -312,3 +312,75 @@ test('buildDailyTokenRunsTestDetrended: invalid since throws', () => {
     /invalid since/,
   );
 });
+
+// ---------- refinement: runsRatio + sort key ----------
+
+test('buildDailyTokenRunsTestDetrended: runsRatio === runs / expectedRuns exactly', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+  }
+  const r = buildDailyTokenRunsTestDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+  });
+  assert.equal(r.sources.length, 1);
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.runsRatio - s.runs / s.expectedRuns) < 1e-12);
+});
+
+test('buildDailyTokenRunsTestDetrended: clustered residuals -> runsRatio < 1; anti-cluster -> > 1', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000)); // anti-cluster
+    queue.push(ql(dayIso(i), 'clust', i < 15 ? 50_000 : 250_000)); // cluster
+  }
+  const r = buildDailyTokenRunsTestDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+    sort: 'source',
+  });
+  const alt = r.sources.find((s) => s.source === 'alt')!;
+  const clust = r.sources.find((s) => s.source === 'clust')!;
+  assert.ok(
+    alt.runsRatio > 1.5,
+    `expected alt runsRatio > 1.5, got ${alt.runsRatio}`,
+  );
+  assert.ok(
+    clust.runsRatio < 0.7,
+    `expected clust runsRatio < 0.7, got ${clust.runsRatio}`,
+  );
+});
+
+test('buildDailyTokenRunsTestDetrended: sort=runsRatio orders ascending (most clustered first)', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+    queue.push(ql(dayIso(i), 'clust', i < 15 ? 50_000 : 250_000));
+  }
+  const r = buildDailyTokenRunsTestDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+    sort: 'runsRatio',
+  });
+  assert.equal(r.sources.length, 2);
+  // 'clust' has runsRatio < 1 (clustering), 'alt' > 1 (anti-cluster)
+  // Ascending: smallest runsRatio (most clustered) first.
+  assert.equal(r.sources[0]!.source, 'clust');
+  assert.equal(r.sources[1]!.source, 'alt');
+});
+
+test('buildDailyTokenRunsTestDetrended: sort=runsRatioDesc orders descending', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+    queue.push(ql(dayIso(i), 'clust', i < 15 ? 50_000 : 250_000));
+  }
+  const r = buildDailyTokenRunsTestDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+    sort: 'runsRatioDesc',
+  });
+  assert.equal(r.sources[0]!.source, 'alt');
+  assert.equal(r.sources[1]!.source, 'clust');
+});

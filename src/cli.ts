@@ -42272,7 +42272,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: rtZAbsDesc (default) | rtZAbs | rtZ | rtZDesc | runs | runsDesc | tokens | tenure | source.',
+    'sort key: rtZAbsDesc (default) | rtZAbs | rtZ | rtZDesc | runs | runsDesc | runsRatio | runsRatioDesc | tokens | tenure | source.',
     'rtZAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -42316,6 +42316,8 @@ program
           'rtZAbsDesc',
           'runs',
           'runsDesc',
+          'runsRatio',
+          'runsRatioDesc',
           'tokens',
           'tenure',
           'source',

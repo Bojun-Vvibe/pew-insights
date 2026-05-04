@@ -238,6 +238,8 @@ export type DailyTokenRunsTestDetrendedSort =
   | 'rtZAbsDesc'
   | 'runs'
   | 'runsDesc'
+  | 'runsRatio'
+  | 'runsRatioDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -282,6 +284,18 @@ export interface DailyTokenRunsTestDetrendedSourceRow {
   runs: number;
   /** Expected runs under the WW null: 2*nPos*nNeg/n + 1. */
   expectedRuns: number;
+  /**
+   * Dispersion ratio runs / expectedRuns. Unitless,
+   * scale-free shape descriptor (refinement, axis-163).
+   *   ~ 1.0  iid sign behaviour
+   *   < 1    fewer runs than expected -> clustering
+   *   > 1    more runs than expected -> anti-clustering
+   * Complementary to rtZ: rtZ measures the STATISTICAL
+   * STRENGTH of the departure (weights by sqrt(n));
+   * runsRatio measures the SCALE of the departure in
+   * raw run-count units, independent of n.
+   */
+  runsRatio: number;
   /** Standardised score (R - mu) / sqrt(var). */
   rtZ: number;
   /** Verdict by rtZ cutoffs (see VERDICT_CUTOFFS). */
@@ -487,6 +501,8 @@ export function buildDailyTokenRunsTestDetrended(
     'rtZAbsDesc',
     'runs',
     'runsDesc',
+    'runsRatio',
+    'runsRatioDesc',
     'tokens',
     'tenure',
     'source',
@@ -621,6 +637,7 @@ export function buildDailyTokenRunsTestDetrended(
       nZero: result.nZero,
       runs: result.runs,
       expectedRuns: result.expectedRuns,
+      runsRatio: result.runs / result.expectedRuns,
       rtZ: result.rtZ,
       verdict: classifyRunsDetrended(result.rtZ),
     });
@@ -647,6 +664,12 @@ export function buildDailyTokenRunsTestDetrended(
         break;
       case 'runsDesc':
         primary = b.runs - a.runs;
+        break;
+      case 'runsRatio':
+        primary = a.runsRatio - b.runsRatio;
+        break;
+      case 'runsRatioDesc':
+        primary = b.runsRatio - a.runsRatio;
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;
