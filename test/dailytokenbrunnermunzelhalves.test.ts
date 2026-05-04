@@ -366,3 +366,126 @@ test('buildDailyTokenBrunnerMunzelHalves: since/until window filtering', () => {
   assert.equal(r.sources.length, 1);
   assert.equal(r.sources[0]!.nTenureDays, 20);
 });
+
+// ---------- refinement: Stouffer aggregator ----------
+
+import {
+  aggregateBrunnerMunzelHalves,
+  standardNormalUpperTailBM,
+  inverseStandardNormalUpperTailBM,
+} from '../src/dailytokenbrunnermunzelhalves.js';
+
+test('standardNormalUpperTailBM: Q(0) = 0.5', () => {
+  assert.ok(Math.abs(standardNormalUpperTailBM(0) - 0.5) < 1e-7);
+});
+
+test('standardNormalUpperTailBM: Q(1.96) ~ 0.025', () => {
+  assert.ok(Math.abs(standardNormalUpperTailBM(1.96) - 0.025) < 5e-5);
+});
+
+test('standardNormalUpperTailBM: Q(-z) = 1 - Q(z)', () => {
+  const z = 1.5;
+  const left = standardNormalUpperTailBM(-z);
+  const right = 1 - standardNormalUpperTailBM(z);
+  assert.ok(Math.abs(left - right) < 1e-7);
+});
+
+test('standardNormalUpperTailBM: rejects non-finite', () => {
+  assert.throws(() => standardNormalUpperTailBM(NaN), /finite/);
+});
+
+test('inverseStandardNormalUpperTailBM: p=0.5 -> z=0', () => {
+  assert.ok(Math.abs(inverseStandardNormalUpperTailBM(0.5)) < 1e-9);
+});
+
+test('inverseStandardNormalUpperTailBM: p=0.025 -> z ~ 1.96', () => {
+  assert.ok(Math.abs(inverseStandardNormalUpperTailBM(0.025) - 1.96) < 1e-3);
+});
+
+test('inverseStandardNormalUpperTailBM: round-trip Q(invQ(p)) ~ p', () => {
+  for (const p of [0.001, 0.05, 0.25, 0.4, 0.6, 0.8, 0.99]) {
+    const z = inverseStandardNormalUpperTailBM(p);
+    const back = standardNormalUpperTailBM(z);
+    assert.ok(Math.abs(back - p) < 1e-6, `p=${p}, back=${back}`);
+  }
+});
+
+test('inverseStandardNormalUpperTailBM: rejects out-of-range', () => {
+  assert.throws(() => inverseStandardNormalUpperTailBM(-0.1), /\[0,1\]/);
+  assert.throws(() => inverseStandardNormalUpperTailBM(1.1), /\[0,1\]/);
+});
+
+test('aggregateBrunnerMunzelHalves: empty -> identity', () => {
+  const r = aggregateBrunnerMunzelHalves([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.stoufferZ, 0);
+  assert.equal(r.stoufferTwoSidedPValue, 1);
+});
+
+test('aggregateBrunnerMunzelHalves: skips malformed rows', () => {
+  const r = aggregateBrunnerMunzelHalves([
+    { bmW: NaN, bmPValue: 0.5, bmDof: 10, bmRelative: 0.5, nTenureDays: 20 },
+    { bmW: 0.5, bmPValue: 0, bmDof: 10, bmRelative: 0.5, nTenureDays: 20 },
+    { bmW: 0.5, bmPValue: 1.5, bmDof: 10, bmRelative: 0.5, nTenureDays: 20 },
+    { bmW: 0.5, bmPValue: 0.5, bmDof: -1, bmRelative: 0.5, nTenureDays: 20 },
+    { bmW: 0.5, bmPValue: 0.5, bmDof: 10, bmRelative: NaN, nTenureDays: 20 },
+    { bmW: 0.5, bmPValue: 0.5, bmDof: 10, bmRelative: 0.5, nTenureDays: 0 },
+  ]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 6);
+});
+
+test('aggregateBrunnerMunzelHalves: all-positive bmW gives positive Stouffer Z', () => {
+  // 4 rows all with positive bmW and small p-value
+  const rows = [
+    { bmW: 1.0, bmPValue: 0.05, bmDof: 30, bmRelative: 0.7, nTenureDays: 40 },
+    { bmW: 0.8, bmPValue: 0.10, bmDof: 30, bmRelative: 0.65, nTenureDays: 40 },
+    { bmW: 1.5, bmPValue: 0.02, bmDof: 30, bmRelative: 0.75, nTenureDays: 40 },
+    { bmW: 0.6, bmPValue: 0.20, bmDof: 30, bmRelative: 0.6, nTenureDays: 40 },
+  ];
+  const r = aggregateBrunnerMunzelHalves(rows);
+  assert.equal(r.rowsUsed, 4);
+  assert.ok(r.stoufferZ > 0);
+  assert.ok(r.stoufferTwoSidedPValue < 0.01);
+  assert.ok(r.tenureWeightedMeanBmRelative > 0.5);
+});
+
+test('aggregateBrunnerMunzelHalves: cancellation when signs disagree', () => {
+  // 4 rows with cancelling signs and similar magnitudes
+  const rows = [
+    { bmW: 1.0, bmPValue: 0.10, bmDof: 30, bmRelative: 0.7, nTenureDays: 40 },
+    { bmW: -1.0, bmPValue: 0.10, bmDof: 30, bmRelative: 0.3, nTenureDays: 40 },
+    { bmW: 1.0, bmPValue: 0.10, bmDof: 30, bmRelative: 0.7, nTenureDays: 40 },
+    { bmW: -1.0, bmPValue: 0.10, bmDof: 30, bmRelative: 0.3, nTenureDays: 40 },
+  ];
+  const r = aggregateBrunnerMunzelHalves(rows);
+  assert.equal(r.rowsUsed, 4);
+  assert.ok(Math.abs(r.stoufferZ) < 1e-9);
+  assert.ok(r.stoufferTwoSidedPValue > 0.99);
+  // mean relative cancels too
+  assert.ok(Math.abs(r.tenureWeightedMeanBmRelative - 0.5) < 1e-9);
+});
+
+test('aggregateBrunnerMunzelHalves: tenure weighting on relative', () => {
+  // long-tenure source dominates the tenure-weighted mean
+  const rows = [
+    { bmW: 0.1, bmPValue: 0.5, bmDof: 30, bmRelative: 0.55, nTenureDays: 200 },
+    { bmW: -0.1, bmPValue: 0.5, bmDof: 30, bmRelative: 0.40, nTenureDays: 20 },
+  ];
+  const r = aggregateBrunnerMunzelHalves(rows);
+  assert.equal(r.rowsUsed, 2);
+  // weighted mean ~ (200*0.55 + 20*0.40) / 220 = (110 + 8)/220 = 0.536...
+  assert.ok(Math.abs(r.tenureWeightedMeanBmRelative - (110 + 8) / 220) < 1e-9);
+});
+
+test('aggregateBrunnerMunzelHalves: single row matches per-source', () => {
+  const r = aggregateBrunnerMunzelHalves([
+    { bmW: 1.5, bmPValue: 0.04, bmDof: 30, bmRelative: 0.65, nTenureDays: 50 },
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  // stoufferZ === inverseStandardNormalUpperTailBM(0.04 / 2) ~ inv-Phi-upper(0.02)
+  // = inv-Phi(0.98) ~ 2.0537
+  assert.ok(r.stoufferZ > 2.0);
+  assert.ok(r.stoufferZ < 2.1);
+  assert.ok(r.tenureWeightedMeanBmRelative === 0.65);
+});

@@ -847,3 +847,242 @@ export function buildDailyTokenBrunnerMunzelHalves(
     sources: kept,
   };
 }
+
+/**
+ * Corpus-level SIGNED aggregator for axis-176 per-source
+ * results. Combines the per-source SIGNED bmW statistics
+ * via STOUFFER'S Z-METHOD (Stouffer et al. 1949
+ * *American Soldier* vol. 1, sec. 2.2; the canonical
+ * signed-combination meta-analytic z statistic):
+ *
+ *     stoufferZ = sum_i bmZ_i / sqrt(m)
+ *     stoufferTwoSidedPValue =
+ *       2 * (1 - Phi(|stoufferZ|))
+ *
+ * where bmZ_i is the per-source bmW interpreted as an
+ * approximate N(0,1) z-score (valid asymptotically as the
+ * t-reference approaches normal as bmDof grows; for
+ * bmDof < 30 we use the equivalent signed normal z via
+ * the inverse-Phi of the per-source two-sided t p-value
+ * with sign(bmW) preserved, which is the standard
+ * Stouffer adjustment for non-normal per-source z's).
+ *
+ * Why Stouffer (this axis): bmW is intrinsically SIGNED
+ * (positive = second half stochastically larger). The
+ * Lancaster/Satterthwaite aggregator used for axis-175
+ * Lepage targets UNSIGNED chi-2(2) p-values via Fisher's
+ * combined-p; that's the right answer for an unsigned
+ * upper-tail test, the WRONG answer for a signed
+ * directional statistic where positive and negative
+ * evidence can CANCEL. Stouffer preserves the sign and
+ * answers "is the corpus-level direction of stochastic
+ * shift consistent and significant", which is the
+ * correct meta-analytic question for axis-176.
+ *
+ * The aggregator returns also the corpus-mean bmRelative
+ * (TENURE-WEIGHTED, matching the axis-175 v0.6.452
+ * weighting convention) for downstream interpretation.
+ *
+ * Malformed rows (non-finite bmW, bmPValue not in (0,1],
+ * non-positive bmDof or nTenureDays) are SKIPPED with a
+ * counter rather than throwing.
+ *
+ * Reference:
+ *   Stouffer, S. A., Suchman, E. A., DeVinney, L. C.,
+ *     Star, S. A. & Williams, R. M. Jr., *The American
+ *     Soldier: Adjustment During Army Life* vol. 1
+ *     (Princeton 1949), sec. 2.2.
+ *   Whitlock, M. C., "Combining probability from
+ *     independent tests: the weighted Z-method is
+ *     superior to Fisher's approach", *J. Evolutionary
+ *     Biology* 18(5) (2005), pp. 1368-1373.
+ */
+export interface BrunnerMunzelHalvesCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedPValue: number;
+  meanBmW: number;
+  tenureWeightedMeanBmRelative: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateBrunnerMunzelHalves(
+  rows: ReadonlyArray<{
+    bmW: number;
+    bmPValue: number;
+    bmDof: number;
+    bmRelative: number;
+    nTenureDays: number;
+  }>,
+): BrunnerMunzelHalvesCorpusAggregate {
+  let zSum = 0;
+  let bmwSum = 0;
+  let weightedRelativeSum = 0;
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.bmW) ||
+      !Number.isFinite(r.bmPValue) ||
+      r.bmPValue <= 0 ||
+      r.bmPValue > 1 ||
+      !Number.isFinite(r.bmDof) ||
+      r.bmDof <= 0 ||
+      !Number.isFinite(r.bmRelative) ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    // Convert per-source two-sided t p-value back to a
+    // signed normal z preserving sign(bmW). The half-
+    // p-value gives the magnitude of the equivalent
+    // standard-normal z via inverse Phi.
+    const halfP = r.bmPValue / 2;
+    const zMagnitude = inverseStandardNormalUpperTailBM(halfP);
+    const signedZ = r.bmW >= 0 ? zMagnitude : -zMagnitude;
+    zSum += signedZ;
+    bmwSum += r.bmW;
+    weightedRelativeSum += r.nTenureDays * r.bmRelative;
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      stoufferZ: 0,
+      stoufferTwoSidedPValue: 1,
+      meanBmW: Number.NaN,
+      tenureWeightedMeanBmRelative: Number.NaN,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = zSum / Math.sqrt(used);
+  const stoufferTwoSidedPValue =
+    2 * standardNormalUpperTailBM(Math.abs(stoufferZ));
+  return {
+    stoufferZ,
+    stoufferTwoSidedPValue,
+    meanBmW: bmwSum / used,
+    tenureWeightedMeanBmRelative: weightedRelativeSum / totalTenure,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Standard-normal upper tail Q(z) = 1 - Phi(z) using the
+ * Abramowitz-Stegun 1965 sec. 26.2.17 rational
+ * approximation; max relative error ~7.5e-8 across the
+ * full real line.
+ */
+export function standardNormalUpperTailBM(z: number): number {
+  if (!Number.isFinite(z)) {
+    throw new Error(`standardNormalUpperTailBM: z must be finite (got ${z})`);
+  }
+  if (z < 0) return 1 - standardNormalUpperTailBM(-z);
+  // Q(z) = phi(z) * (b1 t + b2 t^2 + b3 t^3 + b4 t^4 + b5 t^5)
+  // with t = 1 / (1 + p z).
+  const p = 0.2316419;
+  const b1 = 0.319381530;
+  const b2 = -0.356563782;
+  const b3 = 1.781477937;
+  const b4 = -1.821255978;
+  const b5 = 1.330274429;
+  const t = 1 / (1 + p * z);
+  const phi = Math.exp(-(z * z) / 2) / Math.sqrt(2 * Math.PI);
+  const poly =
+    b1 * t +
+    b2 * t * t +
+    b3 * t * t * t +
+    b4 * t * t * t * t +
+    b5 * t * t * t * t * t;
+  const q = phi * poly;
+  return q < 0 ? 0 : q > 1 ? 1 : q;
+}
+
+/**
+ * Inverse standard-normal upper tail: given p in (0, 1),
+ * return z such that Q(z) = 1 - Phi(z) = p. Uses the
+ * Beasley-Springer-Moro 1977/2002 rational approximation
+ * (max relative error ~1e-9 across p in (1e-300, 1 - 1e-300)).
+ *
+ * Boundary handling: p = 0 returns +Infinity (capped at
+ * a large finite value to avoid NaN downstream); p = 1
+ * returns -Infinity (capped similarly). For pew-insights
+ * this caps at +/- 38.5 (the practical limit of the
+ * normal CDF in IEEE 754 double precision).
+ */
+export function inverseStandardNormalUpperTailBM(p: number): number {
+  if (!Number.isFinite(p) || p < 0 || p > 1) {
+    throw new Error(
+      `inverseStandardNormalUpperTailBM: p in [0,1] required (got ${p})`,
+    );
+  }
+  if (p <= 0) return 38.5;
+  if (p >= 1) return -38.5;
+  // p is the upper tail; convert to lower-tail percentile q = 1 - p.
+  const q = 1 - p;
+  return inverseStandardNormalCdfBM(q);
+}
+
+function inverseStandardNormalCdfBM(p: number): number {
+  // Beasley-Springer-Moro 1977 + Moro 1995 tail correction.
+  // Coefficients from Acklam 2003 (max rel err ~1e-9).
+  const a = [
+    -3.969683028665376e1,
+    2.209460984245205e2,
+    -2.759285104469687e2,
+    1.38357751867269e2,
+    -3.066479806614716e1,
+    2.506628277459239,
+  ];
+  const b = [
+    -5.447609879822406e1,
+    1.615858368580409e2,
+    -1.556989798598866e2,
+    6.680131188771972e1,
+    -1.328068155288572e1,
+  ];
+  const c = [
+    -7.784894002430293e-3,
+    -3.223964580411365e-1,
+    -2.400758277161838,
+    -2.549732539343734,
+    4.374664141464968,
+    2.938163982698783,
+  ];
+  const d = [
+    7.784695709041462e-3,
+    3.224671290700398e-1,
+    2.445134137142996,
+    3.754408661907416,
+  ];
+  const pLow = 0.02425;
+  const pHigh = 1 - pLow;
+  let z: number;
+  if (p < pLow) {
+    const q = Math.sqrt(-2 * Math.log(p));
+    z =
+      (((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q +
+        c[5]!) /
+      ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+  } else if (p <= pHigh) {
+    const q = p - 0.5;
+    const r = q * q;
+    z =
+      ((((((a[0]! * r + a[1]!) * r + a[2]!) * r + a[3]!) * r + a[4]!) * r +
+        a[5]!) *
+        q) /
+      (((((b[0]! * r + b[1]!) * r + b[2]!) * r + b[3]!) * r + b[4]!) * r + 1);
+  } else {
+    const q = Math.sqrt(-2 * Math.log(1 - p));
+    z =
+      -(((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q +
+        c[5]!) /
+      ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+  }
+  return z;
+}
