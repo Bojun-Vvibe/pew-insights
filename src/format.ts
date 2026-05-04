@@ -20592,6 +20592,7 @@ import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyh
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
 import type { DailyTokenAnsariBradleyHalvesReport } from './dailytokenansaribradleyhalves.js';
+import type { DailyTokenMoodsMedianHalvesReport } from './dailytokenmoodsmedianhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -26385,6 +26386,91 @@ export function renderDailyTokenAnsariBradleyHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: abZ approx 0 = halves equally dispersed; abZ > +1.96 = second half more dispersed (DISPERSION GREW); abZ < -1.96 = first half more dispersed (DISPERSION SHRANK). |abZ| > 1.96 = significant scale-shift between halves at alpha = 0.05 (two-sided, Ansari-Bradley exact-moments normal approximation). Ansari-Bradley is the FOLDED-RANK companion of axis-117 Siegel-Tukey: both target SCALE-SHIFT on the same first/second half partition with the same median-centring, but they assign DIFFERENT rank vectors (folded vs outward-pair). They can disagree on a finite-sample basis -- a half whose outliers cluster at BOTH pooled extremes affects the two statistics differently because Ansari-Bradley assigns the same rank 1 to both extremes while Siegel-Tukey ranks them 1 and 2.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMoodsMedianHalves(
+  r: DailyTokenMoodsMedianHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-moods-median-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MOOD'S MEDIAN TEST comparing the first half (n1 days) vs second half (n2 days) of the gap-filled daily total_tokens series via a 2x2 contingency table on counts above/below the POOLED MEDIAN with YATES' continuity-corrected PEARSON CHI-SQUARE(1). ONE-HUNDRED-AND-SEVENTY-FIRST cross-source axis. Class-TWO-SAMPLE-LOCATION-CONTINGENCY-TEST (Mood 1950 sec. 16.5; Hollander/Wolfe/Chicken 2014 sec. 6.3; Yates 1934). mdChi2 = n*(|a*d-b*c|-n/2)^2 / (n1*n2*(a+b)*(n-(a+b))) Yates-floored at 0; mdZ = sign(a/n1-b/n2)*sqrt(mdChi2); positive mdZ = first half larger = MEDIAN DROPPED. INVARIANT under any monotone transform of the data; HIGHLY ROBUST to heavy-tailed contamination. Distinct from axis-115 Mann-Whitney halves (monotonic ranks, sensitive to stochastic dominance over entire distribution); axis-170 Ansari-Bradley halves (folded-rank SCALE on median-centred values); axis-118 KS halves (sup-norm EDF gap at any point; Mood evaluates EDF gap at exactly the pooled median).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MOOD'S MEDIAN chi-square (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'pooledMed',
+    'aboveA',
+    'aboveB',
+    'mdChi2',
+    'mdZ',
+    'p',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.mdN1),
+    formatNumber(s.mdN2),
+    formatNumber(s.mdPooledMedian),
+    formatNumber(s.mdAboveA),
+    formatNumber(s.mdAboveB),
+    s.mdChi2.toFixed(4),
+    s.mdZ.toFixed(4),
+    s.mdTwoSidedP.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: mdChi2 approx 0 = halves balanced about pooled median; mdChi2 > 3.841 = significant location shift at alpha = 0.05 (chi-square(1) critical); equivalently |mdZ| > 1.96. Sign convention: positive mdZ = first half has more above-median values = first half RUNS LARGER = MEDIAN DROPPED across the tenure; negative mdZ = MEDIAN ROSE. The Mood test is INVARIANT under any monotone transform of the data and ROBUST to heavy-tailed contamination -- a single extreme spike that would dominate Mann-Whitney's rank sum is just one above-median count to Mood. Cross-check vs axis-115 Mann-Whitney halves: when the two disagree, Mann-Whitney is reflecting tail mass while Mood is anchored at the median.)`,
     ),
   );
 

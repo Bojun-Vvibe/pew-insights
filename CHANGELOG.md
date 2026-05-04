@@ -2,6 +2,174 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.442 — 2026-05-04
+
+### Added — axis-171: `daily-token-moods-median-halves`
+
+ONE-HUNDRED-AND-SEVENTY-FIRST cross-source axis. Per-source
+**MOOD'S MEDIAN TEST** comparing the first half (n1 =
+floor(n/2) days) vs second half (n2 = n - n1 days) of the
+gap-filled daily total_tokens series via a 2x2 contingency
+table on counts above/below the POOLED MEDIAN, with
+**YATES' continuity-corrected Pearson Chi-Square(1)**.
+
+Class: TWO-SAMPLE-LOCATION-CONTINGENCY-TEST (Mood 1950
+"Introduction to the Theory of Statistics" sec. 16.5;
+Hollander, Wolfe & Chicken 2014 sec. 6.3; Yates 1934
+Suppl. J. R. Stat. Soc. 1(2):217-235).
+
+```
+mdChi2 = n * (|a*d - b*c| - n/2)^2 / (n1*n2*(a+b)*(n-(a+b)))
+mdZ    = sign(a/n1 - b/n2) * sqrt(mdChi2)
+mdP    = 1 - F_{ChiSq(1)}(mdChi2) = erfc(sqrt(mdChi2/2))
+```
+
+with `a` = #{first-half values > pooled median},
+`b` = #{second-half values > pooled median},
+`c = n1 - a`, `d = n2 - b`, and the `|.| - n/2` floored
+at 0 (Yates clamp).
+
+**Sign convention.** Positive `mdZ` = first half has more
+above-median values = first half RUNS LARGER = MEDIAN
+DROPPED across the tenure. Negative `mdZ` = MEDIAN ROSE.
+This is INTENTIONALLY OPPOSITE to axis-117 `stZ` (which
+targets scale, not location): `mdZ` tracks the LOCATION
+SHIFT direction directly.
+
+#### Why this is structurally orthogonal
+
+1. **vs axis-115 Mann-Whitney halves** — Mann-Whitney
+   uses MONOTONIC RANKS on all values and is sensitive
+   to stochastic dominance over the entire distribution;
+   Mood reduces to a BINARY above/below indicator at
+   the pooled median and discards all magnitude
+   information. Mood is therefore INVARIANT under any
+   strictly monotone transform of the data (log, sqrt,
+   bucketing) and HIGHLY ROBUST to heavy-tailed
+   contamination — a single extreme spike that would
+   dominate Mann-Whitney's rank-sum is just "1
+   above-median count" to Mood. Different null
+   distributions (Normal vs Chi-Square(1)).
+
+2. **vs axis-170 Ansari-Bradley halves** — AB targets
+   SCALE shift on FOLDED ranks of MEDIAN-CENTRED values
+   (location removed before testing dispersion); Mood
+   targets LOCATION shift on BINARY counts above the
+   POOLED median (no centring). Orthogonal components
+   of the two-sample shift; the two functionals share
+   no common transformation.
+
+3. **vs axis-118 KS halves** — KS evaluates the
+   SUP-NORM EDF gap at any point; Mood evaluates the
+   EDF gap at EXACTLY ONE point (the pooled median).
+   A series whose halves differ only in their tails
+   registers strongly on KS but is exactly null on
+   Mood.
+
+4. **vs the cumulative-periodogram axes (167-169)** —
+   Frequency-domain goodness-of-fit against white
+   noise on the whole series. Mood is time-domain,
+   two-sample, contingency-table on a fixed
+   first/second-half split.
+
+#### Tests
+
+Test suite grew by **+43** tests (12895 → 12938). Coverage:
+
+- `moodsMedianStandardNormalCdf`: anchor values at
+  z = 0, ±1.96, 3 (within 1e-3 to 1e-7 absolute);
+  monotone non-decreasing across z in [-5, 5];
+  rejects non-finite.
+- `chiSquare1UpperTail`: x = 0 returns 1; x = 3.841459
+  returns ~0.05 (chi-square(1) 95th percentile);
+  x = 6.6349 returns ~0.01 (99th percentile); monotone
+  non-increasing; very large x returns ~0.
+- `dailyTokenMoodsMedianHalves`: rejects fewer than 8
+  samples, non-finite values, all-equal series; pure
+  location shift detected (closed-form `mdChi2 = 12.25`,
+  `mdZ = -3.5` for first-half-small/second-half-large
+  partition); reverse shift gives positive sign;
+  balanced halves yields near-zero `mdChi2`; shift
+  invariance `mdChi2(x + c) = mdChi2(x)`; positive
+  scale invariance `mdChi2(a*x) = mdChi2(x)`;
+  monotone-transform invariance under log; order-
+  within-halves invariance; odd-n series; tied-with-
+  median values placed in at-or-below cell;
+  `mdTwoSidedP` always in [0, 1]; Yates correction
+  floor at 0; structural distinction from Mann-Whitney
+  via outlier replacement (extreme spike yields same
+  `mdChi2` as moderate value).
+- `buildDailyTokenMoodsMedianHalves`: empty queue,
+  invalid hour_start, non-positive tokens, below
+  min-tokens, below min-tenure-days, rejects
+  min-tenure-days < 8, rejects negative min-tokens,
+  rejects bad sort key, full integration with
+  rising/falling sources (signs verified opposite),
+  sort by `mdZAbsDesc`, `top` cap, source filter,
+  zero-variance dropping, gap-fill behavior, report-
+  field population, sort by source returns
+  alphabetical.
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js daily-token-moods-median-halves --json
+
+totalSources: 6  (5 shown, 1 dropped below min-tenure-days)
+totalTokens:  12,726,011,184
+
+source                  tenure  n1   n2   pooledMed   aboveA aboveB  mdChi2    mdZ      p
+openclaw                    18   9    9    77,958,772       8      1   8.0000  +2.8284  0.0047
+claude-code                 72  36   36             0      12     23   5.5598  -2.3579  0.0184
+[redacted-vscode-source]   265 132  133             0      44     29   3.8531  +1.9629  0.0497
+opencode                    15   7    8   420,000,740       5      2   1.6370  +1.2795  0.2007
+hermes                      18   9    9    21,138,988       3      6   0.8889  -0.9428  0.3458
+```
+
+**Interpretation** (per the sign convention: positive
+`mdZ` = first half larger = MEDIAN DROPPED):
+
+- `openclaw` — `mdZ = +2.83`, `p = 0.0047`. First half
+  had 8/9 days above the pooled median; second half
+  only 1/9. **Significant drop in median daily token
+  consumption** across the 18-day tenure.
+- `claude-code` — `mdZ = -2.36`, `p = 0.0184`. Second
+  half had 23/36 days above the pooled median (zero,
+  due to >50% inactive days); first half only 12/36.
+  **Significant rise in median across the 72-day
+  tenure** — the source ramped up activity after a
+  quieter start.
+- `[redacted-vscode-source]` — `mdZ = +1.96`, `p =
+  0.0497`. Borderline-significant drop in median across
+  the 265-day tenure (44/132 active first half vs
+  29/133 active second half — the source has been
+  cooling off).
+- `opencode` and `hermes` — `|mdZ| < 1.5`, both
+  consistent with H0 of equal medians at α = 0.05.
+
+Cross-check: at the pooled-median cut for `claude-code`
+(median = 0, the source is inactive on >half of its
+calendar tenure), the test reduces to "is the active-
+day count balanced between the halves?" — and the
+answer is no (12 vs 23), yielding the significant
+negative `mdZ`. The chi-square machinery handles the
+zero-pooled-median case correctly without numerical
+issues.
+
+#### CLI
+
+```
+pew-insights daily-token-moods-median-halves
+pew-insights daily-token-moods-median-halves --json --min-tenure-days 14 --sort mdZAbsDesc
+pew-insights daily-token-moods-median-halves --source claude-code
+```
+
+Same flag surface as axes 115/117/170:
+`--since`, `--until`, `--source`, `--min-tokens`
+(default 1000), `--min-tenure-days` (default 14, hard
+floor 8), `--top`, `--sort` (default `mdZAbsDesc`),
+`--json`.
+
 ## 0.6.441 — 2026-05-04
 
 ### Refined — axis-170 corpus-level Stouffer aggregator + Phi(z)

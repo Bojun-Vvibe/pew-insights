@@ -198,6 +198,7 @@ import {
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
   renderDailyTokenAnsariBradleyHalves,
+  renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -624,6 +625,7 @@ import { buildDailyTokenMannWhitneyHalves } from './dailytokenmannwhitneyhalves.
 import { buildDailyTokenBrownForsythHalves } from './dailytokenbrownforsythhalves.js';
 import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.js';
 import { buildDailyTokenAnsariBradleyHalves } from './dailytokenansaribradleyhalves.js';
+import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -37713,6 +37715,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenAnsariBradleyHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-moods-median-halves')
+  .description(
+    "Per-source MOOD'S MEDIAN TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series via a 2x2 contingency table on counts above/below the POOLED MEDIAN with YATES' continuity-corrected PEARSON CHI-SQUARE(1) (ONE-HUNDRED-AND-SEVENTY-FIRST cross-source axis). Class-TWO-SAMPLE-LOCATION-CONTINGENCY-TEST (Mood 1950 'Introduction to the Theory of Statistics' sec. 16.5; Hollander, Wolfe & Chicken 2014 sec. 6.3; Yates 1934 Suppl. J. R. Stat. Soc. 1(2):217-235): pool both halves, compute median m, count a = #{first-half values > m}, b = #{second-half values > m}; mdChi2 = n*(|a*d-b*c|-n/2)^2 / (n1*n2*(a+b)*(n-(a+b))) with c=n1-a, d=n2-b, Yates floor at 0; mdZ = sign(a/n1 - b/n2)*sqrt(mdChi2) ~ N(0,1). Sign convention: positive mdZ = first half larger (MEDIAN DROPPED across the tenure); negative = MEDIAN ROSE. ORTHOGONAL to axis-115 Mann-Whitney halves (uses MONOTONIC RANKS on all values, sensitive to stochastic dominance over the entire distribution; Mood reduces to BINARY above/below indicator and is INVARIANT under any monotone transform of the data); axis-170 Ansari-Bradley halves (SCALE on folded ranks of MEDIAN-CENTRED values; Mood targets LOCATION on raw values); axis-118 KS halves (SUP-NORM EDF gap at any point; Mood evaluates the EDF gap at EXACTLY the pooled median); axes 167-169 cumulative-periodogram (FREQUENCY DOMAIN). Highly ROBUST to heavy-tailed contamination (a single outlier counts as 1 above-median).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (each half >= 4 obs for Yates-corrected chi-square). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mdZAbsDesc (default) | mdChi2 | mdChi2Desc | mdZ | mdZDesc | mdZAbs | tokens | tenure | source.',
+    'mdZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'mdChi2',
+          'mdChi2Desc',
+          'mdZ',
+          'mdZDesc',
+          'mdZAbs',
+          'mdZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMoodsMedianHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'mdChi2'
+            | 'mdChi2Desc'
+            | 'mdZ'
+            | 'mdZDesc'
+            | 'mdZAbs'
+            | 'mdZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMoodsMedianHalves(report) + '\n',
           );
         }
       } catch (e) {
