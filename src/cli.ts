@@ -72,6 +72,7 @@ import {
   renderDailyTokenAutocorrelationLag1,
   renderDailyTokenAllanDeviation,
   renderDailyTokenHampelOutlierCount,
+  renderDailyTokenCusumMaxDeviation,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -439,6 +440,10 @@ import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildDailyTokenAllanDeviation } from './dailytokenallandeviation.js';
 import { buildDailyTokenHampelOutlierCount } from './dailytokenhampeloutliercount.js';
+import {
+  buildDailyTokenCusumMaxDeviation,
+  type DailyTokenCusumMaxDeviationSortKey,
+} from './dailytokencusummaxdeviation.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -6884,6 +6889,79 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHampelOutlierCount(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-cusum-max-deviation')
+  .description(
+    "Per-source CUSUM (cumulative-sum) max excursion above and below the running mean on the gap-filled daily total_tokens series (axis-153). Surfaces (mean, rms, cusumMax, cusumMin, cusumRange, normMax, normMin, normRange, argMaxDay, argMinDay). DRIFT / MEAN-SHIFT / CHANGEPOINT class detector — strictly ORDER-DEPENDENT (path integral); reversing the series mirrors S[i] across zero. Structurally orthogonal to axis-152 (Hampel outlier count: ORDER-INVARIANT point statistic), axis-151 (Allan deviation: RMS of FIRST DIFFERENCES, sees step volatility but not accumulated drift), all autocorrelation axes (linear adjacent-pair dependence), and all sort-invariant inequality axes (gini/atkinson/theil/zenga/pietra/palma/etc.). A monotone ramp has tiny Allan dev but huge cusumRange; an iid noisy series has small cusumRange even with large variance.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with gap-filled tenure shorter than n days (default 3, must be >= 3); counts surface as droppedSparseSources',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens | max | min | range | normmax | normmin | normrange | ndays (default tokens). Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 3) {
+          throw new Error(`--min-days must be an integer >= 3 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sortAllowed = ['tokens', 'max', 'min', 'range', 'normmax', 'normmin', 'normrange', 'ndays'];
+        if (!sortAllowed.includes(opts.sort)) {
+          throw new Error(`--sort must be one of ${sortAllowed.join('|')} (got ${opts.sort})`);
+        }
+        const sort = opts.sort as DailyTokenCusumMaxDeviationSortKey;
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCusumMaxDeviation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenCusumMaxDeviation(report) + '\n');
         }
       } catch (e) {
         die(e);

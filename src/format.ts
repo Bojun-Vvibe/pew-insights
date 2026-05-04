@@ -5411,6 +5411,83 @@ export function renderDailyTokenHampelOutlierCount(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenCusumMaxDeviation(
+  r: import('./dailytokencusummaxdeviation.js').DailyTokenCusumMaxDeviationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-cusum-max-deviation'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(CUSUM = running sum of (x[i] - mean) on the gap-filled per-source daily total_tokens series; cusumMax / cusumMin are the worst positive / negative drift excursions; norm* = divided by rms*sqrt(n); flat=y means rms=0 i.e. constant series)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source CUSUM excursions (sorted by ${r.sort} desc)`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'mean',
+    'rms',
+    'cusumMax',
+    'cusumMin',
+    'cusumRange',
+    'normMax',
+    'normMin',
+    'normRange',
+    'argMaxDay',
+    'argMinDay',
+    'flat',
+    'first',
+    'last',
+  ];
+  const rowsR: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.mean.toFixed(1),
+    s.rms.toFixed(1),
+    s.cusumMax.toFixed(1),
+    s.cusumMin.toFixed(1),
+    s.cusumRange.toFixed(1),
+    s.flat ? '-' : s.normMax.toFixed(3),
+    s.flat ? '-' : s.normMin.toFixed(3),
+    s.flat ? '-' : s.normRange.toFixed(3),
+    s.argMaxDay ?? '-',
+    s.argMinDay ?? '-',
+    s.flat ? 'y' : 'n',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderDailyTokenZscoreExtremes(
   r: import('./dailytokenzscoreextremes.js').DailyTokenZscoreExtremesReport,
 ): string {
