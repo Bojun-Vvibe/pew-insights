@@ -194,6 +194,7 @@ import {
   renderDailyTokenBartlettCumulativePeriodogram,
   renderDailyTokenCramerVonMisesCumulativePeriodogram,
   renderDailyTokenAndersonDarlingCumulativePeriodogram,
+  renderDailyTokenKuiperVCumulativePeriodogram,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -526,6 +527,10 @@ import {
   buildDailyTokenAndersonDarlingCumulativePeriodogram,
   type DailyTokenAndersonDarlingCumulativePeriodogramSort,
 } from './dailytokenandersondarlingcumulativeperiodogram.js';
+import {
+  buildDailyTokenKuiperVCumulativePeriodogram,
+  type DailyTokenKuiperVCumulativePeriodogramSort,
+} from './dailytokenkuipervcumulativeperiodogram.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -43228,6 +43233,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenAndersonDarlingCumulativePeriodogram(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-kuiper-v-cumulative-periodogram')
+  .description(
+    "Per-source KUIPER V TEST on the cumulative periodogram of the gap-filled mean-centred daily total_tokens series (axis-172). C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]); kpDPlus = max_j (C[j]-j/K), kpDMinus = max_j (j/K-C[j]); kpV = kpDPlus + kpDMinus; kpVStar = (sqrt(K)+0.155+0.24/sqrt(K))*kpV; kpPValue = sum_{m>=1} 2(4 m^2 V*^2 - 1) exp(-2 m^2 V*^2). FOURTH member of the EDF family on the cumulative-periodogram domain after Bartlett-167 (sup |D|), CvM-168 (uniform L^2), AD-169 (tail-weighted L^2). DIFFERS from Bartlett by SUMMING both one-sided maxima rather than taking the larger -- a spectrum with both a notable LF excess AND a notable HF deficit drives kpV ~ 2*bD; a one-sided spectrum gives kpV ~ bD. Kuiper is also approximately CYCLIC-ROTATION-INVARIANT (Kuiper 1960's original motivation: tests on the circle), making it the canonical TWO-SIDED-EXCURSION white-noise statistic. Refs: Kuiper 1960 Proc. KNAW A 63:38-47; Stephens 1970 JRSS-B 32(1):115-122 Table 1; Press et al. NR3 sec. 14.3.4; Brockwell-Davis 1991 §10.2.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: kpPValue (default) | kpPValueDesc | kpVStar | kpVStarDesc | kpV | kpVDesc | tokens | tenure | source.',
+    'kpPValue',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'kpV',
+          'kpVDesc',
+          'kpVStar',
+          'kpVStarDesc',
+          'kpPValue',
+          'kpPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKuiperVCumulativePeriodogram(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenKuiperVCumulativePeriodogramSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenKuiperVCumulativePeriodogram(report) + '\n',
           );
         }
       } catch (e) {

@@ -20588,6 +20588,7 @@ import type { DailyTokenFisherGPeriodicityReport } from './dailytokenfishergperi
 import type { DailyTokenBartlettCumulativePeriodogramReport } from './dailytokenbartlettcumulativeperiodogram.js';
 import type { DailyTokenCramerVonMisesCumulativePeriodogramReport } from './dailytokencramervonmisescumulativeperiodogram.js';
 import type { DailyTokenAndersonDarlingCumulativePeriodogramReport } from './dailytokenandersondarlingcumulativeperiodogram.js';
+import type { DailyTokenKuiperVCumulativePeriodogramReport } from './dailytokenkuipervcumulativeperiodogram.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -26471,6 +26472,97 @@ export function renderDailyTokenMoodsMedianHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: mdChi2 approx 0 = halves balanced about pooled median; mdChi2 > 3.841 = significant location shift at alpha = 0.05 (chi-square(1) critical); equivalently |mdZ| > 1.96. Sign convention: positive mdZ = first half has more above-median values = first half RUNS LARGER = MEDIAN DROPPED across the tenure; negative mdZ = MEDIAN ROSE. The Mood test is INVARIANT under any monotone transform of the data and ROBUST to heavy-tailed contamination -- a single extreme spike that would dominate Mann-Whitney's rank sum is just one above-median count to Mood. Cross-check vs axis-115 Mann-Whitney halves: when the two disagree, Mann-Whitney is reflecting tail mass while Mood is anchored at the median.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKuiperVCumulativePeriodogram(
+  r: DailyTokenKuiperVCumulativePeriodogramReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-kuiper-v-cumulative-periodogram',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KUIPER V TEST on the cumulative periodogram of the gap-filled mean-centred daily total_tokens series. kpV = max_j (C[j] - j/K) + max_j (j/K - C[j]); kpVStar = (sqrt(K) + 0.155 + 0.24/sqrt(K)) * kpV; kpPValue = sum_{m>=1} 2(4 m^2 V*^2 - 1) exp(-2 m^2 V*^2). ONE-HUNDRED-AND-SEVENTY-SECOND cross-source axis. FOURTH member of the EDF family on the cumulative-periodogram domain after Bartlett-167 (sup |D|), CvM-168 (uniform L^2), AD-169 (tail-weighted L^2). DIFFERS from Bartlett by SUMMING both one-sided maxima rather than taking the larger -- a spectrum with both a notable LF excess AND a notable HF deficit drives kpV ~ 2*bD; a one-sided spectrum gives kpV ~ bD. Companion (kpJPlus, kpJMinus) bin-indices localise the largest positive and largest negative cumulative-spectrum excursions. Refs: Kuiper 1960 Proc. KNAW A 63:38-47; Stephens 1970 JRSS-B 32(1):115-122 Table 1; Press et al. NR3 sec. 14.3.4; Brockwell-Davis 1991 §10.2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KUIPER V CUMULATIVE PERIODOGRAM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'kpDPlus',
+    'kpDMinus',
+    'kpV',
+    'kpVStar',
+    'kpPValue',
+    'jPlus',
+    'jMinus',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.kpDPlus.toFixed(6),
+    s.kpDMinus.toFixed(6),
+    s.kpV.toFixed(6),
+    s.kpVStar.toFixed(6),
+    s.kpPValue.toExponential(4),
+    formatNumber(s.kpJPlus),
+    formatNumber(s.kpJMinus),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: kpVStar < 1.620 = white-noise-compatible at 10% (Stephens 1970 Table 1); kpVStar > 1.747 = REJECT at 5%; kpVStar > 2.001 = REJECT at 1%. ORTHOGONALITY vs axis-167 Bartlett: kpV always >= bD (Bartlett sup-norm); the ratio kpV/bD distinguishes ONE-SIDED-EXCURSION spectra (ratio ~1) from TWO-SIDED-EXCURSION spectra (ratio ~2). ORTHOGONALITY vs axes 168/169 CvM/AD: a single-bin spike drives kpV one-sided large but CvM/AD only modestly; sustained two-sided shape drives all three large but in different proportions.)`,
     ),
   );
 
