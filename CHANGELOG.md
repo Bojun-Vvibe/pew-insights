@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.458 — 2026-05-05
+
+### Added — axis-179 daily-token-mood-halves (squared-centered-ranks scale test)
+
+Per-source Mood (1954, *Annals of Mathematical Statistics*
+25(3):514-522, eq. 4) SQUARED-CENTERED-RANKS SCALE TEST
+for equality of dispersion between the first half
+(n1 = floor(n/2) days) vs second half (n2 = n - n1 days)
+of the gap-filled daily total_tokens series.
+
+ONE-HUNDRED-AND-SEVENTY-NINTH cross-source axis.
+
+Score function squares the CENTRED MID-RANK on the
+pooled raw-value series (no median fold — this is the
+core distinction from axis-178 Conover):
+
+```
+R_1..R_n = midranks( pool(A, B) )
+W        = sum_{j in B} ( R_j - (n+1)/2 )^2
+```
+
+Exact null moments (Mood 1954 Theorem 1):
+
+```
+E[W]   = n2 * (n^2 - 1) / 12
+Var[W] = n1 * n2 * (n + 1) * (n^2 - 4) / 180
+moodZ  = (W - E[W]) / sqrt(Var[W])  ~ N(0, 1)
+```
+
+Two-sided p-value `2 * (1 - Phi(|moodZ|))` using the
+Abramowitz-Stegun 1965 sec. 26.2.17 rational
+approximation. Sign convention: moodZ > 0 means the
+SECOND half is more dispersed (matches axis-117 stZ,
+axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ).
+
+Structural orthogonality vs the existing scale family:
+
+- vs axis-178 Conover (squared LINEAR ranks on
+  |X - median| within-half median fold). Mood squares
+  CENTRED ranks on RAW pooled values with NO median
+  fold and a U-shaped weight symmetric about the rank
+  midpoint (n+1)/2.
+- vs axis-170 Ansari-Bradley (folded LINEAR ranks;
+  triangular weight, ARE 6/(pi^2) ~ 0.608). Mood uses
+  parabolic weight ARE 15/(2 pi^2) ~ 0.760 — 25% more
+  efficient under normal scale alternatives.
+- vs axis-177 Klotz (squared NORMAL scores; exponential
+  rank-extremity amplification). Mood uses POLYNOMIAL
+  rank-extremity weight bounded by ((n-1)/2)^2 — more
+  robust to single outliers.
+- vs axis-117 Siegel-Tukey (interleaved outside-in
+  ranks). Mood ARE 0.760 beats ST 0.608 under normal
+  scale alternatives.
+
+Hard floor on min-tenure-days is 16 (n1 = n2 = 8) so
+the asymptotic normal reference holds nominal alpha
+(Mood 1954 sec. 5 Tab. 2: actual size 0.047-0.054
+across n1 = n2 in [8, 50]).
+
+### CLI
+
+```
+pew-insights daily-token-mood-halves [--since ISO] [--until ISO]
+  [--source NAME] [--min-tokens N] [--min-tenure-days N]
+  [--top N] [--sort KEY] [--json]
+```
+
+Sort keys: `moodZAbsDesc` (default), `moodZ`, `moodPValue`,
+`moodPValueDesc`, `tokens`, `tenure`, `source`.
+
+### Live-smoke output (`~/.config/pew/queue.jsonl`, 2026-05-04)
+
+```
+pew-insights daily-token-mood-halves
+sources: 6 (shown 4)    tokens: 6,079,347,396    sort: moodZAbsDesc
+dropped: 2 below min-tenure-days
+
+source       firstDay    lastDay     tenure  n1   n2   moodW         expW          moodZ     moodPValue   tokens
+<src-A>      2025-07-30  2026-04-20  265     132  133  416746.0000   778316.0000   -8.4711   2.4600e-17   1,885,727
+<src-B>      2026-02-11  2026-04-23  72      36   36   17855.0000    15549.0000     1.3975   1.6225e-1    3,442,385,788
+hermes       2026-04-17  2026-05-04  18      9    9    182.2500      242.2500      -1.1471   2.5135e-1    326,409,869
+openclaw     2026-04-17  2026-05-04  18      9    9    252.2500      242.2500       0.1912   8.4838e-1    2,308,666,012
+
+REJECT scale-equality at alpha=0.05: <src-A> (moodZ=-8.4711, p=2.46e-17,
+  FIRST half decisively more dispersed across 265-day tenure).
+no-reject: <src-B>, hermes, openclaw.
+```
+
+### Tests
+
+Test count grew by 28 (28 new tests for axis-179): primitives
+(midRanks, normal upper-tail), invariants (constant-shift,
+positive-scale, reverse negation when n1=n2 and no ties), exact
+closed-form null moments at n=20 (E[W]=332.5, Var[W]=4620),
+directional sign convention (second-more-dispersed => moodZ>0,
+first-more-dispersed => moodZ<0), and builder filters
+(empty queue, sufficient tenure, short-tenure drop, zero-variance
+drop, invalid sort, minTenureDays floor, source filter).
+
 ## 0.6.457 — 2026-05-05
 
 ### Added — axis-178 daily-token-conover-squared-ranks-halves (squared-ranks scale test)
