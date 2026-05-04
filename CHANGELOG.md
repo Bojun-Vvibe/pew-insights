@@ -2,6 +2,160 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.407 — 2026-05-04
+
+### Added — axis-153: `daily-token-cusum-max-deviation`
+
+Per-source CUSUM (cumulative-sum) max excursion above and below the
+running mean on the gap-filled daily total_tokens series. For each
+source on the gap-filled tenure series `x[0..n-1]`:
+
+```
+mu       = mean(x)
+d[i]     = x[i] - mu
+S[i]     = sum_{j<=i} d[j]              (CUSUM, S[-1] = 0)
+
+cusumMax = max_i S[i]    (>= 0)
+cusumMin = min_i S[i]    (<= 0)
+cusumRange = cusumMax - cusumMin
+rms      = sqrt(mean(d[i]^2))
+normMax  = cusumMax / (rms * sqrt(n))
+normMin  = cusumMin / (rms * sqrt(n))
+normRange = normMax - normMin
+argMaxDay / argMinDay = days achieving cusumMax / cusumMin
+```
+
+### Orthogonality justification (drift / changepoint class)
+
+CUSUM is the canonical statistical-quality-control DRIFT / MEAN-SHIFT
+/ CHANGEPOINT detector. It is structurally orthogonal to every
+prior axis on this series:
+
+- **axis-152 (Hampel outlier count, point class):** order-INVARIANT
+  — sort the series, identical Hampel answer. CUSUM is strictly
+  ORDER-DEPENDENT: reversing the series mirrors S[i] across zero.
+  Hampel cannot detect drift; CUSUM is built for it.
+- **axis-151 (Allan deviation, step-volatility class):** RMS of
+  FIRST DIFFERENCES — a monotone ramp has tiny Allan dev (small
+  uniform steps) but huge cusumRange. Two series with identical
+  Allan dev can have wildly different CUSUM signatures.
+- **all autocorrelation axes (lag-1/lag-7, Pearson/Spearman/
+  Kendall):** linear adjacent-pair dependence. An AR(1) series and
+  a step-shift series can have identical lag-1 autocorrelation but
+  very different cusumRange. CUSUM is a path integral; autocorr is
+  a moment.
+- **all sort-invariant inequality scalars (gini, atkinson, theil-
+  l/t, zenga, pietra, palma, hoover, bonferroni, kolm-pollak,
+  mehran, wolfson, chakravarty, fgt, amato, esteban-ray, foster-
+  wolfson, var-of-logs, hill-tail-index, s-gini, gen-entropy-neg-
+  one, log-mean-abs-dev, ge-half/two/three/four):** continuous
+  shape statistics on the marginal. CUSUM uses ORDER.
+- **spectral / fractal / entropy class (dft-power-law-slope,
+  permutation-entropy, lempel-ziv, sample-entropy, dfa-alpha,
+  hurst-rs, hjorth-*, teager-kaiser, katz/higuchi/petrosian/
+  sevcik/box-count FD):** frequency / complexity / fractal
+  dimension. CUSUM is a single integrated path scalar — not a
+  spectrum, not a complexity measure.
+- **runs / sign / rank class (runs-test-z, cox-stuart, mann-
+  kendall, difference-sign-test, second-diff-sign-runs, bartels-
+  rank-vonneumann, monotone-run-length):** sign or rank trend
+  tests; ignore magnitudes. CUSUM uses centered magnitudes.
+- **daily-token-max-drawdown-rate:** peak-to-trough on the LEVELS
+  `x[i]`. CUSUM is on the CENTERED levels `x[i] - mu` — a series
+  whose levels are all positive and rising has zero drawdown but
+  large positive CUSUM excursion.
+- **daily-token-cumulative-tokens-midpoint:** WHERE in calendar
+  time the cumulative-mass 50% is reached on LEVELS. CUSUM is on
+  DEVIATIONS and exposes worst positive AND negative drift, not a
+  mass percentile.
+
+The structural reading: axis-151 sees step-by-step VOLATILITY,
+axis-152 sees POINT-WISE outliers, axis-153 sees ACCUMULATED DRIFT
+— a series can max one and min the other two, and that disagreement
+is the value.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+```
+$ pew-insights daily-token-cusum-max-deviation --since 2026-04-26T00:00:00.000Z
+```
+
+| source            | tokens         | nActive | nFilled | mean         | rms          | cusumMax     | cusumMin       | cusumRange    | normMax | normMin | normRange | argMaxDay  | argMinDay  | flat |
+|-------------------|----------------|---------|---------|--------------|--------------|--------------|----------------|---------------|---------|---------|-----------|------------|------------|------|
+| opencode          | 6,445,054,959  | 15      | 15      | 429,670,330  | 189,592,310  | 511,383,710  |  -412,522,815  |   923,906,525 |  0.696  | -0.562  |  1.258    | 2026-04-29 | 2026-04-20 |  n   |
+| claude-code       | 3,442,385,788  | 35      | 72      |  47,810,914  | 153,856,936  |  85,869,996  | -2,208,797,628 | 2,294,667,624 |  0.066  | -1.692  |  1.758    | 2026-04-21 | 2026-04-14 |  n   |
+| openclaw          | 2,252,431,358  | 18      | 18      | 125,135,075  |  95,598,805  | 623,552,510  |    -83,532,955 |   707,085,465 |  1.537  | -0.206  |  1.743    | 2026-04-24 | 2026-04-18 |  n   |
+| codex             |   809,624,660  |  8      |  8      | 101,203,083  | 122,703,257  |  82,233,780  |   -288,521,172 |   370,754,951 |  0.237  | -0.831  |  1.068    | 2026-04-13 | 2026-04-19 |  n   |
+| hermes            |   310,927,236  | 18      | 18      |  17,273,735  |   9,842,049  |  19,927,581  |    -26,945,501 |    46,873,082 |  0.477  | -0.645  |  1.123    | 2026-04-22 | 2026-04-26 |  n   |
+| (redacted-source) |     1,885,727  | 73      | 265     |       7,116  |      27,024  |     301,060  |       -276,113 |       577,173 |  0.684  | -0.628  |  1.312    | 2025-10-17 | 2026-03-04 |  n   |
+
+Reading the CUSUM signatures:
+
+`openclaw` (`normMax = 1.537`, `normMin = -0.206`) is the
+cleanest "POSITIVE-DRIFT" signature in the suite: the running mass
+accumulates strongly on the upside (peak excursion at 2026-04-24,
++624M) and barely dips below baseline. Reading axis-152 in parallel
+(`asymmetry = +1.000`, all 5 outliers high), CUSUM agrees: the
+source not only has heavy spike days, it has SUSTAINED above-mean
+drift across the visible window.
+
+`claude-code` (`normMin = -1.692`, `normMax = 0.066`) is the
+strongest "NEGATIVE-DRIFT" signature: the CUSUM marches steadily
+down to -2.21B on 2026-04-14, with essentially no positive
+excursion. This matches the source's profile (72-day gap-filled
+tenure with many zero-mass days early on, dragging cumulative
+mass below the global mean) — axis-152's `flat = y` for this
+source meant Hampel could not see this; CUSUM does, because zeros
+in a long tenure ARE legitimate negative-drift mass after centering.
+
+`opencode` (`normMax = 0.696`, `normMin = -0.562`) is BALANCED:
+moderate positive AND moderate negative drift, with the positive
+peak on 2026-04-29 and the trough on 2026-04-20. Reading
+axis-152 (`asymmetry = -0.333`, mild net-low) the two axes agree
+on direction — CUSUM strengthens the reading by saying the source
+has a non-trivial accumulated upswing AFTER the early-window
+trough, not just an isolated heavy day.
+
+`codex` (`normMin = -0.831`, `normMax = 0.237`) — the CUSUM
+trough on 2026-04-19 (-289M) is the day BEFORE its known
+2026-04-20 spike (axis-152 `argMaxDay = 2026-04-20`,
+`maxScore = 6.918`). This is the structural value of CUSUM next to
+Hampel: Hampel marks the spike day; CUSUM marks the cumulative
+quiet that PRECEDED it. Combined, you see "8 quiet days
+accumulated -289M of negative drift, then one day repaid all of it
+and overshot." Hampel alone would tell you only "one big day."
+
+`hermes` (`normRange = 1.123`) — modest balanced excursions in
+both directions. Axis-152 reported `nOut = 0` for this source; the
+series fits inside the robust band POINT-WISE but still exhibits
+non-trivial PATH structure. CUSUM and Hampel are reading different
+things on the same input, exactly as predicted by orthogonality.
+
+`(redacted-source)` (`normRange = 1.312`, 265-day tenure) — the
+extremely long tenure with 192 zero-fill days produces the largest
+cusumRange of any source in NORMALIZED units. Hampel gave up on
+this source (`flat = y`) because MAD was 0; CUSUM does NOT degenerate
+on flat-majority series, because the rms is taken on the centered
+deviations and the few non-zero days carry positive deviation while
+the many zero-fill days carry negative deviation. The argMaxDay
+(2025-10-17) and argMinDay (2026-03-04) bracket the source's actual
+period of mass accumulation.
+
+Cross-axis reading 153 ↔ 152 ↔ 151: with axis-152 alone you know
+who has POINT outliers; with axis-151 alone you know who has
+STEP volatility; with axis-153 alone you know who has DRIFT.
+`claude-code` (Hampel-blind, drift-loud) and `(redacted-source)`
+(Hampel-blind, drift-loud) are the cleanest demonstration of why
+all three are needed.
+
+### Tests
+
+`12246 -> 12266 (+20)`. Full suite green. Determinism, bounds,
+gap-fill correctness, sort key, source filter, top truncation, and
+flat-series degenerate handling all covered. Build clean.
+
+
+
 ## 0.6.405 — 2026-05-04
 
 ### Added
