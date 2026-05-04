@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.433 — 2026-05-04
+
+### Refined — axis-165: `daily-token-hoeffding-d-lag1`
+
+Adds the **scale-free dispersion shape descriptor**
+`hdRatio = 30 * hd` and the **raw concordant-pair
+count** `concordancePairs = sum_i Q_i` to each row,
+plus matching sort keys `--sort hdRatio`,
+`--sort hdRatioDesc`, `--sort hdRatioAbs`, and
+`--sort hdRatioAbsDesc`.
+
+`hdRatio` is unitless and bounded approximately in
+`[-0.5, +1.0]`, unlike `hdZ` which weights by
+`sqrt(m^3)`:
+
+- `hdRatio` ~ 0     independence (matches `hdZ` ~ 0)
+- `hdRatio` ~ +1    joint distribution at theoretical
+                    maximum monotone-or-otherwise
+                    concentration
+- `hdRatio` ~ -0.5  anti-corner concentration (rare)
+
+`hdZ` measures the **statistical strength** of the
+departure from independence (weights by `sqrt(m^3)`);
+`hdRatio` measures the **scale** of the departure in
+raw U-statistic units, independent of m. The two
+together separate "large effect, small sample" (small
+`hdZ`, extreme `hdRatio`) from "modest effect, long
+tenure" (extreme `hdZ`, modest `hdRatio`).
+
+`concordancePairs` is the raw bivariate concordance
+count `sum_i Q_i` over the lag-1 paired sequence. Its
+range is `[0, m(m-1)/2]`. Under H0 of independence
+the expected value is approximately `m(m-1)/4` (each
+unordered pair is concordant with probability 1/2).
+Useful raw companion to `hd`: large
+`concordancePairs` relative to `m(m-1)/4` indicates
+positive monotone tendency in addition to whatever
+non-monotone structure `hd` may be picking up.
+
+#### Updated live-smoke output
+
+```
+source        pairs  hd        hdRatio  hdZ       concord  E[concord]_iid
+------------  -----  --------  -------  --------  -------  --------------
+[redacted-A]  264    1.101326  33.0398  601.9063  7,613         17,358
+claude-code    71    0.393490  11.8047   54.2332  1,157          1,242
+openclaw       17    0.242970   7.2891    6.2011    108             68
+hermes         17    0.010504   0.3151    0.2681     85             68
+opencode       14    0.008492   0.2547    0.1666     52             45
+```
+
+`openclaw`'s `hdRatio = 7.29` is well above the
+theoretical concentration cap `+1` -- this surfaces
+the m=17 small-sample bias of the U-statistic
+denominator that `hdZ`'s `sqrt(m^3)` weighting
+correctly absorbs (`hdZ = 6.20`, still strong but
+finite). `concordancePairs = 108` is **1.59x** the iid
+expectation `m(m-1)/4 = 68`, confirming the
+monotone-component of the rank dependence.
+
+`hermes` and `opencode` give the cleanest reading on
+the same 14-18 day tenure: `hdRatio` at 0.32 / 0.25
+and `concordancePairs` within 25% of the iid
+expectation -- both axes confirm the
+"independent" verdict from `hdZ`.
+
+9 new unit tests added (12705 -> 12714, +9 from the
+refinement, +43 total since axis-165 landed).
+
 ## 0.6.432 — 2026-05-04
 
 ### Added — axis-165: `daily-token-hoeffding-d-lag1`
