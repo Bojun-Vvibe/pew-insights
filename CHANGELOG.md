@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.435 — 2026-05-04
+
+### Added — axis-167: `daily-token-bartlett-cumulative-periodogram`
+
+ONE-HUNDRED-AND-SIXTY-SEVENTH cross-source axis. The
+classical **Bartlett (1955) cumulative-periodogram
+Kolmogorov-Smirnov test** for white-noise on the
+gap-filled mean-centred daily total_tokens series.
+
+For the one-sided non-DC periodogram `P[k]`,
+`k = 1..K` with `K = floor(n/2)` and `K >= 4`, the
+NORMALISED CUMULATIVE PERIODOGRAM is
+
+```
+C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]),
+       j = 1..K
+```
+
+and the Bartlett statistic is the sup-norm Kolmogorov
+deviation from the white-noise reference line `j/K`:
+
+```
+bD     = max_{j=1..K-1} | C[j] - j/K |   in [0, 1)
+bLambda = sqrt(K - 1) * bD
+bPValue = Q_KS(bLambda)
+        = 2 * sum_{j=1..} (-1)^{j-1} exp(-2 j^2 lambda^2)
+```
+
+Where Fisher's g (axis-166) tests for ONE dominant
+bin and is bin-permutation-INVARIANT, Bartlett's test
+asks whether the SHAPE of the spectral CDF deviates
+from uniform anywhere — and is bin-permutation-
+SENSITIVE. That is the cleanest possible structural
+orthogonality vs axis-166: the same periodogram, two
+disjoint families of departures. A spectrum with two
+equal peaks (g modest) can still produce a sharp
+cumulative jump that Bartlett picks up; a red-noise
+shoulder (g modest because no single bin dominates)
+also rejects strongly under Bartlett.
+
+Companions: `bSignedDevPositive` (low-frequency
+mass overshoot), `bSignedDevNegative` (high-frequency
+mass overshoot), `bArgMaxBin` (frequency at peak
+discrepancy).
+
+References: Bartlett 1955 ch.9; Brockwell & Davis
+1991 §10.2; Priestley 1981 §6.1.4.
+
+#### Live-smoke (against ~/.config/pew/queue.jsonl)
+
+```
+$ pew-insights daily-token-bartlett-cumulative-periodogram --top 5 --sort bPValue
+sources: 6 (shown 2)    tokens: 3,444,271,515
+dropped: 4 below min-tenure-days
+
+source       firstDay    lastDay     tenure  bins  bD        bLambda  bPValue
+claude-code  2026-02-11  2026-04-23  72      36    0.313102  1.8523   2.0930e-3
+```
+
+The `claude-code` source rejects the white-noise
+null at the 1% level (bPValue ~ 2.1e-3, bLambda ~
+1.85 well above the 1.358 5%-critical Kolmogorov
+value), with a positive cumulative-deviation peak at
+bin 8 (low-frequency mass overshoot — consistent
+with longer-than-noise spectral concentration). The
+companion `bSignedDevNegative = 0` confirms the
+deviation is one-sided low-frequency.
+
 ## 0.6.434 — 2026-05-04
 
 ### Added — axis-166: `daily-token-fisher-g-periodicity`
