@@ -681,3 +681,215 @@ export function buildDailyTokenWatsonU2CumulativePeriodogram(
     sources: kept,
   };
 }
+
+/**
+ * Corpus-level aggregator for axis-173 per-source results.
+ * Produces a single corpus-level summary that captures both
+ * the COMBINED SIGNIFICANCE (Fisher 1932) and the CORPUS-
+ * WIDE MEAN-DEVIATION-SHARE -- the orthogonality witness
+ * unique to Watson U^2.
+ *
+ * Outputs:
+ *
+ *   tenureWeightedWU2Star -- weighted average of `wU2Star`
+ *     across rows with weights `nTenureDays - 1` (matches
+ *     the effective-K weighting of the per-source statistic).
+ *
+ *   fisherCombinedPValue -- Fisher (1932) combined p-value:
+ *
+ *       chi2 = -2 * sum_i log(wU2PValue_i)
+ *       fisherCombinedPValue = P(Chi2_{2m} > chi2)
+ *
+ *     for m = number of valid rows. Computed via the chi-
+ *     squared upper-tail routine factored out of axis-169 /
+ *     axis-171 / axis-172. Returns 1 when m = 0.
+ *
+ *   meanDeviationShare -- corpus-level fraction of CvM-168
+ *     L^2 mass that the mean-centring removes:
+ *
+ *         meanDeviationShare
+ *           = sum_i (eBar_i^2)
+ *             / (sum_i (wU2_i + eBar_i^2))     in [0, 1]
+ *
+ *     This is the corpus-wide answer to:
+ *
+ *         share near 0  -> per-source deviation profiles
+ *                          have ZERO MEAN already (CvM and
+ *                          Watson U^2 agree at the corpus
+ *                          level -- Watson adds nothing
+ *                          orthogonal beyond CvM here);
+ *         share near 1  -> per-source deviation profiles
+ *                          are dominated by a CONSTANT
+ *                          OFFSET (CvM measures the offset
+ *                          and almost nothing else; Watson
+ *                          U^2 strips it out entirely --
+ *                          the regime where this axis adds
+ *                          the most over CvM-168).
+ *
+ *     This is THE STRUCTURAL-ORTHOGONALITY WITNESS against
+ *     axis-168 in production data.
+ *
+ *   sumWU2 / sumEBarSquared -- raw sums used by the share.
+ *
+ *   rowsUsed / rowsSkipped -- defensive book-keeping.
+ *
+ * Malformed rows (non-finite `wU2Star` / `wU2PValue` /
+ * `eBar`, non-integer / < 2 nTenureDays, wU2 < 0) are
+ * SKIPPED with a counter rather than throwing.
+ */
+export interface WatsonU2CumulativePeriodogramCorpusAggregate {
+  tenureWeightedWU2Star: number;
+  fisherCombinedPValue: number;
+  sumWU2: number;
+  sumEBarSquared: number;
+  meanDeviationShare: number;
+  totalTenureWeight: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateWatsonU2CumulativePeriodogram(
+  rows: ReadonlyArray<{
+    nTenureDays: number;
+    wU2: number;
+    wU2Star: number;
+    wU2PValue: number;
+    eBar: number;
+  }>,
+): WatsonU2CumulativePeriodogramCorpusAggregate {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  let chi2 = 0;
+  let sumWU2 = 0;
+  let sumEBarSquared = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.wU2) ||
+      !Number.isFinite(r.wU2Star) ||
+      !Number.isFinite(r.wU2PValue) ||
+      !Number.isFinite(r.eBar) ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays < 2 ||
+      !(r.wU2 >= 0)
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const w = r.nTenureDays - 1;
+    weightedSum += w * r.wU2Star;
+    totalWeight += w;
+    const pClamped = Math.max(1e-300, Math.min(1, r.wU2PValue));
+    chi2 += -2 * Math.log(pClamped);
+    sumWU2 += r.wU2;
+    sumEBarSquared += r.eBar * r.eBar;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      tenureWeightedWU2Star: 0,
+      fisherCombinedPValue: 1,
+      sumWU2: 0,
+      sumEBarSquared: 0,
+      meanDeviationShare: 0,
+      totalTenureWeight: 0,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const tenureWeightedWU2Star = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  const dof = 2 * used;
+  const fisherCombinedPValue = chiSquaredUpperTailLocalWatson(chi2, dof);
+  const totalCvmEquivalent = sumWU2 + sumEBarSquared;
+  const meanDeviationShare =
+    totalCvmEquivalent > 0 ? sumEBarSquared / totalCvmEquivalent : 0;
+  return {
+    tenureWeightedWU2Star,
+    fisherCombinedPValue,
+    sumWU2,
+    sumEBarSquared,
+    meanDeviationShare,
+    totalTenureWeight: totalWeight,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Local chi-squared upper-tail `P(Chi^2_k > x)` via the
+ * regularised upper incomplete gamma function (Numerical
+ * Recipes 6.2). Self-contained -- no cross-axis import.
+ * Same algorithm as axes 169 / 171 / 172.
+ */
+export function chiSquaredUpperTailLocalWatson(
+  x: number,
+  k: number,
+): number {
+  if (!Number.isFinite(x)) {
+    throw new Error(`chiSquaredUpperTailLocalWatson: non-finite x (${x})`);
+  }
+  if (!Number.isFinite(k) || k <= 0) {
+    throw new Error(
+      `chiSquaredUpperTailLocalWatson: invalid dof k (${k}; need k > 0)`,
+    );
+  }
+  if (x <= 0) return 1;
+  const s = k / 2;
+  const xHalf = x / 2;
+  if (xHalf < s + 1) {
+    return 1 - lowerIncompleteGammaSeriesLocalWatson(s, xHalf);
+  }
+  return upperIncompleteGammaCFLocalWatson(s, xHalf);
+}
+
+function lowerIncompleteGammaSeriesLocalWatson(s: number, x: number): number {
+  let term = 1 / s;
+  let sum = term;
+  for (let n = 1; n < 1000; n += 1) {
+    term *= x / (s + n);
+    sum += term;
+    if (Math.abs(term) < Math.abs(sum) * 1e-15) break;
+  }
+  return sum * Math.exp(-x + s * Math.log(x) - logGammaLocalWatson(s));
+}
+
+function upperIncompleteGammaCFLocalWatson(s: number, x: number): number {
+  const FPMIN = 1e-300;
+  let b = x + 1 - s;
+  let c = 1 / FPMIN;
+  let d = 1 / b;
+  let h = d;
+  for (let i = 1; i < 1000; i += 1) {
+    const an = -i * (i - s);
+    b += 2;
+    d = an * d + b;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = b + an / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const delta = d * c;
+    h *= delta;
+    if (Math.abs(delta - 1) < 1e-15) break;
+  }
+  return h * Math.exp(-x + s * Math.log(x) - logGammaLocalWatson(s));
+}
+
+function logGammaLocalWatson(z: number): number {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+  ];
+  if (z < 0.5) {
+    return (
+      Math.log(Math.PI / Math.sin(Math.PI * z)) - logGammaLocalWatson(1 - z)
+    );
+  }
+  z -= 1;
+  let a = c[0]!;
+  const t = z + g + 0.5;
+  for (let i = 1; i < g + 2; i += 1) a += c[i]! / (z + i);
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(a);
+}

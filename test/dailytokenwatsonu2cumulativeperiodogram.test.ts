@@ -5,6 +5,8 @@ import {
   watsonU2CumulativePeriodogramStatistic,
   dailyTokenWatsonU2CumulativePeriodogram,
   buildDailyTokenWatsonU2CumulativePeriodogram,
+  aggregateWatsonU2CumulativePeriodogram,
+  chiSquaredUpperTailLocalWatson,
 } from '../src/dailytokenwatsonu2cumulativeperiodogram.js';
 import { cramerVonMisesCumulativePeriodogramStatistic } from '../src/dailytokencramervonmisescumulativeperiodogram.js';
 import type { QueueLine } from '../src/types.js';
@@ -393,4 +395,126 @@ test('buildDailyTokenWatsonU2CumulativePeriodogram: sort by wU2Star desc', () =>
   for (let i = 1; i < r.sources.length; i += 1) {
     assert.ok(r.sources[i - 1]!.wU2Star >= r.sources[i]!.wU2Star);
   }
+});
+
+// ---------- aggregateWatsonU2CumulativePeriodogram ----------
+
+test('aggregateWatsonU2CumulativePeriodogram: empty input', () => {
+  const a = aggregateWatsonU2CumulativePeriodogram([]);
+  assert.equal(a.rowsUsed, 0);
+  assert.equal(a.fisherCombinedPValue, 1);
+  assert.equal(a.meanDeviationShare, 0);
+});
+
+test('aggregateWatsonU2CumulativePeriodogram: malformed rows skipped', () => {
+  const a = aggregateWatsonU2CumulativePeriodogram([
+    { nTenureDays: 1, wU2: 0.01, wU2Star: 0.01, wU2PValue: 0.5, eBar: 0.1 },
+    { nTenureDays: 32, wU2: NaN, wU2Star: 0.01, wU2PValue: 0.5, eBar: 0.1 },
+    { nTenureDays: 32, wU2: 0.01, wU2Star: NaN, wU2PValue: 0.5, eBar: 0.1 },
+    { nTenureDays: 32, wU2: 0.01, wU2Star: 0.01, wU2PValue: NaN, eBar: 0.1 },
+    { nTenureDays: 32, wU2: 0.01, wU2Star: 0.01, wU2PValue: 0.5, eBar: NaN },
+    { nTenureDays: 32, wU2: -0.01, wU2Star: 0.01, wU2PValue: 0.5, eBar: 0.1 },
+  ]);
+  assert.equal(a.rowsUsed, 0);
+  assert.equal(a.rowsSkipped, 6);
+});
+
+test('aggregateWatsonU2CumulativePeriodogram: single valid row', () => {
+  const a = aggregateWatsonU2CumulativePeriodogram([
+    { nTenureDays: 32, wU2: 0.05, wU2Star: 0.04, wU2PValue: 0.3, eBar: 0.1 },
+  ]);
+  assert.equal(a.rowsUsed, 1);
+  assert.equal(a.totalTenureWeight, 31);
+  assert.ok(Math.abs(a.tenureWeightedWU2Star - 0.04) < 1e-12);
+  assert.ok(Math.abs(a.sumWU2 - 0.05) < 1e-12);
+  assert.ok(Math.abs(a.sumEBarSquared - 0.01) < 1e-12);
+  // share = 0.01 / (0.05 + 0.01) = 1/6
+  assert.ok(Math.abs(a.meanDeviationShare - 1 / 6) < 1e-9);
+  // fisher: chi2 = -2 ln(0.3) ~ 2.408, dof=2, p = exp(-chi2/2) = 0.3
+  assert.ok(Math.abs(a.fisherCombinedPValue - 0.3) < 1e-6);
+});
+
+test('aggregateWatsonU2CumulativePeriodogram: zero-mean deviations -> share = 0', () => {
+  // All eBar = 0 -> meanDeviationShare = 0 (the regime where Watson U^2
+  // adds nothing orthogonal to CvM-168).
+  const a = aggregateWatsonU2CumulativePeriodogram([
+    { nTenureDays: 32, wU2: 0.05, wU2Star: 0.04, wU2PValue: 0.3, eBar: 0 },
+    { nTenureDays: 64, wU2: 0.03, wU2Star: 0.025, wU2PValue: 0.5, eBar: 0 },
+  ]);
+  assert.equal(a.rowsUsed, 2);
+  assert.equal(a.meanDeviationShare, 0);
+  assert.equal(a.sumEBarSquared, 0);
+});
+
+test('aggregateWatsonU2CumulativePeriodogram: constant-offset dominated -> share -> 1', () => {
+  // wU2 tiny, eBar large -> share -> 1 (the regime where Watson U^2
+  // adds the most orthogonal signal over CvM-168 -- CvM measures
+  // mostly the constant offset and Watson strips it out).
+  const a = aggregateWatsonU2CumulativePeriodogram([
+    { nTenureDays: 32, wU2: 1e-6, wU2Star: 1e-6, wU2PValue: 0.99, eBar: 0.5 },
+    { nTenureDays: 64, wU2: 1e-6, wU2Star: 1e-6, wU2PValue: 0.99, eBar: 0.6 },
+  ]);
+  // share = (0.25 + 0.36) / (2e-6 + 0.61) ~ 0.61 / 0.61 ~ 1
+  assert.ok(a.meanDeviationShare > 0.999, `share=${a.meanDeviationShare}`);
+});
+
+test('aggregateWatsonU2CumulativePeriodogram: tenure-weighting honoured', () => {
+  // Long-tenure source's wU2Star dominates the weighted mean.
+  const a = aggregateWatsonU2CumulativePeriodogram([
+    { nTenureDays: 1000, wU2: 0.20, wU2Star: 0.20, wU2PValue: 0.001, eBar: 0.1 },
+    { nTenureDays: 4, wU2: 0.001, wU2Star: 0.001, wU2PValue: 0.99, eBar: 0.01 },
+  ]);
+  // weighted mean = (999 * 0.20 + 3 * 0.001) / 1002 ~ 0.1995
+  assert.ok(
+    Math.abs(a.tenureWeightedWU2Star - 0.1995) < 1e-3,
+    `tenureWeighted=${a.tenureWeightedWU2Star}`,
+  );
+});
+
+test('aggregateWatsonU2CumulativePeriodogram: Fisher combined-p across many rows', () => {
+  // Many rows with moderate p -> combined-p should be small.
+  const rows = [];
+  for (let i = 0; i < 10; i += 1) {
+    rows.push({
+      nTenureDays: 64,
+      wU2: 0.05,
+      wU2Star: 0.04,
+      wU2PValue: 0.1,
+      eBar: 0.05,
+    });
+  }
+  const a = aggregateWatsonU2CumulativePeriodogram(rows);
+  // chi2 = -2 * 10 * ln(0.1) = 46.05, dof = 20.
+  // chi2_{20} 95% critical = 31.41 -> p < 0.05.
+  assert.ok(a.fisherCombinedPValue < 0.05, `p=${a.fisherCombinedPValue}`);
+});
+
+// ---------- chiSquaredUpperTailLocalWatson ----------
+
+test('chiSquaredUpperTailLocalWatson: published anchors', () => {
+  // P(Chi^2_2 > 5.991) = 0.05  (5% critical)
+  assert.ok(
+    Math.abs(chiSquaredUpperTailLocalWatson(5.991, 2) - 0.05) < 1e-3,
+    `p=${chiSquaredUpperTailLocalWatson(5.991, 2)}`,
+  );
+  // P(Chi^2_4 > 9.488) = 0.05
+  assert.ok(
+    Math.abs(chiSquaredUpperTailLocalWatson(9.488, 4) - 0.05) < 1e-3,
+  );
+  // P(Chi^2_10 > 18.307) = 0.05
+  assert.ok(
+    Math.abs(chiSquaredUpperTailLocalWatson(18.307, 10) - 0.05) < 1e-3,
+  );
+});
+
+test('chiSquaredUpperTailLocalWatson: boundary behaviour', () => {
+  assert.equal(chiSquaredUpperTailLocalWatson(0, 4), 1);
+  assert.equal(chiSquaredUpperTailLocalWatson(-1, 4), 1);
+  assert.ok(chiSquaredUpperTailLocalWatson(200, 4) < 1e-30);
+});
+
+test('chiSquaredUpperTailLocalWatson: throws on invalid input', () => {
+  assert.throws(() => chiSquaredUpperTailLocalWatson(NaN, 2), /non-finite/);
+  assert.throws(() => chiSquaredUpperTailLocalWatson(1, 0), /invalid dof/);
+  assert.throws(() => chiSquaredUpperTailLocalWatson(1, -1), /invalid dof/);
 });

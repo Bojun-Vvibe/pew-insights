@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.448 — 2026-05-04
+
+### Refined — axis-173 corpus-level aggregator + chi-squared upper-tail helper
+
+New public helper exposed from the axis-173 module:
+**`aggregateWatsonU2CumulativePeriodogram(rows)`** —
+combines per-source Watson U^2 results into a single
+corpus-level summary via Fisher's (1932) combined p-value
+AND a corpus-level **mean-deviation-share**:
+
+```
+chi2 = -2 * sum_i log(wU2PValue_i)
+fisherCombinedPValue = P(Chi^2_{2m} > chi2)
+
+meanDeviationShare
+  = sum_i (eBar_i^2)
+    / (sum_i (wU2_i + eBar_i^2))            in [0, 1]
+```
+
+#### Why a Watson-specific aggregator (not just Fisher)
+
+Axes 169 / 171 / 172 all ship Fisher-style aggregators.
+The NEW signal at this axis is the **mean-deviation-
+share**: a corpus-wide quantification of what fraction of
+the equivalent CvM-168 L^2 mass is the constant-offset
+component that Watson U^2 explicitly removes.
+
+- share near 0 → per-source deviation profiles have zero
+  mean already; CvM and Watson U^2 agree at the corpus
+  level (Watson adds nothing orthogonal beyond CvM here);
+- share near 1 → per-source deviation profiles are
+  dominated by a constant offset; CvM measures the offset
+  and almost nothing else, while Watson U^2 strips it out
+  entirely (the regime where this axis is structurally
+  most distinct from CvM-168).
+
+This is the operationally-meaningful structural-
+orthogonality witness against axis-168; the Fisher
+combined-p alone cannot tell us which regime we're in.
+
+Also exposes **`chiSquaredUpperTailLocalWatson(x, k)`** —
+the chi-squared upper-tail routine factored out of axes
+169 / 171 / 172 (Numerical Recipes 6.2: Lentz continued
+fraction for `x > s+1`, power series for `x <= s+1`,
+Lanczos log-Gamma). Self-contained inside the axis-173
+module so that downstream consumers don't have to take a
+cross-axis import.
+
+#### Tests
+
+Test suite grew by **+10** tests (12998 → 13008). Coverage:
+
+- empty input returns rowsUsed=0, fisher=1, share=0;
+- malformed rows skipped with counter (n<2, NaN wU2 /
+  wU2Star / wU2PValue / eBar, negative wU2);
+- single-row exact-arithmetic anchor (share = 1/6, fisher
+  combined-p ≡ original p when m = 1);
+- zero-mean deviations → share = 0 exactly,
+  sumEBarSquared = 0 exactly;
+- constant-offset-dominated rows → share > 0.999;
+- tenure-weighting honoured (a 1000-day source dominates
+  a 4-day source);
+- Fisher combined-p across 10 rows of moderate p drops
+  below 5%;
+- `chiSquaredUpperTailLocalWatson` published anchors:
+  P(Chi^2_2 > 5.991) = 0.05, P(Chi^2_4 > 9.488) = 0.05,
+  P(Chi^2_10 > 18.307) = 0.05; boundary behaviour
+  (x ≤ 0 → 1, x large → ~0); throws on NaN / dof ≤ 0.
+
 ## 0.6.447 — 2026-05-04
 
 ### Added — axis-173 daily-token-watson-u2-cumulative-periodogram
