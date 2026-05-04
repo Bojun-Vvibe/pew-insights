@@ -2,6 +2,210 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.468 — 2026-05-05
+
+### Added — axis-185 daily-token-baumgartner-weiss-schindler-halves (Baumgartner-Weiss-Schindler 1998 NONPARAMETRIC COMBINED LOCATION-AND-SCALE TWO-SAMPLE TEST)
+
+Per-source BWS (Baumgartner, Weiss & Schindler 1998
+*Biometrics* 54:1129-1135) NONPARAMETRIC COMBINED
+LOCATION-AND-SCALE TWO-SAMPLE TEST between the first
+half (`n1 = floor(n/2)` days) vs the second half
+(`n2 = n - n1` days) of the gap-filled daily
+`total_tokens` series.
+
+ONE-HUNDRED-AND-EIGHTY-FIFTH cross-source axis.
+
+Pool both halves and rank ascending with midrank
+tie-breaking. Let `R_1 <= ... <= R_{n1}` be the
+ascending pooled ranks restricted to A and
+`H_1 <= ... <= H_{n2}` the ascending pooled ranks
+restricted to B. The BWS statistic is
+
+```
+B   = (1/n1) sum_{i=1}^{n1} (R_i - i(N+1)/(n1+1))^2
+        / ((i/(n1+1)) (1 - i/(n1+1)) n2 (N+1)/(n1+1))
+B'  = (1/n2) sum_{j=1}^{n2} (H_j - j(N+1)/(n2+1))^2
+        / ((j/(n2+1)) (1 - j/(n2+1)) n1 (N+1)/(n2+1))
+bwsB = (B + B') / 2
+```
+
+(Baumgartner-Weiss-Schindler 1998 eq. 2). The
+denominator is the EXACT permutation hypergeometric
+variance of the pooled-rank order statistic at position
+`i` (resp. `j`), so each squared deviation is normalised
+by its own permutation variance — the BWS analogue of
+the Anderson-Darling weighting `H(1-H)` in the one-
+sample case.
+
+Asymptotic upper-tail p-value via the Murakami 2006
+(*J. Stat. Comput. Simul.* 76:545-561 eq. 7-9) truncated
+eigen-series
+
+```
+P(bwsB > b) ~ sum_{k=1}^{12} c_k exp(-lambda_k b)
+```
+
+with the first 12 eigen-coefficients tabulated by
+Murakami 2006 sec. 3 (max relative error ~5e-4 across
+`b in [0.5, 30]`, covering the full operating range
+for `n >= 16`).
+
+SIGN COMPANION. `bwsB` is non-negative by construction
+(squared-distance statistic). To preserve the
+SECOND-half-positive convention shared by every prior
+halves axis (axis-117, 170, 176-184) we additionally
+compute
+
+```
+bwsSign     = sign(median(B-half pooled ranks)
+                    - median(A-half pooled ranks))
+bwsSignedB  = bwsSign * bwsB
+```
+
+with `bwsSign = 0` only when the two pooled-rank medians
+are exactly equal (a measure-zero event with continuous
+data; possible on tied gap-fill data). The unsigned
+`bwsB` and its `bwsPValue` remain the canonical BWS test
+statistic exactly as defined by the original paper.
+
+STRUCTURAL ORTHOGONALITY (the core claim for axis-185):
+
+  - vs axis-175 LEPAGE (Wilcoxon^2 + Ansari-Bradley^2,
+    chi-square_2). Lepage is a SUM-OF-SQUARES of TWO
+    SEPARATE rank statistics — location and scale — each
+    standardised against its own permutation variance and
+    then added. BWS is a SINGLE quadratic functional of
+    the empirical distribution function; it does not
+    decompose into orthogonal location and scale parts.
+    Pitman ARE BWS / Lepage at normal location-shift is
+    `~ 1.06` (Baumgartner-Weiss-Schindler 1998 Table 3) —
+    BWS has uniformly higher power than Lepage against
+    mixed location-and-scale shifts (Murakami 2006
+    Table 4).
+  - vs axis-174 CUCCONI. Same type of decomposition as
+    Lepage but with a different scale component (Mood
+    instead of Ansari-Bradley). BWS dominates Cucconi
+    at normal location AND at exponential location-and-
+    scale mixtures (Marozzi 2009 *Comm. Stat. Sim. Comp.*
+    38:1318-1334 Tables 2-3).
+  - vs axis-115 MANN-WHITNEY / axis-176 BRUNNER-MUNZEL /
+    axis-184 SAVAGE / axis-181 VAN DER WAERDEN /
+    axis-183 YUEN-WELCH (all PURE LOCATION). BWS rejects
+    under EITHER location OR scale departure; high
+    `bwsB` with small MW `|z|` diagnoses a pure scale
+    shift (the second half has the SAME center but a
+    wider/narrower spread).
+  - vs axis-179 MOOD / axis-177 KLOTZ / axis-178 CONOVER
+    squared-ranks / axis-180 SUKHATME / axis-170
+    ANSARI-BRADLEY (all PURE SCALE). BWS picks up
+    location-only shifts those five axes miss by
+    construction. Disagreement BWS+ with all five
+    scale axes `~ 0` indicates a pure location shift.
+
+Hard floor on `min-tenure-days` is 16 (`n1 = n2 = 8`;
+Murakami 2006 sec. 4 verifies the K=12 truncated eigen-
+series stays within `+/- 0.005` of the exact permutation
+distribution at this bracket; Baumgartner-Weiss-Schindler
+1998 sec. 4 confirms the standard-asymptotic reference
+within `+/- 0.01` of nominal alpha 0.05).
+
+#### Live-smoke (`~/.config/pew/queue.jsonl`, 2026-05-05)
+
+```
+$ pew-insights daily-token-baumgartner-weiss-schindler-halves --sort bwsBDesc
+
+pew-insights daily-token-baumgartner-weiss-schindler-halves
+as of: 2026-05-04T22:16:08.516Z    sources: 6 (shown 4)    tokens: 6,153,355,384    min-tokens: 1,000    min-tenure-days: 16    top: —    sort: bwsBDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 2 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source BWS combined location-and-scale test (sorted by bwsBDesc; ties: source asc)
+source       firstDay    lastDay     tenure  active  n1   n2   BfromA    BfromB    bwsB      bwsPValue   sign  tokens
+-----------  ----------  ----------  ------  ------  ---  ---  --------  --------  --------  ----------  ----  -------------
+vscode-cp    2025-07-30  2026-04-20  265     73      132  133  120.5834  143.3484  131.9659  1.0000e-15  0     1,885,727
+claude-code  2026-02-11  2026-04-23  72      35      36   36   24.4453   13.5314   18.9883   6.6647e-11  +     3,442,385,788
+openclaw     2026-04-17  2026-05-04  18      18      9    9    5.3650    4.8814    5.1232    1.7962e-3   -     2,378,758,801
+hermes       2026-04-17  2026-05-04  18      18      9    9    1.3840    1.4997    1.4419    1.6850e-1   +     330,325,068
+```
+
+VERDICTS (alpha = 0.05):
+
+  - `vscode-cp` — `bwsB = 131.97`, `p = 1.00e-15`
+    (clamped at numeric floor of the eigen-series),
+    `bwsSign = 0` (tied pooled-rank medians).
+    DECISIVE OMNIBUS REJECT with `bwsSign = 0` is the
+    classic BWS pure-scale-departure diagnostic: the
+    long-tenure source's two halves have identical
+    pooled-rank medians but the empirical distribution
+    functions diverge sharply in the tails. Bucket:
+    `undirected-decisive-bws-departure`.
+  - `claude-code` — `bwsB = 18.99`, `p = 6.66e-11`,
+    `bwsSign = +`. DECISIVE REJECT, second-half ranks
+    dominate. Bucket:
+    `second-decisively-stochastically-larger`.
+  - `openclaw` — `bwsB = 5.12`, `p = 1.80e-3`,
+    `bwsSign = -`. DECISIVE REJECT, first-half ranks
+    dominate. Bucket:
+    `first-decisively-stochastically-larger`.
+  - `hermes` — `bwsB = 1.44`, `p = 1.69e-1`, no-reject.
+    Bucket: `no-evidence-of-bws-departure`.
+
+CROSS-AXIS COMPARISON with axis-184 Savage on the same
+four sources (axis-184 live-smoke from v0.6.467
+CHANGELOG):
+
+  - `claude-code` — Savage `+` decisive (`p = 2.31e-4`),
+    BWS `+` decisive (`p = 6.66e-11`). Sign agreement
+    on second-half dominance; BWS p-value smaller by
+    seven orders of magnitude indicates the second-half
+    departure from the first-half distribution is not
+    only a pure location shift (which Savage detects)
+    but ALSO carries a scale component (which Savage
+    misses by construction; BWS picks up jointly).
+  - `openclaw` — Savage `-` decisive (`p = 1.04e-2`),
+    BWS `-` decisive (`p = 1.80e-3`). Sign agreement
+    on first-half dominance.
+  - `vscode-cp` — Savage `-` decisive (`p = 2.53e-2`),
+    BWS `0` decisive (`p = 1.00e-15` clamp). SIGN
+    DISAGREEMENT (Savage says first-half dominates,
+    BWS says medians tied with massive distributional
+    departure). Diagnostic: long-tenure-decay in tail
+    counts gives Savage's right-tail-sensitive score
+    a strong negative signal even though the pooled-
+    rank medians of the two halves are exactly equal.
+    BWS picks up the pure-scale-and-shape ECDF
+    divergence Savage cannot decompose. CLEAN EXAMPLE
+    of the antipodal-influence diagnostic the two axes
+    are designed to surface jointly.
+  - `hermes` — Savage `+` non-decisive (`p = 0.90`),
+    BWS `+` non-decisive (`p = 0.17`). Both axes
+    report no decisive shift; BWS leans further toward
+    rejection than Savage on the same data, consistent
+    with BWS being more sensitive to the small joint
+    location-and-scale drift in the 18-day series.
+
+#### Tests
+
+42 new unit tests cover `midrankBws` (rank-sum invariant
+under ties, tie-position averaging, strict ordering),
+`medianSortedBws` (odd/even length, empty rejection),
+`bwsAsymptoticUpperTail` (non-finite rejection,
+boundary at `b <= 0`, monotone-decreasing on `[1, 30]`,
+range invariant in `[0, 1]`, asymptotic decay to zero),
+the core `dailyTokenBaumgartnerWeissSchindlerHalves`
+identities (`bwsB(x + c) === bwsB(x)`,
+`bwsB(a x) === bwsB(x)` for `a > 0`,
+`bwsB(reverse(x)) === bwsB(x)` when `n1 = n2`,
+`bwsB >= 0`, monotone-increasing yields `bwsSign = +1`,
+monotone-decreasing yields `bwsSign = -1`, near-
+identical halves yield small `bwsB`, separated halves
+yield decisive `bwsPValue`, `bwsBfromA + bwsBfromB =
+2 * bwsB`), the full builder path (min-tokens drop,
+min-tenure drop, source filter, top cap, sort orderings,
+bad `hour_start` drop, non-positive tokens drop, zero-
+variance drop), and the five directional label buckets.
+
+Total test count: 13615 (was 13573; +42).
+
 ## 0.6.467 — 2026-05-05
 
 ### Added — axis-184 daily-token-savage-halves (Savage 1956 EXPONENTIAL-SCORES location test, equivalent to two-sample log-rank on uncensored data)
