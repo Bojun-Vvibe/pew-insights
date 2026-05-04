@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.431 — 2026-05-04
+
+### Refined — axis-164: `daily-token-rank-von-neumann-detrended`
+
+Adds the **scale-free dispersion shape descriptor**
+`rvnRatio = rvn / 2` to each row, plus matching sort
+keys `--sort rvnRatio` and `--sort rvnRatioDesc`.
+
+`rvnRatio` is unitless and independent of n, unlike
+`bvnZ` which weights by sqrt(n):
+
+- `rvnRatio` ~ 1.0  rank sequence consistent with iid null
+- `rvnRatio` < 1     consecutive ranks closer than expected
+                     -> positive rank autocorrelation
+- `rvnRatio` > 1     consecutive ranks farther than expected
+                     -> negative rank autocorrelation
+
+`bvnZ` measures the **statistical strength** of the
+departure from the iid null (weights by sqrt(n));
+`rvnRatio` measures the **scale** of the departure in
+raw rank-variance units. The two together separate
+"large effect, small sample" (small `bvnZ`, extreme
+`rvnRatio`) from "modest effect, long tenure" (extreme
+`bvnZ`, modest `rvnRatio`).
+
+#### Updated live-smoke output (sort=rvnRatio)
+
+```
+src-A  rvn=0.7461  rvnRatio=0.3730  bvnZ=-10.2333
+src-B  rvn=0.8202  rvnRatio=0.4101  bvnZ= -5.0555
+src-C  rvn=1.2879  rvnRatio=0.6440  bvnZ= -1.5767
+src-D  rvn=1.7893  rvnRatio=0.8946  bvnZ= -0.4300
+src-E  rvn=1.8142  rvnRatio=0.9071  bvnZ= -0.4113
+```
+
+src-A and src-B both surface `rvnRatio < 0.5` —
+consecutive residual ranks are less than half as far
+apart as under the iid null — confirming the
+strong-positive-rank-autocorr verdict by a measure
+that does not depend on sample size.
+
+Edge-case test added for n=4 minimum sample.
+
 ## 0.6.429 — 2026-05-04
 
 ### Added — axis-164: `daily-token-rank-von-neumann-detrended`
