@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.447 — 2026-05-04
+
+### Added — axis-173 daily-token-watson-u2-cumulative-periodogram
+
+New per-source axis: **WATSON U^2 TEST** on the cumulative
+periodogram of the gap-filled mean-centred daily
+`total_tokens` series. FIFTH member of the EDF family on
+the cumulative-periodogram domain after Bartlett-167 (sup
+|D|), CvM-168 (uniform L^2), AD-169 (tail-weighted L^2),
+Kuiper-V-172 (sum of two one-sided sup-norms).
+
+```
+e[j]    = C[j] - j/K            for j = 1..K-1
+eBar    = (1/(K-1)) * sum_j e[j]
+wU2     = (1/(K-1)) * sum_j (e[j] - eBar)^2
+wU2Star = (wU2 - 0.1/K + 0.1/K^2) * (1 + 0.8/K)
+wU2PValue = 2 * sum_{m>=1} (-1)^(m-1) exp(-2 m^2 pi^2 wU2Star)
+```
+
+#### Why Watson U^2 (vs the four prior EDF variants)
+
+Watson 1961's geometric trick is to **subtract the mean of
+the deviation profile before squaring**. This makes the
+statistic invariant under cyclic rotation of the support
+(the canonical "test on a circle"), and crucially
+distinguishes it from CvM-168 in a verifiable way:
+
+- a deviation profile that is approximately a CONSTANT
+  OFFSET leaves CvM with full L^2 mass but Watson U^2 = 0
+  (mean-centring annihilates it);
+- a pure SINUSOIDAL deviation has zero mean already, so
+  CvM and Watson U^2 register the same magnitude;
+- the parallel-axis identity holds exactly:
+  `cvmW2 = (K-1) * (wU2 + eBar^2)` -- the squared mean of
+  the deviation is the witness signal that separates the
+  two statistics.
+
+The relationship vs Kuiper-172 is symmetric: both are
+cyclic-rotation-invariant, but Kuiper picks up only the
+extrema (sup-norm of two one-sided maxima) while Watson
+picks up sustained mean-centred dispersion across the
+entire cumulative spectrum. A single-bin spike drives
+Kuiper large but Watson modestly; a sustained sinusoidal
+deviation drives Watson large but Kuiper only modestly.
+
+#### Refs
+
+- Watson, G. S. "Goodness-of-fit tests on a circle",
+  Biometrika 48(1/2) (1961) 109-114
+- Stephens, M. A. "Use of the Kolmogorov-Smirnov, Cramer-
+  von Mises and related statistics without extensive
+  tables", J. R. Stat. Soc. B 32(1) (1970) 115-122 -- the
+  `wU2Star` standardisation and Table 1 critical values
+- Lockhart, R. A. & Stephens, M. A. "Tests of fit for the
+  von Mises distribution", J. R. Stat. Soc. B 47(1)
+  (1985) 112-119
+- Brockwell & Davis "Time Series: Theory and Methods" 2nd
+  ed., Springer 1991, sec. 10.2
+
+#### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+Top source after `--min-tokens 1000 --min-tenure-days 32`:
+
+```
+source       tenure  bins   eBar      wU2        wU2Star    wU2PValue
+claude-code      72    36   0.157650  0.011594   0.009091   ~1.0000
+```
+
+Reading: the top source's cumulative periodogram is
+extremely close to white-noise-uniform in the mean-centred
+L^2 sense (wU2Star = 0.00909 sits well below the Stephens
+1970 10% critical value of 0.152). The non-trivial `eBar`
+of 0.158 is the constant-offset signal that CvM-168
+captures but Watson U^2 explicitly removes -- the
+orthogonality witness in production data.
+
+#### Tests
+
+Test suite grew by **+29** tests (12969 -> 12998).
+Coverage:
+
+- `watsonU2Survival` boundary behaviour (`u <= 0`, very
+  large `u`, monotone non-increasing on `[0.01, 1.5]`,
+  result clamped to `[0, 1]`, throws on non-finite);
+- Stephens 1970 Table 1 critical values within 5e-3
+  tolerance at the 10% / 5% / 2.5% / 1% levels;
+- statistic invariants (bin-reversal, scale, throws on
+  too-few-bins / non-finite / negative / zero-power);
+- closed-form anchors (uniform spectrum -> wU2 = 0;
+  spike at first bin -> wU2 = 0.0625, eBar = 0.5 exactly
+  at K = 8);
+- parallel-axis identity vs CvM-168:
+  `cvmW2 = (K-1) * (wU2 + eBar^2)` to 1e-9;
+- end-to-end `buildDailyToken...` pipeline coverage:
+  empty input, option validation, since/until validation,
+  source filter, top-cap, bad-hour-start counter,
+  non-positive-tokens counter, sort-by-wU2StarDesc
+  monotonicity.
+
 ## 0.6.445 — 2026-05-04
 
 ### Refined — axis-172 corpus-level aggregator + chi-squared upper-tail helper
