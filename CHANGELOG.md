@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.465 — 2026-05-05
+
+### Added — axis-183 daily-token-yuen-welch-halves (trimmed-mean LOCATION test with Welch-Satterthwaite df on winsorized variances)
+
+Per-source Yuen (1974, *Biometrika* 61:165-170)
+TRIMMED-MEAN LOCATION TEST with WELCH-SATTERTHWAITE
+degrees of freedom on the WINSORIZED variances between
+the first half (`n1 = floor(n/2)` days) vs second half
+(`n2 = n - n1` days) of the gap-filled daily
+`total_tokens` series.
+
+ONE-HUNDRED-AND-EIGHTY-THIRD cross-source axis.
+
+For trim fraction `gamma` per side (default 0.2 per
+Wilcox 2017 sec. 5.3 recommendation), define for each
+half `S` of size `m` with sorted values
+`S(1) <= ... <= S(m)` and trim count `g = floor(gamma m)`:
+
+```
+tm(S)  = (1 / (m - 2g)) * sum_{i=g+1}^{m-g} S(i)
+W(S)_i = S(g+1)        for i in [1, g]
+       = S(i)          for i in [g+1, m-g]
+       = S(m-g)        for i in [m-g+1, m]
+sw2(S) = sum (W(S)_i - mean W(S))^2
+d(S)   = sw2(S) / ((m - 2g) (m - 2g - 1))
+```
+
+Then
+
+```
+ywT  = ( tm(B) - tm(A) ) / sqrt( d(A) + d(B) )       ~ t(ywDf)
+ywDf = ( d(A) + d(B) )^2
+       / ( d(A)^2 / (h1 - 1) + d(B)^2 / (h2 - 1) )
+```
+
+with `h_i = m_i - 2 g_i`. Two-sided p-value
+`ywPValue = 2 (1 - F_t(|ywT|; ywDf))` via the
+regularised incomplete beta function (Press et al. 2007
+sec. 6.4 continued-fraction `betacf`).
+
+#### Structural orthogonality (the core claim)
+
+YW is a MOMENT test on the 20%-trimmed central mass
+with a RE-DESCENDING influence function (exactly zero
+outside the [20%, 80%] order-statistic boundary). All
+prior LOCATION axes are RANK tests:
+
+  - axis-115 Mann-Whitney / axis-116 Brunner-Munzel:
+    midrank-based U-statistics against an asymptotic
+    normal / Welch-t reference.
+  - axis-176 Brunner-Munzel halves: midrank
+    F-hat-based with Welch t-df.
+  - axis-181 Van der Waerden: normal-scores rank
+    statistic against N(0, 1).
+  - axis-182 Fligner-Policello: placement counts
+    against N(0, 1) with the FP placement-variance
+    correction (Behrens-Fisher robust).
+
+YW dominates power under heavy-tailed F (Yuen 1974
+Table 1; Wilcox 2017 sec. 5.3.4) while staying
+calibrated; the rank family dominates under
+contaminated F where the trimmed mean is still
+distorted by the heavy second-half tail.
+
+vs the entire scale family (axes 170 Ansari-Bradley,
+174 Cucconi, 175 Lepage, 177 Klotz, 178 Conover, 179
+Mood, 180 Sukhatme): pure scale shift at zero median
+under symmetric F gives `ywT ~ 0` (the trimmed mean
+is location-equivariant); pure location shift at
+equal scales gives the scale family `~ 0`.
+Asymptotically orthogonal (Hampel et al. 1986
+*Robust Statistics* sec. 2.4).
+
+#### Live-smoke (this machine, 2026-05-05)
+
+Run against `~/.config/pew/queue.jsonl` (6 active
+sources, 4 above the `min-tenure-days = 16` floor;
+2729 queue lines, 6.15 G total tokens):
+
+| source      |  n1 |  n2 | h1 | h2 |  ywT    | ywDf  | ywPValue   | verdict                                      |
+| ----------- | --- | --- | -- | -- | ------- | ----- | ---------- | -------------------------------------------- |
+| openclaw    |   9 |   9 |  7 |  7 | -2.9081 |  7.39 | 2.1415e-02 | first-half trimmed mean larger (decisive)    |
+| claude-code |  36 |  36 | 22 | 22 | +2.8775 | 21.11 | 8.9823e-03 | second-half trimmed mean larger (decisive)   |
+| hermes      |   9 |   9 |  7 |  7 | +1.6634 |  6.91 | 1.4073e-01 | no evidence of trimmed-mean shift            |
+| vscode-cp   | 132 | 133 | 80 | 81 | -1.5233 | 90.75 | 1.3117e-01 | no evidence of trimmed-mean shift            |
+
+Two sources (small CLI agents, < 16-day tenure) dropped
+below the floor.
+
+The two decisive rejections (`openclaw` first-half
+larger trimmed mean, `claude-code` second-half larger
+trimmed mean) match the SIGN of the axis-182
+Fligner-Policello rank-Behrens-Fisher verdict on the
+same data — but YW REJECTS at smaller magnitudes
+because the trimmed mean concentrates evidence in the
+central 60% of the daily-token distribution, where
+each source's day-to-day mass is unimodal and
+non-degenerate. On the long-tenure `vscode-cp` axis
+the two methods AGREE on direction (both negative,
+first half slightly larger) and AGREE on
+non-rejection at alpha = 0.05.
+
+#### Refinement: aggregator + label classifier + cross-axis disagreement reporter
+
+Also ships in this entry:
+
+  - `aggregateYuenWelchHalves(rows)` — corpus-level
+    SIGNED Stouffer combiner. Each per-source
+    Student-t verdict is converted to its signed
+    standard-normal Z equivalent
+    `z_i = sign(ywT_i) * Phi^-1(1 - ywPValue_i / 2)`
+    (uniform scale across sources with different df),
+    then combined as `stoufferZ = sum z_i / sqrt(m)`
+    with two-sided normal p-value. Mirrors the
+    axis-176-182 SIGNED corpus aggregators.
+  - `labelYuenWelchHalvesRow(row, alpha = 0.05)` —
+    5-bucket directional classifier:
+    `second/first-decisively-trimmed-mean-larger`,
+    `second/first-leans-trimmed-mean-larger`,
+    `no-evidence-of-trimmed-mean-shift`.
+  - 67 new unit tests (primitives `lnGamma`,
+    `regularisedIncompleteBeta`, `studentTTwoSidedSurvival`,
+    `trimmedMean`, `winsorizedVarianceContribution`,
+    `inverseStandardNormalCdf`,
+    `standardNormalUpperTailYw`; core test invariances
+    shift / positive-scale / reversal-antisymmetry;
+    `buildDailyTokenYuenWelchHalves` filtering and
+    sorting; aggregator and label classifier).
+
+CLI: `pew-insights daily-token-yuen-welch-halves
+[--trim-fraction <g>] [--min-tenure-days <n>] ...`.
+
 ## 0.6.463 — 2026-05-05
 
 ### Added — axis-182 daily-token-fligner-policello-halves (Behrens-Fisher robust rank LOCATION test)
