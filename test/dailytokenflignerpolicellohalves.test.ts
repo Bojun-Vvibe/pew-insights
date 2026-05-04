@@ -5,6 +5,8 @@ import {
   buildDailyTokenFlignerPolicelloHalves,
   flignerPolicelloPlacements,
   standardNormalUpperTailFp,
+  aggregateFlignerPolicelloHalves,
+  labelFlignerPolicelloHalvesRow,
 } from '../src/dailytokenflignerpolicellohalves.js';
 import type { QueueLine } from '../src/types.js';
 
@@ -347,4 +349,117 @@ test('fp build: sort by fpZAbsDesc puts strongest |Z| first', () => {
   });
   assert.equal(r.sources.length, 2);
   assert.ok(Math.abs(r.sources[0]!.fpZ) >= Math.abs(r.sources[1]!.fpZ));
+});
+
+// ---------- aggregator: aggregateFlignerPolicelloHalves ----------
+
+test('fp agg: empty rows -> rowsUsed=0, stoufferZ=0', () => {
+  const a = aggregateFlignerPolicelloHalves([]);
+  assert.equal(a.rowsUsed, 0);
+  assert.equal(a.stoufferZ, 0);
+  assert.equal(a.stoufferTwoSidedPValue, 1);
+});
+
+test('fp agg: single row stoufferZ === fpZ', () => {
+  const a = aggregateFlignerPolicelloHalves([
+    { fpZ: 2.5, fpPValue: 0.012, nTenureDays: 20 },
+  ]);
+  assert.equal(a.rowsUsed, 1);
+  assert.ok(Math.abs(a.stoufferZ - 2.5) < 1e-12);
+  assert.ok(Math.abs(a.meanFpZ - 2.5) < 1e-12);
+});
+
+test('fp agg: two equal rows -> stoufferZ = z * sqrt(2)', () => {
+  const a = aggregateFlignerPolicelloHalves([
+    { fpZ: 1.0, fpPValue: 0.3, nTenureDays: 18 },
+    { fpZ: 1.0, fpPValue: 0.3, nTenureDays: 18 },
+  ]);
+  assert.ok(Math.abs(a.stoufferZ - Math.sqrt(2)) < 1e-12);
+});
+
+test('fp agg: cancelling signs sum to zero', () => {
+  const a = aggregateFlignerPolicelloHalves([
+    { fpZ: 2.0, fpPValue: 0.05, nTenureDays: 18 },
+    { fpZ: -2.0, fpPValue: 0.05, nTenureDays: 18 },
+  ]);
+  assert.ok(Math.abs(a.stoufferZ) < 1e-12);
+  assert.equal(a.rowsUsed, 2);
+});
+
+test('fp agg: skips malformed rows', () => {
+  const a = aggregateFlignerPolicelloHalves([
+    { fpZ: 1.5, fpPValue: 0.13, nTenureDays: 25 },
+    { fpZ: Number.NaN, fpPValue: 0.5, nTenureDays: 20 },
+    { fpZ: 2.0, fpPValue: 1.5, nTenureDays: 25 }, // P out of range
+    { fpZ: 1.0, fpPValue: 0.5, nTenureDays: 0 }, // tenure 0
+  ]);
+  assert.equal(a.rowsUsed, 1);
+  assert.equal(a.rowsSkipped, 3);
+});
+
+test('fp agg: tenure-weighted mean uses nTenureDays weights', () => {
+  const a = aggregateFlignerPolicelloHalves([
+    { fpZ: 2.0, fpPValue: 0.05, nTenureDays: 100 },
+    { fpZ: 0.0, fpPValue: 0.5, nTenureDays: 1 },
+  ]);
+  // Weighted = (100*2 + 1*0) / 101 = 200/101
+  assert.ok(Math.abs(a.tenureWeightedMeanFpZ - 200 / 101) < 1e-12);
+});
+
+// ---------- label: labelFlignerPolicelloHalvesRow ----------
+
+test('fp label: large positive Z + tiny p -> second-decisive', () => {
+  const v = labelFlignerPolicelloHalvesRow({ fpZ: 3.5, fpPValue: 0.0005 });
+  assert.equal(v, 'second-decisively-stochastically-larger');
+});
+
+test('fp label: large negative Z + tiny p -> first-decisive', () => {
+  const v = labelFlignerPolicelloHalvesRow({ fpZ: -4.0, fpPValue: 1e-5 });
+  assert.equal(v, 'first-decisively-stochastically-larger');
+});
+
+test('fp label: positive Z in lean band -> second-leans', () => {
+  // alpha=0.05 default; lean = 0.05..0.10
+  const v = labelFlignerPolicelloHalvesRow({ fpZ: 1.7, fpPValue: 0.07 });
+  assert.equal(v, 'second-leans-stochastically-larger');
+});
+
+test('fp label: negative Z in lean band -> first-leans', () => {
+  const v = labelFlignerPolicelloHalvesRow({ fpZ: -1.7, fpPValue: 0.08 });
+  assert.equal(v, 'first-leans-stochastically-larger');
+});
+
+test('fp label: large p -> no-evidence', () => {
+  const v = labelFlignerPolicelloHalvesRow({ fpZ: 0.4, fpPValue: 0.7 });
+  assert.equal(v, 'no-evidence-of-stochastic-shift');
+});
+
+test('fp label: throws on non-finite Z', () => {
+  assert.throws(() =>
+    labelFlignerPolicelloHalvesRow({ fpZ: Number.NaN, fpPValue: 0.5 }),
+  );
+});
+
+test('fp label: throws on p out of range', () => {
+  assert.throws(() =>
+    labelFlignerPolicelloHalvesRow({ fpZ: 1, fpPValue: 1.5 }),
+  );
+  assert.throws(() =>
+    labelFlignerPolicelloHalvesRow({ fpZ: 1, fpPValue: -0.1 }),
+  );
+});
+
+test('fp label: throws on bad alpha', () => {
+  assert.throws(() =>
+    labelFlignerPolicelloHalvesRow({ fpZ: 1, fpPValue: 0.1 }, 0),
+  );
+  assert.throws(() =>
+    labelFlignerPolicelloHalvesRow({ fpZ: 1, fpPValue: 0.1 }, 0.6),
+  );
+});
+
+test('fp label: respects custom alpha (0.01)', () => {
+  // p=0.03 with alpha=0.01: lean band 0.01..0.02; 0.03 -> no-evidence
+  const v = labelFlignerPolicelloHalvesRow({ fpZ: 2.2, fpPValue: 0.03 }, 0.01);
+  assert.equal(v, 'no-evidence-of-stochastic-shift');
 });

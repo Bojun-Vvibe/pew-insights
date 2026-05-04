@@ -651,3 +651,160 @@ export function buildDailyTokenFlignerPolicelloHalves(
     sources: kept,
   };
 }
+
+/**
+ * Corpus-level SIGNED aggregator for axis-182 per-source
+ * results. Combines per-source SIGNED fpZ via STOUFFER'S
+ * Z-METHOD (Stouffer et al. 1949 *American Soldier* vol.
+ * 1, sec. 2.2; Whitlock 2005 *J. Evol. Biol.*
+ * 18:1368-1373):
+ *
+ *     stoufferZ              = sum_i fpZ_i / sqrt(m)
+ *     stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+ *
+ * fpZ is intrinsically signed (positive = second half
+ * stochastically larger; negative = first half
+ * stochastically larger). Mirrors the axis-177/178/
+ * 179/180/181 SIGNED aggregators so the Behrens-Fisher
+ * robust location channel can be combined elementwise
+ * with the equal-scale-assuming axis-181 VDW location
+ * channel and the entire scale family — disagreements
+ * across location channels (axis-181 vs axis-182) flag
+ * heteroscedastic alternatives that would otherwise be
+ * silently mis-attributed to a location shift.
+ *
+ * Also returns
+ *
+ *   - meanFpZ — unweighted corpus-mean fpZ
+ *   - tenureWeightedMeanFpZ — nTenureDays-weighted
+ *     mean fpZ (matches the axis-175 v0.6.452 ...
+ *     axis-181 v0.6.462 weighting convention)
+ *   - rowsUsed, rowsSkipped — counters; malformed rows
+ *     (non-finite Z, P outside [0, 1], non-positive
+ *     nTenureDays) are SKIPPED with a counter rather
+ *     than throwing.
+ */
+export interface FlignerPolicelloHalvesCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedPValue: number;
+  meanFpZ: number;
+  tenureWeightedMeanFpZ: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateFlignerPolicelloHalves(
+  rows: ReadonlyArray<{
+    fpZ: number;
+    fpPValue: number;
+    nTenureDays: number;
+  }>,
+): FlignerPolicelloHalvesCorpusAggregate {
+  let zSum = 0;
+  let weightedZSum = 0;
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.fpZ) ||
+      !Number.isFinite(r.fpPValue) ||
+      r.fpPValue < 0 ||
+      r.fpPValue > 1 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    zSum += r.fpZ;
+    weightedZSum += r.nTenureDays * r.fpZ;
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      stoufferZ: 0,
+      stoufferTwoSidedPValue: 1,
+      meanFpZ: Number.NaN,
+      tenureWeightedMeanFpZ: Number.NaN,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = zSum / Math.sqrt(used);
+  const stoufferTwoSidedPValue =
+    2 * standardNormalUpperTailFp(Math.abs(stoufferZ));
+  return {
+    stoufferZ,
+    stoufferTwoSidedPValue,
+    meanFpZ: zSum / used,
+    tenureWeightedMeanFpZ: weightedZSum / totalTenure,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Directional 5-bucket label classifier for axis-182
+ * per-source fpZ. Maps the signed standardised
+ * statistic to one of five mutually-exclusive verdict
+ * buckets at configurable two-sided alpha (default 0.05):
+ *
+ *   - 'second-decisively-stochastically-larger' if fpZ > 0
+ *     AND fpPValue < alpha
+ *   - 'first-decisively-stochastically-larger'  if fpZ < 0
+ *     AND fpPValue < alpha
+ *   - 'second-leans-stochastically-larger' if fpZ > 0 AND
+ *     alpha <= fpPValue < 2 * alpha (suggestive but
+ *     not significant at the chosen level)
+ *   - 'first-leans-stochastically-larger'  if fpZ < 0 AND
+ *     alpha <= fpPValue < 2 * alpha
+ *   - 'no-evidence-of-stochastic-shift' otherwise
+ *
+ * Throws on malformed input (non-finite Z, P outside
+ * [0, 1], alpha outside (0, 0.5]).
+ */
+export type FlignerPolicelloDirectionalLabel =
+  | 'second-decisively-stochastically-larger'
+  | 'first-decisively-stochastically-larger'
+  | 'second-leans-stochastically-larger'
+  | 'first-leans-stochastically-larger'
+  | 'no-evidence-of-stochastic-shift';
+
+export function labelFlignerPolicelloHalvesRow(
+  row: { fpZ: number; fpPValue: number },
+  alpha = 0.05,
+): FlignerPolicelloDirectionalLabel {
+  if (!Number.isFinite(row.fpZ)) {
+    throw new Error(
+      `labelFlignerPolicelloHalvesRow: fpZ must be finite (got ${row.fpZ})`,
+    );
+  }
+  if (
+    !Number.isFinite(row.fpPValue) ||
+    row.fpPValue < 0 ||
+    row.fpPValue > 1
+  ) {
+    throw new Error(
+      `labelFlignerPolicelloHalvesRow: fpPValue must be in [0, 1] (got ${row.fpPValue})`,
+    );
+  }
+  if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 0.5) {
+    throw new Error(
+      `labelFlignerPolicelloHalvesRow: alpha must be in (0, 0.5] (got ${alpha})`,
+    );
+  }
+  const lean = 2 * alpha;
+  if (row.fpPValue < alpha) {
+    return row.fpZ > 0
+      ? 'second-decisively-stochastically-larger'
+      : 'first-decisively-stochastically-larger';
+  }
+  if (row.fpPValue < lean) {
+    return row.fpZ > 0
+      ? 'second-leans-stochastically-larger'
+      : 'first-leans-stochastically-larger';
+  }
+  return 'no-evidence-of-stochastic-shift';
+}
