@@ -2,7 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.434 — 2026-05-04
+
+### Added — axis-166: `daily-token-fisher-g-periodicity`
+
+ONE-HUNDRED-AND-SIXTY-SIXTH cross-source axis. The
+classical **Fisher (1929) g-test for periodicity** --
+the exact significance test for the LARGEST
+periodogram ordinate against the Gaussian-white-noise
+null on the gap-filled mean-centred daily
+total_tokens series.
+
+For the one-sided non-DC periodogram `P[k]`,
+`k = 1..K` with `K = floor(n/2)` and `K >= 4`,
+
+```
+g  = max_{k=1..K} P[k] / sum_{k=1..K} P[k]   in (1/K, 1]
+```
+
+is Fisher's g-statistic (the SHARE of total spectral
+mass carried by the WINNING bin). Under H0 (the series
+is Gaussian white noise) the exact distribution of
+`g` is
+
+```
+P(g > x) = sum_{j=1}^{m} (-1)^{j-1} * C(K, j) * (1 - j*x)^{K-1}
+```
+
+where `m = floor(1 / x)` (Fisher 1929 Proc. Roy. Soc.
+A 125; Brockwell & Davis 1991 §10.2). This is the
+"Fisher exact p-value", `gPValue`, computed in log-
+space via log-binomial coefficients to remain stable
+for `K` up to several thousand.
+
+This is the **FIRST** primitive in the suite that
+delivers a CALIBRATED EXACT p-value for periodogram-
+based detection of a single sinusoidal component
+against a Gaussian-white-noise null. Every prior
+spectral axis (32-98 family, including peak-frequency
+96, second-peak 97, tail-flatness 98) reports
+STRUCTURAL DESCRIPTORS of the PSD (position,
+magnitude, shape) but NOT a calibrated rejection
+probability for the "is there any non-trivial
+periodic component at all" null. Fisher's g delivers
+exactly that: a single-number SIGNIFICANCE TEST whose
+finite-sample distribution is known in CLOSED FORM
+(no asymptotics, no bootstrap).
+
+#### Companions
+
+- `gStat` -- the raw share `peakPower / totalPower`,
+  bounded in `(1/K, 1]`. (By construction identity,
+  `gStat = peakMassShare` from axis-96, surfaced here
+  under its statistical name.)
+- `gPValue` -- the calibrated exact p-value. Bounded
+  in `[0, 1]` and uniform-on-`[0, 1]` under H0.
+- `gNeg2LogP = -2 * log(gPValue + 1e-300)` -- the
+  standard Fisher's combined-evidence transformation.
+  Distributed chi-squared(2) under H0 and **additive**
+  across independent sources, which makes it useful
+  as a CROSS-SOURCE pooled-evidence axis.
+
+#### Reading
+
+- `gStat` near `1/K` -- spectrum is nearly UNIFORM
+  (white-noise-compatible). `gPValue` near 1.
+- `gStat` near 1 -- almost ALL spectral mass on a
+  SINGLE bin (a strong periodic component). `gPValue`
+  near 0.
+- `gPValue < 0.05` -- reject H0 at 5%: a single
+  sinusoidal component is statistically significant
+  against white noise.
+
+#### Invariances
+
+Shift-, scale-(any non-zero a)-, sign-flip-, time-
+reversal-invariant (every kept Fourier bin scales by
+`a^2`; the ratio `max / sum` is unchanged). **Bin-
+permutation-INVARIANT** and **bin-reversal-
+INVARIANT** -- this is the primary orthogonality
+witness vs axis-96 (peak-bin INDEX, bin-permutation-
+SENSITIVE) and axis-97 (second-peak INDEX). Both of
+those collapse on permutation; `gStat` and `gPValue`
+do NOT.
+
+#### Live-smoke output
+
+Computed on the live `~/.config/pew/queue.jsonl` with
+`--min-tenure-days 14`, gating 6 sources to 5
+qualifying rows (1 below min-tenure):
+
+```
+source         tenure  bins  peakBin  gStat     gPValue       gNeg2LogP
+-------------  ------  ----  -------  --------  ------------  ---------
+[redacted-A]      18     9        1   0.590790  7.0764e-3      9.9020
+[redacted-B]      18     9        2   0.526560  2.2717e-2      7.5692
+claude-code       72    36        1   0.108966  5.2592e-1      1.2852
+opencode          15     7        3   0.291855  7.7357e-1      0.5135
+[redacted-C]     265   132        7   0.031259  9.1282e-1      0.1824
+```
+
+The two short-tenure sources `[redacted-A]` and
+`[redacted-B]` (both 18 days, 9 Fourier bins) reject
+the white-noise null at 5%: `gPValue = 7.08e-3` and
+`2.27e-2` respectively. `[redacted-A]` carries 59%
+of its spectral mass on the LOWEST non-DC bin
+(`peakBin = 1`, period ~ 18 days) -- a slow weekly-
+to-fortnightly envelope. `[redacted-B]` carries 53%
+of its spectral mass on the SECOND non-DC bin
+(`peakBin = 2`, period ~ 9 days). Both are
+significant SINGLE-SINUSOID detections against the
+white-noise null.
+
+`claude-code` (72 days, 36 bins) has `gStat = 0.109`,
+about `3.9 / K = 3.9 * (1/36)` -- modest peak
+concentration, `gPValue = 0.526` -- white-noise null
+NOT rejected. `opencode` (15 days, 7 bins) has its
+peak on bin 3 with `gStat = 0.292` and `gPValue =
+0.774` -- under-concentrated relative to its small
+`K`, white-noise compatible. `[redacted-C]` (265
+days, 132 bins) has the longest tenure but the
+smallest `gStat = 0.031` (just `~ 4.1 / K`) and
+`gPValue = 0.913` -- the most decisively white-noise-
+compatible row in the cross-section, despite the
+PSD-peak sitting at a non-trivial bin (`peakBin = 7`,
+period ~ 38 days).
+
+`gNeg2LogP` ranges from `0.18` (`[redacted-C]`) to
+`9.90` (`[redacted-A]`). Pooled across all 5 sources
+the additive sum is `19.25`, distributed
+chi-squared(10) under joint independence-of-sources
+H0 -- the cross-source P-value is `~ 0.037`, a
+mild-to-moderate POOLED rejection of the joint white-
+noise null.
+
+37 new unit tests added (12714 -> 12751, +37).
+
 ## 0.6.433 — 2026-05-04
+
 
 ### Refined — axis-165: `daily-token-hoeffding-d-lag1`
 
