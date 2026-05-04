@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.419 — 2026-05-04
+
+### Added — axis-159: `daily-token-mcleod-li` (McLeod-Li portmanteau Q-test on squared residuals)
+
+Per-source MCLEOD-LI PORTMANTEAU Q-TEST FOR ARCH /
+VOLATILITY-CLUSTERING at H lags on the gap-filled mean-centred
+SQUARED-RESIDUAL daily `total_tokens` series. The 159th
+cross-source axis. McLeod & Li 1983, J. Time Series Analysis
+4(4):269-273.
+
+```
+u[t]    = (x[t] - xbar)^2
+r2_k    = sum (u[t]-ubar)(u[t+k]-ubar) / sum (u[t]-ubar)^2
+Q_ML(H) = n (n + 2) sum_{k=1..H} r2_k^2 / (n - k)
+mlZ     = (Q_ML - H) / sqrt(2 H)              ~ N(0, 1)
+```
+
+Under the iid no-ARCH null Q_ML ~ Chi-Square(H). `mlZ >> +1.96`
+indicates significant volatility clustering -- large absolute
+deviations cluster in time (calm days beget calm days, noisy
+days beget noisy days). `mlZ ~ 0` indicates the squared-residual
+series is white-noise-consistent (constant conditional variance,
+no volatility memory).
+
+**Structural orthogonality justification — vs axis-114 Ljung-Box.**
+Ljung-Box uses the SAME functional form `n(n+2) sum r^2 / (n-k)`
+applied to the CENTRED LEVEL series `e[t] = x[t] - xbar`.
+McLeod-Li applies the IDENTICAL functional to the SQUARED level
+`u[t] = e[t]^2`. The two tests are constructed by McLeod & Li
+1983 to be precisely complementary:
+
+- a pure-trend null (e.g. `x[t] = t`) gives `lbZ → +∞` and
+  `mlZ → 0`
+- a pure-ARCH(1) / GARCH(1,1) null gives `mlZ → +∞` and
+  `lbZ → 0`
+
+The test suite verifies both directions:
+`dailyTokenMcLeodLi: pure linear trend has lbZ much greater
+than 0 but mlZ near zero` and `dailyTokenMcLeodLi: explicit
+ARCH-like amplitude regime yields mlZ much greater than 0`.
+A clustered-amplitude regime construction (alternating calm /
+loud blocks of 10 days) produces `mlZ > 3` with `r2_1 > 0.5`,
+while a pure-trend ramp produces `lbZ > 5` and `lbZ > 1.5 *
+mlZ`. The two axes detect orthogonal forms of dependence.
+
+**vs axis-158 Lo-MacKinlay variance-ratio.** VR's
+heteroskedasticity-consistent z-score `vrZ_hc` is robust against
+ARCH but SILENT about its presence. McLeod-Li directly
+quantifies the ARCH effect that VR's hc correction is robust
+against. They are complements: VR tests level-scaling under a
+martingale-difference null that allows ARCH; McLeod-Li
+quantifies the ARCH that null permits.
+
+**vs axes 156 KPSS / 157 ADF / 155 Buishand / 154 Pettitt /
+153 CUSUM.** All five are LEVEL-based stationarity / change-
+point tests. McLeod-Li is a SECOND-MOMENT test about the
+conditional variance of the residuals -- structurally and
+functionally distinct.
+
+**vs axes 84-104 spectral.** Spectral axes summarise the
+periodogram of the LEVEL. McLeod-Li is a TIME-DOMAIN
+portmanteau autocorrelation on the SQUARED level. Even under
+the Wiener-Khinchin equivalence, the spectrum of `x` and the
+spectrum of `x^2` carry orthogonal information whenever `x`
+is non-Gaussian (which token streams unambiguously are: heavy
+right tail, mass at zero on idle days).
+
+Default `H = min(maxLag, floor(n/4))` with `maxLag = 10`
+(canonical Box-Jenkins, tightened to T/4 to match the 14-day
+default min-tenure).
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (one
+source name redacted; sorted by tokens):
+
+```
+per-source McLEOD-LI Q on squared residuals (sort: tokens)
+source        firstDay    lastDay     tenure  active  mlH  r2_1    r2_2     r2_7     mean             stddev           mlQ     mlZ      tokens
+------------  ----------  ----------  ------  ------  ---  ------  -------  -------  ---------------  ---------------  ------  -------  -------------
+opencode      2026-04-20  2026-05-04  15      15      3    0.3234   0.1101   0.0000  435,186,962.333  178,536,170.768   2.3205  -0.2774  6,527,804,435
+claude-code   2026-02-11  2026-04-23  72      35      10   0.0415   0.3367  -0.0037   47,810,913.722  153,856,936.418   8.9153  -0.2425  3,442,385,788
+openclaw      2026-04-17  2026-05-04  18      18      4    0.1506  -0.2601   0.0000  125,905,121.333   94,645,296.430   2.3333  -0.5893  2,266,292,184
+hermes        2026-04-17  2026-05-04  18      18      4    0.0935  -0.3145   0.0000   17,483,779.056    9,521,849.658   5.6410   0.5802    314,708,023
+vsc-redacted  2025-07-30  2026-04-20  265     73      10   0.0534  -0.0073  -0.0137        7,115.951       27,024.444   1.1344  -1.9824      1,885,727
+```
+
+**Reading the smoke:**
+
+- **No source has `mlZ` significant at α = 0.05 in the
+  positive direction** (all `mlZ < +1.96`). The strongest
+  positive reading is `hermes` at `+0.5802` -- well below the
+  conventional ARCH-detection threshold. The chi-square right
+  tail of `Q_ML` is not breached for any source. **Operational
+  takeaway: there is no detectable volatility clustering in
+  the daily token series of any current source.** Day-to-day
+  variance in token consumption appears to be conditionally
+  homoskedastic at the daily-resolution observation scale.
+- The most negative `mlZ` is `vsc-redacted` at `-1.9824`
+  (just inside the 5 % left tail). A negative `mlZ` is a
+  light-tail / under-dispersion signal: the squared
+  residuals are ANTI-correlated, meaning a large-|deviation|
+  day tends to be followed by a small-|deviation| day. This
+  is a regularising / mean-reverting-amplitude signature
+  that, under the chi-square null, is technically
+  significant but operationally just says "no volatility
+  clustering, mild oscillation in the magnitude of
+  deviations".
+- `claude-code` (`mlQ = 8.9153`, `mlH = 10`) is the closest
+  to the chi-square mean (`Q ≈ H`), making it the most
+  white-noise-consistent on the squared-residual axis -- its
+  `r2_2 = 0.3367` is the largest single per-lag autocorrelation
+  in the fleet but the higher H dilutes it in the portmanteau
+  sum.
+- **Cross-reference with axis-114 Ljung-Box (level
+  portmanteau).** Several sources show clear LEVEL serial
+  structure (axis-114) -- but the squared-residual series is
+  uniformly white-noise-consistent (axis-159). This is the
+  axis-114 ↔ axis-159 orthogonality manifesting in the real
+  data: the dependence captured by axis-114 lives entirely in
+  the FIRST moment (the conditional mean / drift), not in the
+  SECOND moment (the conditional variance). For ARCH/GARCH
+  modelling purposes, the daily token series can be treated
+  as a constant-variance level process at this observation
+  scale.
+- **Practical implication for the analytics stack.** Axis-114
+  detects "the level has memory" (drift, weekly seasonality,
+  level autocorrelation). Axis-159 confirms "but the
+  amplitude does not have memory" (no calm/loud regimes, no
+  variance clustering). Together with axis-156 KPSS / axis-
+  157 ADF / axis-158 Lo-MacKinlay variance-ratio, the
+  unit-root / random-walk / stationarity / heteroskedasticity
+  question is now fully triangulated.
+
 ## 0.6.417 — 2026-05-04
 
 ### Refined — axis-158: `hurstLike` (implied Hurst exponent) + `hurstLike` sort key
