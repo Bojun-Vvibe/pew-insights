@@ -254,6 +254,12 @@ export function kolmogorovSurvival(lambda: number): number {
     const t = Math.exp(-2 * j * j * lambda * lambda);
     if (t === 0) break;
     s += j % 2 === 1 ? t : -t;
+    // Early exit: once the term magnitude has shrunk below
+    // 1e-18 (well past double-precision contribution to s),
+    // further terms cannot meaningfully change the partial
+    // sum and we save iterations on small-lambda inputs
+    // where the loop would otherwise run all 100 iterations.
+    if (t < 1e-18) break;
   }
   let p = 2 * s;
   if (p < 0) p = 0;

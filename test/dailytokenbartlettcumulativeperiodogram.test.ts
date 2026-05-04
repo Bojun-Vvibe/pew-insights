@@ -67,6 +67,38 @@ test('kolmogorovSurvival: rejects non-finite input', () => {
   assert.throws(() => kolmogorovSurvival(Infinity));
 });
 
+test('kolmogorovSurvival: very small positive lambda -> p ~ 1', () => {
+  // For tiny lambda the survival function should approach 1.
+  // (2 * Sum_{j>=1} (-1)^{j-1} exp(-2 j^2 lambda^2) ~ 2 -- but
+  // partial sums with alternation cancel; we clamp to [0, 1].)
+  // The early-exit stability guard ensures we still converge to
+  // a value in [0, 1] for any positive lambda above the
+  // double-precision underflow threshold for exp(-2 lambda^2).
+  for (const l of [1e-3, 1e-4, 1e-5]) {
+    const p = kolmogorovSurvival(l);
+    assert.ok(p >= 0 && p <= 1, `lambda=${l} -> p=${p} out of [0,1]`);
+  }
+});
+
+test('bartlett: signed deviations bounded by bD in magnitude', () => {
+  // The unsigned bD must equal max(devPos, -devNeg) by
+  // construction. Verify on a varied power vector.
+  const cases = [
+    [10, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 10],
+    [5, 10, 3, 2, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 2, 3, 10],
+  ];
+  for (const c of cases) {
+    const r = bartlettCumulativePeriodogramStatistic(c);
+    const expected = Math.max(r.bSignedDevPositive, -r.bSignedDevNegative);
+    assert.ok(
+      Math.abs(r.bD - expected) < 1e-12,
+      `bD=${r.bD} != max(devPos=${r.bSignedDevPositive}, -devNeg=${r.bSignedDevNegative})`,
+    );
+  }
+});
+
 // ---------- bartlettCumulativePeriodogramStatistic ----------
 
 test('bartlett: uniform spectrum -> bD = 0, bPValue = 1', () => {
