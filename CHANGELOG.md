@@ -2,6 +2,158 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.472 — 2026-05-05
+
+### Feature — `daily-token-vargha-delaney-halves` (axis-187)
+
+Adds the ONE-HUNDRED-AND-EIGHTY-SEVENTH cross-source
+axis: the VARGHA-DELANEY 2000 A12
+PROBABILITY-OF-SUPERIORITY EFFECT-SIZE STATISTIC between
+the first half (n1 = floor(n/2) days) and the second
+half (n2 = n - n1 days) of the gap-filled daily
+total_tokens series.
+
+THE STATISTIC. Let X be the first-half sample and Y the
+second-half sample. Then
+
+    A12 = (1 / (n1 * n2)) * sum_{i,j} [
+              ind(y_j > x_i)  +  0.5 * ind(y_j == x_i)
+          ]
+
+(Vargha-Delaney 2000 *J. Educational and Behavioral
+Statistics* 25(2):101-132 eq. 14). Equivalently, in
+mid-rank form, A12 = (R_y / n2 - (n2+1)/2) / n1, with
+R_y = sum of pooled mid-ranks of the Y sample. A12 is
+in [0, 1]; A12 = 0.5 means STOCHASTIC EQUALITY (no
+superiority either way); A12 > 0.5 means the SECOND
+half is stochastically larger, preserving the
+SECOND-half-positive convention of every prior halves
+axis.
+
+THE SE / CI. Closed-form Brunner-Munzel 2000 *Biometrics*
+56:1129-1135 asymptotic standard error from the
+within-sample variances of the placement-rank vectors
+(no permutation, no bootstrap). 95% CI = A12 +/- 1.96
+SE clamped to [0, 1]; `vdCiExcludesHalf === true` IFF
+the closed CI does not contain 0.5 — the asymptotic
+analogue of rejecting H0: P(Y>X) + 0.5 * P(Y==X) = 0.5
+at alpha = 0.05.
+
+THE MAGNITUDE BUCKET. Vargha-Delaney 2000 Table 3
+verbal effect-size thresholds applied to |A12 - 0.5|:
+negligible (< 0.06), small (< 0.14), medium (< 0.21),
+large (>= 0.21). Lets readers separate
+both-meaningful-and-significant rows from
+significant-but-trivial rows, which is the entire
+reason VD proposed A12 in 2000 (as the
+non-parametric replacement for Cohen's d that does
+NOT depend on a Gaussian assumption).
+
+WHY AXIS-187 IS STRUCTURALLY ORTHOGONAL TO EVERY PRIOR
+HALVES AXIS:
+
+  - vs axis-115 MANN-WHITNEY (TEST STATISTIC). MW
+    reports a Z and an asymptotic p-value. A12 reports
+    a SCALE-FREE EFFECT SIZE in [0, 1] with a direct
+    PROBABILISTIC INTERPRETATION (A12 = 0.62 means a
+    randomly picked second-half day has a 62% chance
+    of exceeding a randomly picked first-half day).
+    The two are deterministically related (A12 = U2 /
+    (n1 * n2) with U2 the MW U for the second sample),
+    but A12 is the EFFECT-SIZE INTERPRETATION while MW
+    is the SIGNIFICANCE-DECISION interpretation; they
+    answer different questions.
+  - vs axis-186 HODGES-LEHMANN SHIFT (POINT ESTIMATOR
+    in token units). HL gives the median shift in raw
+    tokens; A12 gives the probability-of-superiority on
+    a SCALE-FREE [0, 1] axis. Two sources with very
+    different token volumes are DIRECTLY COMPARABLE on
+    A12 but NOT on hlDelta.
+  - vs axis-181 vdW / axis-183 Yuen-Welch / axis-184
+    Savage (location TEST statistics with various score
+    functions). All produce z-scores with parametric
+    null references. A12 is a NON-PARAMETRIC
+    EFFECT-SIZE summary; it has no null reference per
+    se and no associated p-value — only thresholds for
+    small / medium / large effects.
+  - vs axis-185 BWS / axis-174 Cucconi (omnibus
+    location-AND-scale tests). Those reject under any
+    departure; A12 is a ONE-DIRECTIONAL location-only
+    EFFECT-SIZE and is INSENSITIVE to pure-scale
+    departures.
+
+39 new unit tests cover empty-input handling, the
+algebraic A12 = U2/(n1 * n2) identity against direct
+indicator-sum reference, mid-rank vs raw-rank
+equivalence under no ties, mid-rank correctness under
+heavy ties, A12 bounds [0,1] and 0.5-symmetry under
+swap, all four magnitude-bucket transitions at the
+exact VD-2000 boundaries, Brunner-Munzel SE positivity
+and finiteness, CI clamp behaviour at the [0,1]
+endpoints, vdCiExcludesHalf === true for clearly
+separated samples, vdCiExcludesHalf === false for
+overlapping samples, deterministic source-asc
+ordering, sort-key handling for all four documented
+keys, droppedSparseSources / droppedZeroVariance
+counters, --min-tenure-days hard floor of 16, and
+--source single-source filter behaviour.
+
+#### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Real read against the four standard sources (after
+`--min-tenure-days 16` which is the hard floor; two
+short-tenure sources surface as
+`droppedBelowMinTenureDays = 2`):
+
+```
+source       n1   n2   A12     A12-.5   SE      CI low  CI high  bucket      CI excl .5
+-----------  ---  ---  ------  -------  ------  ------  -------  ----------  ----------
+openclaw     9    9    0.0988  -0.4012  0.0357  0.0287  0.1688   large       YES
+claude-code  36   36   0.7369  +0.2369  0.0283  0.6815  0.7923   large       YES
+hermes       9    9    0.6420  +0.1420  0.0772  0.4906  0.7933   medium      no
+vscode-cp    132  133  0.4417  -0.0583  0.0139  0.4144  0.4689   negligible  YES
+```
+
+Reading:
+
+  - **openclaw** — `A12 = 0.0988`, `large` magnitude,
+    CI [0.029, 0.169] excludes 0.5. The second-half
+    day has only ~10% chance of exceeding a first-half
+    day; this is the rare LARGE-and-SIGNIFICANT
+    SECOND-half-LOWER reading on the corpus and aligns
+    with the openclaw axis-186 HL shift of approx
+    -119M tokens (CHANGELOG v0.6.471) which itself
+    excluded 0.
+  - **claude-code** — `A12 = 0.7369`, `large`
+    magnitude, CI [0.682, 0.792] excludes 0.5. Clean
+    LARGE-and-SIGNIFICANT SECOND-half-LARGER reading;
+    the asymptotic A12 = U2/(n1*n2) identity makes
+    this the exact effect-size complement of the
+    axis-115 MW rejection (which is also positive on
+    this source per prior CHANGELOG entries).
+  - **hermes** — `A12 = 0.6420`, `medium` magnitude,
+    CI [0.491, 0.793] STRADDLES 0.5. Suggestive but
+    NOT statistically distinguishable from stochastic
+    equality at alpha = 0.05; the small n1 = n2 = 9
+    inflates SE = 0.077 enough to swallow a medium
+    effect — exactly the sort of row VD-2000 designed
+    A12 to flag (a meaningful effect that a
+    significance-only reading would suppress).
+  - **vscode-cp** — `A12 = 0.4417`, `negligible`
+    magnitude, CI [0.414, 0.469] excludes 0.5. The
+    statistical-significance-WITHOUT-meaningful-effect
+    archetype: with n1 = 132, n2 = 133 the SE shrinks
+    to 0.014 and a 0.058-from-0.5 deviation clears
+    the asymptotic test, but the magnitude bucket
+    correctly flags the effect as too small to act on.
+
+This juxtaposition of openclaw + claude-code (large &
+significant), hermes (medium but underpowered), and
+vscode-cp (significant but negligible) on a single
+read is the textbook demonstration of why A12 +
+magnitude bucket is a strictly stronger reporting
+surface than a Z + p-value alone.
+
 ## 0.6.471 — 2026-05-05
 
 ### Refactor — `classifyHlMwShiftAgreement` cross-axis joiner (axes 186 + 115)
