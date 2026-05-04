@@ -195,6 +195,7 @@ import {
   renderDailyTokenCramerVonMisesCumulativePeriodogram,
   renderDailyTokenAndersonDarlingCumulativePeriodogram,
   renderDailyTokenKuiperVCumulativePeriodogram,
+  renderDailyTokenWatsonU2CumulativePeriodogram,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -531,6 +532,10 @@ import {
   buildDailyTokenKuiperVCumulativePeriodogram,
   type DailyTokenKuiperVCumulativePeriodogramSort,
 } from './dailytokenkuipervcumulativeperiodogram.js';
+import {
+  buildDailyTokenWatsonU2CumulativePeriodogram,
+  type DailyTokenWatsonU2CumulativePeriodogramSort,
+} from './dailytokenwatsonu2cumulativeperiodogram.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -43337,6 +43342,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKuiperVCumulativePeriodogram(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-watson-u2-cumulative-periodogram')
+  .description(
+    "Per-source WATSON U^2 TEST on the cumulative periodogram of the gap-filled mean-centred daily total_tokens series (axis-173). e[j] = C[j] - j/K; eBar = mean_j(e[j]); wU2 = (1/(K-1)) * sum_j (e[j] - eBar)^2; wU2Star = (wU2 - 0.1/K + 0.1/K^2)*(1 + 0.8/K); wU2PValue = 2 * sum_{m>=1} (-1)^(m-1) exp(-2 m^2 pi^2 wU2Star). FIFTH member of the EDF family on the cumulative-periodogram domain after Bartlett-167 (sup |D|), CvM-168 (uniform L^2), AD-169 (tail-weighted L^2), Kuiper-V-172 (sum of two one-sided sup-norms). DIFFERS from CvM by SUBTRACTING the mean of the deviation profile before squaring (Watson 1961's geometric trick): a CONSTANT-OFFSET deviation profile leaves CvM with full L^2 mass but Watson U^2 = 0; pure-sinusoidal deviation drives CvM and Watson U^2 in equal magnitude. CYCLIC-ROTATION-INVARIANT on the circular cumulative process (the canonical 'test on a circle' statistic of Watson 1961). Refs: Watson 1961 Biometrika 48:109-114; Stephens 1970 JRSS-B 32(1):115-122 Table 1; Lockhart & Stephens 1985 JRSS-B 47(1):112-119; Brockwell-Davis 1991 sec. 10.2.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: wU2PValue (default) | wU2PValueDesc | wU2Star | wU2StarDesc | wU2 | wU2Desc | tokens | tenure | source.',
+    'wU2PValue',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'wU2',
+          'wU2Desc',
+          'wU2Star',
+          'wU2StarDesc',
+          'wU2PValue',
+          'wU2PValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWatsonU2CumulativePeriodogram(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenWatsonU2CumulativePeriodogramSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWatsonU2CumulativePeriodogram(report) + '\n',
           );
         }
       } catch (e) {

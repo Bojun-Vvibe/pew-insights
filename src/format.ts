@@ -20589,6 +20589,7 @@ import type { DailyTokenBartlettCumulativePeriodogramReport } from './dailytoken
 import type { DailyTokenCramerVonMisesCumulativePeriodogramReport } from './dailytokencramervonmisescumulativeperiodogram.js';
 import type { DailyTokenAndersonDarlingCumulativePeriodogramReport } from './dailytokenandersondarlingcumulativeperiodogram.js';
 import type { DailyTokenKuiperVCumulativePeriodogramReport } from './dailytokenkuipervcumulativeperiodogram.js';
+import type { DailyTokenWatsonU2CumulativePeriodogramReport } from './dailytokenwatsonu2cumulativeperiodogram.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -26472,6 +26473,91 @@ export function renderDailyTokenMoodsMedianHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: mdChi2 approx 0 = halves balanced about pooled median; mdChi2 > 3.841 = significant location shift at alpha = 0.05 (chi-square(1) critical); equivalently |mdZ| > 1.96. Sign convention: positive mdZ = first half has more above-median values = first half RUNS LARGER = MEDIAN DROPPED across the tenure; negative mdZ = MEDIAN ROSE. The Mood test is INVARIANT under any monotone transform of the data and ROBUST to heavy-tailed contamination -- a single extreme spike that would dominate Mann-Whitney's rank sum is just one above-median count to Mood. Cross-check vs axis-115 Mann-Whitney halves: when the two disagree, Mann-Whitney is reflecting tail mass while Mood is anchored at the median.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWatsonU2CumulativePeriodogram(
+  r: DailyTokenWatsonU2CumulativePeriodogramReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-watson-u2-cumulative-periodogram',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WATSON U^2 TEST on the cumulative periodogram of the gap-filled mean-centred daily total_tokens series. e[j] = C[j] - j/K; eBar = mean(e); wU2 = (1/(K-1)) sum (e[j] - eBar)^2; wU2Star = (wU2 - 0.1/K + 0.1/K^2)*(1 + 0.8/K); wU2PValue = 2*sum_{m>=1} (-1)^(m-1) exp(-2 m^2 pi^2 wU2Star). ONE-HUNDRED-AND-SEVENTY-THIRD cross-source axis. FIFTH member of the EDF family on the cumulative-periodogram domain after Bartlett-167, CvM-168, AD-169, Kuiper-V-172. DIFFERS from CvM-168 by SUBTRACTING the mean of the deviation profile before squaring (Watson 1961's geometric trick that makes the statistic invariant under cyclic rotation of the support). Pure-DC offset to the cumulative process leaves CvM large but Watson U^2 = 0; pure sinusoidal deviation drives both equally. Refs: Watson 1961 Biometrika 48:109-114; Stephens 1970 JRSS-B 32(1):115-122; Lockhart & Stephens 1985 JRSS-B 47(1):112-119; Brockwell-Davis 1991 sec. 10.2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source WATSON U^2 CUMULATIVE PERIODOGRAM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'eBar',
+    'wU2',
+    'wU2Star',
+    'wU2PValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.eBar.toFixed(6),
+    s.wU2.toFixed(6),
+    s.wU2Star.toFixed(6),
+    s.wU2PValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: wU2Star < 0.152 = white-noise-compatible at 10% (Stephens 1970 Table 1); wU2Star > 0.187 = REJECT at 5%; wU2Star > 0.267 = REJECT at 1%. ORTHOGONALITY vs axis-168 CvM: a CONSTANT-OFFSET deviation profile leaves CvM with full L^2 mass but Watson U^2 = 0 (mean-centring annihilates it). ORTHOGONALITY vs axis-172 Kuiper: both are cyclic-rotation invariant but Kuiper picks up extrema only; Watson U^2 picks up sustained mean-centred dispersion across the entire cumulative spectrum.)`,
     ),
   );
 
