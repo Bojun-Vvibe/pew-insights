@@ -20625,6 +20625,7 @@ import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermun
 import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
+import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27147,6 +27148,89 @@ export function renderDailyTokenMoodHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: moodPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). moodZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ sign). Mood ARE 0.760 vs F under normal — 25% more efficient than Siegel-Tukey/Ansari-Bradley, 24% less than Klotz; bounded weight makes Mood more robust to single outliers than Klotz.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSukhatmeHalves(
+  r: DailyTokenSukhatmeHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-sukhatme-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SUKHATME 1957 ABSOLUTE-DEVIATIONS U-STATISTIC SCALE TEST. Pooled median M; deviations a_i = |A_i - M|, b_j = |B_j - M|; S = #{(i,j) : a_i < b_j} + 0.5 #{a_i = b_j}; E[S] = n1 n2 / 2, Var[S] = n1 n2 (n+1) / 12; sukhatmeZ ~ N(0,1) under H0. ONE-HUNDRED-AND-EIGHTIETH cross-source axis. STRUCTURALLY DISTINCT: vs axis-179 Mood (squared CENTRED RANKS on RAW values, no median fold) Sukhatme uses LINEAR U-counts on |X - POOLED median| — bounded influence, more outlier-robust. vs axis-178 Conover (squared ranks on |X - WITHIN-HALF median|) Sukhatme pools the median estimator. vs axis-170 Ansari-Bradley (folds about RANK midpoint) Sukhatme folds about DATA median. ARE 6/(pi^2) ~ 0.608 vs F under normal — distribution-free under any continuous symmetric F.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SUKHATME absolute-deviations U-statistic scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'median',
+    'sukhatmeS',
+    'expS',
+    'sukhatmeZ',
+    'sukhatmePValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.sukhatmeN1),
+    formatNumber(s.sukhatmeN2),
+    s.pooledMedian.toFixed(2),
+    s.sukhatmeS.toFixed(2),
+    s.sukhatmeExpS.toFixed(2),
+    s.sukhatmeZ.toFixed(4),
+    s.sukhatmePValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: sukhatmePValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). sukhatmeZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ sign). Sukhatme ARE 0.608 vs F under normal — same as ST/AB but bounded influence per observation makes it strictly more outlier-robust than Mood/Klotz/Conover.)`,
     ),
   );
 

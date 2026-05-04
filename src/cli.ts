@@ -206,6 +206,7 @@ import {
   renderDailyTokenKlotzHalves,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
+  renderDailyTokenSukhatmeHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -665,6 +666,10 @@ import {
   buildDailyTokenMoodHalves,
   type DailyTokenMoodHalvesSort,
 } from './dailytokenmoodhalves.js';
+import {
+  buildDailyTokenSukhatmeHalves,
+  type DailyTokenSukhatmeHalvesSort,
+} from './dailytokensukhatmehalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -44094,6 +44099,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMoodHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-sukhatme-halves')
+  .description(
+    "Per-source SUKHATME 1957 ABSOLUTE-DEVIATIONS U-STATISTIC SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTIETH cross-source axis). Pooled median M; deviations a_i = |A_i - M|, b_j = |B_j - M|; statistic S = #{(i,j) : a_i < b_j} + 0.5 #{a_i = b_j}; E[S] = n1 n2 / 2, Var[S] = n1 n2 (n+1) / 12; sukhatmeZ = (S - E[S]) / sqrt(Var[S]) ~ N(0, 1) under H0. STRUCTURALLY DISTINCT from axis-179 Mood (squared CENTRED RANKS on RAW values, no median fold; quadratic weight) by using LINEAR U-counts on |X - POOLED median|: bounded influence per observation, strictly more outlier-robust than Mood. Distinct from axis-178 Conover (squared ranks on |X - WITHIN-HALF median|) by pooling the median estimator. Distinct from axis-170 Ansari-Bradley (folds about RANK midpoint) by folding about the DATA median. Pitman ARE 6/(pi^2) ~ 0.608 vs F under normal — same as ST/AB but distribution-free under any continuous symmetric F. Refs: Sukhatme 1957 Ann. Math. Statist. 28:188-194; Hollander/Wolfe/Chicken 2014 sec. 5.5.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: sukhatmeZAbsDesc (default) | sukhatmeZ | sukhatmePValue | sukhatmePValueDesc | tokens | tenure | source.',
+    'sukhatmeZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'sukhatmeZ',
+          'sukhatmeZAbsDesc',
+          'sukhatmePValue',
+          'sukhatmePValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSukhatmeHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenSukhatmeHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSukhatmeHalves(report) + '\n',
           );
         }
       } catch (e) {
