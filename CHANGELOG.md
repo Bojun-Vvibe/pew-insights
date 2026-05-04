@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.409 — 2026-05-04
+
+### Refined — axis-154: secondary changepoint (`kt2`, `kt2OverKt`, `tStar2Day`)
+
+Adds a *secondary changepoint* probe to axis-154. After locating the
+primary tStar via `argmax_t |U[t]|`, we re-scan |U[t]| OUTSIDE a
+guard window of `+/- max(3, floor(n/5))` indices around tStar and
+report:
+
+```
+kt2          = max_{|t - tStar| > guard} |U[t]|
+tStar2Index  = argmax_t |U[t]|  s.t.  |t - tStar| > guard
+kt2OverKt    = kt2 / kt          (in [0, 1])
+```
+
+The guard window suppresses the mechanically-near-max |U[t]| values
+adjacent to tStar (|U[t]| is piecewise-linear in t for a clean step,
+so `|U[tStar +/- k]| ~ kt * (1 - 2k/n)` for small k).
+
+**Reading kt2OverKt:**
+
+- ~0 (or `tStar2Index = -1`): single dominant break, no competing
+  candidate. Series cleanly splits at one point.
+- ~0.3-0.5: weak secondary signal — possibly noise, possibly a
+  small additional regime change.
+- ~0.6-0.9: STRONG secondary candidate — the series likely contains
+  *two* regime changes of comparable strength (e.g., a low-high-low
+  V/U shape, or a multi-step staircase).
+- = 1.0: pathological tie; should not occur with the guard.
+
+This is structurally distinct from BinSeg / PELT multi-changepoint
+algorithms: we do NOT iteratively segment the series. We surface a
+*single rank-based scalar* (`kt2OverKt`) that flags whether the
+Pettitt assumption of "single most likely break" is locally
+adequate. Sources with high `kt2OverKt` should be re-examined with
+a multi-changepoint procedure; sources with low `kt2OverKt` are
+well-described by the primary `tStar`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-01)
+
+Sanitized output (one source name redacted; numeric values
+unchanged).
+
+```
+$ pew-insights daily-token-pettitt-changepoint --since 2026-04-01T00:00:00.000Z
+source       n     kt    pApprox  tStarDay    meanShift     kt2   kt2OverKt  tStar2Day
+-----------  ---   ----  -------  ----------  ------------  ----  ---------  ----------
+opencode     15    30    0.4463   2026-04-29  -150,011,945  14    0.467      2026-04-20
+claude-code  72    696   0.0009   2026-03-22  +100,197,426  501   0.720      2026-03-03
+openclaw     18    78    0.0053   2026-04-26  -132,727,809  52    0.667      2026-04-30
+codex        8     11    0.5671   2026-04-17  +127,857,343  5     0.455      2026-04-13
+hermes       18    26    1.0000   2026-04-26  +6,152,204    22    0.846      2026-04-22
+[redacted]   265   3408  0.0480   2026-02-06  +1,761        2340  0.687      2025-12-04
+```
+
+Reading the live numbers (refinement layer):
+
+- **claude-code** primary `tStar = 2026-03-22` (`pApprox = 0.0009`)
+  has a STRONG secondary at `2026-03-03` (`kt2OverKt = 0.720`) —
+  this hints that the ~31× location shift is not a single clean
+  break but rather a *staircase* with at least one earlier inflection
+  inside February. Multi-changepoint analysis recommended.
+- **hermes** primary `pApprox = 1.000` is non-significant, but
+  `kt2OverKt = 0.846` is the highest in the cohort — interpreted
+  jointly: there is no *significant* single break, but if any
+  break exists it is closely matched by a second candidate at
+  `2026-04-22`. Likely noise or weak multi-regime; *not* a clean
+  single-changepoint series.
+- **openclaw** primary at `2026-04-26` (`pApprox = 0.0053`) has a
+  secondary at `2026-04-30` (`kt2OverKt = 0.667`) — the high ratio
+  reflects a sharp U-shape: drop on `04-26`, partial recovery later.
+- **opencode** has a low `kt2OverKt = 0.467` at index 0 — the
+  primary `tStar = 2026-04-29` is well-separated from any rival,
+  consistent with a single (sub-significant) break.
+- **codex** has `kt2OverKt = 0.455` (low) — single-break-plausible
+  but underpowered (n=8).
+- The redacted long-tail source (n=265) has `kt2OverKt = 0.687`
+  with the secondary at `2025-12-04` and primary at `2026-02-06`
+  — multi-regime over a long history, consistent with the marginal
+  primary p-value (0.048).
+
+Cross-axis read 154-refined ↔ 154-primary: `kt2OverKt > ~0.65`
+flags series where the Pettitt single-break assumption is shaky;
+under that threshold, `tStarDay` and `pApprox` are trustworthy as
+single-break summaries.
+
+### Tests
+
+12 additional tests in `test/dailytokenpettittchangepoint.test.ts`
+covering the `kt2`, `kt2OverKt`, `tStar2Index`, `tStar2Day` fields:
+single-break low-ratio, two-regime high-ratio, guard-window
+respected, empty/flat -> `kt2 = 0`, n=4 boundary (no candidate),
+ratio in [0, 1] across diverse cases, builder integration with the
+new sort key `kt2overkt`, and refinement determinism.
+
+Total suite: **12324 → 12336** tests (+12).
+
 ## 0.6.408 — 2026-05-04
 
 ### Added — axis-154: `daily-token-pettitt-changepoint`
