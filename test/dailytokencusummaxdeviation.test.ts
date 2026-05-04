@@ -252,6 +252,82 @@ test('cusum: constant series surfaces flat=true', () => {
   assert.equal(row.cusumMax, 0);
   assert.equal(row.cusumMin, 0);
   assert.equal(row.normMax, 0);
+  assert.equal(row.driftIndex, 0);
   assert.equal(row.argMaxDay, null);
   assert.equal(row.argMinDay, null);
+});
+
+// ---- refinement: driftIndex ---------------------------------------------
+
+test('cusumSummary: driftIndex = normMax + normMin', () => {
+  const xs = [10, 50, 30, 70, 20, 90, 40];
+  const s = cusumSummary(xs);
+  assert.ok(Math.abs(s.driftIndex - (s.normMax + s.normMin)) < 1e-12);
+});
+
+test('cusumSummary: pure-upswing series has positive driftIndex', () => {
+  // Descending ramp 10..1: cusumMax >> 0, cusumMin ~ 0, so driftIndex > 0.
+  const s = cusumSummary([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+  assert.ok(s.driftIndex > 0, `expected driftIndex > 0 (got ${s.driftIndex})`);
+});
+
+test('cusumSummary: pure-downswing series has negative driftIndex', () => {
+  // Ascending ramp 1..10: cusumMin << 0, cusumMax ~ 0, so driftIndex < 0.
+  const s = cusumSummary([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.ok(s.driftIndex < 0, `expected driftIndex < 0 (got ${s.driftIndex})`);
+});
+
+test('cusum: --sort driftindex orders by driftIndex desc', () => {
+  // up = positive drift, down = negative drift, flat-ish = near zero.
+  const q: QueueLine[] = [];
+  for (let d = 1; d <= 6; d++) {
+    const day = `2026-05-0${d}T00:00:00.000Z`;
+    // descending => positive driftIndex
+    q.push(ql(day, 'up', (7 - d) * 100));
+    // ascending => negative driftIndex
+    q.push(ql(day, 'down', d * 100));
+  }
+  const r = buildDailyTokenCusumMaxDeviation(q, {
+    generatedAt: GEN,
+    sort: 'driftindex',
+  });
+  assert.equal(r.sources[0]!.source, 'up');
+  assert.equal(r.sources[1]!.source, 'down');
+  assert.ok(r.sources[0]!.driftIndex > 0);
+  assert.ok(r.sources[1]!.driftIndex < 0);
+});
+
+test('cusum: --sort absdriftindex orders by |driftIndex| desc', () => {
+  const q: QueueLine[] = [];
+  for (let d = 1; d <= 6; d++) {
+    const day = `2026-05-0${d}T00:00:00.000Z`;
+    q.push(ql(day, 'big-down', d * 1000));
+    q.push(ql(day, 'small-up', (7 - d) * 10 + 50));
+  }
+  const r = buildDailyTokenCusumMaxDeviation(q, {
+    generatedAt: GEN,
+    sort: 'absdriftindex',
+  });
+  // big-down has larger |driftIndex| than small-up in magnitude.
+  assert.ok(
+    Math.abs(r.sources[0]!.driftIndex) >= Math.abs(r.sources[1]!.driftIndex),
+  );
+});
+
+test('cusum: flat series surfaces driftIndex = 0', () => {
+  const q: QueueLine[] = [];
+  for (let d = 1; d <= 5; d++) {
+    const day = `2026-05-0${d}T00:00:00.000Z`;
+    q.push(ql(day, 's', 1000));
+  }
+  const r = buildDailyTokenCusumMaxDeviation(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(row.driftIndex, 0);
+  assert.equal(row.flat, true);
+});
+
+test('cusum: rejects new sort keys when malformed', () => {
+  assert.throws(() =>
+    buildDailyTokenCusumMaxDeviation([], { sort: 'driftIndex' as 'driftindex' }),
+  );
 });

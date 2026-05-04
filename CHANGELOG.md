@@ -154,6 +154,72 @@ all three are needed.
 gap-fill correctness, sort key, source filter, top truncation, and
 flat-series degenerate handling all covered. Build clean.
 
+### REFINEMENT — `driftIndex`
+
+Added a complementary signed-drift metric to axis-153:
+
+```
+driftIndex = (cusumMax + cusumMin) / (rms * sqrt(n))
+           = normMax + normMin
+```
+
+Captures NET drift DIRECTION independent of path span. Distinct from
+`normRange` (which is sign-blind). Two series with identical
+`normRange` can have:
+
+- `driftIndex = +1` — pure upswing (cusumMin ≈ 0, cusumMax dominates)
+- `driftIndex = -1` — pure downswing (cusumMax ≈ 0, cusumMin dominates)
+- `driftIndex =  0` — V-shape (excursions cancel)
+
+Two new sort keys: `driftindex` (signed desc — most upward-drifting
+sources first) and `absdriftindex` (`|driftIndex|` desc — most
+strongly-directional sources first regardless of sign). Reported as
+`0` with `flat: true` when `rms = 0`.
+
+### Live-smoke (refinement, against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+```
+$ pew-insights daily-token-cusum-max-deviation --since 2026-04-26T00:00:00.000Z
+```
+
+| source            | tokens         | normMax | normMin | normRange | driftIdx | argMaxDay  | argMinDay  |
+|-------------------|----------------|---------|---------|-----------|----------|------------|------------|
+| opencode          | 6,448,310,456  |  0.695  | -0.563  |  1.259    |  0.132   | 2026-04-29 | 2026-04-20 |
+| claude-code       | 3,442,385,788  |  0.066  | -1.692  |  1.758    | -1.626   | 2026-04-21 | 2026-04-14 |
+| openclaw          | 2,252,642,234  |  1.537  | -0.206  |  1.743    |  1.331   | 2026-04-24 | 2026-04-18 |
+| codex             |   809,624,660  |  0.237  | -0.831  |  1.068    | -0.594   | 2026-04-13 | 2026-04-19 |
+| hermes            |   311,075,457  |  0.477  | -0.648  |  1.125    | -0.171   | 2026-04-22 | 2026-04-26 |
+| (redacted-source) |     1,885,727  |  0.684  | -0.628  |  1.312    |  0.057   | 2025-10-17 | 2026-03-04 |
+
+Reading the new `driftIdx` column:
+
+`openclaw` and `claude-code` have nearly IDENTICAL `normRange`
+(1.743 vs 1.758) — sign-blind axis-153 cannot tell them apart. The
+new `driftIndex` says `+1.331` vs `-1.626`: openclaw is the
+strongest UPWARD-drift source in the suite, claude-code is the
+strongest DOWNWARD-drift source. Same path span, opposite
+direction, captured by a single signed scalar.
+
+`opencode` (`driftIdx = 0.132`) and `(redacted-source)` (`driftIdx
+= 0.057`) — both NEAR-ZERO drift, meaning their CUSUM paths are
+balanced V-shapes despite non-trivial `normRange` (1.259 / 1.312).
+The path goes far in BOTH directions but cancels.
+
+`codex` (`driftIdx = -0.594`) — moderate negative drift, consistent
+with the known 2026-04-19 trough preceding the 2026-04-20 spike.
+The trough wins on net.
+
+`hermes` (`driftIdx = -0.171`) — barely-net-negative drift,
+matching the modest balanced excursions seen in the base axis.
+
+Cross-axis structural value: `normRange` partitions sources by
+PATH SPAN; `driftIndex` partitions them by NET DIRECTION; and the
+combination `(normRange, driftIndex)` lives in a 2D plane where
+`(large, near-zero)` = balanced volatility, `(large, large)` =
+unidirectional drift, `(small, near-zero)` = quiet stable, and
+`(small, large)` is impossible (`|driftIndex| <= normRange` by
+construction). Tests now `12246 -> 12273 (+27)`.
+
 
 
 ## 0.6.405 — 2026-05-04

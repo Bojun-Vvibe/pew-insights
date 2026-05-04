@@ -108,6 +108,8 @@ export type DailyTokenCusumMaxDeviationSortKey =
   | 'normmax'
   | 'normmin'
   | 'normrange'
+  | 'driftindex'
+  | 'absdriftindex'
   | 'ndays';
 
 export interface DailyTokenCusumMaxDeviationOptions {
@@ -144,6 +146,18 @@ export interface DailyTokenCusumMaxDeviationSourceRow {
   normMin: number;
   /** cusumRange / (rms * sqrt(n)). 0 with `flat: true` when rms = 0. */
   normRange: number;
+  /**
+   * Signed net-drift index: (cusumMax + cusumMin) / (rms * sqrt(n)).
+   * Captures NET drift direction independent of path span.
+   *   - > 0: net upward drift (positive excursion dominates trough)
+   *   - < 0: net downward drift (trough dominates positive excursion)
+   *   -   0: balanced excursions
+   * Distinct from normRange (which measures path SPAN, sign-blind).
+   * Two series with identical normRange can have driftIndex of
+   * +1 (pure upswing) vs -1 (pure downswing) vs 0 (V-shape).
+   * 0 with `flat: true` when rms = 0.
+   */
+  driftIndex: number;
   /** ISO YYYY-MM-DD of the day achieving cusumMax. null when flat. */
   argMaxDay: string | null;
   /** ISO YYYY-MM-DD of the day achieving cusumMin. null when flat. */
@@ -181,6 +195,7 @@ export interface CusumSummary {
   normMax: number;
   normMin: number;
   normRange: number;
+  driftIndex: number;
   argMaxIndex: number;
   argMinIndex: number;
   flat: boolean;
@@ -203,6 +218,7 @@ export function cusumSummary(values: number[]): CusumSummary {
       normMax: 0,
       normMin: 0,
       normRange: 0,
+      driftIndex: 0,
       argMaxIndex: -1,
       argMinIndex: -1,
       flat: true,
@@ -241,6 +257,7 @@ export function cusumSummary(values: number[]): CusumSummary {
       normMax: 0,
       normMin: 0,
       normRange: 0,
+      driftIndex: 0,
       argMaxIndex: -1,
       argMinIndex: -1,
       flat: true,
@@ -263,6 +280,7 @@ export function cusumSummary(values: number[]): CusumSummary {
     normMax: cusumMax / denom,
     normMin: cusumMin / denom,
     normRange: cusumRange / denom,
+    driftIndex: (cusumMax + cusumMin) / denom,
     argMaxIndex,
     argMinIndex,
     flat: false,
@@ -289,6 +307,8 @@ const SORT_KEYS: DailyTokenCusumMaxDeviationSortKey[] = [
   'normmax',
   'normmin',
   'normrange',
+  'driftindex',
+  'absdriftindex',
   'ndays',
 ];
 
@@ -414,6 +434,7 @@ export function buildDailyTokenCusumMaxDeviation(
       normMax: summary.normMax,
       normMin: summary.normMin,
       normRange: summary.normRange,
+      driftIndex: summary.driftIndex,
       argMaxDay,
       argMinDay,
       flat: summary.flat,
@@ -442,6 +463,12 @@ export function buildDailyTokenCusumMaxDeviation(
         break;
       case 'normrange':
         primary = b.normRange - a.normRange;
+        break;
+      case 'driftindex':
+        primary = b.driftIndex - a.driftIndex;
+        break;
+      case 'absdriftindex':
+        primary = Math.abs(b.driftIndex) - Math.abs(a.driftIndex);
         break;
       case 'ndays':
         primary = b.nFilledDays - a.nFilledDays;
