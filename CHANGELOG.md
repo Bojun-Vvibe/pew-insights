@@ -2,6 +2,122 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.423 — 2026-05-04
+
+### Added — axis-161: per-source `daily-token-jarque-bera` (moment-based LM normality test)
+
+Adds the **161st cross-source axis**: a per-source
+JARQUE-BERA test for normality of the gap-filled daily
+total_tokens series.
+
+```
+S  = m3 / m2^{3/2}
+K  = m4 / m2^2 - 3
+JB = (n / 6) * ( S^2 + K^2 / 4 )    ~  ChiSq(2) under the iid Gaussian null
+jbZ      = (JB - 2) / 2             ~  N(0, 1) for large n
+pApprox  = exp(-JB / 2)             closed-form upper-tail p-value
+                                     (ChiSq(2) === Exp(1/2))
+```
+
+(Jarque & Bera 1980, Economics Letters 6:255-259;
+ Jarque & Bera 1987, International Statistical Review
+ 55:163-172.)
+
+Per-source row surfaces (`skewness`, `excessKurtosis`,
+`jb`, `jbZ`, `jbPApprox`, `verdict`). Verdict cutoffs by
+ChiSq(2) p-value:
+
+```
+gaussian              p > 0.20  iff JB <  3.219
+borderline    0.05 <  p <= 0.20 iff 3.219 <= JB <  5.991
+non-gaussian  0.01 <  p <= 0.05 iff 5.991 <= JB <  9.210
+strongly-non-gaussian p <= 0.01 iff JB >= 9.210
+```
+
+**Structural-orthogonality claim.** JB is a
+**permutation-invariant moment-based LM test of the
+MARGINAL DISTRIBUTION** against a Gaussian reference. It
+is structurally distinct from every prior axis 79..160:
+
+- **vs serial-dependence axes** (axis-160 BDS, axis-159
+  McLeod-Li, axis-158 VR Lo-MacKinlay, axis-114
+  Ljung-Box). All four change under permutation; JB
+  does not. A heavy-tailed iid stream has `jb` much
+  greater than 0 but `bdsZ`/`mlZ`/`vrZ`/`lbZ` approx 0;
+  a Gaussian-marginal AR(1) has the reverse pattern.
+- **vs stationarity / changepoint axes** (axis-153
+  CUSUM, axis-154 Pettitt, axis-155 Buishand, axis-156
+  KPSS, axis-157 ADF). Those test the **level
+  trajectory**; JB is silent about trajectory and
+  decisive about marginal shape.
+- **vs halves-CDF-distance axes** (Anderson-Darling
+  halves, Cramer-von Mises halves, KS halves, ...).
+  Those compare two **empirical halves** for
+  distributional drift; JB compares the **whole
+  empirical distribution to a single parametric
+  reference** via two moments.
+- **vs raw skewness / kurtosis axes**. Those expose
+  the moments individually; JB is the **joint LM
+  combination** calibrated to one ChiSq decision -- the
+  smallest sufficient summary for "is the marginal
+  plausibly Gaussian?".
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`**
+(one source name redacted to `vsc-redacted`):
+
+```
+per-source JARQUE-BERA normality test (sorted by jbDesc)
+source         firstDay    lastDay     tenure  active  mean             stddev           skew     exKurt   jb           jbZ        pApprox   verdict
+-------------  ----------  ----------  ------  ------  ---------------  ---------------  -------  -------  -----------  ---------  --------  ---------------------
+vsc-redacted   2025-07-30  2026-04-20  265     73      7,115.951        27,024.444       5.9639   39.2577  18587.9772   9292.9886  0.00e+0   strongly-non-gaussian
+claude-code    2026-02-11  2026-04-23  72      35      47,810,913.722   153,856,936.418  5.0227   26.8729  2469.1924    1233.5962  0.00e+0   strongly-non-gaussian
+openclaw       2026-04-17  2026-05-04  18      18      126,213,270.389  94,290,984.71    1.0327   -0.1573  3.2180       0.6090     2.00e-1   gaussian
+opencode       2026-04-20  2026-05-04  15      15      437,136,646.000  175,044,329.341  -0.7718  0.5176   1.6567       -0.1717    4.37e-1   gaussian
+hermes         2026-04-17  2026-05-04  18      18      17,580,240.389   9,397,913.877    0.0225   -1.1780  1.0422       -0.4789    5.94e-1   gaussian
+```
+
+**Reading the live-smoke:**
+
+- The **two longest-tenure sources** (`vsc-redacted`,
+  `claude-code`) are **strongly non-Gaussian**: both
+  carry skewness above 5 and excess kurtosis above 25,
+  giving JB statistics in the thousands. Their daily
+  token series have a heavy right tail dominated by
+  rare burst days, with the bulk of days near zero --
+  exactly the shape that a Gaussian model fits worst.
+- **`hermes`** is the most Gaussian-looking of the five
+  (skew 0.02, excess kurtosis -1.18, JB 1.04). Its
+  18-day series is approximately symmetric and slightly
+  platykurtic.
+- **`opencode`** (the new entrant, 15-day tenure) is
+  also Gaussian-consistent (`jb` = 1.66, p approx 0.44)
+  with mild **negative** skew (-0.77): the right tail
+  is shorter than the left -- the source ramped up
+  fast and is now near a flat plateau.
+- The two non-rejecting daily-tenure-floor sources
+  (`openclaw`, `hermes`) sit near the gaussian /
+  borderline boundary. As their tenure extends past
+  20-30 days the test will sharpen.
+
+**Compositional reading with axis-160 BDS.**
+`vsc-redacted` and `claude-code` reject **both** iid
+(BDS axis-160) **and** Gaussianity (axis-161): they are
+neither white noise nor Gaussian. `opencode` and
+`openclaw` reject iid (BDS) but **not** Gaussianity
+(axis-161): their marginals look Gaussian-enough but
+their day-to-day sequence carries nonlinear /
+ARCH-like structure. This is the axis-160 / axis-161
+matrix in action -- BDS targets the joint dependence,
+JB targets the marginal shape.
+
+27 unit tests cover the closed-form identities
+(`jbZ === (jb - 2) / 2`, `pApprox === exp(-jb / 2)`,
+permutation invariance, sign-flip behaviour of S vs K,
+the two-point alternating closed-form anchor
+`JB === n / 6`, zero-variance / non-finite guards) and
+the full builder pipeline (verdict classification,
+top cap, sort, window filter, source filter).
+
 ## 0.6.421 — 2026-05-04
 
 ### Refinement — axis-160: derived shape-descriptors `cMOverC1Pow` and `cMOverC1PowLog10`
