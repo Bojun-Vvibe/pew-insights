@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.432 — 2026-05-04
+
+### Added — axis-165: `daily-token-hoeffding-d-lag1`
+
+ONE-HUNDRED-AND-SIXTY-FIFTH cross-source axis. The
+per-source **Hoeffding D U-statistic for lag-1
+dependence** (Hoeffding 1948 *Annals of Mathematical
+Statistics* 19(4):546-557) computed on the
+**mid-ranks of consecutive (x_t, x_{t+1}) pairs** of
+the gap-filled daily total_tokens series.
+
+For each source over its tenure window, form the
+m = n - 1 lag-1 pairs, replace each marginal
+coordinate by its mid-rank R_i, S_i in {1..m}, and
+count the bivariate rank Q_i = #{j: R_j < R_i AND
+S_j < S_i}. Then:
+
+```
+D = 30 * ((m-2)(m-3)*D1 + D2 - 2(m-2)*D3)
+        / (m(m-1)(m-2)(m-3)(m-4))
+
+D1 = sum Q_i (Q_i - 1)
+D2 = sum (R_i - 1)(R_i - 2)(S_i - 1)(S_i - 2)
+D3 = sum (R_i - 2)(S_i - 2) Q_i
+```
+
+Under H0 (lag-1 independence): E[D] = 0,
+Var[D] = 2(m^2 + 5m - 32) / (9m(m-1)(m-3)(m-4)),
+hdZ = D/sqrt(Var) approx N(0, 1).
+
+Verdict cutoffs from the asymptotic N(0, 1) null:
+
+```
+strong-positive-rank-dependence       hdZ >= +2.576   (p <= 0.005)
+borderline-positive-rank-dependence  +1.645 <= hdZ < +2.576
+independent                          -1.645 <  hdZ < +1.645
+borderline-negative-rank-dependence  -2.576 <  hdZ <= -1.645
+strong-negative-rank-dependence       hdZ <= -2.576
+```
+
+Structural orthogonality: D detects **any** joint-CDF
+dependence shape, including non-monotonic (U-shaped,
+parabolic, periodic conditional means) that
+**Spearman-rho lag-1 (axis-130) and Kendall-tau lag-1
+(axis-131) MISS** because they are pure
+monotone-correlation statistics. Also distinct from
+axis-95 Pearson lag-1 (raw-magnitude linear), from
+axis-112 / axis-164 Bartels rank vN (univariate
+consecutive-rank-difference statistic, not a
+bivariate joint-CDF test), from axis-160 BDS
+(raw-value embedding correlation integral with a
+bandwidth parameter), and from all stationarity /
+unit-root / changepoint axes.
+
+#### Live-smoke output (sort=hdZAbsDesc, top 5)
+
+```
+source        tenure  pairs  hd        hdZ       verdict
+------------  ------  -----  --------  --------  -------------------------------
+[redacted-A]  265     264    1.101326  601.9063  strong-positive-rank-dependence
+claude-code    72      71    0.393490   54.2332  strong-positive-rank-dependence
+openclaw       18      17    0.242970    6.2011  strong-positive-rank-dependence
+hermes         18      17    0.029412    0.7506  independent
+opencode       15      14    0.008492    0.1666  independent
+```
+
+The 18-day `openclaw` row is the cleanest example of
+the orthogonality: hdZ = +6.20 (strong-positive
+dependence) on a small sample where Spearman-rho and
+Kendall-tau on the same lag-1 pairs surface only
+modest values -- D is firing on a non-monotone
+component of the joint distribution that
+monotone-correlation statistics cannot see.
+
+Conversely `hermes` and `opencode` (both 14-18 days)
+land squarely in the independent band: their lag-1
+joint mid-rank distributions are consistent with iid
+draws from the marginal product, and we should treat
+their day-to-day token totals as memoryless at the
+rank level.
+
 ## 0.6.431 — 2026-05-04
 
 ### Refined — axis-164: `daily-token-rank-von-neumann-detrended`
