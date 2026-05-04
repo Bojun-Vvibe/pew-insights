@@ -190,6 +190,7 @@ import {
   renderDailyTokenRunsTestDetrended,
   renderDailyTokenRankVonNeumannDetrended,
   renderDailyTokenHoeffdingDLag1,
+  renderDailyTokenFisherGPeriodicity,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -504,6 +505,10 @@ import {
   buildDailyTokenHoeffdingDLag1,
   type DailyTokenHoeffdingDLag1Sort,
 } from './dailytokenhoeffdingdlag1.js';
+import {
+  buildDailyTokenFisherGPeriodicity,
+  type DailyTokenFisherGPeriodicitySort,
+} from './dailytokenfishergperiodicity.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42561,6 +42566,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenHoeffdingDLag1(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-fisher-g-periodicity')
+  .description(
+    "Per-source FISHER's g-TEST FOR PERIODICITY (axis-166): the classical Fisher (1929) significance test for the LARGEST periodogram ordinate against the Gaussian-white-noise null on the gap-filled mean-centred daily total_tokens series. g = max P[k] / sum P[k] in (1/K, 1]; exact p-value P(g > x) = sum_{j=1..floor(1/x)} (-1)^{j-1} C(K,j) (1 - j*x)^{K-1}. The FIRST primitive that delivers a CALIBRATED EXACT p-value for periodogram-based detection of a single sinusoidal component against white noise. Bin-permutation-INVARIANT and bin-reversal-INVARIANT (max/sum permutation-blind) -- structurally orthogonal to axis-96 peak-bin (INDEX-VALUED, bin-permutation-SENSITIVE) and axis-97 second-peak. Companion gNeg2LogP = -2*log(p) is chi-squared(2) under H0 and additive across independent sources. Refs: Fisher 1929 Proc. Roy. Soc. A 125; Brockwell & Davis 1991 §10.2; Wichert et al. 2004 Bioinformatics 20:1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: gPValue (default; most-significant first) | gPValueDesc | gStat | gStatDesc | gNeg2LogP | gNeg2LogPDesc | tokens | tenure | source.',
+    'gPValue',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'gStat',
+          'gStatDesc',
+          'gPValue',
+          'gPValueDesc',
+          'gNeg2LogP',
+          'gNeg2LogPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenFisherGPeriodicity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenFisherGPeriodicitySort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenFisherGPeriodicity(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);

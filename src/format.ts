@@ -20584,6 +20584,7 @@ import type { DailyTokenDurbinWatsonDetrendedReport } from './dailytokendurbinwa
 import type { DailyTokenRunsTestDetrendedReport } from './dailytokenrunstestdetrended.js';
 import type { DailyTokenRankVonNeumannDetrendedReport } from './dailytokenrankvonneumanndetrended.js';
 import type { DailyTokenHoeffdingDLag1Report } from './dailytokenhoeffdingdlag1.js';
+import type { DailyTokenFisherGPeriodicityReport } from './dailytokenfishergperiodicity.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25957,6 +25958,89 @@ export function renderDailyTokenHoeffdingDLag1(
   lines.push(
     chalk.dim(
       `(reference anchor: hd approx 0 (hdZ approx 0) = lag-1 (x_t, x_{t+1}) pair distribution consistent with INDEPENDENCE in the joint-CDF sense; hd > 0 (hdZ >> 0) = lag-1 pairs concentrate on SOME bivariate region of ANY shape -- monotone OR non-monotone, including U-shaped / parabolic / periodic conditional means that Spearman (axis-130) and Kendall-tau (axis-131) MISS; hd < 0 (hdZ << 0) = anti-corner concentration, usually small-sample noise. The test is RANK-ONLY -- invariant under any monotone coordinatewise transform of the values.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenFisherGPeriodicity(
+  r: DailyTokenFisherGPeriodicityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-fisher-g-periodicity'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source FISHER's g-TEST FOR PERIODICITY -- the classical Fisher (1929) significance test for the LARGEST periodogram ordinate against the Gaussian-white-noise null on the gap-filled mean-centred daily total_tokens series. g = max P[k] / sum P[k] in (1/K, 1]. Exact p-value P(g > x) = sum_{j=1..floor(1/x)} (-1)^{j-1} C(K,j) (1 - j*x)^{K-1}. ONE-HUNDRED-AND-SIXTY-SIXTH cross-source axis. The FIRST primitive in the suite that delivers a CALIBRATED EXACT p-value for periodogram-based detection of a single sinusoidal component against a Gaussian-white-noise null. Bin-permutation-INVARIANT and bin-reversal-INVARIANT (max/sum are both permutation-blind) -- structurally orthogonal to axis-96 peak-bin (INDEX-VALUED, bin-permutation-SENSITIVE) and axis-97 second-peak. Companions: gNeg2LogP = -2*log(p) is chi-squared(2) under H0 and additive across independent sources -- the cross-source pooled-evidence axis. References: Fisher 1929 Proc. Roy. Soc. A 125; Brockwell & Davis 1991 §10.2; Wichert et al. 2004 Bioinformatics 20:1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source FISHER's g-TEST (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'peakBin',
+    'gStat',
+    'gPValue',
+    'gNeg2LogP',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.peakBin),
+    s.gStat.toFixed(6),
+    s.gPValue.toExponential(4),
+    s.gNeg2LogP.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: gStat near 1/K = uniform PSD = white-noise-compatible (gPValue near 1); gStat near 1 = single-bin spike = strong periodic component (gPValue near 0); gPValue < 0.05 = REJECT white-noise at 5% -- a single sinusoidal component is statistically significant. gNeg2LogP is chi-squared(2)-distributed under H0 and additive across independent sources for cross-source pooled evidence.)`,
     ),
   );
 
