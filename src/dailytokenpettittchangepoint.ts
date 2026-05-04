@@ -59,6 +59,7 @@ export type DailyTokenPettittChangepointSortKey =
   | 'p'
   | 'abszshift'
   | 'tstaridx'
+  | 'kt2overkt'
   | 'ndays';
 
 export interface DailyTokenPettittChangepointOptions {
@@ -95,6 +96,20 @@ export interface DailyTokenPettittChangepointSourceRow {
   meanAfter: number;
   /** meanAfter - meanBefore. Sign indicates jump direction. */
   meanShift: number;
+  /**
+   * Second-best |U[t]| OUTSIDE a guard window of +/- max(3, floor(n/5))
+   * around tStarIndex. Surfaces regime multiplicity: a series with two
+   * roughly equal-strength changepoints will have kt2 close to kt; a
+   * series with a single dominant break will have kt2 << kt.
+   * 0 when no candidate exists outside the guard window or when flat.
+   */
+  kt2: number;
+  /** kt2 / kt, in [0, 1]. 0 when kt = 0 or no second candidate. */
+  kt2OverKt: number;
+  /** argmax t for the second-best |U[t]|. -1 when none. */
+  tStar2Index: number;
+  /** ISO YYYY-MM-DD at tStar2Index. null when none. */
+  tStar2Day: string | null;
   /** True iff series is constant (all values identical) — Pettitt undefined. */
   flat: boolean;
   firstActiveDay: string;
@@ -127,6 +142,12 @@ export interface PettittSummary {
   meanBefore: number;
   meanAfter: number;
   meanShift: number;
+  /** Second-best |U[t]| outside the guard window around tStarIndex. */
+  kt2: number;
+  /** kt2 / kt, in [0, 1]. */
+  kt2OverKt: number;
+  /** argmax t for second-best, or -1 if none. */
+  tStar2Index: number;
   flat: boolean;
 }
 
@@ -149,6 +170,9 @@ export function pettittSummary(values: number[]): PettittSummary {
       meanBefore: 0,
       meanAfter: 0,
       meanShift: 0,
+      kt2: 0,
+      kt2OverKt: 0,
+      tStar2Index: -1,
       flat: true,
     };
   }
@@ -183,23 +207,46 @@ export function pettittSummary(values: number[]): PettittSummary {
       meanBefore: 0,
       meanAfter: 0,
       meanShift: 0,
+      kt2: 0,
+      kt2OverKt: 0,
+      tStar2Index: -1,
       flat: true,
     };
   }
 
   // U[t] = 2 * sum_{i<=t} rank[i] - (t+1)*(n+1).  t = 0..n-2.
+  // First pass: compute all |U[t]| and find primary tStar.
+  const absU = new Array<number>(n - 1);
   let cum = 0;
-  let kt = 0;
   let absKt = 0;
+  let kt = 0;
   let tStar = 0;
   for (let t = 0; t < n - 1; t++) {
     cum += ranks[t]!;
     const u = 2 * cum - (t + 1) * (n + 1);
     const a = Math.abs(u);
+    absU[t] = a;
     if (a > absKt) {
       absKt = a;
       kt = u;
       tStar = t;
+    }
+  }
+
+  // Second pass: find best |U[t]| OUTSIDE the guard window
+  //   [tStar - guard, tStar + guard] (inclusive),
+  // where guard = max(3, floor(n/5)). This excludes the immediate
+  // neighbourhood of the primary changepoint (where |U[t]| is
+  // mechanically near-max because U[t] is piecewise-linear in t).
+  const guard = Math.max(3, Math.floor(n / 5));
+  let kt2 = 0;
+  let tStar2 = -1;
+  for (let t = 0; t < n - 1; t++) {
+    if (Math.abs(t - tStar) <= guard) continue;
+    const a = absU[t]!;
+    if (a > kt2) {
+      kt2 = a;
+      tStar2 = t;
     }
   }
 
@@ -226,6 +273,9 @@ export function pettittSummary(values: number[]): PettittSummary {
     meanBefore,
     meanAfter,
     meanShift: meanAfter - meanBefore,
+    kt2,
+    kt2OverKt: ktAbs > 0 ? kt2 / ktAbs : 0,
+    tStar2Index: tStar2,
     flat: false,
   };
 }
@@ -249,6 +299,7 @@ const SORT_KEYS: DailyTokenPettittChangepointSortKey[] = [
   'p',
   'abszshift',
   'tstaridx',
+  'kt2overkt',
   'ndays',
 ];
 
@@ -356,6 +407,10 @@ export function buildDailyTokenPettittChangepoint(
       summary.tStarIndex >= 0 && summary.tStarIndex < filledDays.length
         ? filledDays[summary.tStarIndex]!
         : null;
+    const tStar2Day =
+      summary.tStar2Index >= 0 && summary.tStar2Index < filledDays.length
+        ? filledDays[summary.tStar2Index]!
+        : null;
 
     rows.push({
       source: src,
@@ -370,6 +425,10 @@ export function buildDailyTokenPettittChangepoint(
       meanBefore: summary.meanBefore,
       meanAfter: summary.meanAfter,
       meanShift: summary.meanShift,
+      kt2: summary.kt2,
+      kt2OverKt: summary.kt2OverKt,
+      tStar2Index: summary.tStar2Index,
+      tStar2Day,
       flat: summary.flat,
       firstActiveDay: first,
       lastActiveDay: last,
@@ -393,6 +452,9 @@ export function buildDailyTokenPettittChangepoint(
         break;
       case 'tstaridx':
         primary = b.tStarIndex - a.tStarIndex;
+        break;
+      case 'kt2overkt':
+        primary = b.kt2OverKt - a.kt2OverKt;
         break;
       case 'ndays':
         primary = b.nFilledDays - a.nFilledDays;

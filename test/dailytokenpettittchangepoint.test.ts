@@ -605,3 +605,172 @@ test('pettitt: spectralFlatness — N/A here, but ensure no leakage from cusum',
   const s = pettittSummary([1, 1, 1, 5, 5, 5]);
   assert.equal(s.tStarIndex, 2);
 });
+
+// ---- refinement: secondary changepoint -----------------------------------
+
+test('pettittSummary: secondary -- single dominant break gives kt2 < kt by guard', () => {
+  // Length 20: clean single step at index 9. With guard = max(3, 4) = 4,
+  // the secondary at distance 5 from the peak gives a ratio mechanically
+  // bounded by (n-2*5)/n = 0.5 for the linear |U[t]| triangle.
+  const v = [...Array(10).fill(1), ...Array(10).fill(100)];
+  const s = pettittSummary(v);
+  assert.equal(s.flat, false);
+  assert.ok(s.kt > 0);
+  assert.ok(s.kt2OverKt < 0.6, `expected kt2/kt < 0.6 for single break w/ guard, got ratio ${s.kt2OverKt}`);
+});
+
+test('pettittSummary: secondary -- two roughly equal regimes gives kt2 close to kt', () => {
+  // Length 24: low, high, low (two changepoints at ~7 and ~15).
+  const v = [
+    ...Array(8).fill(1),
+    ...Array(8).fill(100),
+    ...Array(8).fill(1),
+  ];
+  const s = pettittSummary(v);
+  assert.equal(s.flat, false);
+  assert.ok(s.kt > 0);
+  // Both breaks are visible; the secondary outside the guard
+  // window of the primary should still be substantial.
+  assert.ok(s.kt2 > 0);
+  assert.ok(s.kt2OverKt > 0.3, `expected secondary signal for two-regime series, got ratio ${s.kt2OverKt}`);
+  // tStar2 should be on the OTHER side of the series.
+  assert.ok(s.tStar2Index !== s.tStarIndex);
+  assert.ok(Math.abs(s.tStar2Index - s.tStarIndex) >= 4);
+});
+
+test('pettittSummary: secondary -- guard window respected', () => {
+  // Length 30, single break at index 14: tStar2 must be at least
+  // max(3, floor(30/5)) = 6 indices away from primary.
+  const v = [...Array(15).fill(1), ...Array(15).fill(100)];
+  const s = pettittSummary(v);
+  if (s.tStar2Index >= 0) {
+    const guard = Math.max(3, Math.floor(30 / 5));
+    assert.ok(Math.abs(s.tStar2Index - s.tStarIndex) > guard);
+  }
+});
+
+test('pettittSummary: secondary -- empty / flat returns kt2=0, tStar2Index=-1', () => {
+  const e = pettittSummary([]);
+  assert.equal(e.kt2, 0);
+  assert.equal(e.kt2OverKt, 0);
+  assert.equal(e.tStar2Index, -1);
+
+  const f = pettittSummary([5, 5, 5, 5]);
+  assert.equal(f.kt2, 0);
+  assert.equal(f.kt2OverKt, 0);
+  assert.equal(f.tStar2Index, -1);
+});
+
+test('pettittSummary: secondary -- short series may have no candidate', () => {
+  // n=4 -> guard = max(3, 0) = 3. With t in {0,1,2}, all are within
+  // guard of any tStar -> tStar2Index = -1.
+  const v = [1, 1, 100, 100];
+  const s = pettittSummary(v);
+  assert.equal(s.tStarIndex, 1);
+  // Guard window covers everything; expect no secondary.
+  assert.equal(s.tStar2Index, -1);
+  assert.equal(s.kt2, 0);
+});
+
+test('pettittSummary: secondary -- kt2OverKt always in [0,1]', () => {
+  const cases: number[][] = [
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    [1, 100, 1, 100, 1, 100, 1, 100],
+    [1, 1, 1, 1, 100, 100, 100, 100],
+    [1, 1, 1, 1, 1, 1, 1, 1, 50, 50, 50, 50, 1, 1, 1, 1],
+    [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+  ];
+  for (const v of cases) {
+    const s = pettittSummary(v);
+    assert.ok(s.kt2OverKt >= 0 && s.kt2OverKt <= 1.0001, `case ${v.join(',')}: ratio ${s.kt2OverKt}`);
+  }
+});
+
+test('pettitt: builder surfaces secondary fields on report rows', () => {
+  const queue: QueueLine[] = [];
+  // 24-day low/high/low pattern — should show non-trivial kt2.
+  const days: number[] = [
+    ...Array(8).fill(1),
+    ...Array(8).fill(100),
+    ...Array(8).fill(1),
+  ];
+  for (let d = 0; d < 24; d++) {
+    const dt = new Date(Date.UTC(2026, 3, 1 + d));
+    queue.push(ql(dt.toISOString(), 'A', days[d]!));
+  }
+  const r = buildDailyTokenPettittChangepoint(queue, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  const s = r.sources[0]!;
+  assert.ok(s.kt2 > 0);
+  assert.ok(s.kt2OverKt > 0.3);
+  assert.notEqual(s.tStar2Day, null);
+});
+
+test('pettitt: builder sort by kt2overkt desc', () => {
+  const queue: QueueLine[] = [];
+  // A: two-regime (high kt2/kt)
+  const a: number[] = [
+    ...Array(7).fill(1),
+    ...Array(7).fill(100),
+    ...Array(7).fill(1),
+  ];
+  for (let d = 0; d < 21; d++) {
+    const dt = new Date(Date.UTC(2026, 3, 1 + d));
+    queue.push(ql(dt.toISOString(), 'A', a[d]!));
+  }
+  // B: single break (low kt2/kt)
+  const b: number[] = [...Array(10).fill(1), ...Array(11).fill(100)];
+  for (let d = 0; d < 21; d++) {
+    const dt = new Date(Date.UTC(2026, 3, 1 + d));
+    queue.push(ql(dt.toISOString(), 'B', b[d]!));
+  }
+  const r = buildDailyTokenPettittChangepoint(queue, { generatedAt: GEN, sort: 'kt2overkt' });
+  assert.equal(r.sources[0]!.source, 'A');
+  assert.ok(r.sources[0]!.kt2OverKt >= r.sources[1]!.kt2OverKt);
+});
+
+test('pettitt: tStar2Day matches filledDays[tStar2Index]', () => {
+  const queue: QueueLine[] = [];
+  const seq: number[] = [
+    ...Array(8).fill(1),
+    ...Array(8).fill(100),
+    ...Array(8).fill(1),
+  ];
+  for (let d = 0; d < 24; d++) {
+    const dt = new Date(Date.UTC(2026, 3, 1 + d));
+    queue.push(ql(dt.toISOString(), 'A', seq[d]!));
+  }
+  const r = buildDailyTokenPettittChangepoint(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  if (s.tStar2Index >= 0) {
+    // First active day = 2026-04-01; tStar2Day should be that + tStar2Index days.
+    const expected = new Date(Date.UTC(2026, 3, 1 + s.tStar2Index)).toISOString().slice(0, 10);
+    assert.equal(s.tStar2Day, expected);
+  }
+});
+
+test('pettitt: sort allowed list rejects unknown including the new key typo', () => {
+  assert.throws(() => buildDailyTokenPettittChangepoint([], { sort: 'kt2over' as 'tokens' }));
+});
+
+test('pettittSummary: kt2OverKt = 0 when tStar2 not found', () => {
+  // n=4, single-step; guard=3 -> no candidate.
+  const s = pettittSummary([1, 1, 100, 100]);
+  assert.equal(s.tStar2Index, -1);
+  assert.equal(s.kt2, 0);
+  assert.equal(s.kt2OverKt, 0);
+});
+
+test('pettitt: refinement determinism (two builds give same refinement fields)', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 30; d++) {
+    const dt = new Date(Date.UTC(2026, 3, 1 + d));
+    const v = d < 10 ? 5 : d < 20 ? 50 : 5;
+    queue.push(ql(dt.toISOString(), 'A', v));
+  }
+  const r1 = buildDailyTokenPettittChangepoint(queue, { generatedAt: GEN });
+  const r2 = buildDailyTokenPettittChangepoint(queue, { generatedAt: GEN });
+  assert.equal(r1.sources[0]!.kt2, r2.sources[0]!.kt2);
+  assert.equal(r1.sources[0]!.tStar2Index, r2.sources[0]!.tStar2Index);
+  assert.equal(r1.sources[0]!.kt2OverKt, r2.sources[0]!.kt2OverKt);
+});

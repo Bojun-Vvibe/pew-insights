@@ -6994,7 +6994,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: tokens | kt | ktnorm | p | abszshift | tstaridx | ndays (default tokens). Applied before --top.',
+    'sort key: tokens | kt | ktnorm | p | abszshift | tstaridx | kt2overkt | ndays (default tokens). Applied before --top.',
     'tokens',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -7022,7 +7022,7 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
-        const sortAllowed = ['tokens', 'kt', 'ktnorm', 'p', 'abszshift', 'tstaridx', 'ndays'];
+        const sortAllowed = ['tokens', 'kt', 'ktnorm', 'p', 'abszshift', 'tstaridx', 'kt2overkt', 'ndays'];
         if (!sortAllowed.includes(opts.sort)) {
           throw new Error(`--sort must be one of ${sortAllowed.join('|')} (got ${opts.sort})`);
         }
