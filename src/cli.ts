@@ -207,6 +207,7 @@ import {
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
+  renderDailyTokenVanDerWaerdenHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -670,6 +671,10 @@ import {
   buildDailyTokenSukhatmeHalves,
   type DailyTokenSukhatmeHalvesSort,
 } from './dailytokensukhatmehalves.js';
+import {
+  buildDailyTokenVanDerWaerdenHalves,
+  type DailyTokenVanDerWaerdenHalvesSort,
+} from './dailytokenvanderwaerdenhalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -44201,6 +44206,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSukhatmeHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-van-der-waerden-halves')
+  .description(
+    "Per-source VAN DER WAERDEN 1952 NORMAL-SCORES LOCATION TEST for equality of central tendency between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTY-FIRST cross-source axis). Pooled fractional mid-ranks R_k; normal scores a_k = Phi^{-1}(R_k / (n+1)) via Beasley-Springer-Moro 1995; T = sum_{k in B} a_k; E[T] = 0; Var[T] = (n1 n2 / (n (n-1))) * sum_k a_k^2; vdwZ = T / sqrt(Var[T]) ~ N(0, 1) under H0. STRUCTURALLY ORTHOGONAL to ALL prior cross-source scale axes (170 Ansari-Bradley, 174 Cucconi, 175 Lepage, 177 Klotz, 178 Conover squared-ranks, 179 Mood, 180 Sukhatme): VDW tests EQUALITY OF LOCATION (first-moment shift), the entire scale family tests EQUALITY OF DISPERSION (second-moment shift). Asymptotically orthogonal under symmetric F (Hajek-Sidak 1967 III.4.1): pure scale shift gives vdwZ ~ 0, pure location shift gives the scale family ~ 0. Pitman ARE 1.000 vs Student t under normal — asymptotically OPTIMAL distribution-free location test, dominating Wilcoxon-Mann-Whitney's ARE 3/pi ~ 0.955. Refs: van der Waerden 1952/53 Indagationes Math. 14:453-458, 15:303-316; Hajek-Sidak 1967 Theory of Rank Tests sec. III.4 & V.1; Hollander/Wolfe/Chicken 2014 sec. 4.4.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: vdwZAbsDesc (default) | vdwZ | vdwPValue | vdwPValueDesc | tokens | tenure | source.',
+    'vdwZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'vdwZ',
+          'vdwZAbsDesc',
+          'vdwPValue',
+          'vdwPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenVanDerWaerdenHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenVanDerWaerdenHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenVanDerWaerdenHalves(report) + '\n',
           );
         }
       } catch (e) {

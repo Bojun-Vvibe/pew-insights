@@ -20626,6 +20626,7 @@ import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
+import type { DailyTokenVanDerWaerdenHalvesReport } from './dailytokenvanderwaerdenhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27231,6 +27232,87 @@ export function renderDailyTokenSukhatmeHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: sukhatmePValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). sukhatmeZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ sign). Sukhatme ARE 0.608 vs F under normal — same as ST/AB but bounded influence per observation makes it strictly more outlier-robust than Mood/Klotz/Conover.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenVanDerWaerdenHalves(
+  r: DailyTokenVanDerWaerdenHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-van-der-waerden-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source VAN DER WAERDEN 1952 NORMAL-SCORES LOCATION TEST. Pooled fractional mid-ranks R_k; normal scores a_k = Phi^{-1}(R_k / (n+1)); T = sum_{k in B} a_k; E[T] = 0; Var[T] = n1 n2 / (n (n-1)) * sum_k a_k^2; vdwZ ~ N(0,1) under H0. ONE-HUNDRED-AND-EIGHTY-FIRST cross-source axis. STRUCTURALLY ORTHOGONAL to ALL prior scale axes (170 AB, 174 Cucconi, 175 Lepage, 177 Klotz, 178 Conover, 179 Mood, 180 Sukhatme): VDW tests EQUALITY OF LOCATION (first-moment shift), the scale family tests EQUALITY OF DISPERSION (second-moment shift). Asymptotically orthogonal under symmetric F (Hajek-Sidak 1967 III.4.1). Pitman ARE 1.000 vs Student t under normal — asymptotically OPTIMAL distribution-free location test, dominating Wilcoxon-Mann-Whitney's ARE 3/pi ~ 0.955.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source VAN DER WAERDEN normal-scores location-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'vdwT',
+    'sumA2',
+    'vdwZ',
+    'vdwPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.vdwN1),
+    formatNumber(s.vdwN2),
+    s.vdwT.toFixed(4),
+    s.vdwSumSquaredScores.toFixed(2),
+    s.vdwZ.toFixed(4),
+    s.vdwPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: vdwPValue < 0.05 = REJECT location-equality H0 at alpha=0.05 (two-sided normal reference). vdwZ > 0 = SECOND half has LARGER central tendency (matches axis-117 stZ, axis-170 abZ, axis-177-180 SECOND-half-positive convention). Mixing axis-181 LOCATION with the scale family lets you tell apart "second half is bigger AND more variable" (matched signs) from "second half drifts UP but tightens" (opposite signs).)`,
     ),
   );
 
