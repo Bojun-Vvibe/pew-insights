@@ -20627,6 +20627,7 @@ import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokencono
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
 import type { DailyTokenVanDerWaerdenHalvesReport } from './dailytokenvanderwaerdenhalves.js';
+import type { DailyTokenFlignerPolicelloHalvesReport } from './dailytokenflignerpolicellohalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27318,3 +27319,85 @@ export function renderDailyTokenVanDerWaerdenHalves(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenFlignerPolicelloHalves(
+  r: DailyTokenFlignerPolicelloHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-fligner-policello-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source FLIGNER-POLICELLO 1981 ROBUST RANK location test for the BEHRENS-FISHER nonparametric null H0: P(X<Y) + 0.5 P(X=Y) = 0.5. Placements P_i = #{j: B_j<A_i} + 0.5#{j: B_j=A_i}, Q_j = #{i: A_i<B_j} + 0.5#{i: A_i=B_j}; fpZ = (sum Q - sum P) / (2 sqrt(V1 + V2 + Pbar Qbar)) ~ N(0,1) under H0. ONE-HUNDRED-AND-EIGHTY-SECOND cross-source axis. STRUCTURALLY ORTHOGONAL: vs axis-181 Van der Waerden and axis-115 Mann-Whitney FP does NOT assume equal scale (Behrens-Fisher robust). vs the entire scale family (axes 170/174/175/177/178/179/180) FP isolates the LOCATION channel under heteroscedasticity. Pitman ARE FP/MW = 1 under equal-scale alternatives; FP/BM ~ 1 under heteroscedastic alternatives. Refs: Fligner & Policello 1981 JASA 76:162-168; Hollander/Wolfe/Chicken 2014 sec. 4.4.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source FLIGNER-POLICELLO robust rank location test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'sumP',
+    'sumQ',
+    'fpZ',
+    'fpPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.fpN1),
+    formatNumber(s.fpN2),
+    s.fpSumP.toFixed(2),
+    s.fpSumQ.toFixed(2),
+    s.fpZ.toFixed(4),
+    s.fpPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: fpPValue < 0.05 = REJECT Behrens-Fisher H0 P(X<Y)=0.5 at alpha=0.05 (two-sided normal reference). fpZ > 0 = SECOND half stochastically LARGER (matches axis-117/170/177-181 SECOND-half-positive convention). Compared with axis-181 vdwZ: AGREEMENT under equal-scale alternatives, DISAGREEMENT exposes location-vs-scale confounds in the unequal-spread regime.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+

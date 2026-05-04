@@ -2,6 +2,99 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.463 — 2026-05-05
+
+### Added — axis-182 daily-token-fligner-policello-halves (Behrens-Fisher robust rank LOCATION test)
+
+Per-source Fligner-Policello (1981, *JASA* 76:162-168)
+ROBUST RANK LOCATION TEST for the BEHRENS-FISHER
+nonparametric null `H0: P(X<Y) + 0.5 P(X=Y) = 0.5`
+between the first half (`n1 = floor(n/2)` days) vs
+second half (`n2 = n - n1` days) of the gap-filled
+daily `total_tokens` series.
+
+ONE-HUNDRED-AND-EIGHTY-SECOND cross-source axis.
+
+Compute the placements (with mid-tie correction)
+
+```
+P_i = #{j : B_j <  A_i} + 0.5 #{j : B_j = A_i}
+Q_j = #{i : A_i <  B_j} + 0.5 #{i : A_i = B_j}
+```
+
+then the standardised statistic
+
+```
+fpZ = ( sum Q_j - sum P_i ) /
+      ( 2 * sqrt( V1 + V2 + Pbar Qbar ) )      ~ N(0,1)
+```
+
+with `V1 = sum (P_i - Pbar)^2`, `V2 = sum (Q_j - Qbar)^2`.
+Two-sided p-value `fpPValue = 2 (1 - Phi(|fpZ|))`. When
+the FP placement variance degenerates (perfect separation
+between halves) we fall back to the Mann-Whitney null
+reference `Var[U] = n1 n2 (n1 + n2 + 1) / 12` so the
+boundary case still surfaces a sensible signed Z.
+
+#### Structural orthogonality (the core claim)
+
+Fligner-Policello does NOT assume EQUAL SCALE between
+the two halves. Both Wilcoxon-Mann-Whitney (axis-115)
+and Van der Waerden (axis-181) require `F_A` and `F_B`
+to differ ONLY in location for valid pure-location
+interpretation; under unequal scale they conflate
+location and scale and lose nominal alpha. Brunner-
+Munzel (axis-176) relaxes the equal-scale assumption
+asymptotically via Welch t-df. Fligner-Policello
+relaxes it EXACTLY at the null-variance level via the
+placement variances `V1 + V2`, giving an asymptotic
+N(0,1) calibration under the Behrens-Fisher null
+without ANY assumption about the spread of the two
+halves (FP 1981 Thm. 3).
+
+vs the entire scale family (axes 170 Ansari-Bradley,
+174 Cucconi, 175 Lepage, 177 Klotz, 178 Conover, 179
+Mood, 180 Sukhatme): pure scale shift with equal
+medians under symmetric F gives `fpZ ~ 0`; pure
+location shift with equal scales gives the scale
+family `~ 0`. Asymptotically orthogonal under symmetric
+F (Hajek-Sidak 1967 Lemma III.4.1).
+
+#### Live-smoke (this machine, 2026-05-05)
+
+Run against `~/.config/pew/queue.jsonl` (6 active
+sources, 4 above the `min-tenure-days = 16` floor):
+
+| source         |  n1 |  n2 |  fpZ    | fpPValue   | verdict                                     |
+| -------------- | --- | --- | ------- | ---------- | ------------------------------------------- |
+| openclaw       |   9 |   9 | -5.3439 | 9.119e-08  | first half stochastically larger (decisive) |
+| claude-code    |  36 |  36 | +4.1505 | 3.320e-05  | second half stochastically larger (decisive)|
+| vscode-cp      | 132 | 133 | -2.0877 | 3.683e-02  | first half stochastically larger (sig.)     |
+| hermes         |   9 |   9 | +0.9157 | 3.598e-01  | no evidence of location shift               |
+
+Two sources (`agent-cc`, `agent-oc`) dropped below the
+16-day tenure floor.
+
+The two decisive rejections (`openclaw` first-half
+larger, `claude-code` second-half larger) are exactly
+the same direction reported by axis-181 Van der Waerden
+on the same data — confirming AGREEMENT between the
+two location channels in the equal-scale regime. Where
+they would disagree (heteroscedastic alternatives) FP
+holds nominal alpha while VDW does not, exposing the
+location-vs-scale confound.
+
+#### CLI
+
+```
+pew-insights daily-token-fligner-policello-halves \
+  [--since ISO] [--until ISO] [--source NAME] \
+  [--min-tokens N=1000] [--min-tenure-days N=16] \
+  [--top N=0] \
+  [--sort fpZAbsDesc|fpZ|fpPValue|fpPValueDesc|tokens|tenure|source] \
+  [--json]
+```
+
 ## 0.6.462 — 2026-05-05
 
 ### Added — axis-181 Lepage-style joint location-and-scale combiner
