@@ -200,6 +200,7 @@ import {
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
   renderDailyTokenAnsariBradleyHalves,
+  renderDailyTokenCucconiHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -635,6 +636,10 @@ import { buildDailyTokenMannWhitneyHalves } from './dailytokenmannwhitneyhalves.
 import { buildDailyTokenBrownForsythHalves } from './dailytokenbrownforsythhalves.js';
 import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.js';
 import { buildDailyTokenAnsariBradleyHalves } from './dailytokenansaribradleyhalves.js';
+import {
+  buildDailyTokenCucconiHalves,
+  type DailyTokenCucconiHalvesSort,
+} from './dailytokencucconihalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -43446,6 +43451,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWatsonU2CumulativePeriodogram(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-cucconi-halves')
+  .description(
+    "Per-source CUCCONI (1968) JOINT LOCATION-SCALE TWO-SAMPLE NONPARAMETRIC TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTY-FOURTH cross-source axis). Pool, assign monotonic ranks 1..n, sum the squared ranks (T1) and the squared complementary ranks (T2) for the SECOND half. Standardise against the EXACT Cucconi 1968 null moments E[T1]=E[T2]=n2(n+1)(2n+1)/6 and Var=n1 n2 (n+1)(2n+1)(8n+11)/180 to get U and V; combine via the EXACT closed-form correlation rho = 2(n^2-4)/((2n+1)(8n+11)) - 1 (Marozzi 2009 sec. 2): C = (U^2 + V^2 - 2 rho U V) / (2(1-rho^2)). Asymptotic 2C ~ chi-squared(2), so ccPValue = exp(-C). Distinct from axis-115 Mann-Whitney halves (LOCATION-only, monotonic-rank-sum); axis-117 Siegel-Tukey and axis-170 Ansari-Bradley halves (SCALE-only, folded / outward-pair ranks on MEDIAN-CENTRED halves -- both kill pure-location shifts which Cucconi DOES detect); axis-171 Mood's median (one-point EDF gap at the pooled median); axis-116 Brown-Forsythe (PARAMETRIC F on |x-median|, sensitive to magnitudes); cumulative-periodogram axes 167-169, 172-173 (FREQUENCY DOMAIN). Cucconi has UNIFORMLY HIGHER POWER than Lepage (Wilcoxon^2+AB^2 sum) on joint location-scale alternatives in finite samples (Marozzi 2009 sec. 5) because the closed-form rho captures the redundancy that Lepage's independence assumption ignores. Refs: Cucconi 1968 Giornale degli Economisti 27:225-248; Marozzi 2009 J. Nonparametric Statistics 21(5):629-647 and Comp. Stat. & Data Analysis 53:4242-4252.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1*n2 >= 16 for Cucconi asymptotic chi-2 regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: ccCDesc (default) | ccC | ccPValue | ccPValueDesc | ccZ | ccZDesc | tokens | tenure | source.',
+    'ccCDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'ccC',
+          'ccCDesc',
+          'ccPValue',
+          'ccPValueDesc',
+          'ccZ',
+          'ccZDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCucconiHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenCucconiHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCucconiHalves(report) + '\n',
           );
         }
       } catch (e) {

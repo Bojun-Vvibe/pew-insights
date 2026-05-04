@@ -20619,6 +20619,7 @@ import type { DailyTokenTopsoeDivergenceHalvesReport } from './dailytokentopsoed
 import type { DailyTokenNeymanChiSquaredHalvesReport } from './dailytokenneymanchisquaredhalves.js';
 import type { DailyTokenKDivergenceHalvesReport } from './dailytokenkdivergencehalves.js';
 import type { DailyTokenPearsonSecondSkewnessReport } from './dailytokenpearsonsecondskewness.js';
+import type { DailyTokenCucconiHalvesReport } from './dailytokencucconihalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -26649,6 +26650,91 @@ export function renderDailyTokenKuiperVCumulativePeriodogram(
   lines.push(
     chalk.dim(
       `(reference anchor: kpVStar < 1.620 = white-noise-compatible at 10% (Stephens 1970 Table 1); kpVStar > 1.747 = REJECT at 5%; kpVStar > 2.001 = REJECT at 1%. ORTHOGONALITY vs axis-167 Bartlett: kpV always >= bD (Bartlett sup-norm); the ratio kpV/bD distinguishes ONE-SIDED-EXCURSION spectra (ratio ~1) from TWO-SIDED-EXCURSION spectra (ratio ~2). ORTHOGONALITY vs axes 168/169 CvM/AD: a single-bin spike drives kpV one-sided large but CvM/AD only modestly; sustained two-sided shape drives all three large but in different proportions.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCucconiHalves(
+  r: DailyTokenCucconiHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-cucconi-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CUCCONI 1968 JOINT LOCATION-SCALE TWO-SAMPLE NONPARAMETRIC TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SEVENTY-FOURTH cross-source axis. Pool ranks 1..n; T1 = sum of squared ranks for second half; T2 = sum of squared complementary ranks for second half. Standardise against EXACT Cucconi null moments E[T1]=E[T2]=n2(n+1)(2n+1)/6, Var=n1 n2 (n+1)(2n+1)(8n+11)/180 to get U and V. Combine via the EXACT correlation rho = 2(n^2-4)/((2n+1)(8n+11)) - 1: C = (U^2 + V^2 - 2 rho U V)/(2(1-rho^2)). Asymptotic 2C ~ chi-squared(2), ccPValue = exp(-C). Distinct from axis-115 Mann-Whitney halves (LOCATION-only); axis-117 Siegel-Tukey and axis-170 Ansari-Bradley halves (SCALE-only after median-centring -- both kill pure location shifts that Cucconi DETECTS); axis-171 Mood's median (one-point EDF gap); axis-116 Brown-Forsythe (PARAMETRIC). Has UNIFORMLY HIGHER POWER than Lepage on joint location-scale alternatives (Marozzi 2009) because closed-form rho captures redundancy that Lepage's independence assumption ignores.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source CUCCONI joint location-scale (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'ccU',
+    'ccV',
+    'ccRho',
+    'ccC',
+    'ccPValue',
+    'ccZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.ccN1),
+    formatNumber(s.ccN2),
+    s.ccU.toFixed(4),
+    s.ccV.toFixed(4),
+    s.ccRho.toFixed(4),
+    s.ccC.toFixed(4),
+    s.ccPValue.toExponential(4),
+    s.ccZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: ccPValue < 0.05 (i.e. C > -ln(0.05) ~ 2.996) = REJECT joint-equality at alpha=0.05; ccPValue < 0.01 (C > 4.605) = REJECT at alpha=0.01. SIGN of (ccU - ccV) discriminates location vs scale: positive (ccU - ccV) = second half stochastically larger (location dominates); negative (ccU - ccV) = scale shift dominates (Marozzi 2009 sec. 4). ccZ = sqrt(2C) is the chi-2 root, intrinsically unsigned. Distinct from axis-117 Siegel-Tukey and axis-170 Ansari-Bradley which kill pure-location shifts via median-centring -- Cucconi PRESERVES that signal in the U component.)`,
     ),
   );
 
