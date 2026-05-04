@@ -318,3 +318,65 @@ test('buildDailyTokenJarqueBera: deterministic given fixed input', () => {
   });
   assert.deepEqual(a, b);
 });
+
+// ---------- refinement: jbSkewContribFraction ----------
+
+test('builder.jbSkewContribFraction: in [0, 1] for every row', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'A', 1000 + i * 50));
+  }
+  for (let i = 0; i < 25; i += 1) {
+    queue.push(ql(dayIso(40 + i), 'B', i === 12 ? 1_000_000 : 1000));
+  }
+  const r = buildDailyTokenJarqueBera(queue, {});
+  for (const s of r.sources) {
+    assert.ok(s.jbSkewContribFraction >= 0 && s.jbSkewContribFraction <= 1);
+  }
+});
+
+test('builder.jbSkewContribFraction: identity S^2 / (S^2 + K^2/4)', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'A', 1000 + i * 50 + (i % 5) * 200));
+  }
+  const r = buildDailyTokenJarqueBera(queue, {});
+  for (const s of r.sources) {
+    const s2 = s.skewness * s.skewness;
+    const k2over4 = (s.excessKurtosis * s.excessKurtosis) / 4;
+    const denom = s2 + k2over4;
+    const expected = denom === 0 ? 0 : s2 / denom;
+    assert.ok(Math.abs(s.jbSkewContribFraction - expected) < 1e-12);
+  }
+});
+
+test('builder.jbSkewContribFraction: alternating two-point gives 0 (kurtosis-driven)', () => {
+  // x = [-1, 1, -1, 1, ...] : S = 0, K = -2 -> contrib fraction = 0
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 24; i += 1) {
+    queue.push(ql(dayIso(i), 'flip', i % 2 === 0 ? 1000 : 3000));
+  }
+  const r = buildDailyTokenJarqueBera(queue, {});
+  assert.equal(r.sources.length, 1);
+  assert.ok(Math.abs(r.sources[0]!.jbSkewContribFraction) < 1e-10);
+});
+
+test('builder.jbSkewContribFraction: skewContribFractionDesc sort orders descending', () => {
+  const queue: QueueLine[] = [];
+  // src A: alternating two-point -> skew=0 -> fraction=0 (kurt-driven)
+  for (let i = 0; i < 24; i += 1) {
+    queue.push(ql(dayIso(i), 'A', i % 2 === 0 ? 1000 : 3000));
+  }
+  // src B: highly skewed (one big spike) -> fraction near 0..1, kurtosis also large
+  for (let i = 0; i < 24; i += 1) {
+    queue.push(ql(dayIso(40 + i), 'B', i === 10 ? 1_000_000 : 1000));
+  }
+  const r = buildDailyTokenJarqueBera(queue, {
+    sort: 'skewContribFractionDesc',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.ok(
+    r.sources[0]!.jbSkewContribFraction >=
+      r.sources[1]!.jbSkewContribFraction,
+  );
+});

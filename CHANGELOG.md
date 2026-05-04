@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.424 — 2026-05-04
+
+### Refinement — axis-161: derived shape-descriptor `jbSkewContribFraction`
+
+Adds a unit-free shape-descriptor to the per-source row of
+the JB report:
+
+```
+jbSkewContribFraction = S^2 / ( S^2 + K^2 / 4 )         in [0, 1]
+```
+
+This is the **fraction of the JB statistic driven by
+skewness** (vs excess kurtosis). 1 = entirely
+skewness-driven (one-sided heavy tail); 0 = entirely
+kurtosis-driven (symmetric heavy tails or sharp peak);
+0.5 = the two moments contribute equally. Defined as 0
+when both S and K are exactly 0.
+
+The original axis-161 caveat explicitly notes that
+"JB is BLIND TO WHICH MOMENT drives rejection -- inspect
+skewness and excessKurtosis directly to attribute".
+`jbSkewContribFraction` is the single-number summary of
+that attribution: two sources with the same JB can have
+very different `jbSkewContribFraction` and therefore
+very different marginal-shape stories.
+
+Two new sort keys: `skewContribFraction` /
+`skewContribFractionDesc`. New table column `sFrac`.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`**
+(refinement; one source name redacted to `vsc-redacted`):
+
+```
+per-source JARQUE-BERA normality test (sorted by skewContribFractionDesc)
+source         tenure  skew     exKurt   jb          sFrac   verdict
+-------------  ------  -------  -------  ----------  ------  ---------------------
+openclaw       18      1.0327   -0.1573  3.2180      0.9942  gaussian
+opencode       15      -0.7694  0.5264   1.6529      0.8952  gaussian
+claude-code    72      5.0227   26.8729  2469.1924   0.1226  strongly-non-gaussian
+vsc-redacted   265     5.9639   39.2577  18587.9772  0.0845  strongly-non-gaussian
+hermes         18      0.0236   -1.1766  1.0399      0.0016  gaussian
+```
+
+**Reading the refinement:**
+
+- The two **strongly-non-gaussian** sources
+  (`vsc-redacted`, `claude-code`) are
+  **kurtosis-dominated** (`sFrac` 0.08 / 0.12). Their
+  rejection comes overwhelmingly from the **heavy
+  tails** (excess kurtosis 39 / 27), not from the
+  asymmetry alone. The skewness contribution is real
+  (sample skew ~5-6) but the K^2/4 term dwarfs the S^2
+  term in the JB sum.
+- **`openclaw`** is the most **skewness-dominated**
+  source (`sFrac` 0.994): essentially **all** of its
+  JB mass is asymmetry, with excess kurtosis nearly 0.
+  A right-skewed but mesokurtic distribution -- a long
+  right tail of mid-magnitude bursts rather than a
+  sharp spike.
+- **`hermes`** is the most **kurtosis-dominated** of
+  the gaussian-verdict sources (`sFrac` 0.0016): all
+  of its (small) JB mass comes from the platykurtic
+  excess kurtosis of -1.18; symmetry is near-perfect.
+- **`opencode`** sits between (`sFrac` 0.90):
+  predominantly skewness-driven but with a real
+  positive-kurtosis component as well.
+
+This decomposition is structurally orthogonal to
+axis-160's `cMOverC1Pow` refinement: that one
+decomposed the BDS rejection's **dependence-magnitude
+ratio**; this one decomposes the JB rejection's
+**moment-source ratio**. The two refinements operate on
+orthogonal axes (joint-dependence vs marginal-shape) and
+neither can be derived from the other.
+
+4 new unit tests cover the [0, 1] range, the algebraic
+identity, the alternating two-point closed-form anchor
+(`sFrac = 0` for `S = 0, K = -2`), and the
+`skewContribFractionDesc` sort key.
+
 ## 0.6.423 — 2026-05-04
 
 ### Added — axis-161: per-source `daily-token-jarque-bera` (moment-based LM normality test)
