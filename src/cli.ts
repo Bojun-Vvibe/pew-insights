@@ -197,6 +197,7 @@ import {
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
+  renderDailyTokenAnsariBradleyHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -622,6 +623,7 @@ import { buildDailyTokenLjungBoxQTest } from './dailytokenljungboxqtest.js';
 import { buildDailyTokenMannWhitneyHalves } from './dailytokenmannwhitneyhalves.js';
 import { buildDailyTokenBrownForsythHalves } from './dailytokenbrownforsythhalves.js';
 import { buildDailyTokenSiegelTukeyHalves } from './dailytokensiegeltukeyhalves.js';
+import { buildDailyTokenAnsariBradleyHalves } from './dailytokenansaribradleyhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -37597,6 +37599,120 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSiegelTukeyHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-ansari-bradley-halves')
+  .description(
+    "Per-source ANSARI-BRADLEY TWO-SAMPLE NONPARAMETRIC SCALE-SHIFT (EQUALITY-OF-DISPERSION) TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTIETH cross-source axis). Class-TWO-SAMPLE-SCALE-SHIFT-TEST (Ansari & Bradley 1960, Annals Math. Stat. 31(4):1174-1189): each half median-centred (Hollander, Wolfe & Chicken 2014 sec. 5.4), pool sorted, FOLDED ranks assigned (1, 2, ..., n/2, n/2, ..., 2, 1 for even n; the smallest AND the largest pooled value both get rank 1, folding inward to the median); abWA = sum of folded ranks for first-half elements; abZ = (abWA - E)/sqrt(Var) approx N(0,1) using the EXACT Ansari-Bradley 1960 Thm 2.1 mean and variance. Sign convention: positive abZ = second half MORE dispersed (matches axis-117 stZ and axis-116 bfZ). Distinct from axis-117 Siegel-Tukey halves (OUTWARD-PAIR ranks 1, 2-3, 4-5, 6-7, ... alternating; smallest gets rank 1, largest gets rank 2 -- different rank vector, NOT a monotone transform of the folded ranks); axis-116 Brown-Forsythe (PARAMETRIC F on |x - median|, sensitive to magnitudes); axis-115 Mann-Whitney halves (LOCATION shift, monotonic ranks); cumulative-periodogram axes 167-169 (FREQUENCY DOMAIN). Fully RANK-INVARIANT after median-centring; calibration-stable under heavy-tailed contamination.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1*n2 >= 16 for Ansari-Bradley normal-approximation regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: abZAbsDesc (default) | abWA | abWADesc | abZ | abZDesc | abZAbs | tokens | tenure | source.',
+    'abZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'abWA',
+          'abWADesc',
+          'abZ',
+          'abZDesc',
+          'abZAbs',
+          'abZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAnsariBradleyHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'abWA'
+            | 'abWADesc'
+            | 'abZ'
+            | 'abZDesc'
+            | 'abZAbs'
+            | 'abZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenAnsariBradleyHalves(report) + '\n',
           );
         }
       } catch (e) {

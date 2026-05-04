@@ -20591,6 +20591,7 @@ import type { DailyTokenAndersonDarlingCumulativePeriodogramReport } from './dai
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
+import type { DailyTokenAnsariBradleyHalvesReport } from './dailytokenansaribradleyhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -26301,6 +26302,89 @@ export function renderDailyTokenAndersonDarlingCumulativePeriodogram(
   lines.push(
     chalk.dim(
       `(reference anchor: adAStar near 0 = C[j] tracks j/K with the tails very tightly tracked = white-noise-compatible (adPValue near 1); adAStar large = cumulative spectrum biased away from uniform MOST in the tails (near DC or near Nyquist) (adPValue near 0); adPValue < 0.05 = REJECT white-noise at 5%. wDevMean > 0 indicates LOW-FREQUENCY tail overshoot; wDevMean < 0 indicates HIGH-FREQUENCY tail overshoot. ORTHOGONALITY vs axis-168: deviation at j=1 or j=K-1 drives adAStar large but cvmW2 modest; deviation mid-band drives cvmW2 large but adAStar modest. ORTHOGONALITY vs axis-167: a single-bin spike drives Bartlett-bD large but adAStar feels it only in proportion to the spike's bin-position weight.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenAnsariBradleyHalves(
+  r: DailyTokenAnsariBradleyHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-ansari-bradley-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ANSARI-BRADLEY TWO-SAMPLE NONPARAMETRIC SCALE-SHIFT (EQUALITY-OF-DISPERSION) TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SEVENTIETH cross-source axis. Class-TWO-SAMPLE-SCALE-SHIFT-TEST (Ansari & Bradley 1960 Annals Math. Stat. 31(4):1174-1189): each half median-centred (Hollander, Wolfe & Chicken 2014 sec. 5.4), pool sorted, FOLDED ranks assigned (1, 2, ..., n/2, n/2, ..., 2, 1 for even n; the smallest AND the largest pooled value both get rank 1, folding inward to the median); abWA = sum of folded ranks for first-half elements; abZ = (abWA - E)/sqrt(Var) approx N(0,1) using the EXACT Ansari-Bradley 1960 Thm 2.1 mean and variance. Sign convention: positive abZ = second half MORE dispersed (matches axis-117 stZ and axis-116 bfZ). Distinct from axis-117 Siegel-Tukey halves (OUTWARD-PAIR ranks 1, 2-3, 4-5, 6-7, ... alternating; smallest gets rank 1, largest gets rank 2 -- different rank vector, NOT a monotone transform of the folded ranks); axis-116 Brown-Forsythe (PARAMETRIC F on |x - median|, sensitive to magnitudes); axis-115 Mann-Whitney halves (LOCATION shift, monotonic ranks); cumulative-periodogram axes 167-169 (FREQUENCY DOMAIN). Fully RANK-INVARIANT after median-centring; calibration-stable under heavy-tailed contamination.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source ANSARI-BRADLEY rank-sum (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'abWA',
+    'abMean',
+    'abZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.abN1),
+    formatNumber(s.abN2),
+    formatNumber(s.abMedianA),
+    formatNumber(s.abMedianB),
+    formatNumber(s.abWA),
+    s.abMean.toFixed(2),
+    s.abZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: abZ approx 0 = halves equally dispersed; abZ > +1.96 = second half more dispersed (DISPERSION GREW); abZ < -1.96 = first half more dispersed (DISPERSION SHRANK). |abZ| > 1.96 = significant scale-shift between halves at alpha = 0.05 (two-sided, Ansari-Bradley exact-moments normal approximation). Ansari-Bradley is the FOLDED-RANK companion of axis-117 Siegel-Tukey: both target SCALE-SHIFT on the same first/second half partition with the same median-centring, but they assign DIFFERENT rank vectors (folded vs outward-pair). They can disagree on a finite-sample basis -- a half whose outliers cluster at BOTH pooled extremes affects the two statistics differently because Ansari-Bradley assigns the same rank 1 to both extremes while Siegel-Tukey ranks them 1 and 2.)`,
     ),
   );
 

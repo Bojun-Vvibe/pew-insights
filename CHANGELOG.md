@@ -2,6 +2,171 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.440 — 2026-05-04
+
+### Added — axis-170 daily-token-ansari-bradley-halves
+
+New per-source TWO-SAMPLE NONPARAMETRIC SCALE-SHIFT test
+on the gap-filled daily total_tokens series, comparing the
+first half (n1 = floor(n/2) days) vs the second half
+(n2 = n - n1 days). Class: ANSARI-BRADLEY FOLDED-RANK
+EQUALITY-OF-DISPERSION TEST (Ansari & Bradley 1960,
+Annals Math. Stat. 31(4):1174-1189).
+
+Algorithm. Each half is median-centred (Hollander, Wolfe
+& Chicken 2014 sec. 5.4) so a pure location shift between
+the halves is removed before pooling. The pool is sorted
+ascending (stable, ties broken by original index), and
+ANSARI-BRADLEY FOLDED ranks are assigned:
+
+```
+even n: 1, 2, ...,  n/2,         n/2,         ..., 2, 1
+odd  n: 1, 2, ..., (n-1)/2, (n+1)/2, (n-1)/2, ..., 2, 1
+```
+
+i.e. the smallest AND the largest pooled value both get
+rank 1, the second-smallest and second-largest both get
+rank 2, etc., folding inward to the median. Values close
+to the pooled MEDIAN collect HIGH ranks; values at the
+EXTREMES collect LOW ranks. `abWA` = sum of folded ranks
+for first-half elements; `abZ = (abWA - E)/sqrt(Var)`
+approx N(0, 1) using the EXACT Ansari-Bradley 1960
+Theorem 2.1 mean and variance:
+
+```
+even n:  E[abWA]   = n1 (n+2) / 4
+         Var[abWA] = n1 n2 (n+2)(n-2) / (48 (n-1))
+odd  n:  E[abWA]   = n1 (n+1)^2 / (4n)
+         Var[abWA] = n1 n2 (n+1)(n^2+3) / (48 n^2)
+```
+
+Sign convention. Positive `abZ` = first half collects
+more central (high-folded-rank) mass = first half is more
+concentrated = SECOND HALF MORE DISPERSED. This matches
+the axis-117 `stZ` (Siegel-Tukey) and axis-116 `bfZ`
+(Brown-Forsythe) conventions, so a single column reading
+serves all three companion scale tests.
+
+Why this is structurally orthogonal to ALL prior axes:
+
+- vs axis-117 Siegel-Tukey halves. SAME problem, SAME
+  median-centring prophylaxis, but a DIFFERENT rank
+  assignment scheme. Siegel-Tukey assigns OUTWARD-PAIR
+  ranks (1, 2-3, 4-5, 6-7, ... alternating lo/hi pairs;
+  the smallest gets rank 1 and the largest gets rank 2).
+  Ansari-Bradley assigns SYMMETRIC FOLDED ranks (the
+  smallest AND the largest both get rank 1). The two
+  rank vectors are NOT a monotone transform of each
+  other; the two statistics have DIFFERENT exact null
+  distributions (different mean/variance formulas) and
+  disagree in finite samples — a half whose outliers
+  cluster at BOTH pooled extremes attracts the SAME
+  rank 1 under Ansari-Bradley but ranks 1 and 2 under
+  Siegel-Tukey, depressing `abWA` more sharply than
+  `stWA`.
+- vs axis-116 Brown-Forsythe. Parametric F vs rank-based
+  nonparametric — same orthogonality class as Siegel-
+  Tukey vs BF. Calibration-stable under heavy-tailed
+  contamination where BF loses Type-I error.
+- vs axis-115 Mann-Whitney halves. Mann-Whitney uses
+  MONOTONIC ranks and tests LOCATION shift; Ansari-
+  Bradley uses FOLDED ranks and tests SCALE shift after
+  median-centring.
+- vs axes-118+ CDF-distance halves (KS, CvM, AD,
+  Hellinger, JS, KL, MMD, energy, Wasserstein, ...).
+  Those are FULL-DISTRIBUTION omnibus tests; Ansari-
+  Bradley targets ONLY the SCALE component after median-
+  centring and is invariant to a pure location shift.
+- vs the trend axes (110/111/113), the cumulative-
+  periodogram axes (167-169), the LB / McLeod-Li / VR /
+  BDS serial-dependence axes — all on different
+  populations / domains / functionals.
+
+#### Tests
+
+Test suite grew by **51 tests** (12835 → 12886). Coverage:
+
+- `ansariBradleyRanksFor`: even/odd folding, sum
+  identities `n(n+2)/4` and `(n+1)^2/4`, input
+  validation.
+- `ansariBradleyNullMoments`: closed-form mean/variance
+  matched for n=8 and n=9 down to 1e-12 absolute.
+- Primitive: split sizes (even/odd), input validation
+  (n<8, non-finite, zero-variance), shift-invariance,
+  positive-scale-invariance, NEGATION-invariance (the
+  folded rank vector is symmetric about its centre).
+- Primitive: `abMean` and `abVar` match the closed-form
+  Ansari-Bradley moments for n in {8, 9, 10, 11, 13, 17,
+  30, 31}.
+- Primitive: `abWA` is bounded in [n1, n1·ceil(n/2)]
+  for any input.
+- Primitive: behaviour — second-half-more-dispersed
+  yields positive `abZ`; first-half-more-dispersed
+  yields negative; pure location shift yields |abZ|
+  near zero (median-centring works).
+- Builder: filters non-positive tokens, drops below
+  min-tokens, drops below min-tenure, drops zero-
+  variance, rejects bad sort key, rejects bad min-
+  tenure, top-k cap surfaces `droppedTopSources`,
+  `sort=abZAbsDesc` orders by |abZ|.
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+Invocation:
+
+```
+pew-insights daily-token-ansari-bradley-halves \
+    --min-tenure-days 14 --sort abZAbsDesc
+```
+
+Per-source folded-rank-sum + z-score table (sorted by
+`|abZ|` descending; source name under `<editor-bot>` is
+scrubbed per repo policy):
+
+| source        | tenure | n1  | n2  |  abWA  | abMean   |   abZ   |
+| ------------- | -----: | --: | --: | -----: | -------: | ------: |
+| <editor-bot>  |    265 | 132 | 133 |  5,532 | 8,811.12 | -10.5127 |
+| claude-code   |     72 |  36 |  36 |    964 |   666.00 |  +6.7143 |
+| openclaw      |     18 |   9 |   9 |     35 |    45.00 |  -1.7743 |
+| opencode      |     15 |   7 |   8 |     25 |    29.87 |  -1.1190 |
+| hermes        |     18 |   9 |   9 |     39 |    45.00 |  -1.0646 |
+
+Reading: TWO sources REJECT the equal-scale null at the
+5% level under the Ansari-Bradley folded-rank test, and
+both very strongly:
+
+- `<editor-bot>` (265-day tenure, the longest in the
+  corpus) shows `abZ = -10.5127`, i.e. the FIRST half is
+  MORE DISPERSED than the second half by ~10.5σ. The
+  editor-bot's daily token mass dropped from a wide-
+  spread early regime to a much tighter recent regime —
+  consistent with a productisation / settling effect on
+  a long-running automated source.
+- `claude-code` (72-day tenure) shows `abZ = +6.7143`,
+  i.e. the SECOND half is MORE DISPERSED than the first
+  half by ~6.7σ — consistent with `claude-code`'s
+  recent days exhibiting much larger swings in daily
+  total tokens (driven by the 20.5M-token median in the
+  second half vs zero median in the first half — a
+  classic ramp-up regime shift).
+
+The three short-tenure sources (`openclaw`, `opencode`,
+`hermes` — each 15-18 days) all sit in the borderline
+band `|abZ| in (1, 2)`, none significant at α = 0.05.
+
+Cross-check vs axis-117 (Siegel-Tukey halves) is the
+intended orthogonality witness: `claude-code`'s
+second-half outliers cluster strongly on ONE pooled
+extreme (the high side, since its second half also has
+much higher median), so Siegel-Tukey and Ansari-Bradley
+agree in sign here. The interesting Ansari-Bradley
+SIGNAL is `<editor-bot>`'s `-10.5σ`: a 132-vs-133 split
+on a 265-day tenure aggressively penalises any half-vs-
+half scale asymmetry, and the symmetric folded-rank
+weighting (which up-weights MEDIAN-clustered values) is
+what makes the test so sensitive to the first half's
+broader range.
+
 ## 0.6.439 — 2026-05-04
 
 ### Refined — axis-169 corpus-level aggregator + Fisher combined-p
