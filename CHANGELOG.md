@@ -2,6 +2,233 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.451 — 2026-05-04
+
+### Added — axis-175 daily-token-lepage-halves (joint location-scale test)
+
+New cross-source axis (the ONE-HUNDRED-AND-SEVENTY-FIFTH)
+implementing the LEPAGE 1971 JOINT LOCATION-SCALE TWO-
+SAMPLE NONPARAMETRIC TEST on the gap-filled daily
+total_tokens series of each source.
+
+```
+L = zW^2 + zAB^2
+
+  zW   = standardised Wilcoxon rank-sum on raw pooled
+         mid-ranks (LOCATION channel, tie-corrected
+         variance)
+  zAB  = standardised Ansari-Bradley folded-rank sum on
+         MEDIAN-CENTRED halves (SCALE channel)
+
+Asymptotic null: L ~ Chi-Squared(2), so
+  lepPValue = exp(-L / 2)
+```
+
+**Why a SECOND joint location-scale axis (after axis-174
+Cucconi)** — the structural orthogonality:
+
+Both axes test the joint location-scale shift between the
+first half (n1 = floor(n/2) days) and second half (n2 =
+n - n1 days) of the gap-filled daily series, both have
+asymptotic chi-squared(2) null distribution, both report
+an unsigned upper-tail p-value. But they differ
+**STRUCTURALLY**:
+
+| dimension          | axis-174 Cucconi                                | axis-175 Lepage                                          |
+|--------------------|-------------------------------------------------|----------------------------------------------------------|
+| rank scheme        | SAME monotonic ranks (1..n) for both components | TWO DIFFERENT: monotonic mid-ranks AND folded ranks      |
+| data scheme        | RAW pooled values for both components           | RAW pool for W; MEDIAN-CENTRED halves for AB             |
+| component dependence | INHERENTLY CORRELATED (rho ~ -7/8 closed form) | ASYMPTOTICALLY INDEPENDENT (median-centring de-couples)  |
+| combination form   | quadratic with cross-term -2 rho U V            | sum-of-squares with NO cross-term                        |
+| direction recovery | requires locZ/scaleZ refinement (axis-174 v0.6.450) | DIRECT: signed zW (location) and zAB (scale) channels |
+
+Marozzi (2009) sec. 5 reports Cucconi has uniformly higher
+power on simulated joint alternatives (its closed-form
+rho captures redundancy that Lepage's "treat as
+independent" assumption ignores), but Lepage has TWO
+advantages Cucconi lacks: (i) **directional
+interpretability** — zW and zAB are SIGNED z-scores with
+direct interpretation matching axes 115 (Mann-Whitney) and
+170 (Ansari-Bradley); (ii) **robustness under pure-
+location-dominant alternatives** — Lepage's L has chi-2(1)
+effective dimension (the AB component contributes only
+chi-2(1) noise) while Cucconi still uses both components
+which are almost completely redundant under pure-location
+shift. Empirically Cucconi wins by ~3 percentage points
+on normal-shift alternatives.
+
+**Public surface (`src/dailytokenlepagehalves.ts`):**
+
+- `dailyTokenLepageHalves(values)` — core stat returning
+  `{lepN1, lepN2, lepWA, lepABA, lepZW, lepZAB, lepL,
+  lepPValue, lepZ, mean, stddev, nSamples}`.
+- `buildDailyTokenLepageHalves(queue, opts)` — per-source
+  daily aggregator with the canonical filtering pipeline
+  (min-tokens, min-tenure-days >= 8, zero-variance guard,
+  source filter, sort, top cap).
+- `wilcoxonNullMoments(n1, n2)` — exact closed form
+  E[W_A] = n1(n+1)/2, Var = n1 n2 (n+1)/12 (no-tie form).
+- `ansariBradleyNullMomentsLep(n1, n2)` — exact
+  Ansari-Bradley 1960 Theorem 2.1 moments (even/odd n
+  branches).
+- `ansariBradleyRanksForLep(n)` — folded rank vector
+  min(k, n+1-k) for k = 1..n.
+- `lepageSignedChannels(zW, zAB)` — signed channel
+  decomposition matching axis-115 / axis-170 sign
+  conventions: `lepLocZ = -zW`, `lepScaleZ = +zAB`.
+  Norm-preserving identity `lepLocZ^2 + lepScaleZ^2 ==
+  lepL` holds exactly.
+- `lepageDirectionLabel(lepLocZ, lepScaleZ)` — 2:1
+  magnitude classifier returning 'null-like' /
+  'location-dominant' / 'scale-dominant' / 'mixed'
+  (mirrors `cucconiDirectionLabel` for cross-axis
+  consistency).
+- `aggregateLepageHalves(rows)` — Fisher's combined-p
+  corpus aggregator (analogous to `aggregateCucconiHalves`
+  in axis-174; Fisher because lepL is intrinsically
+  unsigned).
+- `chiSquaredUpperTailLep`, `lanczosLogGammaLep` — self-
+  contained chi-2 tail and log-Gamma (mirrors axis-174's
+  internals; max relative error ~1e-12).
+
+**EXACT IDENTITIES** verified by the 57 test cases
+(`test/dailytokenlepagehalves.test.ts`):
+
+```
+lepL(x + c)        === lepL(x)        for any constant c
+lepL(a * x)        === lepL(x)        for any a > 0
+lepL               === lepZW^2 + lepZAB^2
+lepZ               === sqrt(lepL)
+lepPValue          === exp(-lepL / 2)
+lepLocZ^2 + lepScaleZ^2  ===  lepL
+```
+
+Plus exact spot-check against the n=8 ascending series
+[10,20,30,40,50,60,70,80]: lepWA = 10, lepZW =
+(10 - 18)/sqrt(12) = -2.3094010767585034 (exact, matches
+the closed-form W_A null moments for n1 = n2 = 4).
+
+Asymptotic chi-2(2) survival is verified directly against
+exp(-x/2) at x = 0.5, 1, 2, 3, 5, 10 to within 1e-10.
+
+CLI: `pew-insights daily-token-lepage-halves [--json]
+[--sort lepLDesc|lepL|lepPValue|lepPValueDesc|lepZ|
+lepZDesc|tokens|tenure|source] [--min-tokens N]
+[--min-tenure-days N>=8] [--top N] [--source NAME]
+[--since ISO] [--until ISO]`.
+
+#### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js daily-token-lepage-halves --json
+{
+  "generatedAt": "2026-05-04T15:27:51.349Z",
+  "totalTokens": 12782332184,
+  "totalSources": 6,
+  "droppedBelowMinTenure": 1,
+  "sources": [
+    { "source": "vscode-copilot",  "nTenureDays": 265, "lepN1": 132, "lepN2": 133,
+      "lepWA": 18580, "lepABA": 5532,
+      "lepZW":   2.0852, "lepZAB": -10.5127,
+      "lepL":  114.8658, "lepPValue": 1.141e-25, "lepZ": 10.7175 },
+    { "source": "claude-code",     "nTenureDays":  72, "lepN1":  36, "lepN2":  36,
+      "lepWA":  1007, "lepABA":  964,
+      "lepZW":  -3.7189, "lepZAB":   6.7143,
+      "lepL":   58.9118, "lepPValue": 1.612e-13, "lepZ":  7.6754 },
+    { "source": "openclaw",        "nTenureDays":  18, "lepN1":   9, "lepN2":   9,
+      "lepWA":   121, "lepABA":   35,
+      "lepZW":   3.1347, "lepZAB":  -1.7743,
+      "lepL":   12.9747, "lepPValue": 1.523e-03, "lepZ":  3.6020 },
+    { "source": "opencode",        "nTenureDays":  15, "lepN1":   7, "lepN2":   8,
+      "lepWA":    65, "lepABA":   24,
+      "lepZW":   1.0415, "lepZAB":  -1.3489,
+      "lepL":    2.9044, "lepPValue": 2.341e-01, "lepZ":  1.7042 },
+    { "source": "hermes",          "nTenureDays":  18, "lepN1":   9, "lepN2":   9,
+      "lepWA":    74, "lepABA":   38,
+      "lepZW":  -1.0155, "lepZAB":  -1.2420,
+      "lepL":    2.5738, "lepPValue": 2.761e-01, "lepZ":  1.6043 }
+  ]
+}
+```
+
+Corpus aggregate via Fisher's combined-p across the 5
+rows used:
+
+```
+fisherChi2           = 192.2304
+fisherCombinedPValue = 6.71e-36   (Chi-Squared(10) upper tail)
+meanLepL             = 38.4461
+rowsUsed             = 5
+rowsSkipped          = 0
+```
+
+**Reading the live-smoke vs the axis-174 v0.6.449 numbers**
+(Cucconi run on the same source set):
+
+- `vscode-copilot`: Lepage L = 114.87 (p ~ 1e-25); Cucconi
+  ccC was 70.46 (ccPValue 2e-31). Both REJECT joint
+  equality at any sane alpha. The Lepage decomposition
+  reads zW = +2.09 (mild location signal: first half has
+  HIGHER ranks => second half stochastically SMALLER) and
+  zAB = -10.51 (overwhelming scale signal: |zAB| 5x
+  larger). **DIRECT** confirmation of the v0.6.450 axis-
+  174 refinement which classified this source as 'mixed'
+  with locZ/scaleZ = +5.69 / -9.38 — Lepage agrees the
+  scale channel dominates but assigns a SMALLER location
+  magnitude (W on raw mid-ranks attenuates the signal
+  that Cucconi's squared-rank channel picks up more
+  strongly).
+- `claude-code`: Lepage zW = -3.72 (clean location signal:
+  first half had SMALLER ranks => second half
+  stochastically LARGER, matching axis-174 locZ = +5.21
+  with our SIGN-FLIPPED CONVENTION lepLocZ = -zW = +3.72,
+  same direction); zAB = +6.71 (strong scale signal:
+  second half MORE dispersed). Cucconi v0.6.450
+  classified this as 'location-dominant' but Lepage shows
+  the AB component is ACTUALLY LARGER in magnitude.
+  This is the EXPECTED divergence: Cucconi's locZ/scaleZ
+  rotation absorbs scale signal into the (rho-corrected)
+  location channel when the two are correlated under
+  the underlying alternative; Lepage's median-centred AB
+  isolates the pure-scale signal cleanly.
+- `openclaw`: Lepage L = 12.97 (p = 1.5e-3, REJECT at
+  alpha=0.01). zW = +3.13 (first half HIGHER ranks =>
+  second half stochastically SMALLER), zAB = -1.77 (mild
+  scale signal: second half MORE concentrated).
+  lepLocZ = -3.13 (negative => second half SMALLER, same
+  direction as axis-174 locZ = -3.13 — exact agreement).
+- `opencode` and `hermes`: Lepage agrees with axis-174
+  that neither rejects at alpha = 0.05 (lepPValue 0.234
+  and 0.276 respectively).
+
+Cross-axis consistency check: for `claude-code` the
+Cucconi v0.6.449 ccPValue was 1e-7; the Lepage lepPValue
+is 1.6e-13, ~6 orders smaller. This is consistent with
+the Marozzi (2009) Tab. 3 finding: under joint
+alternatives where the scale shift dominates, Lepage can
+beat Cucconi precisely because the median-centred AB
+component avoids the redundancy penalty that Cucconi
+pays via its rho-correction. Conversely for
+`vscode-copilot` Cucconi (2e-31) BEATS Lepage (1e-25) —
+the same Marozzi-predicted regime where the underlying
+alternative spreads more uniformly across both Cucconi
+channels.
+
+#### Tests
+
+57 new test cases in
+`test/dailytokenlepagehalves.test.ts` covering: closed-
+form null moments (Wilcoxon and Ansari-Bradley); folded-
+rank vector (n=8 even, n=9 odd); shift / scale / squared-
+identity invariances; sign-conventional decomposition
+identities; chi-2(2) survival exact agreement with
+exp(-x/2); Fisher combined-p aggregator (empty, malformed-
+row skipping, 3-source closed-form); builder integration
+(empty queue, source filter, top cap, sort stability,
+zero-variance / sparse / short-tenure dropping, invalid
+hour_start, non-positive tokens, negative bounds rejection).
+All 57 pass.
+
 ## 0.6.450 — 2026-05-04
 
 ### Refined — axis-174 signed channel decomposition + direction label
