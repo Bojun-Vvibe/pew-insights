@@ -2,6 +2,109 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.441 — 2026-05-04
+
+### Refined — axis-170 corpus-level Stouffer aggregator + Phi(z)
+
+Two new public helpers exposed from the axis-170 module:
+
+1. **`aggregateAnsariBradleyHalves(rows)`** — combines
+   per-source `abZ` values into a single corpus-level
+   summary via STOUFFER'S Z-METHOD (Stouffer et al. 1949,
+   "The American Soldier" vol. 1, pp. 45-46) with
+   tenure-weighted z's:
+
+   ```
+   stoufferZ = sum_i (w_i * abZ_i) / sqrt(sum_i w_i^2)
+   ```
+
+   with `w_i = sqrt(nTenureDays_i - 1)` (the natural
+   per-source standard-error scaling for a half-vs-half
+   Mann-Whitney-style statistic). Outputs:
+   - `stoufferZ` — combined z-score; positive = corpus
+     dispersion GROWING; negative = dispersion SHRINKING.
+   - `stoufferTwoSidedP` — `2*(1 - Phi(|stoufferZ|))`.
+   - `tenureWeightedAbZ` — convenience weighted mean of
+     `abZ` (NOT a calibrated z; useful as an "average
+     effect size").
+   - `totalTenureWeight`, `rowsUsed`, `rowsSkipped` —
+     defensive book-keeping. Malformed rows (non-finite
+     `abZ`, non-integer `nTenureDays`, `nTenureDays < 2`)
+     are SKIPPED with a counter rather than throwing.
+
+   Why Stouffer (this axis) instead of Fisher's combined-p
+   (axis-169 aggregator): Stouffer PRESERVES THE SIGN of
+   the per-source statistics, so a corpus where half the
+   sources show DISPERSION GROWING and half show
+   DISPERSION SHRINKING returns `stoufferZ` near zero
+   (mutual cancellation), while Fisher's combined-p (sum
+   of `-2 ln p`) would return a SIGNIFICANT verdict
+   regardless of direction. For SCALE-SHIFT analysis,
+   signed combination is the operationally-meaningful
+   aggregate.
+
+2. **`standardNormalCdf(z)`** — Phi(z) via Abramowitz &
+   Stegun 1964 formula 26.2.17 (rational approximation,
+   max error ~7.5e-8 across all real z). Self-contained —
+   no external dependency. Used by the aggregator above
+   and reusable by other axes.
+
+Why this refinement: the per-source axis-170 test answers
+"is THIS source's dispersion changing?", but operators
+also need a single corpus-level number for the headline
+question "is the WHOLE pew daily-token series getting more
+or less dispersed over time?". A signed-combination
+aggregator is the right tool — Fisher would lose the
+direction.
+
+#### Tests
+
+Test suite grew by **9 tests** (12886 → 12895). Coverage:
+
+- `standardNormalCdf`: anchor values at z = 0, ±1.96,
+  2.576, 3 (within 1e-3 to 1e-7 absolute); monotone non-
+  decreasing across z in [-5, 5]; rejects non-finite.
+- `aggregateAnsariBradleyHalves`: empty input returns
+  NaN with rowsUsed=0; malformed rows skipped with
+  counter; single-source equals own `abZ`; opposing-sign
+  sources cancel exactly (stoufferZ within 1e-12 of 0);
+  long-tenure source dominates over short-tenure;
+  `stoufferTwoSidedP` always in [0, 1].
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node -e "import { buildDailyTokenAnsariBradleyHalves,
+    aggregateAnsariBradleyHalves } from
+    './src/dailytokenansaribradleyhalves.js';
+    ... feed the same 5-source set as the v0.6.440 smoke ..."
+
+stoufferZ          = -6.6492
+stoufferTwoSidedP  =  2.96e-11
+tenureWeightedAbZ  = -3.5494
+totalTenureWeight  = 36.6621
+rowsUsed           = 5
+rowsSkipped        = 0
+```
+
+Reading: the corpus-level Stouffer combination of the
+five surviving sources rejects the equal-scale null at
+`p ~ 3.0e-11`, with stoufferZ = -6.65 firmly NEGATIVE.
+Interpretation: corpus-wide, the pew daily-token series
+has shown a STATISTICALLY OVERWHELMING NET CONTRACTION
+in dispersion across the average source's tenure. The
+signal is dominated by `<editor-bot>`'s -10.5σ over its
+265-day tenure (largest weight `w = sqrt(264) ~ 16.25`),
+which overwhelms `claude-code`'s +6.7σ on its 72-day
+tenure (`w = sqrt(71) ~ 8.43`). The three short-tenure
+sources contribute small additional negative tilt
+(`openclaw -1.77`, `opencode -1.12`, `hermes -1.06`).
+Cross-check vs the per-source view (v0.6.440): two
+sources individually significant (one each direction);
+the corpus aggregate concludes NEGATIVE because the
+larger-tenure rejecting source goes negative AND all
+three borderline sources also lean negative.
+
 ## 0.6.440 — 2026-05-04
 
 ### Added — axis-170 daily-token-ansari-bradley-halves

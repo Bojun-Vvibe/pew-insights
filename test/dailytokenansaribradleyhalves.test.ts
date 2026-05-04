@@ -353,3 +353,92 @@ test('buildDailyTokenAnsariBradleyHalves: sort=abZAbsDesc orders by |abZ|', () =
     `expected abZAbsDesc; got ${r.sources[0]!.abZ} vs ${r.sources[1]!.abZ}`,
   );
 });
+
+// ---------- aggregator: standardNormalCdf ----------
+import {
+  aggregateAnsariBradleyHalves,
+  standardNormalCdf,
+} from '../src/dailytokenansaribradleyhalves.js';
+
+test('standardNormalCdf: anchor values', () => {
+  assert.ok(Math.abs(standardNormalCdf(0) - 0.5) < 1e-7);
+  assert.ok(Math.abs(standardNormalCdf(1.96) - 0.975) < 1e-3);
+  assert.ok(Math.abs(standardNormalCdf(-1.96) - 0.025) < 1e-3);
+  assert.ok(Math.abs(standardNormalCdf(2.576) - 0.995) < 1e-3);
+  assert.ok(Math.abs(standardNormalCdf(3) - 0.99865) < 1e-4);
+});
+
+test('standardNormalCdf: monotone non-decreasing', () => {
+  let prev = standardNormalCdf(-5);
+  for (let z = -4.5; z <= 5; z += 0.5) {
+    const v = standardNormalCdf(z);
+    assert.ok(v >= prev - 1e-12, `non-monotone at z=${z}: ${prev} > ${v}`);
+    prev = v;
+  }
+});
+
+test('standardNormalCdf: rejects non-finite', () => {
+  assert.throws(() => standardNormalCdf(NaN), /non-finite input/);
+  assert.throws(() => standardNormalCdf(Infinity), /non-finite input/);
+});
+
+// ---------- aggregator: Stouffer ----------
+
+test('aggregateAnsariBradleyHalves: empty input', () => {
+  const r = aggregateAnsariBradleyHalves([]);
+  assert.ok(Number.isNaN(r.stoufferZ));
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 0);
+});
+
+test('aggregateAnsariBradleyHalves: skips malformed rows', () => {
+  const r = aggregateAnsariBradleyHalves([
+    { abZ: NaN, nTenureDays: 14 },
+    { abZ: 1.0, nTenureDays: 1 }, // tenure too small
+    { abZ: 1.0, nTenureDays: 14.5 }, // non-integer
+    { abZ: 2.0, nTenureDays: 17 }, // valid
+  ]);
+  assert.equal(r.rowsSkipped, 3);
+  assert.equal(r.rowsUsed, 1);
+  assert.ok(Number.isFinite(r.stoufferZ));
+});
+
+test('aggregateAnsariBradleyHalves: single source equals own abZ', () => {
+  const r = aggregateAnsariBradleyHalves([{ abZ: 2.5, nTenureDays: 17 }]);
+  // sumWZ = sqrt(16)*2.5 = 10; sumW2 = 16; stouffer = 10/4 = 2.5.
+  assert.ok(Math.abs(r.stoufferZ - 2.5) < 1e-12);
+});
+
+test('aggregateAnsariBradleyHalves: opposing-sign sources cancel', () => {
+  const r = aggregateAnsariBradleyHalves([
+    { abZ: +3.0, nTenureDays: 17 },
+    { abZ: -3.0, nTenureDays: 17 },
+  ]);
+  assert.ok(
+    Math.abs(r.stoufferZ) < 1e-12,
+    `expected cancellation, got ${r.stoufferZ}`,
+  );
+});
+
+test('aggregateAnsariBradleyHalves: tenure-weighted', () => {
+  // Long-tenure source dominates. w_long = sqrt(99) ~ 9.95;
+  // w_short = sqrt(7) ~ 2.65. Expect stouffer pulled toward
+  // the long-tenure source.
+  const r = aggregateAnsariBradleyHalves([
+    { abZ: -2.0, nTenureDays: 8 },
+    { abZ: +4.0, nTenureDays: 100 },
+  ]);
+  assert.ok(r.stoufferZ > 2, `expected stoufferZ > 2, got ${r.stoufferZ}`);
+});
+
+test('aggregateAnsariBradleyHalves: stoufferTwoSidedP in [0,1]', () => {
+  for (const z of [-3, -1, 0, 1, 3, 10]) {
+    const r = aggregateAnsariBradleyHalves([
+      { abZ: z, nTenureDays: 17 },
+    ]);
+    assert.ok(
+      r.stoufferTwoSidedP >= 0 && r.stoufferTwoSidedP <= 1,
+      `p out of range: ${r.stoufferTwoSidedP} (z=${z})`,
+    );
+  }
+});

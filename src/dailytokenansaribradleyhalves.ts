@@ -769,3 +769,135 @@ export function buildDailyTokenAnsariBradleyHalves(
     sources: kept,
   };
 }
+
+/**
+ * Corpus-level aggregator for axis-170 per-source results.
+ * Combines per-source `abZ` values into a single corpus-
+ * level summary via STOUFFER'S Z-METHOD (Stouffer et al.
+ * 1949, "The American Soldier: Adjustment During Army
+ * Life", vol. 1, princeton: Princeton University Press,
+ * pp. 45-46) with TENURE-WEIGHTED z's:
+ *
+ *   stoufferZ = sum_i (w_i * abZ_i) / sqrt(sum_i w_i^2)
+ *
+ * with w_i = sqrt(nTenureDays_i - 1) (the natural per-
+ * source standard error scaling for a half-vs-half
+ * Mann-Whitney-style statistic). Under the per-source-
+ * independent null, stoufferZ ~ N(0, 1) exactly when the
+ * w_i are deterministic; for tenure-driven w_i the
+ * approximation is asymptotic.
+ *
+ * Why Stouffer (this axis) instead of Fisher's combined-p
+ * (axis-169 aggregator): Stouffer PRESERVES THE SIGN of
+ * the per-source statistics, so a corpus where half the
+ * sources show DISPERSION GROWING and half show
+ * DISPERSION SHRINKING returns stoufferZ near zero
+ * (mutual cancellation), while Fisher's combined-p
+ * (sum of -2 ln p) would return a SIGNIFICANT verdict
+ * (any departure from null inflates -2 ln p regardless
+ * of direction). For SCALE-SHIFT analysis, signed
+ * combination is the operationally-meaningful aggregate.
+ *
+ * Returns:
+ *   stoufferZ           — combined z-score; positive =
+ *                         corpus-level dispersion GROWING
+ *                         (second halves more dispersed
+ *                         on average); negative = corpus-
+ *                         level dispersion SHRINKING.
+ *   stoufferTwoSidedP   — 2*(1 - Phi(|stoufferZ|)),
+ *                         standard normal upper-tail p.
+ *   tenureWeightedAbZ   — convenience: weighted mean of
+ *                         abZ (NOT a calibrated z; useful
+ *                         as an "average effect size").
+ *   totalTenureWeight   — sum of w_i.
+ *   rowsUsed / rowsSkipped — defensive book-keeping.
+ *
+ * Malformed rows (non-finite abZ, non-integer / < 2
+ * nTenureDays) are SKIPPED with a counter rather than
+ * throwing.
+ */
+export interface AnsariBradleyHalvesCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedP: number;
+  tenureWeightedAbZ: number;
+  totalTenureWeight: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateAnsariBradleyHalves(
+  rows: ReadonlyArray<{ abZ: number; nTenureDays: number }>,
+): AnsariBradleyHalvesCorpusAggregate {
+  let sumWZ = 0;
+  let sumW2 = 0;
+  let sumW = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.abZ) ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays < 2
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const w = Math.sqrt(r.nTenureDays - 1);
+    sumWZ += w * r.abZ;
+    sumW2 += w * w;
+    sumW += w;
+    used += 1;
+  }
+  if (used === 0 || sumW2 <= 0) {
+    return {
+      stoufferZ: Number.NaN,
+      stoufferTwoSidedP: Number.NaN,
+      tenureWeightedAbZ: Number.NaN,
+      totalTenureWeight: 0,
+      rowsUsed: used,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = sumWZ / Math.sqrt(sumW2);
+  const stoufferTwoSidedP = 2 * (1 - standardNormalCdf(Math.abs(stoufferZ)));
+  const tenureWeightedAbZ = sumWZ / sumW;
+  return {
+    stoufferZ,
+    stoufferTwoSidedP,
+    tenureWeightedAbZ,
+    totalTenureWeight: sumW,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Standard normal CDF Phi(z) via Abramowitz & Stegun 1964
+ * formula 26.2.17 (rational approximation, max error
+ * ~7.5e-8 across all real z). Self-contained — no external
+ * dependency.
+ */
+export function standardNormalCdf(z: number): number {
+  if (!Number.isFinite(z)) {
+    throw new Error(`standardNormalCdf: non-finite input (${z})`);
+  }
+  // Phi(z) = 1 - phi(z) * (b1 t + b2 t^2 + b3 t^3 + b4 t^4 + b5 t^5)
+  // for z >= 0 with t = 1 / (1 + p z), p = 0.2316419.
+  // For z < 0 use Phi(z) = 1 - Phi(-z).
+  const sign = z < 0 ? -1 : 1;
+  const a = Math.abs(z);
+  const p = 0.2316419;
+  const b1 = 0.319381530;
+  const b2 = -0.356563782;
+  const b3 = 1.781477937;
+  const b4 = -1.821255978;
+  const b5 = 1.330274429;
+  const t = 1 / (1 + p * a);
+  const phi = Math.exp(-0.5 * a * a) / Math.sqrt(2 * Math.PI);
+  const tail = phi * (b1 * t + b2 * t * t + b3 * t ** 3 + b4 * t ** 4 + b5 * t ** 5);
+  const upper = tail; // P(Z > a)
+  const result = sign === 1 ? 1 - upper : upper;
+  if (result < 0) return 0;
+  if (result > 1) return 1;
+  return result;
+}
