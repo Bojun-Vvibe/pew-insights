@@ -20629,6 +20629,7 @@ import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.
 import type { DailyTokenVanDerWaerdenHalvesReport } from './dailytokenvanderwaerdenhalves.js';
 import type { DailyTokenFlignerPolicelloHalvesReport } from './dailytokenflignerpolicellohalves.js';
 import type { DailyTokenYuenWelchHalvesReport } from './dailytokenyuenwelchhalves.js';
+import type { DailyTokenSavageHalvesReport } from './dailytokensavagehalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27483,6 +27484,89 @@ export function renderDailyTokenYuenWelchHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: ywPValue < 0.05 = REJECT trimmed-mean equality H0 at alpha=0.05 (two-sided Student-t reference). ywT > 0 = SECOND half has LARGER trimmed mean (matches axis-117/170/176-182 SECOND-half-positive convention). Compared with axis-181 vdwZ and axis-182 fpZ: cross-axis sign agreement under symmetric F; disagreement flags skew (YW captures, rank obscures) or heavy tails (rank wins on robustness).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSavageHalves(
+  r: DailyTokenSavageHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-savage-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SAVAGE 1956 EXPONENTIAL-SCORES LOCATION TEST. Centered Savage scores a(i) = sum_{j=N-i+1}^{N} 1/j - 1; statistic S = sum a(rank(x)) over second-half values; Var = (n1 n2 / (N (N-1))) * sum a^2; savZ = S / sqrt(Var) ~ N(0, 1) under H0. ONE-HUNDRED-AND-EIGHTY-FOURTH cross-source axis. Equivalent to two-sample log-rank on uncensored data (Mantel 1966; Peto-Peto 1972). LOCALLY MOST POWERFUL against lehmann-exponential alternative F_B = F_A^theta. STRUCTURALLY ORTHOGONAL: vs axis-181 VDW Savage uses unbounded right-tail score function instead of bounded normal scores; ARE 1.722 at exponential, 0.75 at normal. vs axis-115 MW Savage upweights high-rank tail. vs axis-183 YW antipodal influence design. Refs: Savage 1956 Ann. Math. Stat. 27:590-615; Hájek-Šidák 1967 sec. V.1.4-1.5; Mantel 1966; Peto-Peto 1972.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SAVAGE exponential-scores location test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'sumA2',
+    'S',
+    'var',
+    'savZ',
+    'savPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.savN1),
+    formatNumber(s.savN2),
+    s.savSumScoreSquared.toFixed(4),
+    s.savSecondHalfScoreSum.toFixed(4),
+    s.savVariance.toFixed(4),
+    s.savZ.toFixed(4),
+    s.savPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: savPValue < 0.05 = REJECT identical-distribution H0 at alpha=0.05 (two-sided standard-normal reference). savZ > 0 = SECOND half ranks cluster at the LARGER end of the pooled sample (B stochastically dominates A; lehmann theta < 1). Matches axis-117/170/176-183 SECOND-half-positive convention. Cross-axis with axis-115 MW: agreement under uniform stochastic shift; disagreement (Savage strong, MW weak) flags right-tail concentration. Cross-axis with axis-181 VDW: agreement under symmetric F; disagreement flags exponential vs normal tail shape.)`,
     ),
   );
 

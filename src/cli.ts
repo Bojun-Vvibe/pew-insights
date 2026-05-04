@@ -210,6 +210,7 @@ import {
   renderDailyTokenVanDerWaerdenHalves,
   renderDailyTokenFlignerPolicelloHalves,
   renderDailyTokenYuenWelchHalves,
+  renderDailyTokenSavageHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -685,6 +686,10 @@ import {
   buildDailyTokenYuenWelchHalves,
   type DailyTokenYuenWelchHalvesSort,
 } from './dailytokenyuenwelchhalves.js';
+import {
+  buildDailyTokenSavageHalves,
+  type DailyTokenSavageHalvesSort,
+} from './dailytokensavagehalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -44539,6 +44544,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenYuenWelchHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-savage-halves')
+  .description(
+    "Per-source SAVAGE 1956 EXPONENTIAL-SCORES LOCATION TEST between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTY-FOURTH cross-source axis). Centered Savage scores a(i) = sum_{j=N-i+1}^{N} 1/j - 1; statistic S = sum a(rank(x)) over second-half values; Var = (n1 n2 / (N (N-1))) * sum a^2; savZ = S / sqrt(Var) ~ N(0, 1) under H0 (Savage 1956 eq. 2.4; Hájek-Šidák 1967 sec. V.1.4). Equivalent to two-sample log-rank on uncensored data (Mantel 1966; Peto-Peto 1972). LOCALLY MOST POWERFUL against lehmann-exponential alternative F_B = F_A^theta. STRUCTURALLY ORTHOGONAL: vs axis-181 VDW Savage uses unbounded right-tail score function (J(u) = -log(1-u) - 1) instead of bounded normal scores (Phi^-1); ARE 1.722 at exponential, 0.75 at normal. vs axis-115 MW Savage upweights high-rank tail; disagreement diagnoses tail concentration. vs axis-183 YW antipodal influence design (YW: trimmed center; Savage: right tail). vs scale family: ~ 0 under symmetric F. Refs: Savage 1956 Ann. Math. Stat. 27:590-615; Hájek-Šidák 1967 sec. V.1.4-1.5; Mantel 1966; Peto-Peto 1972; Lehmann 1975 Table H.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8 by Hájek-Šidák V.1.5 Theorem 1). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: savZAbsDesc (default) | savZ | savPValue | savPValueDesc | tokens | tenure | source.',
+    'savZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'savZ',
+          'savZAbsDesc',
+          'savPValue',
+          'savPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSavageHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenSavageHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSavageHalves(report) + '\n',
           );
         }
       } catch (e) {
