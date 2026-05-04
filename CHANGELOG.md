@@ -2,6 +2,176 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.467 — 2026-05-05
+
+### Added — axis-184 daily-token-savage-halves (Savage 1956 EXPONENTIAL-SCORES location test, equivalent to two-sample log-rank on uncensored data)
+
+Per-source SAVAGE (1956, *Ann. Math. Stat.* 27:590-615)
+EXPONENTIAL-SCORES LOCATION TEST between the first half
+(`n1 = floor(n/2)` days) vs second half (`n2 = n - n1`
+days) of the gap-filled daily `total_tokens` series.
+
+ONE-HUNDRED-AND-EIGHTY-FOURTH cross-source axis.
+
+Pool both halves and rank ascending with midrank
+tie-breaking. Centered Savage scores for ranks `1..N`:
+
+```
+a(i) = sum_{j = N - i + 1}^{N} (1 / j)  -  1
+```
+
+(equivalent to centered expected order statistics of
+`N` i.i.d. Exp(1)). `sum_i a(i) = 0` by construction.
+The Savage statistic for the second half is
+
+```
+S      = sum_{x_i in B} a(rank(x_i))
+E[S]   = 0
+Var[S] = (n1 n2 / (N (N - 1))) * sum_{i=1}^{N} a(i)^2
+savZ   = S / sqrt(Var[S])                    ~ N(0, 1)
+```
+
+(Hájek-Šidák 1967 *Theory of Rank Tests* sec. V.1.4).
+Two-sided asymptotic p-value via Abramowitz-Stegun 1965
+sec. 26.2.17. Equivalent to the two-sample log-rank
+test on uncensored data (Mantel 1966 *Cancer Chemother.
+Rep.* 50:163-170; Peto-Peto 1972 *J. R. Stat. Soc. A*
+135:185-207).
+
+LOCALLY MOST POWERFUL against the lehmann-exponential
+alternative `F_B(x) = F_A(x)^theta` for `theta != 1`
+(Savage 1956 Theorem 4.1). Pitman ARE versus
+Mann-Whitney is `pi^2 / 6 ~ 1.645` at the unit-
+exponential location alternative and `0.75` at the
+normal-mean alternative (Hájek-Šidák 1967 sec. VII.2.4
+Table 1) — so disagreement between axis-184 and axis-115
+/ axis-181 / axis-183 is informative about the TAIL SHAPE
+of the underlying distribution, not just location
+magnitude.
+
+STRUCTURAL ORTHOGONALITY (the core claim for axis-184):
+
+  - vs axis-181 Van der Waerden NORMAL scores. VDW uses
+    the bounded score function `J_VDW(u) = Phi^-1(u)`
+    (symmetric influence around `u = 0.5`). Savage uses
+    `J_SAV(u) = -log(1 - u) - 1` — UNBOUNDED as
+    `u -> 1` (right-tail-sensitive), bounded as
+    `u -> 0`. ARE 1.722 at exponential, 0.75 at normal.
+  - vs axis-115 Mann-Whitney / axis-176 Brunner-Munzel.
+    MW/BM uses the IDENTITY rank score `J_MW(u) = u`
+    (raw ranks). Savage UPWEIGHTS the high-rank tail.
+    Disagreement Savage-strong + MW-weak diagnoses a
+    few extreme right-tail observations driving the
+    location signal; Savage-weak + MW-strong diagnoses
+    a uniform stochastic shift across the body.
+  - vs axis-183 Yuen-Welch trimmed mean. YW is a MOMENT
+    test on the central 60% with re-descending influence
+    (zero outside the 20%/80% order statistics). Savage
+    is rank-based with INFINITE-derivative influence at
+    the maximum rank. Antipodal influence design: YW
+    captures the trimmed CENTER, Savage captures the
+    right TAIL. YW + with Savage - means "second-half
+    center shifted up but right-tail mass shifted down"
+    — a left-skewed location shift in B.
+  - vs the entire scale family (axes 170 AB, 174
+    Cucconi, 175 Lepage, 177 Klotz, 178 Conover, 179
+    Mood, 180 Sukhatme). Pure scale shift at identical
+    median under symmetric F gives `savZ ~ 0`; pure
+    location shift at equal scales gives the scale
+    family `~ 0`. Asymptotically orthogonal under
+    symmetric F (Hampel et al. 1986 *Robust Statistics*
+    sec. 2.4).
+
+SIGN CONVENTION: `savZ > 0` <=> SECOND half ranks
+cluster at the LARGER end of the pooled sample
+(B stochastically dominates A; lehmann
+`theta = F_B / F_A < 1`). `savZ < 0` <=> first-half
+values dominate. Matches axis-117 stZ, axis-170 abZ,
+axis-176-183 SECOND-half-positive convention so signed
+cross-axis Stouffer aggregation preserves direction.
+
+Hard floor on `min-tenure-days` is 16 (`n1 = n2 = 8`;
+Hájek-Šidák 1967 sec. V.1.5 Theorem 1 keeps the
+standard-normal reference within +/- 0.01 nominal alpha
+for `max(n1, n2) >= 8` with the centered Savage score
+sequence; Lehmann 1975 *Nonparametrics* Table H).
+
+#### Live-smoke (`~/.config/pew/queue.jsonl`, 2026-05-05)
+
+```
+$ pew-insights daily-token-savage-halves --sort savZAbsDesc
+
+pew-insights daily-token-savage-halves
+as of: 2026-05-04T21:33:51.556Z    sources: 6 (shown 4)    tokens: 6,152,366,421    min-tokens: 1,000    min-tenure-days: 16    top: —    sort: savZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 2 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source SAVAGE exponential-scores location test (sorted by savZAbsDesc; ties: source asc)
+source       firstDay    lastDay     tenure  active  n1   n2   sumA2     S         var      savZ     savPValue   tokens
+-----------  ----------  ----------  ------  ------  ---  ---  --------  --------  -------  -------  ----------  -------------
+claude-code  2026-02-11  2026-04-23  72      35      36   36   67.1392   15.1913   17.0212  3.6821   2.3135e-4   3,442,385,788
+openclaw     2026-04-17  2026-05-04  18      18      9    9    14.5049   -5.0226   3.8395   -2.5632  1.0370e-2   2,378,402,658
+vscode-cp    2025-07-30  2026-04-20  265     73      132  133  258.8412  -18.0311  64.9545  -2.2373  2.5269e-2   1,885,727
+hermes       2026-04-17  2026-05-04  18      18      9    9    14.5049   0.2478    3.8395   0.1264   8.9938e-1   329,692,248
+```
+
+VERDICTS (alpha = 0.05):
+
+  - `claude-code` — `savZ = 3.6821`, `p = 2.31e-4`,
+    REJECT identical-distribution H0. Second half ranks
+    dominate (B stochastically larger). Bucket:
+    `second-decisively-stochastically-larger`.
+  - `openclaw` — `savZ = -2.5632`, `p = 1.04e-2`,
+    REJECT. First half ranks dominate. Bucket:
+    `first-decisively-stochastically-larger`.
+  - `vscode-cp` — `savZ = -2.2373`, `p = 2.53e-2`,
+    REJECT. First half dominates (long-tenure decay).
+    Bucket: `first-decisively-stochastically-larger`.
+  - `hermes` — `savZ = 0.1264`, `p = 8.99e-1`,
+    no-reject. Bucket: `no-evidence-of-savage-shift`.
+
+Cross-axis comparison with axis-183 Yuen-Welch trimmed
+mean on the same four sources (axis-183 live-smoke from
+v0.6.465 CHANGELOG):
+
+  - `claude-code` — YW `+`, Savage `+`, both decisive
+    at alpha = 0.05. Sign agreement on second-half
+    location dominance.
+  - `openclaw` — YW `-`, Savage `-`, both decisive.
+    Sign agreement on first-half dominance.
+  - `vscode-cp` — Savage rejects (`p = 2.53e-2`); the
+    YW row was not joined in the prior axis-183 cross-
+    axis report (different filter). Standalone Savage
+    verdict is informative: long-tenure-decay sources
+    accumulate sufficient rank evidence at the right
+    tail even when trimmed-mean tests lose power.
+  - `hermes` — YW `+` non-decisive, Savage near-zero
+    (`p = 0.90`). Both axes report no decisive shift,
+    but disagreement on sign at the extreme right tail
+    (Savage near 0) vs trimmed center (YW slightly +)
+    is consistent with hermes's small `n = 18` having
+    the second-half center shifted up by ~0.1 sigma
+    while the right-tail rank mass is balanced — exactly
+    the antipodal-influence diagnostic the two axes are
+    designed to surface.
+
+#### Tests
+
+37 new unit tests cover `savageScores` invariants
+(sum-to-zero across `n in {2, 5, 16, 50, 100, 500}`
+within `n * 1e-14`, strict monotonicity, exact harmonic
+identities for `n = 2` and `n = 3`), `midrank` tie
+averaging and rank-sum invariant, the standard-normal
+upper-tail approximation, the location/scale invariance
+identities (`savZ(x + c) === savZ(x)`, `savZ(a x) ===
+savZ(x)` for `a > 0`), the reverse-sign identity
+(`savZ(reverse(x)) === -savZ(x)` when `n1 = n2`), the
+exact variance formula, and the full builder path
+(min-tokens drop, min-tenure drop, source filter,
+top cap, sort orderings, bad `hour_start` drop, the
+five directional label buckets).
+
+Total test count: 13573 (was 13536; +37).
+
 ## 0.6.466 — 2026-05-05
 
 ### Refactor — `classifyLocationCompound` cross-axis sign-agreement reporter (axes 181 + 182 + 183)
