@@ -192,6 +192,7 @@ import {
   renderDailyTokenHoeffdingDLag1,
   renderDailyTokenFisherGPeriodicity,
   renderDailyTokenBartlettCumulativePeriodogram,
+  renderDailyTokenCramerVonMisesCumulativePeriodogram,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -514,6 +515,10 @@ import {
   buildDailyTokenBartlettCumulativePeriodogram,
   type DailyTokenBartlettCumulativePeriodogramSort,
 } from './dailytokenbartlettcumulativeperiodogram.js';
+import {
+  buildDailyTokenCramerVonMisesCumulativePeriodogram,
+  type DailyTokenCramerVonMisesCumulativePeriodogramSort,
+} from './dailytokencramervonmisescumulativeperiodogram.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42778,6 +42783,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenBartlettCumulativePeriodogram(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-cramer-von-mises-cumulative-periodogram')
+  .description(
+    "Per-source CRAMER-VON MISES CUMULATIVE PERIODOGRAM TEST (axis-168): the L^2 (integrated-square) goodness-of-fit test for white-noise on the gap-filled mean-centred daily total_tokens series. C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]); cvmOmega2 = (1/K) sum_{j=1..K-1} (C[j] - j/K)^2; cvmW2 = K * cvmOmega2; cvmPValue = published Anderson-Darling 1952 / Stephens 1970 critical-value table with Csorgo-Faraway 1996 asymptotic-tail closure. Sister test to axis-167 (Bartlett's L^infty cumulative periodogram); SAME statistic domain (the cumulative periodogram), DIFFERENT NORM (sup vs L^2). A single-bin spike of size m yields LARGE Bartlett-bD but MODEST CvM-W^2; a sustained mild bias yields MODEST bD but LARGE W^2 -- the textbook L^infty vs L^2 power complement (Stephens 1970 §3). Companion cvmSignedMean tells direction (positive -> low-frequency mass overshoot; negative -> high-frequency mass overshoot). Refs: Cramer 1928 Skand. Akt. 11; von Mises 1931; Anderson & Darling 1952 Annals Math. Stat. 23(2); Stephens 1970 JRSS B 32(1); Csorgo & Faraway 1996 JRSS B 58(1).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: cvmPValue (default; most-significant first) | cvmPValueDesc | cvmW2 | cvmW2Desc | cvmOmega2 | cvmOmega2Desc | tokens | tenure | source.',
+    'cvmPValue',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'cvmW2',
+          'cvmW2Desc',
+          'cvmPValue',
+          'cvmPValueDesc',
+          'cvmOmega2',
+          'cvmOmega2Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCramerVonMisesCumulativePeriodogram(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenCramerVonMisesCumulativePeriodogramSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCramerVonMisesCumulativePeriodogram(report) + '\n',
           );
         }
       } catch (e) {

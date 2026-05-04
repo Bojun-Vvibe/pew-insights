@@ -20586,6 +20586,7 @@ import type { DailyTokenRankVonNeumannDetrendedReport } from './dailytokenrankvo
 import type { DailyTokenHoeffdingDLag1Report } from './dailytokenhoeffdingdlag1.js';
 import type { DailyTokenFisherGPeriodicityReport } from './dailytokenfishergperiodicity.js';
 import type { DailyTokenBartlettCumulativePeriodogramReport } from './dailytokenbartlettcumulativeperiodogram.js';
+import type { DailyTokenCramerVonMisesCumulativePeriodogramReport } from './dailytokencramervonmisescumulativeperiodogram.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -26129,6 +26130,91 @@ export function renderDailyTokenBartlettCumulativePeriodogram(
   lines.push(
     chalk.dim(
       `(reference anchor: bD near 0 = C[j] tracks j/K = white-noise-compatible (bPValue near 1); bD large = cumulative spectrum bulges away from uniform = spectral mass concentrated on a CONTIGUOUS BAND (bPValue near 0); bPValue < 0.05 = REJECT white-noise at 5%. devPos > 0 indicates LOW-FREQUENCY mass overshoots uniform; devNeg < 0 indicates HIGH-FREQUENCY mass overshoots. argMaxBin marks the frequency at which the cumulative discrepancy is largest.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCramerVonMisesCumulativePeriodogram(
+  r: DailyTokenCramerVonMisesCumulativePeriodogramReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-cramer-von-mises-cumulative-periodogram',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CRAMER-VON MISES CUMULATIVE PERIODOGRAM TEST -- the L^2 (integrated-square) goodness-of-fit test for white-noise on the gap-filled mean-centred daily total_tokens series. cvmOmega2 = (1/K) sum_{j=1..K-1} (C[j] - j/K)^2; cvmW2 = K * cvmOmega2; cvmPValue = Anderson-Darling 1952 / Stephens 1970 critical-value table with Csorgo-Faraway 1996 asymptotic-tail closure. ONE-HUNDRED-AND-SIXTY-EIGHTH cross-source axis. SAME statistic domain as axis-167 Bartlett (the cumulative periodogram), DIFFERENT NORM (sup vs L^2). A single-bin spike yields LARGE Bartlett-bD but MODEST CvM-W^2; a sustained mild bias yields MODEST bD but LARGE W^2. Companion cvmSignedMean tells direction (positive -> low-frequency mass overshoot; negative -> high-frequency mass overshoot). References: Cramer 1928 Skand. Akt. 11; von Mises 1931; Anderson & Darling 1952 Annals Math. Stat. 23(2); Stephens 1970 JRSS B 32(1); Csorgo & Faraway 1996 JRSS B 58(1).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source CRAMER-VON MISES CUMULATIVE PERIODOGRAM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'cvmOmega2',
+    'cvmW2',
+    'cvmPValue',
+    'devMean',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.cvmOmega2.toFixed(6),
+    s.cvmW2.toFixed(6),
+    s.cvmPValue.toExponential(4),
+    s.cvmSignedMean.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: cvmW2 near 0 = C[j] tracks j/K everywhere on average = white-noise-compatible (cvmPValue near 1); cvmW2 large = cumulative spectrum biased AWAY from uniform over a SUSTAINED range of j (cvmPValue near 0); cvmPValue < 0.05 = REJECT white-noise at 5%. devMean > 0 indicates LOW-FREQUENCY mass overshoots uniform; devMean < 0 indicates HIGH-FREQUENCY mass overshoots. ORTHOGONALITY vs axis-167: a single-bin spike makes Bartlett-bD large but CvM-W^2 modest; a sustained mild bias makes Bartlett-bD modest but CvM-W^2 large.)`,
     ),
   );
 
