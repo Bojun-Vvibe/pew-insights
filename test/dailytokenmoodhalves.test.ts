@@ -237,3 +237,108 @@ test('buildDailyTokenMoodHalves: source filter works', () => {
   assert.equal(r.sources[0]!.source, 'a');
   assert.ok(r.droppedSourceFilter > 0);
 });
+
+import {
+  aggregateMoodHalves,
+  labelMoodHalvesRow,
+} from '../src/dailytokenmoodhalves.js';
+
+// ---------- aggregator: aggregateMoodHalves ----------
+
+test('aggregateMoodHalves: empty rows => zeros and NaN means', () => {
+  const r = aggregateMoodHalves([]);
+  assert.equal(r.stoufferZ, 0);
+  assert.equal(r.stoufferTwoSidedPValue, 1);
+  assert.ok(Number.isNaN(r.meanMoodZ));
+  assert.ok(Number.isNaN(r.tenureWeightedMeanMoodZ));
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 0);
+});
+
+test('aggregateMoodHalves: stouffer = sum/sqrt(m) for valid rows', () => {
+  const rows = [
+    { moodZ: 2.0, moodPValue: 0.045, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: 2.0, moodPValue: 0.045, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: 2.0, moodPValue: 0.045, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: 2.0, moodPValue: 0.045, moodVarW: 100, nTenureDays: 20 },
+  ];
+  const r = aggregateMoodHalves(rows);
+  assert.ok(Math.abs(r.stoufferZ - 4.0) < 1e-10, `stoufferZ=${r.stoufferZ}`);
+  assert.equal(r.rowsUsed, 4);
+  assert.equal(r.rowsSkipped, 0);
+});
+
+test('aggregateMoodHalves: opposite-sign cancellation', () => {
+  const rows = [
+    { moodZ: 3.0, moodPValue: 0.003, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: -3.0, moodPValue: 0.003, moodVarW: 100, nTenureDays: 20 },
+  ];
+  const r = aggregateMoodHalves(rows);
+  assert.ok(Math.abs(r.stoufferZ) < 1e-10, `expected ~0, got ${r.stoufferZ}`);
+});
+
+test('aggregateMoodHalves: tenure-weighted mean weights by nTenureDays', () => {
+  const rows = [
+    { moodZ: 1.0, moodPValue: 0.317, moodVarW: 100, nTenureDays: 100 },
+    { moodZ: 5.0, moodPValue: 1e-6, moodVarW: 100, nTenureDays: 1 },
+  ];
+  const r = aggregateMoodHalves(rows);
+  // weighted = (100*1 + 1*5) / 101 = 105/101 ~ 1.0396
+  assert.ok(Math.abs(r.tenureWeightedMeanMoodZ - 105 / 101) < 1e-10);
+  assert.ok(Math.abs(r.meanMoodZ - 3.0) < 1e-10);
+});
+
+test('aggregateMoodHalves: malformed rows skipped not thrown', () => {
+  const rows = [
+    { moodZ: 1.0, moodPValue: 0.317, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: Number.NaN, moodPValue: 0.5, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: 2.0, moodPValue: 0, moodVarW: 100, nTenureDays: 20 },
+    { moodZ: 2.0, moodPValue: 0.5, moodVarW: 0, nTenureDays: 20 },
+    { moodZ: 2.0, moodPValue: 0.5, moodVarW: 100, nTenureDays: -1 },
+    { moodZ: 1.0, moodPValue: 0.317, moodVarW: 100, nTenureDays: 20 },
+  ];
+  const r = aggregateMoodHalves(rows);
+  assert.equal(r.rowsUsed, 2);
+  assert.equal(r.rowsSkipped, 4);
+});
+
+// ---------- classifier: labelMoodHalvesRow ----------
+
+test('labelMoodHalvesRow: second decisive when Z>0 and p<alpha', () => {
+  const l = labelMoodHalvesRow({ moodZ: 3.0, moodPValue: 0.003 });
+  assert.equal(l, 'second-decisively-more-dispersed');
+});
+
+test('labelMoodHalvesRow: first decisive when Z<0 and p<alpha', () => {
+  const l = labelMoodHalvesRow({ moodZ: -3.0, moodPValue: 0.003 });
+  assert.equal(l, 'first-decisively-more-dispersed');
+});
+
+test('labelMoodHalvesRow: second leans when Z>0 and alpha<=p<2alpha', () => {
+  const l = labelMoodHalvesRow({ moodZ: 1.8, moodPValue: 0.07 });
+  assert.equal(l, 'second-leans-more-dispersed');
+});
+
+test('labelMoodHalvesRow: first leans when Z<0 and alpha<=p<2alpha', () => {
+  const l = labelMoodHalvesRow({ moodZ: -1.8, moodPValue: 0.07 });
+  assert.equal(l, 'first-leans-more-dispersed');
+});
+
+test('labelMoodHalvesRow: no-evidence above 2alpha', () => {
+  const l = labelMoodHalvesRow({ moodZ: 1.0, moodPValue: 0.5 });
+  assert.equal(l, 'no-evidence-of-dispersion-shift');
+});
+
+test('labelMoodHalvesRow: respects custom alpha', () => {
+  const l1 = labelMoodHalvesRow({ moodZ: 2.0, moodPValue: 0.04 }, 0.01);
+  assert.equal(l1, 'no-evidence-of-dispersion-shift');
+  const l2 = labelMoodHalvesRow({ moodZ: 2.0, moodPValue: 0.04 }, 0.05);
+  assert.equal(l2, 'second-decisively-more-dispersed');
+});
+
+test('labelMoodHalvesRow: throws on bad inputs', () => {
+  assert.throws(() => labelMoodHalvesRow({ moodZ: Number.NaN, moodPValue: 0.5 }));
+  assert.throws(() => labelMoodHalvesRow({ moodZ: 1, moodPValue: 0 }));
+  assert.throws(() => labelMoodHalvesRow({ moodZ: 1, moodPValue: 0.5 }, 0));
+  assert.throws(() => labelMoodHalvesRow({ moodZ: 1, moodPValue: 0.5 }, 0.6));
+});

@@ -385,6 +385,175 @@ export function standardNormalUpperTailMood(z: number): number {
   return q < 0 ? 0 : q > 1 ? 1 : q;
 }
 
+/**
+ * Corpus-level SIGNED aggregator for axis-179 per-source
+ * results. Combines the per-source SIGNED moodZ via
+ * STOUFFER'S Z-METHOD (Stouffer et al. 1949 *American
+ * Soldier* vol. 1, sec. 2.2; Whitlock 2005 *J. Evol.
+ * Biol.* 18:1368-1373):
+ *
+ *     stoufferZ = sum_i moodZ_i / sqrt(m)
+ *     stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+ *
+ * This is the SIGNED counterpart to the Lancaster /
+ * Fisher unsigned aggregators used for the chi-2(2)
+ * joint location-scale axes 174/175 (where positive and
+ * negative evidence cannot meaningfully cancel). moodZ
+ * is intrinsically signed (positive = second half MORE
+ * dispersed; negative = first half MORE dispersed) so
+ * Stouffer is the correct meta-analytic combiner.
+ *
+ * Also returns
+ *
+ *   - meanMoodZ — unweighted corpus-mean moodZ
+ *   - tenureWeightedMeanMoodZ — nTenureDays-weighted
+ *     mean moodZ (matches the axis-175 v0.6.452,
+ *     axis-176 v0.6.453, axis-177 v0.6.456, axis-178
+ *     v0.6.457 weighting convention)
+ *   - rowsUsed, rowsSkipped — counters; malformed rows
+ *     (non-finite moodZ, moodPValue not in (0, 1],
+ *     non-positive moodVarW or nTenureDays) are
+ *     SKIPPED with a counter rather than throwing.
+ *
+ * AXIS-CROSS USE. Combined elementwise with axis-178's
+ * `aggregateConoverSquaredRanksHalves` and axis-177's
+ * `aggregateKlotzHalves`, the three corpus-mean Z scores
+ * form an ORTHOGONAL scale-detector triple operating on
+ * three different rank-score spaces (raw centred squared
+ * vs |X-median| ascending squared vs raw squared normal
+ * scores). Three-way sign agreement is strong evidence
+ * of a dispersion shift; disagreement localises the
+ * alternative to a specific weighting regime
+ * (centred-rank vs absolute-deviation vs tail-amplified).
+ */
+export interface MoodHalvesCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedPValue: number;
+  meanMoodZ: number;
+  tenureWeightedMeanMoodZ: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateMoodHalves(
+  rows: ReadonlyArray<{
+    moodZ: number;
+    moodPValue: number;
+    moodVarW: number;
+    nTenureDays: number;
+  }>,
+): MoodHalvesCorpusAggregate {
+  let zSum = 0;
+  let weightedZSum = 0;
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.moodZ) ||
+      !Number.isFinite(r.moodPValue) ||
+      r.moodPValue <= 0 ||
+      r.moodPValue > 1 ||
+      !Number.isFinite(r.moodVarW) ||
+      r.moodVarW <= 0 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    zSum += r.moodZ;
+    weightedZSum += r.nTenureDays * r.moodZ;
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      stoufferZ: 0,
+      stoufferTwoSidedPValue: 1,
+      meanMoodZ: Number.NaN,
+      tenureWeightedMeanMoodZ: Number.NaN,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = zSum / Math.sqrt(used);
+  const stoufferTwoSidedPValue =
+    2 * standardNormalUpperTailMood(Math.abs(stoufferZ));
+  return {
+    stoufferZ,
+    stoufferTwoSidedPValue,
+    meanMoodZ: zSum / used,
+    tenureWeightedMeanMoodZ: weightedZSum / totalTenure,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Directional label classifier for axis-179 per-source
+ * moodZ. Maps the signed standardised statistic to one
+ * of five mutually-exclusive verdict buckets at
+ * configurable two-sided alpha (default 0.05):
+ *
+ *   - 'second-decisively-more-dispersed' if moodZ > 0
+ *     AND moodPValue < alpha
+ *   - 'first-decisively-more-dispersed'  if moodZ < 0
+ *     AND moodPValue < alpha
+ *   - 'second-leans-more-dispersed' if moodZ > 0 AND
+ *     alpha <= moodPValue < 2 * alpha (suggestive but
+ *     not significant at the chosen level)
+ *   - 'first-leans-more-dispersed'  if moodZ < 0 AND
+ *     alpha <= moodPValue < 2 * alpha
+ *   - 'no-evidence-of-dispersion-shift' otherwise
+ *
+ * Throws on malformed input (non-finite Z, P outside
+ * (0, 1], alpha outside (0, 0.5]).
+ */
+export type MoodDirectionalLabel =
+  | 'second-decisively-more-dispersed'
+  | 'first-decisively-more-dispersed'
+  | 'second-leans-more-dispersed'
+  | 'first-leans-more-dispersed'
+  | 'no-evidence-of-dispersion-shift';
+
+export function labelMoodHalvesRow(
+  row: { moodZ: number; moodPValue: number },
+  alpha = 0.05,
+): MoodDirectionalLabel {
+  if (!Number.isFinite(row.moodZ)) {
+    throw new Error(
+      `labelMoodHalvesRow: moodZ must be finite (got ${row.moodZ})`,
+    );
+  }
+  if (
+    !Number.isFinite(row.moodPValue) ||
+    row.moodPValue <= 0 ||
+    row.moodPValue > 1
+  ) {
+    throw new Error(
+      `labelMoodHalvesRow: moodPValue must be in (0, 1] (got ${row.moodPValue})`,
+    );
+  }
+  if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 0.5) {
+    throw new Error(
+      `labelMoodHalvesRow: alpha must be in (0, 0.5] (got ${alpha})`,
+    );
+  }
+  const lean = 2 * alpha;
+  if (row.moodPValue < alpha) {
+    return row.moodZ > 0
+      ? 'second-decisively-more-dispersed'
+      : 'first-decisively-more-dispersed';
+  }
+  if (row.moodPValue < lean) {
+    return row.moodZ > 0
+      ? 'second-leans-more-dispersed'
+      : 'first-leans-more-dispersed';
+  }
+  return 'no-evidence-of-dispersion-shift';
+}
+
 function addUtcDays(ymd: string, days: number): string {
   const ms = Date.parse(`${ymd}T00:00:00.000Z`);
   return new Date(ms + days * 86_400_000).toISOString().slice(0, 10);
