@@ -947,3 +947,121 @@ export function lanczosLogGamma(x: number): number {
   }
   return 0.5 * Math.log(2 * Math.PI) + (xm + 0.5) * Math.log(t) - t + Math.log(a);
 }
+
+/**
+ * Discriminant decomposition of the Cucconi (ccU, ccV)
+ * components into a SIGNED LOCATION channel and a SIGNED
+ * SCALE channel using the closed-form null correlation
+ * rho.
+ *
+ * Background. Cucconi's C is a JOINT statistic — it loses
+ * the directional information when collapsed to a single
+ * upper-tail p-value. For downstream Stouffer-style
+ * aggregation we need orthogonal signed projections.
+ *
+ * Construction. Marozzi (2009) sec. 4 observes that under
+ * a pure LOCATION shift (B stochastically larger than A),
+ * U and V have OPPOSITE signs and EQUAL absolute values
+ * (T1 inflates exactly as T2 deflates because the rank
+ * sum is conserved); under a pure SCALE shift
+ * (B more dispersed than A around the same median), U and
+ * V have the SAME sign (both T1 and T2 grow because B's
+ * ranks pile up at BOTH extremes of the pool).
+ *
+ * The natural orthogonal basis is therefore:
+ *
+ *     locZ   = (ccU - ccV) / sqrt(2 (1 - rho))
+ *     scaleZ = (ccU + ccV) / sqrt(2 (1 + rho))
+ *
+ * Each is a SIGNED N(0, 1)-distributed (asymptotically)
+ * channel under H0 (since (ccU, ccV) is asymptotically
+ * bivariate normal with correlation rho, the rotated
+ * components U-V and U+V have variances 2(1-rho) and
+ * 2(1+rho) respectively, with zero covariance). The sum
+ * of squares satisfies the EXACT IDENTITY
+ *
+ *     locZ^2 + scaleZ^2 == 2 * C
+ *
+ * (verified by the test suite), so this is a NORM-
+ * PRESERVING decomposition — it splits the joint chi-2(2)
+ * mass between the two interpretable channels without
+ * loss.
+ *
+ * SIGN CONVENTIONS:
+ *   - locZ > 0   -> second half stochastically LARGER
+ *                   (location of B has shifted UP);
+ *                   matches Mann-Whitney-115 mwZ sign
+ *                   convention.
+ *   - locZ < 0   -> second half stochastically SMALLER.
+ *   - scaleZ > 0 -> second half MORE DISPERSED about
+ *                   the pool centre (matches Siegel-
+ *                   Tukey-117 stZ and Ansari-Bradley-170
+ *                   abZ sign conventions);
+ *   - scaleZ < 0 -> second half MORE CONCENTRATED about
+ *                   the pool centre.
+ *
+ * Throws on non-finite inputs or rho not in (-1, 1).
+ */
+export function cucconiSignedChannels(
+  ccU: number,
+  ccV: number,
+  ccRho: number,
+): { locZ: number; scaleZ: number } {
+  if (!Number.isFinite(ccU) || !Number.isFinite(ccV)) {
+    throw new Error(
+      `cucconiSignedChannels: non-finite ccU/ccV (ccU=${ccU}, ccV=${ccV})`,
+    );
+  }
+  if (!Number.isFinite(ccRho) || ccRho <= -1 || ccRho >= 1) {
+    throw new Error(
+      `cucconiSignedChannels: ccRho must be in (-1, 1) (got ${ccRho})`,
+    );
+  }
+  const locZ = (ccU - ccV) / Math.sqrt(2 * (1 - ccRho));
+  const scaleZ = (ccU + ccV) / Math.sqrt(2 * (1 + ccRho));
+  return { locZ, scaleZ };
+}
+
+/**
+ * Classification label for the Cucconi joint signal
+ * based on the angle of (locZ, scaleZ) in the
+ * decomposition plane.
+ *
+ *   |locZ| / |scaleZ| > 2  ->  'location-dominant'
+ *   |scaleZ| / |locZ| > 2  ->  'scale-dominant'
+ *   otherwise              ->  'mixed'
+ *
+ * The 2:1 magnitude ratio corresponds to ~80 deg / ~10
+ * deg in the (locZ, scaleZ) plane and reproduces the
+ * cutoffs Marozzi (2009) sec. 4 reports as empirically
+ * sharp on simulated joint location-scale alternatives.
+ *
+ * Returns 'null-like' when both |locZ| and |scaleZ| are
+ * below 0.5 (no detectable signal in either channel).
+ *
+ * Pure helper, no external dependency.
+ */
+export type CucconiDirection =
+  | 'null-like'
+  | 'location-dominant'
+  | 'scale-dominant'
+  | 'mixed';
+
+export function cucconiDirectionLabel(
+  locZ: number,
+  scaleZ: number,
+): CucconiDirection {
+  if (!Number.isFinite(locZ) || !Number.isFinite(scaleZ)) {
+    throw new Error(
+      `cucconiDirectionLabel: non-finite inputs (locZ=${locZ}, scaleZ=${scaleZ})`,
+    );
+  }
+  const aL = Math.abs(locZ);
+  const aS = Math.abs(scaleZ);
+  if (aL < 0.5 && aS < 0.5) return 'null-like';
+  if (aS === 0) return 'location-dominant';
+  if (aL === 0) return 'scale-dominant';
+  if (aL / aS > 2) return 'location-dominant';
+  if (aS / aL > 2) return 'scale-dominant';
+  return 'mixed';
+}

@@ -513,3 +513,80 @@ test('aggregateCucconiHalves: p=1 across all rows yields combined p=1', () => {
   assert.equal(r.fisherChi2, 0);
   assert.ok(Math.abs(r.fisherCombinedPValue - 1) < 1e-12);
 });
+
+// ---------- refinement: signed channel decomposition ----------
+import {
+  cucconiSignedChannels,
+  cucconiDirectionLabel,
+} from '../src/dailytokencucconihalves.js';
+
+test('cucconiSignedChannels: norm-preserving identity locZ^2 + scaleZ^2 == 2 C', () => {
+  for (const n of [8, 9, 11, 14, 17, 30, 31]) {
+    const x = Array.from({ length: n }, (_, i) => Math.cos(i * 0.7) + i * 0.3);
+    const r = dailyTokenCucconiHalves(x);
+    const ch = cucconiSignedChannels(r.ccU, r.ccV, r.ccRho);
+    const lhs = ch.locZ * ch.locZ + ch.scaleZ * ch.scaleZ;
+    const rhs = 2 * r.ccC;
+    assert.ok(
+      Math.abs(lhs - rhs) < 1e-9,
+      `n=${n} norm not preserved: ${lhs} vs 2C=${rhs}`,
+    );
+  }
+});
+
+test('cucconiSignedChannels: pure location shift gives locZ-dominant signal', () => {
+  // B all larger than A -> ccU positive, ccV negative -> locZ large, scaleZ small.
+  const x = [
+    1, 2, 3, 4, 5, 6, 7, 8,
+    101, 102, 103, 104, 105, 106, 107, 108,
+  ];
+  const r = dailyTokenCucconiHalves(x);
+  const ch = cucconiSignedChannels(r.ccU, r.ccV, r.ccRho);
+  assert.ok(
+    Math.abs(ch.locZ) > Math.abs(ch.scaleZ) * 5,
+    `expected locZ-dominant; locZ=${ch.locZ} scaleZ=${ch.scaleZ}`,
+  );
+  assert.ok(ch.locZ > 0, `expected positive locZ for location shift up, got ${ch.locZ}`);
+});
+
+test('cucconiSignedChannels: rejects non-finite or rho out of range', () => {
+  assert.throws(() => cucconiSignedChannels(NaN, 1, 0.5), /non-finite/);
+  assert.throws(() => cucconiSignedChannels(1, 1, 1), /must be in/);
+  assert.throws(() => cucconiSignedChannels(1, 1, -1), /must be in/);
+  assert.throws(() => cucconiSignedChannels(1, 1, 1.5), /must be in/);
+});
+
+test('cucconiDirectionLabel: pure location shift labelled location-dominant', () => {
+  const x = [
+    1, 2, 3, 4, 5, 6, 7, 8,
+    101, 102, 103, 104, 105, 106, 107, 108,
+  ];
+  const r = dailyTokenCucconiHalves(x);
+  const ch = cucconiSignedChannels(r.ccU, r.ccV, r.ccRho);
+  assert.equal(cucconiDirectionLabel(ch.locZ, ch.scaleZ), 'location-dominant');
+});
+
+test('cucconiDirectionLabel: null-like for both small', () => {
+  assert.equal(cucconiDirectionLabel(0.1, 0.2), 'null-like');
+  assert.equal(cucconiDirectionLabel(-0.4, 0.4), 'null-like');
+});
+
+test('cucconiDirectionLabel: scale-dominant when |scaleZ| dominates', () => {
+  assert.equal(cucconiDirectionLabel(0.5, 5.0), 'scale-dominant');
+  assert.equal(cucconiDirectionLabel(-0.5, -5.0), 'scale-dominant');
+});
+
+test('cucconiDirectionLabel: mixed when ratio between 0.5 and 2', () => {
+  assert.equal(cucconiDirectionLabel(2.0, 2.5), 'mixed');
+  assert.equal(cucconiDirectionLabel(-3.0, 1.5), 'mixed');
+});
+
+test('cucconiDirectionLabel: handles zero-component edge cases', () => {
+  assert.equal(cucconiDirectionLabel(5.0, 0), 'location-dominant');
+  assert.equal(cucconiDirectionLabel(0, 5.0), 'scale-dominant');
+});
+
+test('cucconiDirectionLabel: rejects non-finite', () => {
+  assert.throws(() => cucconiDirectionLabel(NaN, 1), /non-finite/);
+  assert.throws(() => cucconiDirectionLabel(1, Infinity), /non-finite/);
+});

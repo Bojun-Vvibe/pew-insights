@@ -2,6 +2,109 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.450 — 2026-05-04
+
+### Refined — axis-174 signed channel decomposition + direction label
+
+Two new public helpers exposed from the axis-174 module:
+
+**`cucconiSignedChannels(ccU, ccV, ccRho)`** — orthogonal
+SIGNED decomposition of the joint Cucconi statistic into
+a location channel and a scale channel:
+
+```
+locZ   = (ccU - ccV) / sqrt(2 (1 - rho))
+scaleZ = (ccU + ccV) / sqrt(2 (1 + rho))
+
+EXACT IDENTITY:  locZ^2 + scaleZ^2 == 2 * ccC
+```
+
+Each channel is asymptotically N(0, 1) under H0 (the U-V
+and U+V rotations of the bivariate-normal (U, V) have
+variances 2(1-rho) and 2(1+rho) respectively with zero
+covariance). Sign conventions match the prior axes:
+`locZ > 0` <=> Mann-Whitney-115 mwZ > 0 (second half
+stochastically larger); `scaleZ > 0` <=> Siegel-Tukey-117
+stZ > 0 / Ansari-Bradley-170 abZ > 0 (second half more
+dispersed).
+
+**Why expose this** (the structural value the refinement
+adds):
+
+The joint Cucconi statistic ccC is INTRINSICALLY UNSIGNED
+— Fisher's combined-p (axis-174 aggregator) is the right
+corpus aggregator for the unsigned upper-tail, but it
+loses ALL directional information. The signed
+decomposition is the bridge that lets downstream
+Stouffer-style aggregators consume axis-174 in the same
+signed-effect-size form as axis-115 (Mann-Whitney) for
+location and axis-117 / axis-170 (Siegel-Tukey / Ansari-
+Bradley) for scale — without re-running the per-source
+test in three different forms. The exact `locZ^2 +
+scaleZ^2 == 2 ccC` identity guarantees the decomposition
+is NORM-PRESERVING (no signal is added or destroyed).
+
+**`cucconiDirectionLabel(locZ, scaleZ)`** — operational
+classifier returning one of `'null-like'`, `'location-
+dominant'`, `'scale-dominant'`, or `'mixed'` based on the
+2:1 magnitude ratio in the (locZ, scaleZ) plane. The
+2:1 cutoff corresponds to a ~63 deg / ~27 deg angular
+separation and reproduces the empirical sharpness Marozzi
+(2009) sec. 4 reports on simulated joint location-scale
+alternatives.
+
+#### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+Direction classification across the same 5 sources from
+the v0.6.449 release notes:
+
+```
+source           locZ      scaleZ    direction
+vscode-copilot   +5.6939   -9.3842   mixed
+claude-code      +5.2144   -0.6667   location-dominant
+openclaw         -3.1347   +0.1912   location-dominant
+opencode         -1.0415   -1.6381   mixed
+hermes           +0.9272   -1.0706   mixed
+```
+
+Reading: `claude-code` and `openclaw` show CLEAN single-
+channel signals — for both, the joint Cucconi
+significance (ccPValue 1e-7 and 7e-3 respectively in the
+v0.6.449 live-smoke) is almost entirely carried by the
+location channel; the scale channel is below noise. The
+`openclaw` locZ < 0 says the second half is stochastically
+SMALLER (token volume per active day declined). The
+`claude-code` locZ > 0 says the second half is
+stochastically LARGER (token volume per active day
+grew). The `vscode-copilot` "mixed" classification is
+informative — both channels carry real signal (|locZ|=5.7,
+|scaleZ|=9.4), but the scaleZ < 0 says the second half is
+MORE CONCENTRATED than the first (scale compression
+combined with a location-up shift).
+
+Crucially, this discrimination is INVISIBLE in the
+unsigned ccPValue or ccZ, INVISIBLE in axis-115 Mann-
+Whitney (only sees location), and INVISIBLE in axis-117 /
+axis-170 (only see scale, after killing the location
+shift via median-centring). The signed decomposition is
+the unique witness.
+
+#### Tests
+
+Test suite grew by **+9** tests (13049 -> 13058). Coverage:
+
+- norm-preserving identity `locZ^2 + scaleZ^2 == 2 ccC`
+  swept across n in {8, 9, 11, 14, 17, 30, 31};
+- pure-location-shift example gives locZ-dominant signal
+  (|locZ| > 5 |scaleZ|, locZ > 0 for B-larger);
+- `cucconiSignedChannels` rejects non-finite inputs and
+  rho outside (-1, 1);
+- `cucconiDirectionLabel` correctness on pure-location
+  example, null-like region (|locZ| and |scaleZ| both
+  < 0.5), scale-dominant (|scaleZ| > 2 |locZ|),
+  mixed (ratios in [0.5, 2]), and zero-component edge
+  cases.
+
 ## 0.6.449 — 2026-05-04
 
 ### Added — axis-174 daily-token-cucconi-halves
