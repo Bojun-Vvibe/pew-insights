@@ -257,6 +257,8 @@ export type DailyTokenRankVonNeumannDetrendedSort =
   | 'bvnZAbsDesc'
   | 'rvn'
   | 'rvnDesc'
+  | 'rvnRatio'
+  | 'rvnRatioDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -297,6 +299,21 @@ export interface DailyTokenRankVonNeumannDetrendedSourceRow {
   varRvn: number;
   /** Standardised score (rvn - 2)/sqrt(var). */
   bvnZ: number;
+  /**
+   * Scale-free dispersion shape descriptor rvn / 2
+   * (refinement, axis-164). Unitless and independent
+   * of n (unlike bvnZ which weights by sqrt(n)):
+   *   ~ 1.0  rank sequence consistent with iid null
+   *   < 1    consecutive ranks closer than expected
+   *          -> positive rank autocorrelation
+   *   > 1    consecutive ranks farther than expected
+   *          -> negative rank autocorrelation
+   * Complementary to bvnZ: bvnZ measures the
+   * STATISTICAL STRENGTH of the departure (weights by
+   * sqrt(n)); rvnRatio measures the SCALE of the
+   * departure in raw rank-variance units.
+   */
+  rvnRatio: number;
   /**
    * Tie correction: number of distinct residual
    * values divided by n (refinement, axis-164).
@@ -533,6 +550,8 @@ export function buildDailyTokenRankVonNeumannDetrended(
     'bvnZAbsDesc',
     'rvn',
     'rvnDesc',
+    'rvnRatio',
+    'rvnRatioDesc',
     'tokens',
     'tenure',
     'source',
@@ -665,6 +684,7 @@ export function buildDailyTokenRankVonNeumannDetrended(
       rvn: result.rvn,
       varRvn: result.varRvn,
       bvnZ: result.bvnZ,
+      rvnRatio: result.rvn / 2,
       tieFraction: result.tieFraction,
       verdict: classifyRankVnDetrended(result.bvnZ),
     });
@@ -691,6 +711,12 @@ export function buildDailyTokenRankVonNeumannDetrended(
         break;
       case 'rvnDesc':
         primary = b.rvn - a.rvn;
+        break;
+      case 'rvnRatio':
+        primary = a.rvnRatio - b.rvnRatio;
+        break;
+      case 'rvnRatioDesc':
+        primary = b.rvnRatio - a.rvnRatio;
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;

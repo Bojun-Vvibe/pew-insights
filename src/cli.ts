@@ -42381,7 +42381,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: bvnZAbsDesc (default) | bvnZAbs | bvnZ | bvnZDesc | rvn | rvnDesc | tokens | tenure | source.',
+    'sort key: bvnZAbsDesc (default) | bvnZAbs | bvnZ | bvnZDesc | rvn | rvnDesc | rvnRatio | rvnRatioDesc | tokens | tenure | source.',
     'bvnZAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -42425,6 +42425,8 @@ program
           'bvnZAbsDesc',
           'rvn',
           'rvnDesc',
+          'rvnRatio',
+          'rvnRatioDesc',
           'tokens',
           'tenure',
           'source',

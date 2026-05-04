@@ -302,3 +302,77 @@ test('buildDailyTokenRankVonNeumannDetrended: tieFraction reported per source', 
   const s = r.sources[0]!;
   assert.ok(s.tieFraction > 0 && s.tieFraction <= 1);
 });
+
+// ---------- refinement: rvnRatio + sort key ----------
+
+test('buildDailyTokenRankVonNeumannDetrended: rvnRatio === rvn / 2 exactly', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+  }
+  const r = buildDailyTokenRankVonNeumannDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+  });
+  const s = r.sources[0]!;
+  assert.ok(Math.abs(s.rvnRatio - s.rvn / 2) < 1e-12);
+});
+
+test('buildDailyTokenRankVonNeumannDetrended: clustered residuals rvnRatio < 1; anti-cluster > 1', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+    queue.push(ql(dayIso(i), 'clust', i < 15 ? 50_000 : 250_000));
+  }
+  const r = buildDailyTokenRankVonNeumannDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+    sort: 'source',
+  });
+  const alt = r.sources.find((s) => s.source === 'alt')!;
+  const clust = r.sources.find((s) => s.source === 'clust')!;
+  assert.ok(alt.rvnRatio > 1.0, `expected alt rvnRatio > 1.0, got ${alt.rvnRatio}`);
+  assert.ok(clust.rvnRatio < 1.0, `expected clust rvnRatio < 1.0, got ${clust.rvnRatio}`);
+});
+
+test('buildDailyTokenRankVonNeumannDetrended: sort=rvnRatio orders ascending (most positive-autocorr first)', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+    queue.push(ql(dayIso(i), 'clust', i < 15 ? 50_000 : 250_000));
+  }
+  const r = buildDailyTokenRankVonNeumannDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+    sort: 'rvnRatio',
+  });
+  assert.equal(r.sources[0]!.source, 'clust');
+  assert.equal(r.sources[1]!.source, 'alt');
+});
+
+test('buildDailyTokenRankVonNeumannDetrended: sort=rvnRatioDesc orders descending', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'alt', i % 2 === 0 ? 200_000 : 100_000));
+    queue.push(ql(dayIso(i), 'clust', i < 15 ? 50_000 : 250_000));
+  }
+  const r = buildDailyTokenRankVonNeumannDetrended(queue, {
+    minTokens: 1000,
+    minTenureDays: 14,
+    sort: 'rvnRatioDesc',
+  });
+  assert.equal(r.sources[0]!.source, 'alt');
+  assert.equal(r.sources[1]!.source, 'clust');
+});
+
+// ---------- edge case: small-sample n=4 ----------
+
+test('dailyTokenRankVonNeumannDetrended: n=4 minimum sample produces finite stats', () => {
+  // Smallest valid input. Small-n Var formula must remain positive.
+  const x = [3, 1, 4, 2];
+  const r = dailyTokenRankVonNeumannDetrended(x);
+  assert.equal(r.nSamples, 4);
+  assert.ok(Number.isFinite(r.rvn));
+  assert.ok(Number.isFinite(r.bvnZ));
+  assert.ok(r.varRvn > 0);
+});
