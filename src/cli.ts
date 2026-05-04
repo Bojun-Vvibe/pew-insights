@@ -76,6 +76,7 @@ import {
   renderDailyTokenPettittChangepoint,
   renderDailyTokenBuishandRange,
   renderDailyTokenKpssStationarity,
+  renderDailyTokenAdfUnitRoot,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -459,6 +460,10 @@ import {
   buildDailyTokenKpssStationarity,
   type DailyTokenKpssStationaritySortKey,
 } from './dailytokenkpssstationarity.js';
+import {
+  buildDailyTokenAdfUnitRoot,
+  type DailyTokenAdfUnitRootSortKey,
+} from './dailytokenadfunitroot.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -41545,6 +41550,79 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenKpssStationarity(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-adf-unit-root')
+  .description(
+    "Per-source Augmented Dickey-Fuller (ADF, level-with-constant) unit-root test on the gap-filled daily total_tokens series (axis-157). Surfaces (tau, rho, rhoSe, lags, pMax, nReg, verdict, pApprox). Regression: dx[t]=alpha+rho*x[t-1]+sum_{j=1..p} phi[j]*dx[t-j]+eps[t]; tau is the OLS t-ratio for rho. Hypothesis is INVERTED relative to axis-156 KPSS: H0 = unit root (I(1)), H1 = stationary around a constant mean (I(0)); reject H0 when tau is more negative than the cutoff. Structurally orthogonal to axis-156 (regression-t vs functional-CLT integrand), axis-155 buishand-range, axis-154 pettitt, axis-153 cusum, autocorrelation tests. verdict cutoffs are DF tau_mu (Hamilton 1994 Table B.6): unit-root >-2.570 >= borderline >-2.860 >= stationary >-3.430 >= strongly-stationary.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with gap-filled tenure shorter than n days (default 12, must be >= 12 so the regression has positive residual df at lag>=1); counts surface as droppedSparseSources',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens | tau | lags | rho | ndays | verdict | papprox (default tokens). Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 12) {
+          throw new Error(`--min-days must be an integer >= 12 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sortAllowed = ['tokens', 'tau', 'lags', 'rho', 'ndays', 'verdict', 'papprox'];
+        if (!sortAllowed.includes(opts.sort)) {
+          throw new Error(`--sort must be one of ${sortAllowed.join('|')} (got ${opts.sort})`);
+        }
+        const sort = opts.sort as DailyTokenAdfUnitRootSortKey;
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAdfUnitRoot(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenAdfUnitRoot(report) + '\n');
         }
       } catch (e) {
         die(e);

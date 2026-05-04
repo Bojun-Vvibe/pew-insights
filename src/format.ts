@@ -25177,3 +25177,76 @@ export function renderDailyTokenKpssStationarity(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenAdfUnitRoot(
+  r: import('./dailytokenadfunitroot.js').DailyTokenAdfUnitRootReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-adf-unit-root'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(ADF level-with-constant unit-root test on gap-filled per-source daily total_tokens: dx[t]=alpha+rho*x[t-1]+sum_{j=1..p} phi[j]*dx[t-j]+eps; tau=rho_hat/SE(rho_hat); H0=unit root, H1=stationary; reject H0 when tau is more negative; cutoffs (DF tau_mu, Hamilton 1994 Table B.6): 10%=-2.570, 5%=-2.860, 1%=-3.430; pMax=min(floor(12*(n/100)^.25), floor((n-1)/4)) (Schwert); flat=y means zero variance, statistic undefined)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source ADF unit-root test (sorted by ${r.sort})`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'tau',
+    'rho',
+    'rhoSe',
+    'lags',
+    'pMax',
+    'nReg',
+    'pApprox',
+    'verdict',
+    'flat',
+    'first',
+    'last',
+  ];
+  const rowsA: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.flat || s.degenerate ? '-' : s.tau.toFixed(4),
+    s.flat || s.degenerate ? '-' : s.rho.toExponential(3),
+    s.flat || s.degenerate ? '-' : s.rhoSe.toExponential(3),
+    s.flat ? '-' : String(s.lags),
+    s.flat ? '-' : String(s.pMax),
+    s.flat || s.degenerate ? '-' : String(s.nReg),
+    s.flat || s.degenerate ? '-' : s.pApprox.toFixed(4),
+    s.verdict,
+    s.flat ? 'y' : 'n',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsA));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
