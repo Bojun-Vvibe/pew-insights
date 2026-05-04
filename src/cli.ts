@@ -183,6 +183,7 @@ import {
   renderDailyTokenBartelsRankVonNeumann,
   renderDailyTokenDifferenceSignTest,
   renderDailyTokenLjungBoxQTest,
+  renderDailyTokenMcLeodLi,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -469,6 +470,10 @@ import {
   buildDailyTokenVarianceRatioLoMacKinlay,
   type DailyTokenVarianceRatioLoMacKinlaySort,
 } from './dailytokenvarianceratiolomackinlay.js';
+import {
+  buildDailyTokenMcLeodLi,
+  type DailyTokenMcLeodLiSort,
+} from './dailytokenmcleodli.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -41749,6 +41754,121 @@ program
           process.stdout.write(
             renderDailyTokenVarianceRatioLoMacKinlay(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-mcleod-li')
+  .description(
+    "Per-source MCLEOD-LI PORTMANTEAU Q-TEST FOR ARCH / VOLATILITY-CLUSTERING at H lags on the gap-filled mean-centred SQUARED-RESIDUAL daily total_tokens series (axis-159). u[t] = (x[t] - xbar)^2; r2_k = sum (u[t]-ubar)(u[t+k]-ubar) / sum (u[t]-ubar)^2; Q_ML(H) = n(n+2) sum_{k=1..H} r2_k^2 / (n - k); under iid no-ARCH null Q_ML ~ Chi-Square(H); mlZ = (Q - H)/sqrt(2H) approx N(0, 1) (McLeod & Li 1983, J. Time Series Analysis 4(4):269-273). mlZ much greater than +1.96 = significant volatility clustering. Structurally orthogonal to axis-114 Ljung-Box (same functional but on the LEVEL series x rather than the SQUARED level u): a pure-trend null gives lbZ -> +inf and mlZ -> 0; a pure-ARCH null gives mlZ -> +inf and lbZ -> 0. Default H = min(maxLag, floor(n/4)) with maxLag = 10.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--max-lag <n>',
+    'maximum lag H for the squared-residual portmanteau sum; effective H = min(maxLag, floor(n/4)). Default 10.',
+    '10',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mlZAbsDesc (default) | mlQ | mlQDesc | mlZ | mlZDesc | mlZAbs | tokens | tenure | source.',
+    'mlZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        maxLag: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const maxLag = Number.parseInt(opts.maxLag, 10);
+        if (!Number.isInteger(maxLag) || maxLag < 1) {
+          throw new Error(
+            `--max-lag must be a positive integer (got ${opts.maxLag})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'mlQ',
+          'mlQDesc',
+          'mlZ',
+          'mlZDesc',
+          'mlZAbs',
+          'mlZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMcLeodLi(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          maxLag,
+          top,
+          sort: opts.sort as DailyTokenMcLeodLiSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenMcLeodLi(report) + '\n');
         }
       } catch (e) {
         die(e);

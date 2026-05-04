@@ -20577,6 +20577,7 @@ import type { DailyTokenCoxStuartTrendTestReport } from './dailytokencoxstuarttr
 import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsrankvonneumann.js';
 import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferencesigntest.js';
 import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
+import type { DailyTokenMcLeodLiReport } from './dailytokenmcleodli.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25338,6 +25339,96 @@ export function renderDailyTokenVarianceRatioLoMacKinlay(
   lines.push(
     chalk.dim(
       `(reference anchor: VR(q) approx 1 = random-walk-consistent; VR > 1 = positive level-serial-correlation; VR < 1 = negative (anti-persistent). vrZ_iid valid under iid increments; vrZ_hc robust to volatility clustering -- always read both. |vrZ| > 1.96 = reject RW1 at alpha = 0.05.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMcLeodLi(
+  r: DailyTokenMcLeodLiReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-mcleod-li'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    max-lag: ${formatNumber(r.maxLag)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MCLEOD-LI PORTMANTEAU Q-TEST FOR ARCH / VOLATILITY-CLUSTERING at H lags on the gap-filled mean-centred SQUARED-RESIDUAL daily total_tokens series. ONE-HUNDRED-AND-FIFTY-NINTH cross-source axis. McLeod & Li 1983, J. Time Series Analysis 4(4):269-273: u[t] = (x[t] - xbar)^2; r2_k = sum (u[t]-ubar)(u[t+k]-ubar) / sum (u[t]-ubar)^2; Q_ML(H) = n(n+2) sum_{k=1..H} r2_k^2 / (n - k); under iid no-ARCH null Q_ML ~ Chi-Square(H); mlZ = (Q - H)/sqrt(2H) approx N(0, 1). mlZ much greater than 1.96 = significant volatility clustering (large absolute deviations follow large; small follow small). Structurally orthogonal to axis-114 Ljung-Box (same functional but on the LEVEL series x not the SQUARED level u): a pure-trend null gives lbZ -> +inf and mlZ -> 0; a pure-ARCH null gives mlZ -> +inf and lbZ -> 0. Default H = min(10, floor(n/4)).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source McLEOD-LI Q on squared residuals (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'mlH',
+    'r2_1',
+    'r2_2',
+    'r2_7',
+    'mean',
+    'stddev',
+    'mlQ',
+    'mlZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    const r1 = s.mlAcf[0] ?? 0;
+    const r2 = s.mlAcf[1] ?? 0;
+    const r7 = s.mlAcf[6] ?? 0;
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      formatNumber(s.mlH),
+      r1.toFixed(4),
+      r2.toFixed(4),
+      r7.toFixed(4),
+      formatNumber(s.mean),
+      formatNumber(s.stddev),
+      s.mlQ.toFixed(4),
+      s.mlZ.toFixed(4),
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: mlQ approx H = no detectable ARCH; mlQ much greater than H = volatility clustering; mlZ much greater than +1.96 = significant ARCH evidence at alpha = 0.05. The test is BLIND TO SIGN of the squared-residual autocorrelations and BLIND TO THE LAG that drives significance -- inspect the mlAcf array (r2_1, r2_2, r2_7 surfaced in the table; full array via --json) to identify which lag dominates. Strong r2_7 indicates weekly volatility periodicity (e.g. weekday-vs-weekend amplitude regimes).)`,
     ),
   );
 
