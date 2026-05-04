@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.427 — 2026-05-04
+
+### Added — axis-163: `daily-token-runs-test-detrended`
+
+ONE-HUNDRED-AND-SIXTY-THIRD cross-source axis. The
+per-source **Wald-Wolfowitz runs-test Z-statistic**
+(Wald & Wolfowitz 1940 *Annals of Mathematical
+Statistics* 11(2):147-162) computed on the **SIGN
+sequence of the OLS-detrended residuals** of the
+gap-filled daily total_tokens series.
+
+For each source over its tenure window:
+
+```
+fit  x_t = a + b*t       by closed-form OLS  (same fit as axis-162 DW)
+e_t  = x_t - (a + b*t)
+s_t  = '+' if e_t > 0; '-' if e_t < 0; DROP if e_t == 0
+R    = number of maximal sign-runs in (s_t)
+mu_R = 2*nPos*nNeg/n + 1
+varR = 2*nPos*nNeg*(2*nPos*nNeg - n) / (n^2 * (n-1))
+rtZ  = (R - mu_R) / sqrt(varR)        approx N(0, 1)
+```
+
+Verdict cutoffs from the asymptotic N(0, 1) null:
+
+```
+strong-clustering         rtZ <= -2.576       (p <= 0.005)
+borderline-clustering    -2.576 < rtZ <= -1.645 (p <= 0.05)
+independent              -1.645 < rtZ <  +1.645
+borderline-anti-cluster  +1.645 <= rtZ < +2.576
+strong-anti-clustering    rtZ >= +2.576
+```
+
+#### Orthogonality vs all 162 prior axes
+
+This is structurally a **new primitive**:
+
+- **vs axis-149 `daily-token-runs-test-z`**: that
+  axis splits the **RAW** series at its global
+  median P50(x). For a monotone-trending series the
+  first half is all '-' and the second half is all
+  '+', giving R=2 and rtZ approx -sqrt(n) regardless
+  of any short-range sign behaviour — the trend
+  swamps the runs signal. THIS axis splits the
+  **detrended residuals** at zero (the natural pivot
+  since `sum e_t === 0` by OLS). A linearly-rising
+  series with iid Gaussian noise gives axis-149
+  rtZ approx -sqrt(n) but axis-163 rtZ approx 0.
+- **vs axis-162 `daily-token-durbin-watson-detrended`**:
+  both operate on OLS residuals e_t, but DW is a
+  **continuous L^2 quadratic-form** statistic
+  weighted by residual MAGNITUDES; axis-163 is a
+  **discrete L^0 sign-only nonparametric** statistic
+  that is BLIND TO MAGNITUDE. Residuals
+  `(+0.0001, -10000, +0.0002, -10000, ...)` give the
+  same R as `(+1, -1, +1, -1, ...)`; DW differs by
+  several orders of magnitude between these.
+- **vs every RAW-SERIES serial-correlation axis**
+  (raw-series autocorrelation lag-1/lag-7, Spearman
+  lag-1, Kendall lag-1, Bartels-rank von Neumann,
+  axis-114 Ljung-Box, axis-159 McLeod-Li, axis-158
+  VR Lo-MacKinlay, axis-160 BDS): all see x_t (or
+  |x_t|, x_t^2, ranks(x_t), m-history embeddings).
+  Axis-163 sees `sign(e_t)` after a TWO-STEP
+  transformation (linear detrend, then sign
+  collapse) that is not a feature of any of those.
+- **vs the stationarity / unit-root / changepoint
+  axes** (KPSS, ADF, CUSUM, Pettitt, Buishand):
+  those test the LEVEL TRAJECTORY. Axis-163 tests
+  the run-structure of residual signs around a
+  fitted linear trend — a regression-diagnostic
+  question, not a level question.
+- **vs axis-161 Jarque-Bera**: JB is permutation-
+  invariant on the raw series and tests marginal
+  shape (skew + kurtosis). Axis-163 is time-ordered
+  on the SIGN of residuals and is invariant to
+  residual magnitudes entirely.
+
+#### Live-smoke — `~/.config/pew/queue.jsonl` (2026-05-04)
+
+Output of `pew-insights daily-token-runs-test-detrended` against
+the live local queue, sources renamed for publication:
+
+```
+sources: 6 (shown 5)    tokens: 12,609,991,249    sort: rtZAbsDesc
+dropped: 1 below min-tenure-days, 0 zero-variance, 0 zero-residual-variance, 0 degenerate-sign
+
+source     tenure  active  slope          nPos  nNeg  runs  expR   rtZ      verdict
+src-A      72      35      2920460.88     30    42    14    36.00  -5.3738  strong-clustering
+src-B      265     73      12.22          42    223   49    71.69  -5.2521  strong-clustering
+src-C      18      18      86642.13       10    8     7     9.89   -1.4224  independent
+src-D      18      18      -11306703.43   8     10    9     9.89   -0.4377  independent
+src-E      15      15      -9343677.61    8     7     9     8.47   +0.2872  independent
+```
+
+Two long-tenure sources (src-A 72d, src-B 265d) come back
+**strong-clustering** with `rtZ < -5` — far below the WW
+null `mu_R` of 36.00 and 71.69 respectively. The detrended
+residuals show 14 and 49 runs respectively where ~36 and
+~72 would be expected under iid signs: above-trend and
+below-trend days bunch together (multi-day persistence
+around the fitted trend). The three short-tenure sources
+(15-18 days, n_+ and n_- both single-digit) all land
+in `independent` — the asymptotic Normal approximation is
+suggestive only at this sample size, but the data are
+simply too short to reject the iid sign null.
+
+#### Refinement — `runsRatio` shape descriptor + sort key
+
+Adds `runsRatio = runs / expectedRuns`, a unitless,
+scale-free **dispersion ratio** that is intuitive at
+a glance:
+
+- `runsRatio approx 1.0` — observed runs match the WW
+  null mean; iid sign behaviour.
+- `runsRatio < 1` — fewer runs than expected (clustering).
+  src-A above is `14 / 36.00 = 0.389`, src-B is
+  `49 / 71.69 = 0.683`.
+- `runsRatio > 1` — more runs than expected (anti-clustering).
+
+Surfaced in the row + table + JSON, with two new sort
+keys `runsRatio` / `runsRatioDesc`. `runsRatio` is the
+half-Normal complement to `rtZ`: it tells you the
+**scale of departure** in raw run-count units, where
+`rtZ` tells you the **statistical strength** of that
+departure (which weights by sqrt(n)). For src-B (265d
+tenure) the ratio 0.68 looks mild but the sqrt(n) gain
+makes it a 5-sigma rejection of iid; for a 30-day
+source the same 0.68 ratio would be only ~1.6-sigma.
+
 ## 0.6.426 — 2026-05-04
 
 ### Added — axis-162: `daily-token-durbin-watson-detrended`
