@@ -20624,6 +20624,7 @@ import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
 import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermunzelhalves.js';
 import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
+import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27065,6 +27066,87 @@ export function renderDailyTokenKlotzHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: klotzPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). klotzZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ and axis-170 abZ sign). Pitman ARE 1.000 vs F-test under normal-scale alternatives, the maximum possible for a rank scale test.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMoodHalves(
+  r: DailyTokenMoodHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-mood-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MOOD 1954 SQUARED-CENTERED-RANKS SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the gap-filled daily total_tokens series. Pooled mid-ranks centred at (n+1)/2 and squared; W = sum_{j in B} (R_j - (n+1)/2)^2; E[W] = n2 (n^2-1)/12, Var[W] = n1 n2 (n+1)(n^2-4)/180; moodZ = (W - E[W]) / sqrt(Var[W]) ~ N(0,1) under H0. ONE-HUNDRED-AND-SEVENTY-NINTH cross-source axis. STRUCTURALLY DISTINCT: vs axis-178 Conover (squared ranks on |X-median| within-half median fold) Mood squares CENTRED ranks on RAW values (no median fold) — U-shaped weight equal at both rank extremes. vs axis-170 Ansari-Bradley (folded LINEAR ranks) Mood uses SQUARED centred ranks (parabolic vs triangular weight; ARE 15/(2 pi^2) vs 6/(pi^2) under normal). vs axis-177 Klotz (squared NORMAL scores) Mood uses POLYNOMIAL not exponential rank-extremity weight — bounded by ((n-1)/2)^2 by construction. vs axis-117 Siegel-Tukey (interleaved outside-in ranks) Mood ARE 0.760 beats ST 0.608 under normal scale alternatives.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MOOD squared-centered-ranks scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'moodW',
+    'expW',
+    'moodZ',
+    'moodPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.moodN1),
+    formatNumber(s.moodN2),
+    s.moodW.toFixed(4),
+    s.moodExpW.toFixed(4),
+    s.moodZ.toFixed(4),
+    s.moodPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: moodPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). moodZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ sign). Mood ARE 0.760 vs F under normal — 25% more efficient than Siegel-Tukey/Ansari-Bradley, 24% less than Klotz; bounded weight makes Mood more robust to single outliers than Klotz.)`,
     ),
   );
 

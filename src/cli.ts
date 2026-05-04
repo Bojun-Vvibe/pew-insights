@@ -205,6 +205,7 @@ import {
   renderDailyTokenBrunnerMunzelHalves,
   renderDailyTokenKlotzHalves,
   renderDailyTokenConoverSquaredRanksHalves,
+  renderDailyTokenMoodHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -660,6 +661,10 @@ import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
 } from './dailytokenconoversquaredrankshalves.js';
+import {
+  buildDailyTokenMoodHalves,
+  type DailyTokenMoodHalvesSort,
+} from './dailytokenmoodhalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -43987,6 +43992,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenConoverSquaredRanksHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-mood-halves')
+  .description(
+    "Per-source MOOD 1954 SQUARED-CENTERED-RANKS SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTY-NINTH cross-source axis). Pooled mid-ranks centred at (n+1)/2 and squared; statistic W = sum_{j in B} (R_j - (n+1)/2)^2; E[W] = n2 (n^2-1)/12, Var[W] = n1 n2 (n+1)(n^2-4)/180; moodZ = (W - E[W]) / sqrt(Var[W]) ~ N(0, 1) under H0. STRUCTURALLY DISTINCT from axis-178 Conover (squared LINEAR ranks on |X - median| within-half median fold; ABSOLUTE-DEVIATION space): Mood squares CENTRED ranks on RAW pooled values (NO median fold; symmetric U-shape weight about (n+1)/2). vs axis-170 Ansari-Bradley (folded LINEAR ranks; triangular weight, ARE 6/(pi^2)) Mood uses parabolic weight ARE 15/(2 pi^2) ~ 0.760 — 25% more efficient under normal scale alternatives. vs axis-177 Klotz (squared NORMAL scores; exponential tail-amplification) Mood uses POLYNOMIAL rank-extremity weight bounded by ((n-1)/2)^2 — more robust to outliers. vs axis-117 Siegel-Tukey (interleaved outside-in ranks). Distribution-free under H0. Refs: Mood 1954 Ann. Math. Statist. 25:514-522; Hajek & Sidak 1967 sec. III.4.5; Hollander/Wolfe/Chicken 2014 sec. 5.3.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: moodZAbsDesc (default) | moodZ | moodPValue | moodPValueDesc | tokens | tenure | source.',
+    'moodZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'moodZ',
+          'moodZAbsDesc',
+          'moodPValue',
+          'moodPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMoodHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenMoodHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMoodHalves(report) + '\n',
           );
         }
       } catch (e) {
