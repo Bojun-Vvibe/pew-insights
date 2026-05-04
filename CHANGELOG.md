@@ -2,6 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.460 — 2026-05-05
+
+### Added — axis-180 daily-token-sukhatme-halves (absolute-deviations U-statistic scale test)
+
+Per-source Sukhatme (1957, *Annals of Mathematical
+Statistics* 28(1):188-194, eq. 2.1) ABSOLUTE-DEVIATIONS
+U-STATISTIC SCALE TEST for equality of dispersion between
+the first half (n1 = floor(n/2) days) vs second half
+(n2 = n - n1 days) of the gap-filled daily total_tokens
+series.
+
+ONE-HUNDRED-AND-EIGHTIETH cross-source axis.
+
+Compute the pooled median M = median(A union B), form
+absolute deviations a_i = |A_i - M|, b_j = |B_j - M|, and
+take the Mann-Whitney-style U-count
+
+```
+S = #{(i, j) : a_i < b_j} + 0.5 * #{(i, j) : a_i = b_j}
+```
+
+Exact null moments (under H0 of equal dispersion, with
+location-fold absorbed by the pooled median):
+
+```
+E[S]   = n1 * n2 / 2
+Var[S] = n1 * n2 * (n + 1) / 12
+sukhatmeZ = (S - E[S]) / sqrt(Var[S])  ~ N(0, 1)
+```
+
+Two-sided p-value `2 * (1 - Phi(|sukhatmeZ|))` via the
+Abramowitz-Stegun 1965 sec. 26.2.17 rational
+approximation. Sign convention: sukhatmeZ > 0 means the
+SECOND half is more dispersed (matches axis-117 stZ,
+axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ,
+axis-179 moodZ).
+
+Structural orthogonality vs the existing scale family:
+
+- vs axis-179 Mood (squared CENTRED MID-RANKS on RAW
+  pooled values, no median fold; quadratic weight in
+  [0, ((n-1)/2)^2]). Sukhatme uses LINEAR U-counts on
+  |X - POOLED median| with bounded influence per
+  observation (each value contributes at most n2 to S)
+  — strictly more outlier-robust than Mood's quadratic
+  weight.
+- vs axis-178 Conover (squared LINEAR ranks on
+  |X - WITHIN-HALF median|). Sukhatme pools the median
+  estimator, eliminating the within-half estimation noise
+  that contaminates Conover's scale signal under
+  equal-location alternatives.
+- vs axis-170 Ansari-Bradley (folded LINEAR ranks
+  about the RANK midpoint on RAW pooled values).
+  Sukhatme folds about the DATA median — the two folds
+  coincide only under perfectly symmetric pooled
+  distributions with equal sample sizes.
+- vs axis-117 Siegel-Tukey (interleaved outside-in
+  ranks). Same Pitman ARE 6/(pi^2) ~ 0.608 vs F under
+  normal, but ST's score is a fixed permutation of
+  {1..n} while Sukhatme's is a data-dependent count
+  via the |X - M| transform — they reject differently
+  under skewed alternatives.
+- vs axis-177 Klotz (squared NORMAL scores; exponential
+  rank-extremity amplification, ARE 1.000 under normal).
+  Sukhatme is distribution-free under any continuous
+  symmetric F at the cost of efficiency (ARE 0.608).
+
+Hard floor on min-tenure-days is 16 (n1 = n2 = 8) so
+the asymptotic normal reference holds nominal alpha
+(Sukhatme 1957 sec. 4: actual size 0.046-0.054 across
+n1 = n2 in [8, 50] under continuous symmetric F).
+
+### CLI
+
+```
+pew-insights daily-token-sukhatme-halves [--since ISO] [--until ISO]
+  [--source NAME] [--min-tokens N] [--min-tenure-days N]
+  [--top N] [--sort KEY] [--json]
+```
+
+Sort keys: `sukhatmeZAbsDesc` (default), `sukhatmeZ`,
+`sukhatmePValue`, `sukhatmePValueDesc`, `tokens`, `tenure`,
+`source`.
+
+### Live-smoke output (`~/.config/pew/queue.jsonl`, 2026-05-04)
+
+Source ids paraphrased to neutral `src-A` ... `src-D`
+(primary editor source / vendor agent source / local
+relay source / local proxy source). Numbers are the
+actual statistic values as computed by the new CLI.
+
+```
+pew-insights daily-token-sukhatme-halves --json | jq '.sources[] | {source, tenure: .nTenureDays, sukhatmeZ, sukhatmePValue}'
+sources: 6 (shown 4)    tokens: 6,084,585,986    sort: sukhatmeZAbsDesc
+dropped: 2 below min-tenure-days
+---
+src-A  (vendor agent source, tenure=72,  n1=n2=36)   sukhatmeS=955     E[S]=648    sukhatmeZ=+3.4575   sukhatmePValue=5.453e-04
+src-B  (local relay source,  tenure=18,  n1=n2= 9)   sukhatmeS= 15     E[S]= 40.5  sukhatmeZ=-2.2517   sukhatmePValue=2.434e-02
+src-C  (local proxy source,  tenure=18,  n1=n2= 9)   sukhatmeS= 21.5   E[S]= 40.5  sukhatmeZ=-1.6777   sukhatmePValue=9.340e-02
+src-D  (primary editor src,  tenure=265, n1=132 n2=133) sukhatmeS=7754 E[S]=8778   sukhatmeZ=-1.6415   sukhatmePValue=1.007e-01
+```
+
+Decision per source at alpha=0.05 (two-sided):
+
+- `src-A` REJECTS scale-equality H0 (p=5.45e-04, second
+  half DECISIVELY MORE dispersed: |X - M| pair counts
+  give B-deviations exceeding A-deviations far more often
+  than the null permutation distribution allows).
+- `src-B` REJECTS scale-equality H0 (p=2.43e-02, FIRST
+  half MORE dispersed): consistent with the
+  ramp-down-after-cutover pattern visible in axes
+  170/177/178/179.
+- `src-C` and `src-D` do NOT reject at alpha=0.05
+  (p=0.093 and p=0.101 respectively); both lean toward
+  first-half-more-dispersed but the bounded-influence
+  Sukhatme weighting damps the signal vs the
+  rank-quadratic axes.
+
+Cross-axis cohort note: the Sukhatme decision for `src-A`
+agrees in SIGN (positive Z = second half more dispersed)
+with axis-178 conoverZ and axis-179 moodZ on the same
+source, providing three independent rank-score-space
+confirmations (linear U-count on absolute deviations vs
+squared ranks on absolute deviations vs squared centred
+ranks on raw values) of the dispersion shift.
+
 ## 0.6.458 — 2026-05-05
 
 ### Added — axis-179 daily-token-mood-halves (squared-centered-ranks scale test)
