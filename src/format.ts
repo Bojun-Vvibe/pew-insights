@@ -20623,6 +20623,7 @@ import type { DailyTokenCucconiHalvesReport } from './dailytokencucconihalves.js
 import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
 import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermunzelhalves.js';
 import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
+import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -26902,6 +26903,87 @@ export function renderDailyTokenBrunnerMunzelHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: bmPValue < 0.05 = REJECT stochastic-equality H0 at alpha=0.05 (two-sided Welch-Satterthwaite t reference). bmRelative = P_hat(X_A < Y_B) + 0.5 P_hat(X_A = Y_B); bmRelative > 0.5 = SECOND half stochastically larger; bmW > 0 same direction (matches axis-115 mwZ sign). KEY DIFFERENCE from axis-115: BM does not assume equal CDFs under H0 — placement variances S_A^2, S_B^2 estimate the true Behrens-Fisher variance separately, so BM rejects MEANINGFULLY differently from WMW when the two halves have unequal dispersions.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenConoverSquaredRanksHalves(
+  r: DailyTokenConoverSquaredRanksHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-conover-squared-ranks-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CONOVER 1971/1980 SQUARED-RANKS SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the within-half-median-folded, gap-filled daily total_tokens series. Score R_i^2 on the pooled mid-ranks of |X - median|; statistic T = sum_{j in B} R_j^2; E[T] = n2 * Rbar2, Var[T] = n1 n2 / (n(n-1)) * sum (R^2 - Rbar2)^2; conoverZ = (T - E[T]) / sqrt(Var[T]) ~ N(0,1) under H0. ONE-HUNDRED-AND-SEVENTY-EIGHTH cross-source axis. STRUCTURALLY DISTINCT: vs axis-177 Klotz (squared NORMAL scores on raw aligned values; Phi^{-1}-amplified tail weight) Conover squares LINEAR ranks on |X - median| (quadratic, NOT exponential, weight growth) and operates in absolute-deviation space — Conover beats Klotz under uniform/Cauchy scale alternatives (ARE Conover/Klotz = 1.50 under Cauchy; 0.85 under normal). vs axis-117 Siegel-Tukey (interleaved outside-in ranks on raw values) Conover ascending-ranks then squares on folded |.| values. vs axis-170 Ansari-Bradley (folded LINEAR ranks on raw values) Conover folds OBSERVATIONS not RANKS, then squares — different folding location and weight curve. vs axis-122/123 Brown-Forsythe/Bartlett (parametric on squared deviations) Conover is distribution-free under H0. vs axis-115/176 Mann-Whitney/Brunner-Munzel (stochastic ordering) pure scale shift gives conoverZ != 0 while MW/BM ~ 0. vs axes 174/175 Cucconi/Lepage Conover isolates the SCALE channel C/L mash with location.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source CONOVER squared-ranks scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'conoverT',
+    'expT',
+    'conoverZ',
+    'conoverPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.conoverN1),
+    formatNumber(s.conoverN2),
+    s.conoverT.toFixed(4),
+    s.conoverExpT.toFixed(4),
+    s.conoverZ.toFixed(4),
+    s.conoverPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: conoverPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). conoverZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ sign). Conover/Klotz ARE = 1.50 under Cauchy, 0.85 under normal — strictly more powerful than Klotz under heavy-tailed but symmetric scale alternatives.)`,
     ),
   );
 

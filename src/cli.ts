@@ -204,6 +204,7 @@ import {
   renderDailyTokenLepageHalves,
   renderDailyTokenBrunnerMunzelHalves,
   renderDailyTokenKlotzHalves,
+  renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -655,6 +656,10 @@ import {
   buildDailyTokenKlotzHalves,
   type DailyTokenKlotzHalvesSort,
 } from './dailytokenklotzhalves.js';
+import {
+  buildDailyTokenConoverSquaredRanksHalves,
+  type DailyTokenConoverSquaredRanksHalvesSort,
+} from './dailytokenconoversquaredrankshalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -43880,6 +43885,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKlotzHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-conover-squared-ranks-halves')
+  .description(
+    "Per-source CONOVER 1971/1980 SQUARED-RANKS SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the within-half-median-folded, gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTY-EIGHTH cross-source axis). Score R_i^2 on the pooled mid-ranks of |X - median|; statistic T = sum_{j in B} R_j^2; E[T] = n2 * Rbar2, Var[T] = n1 n2 / (n(n-1)) * sum (R^2 - Rbar2)^2; conoverZ = (T - E[T]) / sqrt(Var[T]) ~ N(0, 1) under H0. STRUCTURALLY DISTINCT from axis-177 Klotz (squared NORMAL scores on raw aligned values; Phi^{-1}-amplified tail weight): Conover squares LINEAR ranks on |X - median| (quadratic, NOT exponential, weight growth) and operates in absolute-deviation space — ARE Conover/Klotz = 1.50 under Cauchy, 0.85 under normal. vs axis-117 Siegel-Tukey (interleaved outside-in ranks on raw values), axis-170 Ansari-Bradley (folded LINEAR ranks on raw values), axis-122/123 Brown-Forsythe/Bartlett (parametric on squared deviations). Distribution-free under H0. Refs: Conover 1971/1980 PNS sec. 5.3; Conover & Iman 1978 Comm. Statist. B7:491-513.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: conoverZAbsDesc (default) | conoverZ | conoverPValue | conoverPValueDesc | tokens | tenure | source.',
+    'conoverZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'conoverZ',
+          'conoverZAbsDesc',
+          'conoverPValue',
+          'conoverPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenConoverSquaredRanksHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenConoverSquaredRanksHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenConoverSquaredRanksHalves(report) + '\n',
           );
         }
       } catch (e) {
