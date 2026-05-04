@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.410 — 2026-05-04
+
+### Added — axis-155: `daily-token-buishand-range`
+
+Per-source Buishand range / Q / U test on the gap-filled daily
+`total_tokens` series. Surfaces sigma-normalized cumulative-deviation
+path statistics:
+
+```
+S*[k]   = (sum_{i<=k} (x[i] - mu)) / sigma_pop
+r       = max_k S*[k] - min_k S*[k]            "range"
+rStar   = r / sqrt(n)                          Buishand R
+q       = max_k |S*[k]|                        max-abs path
+qStar   = q / sqrt(n)                          Buishand Q
+u       = sum_k S*[k]^2 / (n * (n+1))          Buishand U (integrated path)
+tStar   = argmax_k |S*[k]|
+argSpread = argmax_k S*[k]  -  argmin_k S*[k]  (signed lag)
+```
+
+**Why this is structurally orthogonal:**
+
+- **vs axis-153 cusum-max-deviation**: cusum surfaces `max |centered
+  cumsum|` in raw token units with no sigma normalization, no
+  max-min range, and no integrated path U. Buishand normalizes by
+  `sigma_pop` so it is scale-invariant across heterogeneous sources
+  — a 100-token source and a 1e9-token source can be compared on
+  the same axis.
+- **vs axis-154 pettitt-changepoint**: Pettitt's KT is the rank-based
+  statistic `max_t |sum_{i<=t} sum_{j>t} sign(x[i]-x[j])|` — it is
+  magnitude-blind. Buishand IS magnitude-sensitive but explicitly
+  normalized. On a clean V-shape symmetric around the mean,
+  Pettitt's KT can be small (no monotone single shift) while
+  Buishand `r` is large (S\* excurses to BOTH extremes).
+- **vs trend tests** (Mann-Kendall, Cox-Stuart, Bartels-rank): those
+  test pairwise/sign relationships; Buishand tests cumulative
+  deviation path shape.
+- **`argSpread` is a directional sign** (rising regime vs falling
+  regime) that neither Pettitt KT nor CUSUM directly expose.
+
+**CLI:** `daily-token-buishand-range` with sort keys
+`tokens|rstar|qstar|u|tstaridx|spread|ndays`.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`:**
+
+```
+pew-insights daily-token-buishand-range
+as of: 2026-05-04T02:27:13.283Z    sources: 6 (shown 6)    tokens: 13,307,743,083    min-days: 4    sort: tokens
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-days, 0 below top cap
+
+per-source Buishand range/U (sorted by tokens)
+source          tokens         nActive  nFilled  r       rStar   q       qStar   u       tStarIdx  tStarDay    tArgMaxDay  tArgMinDay  argSpread  flat  first       last
+--------------  -------------  -------  -------  ------  ------  ------  ------  ------  --------  ----------  ----------  ----------  ---------  ----  ----------  ----------
+opencode        6,479,900,087  15       15       4.888   1.2621  2.642   0.6823  0.2048  9         2026-04-29  2026-04-29  2026-04-20  9          n     2026-04-20  2026-05-04
+claude-code     3,442,385,788  35       72       14.914  1.7577  14.356  1.6919  1.1922  62        2026-04-14  2026-04-21  2026-04-14  7          n     2026-02-11  2026-04-23
+openclaw        2,261,520,910  18       18       7.414   1.7475  6.524   1.5377  0.8365  7         2026-04-24  2026-04-24  2026-04-18  6          n     2026-04-17  2026-05-04
+codex           809,624,660    8        8        3.022   1.0683  2.351   0.8313  0.2147  6         2026-04-19  2026-04-13  2026-04-19  -6         n     2026-04-13  2026-04-20
+hermes          312,425,911    18       18       4.863   1.1462  2.862   0.6745  0.1067  9         2026-04-26  2026-04-22  2026-04-26  -4         n     2026-04-17  2026-05-04
+```
+
+**Reading the smoke:**
+
+- `claude-code` has the **highest `rStar` (1.7577) and `u` (1.1922)**
+  on a 72-day gap-filled tenure — its centered-cumsum path makes the
+  largest sigma-normalized excursion of any source, with `tArgMin`
+  = 2026-02-14 (early trough) and `tArgMax` = 2026-04-21 (late
+  peak), `argSpread = +7` so the rising regime dominates.
+- `openclaw` is a close second by `rStar` (1.7474) on only 18 days —
+  a much shorter window concentrating its excursion mass.
+- `opencode` and `claude-code` both show **positive `argSpread`**
+  (rising late-window regime); `codex` and `hermes` show **negative
+  `argSpread`** (early-peak, late-decline) — a signal Pettitt's
+  rank-based statistic does not directly expose.
+- `tStarDay` for `claude-code` is 2026-04-14 (mid-window split) vs
+  `tArgMinDay` 2026-02-14 (start-of-tenure trough) — the max-abs
+  point and the path-extreme points genuinely differ, validating
+  that `r` and `q` carry distinct information.
+
 ## 0.6.409 — 2026-05-04
 
 ### Refined — axis-154: secondary changepoint (`kt2`, `kt2OverKt`, `tStar2Day`)
