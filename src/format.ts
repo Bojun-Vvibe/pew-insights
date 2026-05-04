@@ -25106,3 +25106,70 @@ export function renderDailyTokenBuishandRange(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenKpssStationarity(
+  r: import('./dailytokenkpssstationarity.js').DailyTokenKpssStationarityReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-kpss-stationarity'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(KPSS level-stationarity on gap-filled per-source daily total_tokens: e[i]=x[i]-mu; S[t]=sum_{i<=t} e[i]; eta = sum_t S[t]^2 / (n^2 * sigma2_lr); sigma2_lr = gamma[0] + 2*sum_{h=1..L} (1-h/(L+1))*gamma[h] (Bartlett-HAC); L = max(1, floor(4*(n/100)^0.25)) (Schwert); cutoffs (KPSS Table 1, level model): 10%=0.347, 5%=0.463, 1%=0.739; flat=y means zero variance, statistic undefined)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source KPSS level-stationarity (sorted by ${r.sort})`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'eta',
+    'L',
+    'lrVar',
+    'gamma0',
+    'verdict',
+    'flat',
+    'first',
+    'last',
+  ];
+  const rowsK: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.flat ? '-' : s.eta.toFixed(4),
+    s.flat ? '-' : String(s.bandwidth),
+    s.flat ? '-' : s.lrVariance.toExponential(3),
+    s.flat ? '-' : s.gammaZero.toExponential(3),
+    s.verdict,
+    s.flat ? 'y' : 'n',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsK));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

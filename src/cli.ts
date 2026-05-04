@@ -75,6 +75,7 @@ import {
   renderDailyTokenCusumMaxDeviation,
   renderDailyTokenPettittChangepoint,
   renderDailyTokenBuishandRange,
+  renderDailyTokenKpssStationarity,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -454,6 +455,10 @@ import {
   buildDailyTokenBuishandRange,
   type DailyTokenBuishandRangeSortKey,
 } from './dailytokenbuishandrange.js';
+import {
+  buildDailyTokenKpssStationarity,
+  type DailyTokenKpssStationaritySortKey,
+} from './dailytokenkpssstationarity.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -41467,6 +41472,79 @@ program
           process.stdout.write(
             renderDailyTokenIsoWeekDayOfWeekEntropy(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-kpss-stationarity')
+  .description(
+    "Per-source KPSS (Kwiatkowski-Phillips-Schmidt-Shin 1992) level-stationarity test on the gap-filled daily total_tokens series (axis-156). Surfaces (eta, bandwidth, lrVariance, gammaZero, verdict). Long-run-variance-normalized integrated-squared-partial-sum statistic with Bartlett-kernel HAC variance (Schwert bandwidth L = floor(4*(n/100)^0.25)). Hypothesis is INVERTED relative to changepoint tests: H0 = level stationarity. Structurally orthogonal to axis-155 buishand-range (i.i.d.-sigma normalization, range surface), axis-154 pettitt (rank-based single-break), axis-153 cusum (sup norm, no normalization), and trend/autocorrelation tests. verdict cutoffs are KPSS Table-1 (level model): stationary <0.347 <= borderline <0.463 <= nonstationary <0.739 <= strongly-nonstationary.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with gap-filled tenure shorter than n days (default 8, must be >= 8 so Schwert bandwidth is meaningful); counts surface as droppedSparseSources',
+    '8',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens | eta | bandwidth | lrvariance | ndays | verdict (default tokens). Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 8) {
+          throw new Error(`--min-days must be an integer >= 8 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sortAllowed = ['tokens', 'eta', 'bandwidth', 'lrvariance', 'ndays', 'verdict'];
+        if (!sortAllowed.includes(opts.sort)) {
+          throw new Error(`--sort must be one of ${sortAllowed.join('|')} (got ${opts.sort})`);
+        }
+        const sort = opts.sort as DailyTokenKpssStationaritySortKey;
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKpssStationarity(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenKpssStationarity(report) + '\n');
         }
       } catch (e) {
         die(e);
