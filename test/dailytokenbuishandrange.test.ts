@@ -366,3 +366,91 @@ test('buishand: deterministic output with fixed generatedAt', () => {
   const r2 = buildDailyTokenBuishandRange(q, { generatedAt: GEN });
   assert.deepEqual(r1, r2);
 });
+
+// ---- refinement: rOverQ + sort key ---------------------------------------
+
+test('buishandSummary: rOverQ in [1, 2] for non-flat series', () => {
+  const samples: number[][] = [
+    [1, 2, 3, 4, 5, 6],                        // monotone -> one-sided path
+    [1, 1, 1, 100, 100, 100],                  // step shift -> one-sided
+    [10, 10, 10, 1, 1, 1, 10, 10, 10],         // V-shape -> path crosses
+    [1, 5, 9, 5, 1, 5, 9],                     // wavy
+    [1, 100, 1, 100, 1, 100],                  // alternating
+  ];
+  for (const v of samples) {
+    const s = buishandSummary(v);
+    assert.ok(
+      s.rOverQ >= 1 - 1e-12 && s.rOverQ <= 2 + 1e-12,
+      `rOverQ out of [1,2]: ${s.rOverQ} for ${JSON.stringify(v)}`,
+    );
+  }
+});
+
+test('buishandSummary: monotone series -> rOverQ ~ 1 (one-sided path)', () => {
+  // Monotone increasing: S* path is convex, never crosses zero (always
+  // negative until it returns to 0 at the end). So r = max - min = |min|
+  // and q = max|S*| = |min|, hence r/q = 1.
+  const v = [1, 2, 3, 4, 5, 6, 7, 8];
+  const s = buishandSummary(v);
+  assert.ok(Math.abs(s.rOverQ - 1) < 1e-9, `rOverQ=${s.rOverQ}`);
+});
+
+test('buishandSummary: clean step shift -> rOverQ = 1 (one-sided)', () => {
+  // Step shift: S* descends to a minimum at the breakpoint and returns
+  // to 0 at the end. Never goes positive. r = q.
+  const v = [1, 1, 1, 1, 100, 100, 100, 100];
+  const s = buishandSummary(v);
+  assert.ok(Math.abs(s.rOverQ - 1) < 1e-9, `rOverQ=${s.rOverQ}`);
+});
+
+test('buishandSummary: V-shape produces rOverQ > 1 (two-sided path)', () => {
+  // V-shape: high, dip, high. S* crosses zero. r/q should be > 1.
+  // values: [10,10,10,1,1,1,10,10,10]. S[k] in deviations: 3,6,9,3,-3,-9,-6,-3,0
+  // max S = 9 at k=2; min S = -9 at k=5; r = 18; q = 9; r/q = 2.
+  const v = [10, 10, 10, 1, 1, 1, 10, 10, 10];
+  const s = buishandSummary(v);
+  assert.ok(s.rOverQ > 1.5, `expected rOverQ > 1.5 for V-shape, got ${s.rOverQ}`);
+  assert.ok(Math.abs(s.rOverQ - 2) < 1e-9);
+});
+
+test('buishandSummary: flat -> rOverQ = 1 by convention', () => {
+  const s = buishandSummary([7, 7, 7, 7]);
+  assert.equal(s.rOverQ, 1);
+});
+
+test('buishand: sort by rstaroverqstar puts V-shape first', () => {
+  // Source vee: V-shape (rOverQ ~ 2). Source step: clean step (rOverQ ~ 1).
+  const q: QueueLine[] = [];
+  const vee = [10, 10, 10, 1, 1, 1, 10, 10, 10];
+  const step = [1, 1, 1, 1, 100, 100, 100, 100, 100];
+  // Use 9 days each so both have same length.
+  const days = ['2026-04-20', '2026-04-21', '2026-04-22', '2026-04-23',
+    '2026-04-24', '2026-04-25', '2026-04-26', '2026-04-27', '2026-04-28'];
+  for (let i = 0; i < days.length; i++) {
+    q.push(ql(`${days[i]!}T00:00:00.000Z`, 'vee', vee[i]!));
+    q.push(ql(`${days[i]!}T00:00:00.000Z`, 'step', step[i]!));
+  }
+  const r = buildDailyTokenBuishandRange(q, {
+    generatedAt: GEN,
+    sort: 'rstaroverqstar',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.sources[0]!.source, 'vee');
+  assert.equal(r.sources[1]!.source, 'step');
+  assert.ok(r.sources[0]!.rOverQ > r.sources[1]!.rOverQ);
+});
+
+test('buishand: source row carries rOverQ field', () => {
+  const queue: QueueLine[] = [];
+  const days = ['2026-04-20', '2026-04-21', '2026-04-22', '2026-04-23',
+    '2026-04-24', '2026-04-25', '2026-04-26', '2026-04-27'];
+  const vals = [1, 1, 1, 1, 100, 100, 100, 100];
+  for (let i = 0; i < days.length; i++) {
+    queue.push(ql(`${days[i]!}T00:00:00.000Z`, 's', vals[i]!));
+  }
+  const r = buildDailyTokenBuishandRange(queue, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  const s = r.sources[0]!;
+  assert.equal(typeof s.rOverQ, 'number');
+  assert.ok(s.rOverQ >= 1 && s.rOverQ <= 2);
+});

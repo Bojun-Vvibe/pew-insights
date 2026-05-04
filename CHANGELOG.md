@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.411 — 2026-05-04
+
+### Refined — axis-155: `rOverQ` shape descriptor (one-sided vs V-shape)
+
+Adds a single scalar `rOverQ = r / q` (in `[1, 2]`) to every
+axis-155 row, plus a new sort key `rstaroverqstar` that orders sources
+by this scalar.
+
+Interpretation:
+
+- `rOverQ ~ 1.0`: S\* path is **one-sided** — never crosses zero.
+  This is the signature of a **monotone trend** or a **clean step
+  shift**: the worst-point statistic `q` already captures the full
+  range of the path.
+- `rOverQ ~ 2.0`: S\* path is **two-sided / symmetric** — excurses
+  to a positive extreme AND a negative extreme of comparable
+  magnitude. This is the signature of a **V-shape, M-shape, or
+  oscillatory regime**: `q` alone misses half the path information.
+- Intermediate values (1.3-1.7) flag asymmetric two-sided profiles.
+
+Why this is information `q` and `r` don't already carry separately:
+`r` is in raw S\* units (varies with sigma normalization across
+sources), and `q` is too. Their ratio is **dimensionless and bounded
+in `[1, 2]`** by construction — directly comparable across sources
+with wildly different scales and tenure lengths. It is the cleanest
+way to tell "monotone trend" apart from "V-shape" without inspecting
+the full path.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (refinement):
+
+```
+per-source Buishand range/U (sorted by tokens)
+source          tokens         nActive  nFilled  r       rStar   q       qStar   u       tStarIdx  tStarDay    tArgMaxDay  tArgMinDay  argSpread  rOverQ  flat  first       last
+--------------  -------------  -------  -------  ------  ------  ------  ------  ------  --------  ----------  ----------  ----------  ---------  ------  ----  ----------  ----------
+opencode        6,479,900,087  15       15       4.888   1.2621  2.642   0.6823  0.2048  9         2026-04-29  2026-04-29  2026-04-20  9          1.850   n     2026-04-20  2026-05-04
+claude-code     3,442,385,788  35       72       14.914  1.7577  14.356  1.6919  1.1922  62        2026-04-14  2026-04-21  2026-04-14  7          1.039   n     2026-02-11  2026-04-23
+openclaw        2,261,520,910  18       18       7.414   1.7475  6.524   1.5377  0.8365  7         2026-04-24  2026-04-24  2026-04-18  6          1.136   n     2026-04-17  2026-05-04
+codex           809,624,660    8        8        3.022   1.0683  2.351   0.8313  0.2147  6         2026-04-19  2026-04-13  2026-04-19  -6         1.285   n     2026-04-13  2026-04-20
+hermes          312,425,911    18       18       4.863   1.1462  2.862   0.6745  0.1067  9         2026-04-26  2026-04-22  2026-04-26  -4         1.699   n     2026-04-17  2026-05-04
+```
+
+**Reading the refinement:**
+
+- `claude-code` has `rOverQ = 1.039` → almost perfectly **one-sided
+  path**. Combined with its high `rStar = 1.7577` and `argSpread = +7`,
+  this confirms a **clean monotone-rising regime** — `q` already
+  captures it; no V-shape hiding.
+- `opencode` has `rOverQ = 1.850` → strongly **two-sided**. The path
+  excurses both up and down with comparable magnitude — `q` alone
+  understates the shape. Worth a dedicated multi-segment look.
+- `hermes` (1.699) and `codex` (1.285) sit between, with `hermes`
+  closer to a V-shape and `codex` closer to a one-sided regime.
+- `openclaw` (1.136) is **almost one-sided** despite high `rStar` —
+  i.e., a clean step/trend, not a V.
+
+This single scalar collapses what would otherwise need a visual
+inspection of the cumulative-deviation path into a sortable axis.
+
 ## 0.6.410 — 2026-05-04
 
 ### Added — axis-155: `daily-token-buishand-range`

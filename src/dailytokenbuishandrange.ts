@@ -69,6 +69,7 @@ export type DailyTokenBuishandRangeSortKey =
   | 'u'
   | 'tstaridx'
   | 'spread'
+  | 'rstaroverqstar'
   | 'ndays';
 
 export interface DailyTokenBuishandRangeOptions {
@@ -113,6 +114,16 @@ export interface DailyTokenBuishandRangeSourceRow {
   tArgMinDay: string | null;
   /** tArgMax - tArgMin. +n: up-extreme later (rising); -n: down-extreme later. */
   argSpread: number;
+  /**
+   * r / q, in [1, 2]. 1.0 means S* never crosses zero (one-sided path —
+   * a clean monotone trend or a single-direction step shift). 2.0 means
+   * S* swings symmetrically to +k and -k (a V or M shape with mean-
+   * crossing path). Values near 1 imply the worst-point statistic q is
+   * already capturing most of the path information; values near 2 imply
+   * a multi-extremum profile that q misses but r captures.
+   * 1 when q = 0 (flat).
+   */
+  rOverQ: number;
   /** True iff series has zero population variance — Buishand undefined. */
   flat: boolean;
   firstActiveDay: string;
@@ -147,6 +158,8 @@ export interface BuishandSummary {
   tArgMax: number;
   tArgMin: number;
   argSpread: number;
+  /** r / q, in [1, 2]. 1 = one-sided path; 2 = symmetric V/M. 1 when flat. */
+  rOverQ: number;
   flat: boolean;
 }
 
@@ -167,6 +180,7 @@ export function buishandSummary(values: number[]): BuishandSummary {
       tArgMax: -1,
       tArgMin: -1,
       argSpread: 0,
+      rOverQ: 1,
       flat: true,
     };
   }
@@ -192,6 +206,7 @@ export function buishandSummary(values: number[]): BuishandSummary {
       tArgMax: -1,
       tArgMin: -1,
       argSpread: 0,
+      rOverQ: 1,
       flat: true,
     };
   }
@@ -239,6 +254,7 @@ export function buishandSummary(values: number[]): BuishandSummary {
     tArgMax,
     tArgMin,
     argSpread: tArgMax - tArgMin,
+    rOverQ: q > 0 ? r / q : 1,
     flat: false,
   };
 }
@@ -262,6 +278,7 @@ const SORT_KEYS: DailyTokenBuishandRangeSortKey[] = [
   'u',
   'tstaridx',
   'spread',
+  'rstaroverqstar',
   'ndays',
 ];
 
@@ -395,6 +412,7 @@ export function buildDailyTokenBuishandRange(
       tArgMin: summary.tArgMin,
       tArgMinDay,
       argSpread: summary.argSpread,
+      rOverQ: summary.rOverQ,
       flat: summary.flat,
       firstActiveDay: first,
       lastActiveDay: last,
@@ -418,6 +436,9 @@ export function buildDailyTokenBuishandRange(
         break;
       case 'spread':
         primary = b.argSpread - a.argSpread;
+        break;
+      case 'rstaroverqstar':
+        primary = b.rOverQ - a.rOverQ;
         break;
       case 'ndays':
         primary = b.nFilledDays - a.nFilledDays;
