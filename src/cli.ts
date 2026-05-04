@@ -202,6 +202,7 @@ import {
   renderDailyTokenAnsariBradleyHalves,
   renderDailyTokenCucconiHalves,
   renderDailyTokenLepageHalves,
+  renderDailyTokenBrunnerMunzelHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -645,6 +646,10 @@ import {
   buildDailyTokenLepageHalves,
   type DailyTokenLepageHalvesSort,
 } from './dailytokenlepagehalves.js';
+import {
+  buildDailyTokenBrunnerMunzelHalves,
+  type DailyTokenBrunnerMunzelHalvesSort,
+} from './dailytokenbrunnermunzelhalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -43664,6 +43669,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenLepageHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-brunner-munzel-halves')
+  .description(
+    "Per-source BRUNNER-MUNZEL 2000 GENERALISED-WILCOXON NONPARAMETRIC BEHRENS-FISHER TEST for stochastic equality between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTY-SIXTH cross-source axis). Targets p = P(X<Y) + 0.5 P(X=Y) without the equal-CDF assumption Mann-Whitney makes; uses pooled mid-ranks AND within-sample mid-ranks to form placement-variance estimators S_A^2, S_B^2 (Brunner-Munzel eq. 2.4); statistic bmW = (Rbar_B - Rbar_A) / (n * sqrt(S_A^2/n1 + S_B^2/n2)) with Welch-Satterthwaite df, two-sided Student-t p-value via regularised incomplete beta. STRUCTURALLY DISTINCT from axis-115 Mann-Whitney (assumes equal underlying CDFs, closed-form variance n1 n2 (n+1)/12); axes 117/170 are pure scale; axes 174/175 are joint chi-2(2) location-scale tests that BOTH rely on the rank-sum null variance Brunner-Munzel rejects. Under heteroscedastic alternatives BM has correct asymptotic SIZE while WMW/Cucconi/Lepage drift (Brunner-Munzel 2000 Tab. 1: WMW 0.075-0.090 vs nominal 0.05; BM 0.048-0.052). Refs: Brunner & Munzel 2000 Biometrical Journal 42:17-25; Welch 1947 Biometrika 34:28-35; Satterthwaite 1946 Biometrics 2:110-114.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (each within-sample placement variance has at least 7 residual dof). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bmWAbsDesc (default) | bmW | bmPValue | bmPValueDesc | bmRelative | bmRelativeDesc | tokens | tenure | source.',
+    'bmWAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bmW',
+          'bmWAbsDesc',
+          'bmPValue',
+          'bmPValueDesc',
+          'bmRelative',
+          'bmRelativeDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBrunnerMunzelHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenBrunnerMunzelHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenBrunnerMunzelHalves(report) + '\n',
           );
         }
       } catch (e) {

@@ -20621,6 +20621,7 @@ import type { DailyTokenKDivergenceHalvesReport } from './dailytokenkdivergenceh
 import type { DailyTokenPearsonSecondSkewnessReport } from './dailytokenpearsonsecondskewness.js';
 import type { DailyTokenCucconiHalvesReport } from './dailytokencucconihalves.js';
 import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
+import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermunzelhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -26819,6 +26820,87 @@ export function renderDailyTokenLepageHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: lepPValue < 0.05 (i.e. L > -2 ln(0.05) ~ 5.991) = REJECT joint-equality at alpha=0.05; lepPValue < 0.01 (L > 9.210) = REJECT at alpha=0.01. SIGNED CHANNELS: lepLocZ = -zW > 0 = SECOND half stochastically larger (matches axis-115 mwZ); lepScaleZ = +zAB > 0 = SECOND half MORE dispersed (matches axis-170 abZ). Identity: lepLocZ^2 + lepScaleZ^2 == lepL.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBrunnerMunzelHalves(
+  r: DailyTokenBrunnerMunzelHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-brunner-munzel-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BRUNNER-MUNZEL 2000 GENERALISED-WILCOXON NONPARAMETRIC BEHRENS-FISHER TEST: targets p = P(X<Y) + 0.5 P(X=Y) without the equal-CDF assumption Mann-Whitney makes. Uses pooled mid-ranks AND within-sample mid-ranks to form placement-variance estimators S_A^2, S_B^2 (Brunner-Munzel eq. 2.4); statistic bmW = (Rbar_B - Rbar_A) / (n * sqrt(S_A^2/n1 + S_B^2/n2)) ~ Student-t with Welch-Satterthwaite df. ONE-HUNDRED-AND-SEVENTY-SIXTH cross-source axis. STRUCTURALLY DISTINCT from axis-115 Mann-Whitney (assumes equal underlying CDFs, uses closed-form variance n1 n2 (n+1)/12); axes 117/170 are pure scale; axes 174/175 are joint chi-2(2) location-scale tests that BOTH rely on the rank-sum null variance Brunner-Munzel rejects. Under heteroscedastic alternatives BM has correct asymptotic SIZE while WMW/Cucconi/Lepage drift (Brunner-Munzel 2000 Tab. 1).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BRUNNER-MUNZEL stochastic-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'bmRelative',
+    'bmW',
+    'bmDof',
+    'bmPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.bmN1),
+    formatNumber(s.bmN2),
+    s.bmRelative.toFixed(4),
+    s.bmW.toFixed(4),
+    s.bmDof.toFixed(2),
+    s.bmPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bmPValue < 0.05 = REJECT stochastic-equality H0 at alpha=0.05 (two-sided Welch-Satterthwaite t reference). bmRelative = P_hat(X_A < Y_B) + 0.5 P_hat(X_A = Y_B); bmRelative > 0.5 = SECOND half stochastically larger; bmW > 0 same direction (matches axis-115 mwZ sign). KEY DIFFERENCE from axis-115: BM does not assume equal CDFs under H0 — placement variances S_A^2, S_B^2 estimate the true Behrens-Fisher variance separately, so BM rejects MEANINGFULLY differently from WMW when the two halves have unequal dispersions.)`,
     ),
   );
 
