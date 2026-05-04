@@ -20631,6 +20631,7 @@ import type { DailyTokenFlignerPolicelloHalvesReport } from './dailytokenfligner
 import type { DailyTokenYuenWelchHalvesReport } from './dailytokenyuenwelchhalves.js';
 import type { DailyTokenSavageHalvesReport } from './dailytokensavagehalves.js';
 import type { DailyTokenBwsHalvesReport } from './dailytokenbaumgartnerweisschindlerhalves.js';
+import type { DailyTokenHlShiftHalvesReport } from './dailytokenhodgeslehmannshifthalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27651,6 +27652,93 @@ export function renderDailyTokenBwsHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: bwsPValue < 0.05 = REJECT identical-distribution H0 at alpha=0.05. bwsB is non-negative omnibus statistic; sign of departure encoded in companion bwsSign (+: second-half pooled-rank median larger; -: first-half larger; 0: tied medians, pure-scale departure). Cross-axis with axis-115 MW: high bwsB + small MW |z| flags pure-scale shift. Cross-axis with axis-179 MOOD: high bwsB + small MOOD flags pure-location shift. Cross-axis with axis-175 LEPAGE: agreement under joint location-scale departure; disagreement diagnoses ECDF-shape departures Lepage's rank-decomposition misses.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHlShiftHalves(
+  r: DailyTokenHlShiftHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-hodges-lehmann-shift-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    alpha: ${r.alpha}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HODGES-LEHMANN 1963 distribution-free TWO-SAMPLE MEDIAN-SHIFT POINT ESTIMATOR with companion LEHMANN 1963 nonparametric confidence interval. hlDelta = median{ y_j - x_i : x in first half, y in second half } (Hodges-Lehmann 1963 Ann. Math. Stat. 34:598-611 eq. 2.1). CI from sorted pairwise-difference order statistics at index k_alpha = round(E[U] - z * sqrt(Var[U])) with E[U]=n1*n2/2, Var[U]=n1*n2*(n1+n2+1)/12 (Lehmann 1963 Ann. Math. Stat. 34:1507-1512). ONE-HUNDRED-AND-EIGHTY-SIXTH cross-source axis. STRUCTURALLY ORTHOGONAL: vs every prior axis (115/170/174/175/177/178/179/180/181/182/183/184/185), all of which are TEST STATISTICS yielding Z or chi-square; axis-186 is a POINT ESTIMATOR + CI in original token units. hlSign = sign(hlDelta) preserves SECOND-half-positive cross-axis convention. hlCiExcludesZero is the EXACT analogue of "reject Mann-Whitney H0 at level alpha" but additionally carries the EFFECT SIZE.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Hodges-Lehmann two-sample shift estimator with Lehmann CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'pairs',
+    'hlDelta',
+    'hlCiLow',
+    'hlCiHigh',
+    'hlCiWidth',
+    'sign',
+    'CI excl 0',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.hlN1),
+    formatNumber(s.hlN2),
+    formatNumber(s.hlPairs),
+    formatNumber(Math.round(s.hlDelta)),
+    formatNumber(Math.round(s.hlCiLow)),
+    formatNumber(Math.round(s.hlCiHigh)),
+    formatNumber(Math.round(s.hlCiWidth)),
+    s.hlSign === 1 ? '+' : s.hlSign === -1 ? '-' : '0',
+    s.hlCiExcludesZero ? 'YES' : 'no',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: hlCiExcludesZero === true at the chosen alpha is the EXACT distribution-free analogue of rejecting the Mann-Whitney H0 of identical distribution; combined with hlDelta it gives BOTH the binary decision AND the effect size in original token units. Cross-axis with axis-115 MW: should agree on the binary decision under pure-location-shift; with axis-185 BWS: BWS may reject when hlCiExcludesZero === false (pure-scale departure invisible to a shift estimator). The CI WIDTH hlCiWidth is itself diagnostic: very wide CIs flag sources whose two halves are individually high-variance even when the median shift is large.)`,
     ),
   );
 

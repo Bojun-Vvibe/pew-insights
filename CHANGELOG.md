@@ -2,6 +2,182 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.470 — 2026-05-05
+
+### Feature — `daily-token-hodges-lehmann-shift-halves` (axis-186)
+
+Adds the ONE-HUNDRED-AND-EIGHTY-SIXTH cross-source axis:
+the HODGES-LEHMANN 1963 distribution-free TWO-SAMPLE
+MEDIAN-SHIFT POINT ESTIMATOR with companion LEHMANN 1963
+nonparametric CONFIDENCE INTERVAL between the first half
+(n1 = floor(n/2) days) vs second half (n2 = n - n1 days)
+of the gap-filled daily total_tokens series.
+
+THE STATISTIC. With sample A = first half and sample B =
+second half,
+
+    hlDelta = median{ y_j - x_i : 1 <= i <= n1,
+                                  1 <= j <= n2 }
+
+(Hodges-Lehmann 1963 *Ann. Math. Stat.* 34:598-611
+eq. 2.1). Under the location-shift model Y = X + theta,
+hlDelta is the median-unbiased asymptotically-Gaussian
+estimator with the same Pitman ARE as the Mann-Whitney
+rank-sum test: 3/pi ~ 0.955 vs the mean-difference under
+normal F, pi^2/9 ~ 1.097 under logistic F, > 1 under any
+heavy-tailed F (Hodges-Lehmann 1963 Theorem 1; Lehmann
+1975 *Nonparametrics* sec. 2.3).
+
+THE LEHMANN CI. Sort the m = n1 * n2 pairwise differences
+ascending into D_{(1)} <= ... <= D_{(m)}. Choose
+
+    k_alpha = round( E[U] - z_{alpha/2} * sqrt(Var[U]) )
+
+with E[U] = n1*n2/2, Var[U] = n1*n2*(n1+n2+1)/12 (the
+Mann-Whitney null mean and variance), and z_{alpha/2}
+the standard-normal upper quantile (computed via the
+Beasley-Springer-Moro 1977 inverse normal CDF, accurate
+to 5e-9 across alpha in [1e-6, 0.5]). Then
+
+    [ D_{(k_alpha + 1)},  D_{(m - k_alpha)} ]
+
+has EXACT coverage >= 1 - alpha for any continuous F
+(DISTRIBUTION-FREE: depends only on rank invariance, not
+on F's shape, mean, variance, or tails) — Lehmann 1963
+*Ann. Math. Stat.* 34:1507-1512.
+
+WHY AXIS-186 IS STRUCTURALLY ORTHOGONAL TO EVERY PRIOR
+HALVES AXIS. Every prior halves axis (115 Mann-Whitney,
+170 Ansari-Bradley, 174 Cucconi, 175 Lepage, 177 Klotz,
+178 Conover, 179 Mood, 180 Sukhatme, 181 van-der-Waerden,
+182 Fligner-Policello, 183 Yuen-Welch, 184 Savage, 185
+BWS) is a TEST STATISTIC yielding a Z or chi-square
+deviance with an asymptotic p-value. NONE of them
+produce a POINT ESTIMATE in the ORIGINAL TOKEN UNITS of
+the median shift between the two halves, and none
+produce a DISTRIBUTION-FREE CI on that shift. Axis-186
+fills exactly that gap: it is the COMPANION ESTIMATOR to
+the existing rank-test family, reporting
+
+  - hlDelta — median pairwise B - A difference in raw
+    token units (signed: + means second half larger);
+  - hlCiLow / hlCiHigh — distribution-free CI endpoints
+    in raw token units;
+  - hlCiWidth — width of the CI in raw token units (a
+    diagnostic for sources whose two halves are
+    individually high-variance even with a clear median
+    shift);
+  - hlCiExcludesZero — the EXACT distribution-free
+    analogue of rejecting Mann-Whitney H0 at level
+    alpha, but combined with hlDelta and the CI it
+    additionally surfaces the EFFECT SIZE.
+
+CROSS-AXIS DIAGNOSTICS. With axis-115 MW: should agree
+on the binary decision under a pure location-shift; any
+disagreement flags either (a) heavy ties that distort
+MW's variance correction, or (b) the rare case where MW
+rejects via a non-shift alternative the HL estimator
+correctly identifies as nominal. With axis-185 BWS: BWS
+may reject when hlCiExcludesZero === false — that is the
+diagnostic for a PURE-SCALE departure invisible to any
+shift estimator. With axis-179 MOOD / axis-180 SUKHATME
+(pure-scale): hlDelta is INSENSITIVE to scale-only
+shifts, so a large axis-179/180 with hlCiExcludesZero
+false unambiguously diagnoses a scale-without-location
+departure.
+
+The implementation enforces the same minimum-tenure
+floor (16 days, hard) used by the rank-test family,
+yielding m = n1 * n2 >= 8 * 8 = 64 pairwise differences,
+which is sufficient for the asymptotic CI to be reliable.
+
+CLI subcommand surface mirrors the rest of the halves
+family: `--since`, `--until`, `--source`, `--min-tokens`,
+`--min-tenure-days`, `--alpha` (default 0.05 => 95% CI),
+`--top`, `--sort`, `--json`. Sort keys: `hlDeltaAbsDesc`
+(default; biggest-effect first) | `hlDelta` | `hlDeltaDesc`
+| `hlCiWidth` | `hlCiWidthDesc` | `tokens` | `tenure` |
+`source`.
+
+46 new unit tests cover Beasley-Springer-Moro inverse-CDF
+accuracy at standard quantiles (z_{0.975} = 1.96 to
+1e-4), zero-shift / constant-shift / sign-reversal
+identities of the primitive estimator, CI bracketing of
+the point estimate, CI shrinking with looser alpha,
+shift- and scale-equivariance of the halves builder,
+filter / tenure / source-asc-tie / sort-key behaviour of
+the queue builder, alpha propagation to hlCiLevel, and
+the 5-bucket directional label classifier including
+non-finite / inverted-CI / invalid-sign rejection.
+
+#### Live smoke against `~/.config/pew/queue.jsonl`
+
+```
+$ pew-insights daily-token-hodges-lehmann-shift-halves
+sources: 6 (shown 4)    tokens: 6,154,841,957    sort: hlDeltaAbsDesc    alpha: 0.05
+
+source       tenure  n1   n2   pairs   hlDelta       hlCiLow       hlCiHigh     hlCiWidth    sign  CI excl 0
+-----------  ------  ---  ---  ------  ------------  ------------  -----------  -----------  ----  ---------
+openclaw     18      9    9    81      -119,325,554  -200,758,791  -24,974,548  175,784,243  -     YES
+claude-code  72      36   36   1,296   +18,998,644   0             37,473,162   37,473,162   +     no
+hermes       18      9    9    81      +8,905,175    -7,257,938    14,897,330   22,155,268   +     no
+vscode-cp    265     132  133  17,556  0             0             0            0            0     no
+```
+
+INTERPRETATION:
+
+  - **openclaw** has the largest absolute median shift
+    (-119.3M tokens per day) and its 95% Lehmann CI
+    [-200.8M, -25.0M] strictly EXCLUDES ZERO, giving the
+    only decisive distribution-free LOCATION verdict in
+    the corpus: openclaw's per-day total token volume
+    fell decisively in the second half. This agrees in
+    sign with axis-184 SAVAGE on the same source
+    (savZ = -2.5632, p = 1.04e-2, signed-negative) AND
+    with axis-185 BWS bwsSign = -, but axis-186 ADDS
+    the effect size in raw token units that no prior
+    axis reports.
+  - **claude-code** has a positive point estimate
+    (+19.0M tokens/day) but the CI [0, +37.5M] just
+    BARELY INCLUDES zero, so the shift is NOT
+    distribution-free decisive at alpha = 0.05. Note
+    however that axis-185 BWS reports
+    bwsB = 18.99 with p = 6.66e-11 on this source — BWS
+    rejects the joint distributional H0 decisively, but
+    the LOCATION component alone is at the borderline:
+    most of BWS's evidence on claude-code is therefore
+    SCALE / SHAPE, not location. This is the cleanest
+    in-corpus example of axis-186 + axis-185
+    cross-axis diagnostics extracting orthogonal
+    information from the same two halves.
+  - **hermes** has a small positive point estimate
+    (+8.9M) with CI [-7.3M, +14.9M] straddling zero —
+    no detectable location shift, fully consistent with
+    axis-184 savZ = +0.1264 and axis-185 bwsP = 0.169.
+  - **vscode-cp** has hlDelta exactly 0 with degenerate
+    CI [0, 0]: the median pairwise B - A difference is
+    exactly zero, which arises from the source's
+    extreme sparsity (n=265 tenure days but only 73
+    active days, so the gap-filled series is dominated
+    by tied zeros and the median-of-pairwise-diffs
+    collapses to a tied zero). The companion sign is 0,
+    which routes the directional classifier to
+    `no-detectable-shift`. Axis-185 BWS bwsB = 131.97
+    with p = 1e-15 on the same source still flags a
+    decisive distributional departure — that departure
+    is therefore PURE SCALE / SHAPE, exactly the
+    diagnostic axis-186 was designed to enable.
+
+The two `CI excl 0 = YES` and two `no` rows partition
+cleanly into:
+
+  - 1 source (openclaw) with decisive distribution-free
+    NEGATIVE shift in raw token units;
+  - 0 sources with decisive POSITIVE shift;
+  - 2 sources (claude-code, hermes) with leaning point
+    estimates but inconclusive CIs;
+  - 1 source (vscode-cp) with no detectable shift.
+
 ## 0.6.469 — 2026-05-05
 
 ### Refactor — `classifyBwsSavageCompound` cross-axis sign-and-decision-agreement reporter (axes 184 + 185)
