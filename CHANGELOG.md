@@ -2,6 +2,216 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.453 — 2026-05-04
+
+### Added — axis-176 daily-token-brunner-munzel-halves (generalised-Wilcoxon Behrens-Fisher) + Stouffer signed corpus aggregator
+
+Per-source Brunner-Munzel (2000 *Biometrical Journal*
+42:17-25) GENERALISED-WILCOXON NONPARAMETRIC BEHRENS-
+FISHER test for stochastic equality between the first
+half (n1 = floor(n/2) days) vs second half (n2 = n - n1
+days) of the gap-filled daily total_tokens series.
+
+ONE-HUNDRED-AND-SEVENTY-SIXTH cross-source axis.
+
+Targets the relative-effect functional
+
+```
+p = P(X < Y) + (1/2) P(X = Y)
+```
+
+WITHOUT the equal-CDF assumption Mann-Whitney makes
+(under H0, p = 1/2). Uses pooled mid-ranks AND within-
+sample mid-ranks to form placement-variance estimators
+(Brunner-Munzel eq. 2.4)
+
+```
+S_A^2 = (1/(n1 - 1)) sum_{i in A}
+          (R_i - R^A_i - Rbar_A + (n1+1)/2)^2
+S_B^2 = (1/(n2 - 1)) sum_{j in B}
+          (R_j - R^B_j - Rbar_B + (n2+1)/2)^2
+```
+
+Statistic
+
+```
+bmRelative = (Rbar_B - (n2+1)/2) / n1     (~ p)
+bmW        = (Rbar_B - Rbar_A) /
+                ( n * sqrt(S_A^2/n1 + S_B^2/n2) )
+bmDof      = (S_A^2/n1 + S_B^2/n2)^2 /
+             ( (S_A^2/n1)^2/(n1-1) +
+               (S_B^2/n2)^2/(n2-1) )       (Welch-
+                                            Satterthwaite)
+bmPValue   = 2 * (1 - F_t(|bmW|; bmDof))   (two-sided)
+```
+
+Two-sided Student-t p-value computed via the regularised
+incomplete beta function I_x(a,b) with a Lentz
+continued-fraction implementation; max relative error
+~1e-12. Sign convention: bmW > 0 <=> Rbar_B > Rbar_A
+<=> bmRelative > 0.5 <=> SECOND half stochastically
+larger (matches axis-115 mwZ and axis-175 lepLocZ for
+direct cross-axis aggregation).
+
+**Structural orthogonality** vs the existing halves-split
+axes:
+
+- vs **axis-115 Mann-Whitney** (Wilcoxon-Mann-Whitney):
+  WMW assumes equal underlying CDFs under H0 and uses
+  the closed-form null variance n1 n2 (n + 1)/12 (with
+  tie correction). Brunner-Munzel uses sample-specific
+  placement variances S_A^2 and S_B^2 which are
+  consistent for the true variance of p under any pair
+  of underlying CDFs. The two tests COINCIDE when
+  F_A == F_B under H0; they DIFFER (sometimes
+  dramatically) when the two halves have DIFFERENT
+  dispersions under the null hypothesis of stochastic
+  equality (the Behrens-Fisher problem for ranks).
+- vs **axes 117/170 Siegel-Tukey/Ansari-Bradley** (pure
+  scale tests): BM is a stochastic-ordering test, near-
+  zero under pure-scale shift with equal medians.
+- vs **axes 174/175 Cucconi/Lepage** (joint chi-2(2)
+  location-scale): both rely on the rank-sum null
+  variance n1 n2 (n+1)/12 that BM rejects. Under
+  heteroscedastic alternatives BM has correct
+  asymptotic SIZE while Cucconi/Lepage drift (Brunner-
+  Munzel 2000 Tab. 1: WMW 0.075-0.090 vs nominal 0.05;
+  BM 0.048-0.052).
+- vs **axis-171 Mood's-median**: Mood is invariant to any
+  monotone transform of the data; BM uses the full
+  pooled mid-rank vector and is much more powerful for
+  stochastic-ordering alternatives that don't
+  concentrate at the median.
+- vs **the cumulative-periodogram axes** (167-169, 172-
+  173): frequency-domain whole-series tests; this is a
+  time-domain two-sample halves test on a fixed midpoint
+  split.
+
+Hard floor on min-tenure-days is **16** (n1 = n2 = 8) so
+each within-sample placement variance has at least 7
+residual dof and the Welch-Satterthwaite t-reference
+holds nominal alpha (Brunner-Munzel 2000 sec. 4
+simulation: actual size 0.043-0.052 across n1 = n2 in
+[8, 50]).
+
+#### Refinement: Stouffer (1949) SIGNED corpus aggregator
+
+Public helper exposed from the axis-176 module:
+
+**`aggregateBrunnerMunzelHalves(rows)`** — combines per-
+source SIGNED bmW statistics:
+
+```
+signedZ_i = sign(bmW_i) * inv-Phi-upper(bmPValue_i / 2)
+stoufferZ = sum_i signedZ_i / sqrt(m)
+stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+```
+
+Why Stouffer (this axis): bmW is intrinsically SIGNED
+(positive = second half stochastically larger). The
+Lancaster/Satterthwaite aggregator used for axis-175
+Lepage (v0.6.452) targets UNSIGNED chi-2(2) p-values
+via Fisher's combined-p; that's the right answer for an
+unsigned upper-tail test, the WRONG answer for a signed
+directional statistic where positive and negative
+evidence can CANCEL. Stouffer preserves the sign and
+answers "is the corpus-level direction of stochastic
+shift consistent and significant", which is the correct
+meta-analytic question for axis-176.
+
+**Why this is structurally different from the v0.6.452
+Lancaster aggregator**: that one assumes per-source
+p-values are intrinsically UPPER-TAIL (chi-2(2) survival
+from a sum-of-squares); Stouffer assumes per-source
+statistics are SIGNED with two-sided p-values that MUST
+be split via the inverse-Phi transform to recover the
+underlying signed z. The two aggregators answer
+DIFFERENT questions and CANNOT be substituted for each
+other.
+
+Plumbing helpers (all exported, all tested):
+`standardNormalUpperTailBM` (Abramowitz-Stegun 1965
+sec. 26.2.17 rational approximation, max rel err ~7.5e-8)
+and `inverseStandardNormalUpperTailBM` (Acklam 2003
+rational approximation, Beasley-Springer-Moro 1977 +
+Moro 1995 tail correction, max rel err ~1e-9).
+
+#### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+Per-source Brunner-Munzel test, all 4 sources passing
+the 16-day tenure floor (2 dropped below):
+
+```
+source           tenure  n1   n2   bmRelative   bmW       bmDof     bmPValue
+openclaw         18      9    9    0.0617       -0.8659   12.37     4.030e-1
+claude-code      72      36   36   0.7369       +0.1164   48.27     9.078e-1
+hermes           18      9    9    0.6420       +0.1021   13.49     9.201e-1
+vscode-copilot   265     132  133  0.4417       -0.0158   257.68    9.874e-1
+```
+
+Stouffer SIGNED corpus aggregate:
+
+```
+stoufferZ                       = -0.3180
+stoufferTwoSidedPValue          =  7.505e-1
+meanBmW                         = -0.1658
+tenureWeightedMeanBmRelative    =  0.4900
+rowsUsed                        =  4
+rowsSkipped                     =  0
+```
+
+Interpretation: NO source individually rejects H0 of
+stochastic equality at alpha = 0.05 (smallest bmPValue =
+0.40 for openclaw, where the first half has mostly-
+larger ranks but the small n1 = n2 = 9 keeps the
+Welch-Satterthwaite t-reference well above 0.05). The
+corpus-level Stouffer Z = -0.318 (p = 0.75) confirms NO
+directional consensus across sources — the per-source
+signs (-, +, +, -) and the tenure-weighted mean
+relative effect of 0.490 (essentially 0.5) jointly
+indicate the corpus is in the EQUAL-DISTRIBUTION
+regime as far as a Behrens-Fisher-robust ranks test
+can tell. Notable contrast with the axis-175 Lepage
+v0.6.452 result on the same corpus (Lancaster
+weightedCombinedPValue = 2.21e-96): Lepage's UNSIGNED
+joint location-scale rejection is dominated by
+per-source SCALE differences (lepZAB) which BM is
+intentionally insensitive to. The two axes answer
+COMPLEMENTARY questions: axis-175 says "the halves
+DIFFER somehow"; axis-176 says "but not in stochastic
+ORDERING with equal dispersions accounted for".
+
+#### Test coverage
+
+54 new tests (13121 -> 13175 corpus):
+- midRanksBM (4): monotonic and tie cases
+- lanczosLogGammaBM (4): identity values, rejection
+- regularisedIncompleteBetaBM (5): boundaries, uniform,
+  symmetry I_x(a,b) + I_{1-x}(b,a) = 1, rejection
+- studentTTwoSidedBM (5): t=0 identity, t(10) critical
+  match to 5e-4, normal limit, monotonicity, rejection
+- dailyTokenBrunnerMunzelHalves core (10): n<16
+  rejection, non-finite/zero-variance rejection,
+  shift+positive-scale invariance to 1e-12, sign
+  convention (both directions), shape invariants,
+  identical-halves identity (bmRelative === 0.5,
+  bmW === 0)
+- buildDailyTokenBrunnerMunzelHalves (13): empty,
+  drop below min-tenure / sparse / zero-variance,
+  produce row, rejection of bad min-tenure / sort,
+  sort by tokens desc, top cap, source filter,
+  drop invalid hour_start / non-positive tokens,
+  since/until window
+- standardNormalUpperTailBM (4): identity, percentile
+  match, sign symmetry, rejection
+- inverseStandardNormalUpperTailBM (4): identity,
+  percentile match, round-trip across 7 percentiles,
+  rejection
+- aggregateBrunnerMunzelHalves (6): empty identity,
+  skip-malformed (6 malformations), all-positive
+  consensus, sign cancellation, tenure-weighting on
+  relative, single-row sanity
+
 ## 0.6.452 — 2026-05-04
 
 ### Refined — axis-175 tenure-weighted corpus aggregator (Lancaster / Satterthwaite)
