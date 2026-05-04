@@ -193,6 +193,7 @@ import {
   renderDailyTokenFisherGPeriodicity,
   renderDailyTokenBartlettCumulativePeriodogram,
   renderDailyTokenCramerVonMisesCumulativePeriodogram,
+  renderDailyTokenAndersonDarlingCumulativePeriodogram,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -519,6 +520,10 @@ import {
   buildDailyTokenCramerVonMisesCumulativePeriodogram,
   type DailyTokenCramerVonMisesCumulativePeriodogramSort,
 } from './dailytokencramervonmisescumulativeperiodogram.js';
+import {
+  buildDailyTokenAndersonDarlingCumulativePeriodogram,
+  type DailyTokenAndersonDarlingCumulativePeriodogramSort,
+} from './dailytokenandersondarlingcumulativeperiodogram.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42887,6 +42892,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCramerVonMisesCumulativePeriodogram(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-anderson-darling-cumulative-periodogram')
+  .description(
+    "Per-source ANDERSON-DARLING CUMULATIVE PERIODOGRAM TEST (axis-169): the TAIL-WEIGHTED L^2 goodness-of-fit test for white-noise on the gap-filled mean-centred daily total_tokens series. C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]); adA2 = (1/(K-1)) sum_{j=1..K-1} (C[j] - j/K)^2 / ((j/K)*(1-j/K)); adAStar = (K-1) * adA2; adPValue = Marsaglia-Marsaglia (2004) JSS rational/series approximation. Third member of the EDF trio (KS axis-167 / CvM axis-168 / AD axis-169) on the cumulative periodogram domain. SAME statistic domain as axis-167 Bartlett (sup-norm L^infty) and axis-168 CvM (uniform L^2), DIFFERENT WEIGHT (1/[F(1-F)] tail emphasis growing as ~K at j=1 and j=K-1). Deviation concentrated at j=1 (DC) or j=K-1 (Nyquist) yields LARGE adAStar but MODEST cvmW2; deviation concentrated mid-band yields LARGE cvmW2 but MODEST adAStar -- the textbook uniform-L^2 vs tail-weighted-L^2 power complement (Stephens 1974 JASA 69(347) Table 3). Companion adWeightedSignedMean tells direction (positive -> low-frequency tail overshoot; negative -> high-frequency tail overshoot). Refs: Anderson & Darling 1952 Annals Math. Stat. 23(2); Anderson & Darling 1954 JASA 49(268); Stephens 1974 JASA 69(347); Marsaglia & Marsaglia 2004 JSS 9(2); Brockwell & Davis 1991 §10.2.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8. Default 32.',
+    '32',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: adPValue (default; most-significant first) | adPValueDesc | adAStar | adAStarDesc | adA2 | adA2Desc | tokens | tenure | source.',
+    'adPValue',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'adA2',
+          'adA2Desc',
+          'adAStar',
+          'adAStarDesc',
+          'adPValue',
+          'adPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAndersonDarlingCumulativePeriodogram(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenAndersonDarlingCumulativePeriodogramSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenAndersonDarlingCumulativePeriodogram(report) + '\n',
           );
         }
       } catch (e) {

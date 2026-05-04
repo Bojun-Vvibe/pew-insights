@@ -20587,6 +20587,7 @@ import type { DailyTokenHoeffdingDLag1Report } from './dailytokenhoeffdingdlag1.
 import type { DailyTokenFisherGPeriodicityReport } from './dailytokenfishergperiodicity.js';
 import type { DailyTokenBartlettCumulativePeriodogramReport } from './dailytokenbartlettcumulativeperiodogram.js';
 import type { DailyTokenCramerVonMisesCumulativePeriodogramReport } from './dailytokencramervonmisescumulativeperiodogram.js';
+import type { DailyTokenAndersonDarlingCumulativePeriodogramReport } from './dailytokenandersondarlingcumulativeperiodogram.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -26215,6 +26216,91 @@ export function renderDailyTokenCramerVonMisesCumulativePeriodogram(
   lines.push(
     chalk.dim(
       `(reference anchor: cvmW2 near 0 = C[j] tracks j/K everywhere on average = white-noise-compatible (cvmPValue near 1); cvmW2 large = cumulative spectrum biased AWAY from uniform over a SUSTAINED range of j (cvmPValue near 0); cvmPValue < 0.05 = REJECT white-noise at 5%. devMean > 0 indicates LOW-FREQUENCY mass overshoots uniform; devMean < 0 indicates HIGH-FREQUENCY mass overshoots. ORTHOGONALITY vs axis-167: a single-bin spike makes Bartlett-bD large but CvM-W^2 modest; a sustained mild bias makes Bartlett-bD modest but CvM-W^2 large.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenAndersonDarlingCumulativePeriodogram(
+  r: DailyTokenAndersonDarlingCumulativePeriodogramReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-anderson-darling-cumulative-periodogram',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ANDERSON-DARLING CUMULATIVE PERIODOGRAM TEST -- the TAIL-WEIGHTED L^2 goodness-of-fit test for white-noise on the gap-filled mean-centred daily total_tokens series. adA2 = (1/(K-1)) sum_{j=1..K-1} (C[j] - j/K)^2 / ((j/K)*(1-j/K)); adAStar = (K-1) * adA2; adPValue = Marsaglia-Marsaglia (2004) JSS rational/series approximation. ONE-HUNDRED-AND-SIXTY-NINTH cross-source axis. Third member of the EDF trio (KS / CvM / AD) on the cumulative periodogram domain. SAME statistic domain as axis-167 Bartlett (sup-norm) and axis-168 CvM (uniform L^2), DIFFERENT WEIGHT (1/[F(1-F)] tail emphasis). Deviation concentrated at j=1 (DC) or j=K-1 (Nyquist) drives adAStar large but cvmW2 modest; deviation concentrated mid-band drives cvmW2 large but adAStar modest. Companion adWeightedSignedMean tells direction (positive -> low-freq tail overshoot; negative -> high-freq tail overshoot). References: Anderson & Darling 1952 Annals Math. Stat. 23(2); Anderson & Darling 1954 JASA 49(268); Stephens 1974 JASA 69(347); Marsaglia & Marsaglia 2004 JSS 9(2); Brockwell & Davis 1991 §10.2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source ANDERSON-DARLING CUMULATIVE PERIODOGRAM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'adA2',
+    'adAStar',
+    'adPValue',
+    'wDevMean',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    s.adA2.toFixed(6),
+    s.adAStar.toFixed(6),
+    s.adPValue.toExponential(4),
+    s.adWeightedSignedMean.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: adAStar near 0 = C[j] tracks j/K with the tails very tightly tracked = white-noise-compatible (adPValue near 1); adAStar large = cumulative spectrum biased away from uniform MOST in the tails (near DC or near Nyquist) (adPValue near 0); adPValue < 0.05 = REJECT white-noise at 5%. wDevMean > 0 indicates LOW-FREQUENCY tail overshoot; wDevMean < 0 indicates HIGH-FREQUENCY tail overshoot. ORTHOGONALITY vs axis-168: deviation at j=1 or j=K-1 drives adAStar large but cvmW2 modest; deviation mid-band drives cvmW2 large but adAStar modest. ORTHOGONALITY vs axis-167: a single-bin spike drives Bartlett-bD large but adAStar feels it only in proportion to the spike's bin-position weight.)`,
     ),
   );
 
