@@ -5328,6 +5328,85 @@ export function renderDailyTokenAllanDeviation(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenHampelOutlierCount(
+  r: import('./dailytokenhampeloutliercount.js').DailyTokenHampelOutlierCountReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-hampel-outlier-count'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    k: ${r.k}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(robust outlier = day x with |x - median| > k * 1.4826 * MAD on the gap-filled per-source daily total_tokens series; flat=y means MAD=0 i.e. constant majority of days)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source hampel outliers (sorted by ${r.sort} desc)`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'median',
+    'MAD',
+    'sigmaHat',
+    'lo',
+    'hi',
+    'nHigh',
+    'nLow',
+    'nOut',
+    'frac',
+    'maxScore',
+    'argMaxDay',
+    'flat',
+    'first',
+    'last',
+  ];
+  const rowsR: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.median.toFixed(1),
+    s.mad.toFixed(1),
+    s.sigmaHat.toFixed(1),
+    s.loThreshold.toFixed(1),
+    s.hiThreshold.toFixed(1),
+    formatNumber(s.nHigh),
+    formatNumber(s.nLow),
+    formatNumber(s.nOut),
+    s.outFraction.toFixed(3),
+    s.flat ? '-' : s.maxScore.toFixed(3),
+    s.argMaxScoreDay ?? '-',
+    s.flat ? 'y' : 'n',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
 export function renderDailyTokenZscoreExtremes(
   r: import('./dailytokenzscoreextremes.js').DailyTokenZscoreExtremesReport,
 ): string {

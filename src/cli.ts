@@ -71,6 +71,7 @@ import {
   renderRollingBucketCv,
   renderDailyTokenAutocorrelationLag1,
   renderDailyTokenAllanDeviation,
+  renderDailyTokenHampelOutlierCount,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -437,6 +438,7 @@ import { buildCostPerBucketPercentiles } from './costperbucketpercentiles.js';
 import { buildRollingBucketCv } from './rollingbucketcv.js';
 import { buildDailyTokenAutocorrelationLag1 } from './dailytokenautocorrelationlag1.js';
 import { buildDailyTokenAllanDeviation } from './dailytokenallandeviation.js';
+import { buildDailyTokenHampelOutlierCount } from './dailytokenhampeloutliercount.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -6799,6 +6801,89 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenAllanDeviation(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-hampel-outlier-count')
+  .description(
+    "Per-source robust outlier count on the gap-filled daily total_tokens series (axis-152). For each source, compute median, MAD, sigmaHat = 1.4826 * MAD, then count days with |x - median| > k * sigmaHat (default k=3). Surfaces (median, MAD, sigmaHat, lo, hi, nHigh, nLow, nOut, outFraction, maxScore, argMaxScoreDay). Structurally orthogonal to daily-token-zscore-extremes (mean+stddev based, NON-robust: a single huge spike inflates the threshold around itself; Hampel uses median+MAD with 50% breakdown), to daily-token-allan-deviation (first-difference RMS, ORDER-DEPENDENT; Hampel is order-INVARIANT), to daily-token-mad-over-median (continuous dispersion ratio, no threshold), to all gini/atkinson/theil/zenga/pietra/palma/hoover/bonferroni/etc. (continuous inequality scalars, not breach counts), to spectral/entropy/fractal classes (different domain), and to runs / sign / monotone / drawdown classes (sign or path statistics).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--k <n>',
+    'Hampel multiplier on 1.4826*MAD; default 3.0 (canonical 3-sigma-equivalent robust threshold). Must be > 0.',
+    '3.0',
+  )
+  .option(
+    '--min-days <n>',
+    'hide source rows with gap-filled tenure shorter than n days (default 3, must be >= 3); counts surface as droppedSparseSources',
+    '3',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens | nout | frac | maxscore | ndays (default tokens). Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        k: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const k = Number.parseFloat(opts.k);
+        if (!Number.isFinite(k) || k <= 0) {
+          throw new Error(`--k must be a finite positive number (got ${opts.k})`);
+        }
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 3) {
+          throw new Error(`--min-days must be an integer >= 3 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sort = opts.sort as 'tokens' | 'nout' | 'frac' | 'maxscore' | 'ndays';
+        if (!['tokens', 'nout', 'frac', 'maxscore', 'ndays'].includes(sort)) {
+          throw new Error(`--sort must be one of tokens|nout|frac|maxscore|ndays (got ${opts.sort})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHampelOutlierCount(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          k,
+          minDays,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHampelOutlierCount(report) + '\n');
         }
       } catch (e) {
         die(e);
