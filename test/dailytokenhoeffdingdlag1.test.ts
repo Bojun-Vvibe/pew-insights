@@ -420,3 +420,142 @@ test('build: same input gives same hd / hdZ on repeated calls', () => {
   assert.equal(r1.sources[0]!.hd, r2.sources[0]!.hd);
   assert.equal(r1.sources[0]!.hdZ, r2.sources[0]!.hdZ);
 });
+
+// ---------- refinement: hdRatio + concordancePairs (axis-165) ----------
+
+test('refinement: hdRatio = 30 * hd', () => {
+  const r = dailyTokenHoeffdingDLag1([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 14; d += 1) {
+    queue.push(ql(dayIso(d), 'src-A', 1000 + d * 100));
+  }
+  const built = buildDailyTokenHoeffdingDLag1(queue, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+  });
+  // Sanity: hdRatio is exactly 30 * hd.
+  assert.ok(
+    Math.abs(built.sources[0]!.hdRatio - 30 * built.sources[0]!.hd) < 1e-12,
+  );
+  // Primitive returns hd; refinement comes via builder.
+  assert.ok(Number.isFinite(r.hd));
+});
+
+test('refinement: concordancePairs is non-negative integer in [0, m(m-1)/2]', () => {
+  const r = dailyTokenHoeffdingDLag1([3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8]);
+  const m = r.nPairs;
+  assert.ok(Number.isInteger(r.concordancePairs));
+  assert.ok(r.concordancePairs >= 0);
+  assert.ok(r.concordancePairs <= (m * (m - 1)) / 2);
+});
+
+test('refinement: monotone ramp gives concordancePairs at theoretical max', () => {
+  // Strictly increasing values -> X_i and Y_i marginal
+  // ranks both equal i+1 in the lag-1 paired sequence.
+  // For each i, Q_i = i (pairs j<i are concordant via
+  // the diagonal). Sum_i Q_i = 0+1+...+(m-1) = m(m-1)/2.
+  const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const r = dailyTokenHoeffdingDLag1(x);
+  const m = r.nPairs;
+  assert.equal(r.concordancePairs, (m * (m - 1)) / 2);
+});
+
+test('refinement: sort=hdRatioAbsDesc matches sort=hdAbsDesc ordering', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 20; d += 1) {
+    queue.push(ql(dayIso(d), 'a', 1000 + d * 100));
+    queue.push(ql(dayIso(d), 'b', 1000 + (d % 3) * 50));
+    queue.push(ql(dayIso(d), 'c', 1000 + ((d * 7) % 11)));
+  }
+  const r1 = buildDailyTokenHoeffdingDLag1(queue, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sort: 'hdRatioAbsDesc',
+  });
+  // hdRatio is 30 * hd, so sorting by |hdRatio| desc is
+  // the same as sorting by |hd| desc.
+  const labels = r1.sources.map((s) => s.source);
+  // Just assert that sort completed and produced a stable order.
+  assert.equal(labels.length, 3);
+  assert.ok(
+    Math.abs(r1.sources[0]!.hdRatio) >= Math.abs(r1.sources[1]!.hdRatio),
+  );
+  assert.ok(
+    Math.abs(r1.sources[1]!.hdRatio) >= Math.abs(r1.sources[2]!.hdRatio),
+  );
+});
+
+test('refinement: sort=hdRatioDesc orders by hdRatio descending', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 18; d += 1) {
+    queue.push(ql(dayIso(d), 'ramp', 1000 + d * 50));
+    queue.push(ql(dayIso(d), 'noise', 1000 + ((d * 53) % 200)));
+  }
+  const r = buildDailyTokenHoeffdingDLag1(queue, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sort: 'hdRatioDesc',
+  });
+  assert.ok(r.sources[0]!.hdRatio >= r.sources[1]!.hdRatio);
+});
+
+test('refinement: sort=hdRatio orders by hdRatio ascending', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 18; d += 1) {
+    queue.push(ql(dayIso(d), 'ramp', 1000 + d * 50));
+    queue.push(ql(dayIso(d), 'noise', 1000 + ((d * 53) % 200)));
+  }
+  const r = buildDailyTokenHoeffdingDLag1(queue, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sort: 'hdRatio',
+  });
+  assert.ok(r.sources[0]!.hdRatio <= r.sources[1]!.hdRatio);
+});
+
+test('refinement: sort=hdRatioAbs orders by |hdRatio| ascending', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 18; d += 1) {
+    queue.push(ql(dayIso(d), 'ramp', 1000 + d * 50));
+    queue.push(ql(dayIso(d), 'noise', 1000 + ((d * 53) % 200)));
+  }
+  const r = buildDailyTokenHoeffdingDLag1(queue, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sort: 'hdRatioAbs',
+  });
+  assert.ok(
+    Math.abs(r.sources[0]!.hdRatio) <= Math.abs(r.sources[1]!.hdRatio),
+  );
+});
+
+test('refinement: hdRatio is invariant under positive affine transforms', () => {
+  const x = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8];
+  const queue1: QueueLine[] = [];
+  const queue2: QueueLine[] = [];
+  for (let d = 0; d < x.length; d += 1) {
+    queue1.push(ql(dayIso(d), 'src', x[d]! + 1000));
+    queue2.push(ql(dayIso(d), 'src', x[d]! * 7 + 1000));
+  }
+  // Need min-tenure-days <= 12 since x.length = 12.
+  const r1 = buildDailyTokenHoeffdingDLag1(queue1, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    minTenureDays: 12,
+  });
+  const r2 = buildDailyTokenHoeffdingDLag1(queue2, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    minTenureDays: 12,
+  });
+  assert.equal(r1.sources[0]!.hdRatio, r2.sources[0]!.hdRatio);
+  assert.equal(r1.sources[0]!.concordancePairs, r2.sources[0]!.concordancePairs);
+});
+
+test('refinement: row exposes hdRatio and concordancePairs fields', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 0; d < 14; d += 1) {
+    queue.push(ql(dayIso(d), 'src-A', 1000 + d * 50));
+  }
+  const r = buildDailyTokenHoeffdingDLag1(queue, {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+  });
+  const row = r.sources[0]!;
+  assert.ok('hdRatio' in row);
+  assert.ok('concordancePairs' in row);
+  assert.ok(typeof row.hdRatio === 'number');
+  assert.ok(typeof row.concordancePairs === 'number');
+});

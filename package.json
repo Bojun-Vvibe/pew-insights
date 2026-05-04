@@ -1,6 +1,6 @@
 {
   "name": "pew-insights",
-  "version": "0.6.432",
+  "version": "0.6.433",
   "description": "Local-first reports and analytics for your `pew` CLI usage.",
   "license": "MIT",
   "author": "Bojun-Vvibe",

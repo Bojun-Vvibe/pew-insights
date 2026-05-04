@@ -253,6 +253,10 @@ export type DailyTokenHoeffdingDLag1Sort =
   | 'hdZAbsDesc'
   | 'hd'
   | 'hdDesc'
+  | 'hdRatio'
+  | 'hdRatioDesc'
+  | 'hdRatioAbs'
+  | 'hdRatioAbsDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -291,6 +295,37 @@ export interface DailyTokenHoeffdingDLag1SourceRow {
   varHd: number;
   /** Standardised score D / sqrt(Var[D]). */
   hdZ: number;
+  /**
+   * Scale-free shape descriptor hd / (1/30) = 30*hd
+   * (refinement, axis-165). Unitless and bounded
+   * approximately in [-0.5, +1.0]:
+   *   approx 0   independence (matches hdZ approx 0)
+   *   approx +1  joint distribution at theoretical
+   *              maximum monotone-or-otherwise
+   *              concentration (matches hdZ at its
+   *              positive extreme for given m)
+   *   approx -0.5 anti-corner concentration (rare)
+   * Complementary to hdZ: hdZ measures the
+   * STATISTICAL STRENGTH of the departure (weights by
+   * sqrt(m^3)); hdRatio measures the SCALE of the
+   * departure in raw U-statistic units, independent
+   * of m.
+   */
+  hdRatio: number;
+  /**
+   * Concordant-pair count: total sum_i Q_i over the
+   * lag-1 paired sequence (refinement, axis-165).
+   * Each Q_i counts the number of strictly less-than
+   * (in BOTH coordinates) lag-1 pairs. Range: [0,
+   * m*(m-1)/2]. Under independence the expected
+   * value is approximately m*(m-1)/4 (each unordered
+   * pair is concordant with probability 1/2). Useful
+   * raw companion to hd: large concordancePairs
+   * relative to m*(m-1)/4 indicates positive
+   * monotone tendency in addition to whatever
+   * non-monotone structure hd may be picking up.
+   */
+  concordancePairs: number;
   /**
    * Tie correction: number of distinct values in the
    * lag-1-paired first-coordinate marginal divided by
@@ -372,6 +407,7 @@ export function dailyTokenHoeffdingDLag1(values: number[]): {
   varHd: number;
   hdZ: number;
   tieFraction: number;
+  concordancePairs: number;
 } {
   const n = values.length;
   if (n < 6) {
@@ -436,6 +472,7 @@ export function dailyTokenHoeffdingDLag1(values: number[]): {
       varHd: varHdDeg > 0 ? varHdDeg : Number.POSITIVE_INFINITY,
       hdZ: 0,
       tieFraction,
+      concordancePairs: 0,
     };
   }
 
@@ -508,6 +545,7 @@ export function dailyTokenHoeffdingDLag1(values: number[]): {
     varHd,
     hdZ,
     tieFraction,
+    concordancePairs: Q.reduce((a, b) => a + b, 0),
   };
 }
 
@@ -550,6 +588,10 @@ export function buildDailyTokenHoeffdingDLag1(
     'hdZAbsDesc',
     'hd',
     'hdDesc',
+    'hdRatio',
+    'hdRatioDesc',
+    'hdRatioAbs',
+    'hdRatioAbsDesc',
     'tokens',
     'tenure',
     'source',
@@ -672,6 +714,8 @@ export function buildDailyTokenHoeffdingDLag1(
       hd: result.hd,
       varHd: result.varHd,
       hdZ: result.hdZ,
+      hdRatio: result.hd * 30,
+      concordancePairs: result.concordancePairs,
       tieFraction: result.tieFraction,
       verdict: classifyHoeffdingDLag1(result.hdZ),
     });
@@ -698,6 +742,18 @@ export function buildDailyTokenHoeffdingDLag1(
         break;
       case 'hdDesc':
         primary = b.hd - a.hd;
+        break;
+      case 'hdRatio':
+        primary = a.hdRatio - b.hdRatio;
+        break;
+      case 'hdRatioDesc':
+        primary = b.hdRatio - a.hdRatio;
+        break;
+      case 'hdRatioAbs':
+        primary = Math.abs(a.hdRatio) - Math.abs(b.hdRatio);
+        break;
+      case 'hdRatioAbsDesc':
+        primary = Math.abs(b.hdRatio) - Math.abs(a.hdRatio);
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;

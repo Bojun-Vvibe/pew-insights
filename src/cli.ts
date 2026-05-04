@@ -42490,7 +42490,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: hdZAbsDesc (default) | hdZAbs | hdZ | hdZDesc | hd | hdDesc | tokens | tenure | source.',
+    'sort key: hdZAbsDesc (default) | hdZAbs | hdZ | hdZDesc | hd | hdDesc | hdRatio | hdRatioDesc | hdRatioAbs | hdRatioAbsDesc | tokens | tenure | source.',
     'hdZAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -42534,6 +42534,10 @@ program
           'hdZAbsDesc',
           'hd',
           'hdDesc',
+          'hdRatio',
+          'hdRatioDesc',
+          'hdRatioAbs',
+          'hdRatioAbsDesc',
           'tokens',
           'tenure',
           'source',
