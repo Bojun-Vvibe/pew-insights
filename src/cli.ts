@@ -187,6 +187,7 @@ import {
   renderDailyTokenBds,
   renderDailyTokenJarqueBera,
   renderDailyTokenDurbinWatsonDetrended,
+  renderDailyTokenRunsTestDetrended,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -489,6 +490,10 @@ import {
   buildDailyTokenDurbinWatsonDetrended,
   type DailyTokenDurbinWatsonDetrendedSort,
 } from './dailytokendurbinwatsondetrended.js';
+import {
+  buildDailyTokenRunsTestDetrended,
+  type DailyTokenRunsTestDetrendedSort,
+} from './dailytokenrunstestdetrended.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42232,6 +42237,108 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenDurbinWatsonDetrended(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-runs-test-detrended')
+  .description(
+    "Per-source WALD-WOLFOWITZ RUNS-TEST Z-STATISTIC computed on the SIGN sequence of the OLS-DETRENDED residuals of gap-filled daily total_tokens (axis-163). Fits x_t = a + b*t by OLS, takes s_t = sign(e_t) (drops e_t == 0), counts maximal runs R, then rtZ = (R - mu_R)/sqrt(var_R) where mu_R = 2 n_+ n_-/n + 1, var_R = 2 n_+ n_- (2 n_+ n_- - n)/(n^2 (n-1)) (Wald & Wolfowitz 1940 Annals of Mathematical Statistics 11(2):147-162). rtZ approx N(0,1) under iid sign null. Operates on the SIGN of OLS-DETRENDED residuals -- structurally orthogonal to axis-149 daily-token-runs-test-z (raw-series above/below median: a monotone trend gives axis-149 rtZ approx -sqrt(n) but THIS axis rtZ approx 0), to axis-162 DW (continuous L^2 quadratic-form on residual magnitudes vs. this discrete L^0 sign-only nonparametric: blind to magnitude), to all RAW-SERIES serial-correlation / stationarity / changepoint axes, and to axis-161 Jarque-Bera. Verdict cutoffs: strong-clustering <= -2.576, borderline-clustering in (-2.576, -1.645], independent in (-1.645, +1.645), borderline-anti-clustering in [+1.645, +2.576), strong-anti-clustering >= +2.576.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: rtZAbsDesc (default) | rtZAbs | rtZ | rtZDesc | runs | runsDesc | tokens | tenure | source.',
+    'rtZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'rtZ',
+          'rtZDesc',
+          'rtZAbs',
+          'rtZAbsDesc',
+          'runs',
+          'runsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenRunsTestDetrended(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenRunsTestDetrendedSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenRunsTestDetrended(report) + '\n');
         }
       } catch (e) {
         die(e);

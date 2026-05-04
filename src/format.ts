@@ -20581,6 +20581,7 @@ import type { DailyTokenMcLeodLiReport } from './dailytokenmcleodli.js';
 import type { DailyTokenBdsReport } from './dailytokenbds.js';
 import type { DailyTokenJarqueBeraReport } from './dailytokenjarquebera.js';
 import type { DailyTokenDurbinWatsonDetrendedReport } from './dailytokendurbinwatsondetrended.js';
+import type { DailyTokenRunsTestDetrendedReport } from './dailytokenrunstestdetrended.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25697,6 +25698,93 @@ export function renderDailyTokenDurbinWatsonDetrended(
   lines.push(
     chalk.dim(
       `(reference anchor: dw approx 2 = residuals serially independent (white noise around fitted linear trend); dw < 2 = positive residual lag-1 autocorrelation; dw > 2 = negative; dwZ = (dw - 2)*sqrt(n)/2 is asymptotically N(0, 1). The test is BLIND TO HIGHER-ORDER STRUCTURE -- compose with axis-114 Ljung-Box on the raw series for lag-q portmanteau coverage. DW assumes the trend is correctly specified as LINEAR-IN-T; non-linear curvature in x_t will leak into the residuals and DW will misattribute it to AR(1).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenRunsTestDetrended(
+  r: DailyTokenRunsTestDetrendedReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-runs-test-detrended'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroResidualVariance)} zero-residual-variance, ${formatNumber(r.droppedDegenerateSign)} degenerate-sign, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WALD-WOLFOWITZ RUNS-TEST Z-STATISTIC on the SIGN sequence of the OLS-DETRENDED residuals of gap-filled daily total_tokens. ONE-HUNDRED-AND-SIXTY-THIRD cross-source axis. Wald & Wolfowitz 1940 Annals of Mathematical Statistics 11(2):147-162: fit x_t = a + b*t by OLS, form residuals e_t, take s_t = sign(e_t) (drop e_t == 0), count maximal runs R, then rtZ = (R - mu_R)/sqrt(var_R) where mu_R = 2 n_+ n_-/n + 1, var_R = 2 n_+ n_- (2 n_+ n_- - n)/(n^2 (n-1)). Operates on the SIGN of OLS-detrended residuals -- structurally orthogonal to axis-149 daily-token-runs-test-z (raw-series above/below median: a monotone trend gives axis-149 rtZ approx -sqrt(n) but THIS axis rtZ approx 0), to axis-162 DW (continuous L^2 quadratic-form on residual magnitudes vs. this discrete L^0 sign-only nonparametric: blind to magnitude), to all RAW-SERIES serial-correlation / stationarity / changepoint axes, and to axis-161 Jarque-Bera (permutation-invariant moment test). Verdict cutoffs: strong-clustering <= -2.576, borderline-clustering in (-2.576, -1.645], independent in (-1.645, +1.645), borderline-anti-clustering in [+1.645, +2.576), strong-anti-clustering >= +2.576.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source WALD-WOLFOWITZ runs-test on detrended-residual SIGNS (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'slope',
+    'nPos',
+    'nNeg',
+    'nZero',
+    'runs',
+    'expR',
+    'rtZ',
+    'verdict',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      s.trendSlope.toFixed(2),
+      formatNumber(s.nPos),
+      formatNumber(s.nNeg),
+      formatNumber(s.nZero),
+      formatNumber(s.runs),
+      s.expectedRuns.toFixed(2),
+      s.rtZ.toFixed(4),
+      s.verdict,
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: rtZ approx 0 = sign sequence of OLS-detrended residuals looks like an iid coin around the fitted trend; rtZ << 0 = above-trend and below-trend days CLUSTER (long runs of same sign / persistence around trend); rtZ >> 0 = sign ALTERNATES more than chance (oscillation around trend / negative residual AR(1)). Asymptotic Normal approximation is calibrated for n_+ >= 10 and n_- >= 10. The test is BLIND TO RESIDUAL MAGNITUDE -- compose with axis-162 daily-token-durbin-watson-detrended for the magnitude-aware companion diagnostic.)`,
     ),
   );
 
