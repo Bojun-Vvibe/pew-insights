@@ -24948,3 +24948,76 @@ export function renderDailyTokenIsoWeekDayOfWeekEntropy(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenPettittChangepoint(
+  r: import('./dailytokenpettittchangepoint.js').DailyTokenPettittChangepointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-pettitt-changepoint'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(Pettitt KT = max_t |2*sum(rank[0..t]) - (t+1)*(n+1)| on the gap-filled per-source daily total_tokens series; ktNorm = KT / (n^2/4); pApprox ~ 2*exp(-6*KT^2/(n^3+n^2)); tStar = argmax index, tStarDay = corresponding ISO day; meanShift = meanAfter - meanBefore; flat=y means constant series, statistic undefined)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source Pettitt changepoint (sorted by ${r.sort})`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'kt',
+    'ktNorm',
+    'pApprox',
+    'tStarIdx',
+    'tStarDay',
+    'meanBefore',
+    'meanAfter',
+    'meanShift',
+    'flat',
+    'first',
+    'last',
+  ];
+  const rowsR: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.flat ? '-' : s.kt.toFixed(1),
+    s.flat ? '-' : s.ktNormalized.toFixed(3),
+    s.flat ? '-' : s.pApprox.toFixed(4),
+    s.flat ? '-' : String(s.tStarIndex),
+    s.tStarDay ?? '-',
+    s.flat ? '-' : s.meanBefore.toFixed(1),
+    s.flat ? '-' : s.meanAfter.toFixed(1),
+    s.flat ? '-' : s.meanShift.toFixed(1),
+    s.flat ? 'y' : 'n',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
