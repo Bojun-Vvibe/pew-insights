@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.420 — 2026-05-04
+
+### Added — axis-160: `daily-token-bds` (Brock-Dechert-Scheinkman nonlinear-dependence / iid-test via the correlation integral)
+
+Per-source BROCK-DECHERT-SCHEINKMAN (BDS) NONLINEAR-DEPENDENCE
+TEST via the correlation integral on m-dimensional Chebyshev-
+ball embeddings of the gap-filled daily `total_tokens` series.
+The 160th cross-source axis. Brock, Dechert, Scheinkman &
+LeBaron 1996, *Econometric Reviews* 15(3):197-235.
+
+```
+X_t^m   = (x[t], x[t+1], ..., x[t+m-1])
+C(m, e) = (2 / (T_m (T_m - 1)))
+          * sum_{i<j} I( ||X_i^m - X_j^m||_inf < e )
+K       = (1/T) sum_t ( (1/T) #{ s : |x[t] - x[s]| < e } )^2
+sigma^2 = 4 [ K^m + 2 sum_{j=1..m-1} K^{m-j} c^{2j}
+              + (m-1)^2 c^{2m} - m^2 K c^{2m-2} ]
+bdsV    = sqrt(n) (C(m, e) - C(1, e)^m) / sigma  ~ N(0, 1)
+```
+
+Under the iid null `C(m, e) -> C(1, e)^m`, so `bdsV -> 0`.
+`|bdsZ| >> 1.96` rejects the iid null at α = 0.05 — the
+m-history embedding distribution is materially different from
+the product `C(1, e)^m` predicted by independence. The test
+detects nonlinear / chaotic / regime-switching / ARCH / higher-
+moment dependence that linear axes miss. Defaults: m = 2,
+ε = 0.7 · stddev (Brock-Hsieh-LeBaron 1991 recommendation).
+
+**Structural orthogonality justification — vs axis-159
+McLeod-Li.** McLeod-Li is a SECOND-MOMENT TIME-DOMAIN
+PORTMANTEAU on squared centred residuals — it is targeted
+specifically at conditional-variance memory (ARCH/GARCH).
+BDS operates on the JOINT DISTRIBUTION of the m-history
+embedding via the Chebyshev-ball correlation integral and
+detects nonlinear dependence of all orders jointly without
+committing to a second-moment functional form. A pure-ARCH
+series gives both `mlZ` and `bdsZ` large; a deterministic
+chaotic series can give `bdsZ >> 0` with `mlZ ≈ 0` because
+squared residuals can be uncorrelated while the joint
+embedding distribution remains far from the iid product.
+The two are complementary, not redundant. The test suite
+includes `dailyTokenBds: deterministic period-2 pattern
+produces bdsV >> 0` (a bdsV > 3 / |z| > 3 result on a
+strict period-2 sequence where the m=2 history has only
+2 distinct vectors so C(2) >> C(1)^2) and a pseudo-iid LCG
+draw of n = 200 for which `|bdsV| < 4` is comfortably
+satisfied.
+
+**vs axis-114 Ljung-Box.** Ljung-Box is a second-order
+LINEAR statistic — blind to dependence whose linear
+autocovariance happens to be zero (e.g. `x[t] = z[t]·z[t-1]`
+for iid z has `lbZ ≈ 0` but `bdsZ >> 0`). BDS is
+constructed precisely to detect the dependence Ljung-Box
+misses.
+
+**vs axis-158 Lo-MacKinlay variance-ratio.** VR tests the
+q-period LEVEL variance scaling against a martingale-
+difference null. BDS tests the much stronger iid null on
+the FULL JOINT embedding distribution. A martingale-
+difference series with nonlinear dependence (a GARCH whose
+conditional mean is zero) has `vrZ ≈ 0` but `bdsZ >> 0`.
+
+**vs axes 153-157 (CUSUM / Pettitt / Buishand / KPSS / ADF).**
+All five are LEVEL-mean stationarity / changepoint /
+unit-root tests under specific parametric alternatives.
+BDS makes no parametric mean / variance assumption — it
+tests joint independence directly via the correlation
+integral on the embedding.
+
+**vs the entropy / complexity axes (sample entropy,
+approximate entropy, permutation entropy, Lempel-Ziv).**
+SampEn and ApEn are conditional-probability statistics on
+m-history matches and are themselves close relatives of the
+correlation integral. BDS is distinct in that it computes a
+STANDARDISED Z-SCORE of `C(m, ε) - C(1, ε)^m` against the
+closed-form BDS asymptotic variance with a sharp asymptotic
+Gaussian null — it is a hypothesis test, not a complexity
+index. SampEn at radius r summarises the conditional ratio
+`C(m+1, r) / C(m, r)` without a null distribution; BDS
+delivers a p-value-style z-score against iid. The two are
+mathematically related but operationally disjoint.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (one
+source name redacted; sorted by tokens):
+
+```
+per-source BDS independence test (sort: tokens)
+source        firstDay    lastDay     tenure  active  m  eps           C(1)    C(m)    K       sigma   bdsV    bdsZ    tokens
+------------  ----------  ----------  ------  ------  -  ------------  ------  ------  ------  ------  ------  ------  -------------
+opencode      2026-04-20  2026-05-04  15      15      2  123579304.74  0.4190  0.2527  0.2474  0.1436  2.0805  2.0805  6,544,267,967
+claude-code   2026-02-11  2026-04-23  72      35      2  107699855.49  0.8286  0.7360  0.7496  0.1259  3.3265  3.3265  3,442,385,788
+openclaw      2026-04-17  2026-05-04  18      18      2  66168687.83   0.4183  0.2353  0.2527  0.1555  1.6453  1.6453  2,268,121,589
+hermes        2026-04-17  2026-05-04  18      18      2  6639208.81    0.3007  0.0956  0.1228  0.0648  0.3404  0.3404  315,208,466
+vsc-redacted  2025-07-30  2026-04-20  265     73      2  18917.11      0.8538  0.7580  0.7852  0.1124  4.2058  4.2058  1,885,727
+```
+
+**Reading the smoke:**
+
+- **`vsc-redacted` and `claude-code` reject iid at α = 0.05
+  decisively** (`bdsZ` 4.21 and 3.33 respectively). Both have
+  the long tenure (265 / 72 days) where the BDS asymptotic
+  Gaussian approximation is most reliable. `C(2) - C(1)^2`
+  is solidly positive — the 2-history embedding shows
+  EXCESS COINCIDENCES relative to what an iid product
+  predicts.
+- `opencode` sits at `bdsZ = 2.08` — borderline rejection.
+  Its 15-day tenure puts it well under the
+  Brock-Hsieh-LeBaron 1991 `n ≥ 200` rule, so the result
+  is suggestive rather than decisive.
+- `openclaw` at `1.65` does not reject at α = 0.05;
+  `hermes` at `0.34` is firmly inside the iid envelope.
+- The contrast against axis-159 McLeod-Li is informative:
+  in the prior smoke McLeod-Li returned `mlZ < +1.96` for
+  every source — no detectable ARCH effect anywhere. BDS
+  nonetheless rejects iid for the two long-tenure sources.
+  The dependence picked up by BDS is therefore **NOT**
+  conditional-variance memory; it is the kind of joint
+  embedding structure that McLeod-Li's squared-residual
+  portmanteau is structurally blind to (likely day-of-week
+  level seasonality and / or weekday-vs-weekend regime
+  effects that show up as 2-history coincidences without
+  inflating the squared-residual autocorrelation).
+
+**Operational implication.** When BDS rejects but McLeod-Li
+does not, the recommended composition is to look at the
+linear-trend axes (Mann-Kendall axis-110, Cox-Stuart trend,
+Spearman / Pearson lag-1 autocorrelation axes) and the
+weekday / weekend axes — those are the natural candidates
+for the order-sensitive structure BDS is detecting.
+
 ## 0.6.419 — 2026-05-04
 
 ### Added — axis-159: `daily-token-mcleod-li` (McLeod-Li portmanteau Q-test on squared residuals)

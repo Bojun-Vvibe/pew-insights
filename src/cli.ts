@@ -184,6 +184,7 @@ import {
   renderDailyTokenDifferenceSignTest,
   renderDailyTokenLjungBoxQTest,
   renderDailyTokenMcLeodLi,
+  renderDailyTokenBds,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -474,6 +475,10 @@ import {
   buildDailyTokenMcLeodLi,
   type DailyTokenMcLeodLiSort,
 } from './dailytokenmcleodli.js';
+import {
+  buildDailyTokenBds,
+  type DailyTokenBdsSort,
+} from './dailytokenbds.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -41871,6 +41876,136 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenMcLeodLi(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-bds')
+  .description(
+    "Per-source BROCK-DECHERT-SCHEINKMAN (BDS) NONLINEAR-DEPENDENCE TEST via the correlation integral on m-dimensional Chebyshev-ball embeddings of the gap-filled daily total_tokens series (axis-160). C(m, eps) = (2/T_m(T_m-1)) sum_{i<j} I(||X_i^m - X_j^m||_inf < eps); under iid C(m, eps) -> C(1, eps)^m; bdsV = sqrt(n)(C(m, eps) - C(1, eps)^m)/sigma(m, eps) is asymptotically N(0, 1) (Brock, Dechert, Scheinkman & LeBaron 1996, Econometric Reviews 15(3):197-235) with sigma the closed-form BDS asymptotic standard error using K = (1/T) sum_t ((1/T) #{s : |x[s]-x[t]|<eps})^2. |bdsZ| much greater than 1.96 = reject the iid null at alpha = 0.05. Detects nonlinear / chaotic / regime / ARCH dependence that the linear LJUNG-BOX axis-114 (level portmanteau) and the squared-residual MCLEOD-LI axis-159 cannot jointly cover. Defaults: m = 2, eps = 0.7 * stddev (Brock-Hsieh-LeBaron 1991 recommendation).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--embedding-dim <m>',
+    'embedding dimension m for the m-history correlation integral C(m, eps); m >= 2. Default 2.',
+    '2',
+  )
+  .option(
+    '--eps-sigma <r>',
+    'tolerance epsilon as a multiple of the sample stddev (Brock-Hsieh-LeBaron 1991 recommend [0.5, 1.5]). Default 0.7.',
+    '0.7',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bdsZAbsDesc (default) | bdsV | bdsVDesc | bdsZ | bdsZDesc | bdsZAbs | cM | cMDesc | tokens | tenure | source.',
+    'bdsZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        embeddingDim: string;
+        epsSigma: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const embeddingDim = Number.parseInt(opts.embeddingDim, 10);
+        if (!Number.isInteger(embeddingDim) || embeddingDim < 2) {
+          throw new Error(
+            `--embedding-dim must be an integer >= 2 (got ${opts.embeddingDim})`,
+          );
+        }
+        const epsSigma = Number.parseFloat(opts.epsSigma);
+        if (!Number.isFinite(epsSigma) || epsSigma <= 0) {
+          throw new Error(
+            `--eps-sigma must be a positive finite number (got ${opts.epsSigma})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bdsV',
+          'bdsVDesc',
+          'bdsZ',
+          'bdsZDesc',
+          'bdsZAbs',
+          'bdsZAbsDesc',
+          'cM',
+          'cMDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBds(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          embeddingDim,
+          epsSigma,
+          top,
+          sort: opts.sort as DailyTokenBdsSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenBds(report) + '\n');
         }
       } catch (e) {
         die(e);

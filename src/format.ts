@@ -20578,6 +20578,7 @@ import type { DailyTokenBartelsRankVonNeumannReport } from './dailytokenbartelsr
 import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferencesigntest.js';
 import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
 import type { DailyTokenMcLeodLiReport } from './dailytokenmcleodli.js';
+import type { DailyTokenBdsReport } from './dailytokenbds.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25433,6 +25434,93 @@ export function renderDailyTokenMcLeodLi(
   lines.push(
     chalk.dim(
       `(reference anchor: mlQ approx H = no detectable ARCH; mlQ much greater than H = volatility clustering; mlZ much greater than +1.96 = significant ARCH evidence at alpha = 0.05. The test is BLIND TO SIGN of the squared-residual autocorrelations and BLIND TO THE LAG that drives significance -- inspect the mlAcf array (r2_1, r2_2, r2_7 surfaced in the table; full array via --json) to identify which lag dominates. Strong r2_7 indicates weekly volatility periodicity (e.g. weekday-vs-weekend amplitude regimes).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBds(
+  r: DailyTokenBdsReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-bds'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    embedding-dim: ${formatNumber(r.embeddingDim)}    eps-sigma: ${r.epsSigma}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BROCK-DECHERT-SCHEINKMAN (BDS) NONLINEAR-DEPENDENCE TEST via the correlation integral on m-dimensional Chebyshev-ball embeddings of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SIXTIETH cross-source axis. Brock, Dechert, Scheinkman & LeBaron 1996, Econometric Reviews 15(3):197-235: C(m, eps) = (2/T_m(T_m-1)) * sum_{i<j} I(||X_i^m - X_j^m||_inf < eps); under iid C(m, eps) -> C(1, eps)^m; bdsV = sqrt(n)(C(m,eps) - C(1,eps)^m)/sigma(m,eps) is asymptotically N(0, 1) with sigma the BDS asymptotic standard error using K = (1/T) sum_t ((1/T) #{s : |x[s]-x[t]|<eps})^2. |bdsZ| much greater than 1.96 = reject the iid null at alpha = 0.05 -- the m-history embedding distribution differs from the product C(1,eps)^m predicted by independence. Detects nonlinear / chaotic / regime / ARCH dependence that linear axes (114 Ljung-Box) miss. Default m = 2, eps = 0.7 * stddev.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BDS independence test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'm',
+    'eps',
+    'C(1)',
+    'C(m)',
+    'K',
+    'sigma',
+    'bdsV',
+    'bdsZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      formatNumber(s.bdsM),
+      s.bdsEps.toFixed(2),
+      s.c1.toFixed(4),
+      s.cM.toFixed(4),
+      s.bdsK.toFixed(4),
+      s.bdsSigma.toFixed(4),
+      s.bdsV.toFixed(4),
+      s.bdsZ.toFixed(4),
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bdsV approx 0 = embedding consistent with iid; bdsV much greater than 0 = excess m-history coincidences (positive nonlinear / regime / ARCH dependence); bdsV much less than 0 = m-history dispersal (rare; usually finite-sample noise). |bdsZ| > 1.96 = reject iid at alpha = 0.05. Compose with axis-114 Ljung-Box and axis-159 McLeod-Li to attribute a positive bdsZ to LINEAR vs SECOND-MOMENT vs HIGHER-ORDER dependence. C(1) is permutation-invariant; C(m) for m >= 2 is order-sensitive -- the test's whole sensitivity flows from that asymmetry.)`,
     ),
   );
 
