@@ -2,6 +2,131 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.429 — 2026-05-04
+
+### Added — axis-164: `daily-token-rank-von-neumann-detrended`
+
+ONE-HUNDRED-AND-SIXTY-FOURTH cross-source axis. The
+per-source **Bartels rank von Neumann ratio**
+(Bartels 1982 *JASA* 77(377):40-46) computed on the
+**MID-RANKS of the OLS-detrended residuals** of the
+gap-filled daily total_tokens series.
+
+For each source over its tenure window:
+
+```
+fit  x_t = a + b*t       by closed-form OLS  (same fit as axis-162 / 163)
+e_t  = x_t - (a + b*t)
+R[t] = mid-rank(e_t)  in {1..n}    (average ranks for ties)
+Rbar = (n + 1) / 2
+RVN  = sum_{t=0..n-2} (R[t+1] - R[t])^2
+       / sum_{t=0..n-1} (R[t] - Rbar)^2
+Var  = 4*(n-2)*(5*n^2 - 2*n - 9) / (5*n*(n+1)*(n-1)^2)
+bvnZ = (RVN - 2) / sqrt(Var)        approx N(0, 1)
+```
+
+Verdict cutoffs from the asymptotic N(0, 1) null:
+
+```
+strong-positive-rank-autocorr   bvnZ <= -2.576       (p <= 0.005)
+borderline-positive             -2.576 < bvnZ <= -1.645
+independent                     -1.645 < bvnZ <  +1.645
+borderline-negative             +1.645 <= bvnZ < +2.576
+strong-negative-rank-autocorr   bvnZ >= +2.576
+```
+
+#### Orthogonality vs all 163 prior axes
+
+This is structurally a **new primitive**:
+
+- **vs axis-112 `daily-token-bartels-rank-von-neumann`**:
+  that axis ranks the **RAW** series x_t directly. For
+  a monotone-trending series the ranks are essentially
+  1, 2, ..., n in order, giving RVN near its minimum
+  and bvnZ approx -sqrt(n) — but this is **entirely
+  driven by the trend**, not by short-range residual
+  structure. THIS axis ranks the **detrended residuals**
+  (the natural pivot since `sum e_t === 0` by OLS). A
+  linearly-rising series with iid Gaussian noise gives
+  axis-112 bvnZ approx -sqrt(n) but THIS axis bvnZ
+  approx 0 (independent).
+
+- **vs axis-162 `daily-token-durbin-watson-detrended`**:
+  both operate on OLS residuals e_t. DW is a
+  **raw-magnitude L^2** statistic (sum (e_t-e_{t-1})^2
+  / sum e_t^2) — sensitive to outlier residual
+  magnitudes. THIS axis is the **rank-domain L^2**
+  companion: invariant under monotone transforms of
+  the residuals. Residuals (-100, +1, -2, +50) and
+  (-1, +1, -1, +1) with the same rank order give
+  EXACTLY the same RVN, while DW differs by orders of
+  magnitude. This is the robust rank-domain companion
+  of DW-162.
+
+- **vs axis-163 `daily-token-runs-test-detrended`**:
+  axis-163 reduces e_t to a binary SIGN sequence and
+  counts runs (L^0, blind to rank-within-sign). THIS
+  axis preserves the FULL rank ordering of residuals.
+  A pattern (+1, +1, +1, -1, -1, -1) has runs R = 2 in
+  axis-163 but a specific rank sequence (4, 5, 6, 1, 2,
+  3) here with a specific RVN.
+
+- **vs raw-series serial-correlation axes** (axis-114
+  Ljung-Box, axis-159 McLeod-Li, axis-158 VR
+  Lo-MacKinlay, axis-160 BDS): all on raw or squared-raw
+  CONTINUOUS magnitudes of the LEVEL series. THIS axis
+  is on the RANKS OF RESIDUALS. Differs on (a) raw vs.
+  detrended, (b) magnitude vs. rank, (c) lag structure.
+
+- **vs axis-161 Jarque-Bera**: JB is permutation-
+  invariant on the raw series and tests marginal-shape.
+  THIS axis is time-ordered on the RANKS OF RESIDUALS
+  and is invariant to the marginal shape of the
+  residuals (only rank order matters).
+
+- **vs stationarity / unit-root / changepoint axes**
+  (axis-156 KPSS, axis-157 ADF, axis-153 CUSUM,
+  axis-154 Pettitt, axis-155 Buishand): those test the
+  LEVEL TRAJECTORY for unit root / level-stationarity /
+  changepoint. THIS axis tests the RANK STRUCTURE OF
+  RESIDUALS AROUND A FITTED LINEAR TREND.
+
+#### Live-smoke output
+
+Run against real `~/.config/pew/queue.jsonl` on
+2026-05-04 (source names redacted to src-A..E to
+respect repo conventions; verbatim verdicts and
+bvnZ values preserved):
+
+```
+src-A  tenure=265  rvn=0.7461  bvnZ=-10.2333  tieFrac=1.000  verdict=strong-positive-rank-autocorr
+src-B  tenure= 72  rvn=0.8202  bvnZ= -5.0555  tieFrac=1.000  verdict=strong-positive-rank-autocorr
+src-C  tenure= 18  rvn=1.2879  bvnZ= -1.5767  tieFrac=1.000  verdict=independent
+src-D  tenure= 15  rvn=1.7893  bvnZ= -0.4300  tieFrac=1.000  verdict=independent
+src-E  tenure= 18  rvn=1.8142  bvnZ= -0.4113  tieFrac=1.000  verdict=independent
+```
+
+Two long-tenured sources show **strong positive
+rank-autocorrelation** of detrended residuals
+(persistent above-trend / below-trend rank
+ordering — slow drift around the OLS line). Three
+short-tenured sources are statistically
+indistinguishable from a random rank permutation
+under the asymptotic null.
+
+#### Refinement
+
+In addition to the headline `rvn` / `bvnZ` /
+verdict triple, each row reports:
+
+- `tieFraction = nDistinctResiduals / n` — diagnostic
+  for residual-tie prevalence (1.0 = textbook Bartels
+  with closed-form denominator n*(n^2-1)/12; < 1.0
+  means mid-rank corrections are active).
+- Sort keys `rvn` / `rvnDesc` (raw ratio) and
+  `bvnZ` / `bvnZDesc` / `bvnZAbs` / `bvnZAbsDesc` for
+  ranked browsing.
+
 ## 0.6.427 — 2026-05-04
 
 ### Added — axis-163: `daily-token-runs-test-detrended`
