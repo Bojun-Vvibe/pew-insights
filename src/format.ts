@@ -20620,6 +20620,7 @@ import type { DailyTokenNeymanChiSquaredHalvesReport } from './dailytokenneymanc
 import type { DailyTokenKDivergenceHalvesReport } from './dailytokenkdivergencehalves.js';
 import type { DailyTokenPearsonSecondSkewnessReport } from './dailytokenpearsonsecondskewness.js';
 import type { DailyTokenCucconiHalvesReport } from './dailytokencucconihalves.js';
+import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -26735,6 +26736,89 @@ export function renderDailyTokenCucconiHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: ccPValue < 0.05 (i.e. C > -ln(0.05) ~ 2.996) = REJECT joint-equality at alpha=0.05; ccPValue < 0.01 (C > 4.605) = REJECT at alpha=0.01. SIGN of (ccU - ccV) discriminates location vs scale: positive (ccU - ccV) = second half stochastically larger (location dominates); negative (ccU - ccV) = scale shift dominates (Marozzi 2009 sec. 4). ccZ = sqrt(2C) is the chi-2 root, intrinsically unsigned. Distinct from axis-117 Siegel-Tukey and axis-170 Ansari-Bradley which kill pure-location shifts via median-centring -- Cucconi PRESERVES that signal in the U component.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenLepageHalves(
+  r: DailyTokenLepageHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-lepage-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LEPAGE 1971 JOINT LOCATION-SCALE TWO-SAMPLE NONPARAMETRIC TEST: L = zW^2 + zAB^2 where zW is the standardised Wilcoxon rank-sum on raw mid-ranks (LOCATION) and zAB is the standardised Ansari-Bradley folded-rank sum on median-centred halves (SCALE). Asymptotic chi-squared(2): lepPValue = exp(-L/2). ONE-HUNDRED-AND-SEVENTY-FIFTH cross-source axis. STRUCTURALLY DISTINCT from axis-174 Cucconi (uses SAME monotonic ranks for both components, combines via closed-form correlation rho ~ -7/8 with explicit decorrelation cross-term -2 rho U V); Lepage uses TWO DIFFERENT rank schemes on DIFFERENT data (raw monotonic vs folded-on-median-centred), components asymptotically INDEPENDENT, no cross-term. Marozzi 2009 sec. 5 reports Cucconi has uniformly higher power on joint alternatives but Lepage has direct directional interpretability via signed zW and zAB.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source LEPAGE joint location-scale (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'lepZW',
+    'lepZAB',
+    'lepL',
+    'lepPValue',
+    'lepZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.lepN1),
+    formatNumber(s.lepN2),
+    s.lepZW.toFixed(4),
+    s.lepZAB.toFixed(4),
+    s.lepL.toFixed(4),
+    s.lepPValue.toExponential(4),
+    s.lepZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: lepPValue < 0.05 (i.e. L > -2 ln(0.05) ~ 5.991) = REJECT joint-equality at alpha=0.05; lepPValue < 0.01 (L > 9.210) = REJECT at alpha=0.01. SIGNED CHANNELS: lepLocZ = -zW > 0 = SECOND half stochastically larger (matches axis-115 mwZ); lepScaleZ = +zAB > 0 = SECOND half MORE dispersed (matches axis-170 abZ). Identity: lepLocZ^2 + lepScaleZ^2 == lepL.)`,
     ),
   );
 

@@ -201,6 +201,7 @@ import {
   renderDailyTokenSiegelTukeyHalves,
   renderDailyTokenAnsariBradleyHalves,
   renderDailyTokenCucconiHalves,
+  renderDailyTokenLepageHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -640,6 +641,10 @@ import {
   buildDailyTokenCucconiHalves,
   type DailyTokenCucconiHalvesSort,
 } from './dailytokencucconihalves.js';
+import {
+  buildDailyTokenLepageHalves,
+  type DailyTokenLepageHalvesSort,
+} from './dailytokenlepagehalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -43555,6 +43560,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCucconiHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-lepage-halves')
+  .description(
+    "Per-source LEPAGE 1971 JOINT LOCATION-SCALE TWO-SAMPLE NONPARAMETRIC TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-SEVENTY-FIFTH cross-source axis). L = zW^2 + zAB^2 where zW is the standardised Wilcoxon rank-sum on raw pooled mid-ranks (LOCATION channel, tie-corrected variance) and zAB is the standardised Ansari-Bradley folded-rank sum on MEDIAN-CENTRED halves (SCALE channel). Asymptotic chi-squared(2) under H0 (zW and zAB are asymptotically independent because median-centring de-couples the channels), so lepPValue = exp(-L/2). STRUCTURALLY DISTINCT from axis-174 Cucconi (Cucconi uses the SAME monotonic ranks for BOTH components combined via closed-form correlation rho ~ -7/8 with explicit decorrelation cross-term -2 rho U V; Lepage uses TWO DIFFERENT rank schemes on DIFFERENT data with NO cross-term). Marozzi 2009 sec. 5 reports Cucconi has uniformly higher power but Lepage has direct directional interpretability via signed zW and zAB without rotation. Distinct from axis-115 Mann-Whitney (location-only); axis-117 Siegel-Tukey and axis-170 Ansari-Bradley (scale-only). Refs: Lepage 1971 Biometrika 58:213-217; Hollander/Wolfe/Chicken 2014 sec. 5.5.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (chi-2(2) asymptotic regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: lepLDesc (default) | lepL | lepPValue | lepPValueDesc | lepZ | lepZDesc | tokens | tenure | source.',
+    'lepLDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'lepL',
+          'lepLDesc',
+          'lepPValue',
+          'lepPValueDesc',
+          'lepZ',
+          'lepZDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLepageHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenLepageHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLepageHalves(report) + '\n',
           );
         }
       } catch (e) {
