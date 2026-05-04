@@ -94,7 +94,9 @@ export type DailyTokenKpssStationaritySortKey =
   | 'bandwidth'
   | 'lrvariance'
   | 'ndays'
-  | 'verdict';
+  | 'verdict'
+  | 'hacratio'
+  | 'papprox';
 
 export type KpssVerdict =
   | 'stationary'
@@ -131,6 +133,10 @@ export interface DailyTokenKpssStationaritySourceRow {
   gammaZero: number;
   /** Categorical verdict at standard KPSS-Table-1 (level) cutoffs. */
   verdict: KpssVerdict;
+  /** lrVariance / gammaZero. >1 = positive serial dep; <1 = negative. */
+  hacInflationRatio: number;
+  /** Approximate upper-tail p-value via 4-anchor interpolation. */
+  pApprox: number;
   /** True iff series has zero variance — KPSS undefined. */
   flat: boolean;
   firstActiveDay: string;
@@ -161,12 +167,67 @@ export interface KpssSummary {
   lrVariance: number;
   gammaZero: number;
   verdict: KpssVerdict;
+  hacInflationRatio: number;
+  pApprox: number;
   flat: boolean;
 }
 
 const KPSS_CRIT_10 = 0.347;
 const KPSS_CRIT_5 = 0.463;
+const KPSS_CRIT_25 = 0.574;
 const KPSS_CRIT_1 = 0.739;
+
+const P_LEVELS: readonly number[] = [0.1, 0.05, 0.025, 0.01];
+const ETA_ANCHORS: readonly number[] = [
+  KPSS_CRIT_10,
+  KPSS_CRIT_5,
+  KPSS_CRIT_25,
+  KPSS_CRIT_1,
+];
+
+/**
+ * 4-anchor log-linear interpolation/extrapolation of the upper-tail
+ * KPSS p-value at the published Table-1 (level model) critical values.
+ *
+ *   eta <= 0.347   -> linear-in-eta from p=1 at eta=0 to p=0.10 at 0.347
+ *   0.347..0.463   -> log-linear in p between 0.10 and 0.05
+ *   0.463..0.574   -> log-linear in p between 0.05 and 0.025
+ *   0.574..0.739   -> log-linear in p between 0.025 and 0.01
+ *   eta >  0.739   -> log-linear extrapolation using last (eta, p) pair,
+ *                     pinned at min p = 1e-4
+ *
+ * Diagnostic only. The KPSS asymptotic null is a Brownian-bridge L2
+ * functional; this anchored interpolation is faithful at the four
+ * tabulated points and well-behaved between them, but should not be
+ * over-interpreted in deep tails.
+ */
+export function kpssPApprox(eta: number): number {
+  if (!Number.isFinite(eta) || eta <= 0) return 0.99;
+  // Below the 10% anchor: linear in eta from (0, 1) to (KPSS_CRIT_10, 0.10).
+  if (eta <= ETA_ANCHORS[0]!) {
+    const slope = (1 - P_LEVELS[0]!) / ETA_ANCHORS[0]!;
+    const p = 1 - slope * eta;
+    return Math.min(0.99, Math.max(P_LEVELS[0]!, p));
+  }
+  // Between consecutive anchors: log-linear in p.
+  for (let i = 0; i < ETA_ANCHORS.length - 1; i++) {
+    const e0 = ETA_ANCHORS[i]!;
+    const e1 = ETA_ANCHORS[i + 1]!;
+    if (eta <= e1) {
+      const t = (eta - e0) / (e1 - e0);
+      const lp = Math.log(P_LEVELS[i]!) + t * (Math.log(P_LEVELS[i + 1]!) - Math.log(P_LEVELS[i]!));
+      return Math.exp(lp);
+    }
+  }
+  // Above the 1% anchor: extrapolate using the slope of the last segment.
+  const eA = ETA_ANCHORS[ETA_ANCHORS.length - 2]!;
+  const eB = ETA_ANCHORS[ETA_ANCHORS.length - 1]!;
+  const pA = P_LEVELS[P_LEVELS.length - 2]!;
+  const pB = P_LEVELS[P_LEVELS.length - 1]!;
+  const slope = (Math.log(pB) - Math.log(pA)) / (eB - eA);
+  const lp = Math.log(pB) + slope * (eta - eB);
+  return Math.max(1e-4, Math.exp(lp));
+}
 
 export function kpssVerdict(eta: number, flat: boolean): KpssVerdict {
   if (flat) return 'flat';
@@ -196,6 +257,8 @@ export function kpssSummary(values: number[]): KpssSummary {
       lrVariance: 0,
       gammaZero: 0,
       verdict: 'flat',
+      hacInflationRatio: 1,
+      pApprox: 0.99,
       flat: true,
     };
   }
@@ -218,6 +281,8 @@ export function kpssSummary(values: number[]): KpssSummary {
       lrVariance: 0,
       gammaZero: 0,
       verdict: 'flat',
+      hacInflationRatio: 1,
+      pApprox: 0.99,
       flat: true,
     };
   }
@@ -257,6 +322,8 @@ export function kpssSummary(values: number[]): KpssSummary {
     lrVariance: lrv,
     gammaZero: gamma0,
     verdict: kpssVerdict(eta, flat),
+    hacInflationRatio: lrv / gamma0,
+    pApprox: kpssPApprox(eta),
     flat,
   };
 }
@@ -280,6 +347,8 @@ const SORT_KEYS: DailyTokenKpssStationaritySortKey[] = [
   'lrvariance',
   'ndays',
   'verdict',
+  'hacratio',
+  'papprox',
 ];
 
 const VERDICT_RANK: Record<KpssVerdict, number> = {
@@ -398,6 +467,8 @@ export function buildDailyTokenKpssStationarity(
       lrVariance: summary.lrVariance,
       gammaZero: summary.gammaZero,
       verdict: summary.verdict,
+      hacInflationRatio: summary.hacInflationRatio,
+      pApprox: summary.pApprox,
       flat: summary.flat,
       firstActiveDay: first,
       lastActiveDay: last,
@@ -421,6 +492,13 @@ export function buildDailyTokenKpssStationarity(
         break;
       case 'verdict':
         primary = VERDICT_RANK[b.verdict] - VERDICT_RANK[a.verdict];
+        break;
+      case 'hacratio':
+        primary = b.hacInflationRatio - a.hacInflationRatio;
+        break;
+      case 'papprox':
+        // Smaller p first (most significant rejection).
+        primary = a.pApprox - b.pApprox;
         break;
       case 'tokens':
       default:

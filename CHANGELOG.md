@@ -2,6 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.413 — 2026-05-04
+
+### Refined — axis-156: `hacInflationRatio` + `pApprox` (HAC diagnostic + interpolated p-value)
+
+Adds two scalars to every axis-156 row, plus two new sort keys
+(`hacratio`, `papprox`) that order sources by these scalars.
+
+```
+hacInflationRatio = lrVariance / gammaZero          dimensionless, > 0
+pApprox           = 4-anchor log-linear interp. of upper-tail p across
+                    KPSS Table-1 critical values (0.347, 0.463, 0.574, 0.739)
+                    at p = (0.10, 0.05, 0.025, 0.01); pinned to [1e-4, 0.99]
+```
+
+**Why these two are information `eta` and `verdict` don't already carry:**
+
+`hacInflationRatio` decomposes the KPSS reject/accept signal into its
+two physical drivers. eta is high either because (a) the partial-sum
+process actually wanders far from zero (real non-stationarity), or
+(b) the long-run variance estimate is small relative to gamma0 because
+of negative serial dependence (sawtooth around the mean), in which
+case eta is large but the source is genuinely mean-reverting. The
+ratio tells you which:
+
+- `hacInflationRatio ~ 1.0`: the i.i.d. assumption is roughly OK; the
+  HAC correction was a no-op. Trust eta and the verdict at face value.
+- `hacInflationRatio > 1`: positive serial dependence (drift, slow
+  trend, persistent regime). HAC inflates lrv, which *deflates* eta
+  vs the i.i.d. baseline. Reading: "even after correcting for
+  persistence, the partial-sum process is still wandering this far".
+- `hacInflationRatio < 1`: net negative serial dependence (anti-
+  persistent / mean-reverting noise). HAC deflates lrv, which
+  *inflates* eta vs the i.i.d. baseline. Reading: "the high eta is
+  partly a measurement artifact of the small lrv; the source is
+  actually rhythmically mean-reverting".
+
+`pApprox` collapses the four published KPSS Table-1 critical values
+into a single sortable scalar so two sources both labeled
+"nonstationary" can be ranked by *how* significant the rejection is.
+Sort key `papprox` orders ascending (most-significant rejection
+first), which is the natural triage order.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (refinement):
+
+```
+per-source KPSS level-stationarity (sorted by tokens)
+source         tokens         nFilled  eta     L  hacRatio  pApprox  verdict
+-------------  -------------  -------  ------  -  --------  -------  -------------
+opencode       6,500,024,305  15       0.2485  2  0.853     0.3554   stationary
+claude-code    3,442,385,788  72       0.6042  3  2.001     0.0211   nonstationary
+openclaw       2,263,097,507  18       0.4757  2  1.853     0.0462   nonstationary
+codex          809,624,660    8        0.2324  2  1.039     0.3972   stationary
+hermes         313,260,170    18       0.0783  2  1.464     0.7970   stationary
+vsc-redacted   1,885,727      265      0.0873  5  1.414     0.7735   stationary
+```
+
+(One real source name is redacted in this CHANGELOG; KPSS is computed
+on raw queue rows so live values are unaffected.)
+
+**Reading the refinement:**
+
+- `claude-code` has `hacInflationRatio = 2.001` — the HAC correction
+  doubled the i.i.d. variance, exactly the signature of strong
+  positive serial dependence (persistent regime shift). Its
+  `pApprox = 0.0211` puts the rejection between the 5% and 2.5%
+  table cutoffs — clearly significant but not at 1%. This is the
+  *most* significant rejection in the dataset by this scalar.
+- `openclaw` has `hacInflationRatio = 1.853` — also strong positive
+  serial dependence — and `pApprox = 0.0462`, just under the 5%
+  level. The two `nonstationary` sources are now totally ordered:
+  claude-code > openclaw.
+- `opencode` has `hacInflationRatio = 0.853` — *less than 1*. This
+  is the orthogonality witness: opencode's partial-sum range is
+  large (axis-155 rStar = 1.26) but the lag-h autocovariances are
+  net negative, meaning HAC actually *deflates* lrv. The `eta`
+  value (0.2485) is therefore artificially elevated — the true
+  stationarity case is even stronger. `pApprox = 0.3554` confirms
+  no rejection at any conventional level.
+- `hermes` (`hacInflationRatio = 1.464`, `pApprox = 0.7970`) and
+  `codex` (1.039, 0.3972) sit cleanly in the stationary band.
+- The redacted long-tenure source (1.414, 0.7735) has the longest
+  tenure (265 days) and the largest HAC bandwidth (L = 5) — its
+  HAC correction inflates lrv 1.4x, but the partial-sum process is
+  small enough that pApprox is well above any rejection threshold.
+
+`pApprox` plus `hacInflationRatio` together turn the three categorical
+verdicts into a totally-ordered ranking with a physical interpretation
+of *why* each source is where it is.
+
 ## 0.6.412 — 2026-05-04
 
 ### Added — axis-156: `daily-token-kpss-stationarity`

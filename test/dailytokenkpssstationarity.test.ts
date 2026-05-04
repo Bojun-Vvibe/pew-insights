@@ -4,6 +4,7 @@ import {
   buildDailyTokenKpssStationarity,
   kpssSummary,
   kpssVerdict,
+  kpssPApprox,
   schwertBandwidth,
 } from '../src/dailytokenkpssstationarity.js';
 import type { QueueLine } from '../src/types.js';
@@ -290,4 +291,127 @@ test('kpss builder: deterministic across runs', () => {
   const r1 = buildDailyTokenKpssStationarity(q, { generatedAt: GEN });
   const r2 = buildDailyTokenKpssStationarity(q, { generatedAt: GEN });
   assert.deepEqual(r1, r2);
+});
+
+// ---- refinement: kpssPApprox + hacInflationRatio + new sorts ------------
+
+test('kpssPApprox: anchors hit table-1 levels exactly', () => {
+  // Floating-point exactness at the four published critical values.
+  assert.ok(Math.abs(kpssPApprox(0.347) - 0.10) < 1e-12, `got ${kpssPApprox(0.347)}`);
+  assert.ok(Math.abs(kpssPApprox(0.463) - 0.05) < 1e-12, `got ${kpssPApprox(0.463)}`);
+  assert.ok(Math.abs(kpssPApprox(0.574) - 0.025) < 1e-12, `got ${kpssPApprox(0.574)}`);
+  assert.ok(Math.abs(kpssPApprox(0.739) - 0.01) < 1e-12, `got ${kpssPApprox(0.739)}`);
+});
+
+test('kpssPApprox: monotone non-increasing in eta', () => {
+  let prev = kpssPApprox(0);
+  for (const e of [0.05, 0.1, 0.2, 0.347, 0.4, 0.463, 0.5, 0.574, 0.65, 0.739, 1.0, 2.0, 5.0]) {
+    const p = kpssPApprox(e);
+    assert.ok(p <= prev + 1e-12, `non-monotone at eta=${e}: ${prev} -> ${p}`);
+    prev = p;
+  }
+});
+
+test('kpssPApprox: pinned to (1e-4, 0.99)', () => {
+  assert.equal(kpssPApprox(0), 0.99);
+  assert.equal(kpssPApprox(-5), 0.99);
+  assert.equal(kpssPApprox(NaN), 0.99);
+  // Deep tail extrapolation should not crash to 0.
+  assert.ok(kpssPApprox(50) >= 1e-4);
+  assert.ok(kpssPApprox(50) < 0.01);
+});
+
+test('kpssPApprox: bracketed-band consistency', () => {
+  // Mid-band 10%-5%: must be strictly between the anchor p-values.
+  const mid = kpssPApprox(0.4);
+  assert.ok(mid > 0.05 && mid < 0.10, `expected (0.05, 0.10), got ${mid}`);
+  // 5%-2.5% band.
+  const m2 = kpssPApprox(0.5);
+  assert.ok(m2 > 0.025 && m2 < 0.05, `expected (0.025, 0.05), got ${m2}`);
+});
+
+test('kpssSummary: hacInflationRatio > 1 for positive serial dep', () => {
+  const v = [1, 2, 3, 2, 3, 4, 3, 4, 5, 4, 5, 6];
+  const s = kpssSummary(v);
+  assert.ok(s.hacInflationRatio > 1, `got ratio=${s.hacInflationRatio}`);
+});
+
+test('kpssSummary: hacInflationRatio <= 1 for anti-persistent series', () => {
+  const v = [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1];
+  const s = kpssSummary(v);
+  assert.ok(s.hacInflationRatio <= 1 + 1e-12, `got ratio=${s.hacInflationRatio}`);
+});
+
+test('kpssSummary: hacInflationRatio = 1 when flat', () => {
+  const s1 = kpssSummary([]);
+  const s2 = kpssSummary([5, 5, 5, 5]);
+  assert.equal(s1.hacInflationRatio, 1);
+  assert.equal(s2.hacInflationRatio, 1);
+});
+
+test('kpssSummary: pApprox aligns with verdict bands', () => {
+  // Stationary -> p > 0.10.
+  const sStat = kpssSummary([1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1]);
+  assert.equal(sStat.verdict, 'stationary');
+  assert.ok(sStat.pApprox > 0.10, `expected p>0.10 for stationary, got ${sStat.pApprox}`);
+  // Strongly nonstationary ramp -> p < 0.01.
+  const sRamp = kpssSummary(Array.from({ length: 20 }, (_, i) => i));
+  assert.equal(sRamp.verdict, 'strongly-nonstationary');
+  assert.ok(sRamp.pApprox < 0.01, `expected p<0.01 for ramp, got ${sRamp.pApprox}`);
+});
+
+test('kpss builder: row exposes hacInflationRatio and pApprox', () => {
+  const q = makeRamp('rampy', '2026-04-01', 12);
+  const r = buildDailyTokenKpssStationarity(q, { generatedAt: GEN });
+  const row = r.sources[0]!;
+  assert.equal(typeof row.hacInflationRatio, 'number');
+  assert.equal(typeof row.pApprox, 'number');
+  assert.ok(row.hacInflationRatio > 0);
+  assert.ok(row.pApprox >= 1e-4 && row.pApprox <= 0.99);
+});
+
+test('kpss builder: sort by hacratio (descending)', () => {
+  // Build two sources: one with strong positive serial dep, one alternating.
+  const startMs = Date.parse('2026-04-01T00:00:00.000Z');
+  const positives: QueueLine[] = [];
+  const alts: QueueLine[] = [];
+  const ramp = [10, 20, 30, 25, 35, 45, 40, 50, 60, 55, 65, 75]; // positively autocorrelated
+  const alt = [100, 90, 110, 90, 110, 90, 110, 90, 110, 90, 110, 90]; // anti-persistent
+  for (let i = 0; i < 12; i++) {
+    const day = new Date(startMs + i * 86_400_000).toISOString().slice(0, 10);
+    positives.push(ql(`${day}T00:00:00.000Z`, 'p-pos', ramp[i]!));
+    alts.push(ql(`${day}T00:00:00.000Z`, 'a-alt', alt[i]!));
+  }
+  const r = buildDailyTokenKpssStationarity([...positives, ...alts], {
+    generatedAt: GEN,
+    sort: 'hacratio',
+  });
+  assert.equal(r.sources.length, 2);
+  // The positively-autocorrelated source must have hacRatio > the
+  // anti-persistent one, and therefore comes first under desc sort.
+  assert.ok(r.sources[0]!.hacInflationRatio > r.sources[1]!.hacInflationRatio);
+});
+
+test('kpss builder: sort by papprox (smallest p first)', () => {
+  const ramp = makeRamp('a-ramp', '2026-04-01', 12);
+  const startMs = Date.parse('2026-04-01T00:00:00.000Z');
+  const altQ: QueueLine[] = [];
+  for (let i = 0; i < 12; i++) {
+    const day = new Date(startMs + i * 86_400_000).toISOString().slice(0, 10);
+    altQ.push(ql(`${day}T00:00:00.000Z`, 'b-alt', 100 + (i % 2 === 0 ? 10 : -10)));
+  }
+  const r = buildDailyTokenKpssStationarity([...ramp, ...altQ], {
+    generatedAt: GEN,
+    sort: 'papprox',
+  });
+  assert.equal(r.sources.length, 2);
+  // Ramp has smallest p (most significant rejection), so it sorts first.
+  assert.equal(r.sources[0]!.source, 'a-ramp');
+  assert.ok(r.sources[0]!.pApprox < r.sources[1]!.pApprox);
+});
+
+test('kpss builder: rejects unknown sort key (refinement keys whitelisted)', () => {
+  assert.throws(() =>
+    buildDailyTokenKpssStationarity([], { sort: 'something' as 'tokens' }),
+  );
 });
