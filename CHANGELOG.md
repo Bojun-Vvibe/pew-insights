@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.405 — 2026-05-04
+
+### Added
+
+- `daily-token-hampel-outlier-count` REFINEMENT — two new
+  per-row derived fields plus two sort keys:
+  - `meanAbsScore`: MEAN of (`|x[i] - median| / sigmaHat`)
+    across all days in the gap-filled series. Companion to
+    `maxScore`: complements the single-most-extreme-day reading
+    with the AVERAGE robust deviation. Two series with identical
+    `maxScore` (one isolated spike) can have wildly different
+    `meanAbsScore` — uniformly heavy days vs single-spike-on-
+    quiet-baseline. Reported as 0 with `flat: true` when
+    `sigmaHat = 0`.
+  - `asymmetry`: `(nHigh - nLow) / nOut`, in `[-1, +1]`.
+    `+1` = all outliers are HIGH (heavy spikes), `-1` = all
+    outliers are LOW (anomalous quiet days), `0` = balanced
+    mix. Reported as 0 with `flatAsymmetry: true` when
+    `nOut = 0` (asymmetry undefined). Cleanly partitions
+    sources into "spike-only" (`+1`), "drought-only" (`-1`),
+    "mixed" (between), and "no outliers" (`flatAsymmetry`).
+  - New sort keys `meanscore` and `asymmetry` accepted on
+    `--sort`.
+- 10 additional unit tests covering: `meanAbsScore` exposed and
+  0 when flat; `meanAbsScore` positive and bounded by `maxScore`
+  when not flat; `asymmetry = +1` when all outliers high;
+  `asymmetry = -1` when all outliers low; `asymmetry = 0` +
+  `flatAsymmetry` when `nOut = 0`; `asymmetry` in `[-1, +1]`;
+  `--sort meanscore` reorders by `meanAbsScore` desc;
+  `--sort asymmetry` reorders by `asymmetry` desc; rejects bad
+  sort key (regression); deterministic across two builds.
+- Renderer surfaces `meanScore` and `asym` columns next to
+  `maxScore`.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+```
+$ pew-insights daily-token-hampel-outlier-count --since 2026-04-26T00:00:00.000Z
+```
+
+| source            | tokens         | nActive | nFilled | median       | MAD         | sigmaHat   | lo            | hi          | nHigh | nLow | nOut | frac  | maxScore | meanScore | asym   | argMaxDay  | flat |
+|-------------------|----------------|---------|---------|--------------|-------------|------------|---------------|-------------|-------|------|------|-------|----------|-----------|--------|------------|------|
+| opencode          | 6,432,311,040  | 15      | 15      | 420,000,740  | 64,578,479  | 95,744,053 |  132,768,581  | 707,232,899 |   1   |   2  |   3  | 0.200 | 4.288    | 1.396     | -0.333 | 2026-05-04 |  n   |
+| claude-code       | 3,442,385,788  | 35      | 72      |           0  |          0  |          0 |            0  |           0 |   0   |   0  |   0  | 0.000 | -        | -         | -      | -          |  y   |
+| openclaw          | 2,252,186,739  | 18      | 18      |  77,958,772  | 29,624,860  | 43,921,817 |  -53,806,678  | 209,724,222 |   5   |   0  |   5  | 0.278 | 6.286    | 1.649     |  1.000 | 2026-04-19 |  n   |
+| codex             |   809,624,660  |  8      |  8      |  41,235,206  | 33,978,163  | 50,376,025 | -109,892,869  | 192,363,282 |   1   |   0  |   1  | 0.125 | 6.918    | 1.598     |  1.000 | 2026-04-20 |  n   |
+| hermes            |   310,636,293  | 18      | 18      |  21,138,988  |  8,590,247  | 12,735,901 |  -17,068,715  |  59,346,691 |   0   |   0  |   0  | 0.000 | 1.625    | 0.655     | -      | 2026-05-04 |  n   |
+| (redacted-source) |     1,885,727  | 73      | 265     |           0  |          0  |          0 |            0  |           0 |   0   |   0  |   0  | 0.000 | -        | -         | -      | -          |  y   |
+
+Reading the new `meanScore` + `asym` columns:
+
+`openclaw` (`asym = +1.000`, `meanScore = 1.649`) is the
+cleanest "spike-only" source in the suite: ALL 5 of its
+flagged outliers sit on the HIGH side, and the source's
+average robust deviation across all 18 days (1.65 MAD-units)
+is the LARGEST average robust deviation in the visible suite.
+This is "consistently above-baseline with multiple genuine
+heavy days" — not just one isolated burst.
+
+`codex` (`asym = +1.000`, `meanScore = 1.598`) is the second
+"spike-only" source: similar `meanScore` (1.60) and pure-high
+asymmetry. Combined with axis-151's `allanDev = 1.05e8` for
+the same source, this confirms the reading: 8 days of
+volatile usage with no anomalously quiet days, just one big
+day on `2026-04-20`.
+
+`opencode` (`asym = -0.333`) is the only suite source with a
+NET-LOW asymmetry: of its 3 outliers, 2 are LOW-side and only
+1 is HIGH-side. This is a very different signature from
+`openclaw` and `codex`: the `opencode` source has anomalous
+QUIET days (likely weekend troughs) being detected by Hampel
+as outliers below `lo = 1.33e8`, plus one above-band day.
+`meanScore = 1.396` is the lowest of the "active" sources,
+showing the bulk of `opencode`'s days are within the normal
+robust range — the asymmetry sign is what carries the
+information here, not the magnitude.
+
+`hermes` (`meanScore = 0.655`, `asym = -`) — `nOut = 0`, so
+`asymmetry` is undefined and surfaces as `-`. The `meanScore`
+of 0.66 MAD-units is well below the `k = 3` threshold for any
+single day, confirming the entire 18-day series sits inside
+the robust band. Companion to axis-151's `rwRatio = 0.783`
+("persistent / smooth") for the same source: Hampel agrees
+that this source has no robust outliers, while Allan reads
+the step volatility separately.
+
+`claude-code` and `(redacted-source)` remain `flat = y` (MAD =
+0 because gap-fill zeros dominate the median). Both
+`meanScore` and `asym` correctly surface as `-` on these,
+preserving the "honest abstention" property of the axis.
+
+Cross-axis structural value: with axis-152 alone you get
+{"who has spikes"} (`nOut`, `maxScore`). With the refinement
+you also get {"who is uniformly heavy vs spike-only"}
+(`meanScore`) and {"are the spikes upward or downward"}
+(`asym`). Three sources tied at `nOut >= 1` (`openclaw`,
+`opencode`, `codex`) split cleanly along `asym`: two pure-high
+(`openclaw`, `codex`), one net-low (`opencode`).
+
 ## 0.6.404 — 2026-05-04
 
 ### Added
