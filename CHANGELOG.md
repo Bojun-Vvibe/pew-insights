@@ -2,6 +2,161 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.449 — 2026-05-04
+
+### Added — axis-174 daily-token-cucconi-halves
+
+New per-source axis: **CUCCONI (1968) JOINT LOCATION-
+SCALE TWO-SAMPLE NONPARAMETRIC TEST** comparing the first
+half (n1 = floor(n/2) days) vs second half (n2 = n - n1
+days) of the gap-filled daily `total_tokens` series. The
+first joint location-scale member of the halves family
+after Mann-Whitney-115 (location), Brown-Forsythe-116
+(parametric scale), Siegel-Tukey-117 / Ansari-Bradley-170
+(rank scale on median-centred halves), and Mood's-median-
+171 (one-point EDF gap at the pooled median).
+
+```
+Pool ranks 1..n; for each second-half element with rank R:
+  T1 += R^2;  T2 += (n+1-R)^2
+
+E[T1] = E[T2] = n2 (n+1)(2n+1) / 6
+Var[T1] = Var[T2] = n1 n2 (n+1)(2n+1)(8n+11) / 180
+
+U = (T1 - E[T1]) / sqrt(Var[T1])
+V = (T2 - E[T2]) / sqrt(Var[T2])
+rho = 2(n^2 - 4) / ((2n+1)(8n+11)) - 1
+
+C = (U^2 + V^2 - 2 rho U V) / (2 (1 - rho^2))
+ccPValue = exp(-C)             # asymptotic 2C ~ chi-squared(2)
+ccZ = sqrt(2 * C)               # intrinsically unsigned
+```
+
+#### Why Cucconi (vs the prior six halves axes)
+
+Cucconi is structurally orthogonal to the entire prior
+chain of two-sample halves tests in two distinct,
+verifiable ways:
+
+- **Detects pure location shifts that Siegel-Tukey-117
+  and Ansari-Bradley-170 explicitly kill.** Both 117 and
+  170 *median-centre each half before* the rank
+  assignment to remove pure-location-shift contamination
+  of their scale tests. Cucconi assigns ranks on the
+  RAW pooled values, so the U-component picks up exactly
+  the location signal that 117/170 throw away. Witness:
+  series `[1..8 ; 101..108]` gives Mann-Whitney
+  significant, Cucconi significant, Siegel-Tukey near
+  null, Ansari-Bradley near null.
+
+- **Has uniformly higher power than Lepage on joint
+  location-scale alternatives** (Marozzi 2009 sec. 5)
+  because the closed-form null correlation rho captures
+  the redundancy between the two squared-rank-sum
+  channels. Lepage assumes the Wilcoxon and Ansari-
+  Bradley components are independent (they are, after
+  median-centring); Cucconi uses the EXACT correlation
+  on the raw monotonic ranks, which is large in absolute
+  value (rho ~ -0.88 for n in 8..1024, asymptotic limit
+  -7/8) and so the decorrelation step is non-trivial.
+
+The single-statistic interpretation (one C, one ccPValue)
+also dominates the chi-squared(2) presentation of Lepage
+operationally — when comparing many sources, an ordered
+list of ccPValues is directly Bonferroni- or
+Benjamini-Hochberg-correctable.
+
+#### Refs
+
+- Cucconi, O. "Un nuovo test non parametrico per il
+  confronto fra due gruppi di valori campionari",
+  Giornale degli Economisti e Annali di Economia 27
+  (1968) 225-248
+- Marozzi, M. "Some notes on the location-scale Cucconi
+  test", J. Nonparametric Statistics 21(5) (2009)
+  629-647
+- Marozzi, M. "Nonparametric simultaneous tests for
+  location and scale testing: A comparison of several
+  methods", Computational Statistics & Data Analysis 53
+  (2009) 4242-4252 — the finite-sample power study
+  showing Cucconi dominates Lepage on joint alternatives
+
+#### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+Per-source results with `--min-tokens 1000 --min-tenure-days 14 --top 10`:
+
+```
+source          tenure  n1   n2   ccU      ccV      ccRho    ccC      ccPValue    ccZ
+vscode-copilot  265     132  133  3.1767   -7.8521  -0.8759  60.2423  6.8723e-27  10.9765
+claude-code      72      36   36  4.8888   -5.2177  -0.8783  13.8174  9.9811e-7    5.2569
+openclaw         18       9    9 -3.0009    3.0912  -0.8884   4.9315  7.2155e-3    3.1406
+opencode         15       7    8 -1.3950    0.6307  -0.8912   1.8842  1.5195e-1    1.9412
+hermes           18       9    9  0.6480   -1.1538  -0.8884   1.0029  3.6681e-1    1.4163
+```
+
+Corpus aggregator (Fisher's combined p-value):
+
+```
+fisherChi2            = 163.7566
+fisherCombinedPValue  = 5.4279e-30   (df = 10)
+meanCcC               = 16.3757
+rowsUsed              = 5
+```
+
+Reading: at the corpus level the joint location-scale
+shift is overwhelmingly significant. Two sources
+(`vscode-copilot`, `claude-code`) carry ccPValue below
+1e-6 individually. Notably `vscode-copilot` shows a
+strong asymmetric (ccU, ccV) pattern: ccU = +3.18,
+ccV = -7.85 — the SECOND half's complementary-rank sum
+is depressed far more than its monotonic-rank sum is
+inflated, indicating SCALE compression in the second
+half (the rank pattern asymmetry that a pure location
+shift would NOT produce; a pure location shift gives
+ccU and ccV equal in magnitude and opposite in sign).
+This is exactly the structural signal Cucconi is
+designed to discriminate, and which Mann-Whitney-115,
+Siegel-Tukey-117, and Ansari-Bradley-170 cannot resolve
+in a single statistic.
+
+#### Tests
+
+Test suite grew by **+41** tests (13008 -> 13049).
+Coverage:
+
+- `cucconiNullMoments` closed-form anchors at n=8;
+  symmetry of T1/T2 marginals; rejects n1<1, n2<1,
+  non-integer;
+- `cucconiNullRho` closed-form at n=8; monotone INCREASE
+  toward asymptotic limit -7/8 = -0.875 as n grows;
+- statistic invariants (shift, positive scale,
+  negation T1 <-> T2 swap with C unchanged);
+- `ccU` / `ccV` standardisation matches closed-form
+  moments; `ccRho` matches `cucconiNullRho(n)`;
+- `ccC` formula identity (U^2 + V^2 - 2 rho U V) /
+  (2(1-rho^2)) verified numerically;
+- `ccPValue = exp(-ccC)` and `ccZ = sqrt(2 ccC)` exact;
+- `ccC` non-negativity sweep over 20 random series;
+- behavioural: pure-location-shift drives large ccC
+  (p < 0.01); pure-scale-shift drives ccC > 0.5;
+  identical halves yield modest ccC < 5;
+- `chiSquaredUpperTail` Numerical Recipes 6.2 anchors
+  (chi-2(2): exp(-x/2); chi-2(1) at 3.841 ~ 0.05;
+  chi-2(4) at 9.488 ~ 0.05); monotone non-increasing in
+  x; clamped to [0, 1]; rejects k <= 0 / non-finite;
+- `lanczosLogGamma` integer-factorial anchors;
+  rejects x <= 0;
+- `aggregateCucconiHalves` Fisher's combined-p empty
+  identity (chi2=0, p=1); skip-malformed-rows counter
+  (n<2, NaN ccC, ccPValue not in (0,1], negative ccC);
+  single-row Fisher anchor reproduces input p; many-
+  small-p amplification; all-p=1 yields combined p=1;
+- end-to-end `buildDailyTokenCucconiHalves` pipeline:
+  empty input, option validation, since/until validation,
+  source filter, top-cap, bad-hour-start counter,
+  non-positive-tokens counter, sort-by-ccCDesc
+  monotonicity.
+
 ## 0.6.448 — 2026-05-04
 
 ### Refined — axis-173 corpus-level aggregator + chi-squared upper-tail helper
