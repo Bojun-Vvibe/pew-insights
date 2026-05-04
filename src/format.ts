@@ -25258,3 +25258,86 @@ export function renderDailyTokenAdfUnitRoot(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenVarianceRatioLoMacKinlay(
+  r: import('./dailytokenvarianceratiolomackinlay.js').DailyTokenVarianceRatioLoMacKinlayReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-variance-ratio-lo-mackinlay'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    q: ${r.q}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LO-MACKINLAY VARIANCE-RATIO TEST for the random-walk null on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-FIFTY-EIGHTH cross-source axis. Class-RANDOM-WALK-NULL-TEST (Lo & MacKinlay 1988 RFS 1:41-66; Campbell-Lo-MacKinlay 1997 sec. 2.4): VR(q) = Var(x[t]-x[t-q]) / (q * Var(x[t]-x[t-1])); under iid random-walk null VR(q)=1 for all q; vrZ_iid = (VR-1)/sqrt(2(2q-1)(q-1)/(3*q*nDiff)); vrZ_hc = (VR-1)/sqrt(sum_{j=1..q-1} (2(q-j)/q)^2 * delta(j)) is heteroskedasticity-consistent (robust to ARCH/GARCH/SV). vrZ much greater than +1.96 = positive level-serial-correlation (level wanders less than RW); vrZ much less than -1.96 = negative level-serial-correlation (anti-persistence). Distinct from axis-157 ADF (regression t-ratio on AR(1) coef rho with non-standard DF null) and axis-156 KPSS (functional-CLT integrand on level partial sums) by being a SECOND-MOMENT VARIANCE-SCALING statistic on level differences with closed-form Gaussian null. Default q = 2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source variance-ratio test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'nDiff',
+    'q',
+    'vr',
+    'vrZIid',
+    'vrZHc',
+    'diffMean',
+    'diffStddev',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nDiff),
+    formatNumber(s.vrQ),
+    s.vr.toFixed(4),
+    s.vrZIid.toFixed(4),
+    s.vrZHc.toFixed(4),
+    formatNumber(s.diffMean),
+    formatNumber(s.diffStddev),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: VR(q) approx 1 = random-walk-consistent; VR > 1 = positive level-serial-correlation; VR < 1 = negative (anti-persistent). vrZ_iid valid under iid increments; vrZ_hc robust to volatility clustering -- always read both. |vrZ| > 1.96 = reject RW1 at alpha = 0.05.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

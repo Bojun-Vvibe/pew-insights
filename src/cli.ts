@@ -77,6 +77,7 @@ import {
   renderDailyTokenBuishandRange,
   renderDailyTokenKpssStationarity,
   renderDailyTokenAdfUnitRoot,
+  renderDailyTokenVarianceRatioLoMacKinlay,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -464,6 +465,10 @@ import {
   buildDailyTokenAdfUnitRoot,
   type DailyTokenAdfUnitRootSortKey,
 } from './dailytokenadfunitroot.js';
+import {
+  buildDailyTokenVarianceRatioLoMacKinlay,
+  type DailyTokenVarianceRatioLoMacKinlaySort,
+} from './dailytokenvarianceratiolomackinlay.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -41623,6 +41628,125 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenAdfUnitRoot(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-variance-ratio-lo-mackinlay')
+  .description(
+    "Per-source LO-MACKINLAY VARIANCE-RATIO TEST for the random-walk null on the gap-filled daily total_tokens series (axis-158). VR(q) = Var(x[t]-x[t-q]) / (q * Var(x[t]-x[t-1])); under iid random-walk null VR(q)=1; vrZ_iid uses asymptotic iid variance 2(2q-1)(q-1)/(3*q*nDiff); vrZ_hc uses heteroskedasticity-consistent variance sum_{j=1..q-1} (2(q-j)/q)^2 * delta(j) (Lo & MacKinlay 1988 RFS 1:41-66 eq. 9 / eq. 12). vrZ much greater than +1.96 = positive level-serial-correlation; vrZ much less than -1.96 = anti-persistence. Structurally orthogonal to axis-157 ADF (regression t-ratio with non-standard DF null), axis-156 KPSS (functional-CLT integrand), axis-114 Ljung-Box (multi-lag squared-acf portmanteau on the level), and the autocorrelation axes by being a SECOND-MOMENT VARIANCE-SCALING statistic on level differences with a closed-form Gaussian null. Default q = 2 (canonical Lo-MacKinlay smallest non-trivial horizon).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 6 (nDiff=5, q=2 just admissible). Default 14.',
+    '14',
+  )
+  .option(
+    '--q <n>',
+    'aggregation horizon q for the variance ratio; effective q = min(q, floor(nDiff/2)). Default 2 (canonical Lo-MacKinlay smallest non-trivial horizon).',
+    '2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: vrZHcAbsDesc (default) | vr | vrDesc | vrZIid | vrZIidDesc | vrZIidAbs | vrZIidAbsDesc | vrZHc | vrZHcDesc | vrZHcAbs | tokens | tenure | source.',
+    'vrZHcAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        q: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 6) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 6 (got ${opts.minTenureDays})`,
+          );
+        }
+        const qVal = Number.parseInt(opts.q, 10);
+        if (!Number.isInteger(qVal) || qVal < 2) {
+          throw new Error(`--q must be an integer >= 2 (got ${opts.q})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'vr',
+          'vrDesc',
+          'vrZIid',
+          'vrZIidDesc',
+          'vrZIidAbs',
+          'vrZIidAbsDesc',
+          'vrZHc',
+          'vrZHcDesc',
+          'vrZHcAbs',
+          'vrZHcAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenVarianceRatioLoMacKinlay(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          q: qVal,
+          top,
+          sort: opts.sort as DailyTokenVarianceRatioLoMacKinlaySort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenVarianceRatioLoMacKinlay(report) + '\n',
+          );
         }
       } catch (e) {
         die(e);
