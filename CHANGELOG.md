@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.439 — 2026-05-04
+
+### Refined — axis-169 corpus-level aggregator + Fisher combined-p
+
+Two new public helpers exposed from the axis-169 module:
+
+1. **`aggregateAndersonDarlingCumulativePeriodogram(rows)`** —
+   combines per-source `adAStar` / `adPValue` results into a
+   single corpus-level summary. Outputs:
+   - `tenureWeightedAdAStar` — average of `adAStar` weighted
+     by `nTenureDays - 1` (matches the natural d.o.f. of the
+     per-source statistic under the Brownian-bridge
+     asymptotic).
+   - `fisherCombinedPValue` — Fisher's (1932) combined-p
+     `P(Chi^2_{2m} > -2 sum_i log(p_i))`, with `p_i` clamped
+     to `[1e-300, 1]` so that numerically-zero per-source
+     p-values do not produce `-Infinity` contributions.
+   - `totalTenureWeight`, `rowsUsed`, `rowsSkipped` — defensive
+     book-keeping. Malformed rows (non-finite `adAStar` /
+     `adPValue`, non-integer `nTenureDays`, `nTenureDays < 2`)
+     are SKIPPED with a counter rather than throwing.
+
+2. **`chiSquaredUpperTail(x, k)`** — published-table accurate
+   `P(Chi^2_k > x)` via the regularised upper incomplete
+   gamma function (Numerical Recipes 6.2 with Lentz's
+   modified continued-fraction expansion for `x > s+1` and
+   the power series for `x <= s+1`). Convergence to ~1e-12
+   absolute in <= 100 iterations across the operating range
+   (`k = 2m` for `m` rows; typically `k <= 200`). Uses a
+   self-contained Lanczos `logGamma` (g=7, 9 coefficients) —
+   no external dependency.
+
+Why this refinement: the per-source axis-169 test is the
+published deployment, but corpus-level dashboards routinely
+need a single number summarising "how white-noise-like is the
+WHOLE pew daily-token stream?". Without this helper, callers
+were left to either (a) re-run the test on a concatenated
+series — which inflates `K` and breaks the per-source-tenure
+asymptotic — or (b) eyeball the per-source p-value column.
+Fisher's combined-p is the textbook independence-respecting
+aggregation under the per-source-independent null
+(Mosteller & Fisher 1948 Am. Stat. 2(5)).
+
+#### Tests
+
+Test suite grew by **10 tests** (12825 → 12835). Coverage:
+
+- `aggregate`: empty rows -> trivial neutral, defensive
+  skipping of 4 distinct malformed shapes, manual
+  weighted-average verification, zero-p clamp guard, two-row
+  Fisher-combined-p closed-form pinned to ~0.5963 (matches
+  R `pchisq(4*log(2), 4, lower.tail=FALSE)`).
+- `chiSquaredUpperTail`: edge cases (`x<=0`, non-finite,
+  `k<=0`), four published Stephens 1974 critical values
+  pinned to 1e-3, monotonicity, range `[0,1]` across
+  `k ∈ {1,2,4,10,50}` and `x ∈ [0,100]`.
+
 ## 0.6.438 — 2026-05-04
 
 ### Added — axis-169: `daily-token-anderson-darling-cumulative-periodogram`
