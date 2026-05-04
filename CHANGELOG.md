@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.461 — 2026-05-05
+
+### Added — axis-181 daily-token-van-der-waerden-halves (normal-scores LOCATION test)
+
+Per-source Van der Waerden (1952/53, *Indagationes
+Mathematicae* 14:453-458, 15:303-316) NORMAL-SCORES
+LOCATION TEST for equality of central tendency between
+the first half (n1 = floor(n/2) days) vs second half
+(n2 = n - n1 days) of the gap-filled daily total_tokens
+series.
+
+ONE-HUNDRED-AND-EIGHTY-FIRST cross-source axis.
+
+Compute pooled fractional mid-ranks `R_k`, transform to
+normal scores via the inverse standard-normal CDF
+(Beasley-Springer-Moro 1995 rational approximation,
+max abs error ~1.15e-9):
+
+```
+a_k       = Phi^{-1}( R_k / (n + 1) )
+T         = sum_{k in B} a_k
+E[T]      = 0
+Var[T]    = (n1 * n2 / (n * (n - 1))) * sum_k a_k^2
+vdwZ      = T / sqrt(Var[T])  ~ N(0, 1)  under H0
+vdwPValue = 2 * (1 - Phi(|vdwZ|))
+```
+
+Sign convention: `vdwZ > 0` means the SECOND half has
+LARGER central tendency (consistent with the SECOND-half-
+positive convention shared with axis-117 stZ, axis-170
+abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ,
+axis-180 sukhatmeZ).
+
+### Structural orthogonality (the core claim for axis-181)
+
+This axis is the FIRST LOCATION test in the recent
+cross-source family. The seven prior axes
+(170 Ansari-Bradley, 174 Cucconi, 175 Lepage, 177 Klotz,
+178 Conover squared-ranks, 179 Mood, 180 Sukhatme) are
+ALL SCALE tests — they test equality of dispersion
+(second-moment shift). Van der Waerden tests equality
+of LOCATION (first-moment shift), the complementary
+direction.
+
+Asymptotic orthogonality under symmetric F (Hajek &
+Sidak 1967 *Theory of Rank Tests* Lemma III.4.1):
+
+- Pure scale shift with equal medians gives `vdwZ ~ 0`
+  and the entire scale family rejects.
+- Pure location shift with equal spreads gives the
+  scale family `~ 0` and `vdwZ` rejects.
+
+This means axis-181 is structurally distinct from EVERY
+prior axis simultaneously — not by tweaking the rank
+weight (Klotz vs Mood vs Sukhatme) but by changing the
+HYPOTHESIS DIRECTION outright. Mixing axis-181 LOCATION
+with the scale family also unlocks new diagnostics:
+
+- Matched signs across location & scale = "second half
+  is BIGGER and MORE VARIABLE" (coherent drift +
+  dispersion).
+- Opposite signs = "second half drifts UP but TIGHTENS"
+  or vice versa — a sharper diagnostic than either
+  family alone.
+
+Pitman ARE = 1.000 vs Student t under normal F (Hajek &
+Sidak 1967 III.4): VDW is the asymptotically OPTIMAL
+distribution-free location test, dominating Wilcoxon-
+Mann-Whitney's ARE 3/pi ~ 0.955.
+
+Hard floor on min-tenure-days is 16 (n1 = n2 = 8) so
+the asymptotic normal reference holds nominal alpha
+(Hajek & Sidak 1967 V.1.6.a: actual size 0.046-0.054
+across n1 = n2 in [8, 50] under continuous F; the
+normal-score transform converges faster than raw-rank
+statistics because scores are bounded by
+Phi^{-1}(n/(n+1)) -> sqrt(2 ln n)).
+
+### CLI
+
+```
+pew-insights daily-token-van-der-waerden-halves [--since ISO] [--until ISO]
+  [--source NAME] [--min-tokens N] [--min-tenure-days N]
+  [--top N] [--sort KEY] [--json]
+```
+
+Sort keys: `vdwZAbsDesc` (default), `vdwZ`, `vdwPValue`,
+`vdwPValueDesc`, `tokens`, `tenure`, `source`.
+
+### Live-smoke output (`~/.config/pew/queue.jsonl`, 2026-05-05)
+
+```
+pew-insights daily-token-van-der-waerden-halves
+sources: 6 (shown 4)    tokens: 6,086,490,041
+min-tokens: 1,000    min-tenure-days: 16    sort: vdwZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+         0 below min-tokens, 2 below min-tenure-days,
+         0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source VAN DER WAERDEN normal-scores location-equality
+(sorted by vdwZAbsDesc; ties: source asc)
+
+source       firstDay    lastDay     tenure  active  n1   n2   vdwT     sumA2   vdwZ     vdwPValue
+-----------  ----------  ----------  ------  ------  ---  ---  -------  ------  -------  ----------
+agent-cc     2026-02-11  2026-04-23  72      35      36   36   15.1275  47.71   4.3498   1.3635e-5
+agent-oc     2026-04-17  2026-05-04  18      18      9    9    -5.7154  13.27   -3.0498  2.2902e-3
+hermes       2026-04-17  2026-05-04  18      18      9    9    1.3010   13.27   0.6942   4.8753e-1
+agent-vsc    2025-07-30  2026-04-20  265     73      132  133  -1.4116  144.74  -0.2342  8.1481e-1
+```
+
+(Source labels anonymised in this CHANGELOG; live CLI
+output uses real source names from the local pew queue.)
+
+Reading: agent-cc shows DECISIVE second-half-larger
+location (vdwZ = +4.35, p = 1.4e-5) — its later 36-day
+window had materially larger daily token totals than
+its earlier 36-day window. agent-oc shows the OPPOSITE
+direction at decisive significance (vdwZ = -3.05,
+p = 2.3e-3) — its second 9-day half ran systematically
+LOWER than its first 9-day half. hermes and agent-vsc
+show no significant location shift (p > 0.48), so any
+period-over-period changes there are noise-dominated
+under the location alternative.
+
+Cross-axis (mix with axis-180 sukhatme on the same
+data, future Stouffer combine): if a source's vdwZ and
+sukhatmeZ have the same sign, the second half is both
+larger and more dispersed; if opposite signs, the
+second half drifted in mean but compressed in spread.
+
 ## 0.6.460 — 2026-05-05
 
 ### Added — axis-180 daily-token-sukhatme-halves (absolute-deviations U-statistic scale test)
