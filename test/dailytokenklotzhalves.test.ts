@@ -285,3 +285,61 @@ test('buildDailyTokenKlotzHalves: source filter restricts and counts dropped', (
   assert.equal(r.sources[0]!.source, 'keep');
   assert.ok(r.droppedSourceFilter > 0);
 });
+
+// ---------- refinement: aggregateKlotzHalves Stouffer signed combiner ----------
+
+import { aggregateKlotzHalves } from '../src/dailytokenklotzhalves.js';
+
+test('aggregateKlotzHalves: empty input -> rowsUsed 0', () => {
+  const r = aggregateKlotzHalves([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.stoufferZ, 0);
+  assert.equal(r.stoufferTwoSidedPValue, 1);
+});
+
+test('aggregateKlotzHalves: skips malformed rows', () => {
+  const r = aggregateKlotzHalves([
+    { klotzZ: Number.NaN, klotzPValue: 0.1, klotzVarK: 1, nTenureDays: 20 },
+    { klotzZ: 1, klotzPValue: 0, klotzVarK: 1, nTenureDays: 20 },
+    { klotzZ: 1, klotzPValue: 0.5, klotzVarK: 0, nTenureDays: 20 },
+    { klotzZ: 1, klotzPValue: 0.5, klotzVarK: 1, nTenureDays: 0 },
+  ]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 4);
+});
+
+test('aggregateKlotzHalves: signed cancellation — equal +z and -z give stoufferZ ~ 0', () => {
+  const r = aggregateKlotzHalves([
+    { klotzZ: 2.0, klotzPValue: 0.0455, klotzVarK: 1, nTenureDays: 20 },
+    { klotzZ: -2.0, klotzPValue: 0.0455, klotzVarK: 1, nTenureDays: 20 },
+  ]);
+  assert.equal(r.rowsUsed, 2);
+  assert.ok(Math.abs(r.stoufferZ) < 1e-10);
+  assert.ok(r.stoufferTwoSidedPValue > 0.99);
+});
+
+test('aggregateKlotzHalves: same-sign reinforcement — sqrt(m) scaling', () => {
+  // 4 sources each at klotzZ = 2: stoufferZ = 4 * 2 / sqrt(4) = 4.
+  const r = aggregateKlotzHalves(
+    Array.from({ length: 4 }, () => ({
+      klotzZ: 2.0,
+      klotzPValue: 0.0455,
+      klotzVarK: 1,
+      nTenureDays: 20,
+    })),
+  );
+  assert.equal(r.rowsUsed, 4);
+  assert.ok(Math.abs(r.stoufferZ - 4.0) < 1e-9);
+  assert.ok(r.stoufferTwoSidedPValue < 1e-4);
+});
+
+test('aggregateKlotzHalves: tenure weighting differs from unweighted mean', () => {
+  // Long-tenure source dominates the weighted mean.
+  const r = aggregateKlotzHalves([
+    { klotzZ: 5, klotzPValue: 1e-6, klotzVarK: 1, nTenureDays: 1000 },
+    { klotzZ: -1, klotzPValue: 0.317, klotzVarK: 1, nTenureDays: 20 },
+    { klotzZ: -1, klotzPValue: 0.317, klotzVarK: 1, nTenureDays: 20 },
+  ]);
+  assert.ok(Math.abs(r.meanKlotzZ - 1.0) < 1e-9);
+  assert.ok(r.tenureWeightedMeanKlotzZ > 4.5);
+});

@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.456 — 2026-05-05
+
+### Refined — axis-177 Stouffer signed corpus aggregator
+
+New public helper exposed from the axis-177 module:
+
+**`aggregateKlotzHalves(rows)`** — corpus-level SIGNED
+combiner for per-source `klotzZ`. Implements Stouffer's
+z-method (Stouffer et al. 1949 *American Soldier*
+vol. 1, sec. 2.2; Whitlock 2005 *J. Evol. Biol.*
+18:1368-1373):
+
+```
+stoufferZ              = sum_i klotzZ_i / sqrt(m)
+stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+```
+
+This is the SIGNED counterpart to the Lancaster /
+Fisher unsigned aggregators used for axes 174/175.
+`klotzZ` is intrinsically signed (positive = second half
+MORE dispersed; negative = first half MORE dispersed)
+so Stouffer is the correct meta-analytic combiner —
+opposite-direction sources can meaningfully cancel,
+which is exactly what the unsigned chi-2(2) Lancaster
+combiner can NOT express.
+
+Also returns:
+
+- `meanKlotzZ` — unweighted corpus-mean klotzZ
+- `tenureWeightedMeanKlotzZ` — `nTenureDays`-weighted
+  mean klotzZ (matches axis-175 v0.6.452 / axis-176
+  v0.6.453 weighting convention)
+- `rowsUsed`, `rowsSkipped` — counters; malformed rows
+  are skipped not thrown
+
+5 additional unit tests (38 total for axis-177) cover:
+empty input, malformed-row skip, signed cancellation
+(equal +z and -z give stoufferZ ~ 0), same-sign
+reinforcement (4 sources at klotzZ = 2 give stoufferZ
+= 4 by sqrt(m) scaling), and tenure-weighting
+divergence from unweighted mean.
+
 ## 0.6.455 — 2026-05-05
 
 ### Added — axis-177 daily-token-klotz-halves (squared-normal-scores scale test)

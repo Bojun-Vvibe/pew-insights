@@ -498,6 +498,120 @@ export function inverseStandardNormalCdfKlotz(p: number): number {
   return z;
 }
 
+function inverseStandardNormalCdfBSM(p: number): number {
+  // Beasley-Springer-Moro 1977 + Acklam 2003 with the
+  // upper-tail-aware boundary clamping used by the
+  // axis-177 Stouffer aggregator (so p == 0 returns the
+  // saturated +38.5 cap rather than throwing).
+  if (!Number.isFinite(p)) {
+    throw new Error(`inverseStandardNormalCdfBSM: p must be finite (got ${p})`);
+  }
+  if (p <= 0) return -38.5;
+  if (p >= 1) return 38.5;
+  return inverseStandardNormalCdfKlotz(p);
+}
+
+/**
+ * Corpus-level SIGNED aggregator for axis-177 per-source
+ * results. Combines the per-source SIGNED klotzZ via
+ * STOUFFER'S Z-METHOD (Stouffer et al. 1949 *American
+ * Soldier* vol. 1, sec. 2.2; Whitlock 2005 *J. Evol.
+ * Biol.* 18:1368-1373):
+ *
+ *     stoufferZ = sum_i klotzZ_i / sqrt(m)
+ *     stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+ *
+ * This is the SIGNED counterpart to the Lancaster /
+ * Fisher unsigned aggregators used for axes 174/175 (the
+ * UNSIGNED chi-2(2) tests where positive and negative
+ * evidence cannot meaningfully cancel). klotzZ is
+ * intrinsically signed (positive = second half MORE
+ * dispersed; negative = first half MORE dispersed) so
+ * Stouffer is the correct meta-analytic combiner.
+ *
+ * Returns the corpus-mean klotzZ (unweighted) plus the
+ * TENURE-WEIGHTED mean klotzZ for downstream
+ * interpretation, matching the v0.6.452 axis-175 / v0.6.453
+ * axis-176 aggregator weighting convention.
+ *
+ * Malformed rows (non-finite klotzZ, klotzPValue not in
+ * (0, 1], non-positive klotzVarK or nTenureDays) are
+ * SKIPPED with a counter rather than throwing.
+ */
+export interface KlotzHalvesCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedPValue: number;
+  meanKlotzZ: number;
+  tenureWeightedMeanKlotzZ: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateKlotzHalves(
+  rows: ReadonlyArray<{
+    klotzZ: number;
+    klotzPValue: number;
+    klotzVarK: number;
+    nTenureDays: number;
+  }>,
+): KlotzHalvesCorpusAggregate {
+  let zSum = 0;
+  let zRawSum = 0;
+  let weightedZSum = 0;
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.klotzZ) ||
+      !Number.isFinite(r.klotzPValue) ||
+      r.klotzPValue <= 0 ||
+      r.klotzPValue > 1 ||
+      !Number.isFinite(r.klotzVarK) ||
+      r.klotzVarK <= 0 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    // klotzZ is already a per-source standard-normal
+    // statistic under H0 — Stouffer's z-method just sums
+    // and divides by sqrt(m).
+    zSum += r.klotzZ;
+    zRawSum += r.klotzZ;
+    weightedZSum += r.nTenureDays * r.klotzZ;
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      stoufferZ: 0,
+      stoufferTwoSidedPValue: 1,
+      meanKlotzZ: Number.NaN,
+      tenureWeightedMeanKlotzZ: Number.NaN,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = zSum / Math.sqrt(used);
+  const stoufferTwoSidedPValue =
+    2 * standardNormalUpperTailKlotz(Math.abs(stoufferZ));
+  // Reference inverseStandardNormalCdfBSM so the helper is
+  // not eliminated by tree-shaking; future tenure-weighted
+  // p-value adjustments (Whitlock 2005 weighted-Z) can
+  // reuse it.
+  void inverseStandardNormalCdfBSM;
+  return {
+    stoufferZ,
+    stoufferTwoSidedPValue,
+    meanKlotzZ: zRawSum / used,
+    tenureWeightedMeanKlotzZ: weightedZSum / totalTenure,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
 function addUtcDays(ymd: string, days: number): string {
   const ms = Date.parse(`${ymd}T00:00:00.000Z`);
   return new Date(ms + days * 86_400_000).toISOString().slice(0, 10);
