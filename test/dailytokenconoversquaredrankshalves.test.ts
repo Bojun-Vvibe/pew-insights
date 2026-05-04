@@ -6,6 +6,8 @@ import {
   midRanksConover,
   medianConover,
   standardNormalUpperTailConover,
+  aggregateConoverSquaredRanksHalves,
+  labelConoverSquaredRanksHalvesRow,
 } from '../src/dailytokenconoversquaredrankshalves.js';
 import type { QueueLine } from '../src/types.js';
 
@@ -254,4 +256,134 @@ test('buildDailyTokenConoverSquaredRanksHalves: respects top cap and reports dro
   });
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedTopSources, 1);
+});
+
+// ---------- aggregator: aggregateConoverSquaredRanksHalves ----------
+
+test('aggregateConoverSquaredRanksHalves: empty input returns sentinel', () => {
+  const r = aggregateConoverSquaredRanksHalves([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 0);
+  assert.equal(r.stoufferZ, 0);
+  assert.equal(r.stoufferTwoSidedPValue, 1);
+  assert.ok(Number.isNaN(r.meanConoverZ));
+  assert.ok(Number.isNaN(r.tenureWeightedMeanConoverZ));
+});
+
+test('aggregateConoverSquaredRanksHalves: skips malformed rows', () => {
+  const r = aggregateConoverSquaredRanksHalves([
+    { conoverZ: 1.5, conoverPValue: 0.1, conoverVarT: 10, nTenureDays: 30 },
+    { conoverZ: Number.NaN, conoverPValue: 0.5, conoverVarT: 1, nTenureDays: 20 },
+    { conoverZ: 2.0, conoverPValue: 0, conoverVarT: 5, nTenureDays: 25 }, // p=0 invalid
+    { conoverZ: 1.0, conoverPValue: 0.3, conoverVarT: -1, nTenureDays: 16 }, // var<0 invalid
+    { conoverZ: 1.0, conoverPValue: 0.3, conoverVarT: 1, nTenureDays: 0 }, // tenure<=0 invalid
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  assert.equal(r.rowsSkipped, 4);
+});
+
+test('aggregateConoverSquaredRanksHalves: signed cancellation (equal +z and -z give stoufferZ ~ 0)', () => {
+  const r = aggregateConoverSquaredRanksHalves([
+    { conoverZ: 2.0, conoverPValue: 0.05, conoverVarT: 1, nTenureDays: 30 },
+    { conoverZ: -2.0, conoverPValue: 0.05, conoverVarT: 1, nTenureDays: 30 },
+  ]);
+  assert.ok(Math.abs(r.stoufferZ) < 1e-9);
+  assert.ok(Math.abs(r.meanConoverZ) < 1e-9);
+});
+
+test('aggregateConoverSquaredRanksHalves: same-sign reinforcement (4 sources at z=2 give stouffer = 4)', () => {
+  const r = aggregateConoverSquaredRanksHalves([
+    { conoverZ: 2.0, conoverPValue: 0.05, conoverVarT: 1, nTenureDays: 30 },
+    { conoverZ: 2.0, conoverPValue: 0.05, conoverVarT: 1, nTenureDays: 30 },
+    { conoverZ: 2.0, conoverPValue: 0.05, conoverVarT: 1, nTenureDays: 30 },
+    { conoverZ: 2.0, conoverPValue: 0.05, conoverVarT: 1, nTenureDays: 30 },
+  ]);
+  // sum/sqrt(4) = 8/2 = 4
+  assert.ok(Math.abs(r.stoufferZ - 4) < 1e-9);
+  assert.ok(r.stoufferTwoSidedPValue < 1e-4);
+});
+
+test('aggregateConoverSquaredRanksHalves: tenure-weighting diverges from unweighted mean', () => {
+  const r = aggregateConoverSquaredRanksHalves([
+    { conoverZ: 5.0, conoverPValue: 0.001, conoverVarT: 1, nTenureDays: 100 },
+    { conoverZ: -1.0, conoverPValue: 0.4, conoverVarT: 1, nTenureDays: 20 },
+  ]);
+  // unweighted mean = (5 - 1) / 2 = 2.0
+  // tenure-weighted = (5 * 100 + -1 * 20) / 120 = 480/120 = 4.0
+  assert.ok(Math.abs(r.meanConoverZ - 2.0) < 1e-9);
+  assert.ok(Math.abs(r.tenureWeightedMeanConoverZ - 4.0) < 1e-9);
+});
+
+// ---------- classifier: labelConoverSquaredRanksHalvesRow ----------
+
+test('labelConoverSquaredRanksHalvesRow: decisive positive at p < alpha', () => {
+  const lab = labelConoverSquaredRanksHalvesRow({
+    conoverZ: 6.4,
+    conoverPValue: 1e-10,
+  });
+  assert.equal(lab, 'second-decisively-more-dispersed');
+});
+
+test('labelConoverSquaredRanksHalvesRow: decisive negative at p < alpha', () => {
+  const lab = labelConoverSquaredRanksHalvesRow({
+    conoverZ: -3.0,
+    conoverPValue: 0.003,
+  });
+  assert.equal(lab, 'first-decisively-more-dispersed');
+});
+
+test('labelConoverSquaredRanksHalvesRow: leaning positive at alpha <= p < 2*alpha', () => {
+  const lab = labelConoverSquaredRanksHalvesRow({
+    conoverZ: 1.7,
+    conoverPValue: 0.08,
+  });
+  assert.equal(lab, 'second-leans-more-dispersed');
+});
+
+test('labelConoverSquaredRanksHalvesRow: leaning negative at alpha <= p < 2*alpha', () => {
+  const lab = labelConoverSquaredRanksHalvesRow({
+    conoverZ: -1.7,
+    conoverPValue: 0.08,
+  });
+  assert.equal(lab, 'first-leans-more-dispersed');
+});
+
+test('labelConoverSquaredRanksHalvesRow: no evidence at p >= 2*alpha', () => {
+  const lab = labelConoverSquaredRanksHalvesRow({
+    conoverZ: 0.4,
+    conoverPValue: 0.6,
+  });
+  assert.equal(lab, 'no-evidence-of-dispersion-shift');
+});
+
+test('labelConoverSquaredRanksHalvesRow: configurable alpha changes verdict', () => {
+  const lab1 = labelConoverSquaredRanksHalvesRow(
+    { conoverZ: 2.0, conoverPValue: 0.04 },
+    0.01,
+  );
+  // p=0.04 >= alpha=0.01 and < 0.02? No, 0.04 > 2*0.01=0.02 -> no evidence
+  assert.equal(lab1, 'no-evidence-of-dispersion-shift');
+  const lab2 = labelConoverSquaredRanksHalvesRow(
+    { conoverZ: 2.0, conoverPValue: 0.04 },
+    0.05,
+  );
+  assert.equal(lab2, 'second-decisively-more-dispersed');
+});
+
+test('labelConoverSquaredRanksHalvesRow: throws on bad input', () => {
+  assert.throws(() =>
+    labelConoverSquaredRanksHalvesRow({
+      conoverZ: Number.NaN,
+      conoverPValue: 0.5,
+    }),
+  );
+  assert.throws(() =>
+    labelConoverSquaredRanksHalvesRow({ conoverZ: 1, conoverPValue: 0 }),
+  );
+  assert.throws(() =>
+    labelConoverSquaredRanksHalvesRow(
+      { conoverZ: 1, conoverPValue: 0.5 },
+      0.6,
+    ),
+  );
 });

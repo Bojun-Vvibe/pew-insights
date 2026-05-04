@@ -461,6 +461,179 @@ export function standardNormalUpperTailConover(z: number): number {
   return q < 0 ? 0 : q > 1 ? 1 : q;
 }
 
+/**
+ * Corpus-level SIGNED aggregator for axis-178 per-source
+ * results. Combines the per-source SIGNED conoverZ via
+ * STOUFFER'S Z-METHOD (Stouffer et al. 1949 *American
+ * Soldier* vol. 1, sec. 2.2; Whitlock 2005 *J. Evol.
+ * Biol.* 18:1368-1373):
+ *
+ *     stoufferZ = sum_i conoverZ_i / sqrt(m)
+ *     stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+ *
+ * This is the SIGNED counterpart to the Lancaster /
+ * Fisher unsigned aggregators used for the chi-2(2)
+ * joint location-scale axes 174/175 (where positive and
+ * negative evidence cannot meaningfully cancel). conoverZ
+ * is intrinsically signed (positive = second half MORE
+ * dispersed; negative = first half MORE dispersed) so
+ * Stouffer is the correct meta-analytic combiner —
+ * opposite-direction sources can meaningfully cancel,
+ * which is exactly what the unsigned chi-2(2) Lancaster
+ * combiner can NOT express.
+ *
+ * Also returns
+ *
+ *   - meanConoverZ — unweighted corpus-mean conoverZ
+ *   - tenureWeightedMeanConoverZ — nTenureDays-weighted
+ *     mean conoverZ (matches the axis-175 v0.6.452,
+ *     axis-176 v0.6.453, axis-177 v0.6.456 weighting
+ *     convention)
+ *   - rowsUsed, rowsSkipped — counters; malformed rows
+ *     (non-finite conoverZ, conoverPValue not in (0, 1],
+ *     non-positive conoverVarT or nTenureDays) are
+ *     SKIPPED with a counter rather than throwing.
+ *
+ * AXIS-CROSS USE. Combined elementwise with axis-177's
+ * `aggregateKlotzHalves` (signed Stouffer over klotzZ),
+ * the two corpus-mean Z scores form an ORTHOGONAL
+ * scale-detector pair: agreement on sign confirms a
+ * dispersion shift in BOTH the rank-quadratic (Conover)
+ * AND tail-amplified-normal-score (Klotz) channels;
+ * disagreement localises the alternative to either
+ * shoulder-dominant (Conover-only) or tail-dominant
+ * (Klotz-only) regimes.
+ */
+export interface ConoverSquaredRanksHalvesCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedPValue: number;
+  meanConoverZ: number;
+  tenureWeightedMeanConoverZ: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateConoverSquaredRanksHalves(
+  rows: ReadonlyArray<{
+    conoverZ: number;
+    conoverPValue: number;
+    conoverVarT: number;
+    nTenureDays: number;
+  }>,
+): ConoverSquaredRanksHalvesCorpusAggregate {
+  let zSum = 0;
+  let zRawSum = 0;
+  let weightedZSum = 0;
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.conoverZ) ||
+      !Number.isFinite(r.conoverPValue) ||
+      r.conoverPValue <= 0 ||
+      r.conoverPValue > 1 ||
+      !Number.isFinite(r.conoverVarT) ||
+      r.conoverVarT <= 0 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    zSum += r.conoverZ;
+    zRawSum += r.conoverZ;
+    weightedZSum += r.nTenureDays * r.conoverZ;
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      stoufferZ: 0,
+      stoufferTwoSidedPValue: 1,
+      meanConoverZ: Number.NaN,
+      tenureWeightedMeanConoverZ: Number.NaN,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = zSum / Math.sqrt(used);
+  const stoufferTwoSidedPValue =
+    2 * standardNormalUpperTailConover(Math.abs(stoufferZ));
+  return {
+    stoufferZ,
+    stoufferTwoSidedPValue,
+    meanConoverZ: zRawSum / used,
+    tenureWeightedMeanConoverZ: weightedZSum / totalTenure,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Directional label classifier for axis-178 per-source
+ * conoverZ. Maps the signed standardised statistic to one
+ * of five mutually-exclusive verdict buckets at
+ * configurable two-sided alpha (default 0.05):
+ *
+ *   - 'second-decisively-more-dispersed' if conoverZ > 0
+ *     AND conoverPValue < alpha
+ *   - 'first-decisively-more-dispersed'  if conoverZ < 0
+ *     AND conoverPValue < alpha
+ *   - 'second-leans-more-dispersed' if conoverZ > 0 AND
+ *     alpha <= conoverPValue < 2 * alpha (suggestive but
+ *     not significant at the chosen level)
+ *   - 'first-leans-more-dispersed'  if conoverZ < 0 AND
+ *     alpha <= conoverPValue < 2 * alpha
+ *   - 'no-evidence-of-dispersion-shift' otherwise
+ *
+ * Throws on malformed input (non-finite Z, P outside
+ * (0, 1], alpha outside (0, 0.5]).
+ */
+export type ConoverDirectionalLabel =
+  | 'second-decisively-more-dispersed'
+  | 'first-decisively-more-dispersed'
+  | 'second-leans-more-dispersed'
+  | 'first-leans-more-dispersed'
+  | 'no-evidence-of-dispersion-shift';
+
+export function labelConoverSquaredRanksHalvesRow(
+  row: { conoverZ: number; conoverPValue: number },
+  alpha = 0.05,
+): ConoverDirectionalLabel {
+  if (!Number.isFinite(row.conoverZ)) {
+    throw new Error(
+      `labelConoverSquaredRanksHalvesRow: conoverZ must be finite (got ${row.conoverZ})`,
+    );
+  }
+  if (
+    !Number.isFinite(row.conoverPValue) ||
+    row.conoverPValue <= 0 ||
+    row.conoverPValue > 1
+  ) {
+    throw new Error(
+      `labelConoverSquaredRanksHalvesRow: conoverPValue must be in (0, 1] (got ${row.conoverPValue})`,
+    );
+  }
+  if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 0.5) {
+    throw new Error(
+      `labelConoverSquaredRanksHalvesRow: alpha must be in (0, 0.5] (got ${alpha})`,
+    );
+  }
+  const lean = 2 * alpha;
+  if (row.conoverPValue < alpha) {
+    return row.conoverZ > 0
+      ? 'second-decisively-more-dispersed'
+      : 'first-decisively-more-dispersed';
+  }
+  if (row.conoverPValue < lean) {
+    return row.conoverZ > 0
+      ? 'second-leans-more-dispersed'
+      : 'first-leans-more-dispersed';
+  }
+  return 'no-evidence-of-dispersion-shift';
+}
+
 function addUtcDays(ymd: string, days: number): string {
   const ms = Date.parse(`${ymd}T00:00:00.000Z`);
   return new Date(ms + days * 86_400_000).toISOString().slice(0, 10);
