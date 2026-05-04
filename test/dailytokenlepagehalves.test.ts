@@ -493,3 +493,84 @@ test('buildDailyTokenLepageHalves: dropped invalid hour_start', () => {
   const r = buildDailyTokenLepageHalves(queue);
   assert.equal(r.droppedInvalidHourStart, 1);
 });
+
+// ---------- tenure-weighted corpus aggregator (refinement) ----------
+
+import { aggregateLepageHalvesTenureWeighted } from '../src/dailytokenlepagehalves.js';
+
+test('aggregateLepageHalvesTenureWeighted: empty -> rowsUsed=0, p=1', () => {
+  const r = aggregateLepageHalvesTenureWeighted([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.weightedCombinedPValue, 1);
+  assert.equal(r.weightSum, 0);
+  assert.equal(r.effectiveDof, 0);
+});
+
+test('aggregateLepageHalvesTenureWeighted: equal tenures reduce to standard Fisher chi-2(2m)', () => {
+  // When all w_i = 1 (equal tenures), weightedChi2 = sum -2 ln p_i,
+  // effectiveDof = 2 * m^2 / m = 2m. Identical to Fisher.
+  const rows = [
+    { lepL: 4, lepPValue: 0.1, nTenureDays: 30 },
+    { lepL: 3, lepPValue: 0.2, nTenureDays: 30 },
+    { lepL: 2, lepPValue: 0.3, nTenureDays: 30 },
+  ];
+  const w = aggregateLepageHalvesTenureWeighted(rows);
+  const expectedChi2 = -2 * (Math.log(0.1) + Math.log(0.2) + Math.log(0.3));
+  assert.ok(Math.abs(w.weightedChi2 - expectedChi2) < 1e-10);
+  assert.ok(Math.abs(w.effectiveDof - 6) < 1e-10);
+  // p-value should match Fisher's chi-2(6) upper tail at expectedChi2
+  const fisher = aggregateLepageHalves(rows);
+  assert.ok(Math.abs(w.weightedCombinedPValue - fisher.fisherCombinedPValue) < 1e-10);
+});
+
+test('aggregateLepageHalvesTenureWeighted: skips malformed rows', () => {
+  const rows = [
+    { lepL: 5, lepPValue: 0.1, nTenureDays: 30 },
+    { lepL: Number.NaN, lepPValue: 0.5, nTenureDays: 30 },
+    { lepL: -1, lepPValue: 0.5, nTenureDays: 30 },
+    { lepL: 3, lepPValue: 0, nTenureDays: 30 },
+    { lepL: 3, lepPValue: 1.5, nTenureDays: 30 },
+    { lepL: 2, lepPValue: 0.5, nTenureDays: 0 }, // bad tenure
+    { lepL: 2, lepPValue: 0.5, nTenureDays: -5 },
+    { lepL: 2, lepPValue: 0.5, nTenureDays: 30 },
+  ];
+  const w = aggregateLepageHalvesTenureWeighted(rows);
+  assert.equal(w.rowsUsed, 2);
+  assert.equal(w.rowsSkipped, 6);
+});
+
+test('aggregateLepageHalvesTenureWeighted: heavy-tenure source dominates chi2', () => {
+  // 1 long-tenure source (200 days) with strong signal, 2 short ones.
+  const rows = [
+    { lepL: 50, lepPValue: 1e-12, nTenureDays: 200 },
+    { lepL: 1, lepPValue: 0.5, nTenureDays: 20 },
+    { lepL: 1, lepPValue: 0.5, nTenureDays: 20 },
+  ];
+  const w = aggregateLepageHalvesTenureWeighted(rows);
+  // Mean tenure = 80; weights = (2.5, 0.25, 0.25); weightSum = 3 = m; weightSqSum = 6.375
+  // effectiveDof = 2 * 9 / 6.375 ~ 2.823
+  assert.ok(Math.abs(w.weightSum - 3) < 1e-10);
+  assert.ok(Math.abs(w.effectiveDof - (2 * 9) / 6.375) < 1e-10);
+  // Heavy chi2 contribution from the long-tenure source
+  // weightedChi2 = 2.5 * (-2 ln 1e-12) + 0.25 * (-2 ln 0.5) * 2
+  const expected = 2.5 * (-2 * Math.log(1e-12)) + 0.5 * (-2 * Math.log(0.5));
+  assert.ok(Math.abs(w.weightedChi2 - expected) < 1e-10);
+  // Should still reject strongly
+  assert.ok(w.weightedCombinedPValue < 1e-5);
+});
+
+test('aggregateLepageHalvesTenureWeighted: meanLepL is unweighted arithmetic mean', () => {
+  const w = aggregateLepageHalvesTenureWeighted([
+    { lepL: 4, lepPValue: 0.1, nTenureDays: 100 },
+    { lepL: 6, lepPValue: 0.05, nTenureDays: 10 },
+  ]);
+  assert.equal(w.meanLepL, 5);
+});
+
+test('aggregateLepageHalvesTenureWeighted: rejects non-integer tenure', () => {
+  const w = aggregateLepageHalvesTenureWeighted([
+    { lepL: 5, lepPValue: 0.1, nTenureDays: 14.5 as number },
+  ]);
+  assert.equal(w.rowsUsed, 0);
+  assert.equal(w.rowsSkipped, 1);
+});

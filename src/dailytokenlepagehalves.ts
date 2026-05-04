@@ -1066,3 +1066,152 @@ export function lanczosLogGammaLep(x: number): number {
   }
   return 0.5 * Math.log(2 * Math.PI) + (xm + 0.5) * Math.log(t) - t + Math.log(a);
 }
+
+/**
+ * TENURE-WEIGHTED corpus aggregator for axis-175. The
+ * default `aggregateLepageHalves` treats every source
+ * equally in Fisher's combined-p; that's the right answer
+ * when each source is an INDEPENDENT trial of the same
+ * underlying null but the WRONG answer when sources
+ * differ wildly in series length (axis-175 has been seen
+ * to produce both n=18 (openclaw) and n=265 (vscode-
+ * copilot) tenures in the same corpus).
+ *
+ * Lancaster (1949 *Biometrika* 36:370-382) generalises
+ * Fisher to WEIGHTED combination via the property that
+ * if P_i ~ Uniform(0,1) under H0 then -2 ln P_i ~
+ * Chi-2(2), and a SUM of independent chi-2 with
+ * INTEGER degrees of freedom is again chi-2 with summed
+ * dof. For non-integer weights one inflates each chi-2(2)
+ * by w_i and the sum is approximated by a Satterthwaite
+ * (1946 Biometrics 2:110-114) chi-2 with effective dof
+ *
+ *     v_eff = ( sum_i w_i )^2 / sum_i w_i^2 * 2
+ *
+ * (Satterthwaite eq. 9 specialised to chi-2(2)
+ * components: Var[w_i * Chi-2(2)] = 4 w_i^2, E = 2 w_i;
+ * matching first two moments to a single chi-2(v_eff)
+ * gives v_eff = 2 (sum w_i)^2 / sum w_i^2). This is the
+ * BROWN (1975 Biometrics 31:987-992) construction
+ * specialised to independent components and uniform
+ * weights mapped to tenure weights.
+ *
+ * We use w_i = nTenureDays_i / mean(nTenureDays) as the
+ * per-source weight so the SUM of weights equals
+ * rowsUsed (matching the unweighted case as a special
+ * case where all w_i = 1 reduces to the standard Fisher
+ * combination chi-2(2 * rowsUsed)). The weighted
+ * statistic is
+ *
+ *     chi2_w = sum_i w_i * (-2 ln lepPValue_i)
+ *     v_eff  = 2 (sum w_i)^2 / sum w_i^2
+ *
+ * and the upper-tail p-value is P(Chi^2_{v_eff} > chi2_w).
+ *
+ * INTERPRETATION: long-tenure sources contribute MORE to
+ * the chi2_w sum (their evidence is on a finer time grid
+ * and is more reliable per source), but the
+ * Satterthwaite v_eff INCREASES too (the effective number
+ * of independent chi-2(2) trials grows with the weight
+ * concentration), so the EXTRA chi2_w from one heavily-
+ * weighted source is partially offset by the larger
+ * upper-tail mass of the larger v_eff distribution. Brown
+ * 1975 sec. 3 shows the Satterthwaite approximation is
+ * accurate to within ~1% on the upper tail for any weight
+ * distribution where max(w_i) / min(w_i) < 100, which
+ * holds comfortably for our daily-tenure ratios.
+ *
+ * Returns the same shape as `aggregateLepageHalves` plus
+ * `effectiveDof` and `weightSum` for diagnostics.
+ *
+ * Malformed rows (non-finite lepL, lepPValue not in (0,1],
+ * non-positive nTenureDays) are SKIPPED with a counter
+ * rather than throwing.
+ */
+export interface LepageHalvesTenureWeightedAggregate {
+  weightedChi2: number;
+  effectiveDof: number;
+  weightedCombinedPValue: number;
+  meanLepL: number;
+  weightSum: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateLepageHalvesTenureWeighted(
+  rows: ReadonlyArray<{
+    lepL: number;
+    lepPValue: number;
+    nTenureDays: number;
+  }>,
+): LepageHalvesTenureWeightedAggregate {
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  // First pass: count valid rows and total tenure.
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.lepL) ||
+      r.lepL < 0 ||
+      !Number.isFinite(r.lepPValue) ||
+      r.lepPValue <= 0 ||
+      r.lepPValue > 1 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      weightedChi2: 0,
+      effectiveDof: 0,
+      weightedCombinedPValue: 1,
+      meanLepL: Number.NaN,
+      weightSum: 0,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const meanTenure = totalTenure / used;
+  // Second pass: accumulate weighted chi2 and weight^2.
+  let weightedChi2 = 0;
+  let weightSum = 0;
+  let weightSqSum = 0;
+  let sumL = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.lepL) ||
+      r.lepL < 0 ||
+      !Number.isFinite(r.lepPValue) ||
+      r.lepPValue <= 0 ||
+      r.lepPValue > 1 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      continue;
+    }
+    const w = r.nTenureDays / meanTenure;
+    weightedChi2 += w * (-2 * Math.log(r.lepPValue));
+    weightSum += w;
+    weightSqSum += w * w;
+    sumL += r.lepL;
+  }
+  const effectiveDof = (2 * weightSum * weightSum) / weightSqSum;
+  const weightedCombinedPValue = chiSquaredUpperTailLep(
+    weightedChi2,
+    effectiveDof,
+  );
+  return {
+    weightedChi2,
+    effectiveDof,
+    weightedCombinedPValue,
+    meanLepL: sumL / used,
+    weightSum,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}

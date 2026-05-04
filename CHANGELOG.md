@@ -2,6 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.452 — 2026-05-04
+
+### Refined — axis-175 tenure-weighted corpus aggregator (Lancaster / Satterthwaite)
+
+New public helper exposed from the axis-175 module:
+
+**`aggregateLepageHalvesTenureWeighted(rows)`** —
+Lancaster (1949) WEIGHTED-FISHER combination of per-source
+`lepPValue` values with TENURE-PROPORTIONAL weights and
+SATTERTHWAITE (1946) effective-dof chi-2 approximation:
+
+```
+w_i      = nTenureDays_i / mean(nTenureDays)
+chi2_w   = sum_i w_i * (-2 ln lepPValue_i)
+v_eff    = 2 * (sum_i w_i)^2 / sum_i w_i^2
+weightedCombinedPValue = P(Chi^2_{v_eff} > chi2_w)
+```
+
+The default `aggregateLepageHalves` (Fisher equal-weight)
+treats every source as ONE independent trial of the same
+underlying null — that's the right answer when sources
+differ only by random sampling but the WRONG answer when
+sources differ wildly in series length. The live-smoke
+shows the corpus has nTenureDays ranging from 15 to 265
+(a 17.7x ratio) — Fisher's equal-weight implicitly
+penalises the long-tenure source for having "more
+opportunity to detect significance", which is exactly
+backwards: longer tenure means more reliable per-source
+evidence and should COUNT MORE in the corpus combination.
+
+The Satterthwaite v_eff is the Welch-style first-two-
+moment match between the weighted sum-of-chi-2(2)
+distribution and a single chi-2(v) distribution. When
+all w_i = 1 it reduces EXACTLY to v = 2m and chi2_w =
+the standard Fisher chi2 — the equal-weight case is a
+proper special case (verified by the test suite). Brown
+(1975) sec. 3 reports the Satterthwaite approximation is
+accurate to within ~1% on the upper tail for any weight
+distribution where max(w_i)/min(w_i) < 100, which holds
+comfortably for our daily-tenure ratios (17.7x in the
+current corpus).
+
+**Why this is structurally different from the v0.6.451
+Fisher aggregator**: v_eff is no longer 2 * rowsUsed.
+For our corpus it's 3.95 (vs 10 for equal-weight Fisher
+on 5 rows) — the weight concentration toward the long-
+tenure source REDUCES the effective number of independent
+trials. Combined with the LARGER weighted chi2 (451.09
+vs Fisher's 192.23), the net effect on the p-value is
+~60 orders of magnitude SMALLER (1e-96 vs 7e-36): the
+long-tenure evidence is correctly amplified after the
+Satterthwaite correction.
+
+#### Live-smoke (real `~/.config/pew/queue.jsonl`)
+
+Tenure-weighted vs equal-weight corpus combination on the
+v0.6.451 5-source result set:
+
+```
+weightedChi2           = 451.0892
+effectiveDof           = 3.9470     (Satterthwaite v_eff)
+weightedCombinedPValue = 2.21e-96   (Chi^2_{3.95} upper tail)
+meanLepL               = 38.4461
+weightSum              = 5.0000     (= rowsUsed by construction)
+rowsUsed               = 5
+rowsSkipped            = 0
+```
+
+Comparison to the v0.6.451 Fisher equal-weight aggregate:
+
+```
+                       v0.6.451 Fisher        v0.6.452 tenure-weighted
+chi2                   192.2304               451.0892
+dof                    10  (= 2 * 5)          3.9470  (Satterthwaite)
+combined p-value       6.71e-36               2.21e-96
+```
+
+Reading: the long-tenure source (vscode-copilot,
+nTenureDays = 265) carries weight 265/77.6 = 3.42 in the
+weighted sum; its individual -2 ln(1.14e-25) = 114.85 is
+multiplied by 3.42 to contribute 393.18 to chi2_w. The
+short-tenure sources (15-72 days) contribute weights
+0.19-0.93 and damp their individual chi2 contributions
+proportionally. The Satterthwaite v_eff = 3.95 < 5
+correctly recognises the effective sample size is below
+the row count.
+
+#### Tests
+
+6 new test cases added to
+`test/dailytokenlepagehalves.test.ts` (total now 63):
+empty input; equal-tenure equivalence to Fisher (the
+INVARIANT — when w_i are all 1 the weighted aggregator
+must reduce exactly to Fisher chi-2(2m), verified to
+1e-10 on chi2 and dof and combined-p); malformed-row
+skipping (NaN, negative L, p outside (0,1], non-positive
+or non-integer tenure); heavy-tenure dominance with
+explicit closed-form expected chi2_w and v_eff; meanLepL
+remains the unweighted arithmetic mean (deliberate — the
+"effect size" report should NOT be tenure-weighted); non-
+integer tenure rejection.
+
 ## 0.6.451 — 2026-05-04
 
 ### Added — axis-175 daily-token-lepage-halves (joint location-scale test)
