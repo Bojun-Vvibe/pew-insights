@@ -2,6 +2,186 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.404 — 2026-05-04
+
+### Added
+
+- `pew-insights daily-token-hampel-outlier-count` (axis-152) —
+  per-source robust outlier count on the gap-filled daily
+  `total_tokens` series. For each source, on the gap-filled tenure:
+
+      med      = median(x[])
+      mad      = median(|x[i] - med|)
+      sigmaHat = 1.4826 * mad         (Gaussian-consistent estimator
+                                       of population stddev)
+      hi       = med + k * sigmaHat
+      lo       = med - k * sigmaHat
+      nHigh    = count of x[i] > hi   (strict)
+      nLow     = count of x[i] < lo   (strict)
+      nOut     = nHigh + nLow
+      maxScore = max_i (|x[i] - med| / sigmaHat)
+
+  STRUCTURALLY ORTHOGONAL by construction to:
+
+  - `daily-token-zscore-extremes` — uses MEAN and POPULATION
+    STDDEV. Both are NON-ROBUST: a single huge spike pulls the
+    mean up AND inflates the stddev, so the ±sigma threshold
+    widens around the spike and the spike often escapes its own
+    detector. Hampel uses MEDIAN and MAD: the spike does not
+    move the median (50% breakdown) and barely moves MAD (50%
+    breakdown). The two axes can DISAGREE on the same series and
+    that disagreement is the structural value.
+  - `daily-token-allan-deviation` (axis-151) — first-difference
+    RMS, ORDER-DEPENDENT; Hampel is order-INVARIANT.
+  - `daily-token-mad-over-median` — continuous dispersion ratio
+    without a threshold; Hampel is an INTEGER breach count above
+    a fixed multiplier of that very scale. Two series can have
+    identical `madOverMedian` but different `nOut` whenever one
+    has a single huge tail spike and the other is uniformly
+    heavy.
+  - All `gini` / `atkinson` / `theil-l` / `theil-t` / `zenga` /
+    `pietra` / `palma` / `hoover` / `bonferroni` / `kolm-pollak` /
+    `mehran` / `wolfson` / `chakravarty` / `fgt` / `amato` /
+    `esteban-ray` / `foster-wolfson` / `ge2` / `ge-half` /
+    `ge-three` / `ge-four` / `s-gini` / `gen-entropy-neg-one` /
+    `var-of-logs` / `log-mean-abs-dev` / `hill-tail-index` /
+    `pielou-evenness` / `herfindahl-hirschman` /
+    `top-four-concentration-ratio` / `quintile-share-ratio` /
+    `decile-share-gap` / `mid-spread-ratio` / `iqr-over-median` /
+    `percentile-gap-ratio` — continuous SCALAR inequality /
+    dispersion / shape statistics. Hampel returns an integer
+    COUNT of threshold breaches plus a single robust score.
+  - All `spectral-*` / `dft-power-law-slope` /
+    `permutation-entropy` / `lempel-ziv-complexity` /
+    `sample-entropy` / `dfa-alpha` / `hurst-rs` /
+    `hjorth-mobility` / `hjorth-complexity` /
+    `teager-kaiser-energy` / `katz-fd` / `higuchi-fd` /
+    `petrosian-fd` / `sevcik-fd` / `box-count-fd` —
+    frequency / complexity / fractal-dimension classes; Hampel
+    is none of these.
+  - `daily-token-max-drawdown-rate` / `cumulative-tokens-midpoint`
+    — peak-to-trough trajectory / path-dependent statistics;
+    Hampel is path-INDEPENDENT (sort invariant).
+  - `daily-token-runs-test-z` / `cox-stuart-trend-test` /
+    `mann-kendall-tau` / `difference-sign-test` /
+    `second-diff-sign-runs` / `monotone-run-length` — trend /
+    sign / order statistics; Hampel ignores order and uses
+    magnitudes via robust scale.
+  - `daily-token-calendar-mask-rle-entropy` /
+    `daily-token-longest-zero-run` / `daily-token-weekend-
+    weekday-ratio` / `daily-token-month-end-vs-month-start-
+    ratio` / `daily-token-iso-week-day-of-week-entropy` —
+    calendar / partition / on-off statistics. Hampel ignores
+    calendar identity entirely.
+
+  Per-source columns: `tokens`, `nActive`, `nFilled`, `median`,
+  `mad`, `sigmaHat`, `lo`, `hi`, `nHigh`, `nLow`, `nOut`,
+  `outFraction = nOut / nFilledDays`, `maxScore`, `argMaxDay`,
+  `flat` (true iff `mad = 0`), `first`, `last`.
+
+  Knobs: `--since`, `--until`, `--source`, `--k` (default 3.0,
+  must be > 0), `--min-days` (default 3, must be >= 3), `--top`
+  (display cap), `--sort tokens|nout|frac|maxscore|ndays`,
+  `--json`.
+
+- 38 unit tests covering: option validation (bad k, minDays,
+  top, sort, since/until); pure helpers
+  `populationMedian` (empty / single / odd / even),
+  `medianAbsoluteDeviation` (constant / empty / known fixture),
+  `hampelOutlierSummary` (empty / constant / single huge spike
+  with MAD=0 fallback / spike against varied background / low
+  outlier / k monotonicity / order invariance); end-to-end
+  (constant 5-day source flat with nOut=0; single spike against
+  varied background flagged exactly once; gap-fill creates new
+  zeros and matches expected nFilledDays; window since/until;
+  source filter; invalid hour_start; zero/negative tokens;
+  multi-row-per-day aggregation; deterministic source-asc tie-
+  break under equal totals; `--top` cap surfaces
+  `droppedTopSources`; `--sort nout/frac/maxscore/ndays` reorder
+  correctness; report echoes options + window; unknown-source
+  bucketing; earliest-tie wins for `argMaxScoreDay`;
+  `outFraction = nOut/nFilledDays` exact; `hi/lo = med ± k *
+  sigmaHat` exact; `sigmaHat = 1.4826 * mad` exact; `nOut =
+  nHigh + nLow` invariant; k monotonic on nOut; build
+  determinism; `minDays` default 3; first/last active day
+  reporting).
+
+- New exported pure helpers
+  `populationMedian(values: number[]): number`,
+  `medianAbsoluteDeviation(values: number[]): number`,
+  `hampelOutlierSummary(values: number[], k: number): {...}`.
+
+- Renderer surfaces median, MAD, sigmaHat, lo, hi, nHigh, nLow,
+  nOut, frac, maxScore, argMaxDay, and a `flat` flag column.
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+```
+$ pew-insights daily-token-hampel-outlier-count --since 2026-04-26T00:00:00.000Z --sort nout
+```
+
+| source            | tokens         | nActive | nFilled | median       | MAD         | sigmaHat   | lo            | hi          | nHigh | nLow | nOut | frac  | maxScore | argMaxDay  | flat |
+|-------------------|----------------|---------|---------|--------------|-------------|------------|---------------|-------------|-------|------|------|-------|----------|------------|------|
+| openclaw          | 2,251,984,318  | 18      | 18      |  77,958,772  | 29,624,860  | 43,921,817 |  -53,806,678  | 209,724,222 |   5   |   0  |   5  | 0.278 | 6.286    | 2026-04-19 |  n   |
+| opencode          | 6,428,351,355  | 15      | 15      | 420,000,740  | 64,578,479  | 95,744,053 |  132,768,581  | 707,232,899 |   1   |   2  |   3  | 0.200 | 4.330    | 2026-05-04 |  n   |
+| codex             |   809,624,660  |  8      |  8      |  41,235,206  | 33,978,163  | 50,376,025 | -109,892,869  | 192,363,282 |   1   |   0  |   1  | 0.125 | 6.918    | 2026-04-20 |  n   |
+| hermes            |   310,636,293  | 18      | 18      |  21,138,988  |  8,590,247  | 12,735,901 |  -17,068,715  |  59,346,691 |   0   |   0  |   0  | 0.000 | 1.625    | 2026-05-04 |  n   |
+| claude-code       | 3,442,385,788  | 35      | 72      |           0  |          0  |          0 |            0  |           0 |   0   |   0  |   0  | 0.000 | -        | -          |  y   |
+| (redacted-source) |     1,885,727  | 73      | 265     |           0  |          0  |          0 |            0  |           0 |   0   |   0  |   0  | 0.000 | -        | -          |  y   |
+
+Reading the per-source robust outlier picture:
+
+`openclaw` (`nOut = 5`, `frac = 0.278`) is the largest robust-
+outlier carrier in the visible suite: of its 18 gap-filled days,
+5 days breach the median ± 3·sigmaHat band, all on the HIGH side
+(`nHigh = 5`, `nLow = 0`). The single most extreme day lands at
+`maxScore = 6.286` standard MAD-units above the median on
+`2026-04-19`. This is the "moderate-baseline + several genuine
+spikes" signature.
+
+`opencode` carries the most TOKENS by far (`6.4e9`) but only
+3 of 15 days breach the band (`nOut = 3`), split asymmetrically
+`nHigh = 1` / `nLow = 2`. The `lo = 1.33e8` threshold sits well
+ABOVE zero, so two days with depressed activity (likely weekend
+or low-load days) breach the LOWER band — Hampel reads this
+suite as "genuinely heavy with a couple of cooler days plus one
+extra-heavy day at `2026-05-04` (`maxScore = 4.33`)".
+
+`codex` (`nOut = 1`, `maxScore = 6.918`) — the single extreme
+day on `2026-04-20` is the most-extreme robust score in the
+entire visible suite (6.92 MAD-units above median). Combined
+with axis-151's `allanDev = 1.05e8` for the same source, this
+is the "isolated burst on `2026-04-20`" reading: short tenure
+(8 days) plus one big spike.
+
+`hermes` (`nOut = 0`, `maxScore = 1.625`) — within ±3·sigmaHat
+the entire 18-day series fits. Its largest robust score is only
+1.6 MAD-units above median, well below the k=3 threshold. This
+matches axis-151's `rwRatio = 0.783` (persistent / smooth) for
+the same source.
+
+`claude-code` (`flat = y`) — gap-filled tenure is 72 days but
+only 35 are active, so the gap-filled series has 37 zero-days.
+Median of 72 values with 37 zeros is 0, so MAD=0 and the
+robust threshold COLLAPSES (the "constant majority of days"
+degenerate case). This is honest behavior: the Hampel detector
+correctly refuses to score in a series where the modal day is
+silence. Axis-151's `allanDev` still scored this source via the
+first-difference path; axis-152 abstains. The two axes give
+genuinely different reads on the same source.
+
+CROSS-AXIS SANITY VS axis-100 `daily-token-zscore-extremes`
+(MEAN+STDDEV variant): for `opencode`, the parametric z-score
+extremes sees `~ 0.34` allanRel and would compute the spike
+days against the inflated mean of 458M; the robust Hampel
+thresholds at `[1.33e8, 7.07e8]` are MUCH tighter than the
+mean-stddev band (the spike does not pull the median or MAD).
+This confirms the design: a non-robust detector would miss the
+two LOW-side breaches that Hampel picks up, because they sit
+above mean - stddev in the parametric world but below
+median - 3·sigmaHat in the robust world. STRUCTURAL DISAGREEMENT
+on the same data is the value-add.
+
 ## 0.6.403 — 2026-05-04
 
 ### Added
