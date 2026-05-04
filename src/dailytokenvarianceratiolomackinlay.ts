@@ -292,6 +292,8 @@ export type DailyTokenVarianceRatioLoMacKinlaySort =
   | 'vrZHcDesc'
   | 'vrZHcAbs'
   | 'vrZHcAbsDesc'
+  | 'hurstLike'
+  | 'hurstLikeDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -343,6 +345,18 @@ export interface DailyTokenVarianceRatioLoMacKinlaySourceRow {
   vrZIid: number;
   /** Standardised score (VR-1)/sqrt(Var_hc). */
   vrZHc: number;
+  /**
+   * Hurst-like exponent implied by the variance ratio:
+   * H_implied = 0.5 + 0.5 * log2(VR(q)) / log2(q).
+   * Under fractional-Brownian-motion assumptions this
+   * coincides with the Hurst exponent (Beran 1994
+   * "Statistics for Long-Memory Processes" sec. 1.2).
+   * H = 0.5 = pure RW; H > 0.5 = persistent /
+   * trending; H < 0.5 = anti-persistent / mean-
+   * reverting. Pure interpretive scalar; the
+   * inferential statistics remain vrZIid / vrZHc.
+   */
+  hurstLike: number;
 }
 
 export interface DailyTokenVarianceRatioLoMacKinlayReport {
@@ -412,6 +426,7 @@ export function dailyTokenVarianceRatioLoMacKinlay(
   vr: number;
   vrZIid: number;
   vrZHc: number;
+  hurstLike: number;
 } {
   const n = values.length;
   if (n < 6) {
@@ -507,6 +522,17 @@ export function dailyTokenVarianceRatioLoMacKinlay(
   }
   const vrZHc = varHc > 0 ? (vr - 1) / Math.sqrt(varHc) : 0;
 
+  // Hurst-like exponent implied by the variance ratio:
+  //   H_implied = 0.5 + 0.5 * log2(VR(q)) / log2(q).
+  // Under fractional-Brownian-motion assumptions this
+  // coincides with the Hurst exponent (Beran 1994
+  // sec. 1.2). For VR(q) <= 0 we surface NaN (no real
+  // log; only happens if VR underflows numerically).
+  const hurstLike =
+    vr > 0
+      ? 0.5 + (0.5 * Math.log2(vr)) / Math.log2(vrQ)
+      : Number.NaN;
+
   if (
     !Number.isFinite(vr) ||
     !Number.isFinite(vrZIid) ||
@@ -526,6 +552,7 @@ export function dailyTokenVarianceRatioLoMacKinlay(
     vr,
     vrZIid,
     vrZHc,
+    hurstLike,
   };
 }
 
@@ -577,6 +604,8 @@ export function buildDailyTokenVarianceRatioLoMacKinlay(
     'vrZHcDesc',
     'vrZHcAbs',
     'vrZHcAbsDesc',
+    'hurstLike',
+    'hurstLikeDesc',
     'tokens',
     'tenure',
     'source',
@@ -704,6 +733,7 @@ export function buildDailyTokenVarianceRatioLoMacKinlay(
       vr: result.vr,
       vrZIid: result.vrZIid,
       vrZHc: result.vrZHc,
+      hurstLike: result.hurstLike,
     };
     rows.push(row);
     totalTokensSum += acc.totalTokens;
@@ -742,6 +772,26 @@ export function buildDailyTokenVarianceRatioLoMacKinlay(
       case 'vrZHcAbsDesc':
         primary = Math.abs(b.vrZHc) - Math.abs(a.vrZHc);
         break;
+      case 'hurstLike': {
+        const ah = Number.isNaN(a.hurstLike)
+          ? Number.POSITIVE_INFINITY
+          : a.hurstLike;
+        const bh = Number.isNaN(b.hurstLike)
+          ? Number.POSITIVE_INFINITY
+          : b.hurstLike;
+        primary = ah - bh;
+        break;
+      }
+      case 'hurstLikeDesc': {
+        const ah = Number.isNaN(a.hurstLike)
+          ? Number.NEGATIVE_INFINITY
+          : a.hurstLike;
+        const bh = Number.isNaN(b.hurstLike)
+          ? Number.NEGATIVE_INFINITY
+          : b.hurstLike;
+        primary = bh - ah;
+        break;
+      }
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;
         break;

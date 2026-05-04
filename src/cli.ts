@@ -41668,7 +41668,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: vrZHcAbsDesc (default) | vr | vrDesc | vrZIid | vrZIidDesc | vrZIidAbs | vrZIidAbsDesc | vrZHc | vrZHcDesc | vrZHcAbs | tokens | tenure | source.',
+    'sort key: vrZHcAbsDesc (default) | vr | vrDesc | vrZIid | vrZIidDesc | vrZIidAbs | vrZIidAbsDesc | vrZHc | vrZHcDesc | vrZHcAbs | hurstLike | hurstLikeDesc | tokens | tenure | source.',
     'vrZHcAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -41721,6 +41721,8 @@ program
           'vrZHcDesc',
           'vrZHcAbs',
           'vrZHcAbsDesc',
+          'hurstLike',
+          'hurstLikeDesc',
           'tokens',
           'tenure',
           'source',

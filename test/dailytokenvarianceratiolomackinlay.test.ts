@@ -237,3 +237,64 @@ test('buildDailyTokenVarianceRatioLoMacKinlay: top cap surfaces droppedTopSource
   assert.equal(r.sources.length, 2);
   assert.equal(r.droppedTopSources, 2);
 });
+
+// ---------- refinement: hurstLike ----------
+
+test('dailyTokenVarianceRatioLoMacKinlay: hurstLike == 0.5 when VR == 1 (RW)', () => {
+  // Construct a series whose increments are jittered enough to avoid
+  // zero-variance, but with VR(2) extremely close to 1.
+  let s = 9876543;
+  const next = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff - 0.5;
+  };
+  const n = 4000;
+  const x: number[] = [0];
+  for (let i = 1; i < n; i += 1) x.push(x[i - 1]! + next());
+  const r = dailyTokenVarianceRatioLoMacKinlay(x, 2);
+  // VR ~ 1 -> log2(VR)/log2(2) ~ 0 -> hurstLike ~ 0.5
+  assert.ok(
+    Math.abs(r.hurstLike - 0.5) < 0.05,
+    `expected hurstLike ~ 0.5, got ${r.hurstLike} (vr=${r.vr})`,
+  );
+});
+
+test('dailyTokenVarianceRatioLoMacKinlay: hurstLike < 0.5 for anti-persistent series', () => {
+  // Alternating series -> VR(2) ~ 0 -> log2(VR) -> -inf -> hurstLike very negative
+  const x = Array.from({ length: 32 }, (_, i) => (i % 2 === 0 ? 1 : 2));
+  const r = dailyTokenVarianceRatioLoMacKinlay(x, 2);
+  assert.ok(
+    r.hurstLike < 0.0,
+    `expected hurstLike much less than 0.5, got ${r.hurstLike}`,
+  );
+});
+
+test('buildDailyTokenVarianceRatioLoMacKinlay: hurstLike sort key orders ascending', () => {
+  const queue: QueueLine[] = [];
+  // src-low: alternating high-amplitude (anti-persistent, low hurstLike)
+  for (let i = 0; i < 16; i += 1) {
+    queue.push(ql(dayIso(i), 'src-low', i % 2 === 0 ? 1000 : 9000));
+  }
+  // src-mid: monotone-ish jitter
+  for (let i = 0; i < 16; i += 1) {
+    queue.push(ql(dayIso(i), 'src-mid', 1000 + i * 100 + ((i * 7) % 3) * 50));
+  }
+  const rAsc = buildDailyTokenVarianceRatioLoMacKinlay(queue, {
+    generatedAt: 'fixed',
+    sort: 'hurstLike',
+    minTenureDays: 14,
+    minTokens: 1000,
+  });
+  const rDesc = buildDailyTokenVarianceRatioLoMacKinlay(queue, {
+    generatedAt: 'fixed',
+    sort: 'hurstLikeDesc',
+    minTenureDays: 14,
+    minTokens: 1000,
+  });
+  assert.equal(rAsc.sources.length, 2);
+  assert.equal(rDesc.sources.length, 2);
+  // src-low has smaller hurstLike (more anti-persistent)
+  assert.ok(rAsc.sources[0]!.hurstLike <= rAsc.sources[1]!.hurstLike);
+  assert.ok(rDesc.sources[0]!.hurstLike >= rDesc.sources[1]!.hurstLike);
+  assert.equal(rAsc.sources[0]!.source, 'src-low');
+});

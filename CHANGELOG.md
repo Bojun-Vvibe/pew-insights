@@ -2,6 +2,109 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.417 — 2026-05-04
+
+### Refined — axis-158: `hurstLike` (implied Hurst exponent) + `hurstLike` sort key
+
+Adds an interpretable scaling-exponent scalar to every axis-158 row,
+plus two new sort keys (`hurstLike` ascending, `hurstLikeDesc`).
+
+```
+hurstLike = 0.5 + 0.5 * log2(VR(q)) / log2(q)
+```
+
+Under fractional-Brownian-motion assumptions this coincides with the
+Hurst exponent (Beran 1994 "Statistics for Long-Memory Processes"
+sec. 1.2). Interpretation:
+
+- `hurstLike = 0.5`  → pure random walk (VR = 1)
+- `hurstLike > 0.5`  → persistent / trending (VR > 1; level wanders
+  less than a pure RW)
+- `hurstLike < 0.5`  → anti-persistent / mean-reverting (VR < 1;
+  level over-wanders relative to RW, with partial reversal of spikes)
+
+**What `hurstLike` adds beyond `vr`, `vrZIid`, and `vrZHc`:**
+
+`vr` is dimensionless but not normalised against horizon — VR(2) =
+0.5 and VR(8) = 0.5 represent very different scaling behaviours but
+look numerically identical. `hurstLike` rescales by `log2(q)` so
+results at different q values are directly comparable: a series with
+`hurstLike = 0.4` at q = 2 has the same per-step scaling exponent as
+a series with `hurstLike = 0.4` at q = 8, even though the raw VR
+values differ substantially.
+
+This is the canonical "report scaling, not raw ratio" presentation
+in long-memory econometrics (Beran 1994 sec. 4.1, Mandelbrot & van
+Ness 1968 SIAM Review 10:422-437): the *exponent* is the
+fundamental quantity of interest because it characterises the
+self-similarity of the process across scales.
+
+The inferential statistics remain `vrZIid` (iid-increment variance)
+and `vrZHc` (heteroskedasticity-consistent variance) — `hurstLike`
+is a pure interpretive descriptor with no sampling distribution
+attached. For inference always read the z-scores; for cross-source
+or cross-horizon comparison read `hurstLike`.
+
+**`hurstLike` sort key:** orders ascending, with `NaN` (which
+arises only if `VR <= 0`, a numerical edge case that does not occur
+for real data) placed at the end. The natural "most anti-persistent
+first" ordering surfaces sources with the strongest mean-reverting
+structure at the top.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (refinement;
+one source name redacted):
+
+```
+per-source variance-ratio test (sorted by tokens)
+source        firstDay    lastDay     tenure  active  nDiff  q  vr      vrZIid   vrZHc    hurstLike  diffMean        diffStddev       tokens
+------------  ----------  ----------  ------  ------  -----  -  ------  -------  -------  ---------  --------------  ---------------  -------------
+opencode      2026-04-20  2026-05-04  15      15      14     2  0.5046  -1.8535  -5.8170   0.0066    5,653,726.5     227,844,234.452  6,519,192,473
+claude-code   2026-02-11  2026-04-23  72      35      71     2  0.4359  -4.7530  -1.4971  -0.0989    116,635.324     178,897,449.025  3,442,385,788
+openclaw      2026-04-17  2026-05-04  18      18      17     2  0.7712  -0.9435  -1.1518   0.3126   -3,175,779.765   91,168,237.147   2,265,224,880
+hermes        2026-04-17  2026-05-04  18      18      17     2  0.7548  -1.0112  -1.8785   0.2970     -486,693.529   10,714,213.069   314,353,001
+vsc-redacted  2025-07-30  2026-04-20  265     73      264    2  0.5476  -7.3499  -1.9835   0.0657         -11.845        35,409.238   1,885,727
+```
+
+**Reading the refinement:**
+
+- `claude-code` is the only source with **`hurstLike < 0`** at
+  -0.0989 — strongly anti-persistent, well below the 0.5 RW
+  baseline. This is the clearest mean-reverting signal in the
+  fleet: increment-on-increment reversal is the dominant pattern.
+  Cross-references with axis-157 ADF (`tau = -0.1061`,
+  `halfLifeDays = 6.31`): the axis-157 reading flagged borderline
+  mean reversion at ~6 days, axis-158 confirms it at the q = 2
+  scaling-exponent level. Two structurally orthogonal tests, same
+  conclusion.
+- `opencode` (`hurstLike = 0.0066`) and `vsc-redacted`
+  (`hurstLike = 0.0657`) sit *just above zero* — strongly anti-
+  persistent but not as extreme as claude-code. Both sources have
+  `vrZ_hc` significant or near-significant, supporting the
+  hurstLike-derived anti-persistence reading.
+- `openclaw` (`hurstLike = 0.3126`) and `hermes`
+  (`hurstLike = 0.2970`) are in the *moderate anti-persistence*
+  band: H between 0.25 and 0.4 indicates a mean-reverting series
+  that still has substantial random-walk-like wander on top of the
+  reversion. Compatible with the axis-157 ADF reading on hermes
+  (oscillatory band, `halfLifeDays = NaN`): the sawtooth one-step
+  sign-flip is an extreme form of anti-persistence that depresses
+  hurstLike below 0.5 but not all the way to 0.
+- **No source has `hurstLike > 0.5`** in the current snapshot —
+  every observed source exhibits some degree of mean reversion at
+  the q = 2 horizon, none show persistence/trending at this scale.
+  Operationally: there are no sources whose daily token series
+  trend strongly enough that today's increment predicts tomorrow's
+  increment in the *same direction*; the dominant pattern across
+  the fleet is "spike then partial revert".
+
+The triple (`vr`, `vrZHc`, `hurstLike`) thus stratifies sources on
+three orthogonal axes — *raw scaling ratio*, *robust significance*,
+*scaling exponent normalised by horizon*. Together with axis-157
+ADF (`tau`, `halfLifeDays`) and axis-156 KPSS (`eta`,
+`hacInflationRatio`), the unit-root / random-walk / stationarity
+question is now triangulated by three independent statistical
+families.
+
 ## 0.6.416 — 2026-05-04
 
 ### Added — axis-158: `daily-token-variance-ratio-lo-mackinlay` (Lo-MacKinlay variance-ratio test)
