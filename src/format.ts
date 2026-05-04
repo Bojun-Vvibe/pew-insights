@@ -20579,6 +20579,7 @@ import type { DailyTokenDifferenceSignTestReport } from './dailytokendifferences
 import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js';
 import type { DailyTokenMcLeodLiReport } from './dailytokenmcleodli.js';
 import type { DailyTokenBdsReport } from './dailytokenbds.js';
+import type { DailyTokenJarqueBeraReport } from './dailytokenjarquebera.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25525,6 +25526,93 @@ export function renderDailyTokenBds(
   lines.push(
     chalk.dim(
       `(reference anchor: bdsV approx 0 = embedding consistent with iid; bdsV much greater than 0 = excess m-history coincidences (positive nonlinear / regime / ARCH dependence); bdsV much less than 0 = m-history dispersal (rare; usually finite-sample noise). |bdsZ| > 1.96 = reject iid at alpha = 0.05. Compose with axis-114 Ljung-Box and axis-159 McLeod-Li to attribute a positive bdsZ to LINEAR vs SECOND-MOMENT vs HIGHER-ORDER dependence. C(1) is permutation-invariant; C(m) for m >= 2 is order-sensitive -- the test's whole sensitivity flows from that asymmetry.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenJarqueBera(
+  r: DailyTokenJarqueBeraReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-jarque-bera'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source JARQUE-BERA MOMENT-BASED LM TEST FOR NORMALITY of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-SIXTY-FIRST cross-source axis. Jarque & Bera 1980 Econ. Letters 6:255-259: S = m3/m2^{3/2}, K = m4/m2^2 - 3, JB = (n/6)(S^2 + K^2/4); under iid Gaussian null JB ~ Chi-Square(2); jbZ = (JB - 2)/2 approx N(0, 1) for large n; pApprox = exp(-JB/2) is the closed-form upper-tail p-value (Chi-Square(2) === Exp(1/2)). PERMUTATION-INVARIANT marginal-shape test, structurally orthogonal to all serial-dependence axes (axis-160 BDS, axis-159 McLeod-Li, axis-158 VR, axis-114 Ljung-Box) which all change under permutation, and to all changepoint / stationarity axes (axis-153 CUSUM, axis-154 Pettitt, axis-155 Buishand, axis-156 KPSS, axis-157 ADF) which test the LEVEL TRAJECTORY rather than the MARGINAL DISTRIBUTION. Joint LM combination of skewness AND kurtosis -- not equivalent to surfacing those two moments separately.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source JARQUE-BERA normality test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'mean',
+    'stddev',
+    'skew',
+    'exKurt',
+    'jb',
+    'jbZ',
+    'pApprox',
+    'verdict',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      formatNumber(s.mean),
+      formatNumber(s.stddev),
+      s.skewness.toFixed(4),
+      s.excessKurtosis.toFixed(4),
+      s.jb.toFixed(4),
+      s.jbZ.toFixed(4),
+      s.jbPApprox.toExponential(2),
+      s.verdict,
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: jb approx 0 = sample skewness and excess kurtosis both approx 0 (Gaussian-like marginal); jb > 5.991 = reject Gaussian at alpha = 0.05 by Chi-Square(2); pApprox = exp(-jb/2). The test is BLIND TO WHICH MOMENT (skew or kurtosis) drives rejection -- inspect skew and exKurt directly to attribute. Compose with axis-160 BDS to separate "non-Gaussian iid" (jb high, BDS approx 0) from "Gaussian-marginal serially dependent" (BDS high, jb approx 0). Verdict cutoffs by Chi-Square(2) p-value: gaussian p>0.20 (jb<3.219), borderline 0.05<p<=0.20 (3.219<=jb<5.991), non-gaussian 0.01<p<=0.05 (5.991<=jb<9.210), strongly-non-gaussian p<=0.01 (jb>=9.210).)`,
     ),
   );
 

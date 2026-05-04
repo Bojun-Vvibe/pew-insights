@@ -185,6 +185,7 @@ import {
   renderDailyTokenLjungBoxQTest,
   renderDailyTokenMcLeodLi,
   renderDailyTokenBds,
+  renderDailyTokenJarqueBera,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -479,6 +480,10 @@ import {
   buildDailyTokenBds,
   type DailyTokenBdsSort,
 } from './dailytokenbds.js';
+import {
+  buildDailyTokenJarqueBera,
+  type DailyTokenJarqueBeraSort,
+} from './dailytokenjarquebera.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42010,6 +42015,110 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenBds(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-jarque-bera')
+  .description(
+    "Per-source JARQUE-BERA MOMENT-BASED LM TEST FOR NORMALITY of the gap-filled daily total_tokens series (axis-161). Surfaces (skewness, excessKurtosis, jb, jbZ, jbPApprox, verdict). S = m3/m2^{3/2}, K = m4/m2^2 - 3, JB = (n/6)(S^2 + K^2/4); under iid Gaussian null JB ~ Chi-Square(2); jbZ = (JB - 2)/2 approx N(0, 1); pApprox = exp(-JB/2) is the closed-form upper-tail Chi-Square(2) p-value (Jarque & Bera 1980 Econ. Letters 6:255-259). PERMUTATION-INVARIANT marginal-shape test, structurally orthogonal to all serial-dependence axes (axis-160 BDS, axis-159 McLeod-Li, axis-158 VR Lo-MacKinlay, axis-114 Ljung-Box) which all change under permutation, all stationarity / changepoint axes (axis-153 CUSUM, axis-154 Pettitt, axis-155 Buishand, axis-156 KPSS, axis-157 ADF) which test the LEVEL TRAJECTORY rather than the MARGINAL DISTRIBUTION, all halves CDF-distance axes (which compare two windows rather than one whole sample to a parametric reference), and to raw skewness / kurtosis axes (joint LM combination calibrated to a single Chi-Square decision, not a per-moment statistic). Verdict cutoffs: gaussian <3.219 <= borderline <5.991 <= non-gaussian <9.210 <= strongly-non-gaussian.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: jbDesc (default) | jb | jbZ | jbZDesc | skewAbs | skewAbsDesc | kurtAbs | kurtAbsDesc | tokens | tenure | source.',
+    'jbDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'jb',
+          'jbDesc',
+          'jbZ',
+          'jbZDesc',
+          'skewAbs',
+          'skewAbsDesc',
+          'kurtAbs',
+          'kurtAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenJarqueBera(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenJarqueBeraSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenJarqueBera(report) + '\n');
         }
       } catch (e) {
         die(e);
