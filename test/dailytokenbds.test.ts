@@ -295,3 +295,89 @@ test('buildDailyTokenBds: deterministic with fixed generatedAt', () => {
   });
   assert.deepEqual(a, b);
 });
+
+// ---------- refinement: cMOverC1Pow / cMOverC1PowLog10 ----------
+
+test('buildDailyTokenBds: cMOverC1Pow > 1 on dependent series, log10 > 0', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 40; i += 1) {
+    queue.push(ql(dayIso(i), 'sCycle', i % 2 === 0 ? 100 : 5000));
+  }
+  const r = buildDailyTokenBds(queue, {
+    epsSigma: 0.5,
+    generatedAt: '2026-05-04T00:00:00Z',
+  });
+  const row = r.sources[0]!;
+  assert.ok(
+    row.cMOverC1Pow > 1.05,
+    `expected cMOverC1Pow > 1.05 for period-2, got ${row.cMOverC1Pow}`,
+  );
+  assert.ok(
+    row.cMOverC1PowLog10 > 0,
+    `expected log10 > 0, got ${row.cMOverC1PowLog10}`,
+  );
+});
+
+test('buildDailyTokenBds: cMOverC1Pow ≈ 1 within tolerance for pseudo-iid LCG', () => {
+  let seed = 99991;
+  const next = (): number => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 200; i += 1) {
+    queue.push(ql(dayIso(i), 'sIid', 1000 + Math.floor(next() * 10000)));
+  }
+  const r = buildDailyTokenBds(queue, {
+    generatedAt: '2026-05-04T00:00:00Z',
+  });
+  const row = r.sources[0]!;
+  // Under iid the ratio is asymptotically 1.0 -- generously
+  // bound at [0.5, 2.0] for a 200-sample LCG draw.
+  assert.ok(
+    row.cMOverC1Pow > 0.5 && row.cMOverC1Pow < 2.0,
+    `expected cMOverC1Pow near 1, got ${row.cMOverC1Pow}`,
+  );
+  assert.ok(
+    Math.abs(row.cMOverC1PowLog10) < 0.31,
+    `expected |log10| < 0.31, got ${row.cMOverC1PowLog10}`,
+  );
+});
+
+test('buildDailyTokenBds: cMOverC1Pow algebraic identity cM === c1^m * ratio', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'sX', 1000 + ((i * 17) % 300)));
+  }
+  const r = buildDailyTokenBds(queue, {
+    generatedAt: '2026-05-04T00:00:00Z',
+  });
+  const row = r.sources[0]!;
+  if (row.c1 > 0) {
+    const reconstructed = Math.pow(row.c1, row.bdsM) * row.cMOverC1Pow;
+    assert.ok(
+      Math.abs(reconstructed - row.cM) < 1e-12,
+      `${reconstructed} vs ${row.cM}`,
+    );
+  }
+});
+
+test('buildDailyTokenBds: sort cMOverC1PowLogAbsDesc orders by |log10 ratio| desc', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'sCycle', i % 2 === 0 ? 100 : 5000));
+    queue.push(ql(dayIso(i), 'sLin', 1000 + i * 100));
+    queue.push(ql(dayIso(i), 'sNoise', 1000 + ((i * 7919) % 300)));
+  }
+  const r = buildDailyTokenBds(queue, {
+    sort: 'cMOverC1PowLogAbsDesc',
+    generatedAt: '2026-05-04T00:00:00Z',
+  });
+  for (let i = 1; i < r.sources.length; i += 1) {
+    assert.ok(
+      Math.abs(r.sources[i - 1]!.cMOverC1PowLog10) >=
+        Math.abs(r.sources[i]!.cMOverC1PowLog10),
+      `unsorted at ${i}`,
+    );
+  }
+});

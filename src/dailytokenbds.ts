@@ -213,6 +213,10 @@ export type DailyTokenBdsSort =
   | 'bdsZAbsDesc'
   | 'cM'
   | 'cMDesc'
+  | 'cMOverC1Pow'
+  | 'cMOverC1PowDesc'
+  | 'cMOverC1PowLogAbs'
+  | 'cMOverC1PowLogAbsDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -269,6 +273,26 @@ export interface DailyTokenBdsSourceRow {
   bdsZ: number;
   /** sigma(m, eps) used to standardise. */
   bdsSigma: number;
+  /**
+   * Independence-deficit ratio C(m, eps) / C(1, eps)^m.
+   * Equals 1 exactly under the iid factorisation null;
+   * > 1 means the m-history embedding has EXCESS
+   * coincidences (positive joint dependence); < 1 means
+   * dispersal. Reads as a unit-free shape-descriptor of
+   * the BDS deficit, complementing the n-scaled bdsV.
+   * Defined as 0 when c1 = 0.
+   */
+  cMOverC1Pow: number;
+  /**
+   * log10(cMOverC1Pow) when defined and finite, else 0.
+   * Symmetric around 0 (independence) on a scale where
+   * factor-of-10 over-coincidence (= 1.0) and factor-of-10
+   * dispersal (= -1.0) are equidistant from the iid null.
+   * Used as a sort key to surface the largest DEPENDENCE
+   * MAGNITUDE regardless of sign, decoupled from sample
+   * size (unlike |bdsV| which scales with sqrt(n)).
+   */
+  cMOverC1PowLog10: number;
 }
 
 export interface DailyTokenBdsReport {
@@ -544,6 +568,10 @@ export function buildDailyTokenBds(
     'bdsZAbsDesc',
     'cM',
     'cMDesc',
+    'cMOverC1Pow',
+    'cMOverC1PowDesc',
+    'cMOverC1PowLogAbs',
+    'cMOverC1PowLogAbsDesc',
     'tokens',
     'tenure',
     'source',
@@ -672,6 +700,18 @@ export function buildDailyTokenBds(
       bdsV: result.bdsV,
       bdsZ: result.bdsZ,
       bdsSigma: result.bdsSigma,
+      cMOverC1Pow: ((): number => {
+        const denom = Math.pow(result.c1, result.bdsM);
+        if (!Number.isFinite(denom) || denom === 0) return 0;
+        return result.cM / denom;
+      })(),
+      cMOverC1PowLog10: ((): number => {
+        const denom = Math.pow(result.c1, result.bdsM);
+        if (!Number.isFinite(denom) || denom === 0) return 0;
+        const ratio = result.cM / denom;
+        if (!Number.isFinite(ratio) || ratio <= 0) return 0;
+        return Math.log10(ratio);
+      })(),
     });
     totalTokensSum += acc.totalTokens;
   }
@@ -702,6 +742,20 @@ export function buildDailyTokenBds(
         break;
       case 'cMDesc':
         primary = b.cM - a.cM;
+        break;
+      case 'cMOverC1Pow':
+        primary = a.cMOverC1Pow - b.cMOverC1Pow;
+        break;
+      case 'cMOverC1PowDesc':
+        primary = b.cMOverC1Pow - a.cMOverC1Pow;
+        break;
+      case 'cMOverC1PowLogAbs':
+        primary =
+          Math.abs(a.cMOverC1PowLog10) - Math.abs(b.cMOverC1PowLog10);
+        break;
+      case 'cMOverC1PowLogAbsDesc':
+        primary =
+          Math.abs(b.cMOverC1PowLog10) - Math.abs(a.cMOverC1PowLog10);
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;

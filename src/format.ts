@@ -25496,6 +25496,8 @@ export function renderDailyTokenBds(
     'sigma',
     'bdsV',
     'bdsZ',
+    'C(m)/C(1)^m',
+    'log10ratio',
     'tokens',
   ];
   const rowsOut: string[][] = r.sources.map((s) => {
@@ -25513,6 +25515,8 @@ export function renderDailyTokenBds(
       s.bdsSigma.toFixed(4),
       s.bdsV.toFixed(4),
       s.bdsZ.toFixed(4),
+      s.cMOverC1Pow.toFixed(4),
+      s.cMOverC1PowLog10.toFixed(4),
       formatNumber(s.totalTokens),
     ];
   });

@@ -41921,7 +41921,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: bdsZAbsDesc (default) | bdsV | bdsVDesc | bdsZ | bdsZDesc | bdsZAbs | cM | cMDesc | tokens | tenure | source.',
+    'sort key: bdsZAbsDesc (default) | bdsV | bdsVDesc | bdsZ | bdsZDesc | bdsZAbs | cM | cMDesc | cMOverC1Pow | cMOverC1PowDesc | cMOverC1PowLogAbs | cMOverC1PowLogAbsDesc | tokens | tenure | source.',
     'bdsZAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -41981,6 +41981,10 @@ program
           'bdsZAbsDesc',
           'cM',
           'cMDesc',
+          'cMOverC1Pow',
+          'cMOverC1PowDesc',
+          'cMOverC1PowLogAbs',
+          'cMOverC1PowLogAbsDesc',
           'tokens',
           'tenure',
           'source',

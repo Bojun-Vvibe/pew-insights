@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.421 — 2026-05-04
+
+### Refinement — axis-160: derived shape-descriptors `cMOverC1Pow` and `cMOverC1PowLog10`
+
+Adds two unit-free shape-descriptors to the per-source row of
+the BDS report:
+
+```
+cMOverC1Pow      = C(m, eps) / C(1, eps)^m
+cMOverC1PowLog10 = log10( cMOverC1Pow )         (0 when c1 = 0)
+```
+
+`cMOverC1Pow` is the **independence-deficit ratio**: it equals
+exactly 1 under the iid factorisation null `C(m) = C(1)^m`,
+> 1 means the m-history embedding has EXCESS coincidences
+(positive joint dependence), < 1 means dispersal. Unlike
+`bdsV` it does NOT scale with `sqrt(n)`, so it ranks sources
+by the MAGNITUDE of dependence in a way that is decoupled from
+sample size — useful when comparing sources with very
+different tenures (e.g. the 15-day `opencode` vs the 265-day
+`vscode-copilot` cohort).
+
+`cMOverC1PowLog10` is the same quantity on a symmetric log
+scale: 0 = independence; +1 = order-of-magnitude over-
+coincidence; -1 = order-of-magnitude dispersal. Used as the
+new `cMOverC1PowLogAbsDesc` sort key to surface the largest
+DEPENDENCE MAGNITUDE regardless of sign.
+
+Algebraic identity preserved (verified by test):
+`cM === c1^m * cMOverC1Pow` exactly.
+
+Three new sort keys: `cMOverC1Pow` / `cMOverC1PowDesc` /
+`cMOverC1PowLogAbs` / `cMOverC1PowLogAbsDesc`.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (refinement;
+one source name redacted):
+
+```
+per-source BDS independence test (with refinement columns)
+source        firstDay    lastDay     tenure  active  m  eps           C(1)    C(m)    K       sigma   bdsV    bdsZ    C(m)/C(1)^m  log10ratio  tokens
+------------  ----------  ----------  ------  ------  -  ------------  ------  ------  ------  ------  ------  ------  -----------  ----------  -------------
+vsc-redacted  2025-07-30  2026-04-20  265     73      2  18917.11      0.8538  0.7580  0.7852  0.1124  4.2058  4.2058  1.0398       0.0170      1,885,727
+claude-code   2026-02-11  2026-04-23  72      35      2  107699855.49  0.8286  0.7360  0.7496  0.1259  3.3265  3.3265  1.0719       0.0302      3,442,385,788
+opencode      2026-04-20  2026-05-04  15      15      2  123381675.55  0.4190  0.2527  0.2474  0.1436  2.0805  2.0805  1.4393       0.1582      6,546,648,608
+openclaw      2026-04-17  2026-05-04  18      18      2  66168687.83   0.4183  0.2353  0.2527  0.1555  1.6453  1.6453  1.3447       0.1286      2,268,121,589
+hermes        2026-04-17  2026-05-04  18      18      2  6639208.81    0.3007  0.0956  0.1228  0.0648  0.3404  0.3404  1.0575       0.0243      315,208,466
+```
+
+**Reading the refinement:**
+
+- The two longest-tenure sources (`vsc-redacted`, `claude-code`)
+  have the **largest `bdsZ`** (4.21 / 3.33) but the **smallest
+  `cMOverC1Pow`** (1.04 / 1.07). In other words their iid
+  rejection is driven mostly by the `sqrt(n)` scaling of the
+  BDS test against the long tenure, not by a particularly
+  large per-pair dependence excess. The 2-history embedding
+  exceeds the iid prediction by only 4-7%.
+- Conversely `opencode` (15 days) shows a `cMOverC1Pow` of
+  1.44 — a **44% excess** over iid — which translates to a
+  more modest `bdsZ` of 2.08 only because `n` is small.
+  `openclaw` is similar at 1.34 (34% excess).
+- The new `log10ratio` column makes the relative magnitudes
+  comparable on a log scale: `opencode` at 0.158 carries
+  the largest unit-free dependence signal, ~9× larger than
+  `vsc-redacted` at 0.017. This is the **opposite ranking**
+  to `bdsZ`. Both rankings are correct — they answer
+  different questions: `bdsZ` ranks "how confidently can we
+  reject iid", `cMOverC1Pow` ranks "how far from iid is the
+  observed embedding distribution".
+
+**Operational implication.** Use `bdsZ` for hypothesis-testing
+decisions (does this source's series significantly differ
+from iid?) and `cMOverC1Pow` for effect-size comparisons
+across sources of different tenure (which source has the
+strongest dependence signal *per pair*, regardless of how
+many pairs we have to detect it?). Both are surfaced in the
+default rendered table; the new sort keys allow either to
+drive the row order.
+
 ## 0.6.420 — 2026-05-04
 
 ### Added — axis-160: `daily-token-bds` (Brock-Dechert-Scheinkman nonlinear-dependence / iid-test via the correlation integral)
