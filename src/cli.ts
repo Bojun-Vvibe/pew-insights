@@ -188,6 +188,7 @@ import {
   renderDailyTokenJarqueBera,
   renderDailyTokenDurbinWatsonDetrended,
   renderDailyTokenRunsTestDetrended,
+  renderDailyTokenRankVonNeumannDetrended,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -494,6 +495,10 @@ import {
   buildDailyTokenRunsTestDetrended,
   type DailyTokenRunsTestDetrendedSort,
 } from './dailytokenrunstestdetrended.js';
+import {
+  buildDailyTokenRankVonNeumannDetrended,
+  type DailyTokenRankVonNeumannDetrendedSort,
+} from './dailytokenrankvonneumanndetrended.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42341,6 +42346,108 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenRunsTestDetrended(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-rank-von-neumann-detrended')
+  .description(
+    "Per-source BARTELS RANK VON NEUMANN RATIO computed on the MID-RANKS of OLS-DETRENDED residuals of gap-filled daily total_tokens (axis-164). Fits x_t = a + b*t by OLS, forms residuals e_t, replaces them with mid-ranks R[t] in {1..n}, then RVN = sum (R[t+1]-R[t])^2 / sum (R[t]-Rbar)^2 with E[RVN]=2 and Var[RVN] = 4(n-2)(5n^2-2n-9)/(5n(n+1)(n-1)^2) (Bartels 1982 JASA 77(377):40-46). bvnZ = (RVN-2)/sqrt(Var) approx N(0,1) under the iid rank null. Operates on the RANKS of OLS-detrended residuals -- structurally orthogonal to axis-112 daily-token-bartels-rank-von-neumann (raw-series rank vN: a monotone trend gives axis-112 bvnZ approx -sqrt(n) but THIS axis bvnZ approx 0), to axis-162 DW (raw-magnitude L^2 vs. this rank-domain L^2: invariant under monotone transforms of residuals), to axis-163 runs-test-detrended (sign-only L^0 vs. this rank-aware ordinal: preserves rank-within-sign), to axis-114 / axis-159 / axis-158 / axis-160 (all on raw values), to axis-161 Jarque-Bera, and to all stationarity / unit-root / changepoint axes. Verdict cutoffs: strong-positive-rank-autocorr <= -2.576, borderline-positive in (-2.576, -1.645], independent in (-1.645, +1.645), borderline-negative in [+1.645, +2.576), strong-negative >= +2.576.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bvnZAbsDesc (default) | bvnZAbs | bvnZ | bvnZDesc | rvn | rvnDesc | tokens | tenure | source.',
+    'bvnZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bvnZ',
+          'bvnZDesc',
+          'bvnZAbs',
+          'bvnZAbsDesc',
+          'rvn',
+          'rvnDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenRankVonNeumannDetrended(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenRankVonNeumannDetrendedSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenRankVonNeumannDetrended(report) + '\n');
         }
       } catch (e) {
         die(e);

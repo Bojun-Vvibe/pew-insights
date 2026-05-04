@@ -20582,6 +20582,7 @@ import type { DailyTokenBdsReport } from './dailytokenbds.js';
 import type { DailyTokenJarqueBeraReport } from './dailytokenjarquebera.js';
 import type { DailyTokenDurbinWatsonDetrendedReport } from './dailytokendurbinwatsondetrended.js';
 import type { DailyTokenRunsTestDetrendedReport } from './dailytokenrunstestdetrended.js';
+import type { DailyTokenRankVonNeumannDetrendedReport } from './dailytokenrankvonneumanndetrended.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25787,6 +25788,87 @@ export function renderDailyTokenRunsTestDetrended(
   lines.push(
     chalk.dim(
       `(reference anchor: rtZ approx 0 = sign sequence of OLS-detrended residuals looks like an iid coin around the fitted trend; rtZ << 0 = above-trend and below-trend days CLUSTER (long runs of same sign / persistence around trend); rtZ >> 0 = sign ALTERNATES more than chance (oscillation around trend / negative residual AR(1)). Asymptotic Normal approximation is calibrated for n_+ >= 10 and n_- >= 10. The test is BLIND TO RESIDUAL MAGNITUDE -- compose with axis-162 daily-token-durbin-watson-detrended for the magnitude-aware companion diagnostic.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenRankVonNeumannDetrended(
+  r: DailyTokenRankVonNeumannDetrendedReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-rank-von-neumann-detrended'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroResidualVariance)} zero-residual-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BARTELS RANK VON NEUMANN RATIO on the MID-RANKS of OLS-DETRENDED residuals of gap-filled daily total_tokens. ONE-HUNDRED-AND-SIXTY-FOURTH cross-source axis. Bartels 1982 JASA 77(377):40-46: fit x_t = a + b*t by OLS, form residuals e_t, replace by mid-ranks R[t] in {1..n}, then RVN = sum (R[t+1]-R[t])^2 / sum (R[t]-Rbar)^2 with E[RVN]=2 and Var[RVN] = 4(n-2)(5n^2-2n-9)/(5n(n+1)(n-1)^2). bvnZ = (RVN-2)/sqrt(Var) approx N(0,1). Operates on the RANKS of OLS-detrended residuals -- structurally orthogonal to axis-112 daily-token-bartels-rank-von-neumann (raw-series rank vN: a monotone trend gives axis-112 bvnZ approx -sqrt(n) but THIS axis bvnZ approx 0 after detrend), to axis-162 DW (raw-magnitude L^2 vs this rank-domain L^2: invariant under monotone transforms of residuals), to axis-163 runs-test-detrended (sign-only L^0 vs this rank-aware ordinal: preserves rank-within-sign), to axis-114 Ljung-Box / axis-159 McLeod-Li / axis-158 VR / axis-160 BDS (all on raw values), to axis-161 Jarque-Bera (permutation-invariant moment test), and to all stationarity / unit-root / changepoint axes. Verdict cutoffs: strong-positive-rank-autocorr <= -2.576, borderline-positive in (-2.576, -1.645], independent in (-1.645, +1.645), borderline-negative in [+1.645, +2.576), strong-negative >= +2.576.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BARTELS rank von Neumann on detrended residual ranks (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'slope',
+    'rvn',
+    'bvnZ',
+    'tieFrac',
+    'verdict',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      s.trendSlope.toFixed(2),
+      s.rvn.toFixed(4),
+      s.bvnZ.toFixed(4),
+      s.tieFraction.toFixed(3),
+      s.verdict,
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: rvn approx 2 = rank sequence of OLS-detrended residuals consistent with random permutation around fitted trend; rvn < 2 (bvnZ << 0) = consecutive ranks STAY CLOSE -> POSITIVE RANK-DOMAIN AUTOCORRELATION (above-trend days followed by above-trend days in rank order); rvn > 2 (bvnZ >> 0) = consecutive ranks JUMP APART -> NEGATIVE RANK-DOMAIN AUTOCORRELATION (rank-oscillation around the trend, robust analogue of axis-162 DW > 2). Asymptotic Normal approximation is calibrated for n >= 10. The test is INVARIANT UNDER MONOTONE TRANSFORMS of the residuals -- compose with axis-162 daily-token-durbin-watson-detrended for the magnitude-aware companion diagnostic.)`,
     ),
   );
 
