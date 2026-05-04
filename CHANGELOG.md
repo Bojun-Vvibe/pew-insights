@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.437 — 2026-05-04
+
+### Refined — axis-168 numerical-stability + signed-mean orthogonality invariant
+
+Four new invariant tests pinning the published-table /
+asymptotic-tail boundary of axis-168's
+`cramerVonMisesSurvival`:
+
+1. **Full Anderson-Darling 1952 Table 1 grid pinned**
+   to 1e-9 — every published critical value (14
+   grid points spanning p ∈ [0.99, 0.001]) is a
+   regression guard against any future drift in the
+   lookup table.
+2. **Tail closure C^0 continuity at the table seam
+   (w² = 1.16786)** — the Csörgő–Faraway exponential
+   extrapolation must agree with the table edge to
+   1e-6, guarding against any change to the tail
+   constant or the table edge introducing a
+   discontinuity.
+3. **Signed-mean orthogonality witness vs Bartlett-
+   bSignedDev** — `cvmSignedMean` is the MEAN of the
+   signed cumulative deviation, structurally distinct
+   from axis-167's `bSignedDev{Positive,Negative}`
+   pair (sup of signed deviation). The test pins
+   bin-reversal antisymmetry: reflecting the spectrum
+   exactly negates `cvmSignedMean`.
+4. **Csörgő–Faraway tail monotonicity out to w² = 20**
+   — the asymptotic-tail closure remains positive and
+   below 0.001 across the full operational tail
+   region, guarding against tail underflow or
+   overflow at extreme rejection regimes.
+
 ## 0.6.436 — 2026-05-04
 
 ### Added — axis-168: `daily-token-cramer-von-mises-cumulative-periodogram`

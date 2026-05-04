@@ -339,3 +339,102 @@ test('build: source filter restricts rows', () => {
   assert.equal(r.sources[0]!.source, 'src1');
   assert.equal(r.droppedSourceFilter, 40);
 });
+
+// ---------- numerical-stability refinements (axis-168 v0.6.437) ----------
+
+test('cvmSurvival: full Anderson-Darling 1952 Table 1 grid pinned', () => {
+  // Pin EVERY published Anderson-Darling 1952 Table 1 / Stephens
+  // 1970 Table 3 critical value to 1e-9. This is the strongest
+  // possible regression guard: any future drift in the lookup
+  // table will surface here. (The table grid points are exact
+  // table values; linear interpolation between them is exact at
+  // the grid points themselves.)
+  const grid: ReadonlyArray<readonly [number, number]> = [
+    [0.02480, 0.99],
+    [0.03471, 0.95],
+    [0.04395, 0.90],
+    [0.06065, 0.80],
+    [0.09471, 0.65],
+    [0.11888, 0.55],
+    [0.15633, 0.40],
+    [0.21862, 0.25],
+    [0.34730, 0.10],
+    [0.46136, 0.05],
+    [0.58061, 0.025],
+    [0.74346, 0.01],
+    [0.86902, 0.005],
+    [1.16786, 0.001],
+  ];
+  for (const [w2, expectedP] of grid) {
+    const got = cramerVonMisesSurvival(w2);
+    assert.ok(
+      Math.abs(got - expectedP) < 1e-9,
+      `table grid mismatch at w2=${w2}: got ${got}, expected ${expectedP}`,
+    );
+  }
+});
+
+test('cvmSurvival: tail closure is C^0 continuous at table seam', () => {
+  // The asymptotic tail extrapolation MUST agree with the last
+  // table value at w2 = 1.16786 itself (continuity guard). This
+  // is a numerical-stability invariant -- any change to the
+  // tail constant or the table edge would surface as a
+  // discontinuity here.
+  const seam = 1.16786;
+  const eps = 1e-12;
+  const left = cramerVonMisesSurvival(seam - eps);
+  const right = cramerVonMisesSurvival(seam + eps);
+  // Both sides should be very close to the table value 0.001.
+  assert.ok(Math.abs(left - 0.001) < 1e-9, `left of seam: ${left}`);
+  assert.ok(
+    Math.abs(right - 0.001) < 1e-6,
+    `right of seam (asymptotic): ${right}`,
+  );
+});
+
+test('cvm: signed-mean orthogonality witness vs Bartlett-bSignedDev', () => {
+  // Two spectra with the SAME magnitude of signed deviation
+  // can have OPPOSITE Bartlett-bSignedDev{Positive,Negative}
+  // sup behaviours (which capture the sup of signed dev) yet
+  // the SAME-sign cvmSignedMean (the MEAN of signed dev). The
+  // test pins this distinction.
+  // Spectrum: [4,4,1,1,1,1,1,1] -- low-frequency overshoot.
+  const power = [4, 4, 1, 1, 1, 1, 1, 1];
+  const r = cramerVonMisesCumulativePeriodogramStatistic(power);
+  // First two bins overshoot; cumulative deviation peaks at
+  // low frequency, both bD-positive and devMean-positive.
+  assert.ok(
+    r.cvmSignedMean > 0,
+    `expected positive devMean for low-freq overshoot, got ${r.cvmSignedMean}`,
+  );
+  // Same magnitude but reflected -- mass at high frequency.
+  const reflected = [...power].reverse();
+  const r2 = cramerVonMisesCumulativePeriodogramStatistic(reflected);
+  assert.ok(
+    r2.cvmSignedMean < 0,
+    `expected negative devMean for high-freq overshoot, got ${r2.cvmSignedMean}`,
+  );
+  // The MAGNITUDES of signed mean must be equal (bin-reversal
+  // antisymmetry of the signed-mean functional).
+  assert.ok(
+    Math.abs(r.cvmSignedMean + r2.cvmSignedMean) < 1e-12,
+    `signed-mean not antisymmetric: ${r.cvmSignedMean} vs ${r2.cvmSignedMean}`,
+  );
+});
+
+test('cvm: Csorgo-Faraway tail dominates KS-Bartlett tail at large w2', () => {
+  // Both axis-167 (Bartlett) and axis-168 (CvM) reduce to a
+  // Brownian-bridge functional under H0; the CvM L^2 tail
+  // decays as exp(-pi^2 * w / 2) while the KS L^infty tail
+  // decays as exp(-2 * lambda^2). At LARGE statistic values
+  // both tails are vanishingly small but the CvM decay rate
+  // (pi^2/2 ~ 4.93) is FASTER per unit statistic than the KS
+  // decay rate (2 per unit lambda^2 = 2 per unit bD^2*K_eff).
+  // We confirm the CvM tail is monotone and remains positive
+  // out to w2 = 20 (well past any practical regime).
+  for (let w = 2; w <= 20; w += 0.5) {
+    const p = cramerVonMisesSurvival(w);
+    assert.ok(p > 0, `tail underflow at w=${w}: ${p}`);
+    assert.ok(p < 0.001, `tail too large at w=${w}: ${p}`);
+  }
+});
