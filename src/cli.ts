@@ -189,6 +189,7 @@ import {
   renderDailyTokenDurbinWatsonDetrended,
   renderDailyTokenRunsTestDetrended,
   renderDailyTokenRankVonNeumannDetrended,
+  renderDailyTokenHoeffdingDLag1,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -499,6 +500,10 @@ import {
   buildDailyTokenRankVonNeumannDetrended,
   type DailyTokenRankVonNeumannDetrendedSort,
 } from './dailytokenrankvonneumanndetrended.js';
+import {
+  buildDailyTokenHoeffdingDLag1,
+  type DailyTokenHoeffdingDLag1Sort,
+} from './dailytokenhoeffdingdlag1.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42450,6 +42455,108 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenRankVonNeumannDetrended(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-hoeffding-d-lag1')
+  .description(
+    "Per-source HOEFFDING'S D U-statistic for LAG-1 DEPENDENCE between consecutive MID-RANKS of gap-filled daily total_tokens (axis-165). Form lag-1 pairs (x_t, x_{t+1}), replace each marginal coordinate by its mid-rank, count Q_i = #{j: R_j<R_i AND S_j<S_i}, then D = 30*((m-2)(m-3)D1 + D2 - 2(m-2)D3) / (m(m-1)(m-2)(m-3)(m-4)) (Hoeffding 1948 AMS 19(4):546-557). Under H0 of independence E[D]=0, Var[D]=2(m^2+5m-32)/(9m(m-1)(m-3)(m-4)), hdZ = D/sqrt(Var) approx N(0,1). Detects ANY joint-CDF dependence shape including NON-MONOTONIC -- structurally orthogonal to axis-130 Spearman-lag1 and axis-131 Kendall-tau-lag1 (both monotone-only), to axis-95 Pearson-lag1 (raw-magnitude linear), to axis-112 / axis-164 Bartels rank vN (univariate consecutive-rank-difference statistic, not bivariate joint-CDF), to axis-160 BDS (raw-value embedding), and to all stationarity / unit-root / changepoint axes. Verdict cutoffs: strong-positive >= +2.576, borderline-positive in [+1.645, +2.576), independent in (-1.645, +1.645), borderline-negative in (-2.576, -1.645], strong-negative <= -2.576.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 6. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hdZAbsDesc (default) | hdZAbs | hdZ | hdZDesc | hd | hdDesc | tokens | tenure | source.',
+    'hdZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 6) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 6 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'hdZ',
+          'hdZDesc',
+          'hdZAbs',
+          'hdZAbsDesc',
+          'hd',
+          'hdDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHoeffdingDLag1(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenHoeffdingDLag1Sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenHoeffdingDLag1(report) + '\n');
         }
       } catch (e) {
         die(e);

@@ -20583,6 +20583,7 @@ import type { DailyTokenJarqueBeraReport } from './dailytokenjarquebera.js';
 import type { DailyTokenDurbinWatsonDetrendedReport } from './dailytokendurbinwatsondetrended.js';
 import type { DailyTokenRunsTestDetrendedReport } from './dailytokenrunstestdetrended.js';
 import type { DailyTokenRankVonNeumannDetrendedReport } from './dailytokenrankvonneumanndetrended.js';
+import type { DailyTokenHoeffdingDLag1Report } from './dailytokenhoeffdingdlag1.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25871,6 +25872,87 @@ export function renderDailyTokenRankVonNeumannDetrended(
   lines.push(
     chalk.dim(
       `(reference anchor: rvn approx 2 = rank sequence of OLS-detrended residuals consistent with random permutation around fitted trend; rvn < 2 (bvnZ << 0) = consecutive ranks STAY CLOSE -> POSITIVE RANK-DOMAIN AUTOCORRELATION (above-trend days followed by above-trend days in rank order); rvn > 2 (bvnZ >> 0) = consecutive ranks JUMP APART -> NEGATIVE RANK-DOMAIN AUTOCORRELATION (rank-oscillation around the trend, robust analogue of axis-162 DW > 2). Asymptotic Normal approximation is calibrated for n >= 10. The test is INVARIANT UNDER MONOTONE TRANSFORMS of the residuals -- compose with axis-162 daily-token-durbin-watson-detrended for the magnitude-aware companion diagnostic.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHoeffdingDLag1(
+  r: DailyTokenHoeffdingDLag1Report,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-hoeffding-d-lag1'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HOEFFDING'S D U-statistic for LAG-1 DEPENDENCE between consecutive MID-RANKS of gap-filled daily total_tokens. ONE-HUNDRED-AND-SIXTY-FIFTH cross-source axis. Hoeffding 1948 AMS 19(4):546-557. Form lag-1 pairs (x_t, x_{t+1}), replace each marginal coordinate by its mid-rank, count Q_i = #{j: R_j<R_i AND S_j<S_i}, then D = 30*((m-2)(m-3)D1 + D2 - 2(m-2)D3) / (m(m-1)(m-2)(m-3)(m-4)) with D1=sum Q_i(Q_i-1), D2=sum (R_i-1)(R_i-2)(S_i-1)(S_i-2), D3=sum (R_i-2)(S_i-2)Q_i. Under H0 of independence E[D]=0, Var[D]=2(m^2+5m-32)/(9m(m-1)(m-3)(m-4)), hdZ = D/sqrt(Var) approx N(0,1). Detects ANY joint-CDF dependence shape including NON-MONOTONIC -- structurally orthogonal to axis-130 Spearman-lag1 and axis-131 Kendall-tau-lag1 (both monotone-only), to axis-95 Pearson-lag1 (raw-magnitude linear), to axis-112 / axis-164 Bartels rank vN (univariate consecutive-rank-difference statistic, not a bivariate joint-CDF test), to axis-160 BDS (raw-value embedding), and to all stationarity / unit-root / changepoint axes. Verdict cutoffs: strong-positive >= +2.576, borderline-positive in [+1.645, +2.576), independent in (-1.645, +1.645), borderline-negative in (-2.576, -1.645], strong-negative <= -2.576.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source HOEFFDING D lag-1 on consecutive mid-ranks (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'hd',
+    'hdZ',
+    'tieFrac',
+    'verdict',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      formatNumber(s.nPairs),
+      s.hd.toFixed(6),
+      s.hdZ.toFixed(4),
+      s.tieFraction.toFixed(3),
+      s.verdict,
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: hd approx 0 (hdZ approx 0) = lag-1 (x_t, x_{t+1}) pair distribution consistent with INDEPENDENCE in the joint-CDF sense; hd > 0 (hdZ >> 0) = lag-1 pairs concentrate on SOME bivariate region of ANY shape -- monotone OR non-monotone, including U-shaped / parabolic / periodic conditional means that Spearman (axis-130) and Kendall-tau (axis-131) MISS; hd < 0 (hdZ << 0) = anti-corner concentration, usually small-sample noise. The test is RANK-ONLY -- invariant under any monotone coordinatewise transform of the values.)`,
     ),
   );
 
