@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.445 — 2026-05-04
+
+### Refined — axis-172 corpus-level aggregator + chi-squared upper-tail helper
+
+New public helper exposed from the axis-172 module:
+**`aggregateKuiperVCumulativePeriodogram(rows)`** — combines
+per-source Kuiper-V results into a single corpus-level
+summary via Fisher's (1932) combined p-value AND a corpus-
+level **two-sided-excursion-asymmetry ratio**:
+
+```
+chi2 = -2 * sum_i log(kpPValue_i)
+fisherCombinedPValue = P(Chi^2_{2m} > chi2)
+
+twoSidedAsymmetryRatio
+  = min(sumKpDPlus, sumKpDMinus)
+    / max(sumKpDPlus, sumKpDMinus)         in [0, 1]
+```
+
+#### Why a Kuiper-specific aggregator (not just Fisher)
+
+Axes 169 and 171 both ship Fisher-style aggregators. The
+NEW signal at this axis is the **two-sided-asymmetry
+ratio**: a corpus-wide quantification of whether the
+per-source cumulative-periodogram excursions are
+uniformly one-sided (ratio near 0 — Kuiper degenerates
+to Bartlett at the corpus level) or balance positive and
+negative excursions (ratio near 1 — Kuiper signal is ~2x
+Bartlett at the corpus level). This is the operationally-
+meaningful structural-orthogonality witness against
+axis-167; the Fisher combined-p alone cannot tell us
+which regime we're in.
+
+Also exposes **`chiSquaredUpperTailLocal(x, k)`** — the
+chi-squared upper-tail routine factored out of axis-169 /
+axis-171 (Numerical Recipes 6.2: Lentz continued fraction
+for `x > s+1`, power series for `x <= s+1`, Lanczos
+log-Gamma). Self-contained inside the axis-172 module so
+that downstream consumers don't have to take a cross-axis
+import.
+
+#### Tests
+
+Test suite grew by **+6** tests (12963 → 12969). Coverage:
+
+- empty input returns rowsUsed=0, fisher=1, ratio=0;
+- malformed rows skipped with counter (n<2, NaN kpVStar,
+  non-integer nTenureDays, negative kpDPlus);
+- uniformly one-sided rows → ratio = 0 exactly,
+  sumKpDMinus = 0 exactly;
+- balanced two-sided rows → ratio > 0.9 and Fisher
+  combined-p reflects the per-source significance;
+- tenure-weighting honoured (a 1000-day source with
+  kpVStar = 3.0 dominates a 4-day source with
+  kpVStar = 0.5);
+- `chiSquaredUpperTailLocal` published anchors:
+  P(Chi^2_2 > 0) = 1, P(Chi^2_2 > 5.991) = 0.05,
+  P(Chi^2_4 > 9.488) = 0.05.
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node -e "import { buildDailyTokenKuiperVCumulativePeriodogram,
+    aggregateKuiperVCumulativePeriodogram }
+    from './dist/dailytokenkuipervcumulativeperiodogram.js';
+    ... feed the same 4-source set as v0.6.444 smoke ..."
+
+rowsUsed=4    rowsSkipped=0
+tenureWeightedKpVStar    = 1.483404
+fisherCombinedPValue     = 2.8866e-2
+sumKpDPlus               = 1.335580
+sumKpDMinus              = 0.001569
+twoSidedAsymmetryRatio   = 0.001175
+totalTenureWeight        = 369
+```
+
+**Interpretation.**
+
+- Fisher combined-p = 0.029 < 0.05: as a CORPUS, the four
+  sources collectively REJECT white noise at the 5%
+  level. Driven primarily by `claude-code` (per-source
+  p = 0.015) but the other three sources contribute
+  enough to keep the combined-p well below 0.05.
+- `twoSidedAsymmetryRatio = 0.0012` is essentially 0:
+  ALL of the cumulative-periodogram excursion across
+  the corpus is ONE-SIDED (sumKpDMinus is essentially
+  zero). At the corpus level Kuiper degenerates to
+  Bartlett — the orthogonality of axis-172 over axis-167
+  does NOT activate on this real-data corpus, but the
+  aggregator now MEASURES that fact rather than
+  silently ignoring it. The ratio gives operators a
+  one-glance verdict on whether the Kuiper axis is
+  adding signal beyond Bartlett for this dataset.
+- `tenureWeightedKpVStar = 1.48` sits BELOW the 10%
+  critical value of 1.620 — so an "average effect size"
+  view says the corpus is borderline white-noise-
+  compatible, but Fisher's combined-p (which is sensitive
+  to ANY individual rejection) calls it.
+
 ## 0.6.444 — 2026-05-04
 
 ### Added — axis-172 daily-token-kuiper-v-cumulative-periodogram

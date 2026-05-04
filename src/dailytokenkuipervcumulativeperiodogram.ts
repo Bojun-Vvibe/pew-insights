@@ -729,3 +729,205 @@ export function buildDailyTokenKuiperVCumulativePeriodogram(
     sources: kept,
   };
 }
+
+/**
+ * Corpus-level aggregator for axis-172 per-source results.
+ * Produces a single corpus-level summary that captures both
+ * the COMBINED SIGNIFICANCE (Fisher 1932) and the CORPUS-
+ * WIDE TWO-SIDED-EXCURSION ASYMMETRY of the cumulative
+ * periodograms.
+ *
+ * Outputs:
+ *
+ *   tenureWeightedKpVStar -- weighted average of `kpVStar`
+ *     across rows with weights `nTenureDays - 1` (matches
+ *     the effective-K weighting of the per-source statistic).
+ *
+ *   fisherCombinedPValue -- Fisher (1932) combined p-value:
+ *
+ *       chi2 = -2 * sum_i log(p_i),     p_i = kpPValue_i
+ *       fisherCombinedPValue = P(Chi2_{2m} > chi2)
+ *
+ *     for m = number of valid rows. Computed via the chi-
+ *     squared upper-tail routine factored out of axis-169.
+ *     Returns 1 when m = 0.
+ *
+ *   sumKpDPlus / sumKpDMinus -- raw sums of the per-source
+ *     one-sided maxima. The companion ratio
+ *
+ *         twoSidedAsymmetryRatio
+ *           = min(sumKpDPlus, sumKpDMinus)
+ *             / max(sumKpDPlus, sumKpDMinus)
+ *
+ *     is in [0, 1] and answers the orthogonality-witness
+ *     question:
+ *
+ *         ratio near 0  -> corpus PSDs are uniformly
+ *                          ONE-SIDED (Kuiper degenerates to
+ *                          Bartlett at the corpus level);
+ *         ratio near 1  -> corpus PSDs balance positive
+ *                          and negative cumulative
+ *                          excursions (Kuiper signal is
+ *                          ~2x Bartlett at the corpus
+ *                          level -- the regime where this
+ *                          axis adds the most over 167-169).
+ *
+ *   rowsUsed / rowsSkipped -- defensive book-keeping.
+ *
+ * Malformed rows (non-finite `kpVStar` / `kpPValue`, non-
+ * integer / < 2 nTenureDays, kpDPlus or kpDMinus < 0) are
+ * SKIPPED with a counter rather than throwing.
+ */
+export interface KuiperVCumulativePeriodogramCorpusAggregate {
+  tenureWeightedKpVStar: number;
+  fisherCombinedPValue: number;
+  sumKpDPlus: number;
+  sumKpDMinus: number;
+  twoSidedAsymmetryRatio: number;
+  totalTenureWeight: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateKuiperVCumulativePeriodogram(
+  rows: ReadonlyArray<{
+    nTenureDays: number;
+    kpVStar: number;
+    kpPValue: number;
+    kpDPlus: number;
+    kpDMinus: number;
+  }>,
+): KuiperVCumulativePeriodogramCorpusAggregate {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  let chi2 = 0;
+  let sumKpDPlus = 0;
+  let sumKpDMinus = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.kpVStar) ||
+      !Number.isFinite(r.kpPValue) ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays < 2 ||
+      !(r.kpDPlus >= 0) ||
+      !(r.kpDMinus >= 0)
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const w = r.nTenureDays - 1;
+    weightedSum += w * r.kpVStar;
+    totalWeight += w;
+    const pClamped = Math.max(1e-300, Math.min(1, r.kpPValue));
+    chi2 += -2 * Math.log(pClamped);
+    sumKpDPlus += r.kpDPlus;
+    sumKpDMinus += r.kpDMinus;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      tenureWeightedKpVStar: 0,
+      fisherCombinedPValue: 1,
+      sumKpDPlus: 0,
+      sumKpDMinus: 0,
+      twoSidedAsymmetryRatio: 0,
+      totalTenureWeight: 0,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const tenureWeightedKpVStar = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  const dof = 2 * used;
+  const fisherCombinedPValue = chiSquaredUpperTailLocal(chi2, dof);
+  const maxSum = Math.max(sumKpDPlus, sumKpDMinus);
+  const minSum = Math.min(sumKpDPlus, sumKpDMinus);
+  const twoSidedAsymmetryRatio = maxSum > 0 ? minSum / maxSum : 0;
+  return {
+    tenureWeightedKpVStar,
+    fisherCombinedPValue,
+    sumKpDPlus,
+    sumKpDMinus,
+    twoSidedAsymmetryRatio,
+    totalTenureWeight: totalWeight,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Local chi-squared upper-tail `P(Chi^2_k > x)` via the
+ * regularised upper incomplete gamma function (Numerical
+ * Recipes 6.2). Self-contained -- no cross-axis import. Same
+ * algorithm as axis-169 / axis-171 (Lentz continued fraction
+ * for x > s+1, power series for x <= s+1, Lanczos log-Gamma).
+ *
+ * Convergence: ~1e-12 absolute in <= 100 iterations across
+ * the operating range used by the Fisher combined-p (k = 2m
+ * for m rows; typically k <= 200).
+ */
+export function chiSquaredUpperTailLocal(x: number, k: number): number {
+  if (!Number.isFinite(x)) {
+    throw new Error(`chiSquaredUpperTailLocal: non-finite x (${x})`);
+  }
+  if (!Number.isFinite(k) || k <= 0) {
+    throw new Error(`chiSquaredUpperTailLocal: invalid dof k (${k}; need k > 0)`);
+  }
+  if (x <= 0) return 1;
+  const s = k / 2;
+  const xHalf = x / 2;
+  if (xHalf < s + 1) {
+    return 1 - lowerIncompleteGammaSeriesLocal(s, xHalf);
+  }
+  return upperIncompleteGammaCFLocal(s, xHalf);
+}
+
+function lowerIncompleteGammaSeriesLocal(s: number, x: number): number {
+  let term = 1 / s;
+  let sum = term;
+  for (let n = 1; n < 1000; n += 1) {
+    term *= x / (s + n);
+    sum += term;
+    if (Math.abs(term) < Math.abs(sum) * 1e-15) break;
+  }
+  return sum * Math.exp(-x + s * Math.log(x) - logGammaLocal(s));
+}
+
+function upperIncompleteGammaCFLocal(s: number, x: number): number {
+  const FPMIN = 1e-300;
+  let b = x + 1 - s;
+  let c = 1 / FPMIN;
+  let d = 1 / b;
+  let h = d;
+  for (let i = 1; i < 1000; i += 1) {
+    const an = -i * (i - s);
+    b += 2;
+    d = an * d + b;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = b + an / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const delta = d * c;
+    h *= delta;
+    if (Math.abs(delta - 1) < 1e-15) break;
+  }
+  return h * Math.exp(-x + s * Math.log(x) - logGammaLocal(s));
+}
+
+function logGammaLocal(z: number): number {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+  ];
+  if (z < 0.5) {
+    return Math.log(Math.PI / Math.sin(Math.PI * z)) - logGammaLocal(1 - z);
+  }
+  z -= 1;
+  let a = c[0]!;
+  const t = z + g + 0.5;
+  for (let i = 1; i < g + 2; i += 1) a += c[i]! / (z + i);
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(a);
+}

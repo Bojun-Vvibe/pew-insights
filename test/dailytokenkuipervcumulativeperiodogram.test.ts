@@ -255,3 +255,74 @@ test('buildDailyTokenKuiperVCPM: invalid sort throws', () => {
     }),
   );
 });
+
+// ---------- aggregateKuiperVCumulativePeriodogram ----------
+
+import {
+  aggregateKuiperVCumulativePeriodogram,
+  chiSquaredUpperTailLocal,
+} from '../src/dailytokenkuipervcumulativeperiodogram.js';
+
+test('aggregateKuiperVCPM: empty input -> rowsUsed=0, fisher=1, ratio=0', () => {
+  const a = aggregateKuiperVCumulativePeriodogram([]);
+  assert.equal(a.rowsUsed, 0);
+  assert.equal(a.rowsSkipped, 0);
+  assert.equal(a.fisherCombinedPValue, 1);
+  assert.equal(a.twoSidedAsymmetryRatio, 0);
+});
+
+test('aggregateKuiperVCPM: skips malformed rows with counter', () => {
+  const a = aggregateKuiperVCumulativePeriodogram([
+    { nTenureDays: 30, kpVStar: 1.5, kpPValue: 0.2, kpDPlus: 0.1, kpDMinus: 0.05 },
+    { nTenureDays: 1, kpVStar: 1.0, kpPValue: 0.5, kpDPlus: 0.05, kpDMinus: 0.0 }, // n<2
+    { nTenureDays: 30, kpVStar: NaN, kpPValue: 0.5, kpDPlus: 0.05, kpDMinus: 0.0 },
+    { nTenureDays: 30.5 as never, kpVStar: 1, kpPValue: 0.5, kpDPlus: 0.05, kpDMinus: 0.0 },
+    { nTenureDays: 30, kpVStar: 1, kpPValue: 0.5, kpDPlus: -1, kpDMinus: 0.0 },
+  ]);
+  assert.equal(a.rowsUsed, 1);
+  assert.equal(a.rowsSkipped, 4);
+});
+
+test('aggregateKuiperVCPM: uniformly one-sided rows -> ratio = 0', () => {
+  const a = aggregateKuiperVCumulativePeriodogram([
+    { nTenureDays: 30, kpVStar: 1.5, kpPValue: 0.2, kpDPlus: 0.2, kpDMinus: 0 },
+    { nTenureDays: 50, kpVStar: 1.7, kpPValue: 0.05, kpDPlus: 0.3, kpDMinus: 0 },
+    { nTenureDays: 40, kpVStar: 1.4, kpPValue: 0.3, kpDPlus: 0.15, kpDMinus: 0 },
+  ]);
+  assert.equal(a.rowsUsed, 3);
+  assert.equal(a.twoSidedAsymmetryRatio, 0);
+  assert.equal(a.sumKpDMinus, 0);
+  assert.ok(Math.abs(a.sumKpDPlus - 0.65) < 1e-12);
+});
+
+test('aggregateKuiperVCPM: balanced two-sided -> ratio near 1', () => {
+  const a = aggregateKuiperVCumulativePeriodogram([
+    { nTenureDays: 30, kpVStar: 2.0, kpPValue: 0.01, kpDPlus: 0.2, kpDMinus: 0.2 },
+    { nTenureDays: 30, kpVStar: 2.0, kpPValue: 0.01, kpDPlus: 0.15, kpDMinus: 0.18 },
+  ]);
+  assert.ok(a.twoSidedAsymmetryRatio > 0.9);
+  assert.ok(a.fisherCombinedPValue < 0.01);
+});
+
+test('aggregateKuiperVCPM: tenure-weighting honoured', () => {
+  // Big-tenure source dominates the weighted average.
+  const a = aggregateKuiperVCumulativePeriodogram([
+    { nTenureDays: 4, kpVStar: 0.5, kpPValue: 0.9, kpDPlus: 0.05, kpDMinus: 0.05 },
+    { nTenureDays: 1000, kpVStar: 3.0, kpPValue: 1e-6, kpDPlus: 0.4, kpDMinus: 0.3 },
+  ]);
+  assert.ok(
+    Math.abs(a.tenureWeightedKpVStar - 3.0) < 0.05,
+    `weighted mean ${a.tenureWeightedKpVStar} should be near 3.0`,
+  );
+});
+
+test('chiSquaredUpperTailLocal: known anchors', () => {
+  // P(Chi^2_2 > 0) = 1
+  assert.equal(chiSquaredUpperTailLocal(0, 2), 1);
+  // P(Chi^2_2 > 5.991) ~ 0.05 (5% critical value, k=2)
+  assert.ok(Math.abs(chiSquaredUpperTailLocal(5.991, 2) - 0.05) < 1e-3);
+  // P(Chi^2_4 > 9.488) ~ 0.05 (5% critical value, k=4)
+  assert.ok(Math.abs(chiSquaredUpperTailLocal(9.488, 4) - 0.05) < 1e-3);
+  // Very large x -> 0
+  assert.ok(chiSquaredUpperTailLocal(200, 2) < 1e-30);
+});
