@@ -25401,6 +25401,8 @@ export function renderDailyTokenMcLeodLi(
     'stddev',
     'mlQ',
     'mlZ',
+    '|r2|max',
+    'argmax',
     'tokens',
   ];
   const rowsOut: string[][] = r.sources.map((s) => {
@@ -25421,6 +25423,8 @@ export function renderDailyTokenMcLeodLi(
       formatNumber(s.stddev),
       s.mlQ.toFixed(4),
       s.mlZ.toFixed(4),
+      s.mlAbsAcfMax.toFixed(4),
+      formatNumber(s.mlAbsAcfMaxLag),
       formatNumber(s.totalTokens),
     ];
   });

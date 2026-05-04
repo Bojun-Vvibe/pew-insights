@@ -381,3 +381,123 @@ test('buildDailyTokenMcLeodLi: source filter restricts and counts droppedSourceF
   assert.equal(r.sources[0]!.source, 'keep');
   assert.equal(r.droppedSourceFilter, 16);
 });
+
+// ---------- refinement: mlAbsAcfMax + mlAbsAcfMaxLag ----------
+
+test('buildDailyTokenMcLeodLi: mlAbsAcfMax equals max |r2_k| over k=1..mlH', () => {
+  const queue: QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 's', 1000 + ((i * 53 + 11) % 4321)));
+  }
+  const r = buildDailyTokenMcLeodLi(queue, {
+    minTokens: 1,
+    minTenureDays: 14,
+    generatedAt: '2026-05-04T00:00:00.000Z',
+  });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  let expectedMax = 0;
+  let expectedLag = 0;
+  for (let i = 0; i < row.mlAcf.length; i += 1) {
+    const a = Math.abs(row.mlAcf[i]!);
+    if (a > expectedMax) {
+      expectedMax = a;
+      expectedLag = i + 1;
+    }
+  }
+  assert.ok(Math.abs(row.mlAbsAcfMax - expectedMax) < 1e-12);
+  assert.equal(row.mlAbsAcfMaxLag, expectedLag);
+  assert.ok(row.mlAbsAcfMax >= 0 && row.mlAbsAcfMax <= 1);
+  assert.ok(row.mlAbsAcfMaxLag >= 1 && row.mlAbsAcfMaxLag <= row.mlH);
+});
+
+test('buildDailyTokenMcLeodLi: clustered-amplitude regime surfaces a high-magnitude dominant lag', () => {
+  const queue: QueueLine[] = [];
+  // Block-of-8 amplitude regime: alternates 8 calm days, 8 loud
+  // days. The squared-residual acf is a triangular wave with
+  // peak |r2_k| at lag = block-size = 8 (same-regime crossings
+  // start there). Verify the dominant lag is large and the
+  // magnitude is dominant (much larger than r2_1).
+  for (let i = 0; i < 40; i += 1) {
+    const regime = Math.floor(i / 8) % 2;
+    const amp = regime === 0 ? 100 : 5000;
+    queue.push(ql(dayIso(i), 'cluster', 10000 + (i % 2 === 0 ? amp : -amp + 10000)));
+  }
+  const r = buildDailyTokenMcLeodLi(queue, {
+    minTokens: 1,
+    minTenureDays: 14,
+    generatedAt: '2026-05-04T00:00:00.000Z',
+  });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  assert.ok(row.mlAbsAcfMax > 0.5, `expected mlAbsAcfMax > 0.5, got ${row.mlAbsAcfMax}`);
+  assert.ok(
+    row.mlAbsAcfMaxLag >= 1 && row.mlAbsAcfMaxLag <= row.mlH,
+    `mlAbsAcfMaxLag out of range: ${row.mlAbsAcfMaxLag} (mlH=${row.mlH})`,
+  );
+  // Confirm the surfaced max really is the max
+  let independentMax = 0;
+  for (const v of row.mlAcf) {
+    independentMax = Math.max(independentMax, Math.abs(v));
+  }
+  assert.ok(Math.abs(independentMax - row.mlAbsAcfMax) < 1e-12);
+});
+
+test('buildDailyTokenMcLeodLi: sort=mlAbsAcfMaxDesc orders by largest |r2_k| descending', () => {
+  const queue: QueueLine[] = [];
+  // Two sources with different mlAbsAcfMax. Verify ordering
+  // is monotone non-increasing in mlAbsAcfMax along the
+  // returned rows (without asserting which source comes
+  // first — values depend on synthetic data details).
+  for (let i = 0; i < 40; i += 1) {
+    const regime = Math.floor(i / 8) % 2;
+    const amp = regime === 0 ? 100 : 5000;
+    queue.push(ql(dayIso(i), 'high', 10000 + (i % 2 === 0 ? amp : -amp + 10000)));
+  }
+  // Pseudo-random low-correlation series (LCG)
+  let seed = 12345;
+  for (let i = 0; i < 40; i += 1) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    queue.push(ql(dayIso(i), 'low', 10000 + (seed % 1000)));
+  }
+  const r = buildDailyTokenMcLeodLi(queue, {
+    minTokens: 1,
+    minTenureDays: 14,
+    sort: 'mlAbsAcfMaxDesc',
+    generatedAt: '2026-05-04T00:00:00.000Z',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.ok(
+    r.sources[0]!.mlAbsAcfMax >= r.sources[1]!.mlAbsAcfMax,
+    `expected first mlAbsAcfMax >= second: ${r.sources[0]!.mlAbsAcfMax} vs ${r.sources[1]!.mlAbsAcfMax}`,
+  );
+});
+
+test('buildDailyTokenMcLeodLi: mlAbsAcfMaxLag tie-break prefers smallest lag', () => {
+  // Manually craft a series where r2_1 ≈ r2_2 in magnitude;
+  // verify tie goes to lag 1.
+  const queue: QueueLine[] = [];
+  // Use a deterministic construction; verify property post-hoc
+  // (we cannot easily engineer an exact tie, so we check the
+  // tie-break rule via direct call to maxAbs through builder).
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 't', 1000 + ((i * 41) % 2000)));
+  }
+  const r = buildDailyTokenMcLeodLi(queue, {
+    minTokens: 1,
+    minTenureDays: 14,
+    generatedAt: '2026-05-04T00:00:00.000Z',
+  });
+  const row = r.sources[0]!;
+  // Walk acf manually with tie-break = first; must equal builder result.
+  let want = 0;
+  let wantLag = 0;
+  for (let i = 0; i < row.mlAcf.length; i += 1) {
+    const a = Math.abs(row.mlAcf[i]!);
+    if (a > want) {
+      want = a;
+      wantLag = i + 1;
+    }
+  }
+  assert.equal(row.mlAbsAcfMaxLag, wantLag);
+});

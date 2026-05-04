@@ -175,6 +175,8 @@ export type DailyTokenMcLeodLiSort =
   | 'mlZDesc'
   | 'mlZAbs'
   | 'mlZAbsDesc'
+  | 'mlAbsAcfMax'
+  | 'mlAbsAcfMaxDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -214,6 +216,19 @@ export interface DailyTokenMcLeodLiSourceRow {
   mlQ: number;
   /** Standardised score (Q - H) / sqrt(2 H). */
   mlZ: number;
+  /**
+   * Maximum |r2_k| across k = 1..mlH. Identifies the
+   * single most-correlated squared-residual lag.
+   * mlQ hides the dominant lag inside the portmanteau
+   * sum; mlAbsAcfMax surfaces it directly. Range
+   * [0, 1].
+   */
+  mlAbsAcfMax: number;
+  /**
+   * The lag k in {1, .., mlH} achieving mlAbsAcfMax.
+   * Ties broken by smallest k (shortest-lag wins).
+   */
+  mlAbsAcfMaxLag: number;
 }
 
 export interface DailyTokenMcLeodLiReport {
@@ -387,6 +402,26 @@ function dayDiffInclusive(a: string, b: string): number {
   return Math.round((bm - am) / 86_400_000) + 1;
 }
 
+/**
+ * Largest |r2_k| across the lag spectrum and the lag k
+ * achieving it. Ties broken by smallest k (shortest-lag
+ * wins) -- the convention is that shorter-lag dependence
+ * is the more parsimonious explanation when magnitudes
+ * tie.
+ */
+function maxAbs(acf: number[]): { value: number; lag: number } {
+  let bestVal = 0;
+  let bestLag = 0;
+  for (let i = 0; i < acf.length; i += 1) {
+    const a = Math.abs(acf[i]!);
+    if (a > bestVal) {
+      bestVal = a;
+      bestLag = i + 1;
+    }
+  }
+  return { value: bestVal, lag: bestLag };
+}
+
 export function buildDailyTokenMcLeodLi(
   queue: QueueLine[],
   opts: DailyTokenMcLeodLiOptions = {},
@@ -419,6 +454,8 @@ export function buildDailyTokenMcLeodLi(
     'mlZDesc',
     'mlZAbs',
     'mlZAbsDesc',
+    'mlAbsAcfMax',
+    'mlAbsAcfMaxDesc',
     'tokens',
     'tenure',
     'source',
@@ -544,6 +581,8 @@ export function buildDailyTokenMcLeodLi(
       mlAcf: result.mlAcf,
       mlQ: result.mlQ,
       mlZ: result.mlZ,
+      mlAbsAcfMax: maxAbs(result.mlAcf).value,
+      mlAbsAcfMaxLag: maxAbs(result.mlAcf).lag,
     });
     totalTokensSum += acc.totalTokens;
   }
@@ -568,6 +607,12 @@ export function buildDailyTokenMcLeodLi(
         break;
       case 'mlZAbsDesc':
         primary = Math.abs(b.mlZ) - Math.abs(a.mlZ);
+        break;
+      case 'mlAbsAcfMax':
+        primary = a.mlAbsAcfMax - b.mlAbsAcfMax;
+        break;
+      case 'mlAbsAcfMaxDesc':
+        primary = b.mlAbsAcfMax - a.mlAbsAcfMax;
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;

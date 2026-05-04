@@ -41794,7 +41794,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: mlZAbsDesc (default) | mlQ | mlQDesc | mlZ | mlZDesc | mlZAbs | tokens | tenure | source.',
+    'sort key: mlZAbsDesc (default) | mlQ | mlQDesc | mlZ | mlZDesc | mlZAbs | mlAbsAcfMax | mlAbsAcfMaxDesc | tokens | tenure | source.',
     'mlZAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -41845,6 +41845,8 @@ program
           'mlZDesc',
           'mlZAbs',
           'mlZAbsDesc',
+          'mlAbsAcfMax',
+          'mlAbsAcfMaxDesc',
           'tokens',
           'tenure',
           'source',
