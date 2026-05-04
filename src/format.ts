@@ -25027,3 +25027,80 @@ export function renderDailyTokenPettittChangepoint(
 
   return lines.join('\n').replace(/\n+$/, '');
 }
+
+export function renderDailyTokenBuishandRange(
+  r: import('./dailytokenbuishandrange.js').DailyTokenBuishandRangeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(chalk.bold.cyan('pew-insights daily-token-buishand-range'));
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-days: ${r.minDays}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedZeroTokens)} zero-tokens, ${formatNumber(r.droppedSourceFilter)} by source filter, ${formatNumber(r.droppedSparseSources)} below min-days, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`));
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(Buishand on gap-filled per-source daily total_tokens: S*[k] = (sum_{i<=k} (x[i]-mu)) / sigma_pop; r = max S* - min S*; rStar = r/sqrt(n); q = max|S*|; qStar = q/sqrt(n); u = sum_k S*[k]^2 / (n*(n+1)); tStar = argmax|S*|; argSpread = tArgMax - tArgMin (sign indicates rising/falling regime); flat=y means zero variance, statistic undefined)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(chalk.bold(`per-source Buishand range/U (sorted by ${r.sort})`));
+  const headers = [
+    'source',
+    'tokens',
+    'nActive',
+    'nFilled',
+    'r',
+    'rStar',
+    'q',
+    'qStar',
+    'u',
+    'tStarIdx',
+    'tStarDay',
+    'tArgMaxDay',
+    'tArgMinDay',
+    'argSpread',
+    'flat',
+    'first',
+    'last',
+  ];
+  const rowsR: string[][] = r.sources.map((s) => [
+    s.source,
+    formatNumber(s.totalTokens),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFilledDays),
+    s.flat ? '-' : s.r.toFixed(3),
+    s.flat ? '-' : s.rStar.toFixed(4),
+    s.flat ? '-' : s.q.toFixed(3),
+    s.flat ? '-' : s.qStar.toFixed(4),
+    s.flat ? '-' : s.u.toFixed(4),
+    s.flat ? '-' : String(s.tStarIndex),
+    s.tStarDay ?? '-',
+    s.tArgMaxDay ?? '-',
+    s.tArgMinDay ?? '-',
+    s.flat ? '-' : String(s.argSpread),
+    s.flat ? 'y' : 'n',
+    s.firstActiveDay,
+    s.lastActiveDay,
+  ]);
+  lines.push(renderTableLocal(headers, rowsR));
+
+  return lines.join('\n').replace(/\n+$/, '');
+}

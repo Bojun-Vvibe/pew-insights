@@ -74,6 +74,7 @@ import {
   renderDailyTokenHampelOutlierCount,
   renderDailyTokenCusumMaxDeviation,
   renderDailyTokenPettittChangepoint,
+  renderDailyTokenBuishandRange,
   renderDailyTokenMonotoneRunLength,
   renderDailyTokenZscoreExtremes,
   renderDailyTokenSecondDiffSignRuns,
@@ -449,6 +450,10 @@ import {
   buildDailyTokenPettittChangepoint,
   type DailyTokenPettittChangepointSortKey,
 } from './dailytokenpettittchangepoint.js';
+import {
+  buildDailyTokenBuishandRange,
+  type DailyTokenBuishandRangeSortKey,
+} from './dailytokenbuishandrange.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -7040,6 +7045,79 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenPettittChangepoint(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-buishand-range')
+  .description(
+    "Per-source Buishand range/U test on the gap-filled daily total_tokens series (axis-155). Surfaces (r, rStar, q, qStar, u, tStarIndex, tStarDay, tArgMax, tArgMin, argSpread). Range-of-cumulative-deviation changepoint statistic structurally orthogonal to axis-153 cusum (max |centered cumsum|, no sigma normalization, no range surface), axis-154 pettitt (rank-based KT, no path-extreme split), and trend tests. argSpread = tArgMax - tArgMin: positive = rising regime (peak after trough), negative = falling regime.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option('--source <name>', 'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter')
+  .option(
+    '--min-days <n>',
+    'hide source rows with gap-filled tenure shorter than n days (default 4, must be >= 4); counts surface as droppedSparseSources',
+    '4',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tokens | rstar | qstar | u | tstaridx | spread | ndays (default tokens). Applied before --top.',
+    'tokens',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minDays = Number.parseInt(opts.minDays, 10);
+        if (!Number.isInteger(minDays) || minDays < 4) {
+          throw new Error(`--min-days must be an integer >= 4 (got ${opts.minDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const sortAllowed = ['tokens', 'rstar', 'qstar', 'u', 'tstaridx', 'spread', 'ndays'];
+        if (!sortAllowed.includes(opts.sort)) {
+          throw new Error(`--sort must be one of ${sortAllowed.join('|')} (got ${opts.sort})`);
+        }
+        const sort = opts.sort as DailyTokenBuishandRangeSortKey;
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBuishandRange(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minDays,
+          top,
+          sort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenBuishandRange(report) + '\n');
         }
       } catch (e) {
         die(e);
