@@ -2,6 +2,110 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.436 — 2026-05-04
+
+### Added — axis-168: `daily-token-cramer-von-mises-cumulative-periodogram`
+
+ONE-HUNDRED-AND-SIXTY-EIGHTH cross-source axis. The
+**Cramér–von Mises (1928 / 1931) L² cumulative-
+periodogram test** for white-noise on the gap-filled
+mean-centred daily total_tokens series — direct
+sister test to axis-167 (Bartlett's L^infty cumulative
+periodogram).
+
+For the one-sided non-DC periodogram `P[k]`,
+`k = 1..K` with `K = floor(n/2)` and `K >= 4`, the
+NORMALISED CUMULATIVE PERIODOGRAM is
+
+```
+C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]),
+       j = 1..K
+```
+
+and the Cramér–von Mises statistic is the L² (mean-
+squared) deviation from the white-noise reference
+line `j/K`:
+
+```
+cvmOmega2 = (1/K) * sum_{j=1..K-1} ( C[j] - j/K )^2
+cvmW2     = K * cvmOmega2 = sum_{j=1..K-1} (C[j] - j/K)^2
+cvmPValue = P(W^2 > cvmW2)   [Anderson–Darling 1952 table]
+```
+
+Where Bartlett's bD asks "what is the WORST point of
+deviation" (sup-norm) and Fisher's g (axis-166) asks
+"is there ONE dominant bin", Cramér–von Mises asks
+"what is the AVERAGE squared deviation everywhere"
+(integrated norm). This is the textbook **L^infty vs
+L^2 power complement** (Stephens 1970 §3): a spectrum
+with ONE sharp jump at one frequency yields LARGE
+Bartlett-bD but MODEST CvM-W²; a spectrum with a
+SUSTAINED MILD bias across many bins yields MODEST
+Bartlett-bD but LARGE CvM-W². CvM dominates KS
+against alternatives whose CDF deviation is
+integrable but not concentrated.
+
+Companion `cvmSignedMean` = mean of (C[j] - j/K)
+gives direction: positive ⇒ low-frequency mass
+overshoot, negative ⇒ high-frequency mass overshoot
+— closely related to but DISTINCT from axis-167's
+`bSignedDev{Positive,Negative}` pair (sup of signed
+deviation vs MEAN of signed deviation).
+
+The p-value is computed from the published Anderson
+& Darling (1952) Table 1 / Stephens (1970) Biometrika
+57(1) Table 3 critical-value lookup with linear
+interpolation, closed in the asymptotic tail by the
+Csörgő–Faraway (1996) JRSS B 58(1) exponential
+extrapolation `P(W^2 > w) ~ pLast * exp(-π²/2 *
+(w - wLast))` — the same numerical strategy R's
+`goftest::pCvM` deploys. Table critical values pinned
+in tests against published references to 1e-9.
+
+References: Cramér 1928 Skand. Akt. 11; von Mises
+1931 Wahrscheinlichkeitsrechnung; Anderson & Darling
+1952 Annals Math. Stat. 23(2); Stephens 1970 JRSS B
+32(1); Csörgő & Faraway 1996 JRSS B 58(1); Brockwell
+& Davis 1991 §10.2.
+
+#### Live-smoke (against ~/.config/pew/queue.jsonl)
+
+```
+$ pew-insights daily-token-cramer-von-mises-cumulative-periodogram \
+    --min-tenure-days 8 --top 10 --sort cvmPValue
+sources: 6 (shown 6)    tokens: 13,487,035,669
+
+source       firstDay    lastDay     tenure  bins  cvmW2     cvmPValue   devMean
+claude-code  2026-02-11  2026-04-23  72      36    1.275669  5.8742e-4   +0.157650
+openclaw     2026-04-17  2026-05-04  18      9     0.895405  4.6468e-3   +0.311376
+hermes       2026-04-17  2026-05-04  18      9     0.561641  2.8977e-2   +0.232883
+opencode     2026-04-20  2026-05-04  15      7     0.117377  5.5622e-1   +0.114101
+codex        2026-04-13  2026-04-20  8       4     0.107242  5.9815e-1   +0.175732
+```
+
+Reading: three sources (`claude-code`, `openclaw`,
+`hermes`) reject the white-noise null at the 5%
+level under the L² norm; the strongest rejection is
+`claude-code` at p ~ 5.9e-4 (cvmW² = 1.276 well past
+the 1% critical value 0.7435 from Anderson & Darling
+1952 Table 1). All five surviving sources show
+positive `devMean`, indicating low-frequency mass
+overshoot — the cumulative spectrum integrates
+ABOVE the white-noise reference line, consistent
+with a long-memory / red-noise spectral shape. The
+cross-check vs axis-167 is informative: `claude-
+code`'s axis-167 `bD = 0.313` came from a single
+sharp cumulative jump at bin 8 (sup-norm); the
+axis-168 `cvmW² = 1.276` confirms the deviation is
+NOT just one point — the L² integral over all 35
+non-trivial bins ALSO rejects strongly, meaning the
+red-noise bias is sustained across the full
+cumulative range, not isolated. `opencode` and
+`codex` (both very short tenures of 15 and 8 days,
+4–7 bins) lack the bin count to reject either way
+and surface as p > 0.5 — the expected behaviour at
+the small-K asymptotic boundary.
+
 ## 0.6.435 — 2026-05-04
 
 ### Added — axis-167: `daily-token-bartlett-cumulative-periodogram`
