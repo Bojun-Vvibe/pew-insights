@@ -2,6 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.438 — 2026-05-04
+
+### Added — axis-169: `daily-token-anderson-darling-cumulative-periodogram`
+
+ONE-HUNDRED-AND-SIXTY-NINTH cross-source axis. The
+**Anderson–Darling (1952) tail-weighted L² cumulative-
+periodogram test** for white-noise on the gap-filled mean-
+centred daily total_tokens series — third member of the
+canonical EDF goodness-of-fit trio:
+
+| axis | norm                          | reference                  |
+| ---- | ----------------------------- | -------------------------- |
+| 167  | sup-norm L^∞ (Bartlett-KS)    | Bartlett 1955              |
+| 168  | uniform-weight L² (Cramér–vM) | Anderson–Darling 1952      |
+| 169  | tail-weighted L² (AD)         | Anderson–Darling 1952/1954 |
+
+For the one-sided non-DC periodogram `P[k]`, `k = 1..K` with
+`K = floor(n/2)` and `K >= 4`, the NORMALISED CUMULATIVE
+PERIODOGRAM is
+
+```
+C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]),
+       j = 1..K
+```
+
+and the Anderson-Darling statistic uses the
+tail-emphasising weight `w(t) = 1/(t*(1-t))`:
+
+```
+adA2     = (1/(K-1)) * sum_{j=1..K-1}
+            (C[j] - j/K)^2 / ((j/K) * (1 - j/K))
+adAStar  = (K-1) * adA2
+adPValue = P(A^2 > adAStar)   [Marsaglia–Marsaglia 2004 JSS]
+```
+
+Where Bartlett's `bD` asks "what is the WORST point of
+deviation" (sup-norm) and Cramér–von Mises asks "what is the
+AVERAGE squared deviation everywhere" (uniform L²),
+Anderson–Darling asks "what is the tail-weighted average
+squared deviation" — up-weighting the lowest- and highest-
+frequency contributions by ~K. A spectrum with deviation
+concentrated at `j=1` (DC excess) or `j=K-1` (Nyquist
+excess) yields LARGE `adAStar` but MODEST `cvmW2`; a
+spectrum with deviation concentrated mid-band yields LARGE
+`cvmW2` but MODEST `adAStar`. This is the textbook
+uniform-L² vs tail-weighted-L² power complement
+(Stephens 1974 JASA 69(347) Table 3).
+
+Companion `adWeightedSignedMean` = mean of
+`(C[j] - j/K) / sqrt((j/K)*(1-j/K))` — the natural
+half-weight signed companion to A². Positive → low-frequency
+tail mass overshoots uniform; negative → high-frequency tail
+mass overshoots.
+
+`adAStar` ∈ [0, ∞); `adPValue` ∈ [0, 1].
+
+Survival: Marsaglia & Marsaglia (2004) JSS 9(2)
+piecewise rational/series approximation, accurate to
+~1e-4 in the body and ~1e-12 in the tail. No external
+table file; the deployed runtime is pure-real-valued.
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+Invocation:
+
+```
+pew-insights daily-token-anderson-darling-cumulative-periodogram \
+  --json --min-tokens 5000 --min-tenure-days 14
+```
+
+Per-source A²-statistic + p-value table (sorted by
+`adPValue` ascending; source names under
+`<editor-bot>` are scrubbed per repo policy):
+
+| source        | tenure | bins | adAStar | adPValue   | wDevMean |
+| ------------- | -----: | ---: | ------: | ---------- | -------: |
+| claude-code   |     72 |   36 | 7.72119 | 1.518e-04  |  +0.39082 |
+| openclaw      |     18 |    9 | 5.52121 | 1.620e-03  |  +0.74803 |
+| <editor-bot>  |    265 |  132 | 3.56166 | 1.432e-02  |  +0.15296 |
+| hermes        |     18 |    9 | 2.81321 | 3.408e-02  |  +0.52789 |
+| opencode      |     15 |    7 | 0.49860 | 7.482e-01  |  +0.24017 |
+
+Reading: every source other than `opencode` REJECTS the
+white-noise null at the 5% level under the tail-weighted
+L² norm. Each of the rejecting sources also carries
+`adWeightedSignedMean > 0` — indicating LOW-FREQUENCY
+tail mass overshoot (slow-cadence/weekly drift in the
+daily total_tokens series). `claude-code` is the most
+significant departure (`p ≈ 1.5e-4`). `opencode` (the
+youngest source at 15 days) is the only one consistent
+with white noise under AD's tail-weighted view.
+
+Counts: 6 sources scanned, 1 dropped for tenure < 14, 5
+included. Total tokens analysed: 12,696,255,768.
+
+#### Tests
+
+Test suite grew by **33 tests** (12792 → 12825). Coverage:
+
+- `andersonDarlingSurvival`: edge cases (`z<=0`, large `z`,
+  non-finite input), monotonicity, range `[0,1]`, published
+  Stephens 1974 critical values pinned to 5e-3, piecewise
+  seam continuity at `z=2`, tail behaviour beyond `z=6`.
+- `andersonDarlingCumulativePeriodogramStatistic`: uniform-
+  spectrum identity, closed-form spike-at-first-bin and
+  spike-at-last-bin (`(K-j)/j` and `j/(K-j)` series), bin-
+  reversal symmetry from the symmetric AD weight, scale
+  invariance, identity `adAStar = (K-1) * adA2`, error
+  cases (too few bins, negative power, non-finite power,
+  all-zero spectrum).
+- **Two pinned orthogonality witnesses**:
+  1. AD-vs-CvM ratio is ≥ 2× larger for a `j=1`-concentrated
+     spectrum than for a mid-band-concentrated spectrum
+     (tail-weight emphasis vs uniform-weight).
+  2. AD-vs-Bartlett-bD² ratio is ≥ 1.2× larger for a low-
+     frequency-concentrated spectrum than for a mid-band
+     spike (tail-weighted L² vs sup-norm).
+- `dailyTokenAndersonDarlingCumulativePeriodogram`: rejects
+  too-short series, zero-variance series, non-finite
+  values; pure sinusoid concentrates spectrum.
+- `buildDailyTokenAndersonDarlingCumulativePeriodogram`:
+  empty queue, drops below-min-tokens, drops below-min-
+  tenure, produces row for sufficient source, rejects
+  invalid sort, rejects too-small `minTenureDays`, source-
+  filter restriction, `adPValue` ascending sort verified.
+
 ## 0.6.437 — 2026-05-04
 
 ### Refined — axis-168 numerical-stability + signed-mean orthogonality invariant
