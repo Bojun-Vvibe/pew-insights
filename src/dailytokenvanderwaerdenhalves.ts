@@ -833,3 +833,78 @@ export function labelVanDerWaerdenHalvesRow(
   }
   return 'no-evidence-of-location-shift';
 }
+
+/**
+ * Cross-axis JOINT location-and-scale combiner. Combines
+ * axis-181 (Van der Waerden LOCATION) with axis-180
+ * (Sukhatme SCALE) into a single chi-squared statistic
+ * with 2 degrees of freedom, mirroring the original
+ * Lepage (1971) construction:
+ *
+ *     jointChi2 = vdwZ^2 + sukhatmeZ^2  ~ Chi^2_2  under H0
+ *
+ * Under H0 (equal location AND equal scale, F_A = F_B
+ * continuous) the two standardised statistics are
+ * asymptotically INDEPENDENT under symmetric F (Lepage
+ * 1971 *Biometrika* 58:213-217 Thm. 1; Hajek-Sidak 1967
+ * Lemma III.4.1) so their squared sum follows the central
+ * chi-squared on 2 df.
+ *
+ * The two-sided p-value uses the closed-form Chi^2_2
+ * survival function 1 - F(x) = exp(-x/2) (no series
+ * needed — Chi^2_2 is exponential with mean 2):
+ *
+ *     jointPValue = exp(-jointChi2 / 2)
+ *
+ * jointDirection summarises the two component signs into
+ * a four-quadrant verdict useful for downstream labelling:
+ *
+ *   - 'larger-and-more-dispersed'  vdwZ>0 AND sukhatmeZ>0
+ *   - 'larger-but-less-dispersed'  vdwZ>0 AND sukhatmeZ<0
+ *   - 'smaller-and-more-dispersed' vdwZ<0 AND sukhatmeZ>0
+ *   - 'smaller-but-less-dispersed' vdwZ<0 AND sukhatmeZ<0
+ *   - 'mixed-or-zero'              if either is exactly 0
+ *
+ * Throws on non-finite inputs.
+ */
+export type VdwSukhatmeJointDirection =
+  | 'larger-and-more-dispersed'
+  | 'larger-but-less-dispersed'
+  | 'smaller-and-more-dispersed'
+  | 'smaller-but-less-dispersed'
+  | 'mixed-or-zero';
+
+export interface VdwSukhatmeJointResult {
+  jointChi2: number;
+  jointPValue: number;
+  jointDirection: VdwSukhatmeJointDirection;
+}
+
+export function combineVdwSukhatmeJoint(
+  vdwZ: number,
+  sukhatmeZ: number,
+): VdwSukhatmeJointResult {
+  if (!Number.isFinite(vdwZ) || !Number.isFinite(sukhatmeZ)) {
+    throw new Error(
+      `combineVdwSukhatmeJoint: both Z values must be finite (vdwZ=${vdwZ}, sukhatmeZ=${sukhatmeZ})`,
+    );
+  }
+  const jointChi2 = vdwZ * vdwZ + sukhatmeZ * sukhatmeZ;
+  // Chi^2_2 survival = exp(-x/2) (closed-form; Chi^2_2 ~ Exp(1/2)).
+  let jointPValue = Math.exp(-jointChi2 / 2);
+  if (jointPValue < 0) jointPValue = 0;
+  if (jointPValue > 1) jointPValue = 1;
+  let jointDirection: VdwSukhatmeJointDirection;
+  if (vdwZ === 0 || sukhatmeZ === 0) {
+    jointDirection = 'mixed-or-zero';
+  } else if (vdwZ > 0 && sukhatmeZ > 0) {
+    jointDirection = 'larger-and-more-dispersed';
+  } else if (vdwZ > 0 && sukhatmeZ < 0) {
+    jointDirection = 'larger-but-less-dispersed';
+  } else if (vdwZ < 0 && sukhatmeZ > 0) {
+    jointDirection = 'smaller-and-more-dispersed';
+  } else {
+    jointDirection = 'smaller-but-less-dispersed';
+  }
+  return { jointChi2, jointPValue, jointDirection };
+}

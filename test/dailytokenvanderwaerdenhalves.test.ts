@@ -420,3 +420,69 @@ test('classifier: throws on non-finite Z', () => {
     labelVanDerWaerdenHalvesRow({ vdwZ: Number.NaN, vdwPValue: 0.1 }),
   );
 });
+
+// ---------- joint combiner: combineVdwSukhatmeJoint ----------
+
+import { combineVdwSukhatmeJoint } from '../src/dailytokenvanderwaerdenhalves.js';
+
+test('joint: chi2 = vdwZ^2 + sukhatmeZ^2', () => {
+  const r = combineVdwSukhatmeJoint(2, 3);
+  assert.equal(r.jointChi2, 13);
+});
+
+test('joint: pValue = exp(-chi2/2)', () => {
+  const r = combineVdwSukhatmeJoint(1, 1);
+  assert.ok(Math.abs(r.jointPValue - Math.exp(-1)) < 1e-12);
+});
+
+test('joint: pValue clamps to [0,1]', () => {
+  const r = combineVdwSukhatmeJoint(0, 0);
+  assert.equal(r.jointPValue, 1);
+  const r2 = combineVdwSukhatmeJoint(10, 10);
+  assert.ok(r2.jointPValue >= 0 && r2.jointPValue < 1e-40);
+});
+
+test('joint: direction larger-and-more-dispersed', () => {
+  assert.equal(
+    combineVdwSukhatmeJoint(2, 2).jointDirection,
+    'larger-and-more-dispersed',
+  );
+});
+
+test('joint: direction larger-but-less-dispersed', () => {
+  assert.equal(
+    combineVdwSukhatmeJoint(2, -2).jointDirection,
+    'larger-but-less-dispersed',
+  );
+});
+
+test('joint: direction smaller-and-more-dispersed', () => {
+  assert.equal(
+    combineVdwSukhatmeJoint(-2, 2).jointDirection,
+    'smaller-and-more-dispersed',
+  );
+});
+
+test('joint: direction smaller-but-less-dispersed', () => {
+  assert.equal(
+    combineVdwSukhatmeJoint(-2, -2).jointDirection,
+    'smaller-but-less-dispersed',
+  );
+});
+
+test('joint: zero component -> mixed-or-zero', () => {
+  assert.equal(combineVdwSukhatmeJoint(0, 1).jointDirection, 'mixed-or-zero');
+  assert.equal(combineVdwSukhatmeJoint(1, 0).jointDirection, 'mixed-or-zero');
+});
+
+test('joint: throws on non-finite', () => {
+  assert.throws(() => combineVdwSukhatmeJoint(Number.NaN, 1));
+  assert.throws(() => combineVdwSukhatmeJoint(1, Number.POSITIVE_INFINITY));
+});
+
+test('joint: rotational identity Z1=Z2 -> Lepage equiv', () => {
+  // For equal Z components Lepage statistic = 2 * Z^2
+  const z = 1.5;
+  const r = combineVdwSukhatmeJoint(z, z);
+  assert.equal(r.jointChi2, 2 * z * z);
+});

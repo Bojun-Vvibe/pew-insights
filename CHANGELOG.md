@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.462 — 2026-05-05
+
+### Added — axis-181 Lepage-style joint location-and-scale combiner
+
+`combineVdwSukhatmeJoint(vdwZ, sukhatmeZ)` combines the
+axis-181 Van der Waerden LOCATION standardised statistic
+with the axis-180 Sukhatme SCALE standardised statistic
+into a single Chi^2_2 joint statistic, mirroring the
+original Lepage (1971, *Biometrika* 58:213-217 Thm. 1)
+construction:
+
+```
+jointChi2   = vdwZ^2 + sukhatmeZ^2  ~ Chi^2_2  under H0
+jointPValue = exp(-jointChi2 / 2)              (closed form)
+```
+
+Under H0 (equal location AND equal scale, F continuous
+symmetric) the two component statistics are
+asymptotically independent (Hajek-Sidak 1967 Lemma
+III.4.1), so their squared sum follows the central
+chi-squared on 2 degrees of freedom. The Chi^2_2
+survival function admits the closed-form `exp(-x/2)`
+(Chi^2_2 is exponential with mean 2), so no series
+evaluation is required — the joint p-value is computed
+in a single `exp` call.
+
+`jointDirection` summarises the sign quadrant into a
+four-bucket verdict (`larger-and-more-dispersed`,
+`larger-but-less-dispersed`,
+`smaller-and-more-dispersed`,
+`smaller-but-less-dispersed`, `mixed-or-zero`) — the
+same diagnostic axis-181's CHANGELOG live-smoke
+section described as "matched signs vs opposite signs".
+
+This refinement is a CONSUMER of axis-180 + axis-181
+rather than a new axis: it doesn't compute another
+rank statistic from raw data; it composes the two
+existing per-source signed Z values into a joint
+omnibus test. Useful for downstream label classifiers
+that want a single verdict from both moment directions
+without manually combining two p-values.
+
 ## 0.6.461 — 2026-05-05
 
 ### Added — axis-181 daily-token-van-der-waerden-halves (normal-scores LOCATION test)
