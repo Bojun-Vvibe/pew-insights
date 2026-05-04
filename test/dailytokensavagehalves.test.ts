@@ -346,3 +346,74 @@ test('sav: label rejects bad inputs', () => {
   assert.throws(() => labelSavageHalvesRow({ savZ: 1, savPValue: 0.5 }, 0));
   assert.throws(() => labelSavageHalvesRow({ savZ: 1, savPValue: 0.5 }, 0.6));
 });
+
+// ---------- aggregator: aggregateSavageHalves ----------
+
+import {
+  aggregateSavageHalves,
+  inverseStandardNormalCdfSavage,
+} from '../src/dailytokensavagehalves.js';
+
+test('sav: inverseStandardNormalCdf round-trip ~ identity', () => {
+  for (const z of [-2.5, -1.0, 0.5, 1.96, 3.0]) {
+    const upper = standardNormalUpperTailSavage(z);
+    const back = inverseStandardNormalCdfSavage(1 - upper);
+    assert.ok(Math.abs(back - z) < 1e-3, `z=${z} round=${back}`);
+  }
+});
+
+test('sav: inverseStandardNormalCdf throws on out of bounds', () => {
+  assert.throws(() => inverseStandardNormalCdfSavage(0));
+  assert.throws(() => inverseStandardNormalCdfSavage(1));
+  assert.throws(() => inverseStandardNormalCdfSavage(-0.1));
+  assert.throws(() => inverseStandardNormalCdfSavage(1.5));
+});
+
+test('sav: aggregator returns degenerate result on empty input', () => {
+  const r = aggregateSavageHalves([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.stoufferZ, 0);
+  assert.equal(r.stoufferTwoSidedPValue, 1);
+});
+
+test('sav: aggregator combines unanimous positive signal', () => {
+  const r = aggregateSavageHalves([
+    { savZ: 2.0, savPValue: 0.0455, nTenureDays: 20 },
+    { savZ: 2.5, savPValue: 0.0124, nTenureDays: 30 },
+    { savZ: 1.8, savPValue: 0.0719, nTenureDays: 25 },
+  ]);
+  assert.equal(r.rowsUsed, 3);
+  assert.ok(r.stoufferZ > 0, `expected +Z, got ${r.stoufferZ}`);
+  assert.ok(r.stoufferTwoSidedPValue < 0.01);
+});
+
+test('sav: aggregator handles split signs (cancellation)', () => {
+  const r = aggregateSavageHalves([
+    { savZ: 2.0, savPValue: 0.0455, nTenureDays: 20 },
+    { savZ: -2.0, savPValue: 0.0455, nTenureDays: 20 },
+  ]);
+  assert.equal(r.rowsUsed, 2);
+  assert.ok(Math.abs(r.stoufferZ) < 1e-9);
+  assert.ok(Math.abs(r.stoufferTwoSidedPValue - 1) < 1e-3);
+});
+
+test('sav: aggregator skips bad rows', () => {
+  const r = aggregateSavageHalves([
+    { savZ: Number.NaN, savPValue: 0.1, nTenureDays: 20 },
+    { savZ: 1.5, savPValue: 1.5, nTenureDays: 20 },
+    { savZ: 1.5, savPValue: 0.1, nTenureDays: -5 },
+    { savZ: 2.0, savPValue: 0.04, nTenureDays: 20 },
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  assert.equal(r.rowsSkipped, 3);
+});
+
+test('sav: tenure-weighted mean reflects long-tenure rows', () => {
+  const r = aggregateSavageHalves([
+    { savZ: 1.0, savPValue: 0.3, nTenureDays: 10 },
+    { savZ: 3.0, savPValue: 0.003, nTenureDays: 100 },
+  ]);
+  // unweighted mean = 2.0; tenure-weighted should pull toward 3.0
+  assert.ok(Math.abs(r.meanSavZ - 2.0) < 1e-9);
+  assert.ok(r.tenureWeightedMeanSavZ > 2.5);
+});
