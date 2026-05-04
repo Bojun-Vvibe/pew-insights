@@ -2,6 +2,120 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.416 — 2026-05-04
+
+### Added — axis-158: `daily-token-variance-ratio-lo-mackinlay` (Lo-MacKinlay variance-ratio test)
+
+Per-source LO-MACKINLAY VARIANCE-RATIO TEST for the random-walk null
+on the gap-filled daily `total_tokens` series. The 158th cross-source
+axis. Structurally orthogonal to all 157 prior axes:
+
+- **vs axis-157 ADF**: ADF tests the AR(1) coefficient `rho` via a
+  regression t-ratio with a non-standard Dickey-Fuller null. VR tests
+  the q-period variance-scaling of the LEVEL with a STANDARD Gaussian
+  null on a closed-form variance estimator. ADF rejects when `rho < 0`
+  (mean reversion at lag 1); VR rejects when `VR(q) != 1` (departure
+  from linear variance scaling at horizon q). A series with weak AR(1)
+  but strong longer-lag autocorrelation can have ADF tau ~ 0 yet
+  VR(q) very different from 1 — and vice versa.
+- **vs axis-156 KPSS**: KPSS asks "is the level stationary?" via a
+  functional-CLT integrand. VR asks "are the increments iid?" — a
+  pure unit-root with iid increments PASSES VR but FAILS KPSS.
+- **vs axis-114 Ljung-Box**: LB is a multi-lag squared-acf portmanteau
+  on the LEVEL series. VR is a closed-form variance-scaling statistic
+  on the LEVEL DIFFERENCES. Different objects, different nulls.
+
+```
+VR(q)        = Var(x[t] - x[t-q]) / (q * Var(x[t] - x[t-1]))
+vrZ_iid      = (VR - 1) / sqrt( 2(2q-1)(q-1) / (3*q*nDiff) )      Lo-MacKinlay 1988 eq. 9
+vrZ_hc       = (VR - 1) / sqrt( sum_{j=1..q-1} (2(q-j)/q)^2 * delta(j) )   eq. 12
+delta(j)     = sum_t (d_t-mu)^2 (d_{t-j}-mu)^2 / ( sum_t (d_t-mu)^2 )^2
+```
+
+Default `q = 2` (canonical Lo-MacKinlay smallest non-trivial horizon
+with highest power against AR(1) departures, tabulated in Lo-MacKinlay
+1988 Table 1). The OVERLAPPING formulation with denominator `nDiff` is
+the canonical Campbell-Lo-MacKinlay 1997 sec. 2.4 implementation.
+Effective q is capped at `floor(nDiff / 2)` so the longest delta(j)
+sum has positive support.
+
+**Reading the test:** `vrZ_iid` is valid under iid increments;
+`vrZ_hc` is robust to volatility clustering (ARCH/GARCH/SV). Always
+read both — the `iid` variant over-rejects under conditional
+heteroskedasticity, while the `hc` variant maintains correct size.
+
+- `|vrZ| < 1.96` → consistent with the random-walk null at α = 0.05
+- `vrZ > +1.96` → positive level-serial-correlation (level wanders
+  *less* than a pure RW would predict; mean-reverting compounding)
+- `vrZ < -1.96` → negative level-serial-correlation (level wanders
+  *more* than a pure RW; anti-persistence — partial reversal of
+  one-day spikes)
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (one source
+name redacted per workspace policy):
+
+```
+per-source variance-ratio test (sorted by tokens)
+source        firstDay    lastDay     tenure  active  nDiff  q  vr      vrZIid   vrZHc    diffMean        diffStddev       tokens
+------------  ----------  ----------  ------  ------  -----  -  ------  -------  -------  --------------  ---------------  -------------
+opencode      2026-04-20  2026-05-04  15      15      14     2  0.5042  -1.8549  -5.8499  5,427,064.357   228,170,935.766  6,516,019,203
+claude-code   2026-02-11  2026-04-23  72      35      71     2  0.4359  -4.7530  -1.4971  116,635.324     178,897,449.025  3,442,385,788
+openclaw      2026-04-17  2026-05-04  18      18      17     2  0.7712  -0.9435  -1.1518  -3,175,779.765  91,168,237.147   2,265,224,880
+hermes        2026-04-17  2026-05-04  18      18      17     2  0.7544  -1.0126  -1.8856  -494,589.353    10,726,267.459   314,218,772
+vsc-redacted  2025-07-30  2026-04-20  265     73      264    2  0.5476  -7.3499  -1.9835  -11.845         35,409.238       1,885,727
+```
+
+**Reading the live-smoke:**
+
+- All five sources have **VR(2) < 1**, i.e. *all daily-token series
+  exhibit anti-persistence at the q = 2 horizon*. After a one-day
+  spike there is a partial reversal — the series wanders *less* over
+  two days than a pure random walk on the increments would predict.
+  This is the canonical "spike then partial revert" pattern of human-
+  driven usage: a heavy day is partly compensated by a lighter day,
+  not amplified.
+- `claude-code` has the strongest anti-persistence by VR magnitude
+  (VR = 0.4359), which corresponds to an implied lag-1 increment
+  autocorrelation of approximately `(0.4359 - 1) / 2 = -0.282`. This
+  is consistent with the axis-157 ADF reading (`tau = -0.1061`,
+  `halfLifeDays = 6.31`): both flag mean-reverting structure, but VR
+  detects it via the increment second-moment scaling whereas ADF
+  detects it via the AR(1) regression coefficient.
+- `vsc-redacted` shows `vrZ_iid = -7.35` (overwhelmingly significant
+  under iid) but `vrZ_hc = -1.98` (just at the α = 0.05 boundary).
+  This is the textbook diagnostic for *volatility clustering masking
+  serial correlation*: the iid variance estimator under-states the
+  true variance because it ignores the squared-residual
+  autocovariances, so the iid z-score over-rejects. The robust
+  `vrZ_hc` is the correct inferential statistic — and at -1.98 it
+  *just barely* rejects RW1, consistent with the axis-157 ADF
+  reading `tau = -3.69` (`strongly-stationary`) on the same series.
+  The two axes converge on the same conclusion via different
+  statistics.
+- `opencode` has the largest `|vrZ_hc|` of any source (-5.85) despite
+  only 14 increments. Because the source has tenure 15 days but very
+  large `diffStddev` (228M), the variance ratio strongly favours
+  anti-persistence under the heteroskedasticity-consistent estimator.
+  Compare to axis-157 ADF's `tau = +1.36` on the same source: ADF
+  failed to reject the unit-root null because of the n = 15 sample
+  size, but VR(2) — which is a second-moment scaling statistic
+  rather than an AR(1) regression — flags the anti-persistent
+  structure clearly via `vrZ_hc`.
+- `hermes` (`vr = 0.7544`, `vrZ_hc = -1.89`) and `openclaw`
+  (`vr = 0.7712`, `vrZ_hc = -1.15`) sit in the borderline band, both
+  consistent with weak-to-moderate anti-persistence. The axis-157
+  ADF reading on hermes (`rho = -1.005`, `halfLifeDays = NaN`,
+  oscillatory band) is corroborated: hermes flips sign of its
+  deviation-from-mean at every step, and the VR(2) < 1 result is
+  the second-moment manifestation of the same one-step sign-flip
+  behaviour.
+
+**Sort keys:** `vrZHcAbsDesc` (default — strongest robust evidence
+first), `vr` / `vrDesc`, `vrZIid` / `vrZIidDesc` / `vrZIidAbs` /
+`vrZIidAbsDesc`, `vrZHc` / `vrZHcDesc` / `vrZHcAbs`, `tokens`,
+`tenure`, `source`. Filters: `--since` / `--until` / `--source` /
+`--min-tokens` / `--min-tenure-days` / `--q` / `--top` / `--json`.
+
 ## 0.6.415 — 2026-05-04
 
 ### Refined — axis-157: `halfLifeDays` (mean-reversion half-life) + `halflife` sort key + `adfHalf` joint-tag column
