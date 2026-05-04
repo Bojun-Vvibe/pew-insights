@@ -186,6 +186,7 @@ import {
   renderDailyTokenMcLeodLi,
   renderDailyTokenBds,
   renderDailyTokenJarqueBera,
+  renderDailyTokenDurbinWatsonDetrended,
   renderDailyTokenMannWhitneyHalves,
   renderDailyTokenBrownForsythHalves,
   renderDailyTokenSiegelTukeyHalves,
@@ -484,6 +485,10 @@ import {
   buildDailyTokenJarqueBera,
   type DailyTokenJarqueBeraSort,
 } from './dailytokenjarquebera.js';
+import {
+  buildDailyTokenDurbinWatsonDetrended,
+  type DailyTokenDurbinWatsonDetrendedSort,
+} from './dailytokendurbinwatsondetrended.js';
 import { buildDailyTokenMonotoneRunLength } from './dailytokenmonotonerunlength.js';
 import { buildDailyTokenSecondDiffSignRuns } from './dailytokenseconddiffsignruns.js';
 import { buildSourceOutputTokenBenfordDeviation } from './sourceoutputtokenbenforddeviation.js';
@@ -42121,6 +42126,112 @@ program
           process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         } else {
           process.stdout.write(renderDailyTokenJarqueBera(report) + '\n');
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-durbin-watson-detrended')
+  .description(
+    "Per-source DURBIN-WATSON LAG-1 RESIDUAL-AUTOCORRELATION TEST applied to OLS-DETRENDED gap-filled daily total_tokens (axis-162). Fits x_t = a + b*t by OLS, forms residuals e_t, computes DW = sum(e_t - e_{t-1})^2 / sum e_t^2 in [0, 4]; rhoHat_e = sum e_t e_{t-1} / sum e_t^2; algebraic identity DW = 2*(1 - rhoHat_e) + (e_0^2 + e_{n-1}^2)/rss. Standardised dwZ = (DW - 2)*sqrt(n)/2 approx N(0,1) under iid Gaussian residual null (Durbin & Watson 1950 Biometrika 37:409-428). Operates on DETRENDED RESIDUALS, structurally orthogonal to all RAW-SERIES serial-correlation axes (Spearman/Kendall/raw lag-1, axis-114 Ljung-Box, axis-159 McLeod-Li, axis-158 VR, axis-160 BDS) which all see x_t directly; orthogonal to stationarity / changepoint axes (axis-156 KPSS, axis-157 ADF, axis-153 CUSUM, axis-154 Pettitt, axis-155 Buishand) which test the LEVEL TRAJECTORY rather than RESIDUAL SHORT-RANGE DEPENDENCE; and to axis-161 Jarque-Bera which is permutation-invariant on the raw series. Verdict cutoffs: positive-autocorr <= -2.576, borderline-positive in (-2.576, -1.645], independent in (-1.645, +1.645), borderline-negative in [+1.645, +2.576), negative-autocorr >= +2.576.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: dwZAbsDesc (default) | dwZAbs | dw | dwDesc | dwZ | dwZDesc | rhoHatResid | rhoHatResidDesc | rhoHatResidAbs | rhoHatResidAbsDesc | tokens | tenure | source.',
+    'dwZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'dw',
+          'dwDesc',
+          'dwZ',
+          'dwZDesc',
+          'dwZAbs',
+          'dwZAbsDesc',
+          'rhoHatResid',
+          'rhoHatResidDesc',
+          'rhoHatResidAbs',
+          'rhoHatResidAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDurbinWatsonDetrended(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenDurbinWatsonDetrendedSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenDurbinWatsonDetrended(report) + '\n');
         }
       } catch (e) {
         die(e);

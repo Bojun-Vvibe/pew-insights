@@ -20580,6 +20580,7 @@ import type { DailyTokenLjungBoxQTestReport } from './dailytokenljungboxqtest.js
 import type { DailyTokenMcLeodLiReport } from './dailytokenmcleodli.js';
 import type { DailyTokenBdsReport } from './dailytokenbds.js';
 import type { DailyTokenJarqueBeraReport } from './dailytokenjarquebera.js';
+import type { DailyTokenDurbinWatsonDetrendedReport } from './dailytokendurbinwatsondetrended.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -25615,6 +25616,87 @@ export function renderDailyTokenJarqueBera(
   lines.push(
     chalk.dim(
       `(reference anchor: jb approx 0 = sample skewness and excess kurtosis both approx 0 (Gaussian-like marginal); jb > 5.991 = reject Gaussian at alpha = 0.05 by Chi-Square(2); pApprox = exp(-jb/2). The test is BLIND TO WHICH MOMENT (skew or kurtosis) drives rejection -- inspect skew and exKurt directly to attribute. Compose with axis-160 BDS to separate "non-Gaussian iid" (jb high, BDS approx 0) from "Gaussian-marginal serially dependent" (BDS high, jb approx 0). Verdict cutoffs by Chi-Square(2) p-value: gaussian p>0.20 (jb<3.219), borderline 0.05<p<=0.20 (3.219<=jb<5.991), non-gaussian 0.01<p<=0.05 (5.991<=jb<9.210), strongly-non-gaussian p<=0.01 (jb>=9.210).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenDurbinWatsonDetrended(
+  r: DailyTokenDurbinWatsonDetrendedReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-durbin-watson-detrended'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroResidualVariance)} zero-residual-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DURBIN-WATSON LAG-1 RESIDUAL-AUTOCORRELATION TEST applied to OLS-DETRENDED gap-filled daily total_tokens. ONE-HUNDRED-AND-SIXTY-SECOND cross-source axis. Durbin & Watson 1950 Biometrika 37:409-428: fit x_t = a + b*t by OLS, form residuals e_t, DW = sum (e_t - e_{t-1})^2 / sum e_t^2 in [0, 4]; rhoHat_e = sum e_t e_{t-1} / sum e_t^2; algebraic identity DW = 2*(1 - rhoHat_e) - (e_0^2 + e_{n-1}^2)/rss; dwZ = (DW - 2)*sqrt(n)/2 approx N(0,1) under iid Gaussian residual null. Operates on DETRENDED RESIDUALS -- structurally orthogonal to all RAW-SERIES serial-correlation axes (which see x_t directly), to stationarity / changepoint axes (which test the LEVEL TRAJECTORY), and to axis-161 JARQUE-BERA (permutation-invariant on the raw series). DW approx 2 = residuals look like white noise around the trend; DW approx 0 = perfect positive residual rho_1; DW approx 4 = perfect negative residual rho_1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source DURBIN-WATSON detrended-residual lag-1 test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'slope',
+    'rhoHatE',
+    'dw',
+    'dwZ',
+    'verdict',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => {
+    return [
+      s.source,
+      s.firstActiveDay,
+      s.lastActiveDay,
+      formatNumber(s.nTenureDays),
+      formatNumber(s.nActiveDays),
+      s.trendSlope.toFixed(2),
+      s.rhoHatResid.toFixed(4),
+      s.dw.toFixed(4),
+      s.dwZ.toFixed(4),
+      s.verdict,
+      formatNumber(s.totalTokens),
+    ];
+  });
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: dw approx 2 = residuals serially independent (white noise around fitted linear trend); dw < 2 = positive residual lag-1 autocorrelation; dw > 2 = negative; dwZ = (dw - 2)*sqrt(n)/2 is asymptotically N(0, 1). The test is BLIND TO HIGHER-ORDER STRUCTURE -- compose with axis-114 Ljung-Box on the raw series for lag-q portmanteau coverage. DW assumes the trend is correctly specified as LINEAR-IN-T; non-linear curvature in x_t will leak into the residuals and DW will misattribute it to AR(1).)`,
     ),
   );
 
