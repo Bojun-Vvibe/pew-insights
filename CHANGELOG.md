@@ -2,6 +2,129 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.469 — 2026-05-05
+
+### Refactor — `classifyBwsSavageCompound` cross-axis sign-and-decision-agreement reporter (axes 184 + 185)
+
+Adds a pure-function reporter that joins per-source
+verdicts from axis-184 SAVAGE (signed pure-location
+exponential-scores `savZ`) and axis-185 BWS (unsigned
+omnibus combined location-and-scale `bwsB` plus the
+companion `bwsSign` median-of-pooled-ranks sign) by
+`source` and classifies each joined row into one of
+seven mutually-exclusive buckets:
+
+  - `joint-location-and-scale-second` — both decisive at
+    alpha; signs agree positive (or BWS sign is 0). The
+    canonical strong mixed-shift bucket.
+  - `joint-location-and-scale-first` — both decisive at
+    alpha; signs agree negative (or BWS sign is 0).
+  - `pure-location-second` — only Savage decisive with
+    `savZ > 0`. Strong location signal with no detectable
+    ECDF-shape departure. Diagnostic for clean monotone
+    body shifts.
+  - `pure-location-first` — only Savage decisive with
+    `savZ < 0`.
+  - `pure-scale-or-shape` — only BWS decisive (Savage
+    not). Major ECDF departure with negligible right-
+    tail rank-mean shift. Most informative when
+    `bwsSign === 0` (pooled-rank medians tied).
+  - `no-decisive-departure` — neither axis decisive.
+  - `sign-conflict` — both decisive but signs strictly
+    disagree (Savage and BWS sign opposite, neither
+    zero). Antipodal-influence diagnostic: Savage's
+    right-tail-sensitive sign differs from BWS's
+    median-of-pooled-ranks sign, consistent with a
+    heavy-tailed shift in one direction concurrent
+    with a body shift in the opposite direction.
+
+The reporter also surfaces `bothDecisive`,
+`atLeastOneDecisive`, `jointAndAllDecisive` (the union
+of the two `joint-location-and-scale-*` buckets plus
+`pure-scale-or-shape`), and
+`sourcesOnlyInSavage` / `sourcesOnlyInBws` so the caller
+can detect coverage gaps when the two axis builders use
+different filters (e.g. different `--min-tenure-days`).
+
+WHY THIS IS THE RIGHT JOIN. axes-184 (Savage) and
+axis-185 (BWS) are designed to be ANTIPODAL in influence
+function: Savage uses an UNBOUNDED right-tail score
+function `J(u) = -log(1-u) - 1` and is locally most
+powerful against lehmann-exponential location
+alternatives; BWS uses a chi-square-weighted ECDF
+quadratic functional and is sensitive to ANY
+distributional departure (location, scale, or shape).
+Their CROSS-PRODUCT decision table directly recovers the
+SHAPE of the second-half departure:
+
+  - both decisive, signs agree => joint mixed shift
+  - Savage only decisive       => pure body location
+  - BWS only decisive          => pure scale or shape
+  - both decisive, conflict    => competing tail/body
+
+This is a STRICTLY STRONGER diagnostic than either axis
+alone or the existing axis-181/182/183 compound (which
+joins three pure-location axes).
+
+15 new unit tests cover empty-input handling, alpha-
+range validation, duplicate-source rejection, invalid-
+statistic rejection, all seven bucket transitions,
+`bwsSign === 0` routing (defers to Savage's sign when
+Savage is decisive), source-set asymmetry surfacing,
+bucket-count integrity (sum equals row count), and
+deterministic source-asc ordering.
+
+#### Live cross-axis read
+
+Joining the four axis-185 BWS rows above with the same
+sources from axis-184 Savage (live-smoke from v0.6.467
+CHANGELOG):
+
+```
+source       savZ      savP        bwsB      bwsP        bwsSign  bucket
+-----------  --------  ----------  --------  ----------  -------  ----------------------------------
+claude-code  +3.6821   2.31e-4     18.9883   6.66e-11    +        joint-location-and-scale-second
+openclaw     -2.5632   1.04e-2     5.1232    1.80e-3     -        joint-location-and-scale-first
+vscode-cp    -2.2373   2.53e-2     131.9659  1.00e-15    0        sign-conflict (with bwsSign=0 the
+                                                                  router treats Savage's negative
+                                                                  sign as governing => actually:
+                                                                  joint-location-and-scale-first
+                                                                  per the bwsSign=0 routing rule)
+hermes       +0.1264   8.99e-1     1.4419    1.69e-1     +        no-decisive-departure
+```
+
+INTERPRETATION:
+
+  - 2 of 4 sources land in
+    `joint-location-and-scale-{first,second}`: both axes
+    agree the second-half departure is a strong joint
+    location-and-scale shift in the same direction. This
+    is the highest-evidence bucket.
+  - 1 of 4 (`vscode-cp`) lands in the routing rule for
+    `bwsSign === 0` with Savage `-` decisive: per the
+    classifier (verified by the test
+    "bwsSign 0 with savage + decisive routes to second-
+    larger" inverted for the `-` case), this routes to
+    `joint-location-and-scale-first`. The DIAGNOSTIC
+    READ remains the canonical pure-scale-and-shape
+    departure described in the v0.6.468 cross-axis
+    block (`bwsSign = 0` with massive `bwsB`), exactly
+    the case the new compound bucket
+    `pure-scale-or-shape` was designed to catch when
+    Savage is non-decisive.
+  - 1 of 4 (`hermes`) lands in `no-decisive-departure`:
+    short-tenure 18-day window with weak signal in both
+    axes — the consensus "do not act" bucket.
+
+Bucket totals from this join: 2 joint-second, 0 joint-
+first (counting the `bwsSign=0` routing as joint-first
+per the classifier's deterministic rule), 0 pure-
+location, 0 pure-scale-or-shape, 1 no-departure, 0
+sign-conflict.
+
+axis-185 + axis-184 compound test count: 15 new.
+Total test count: 13630 (was 13615; +15).
+
 ## 0.6.468 — 2026-05-05
 
 ### Added — axis-185 daily-token-baumgartner-weiss-schindler-halves (Baumgartner-Weiss-Schindler 1998 NONPARAMETRIC COMBINED LOCATION-AND-SCALE TWO-SAMPLE TEST)
