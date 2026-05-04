@@ -2,6 +2,199 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.426 — 2026-05-04
+
+### Added — axis-162: `daily-token-durbin-watson-detrended`
+
+ONE-HUNDRED-AND-SIXTY-SECOND cross-source axis. The
+per-source **Durbin-Watson lag-1 residual-
+autocorrelation test** (Durbin & Watson 1950
+*Biometrika* 37:409-428) on the **OLS-detrended**
+gap-filled daily total_tokens series.
+
+For each source over its tenure window:
+
+```
+fit  x_t = a + b*t      by closed-form OLS
+e_t  = x_t - (a + b*t)
+DW   = sum_{t=1..n-1} (e_t - e_{t-1})^2 / sum e_t^2     in [0, 4]
+rhoE = sum_{t=1..n-1} e_t * e_{t-1}    / sum e_t^2
+dwZ  = (DW - 2) * sqrt(n) / 2           approx N(0, 1)
+```
+
+Algebraic identity (verified by tests):
+
+```
+DW = 2*(1 - rhoE) - (e_0^2 + e_{n-1}^2) / sum e_t^2
+```
+
+Verdict cutoffs from the asymptotic N(0, 1) null:
+
+```
+positive-autocorr      dwZ <= -2.576       (p <= 0.005)
+borderline-positive   -2.576 < dwZ <= -1.645 (p <= 0.05)
+independent           -1.645 < dwZ <  +1.645
+borderline-negative   +1.645 <= dwZ < +2.576
+negative-autocorr      dwZ >= +2.576
+```
+
+#### Orthogonality vs all 161 prior axes
+
+This is structurally a **new primitive**, not
+derivable from any existing axis:
+
+- **vs every RAW-SERIES serial-correlation axis**
+  (raw-series autocorrelation lag-1 / lag-7,
+  Spearman lag-1, Kendall lag-1, Bartels-rank
+  von Neumann, axis-114 Ljung-Box, axis-159
+  McLeod-Li, axis-158 VR Lo-MacKinlay, axis-160
+  BDS): all of those see `x_t` directly. DW
+  operates on the **detrended residuals**
+  `e_t = x_t - (a + b*t)`. A monotone-trend
+  series with iid Gaussian noise has near-perfect
+  raw-series `rhoHat_x` but `DW approx 2` because
+  the trend is exactly what gets subtracted.
+- **vs the stationarity / unit-root / changepoint
+  axes** (axis-156 KPSS, axis-157 ADF, axis-153
+  CUSUM, axis-154 Pettitt, axis-155 Buishand):
+  those test the **level trajectory** (unit-root,
+  level-stationarity, range-of-cumdev,
+  changepoint). DW tests the **short-range lag-1
+  serial correlation of the residuals around a
+  fitted linear trend** -- a regression-
+  diagnostic, not a level test. The level can be
+  perfectly stationary with no changepoint and DW
+  can still reject `independent` because the
+  trend-fit residuals carry AR(1) structure.
+- **vs axis-161 Jarque-Bera**: JB is permutation-
+  invariant on the raw series and tests
+  marginal-shape (skew + kurtosis). DW is
+  time-ordered on detrended residuals. A heavy-
+  tailed iid raw series has `JB >> 0` but
+  `DW approx 2`; an AR(1)-residual linearly
+  trending series has `JB approx 0` but
+  `DW != 2`.
+- **vs the halves CDF-distance axes** (KS halves,
+  AD halves, energy halves, etc.): those compare
+  the empirical CDF of the first half of `x_t`
+  against the second half. DW is a single-window
+  statistic on residuals, no first/second-half
+  split.
+- **vs the inequality / shape axes** (Gini,
+  Theil, Atkinson, Hoover, raw skew, raw
+  kurtosis, Bowley, L-skew, medcouple, etc.):
+  DW does not see moments or scale-equivariant
+  inequality ratios; it sees the lag-1 residual
+  cross-product after detrending.
+
+The headline question DW answers: **"After we
+subtract the best linear trend, do the day-to-day
+residuals carry first-order serial structure
+(`DW != 2`), or do they look like a clean white-
+noise sequence around the trend (`DW approx 2`)?"**
+
+#### Test delta
+
+`12,582 -> 12,614` (+32 tests on the new
+file `dailytokendurbinwatsondetrended.test.ts`):
+input validation (n < 4, non-finite, zero level
+variance, zero residual variance), additive-shift
+invariance, positive-scale invariance, sign-flip
+behaviour, the `dwZ === (DW - 2)*sqrt(n)/2`
+identity, the algebraic
+`DW = 2*(1 - rhoHat) - (e_0^2 + e_{n-1}^2)/rss`
+identity, range `DW in [0, 4]`, alternating
+residuals -> `DW > 3.5`, block residuals ->
+`DW < 1`, OLS first-order conditions
+`sum e_t = 0` and `sum t*e_t = 0`, builder
+pipeline filters (sparse / below-tenure /
+zero-variance / zero-residual-variance), default
+sort `dwZAbsDesc`, `dw` and `rhoHatResidDesc`
+sort orderings, verdict cutoffs, `--top` cap,
+source filter, since/until window, bad
+`min-tokens` / `min-tenure-days` rejection,
+deterministic output.
+
+#### Live-smoke against real `~/.config/pew/queue.jsonl`
+
+(One source name redacted to `vsc-redacted` per
+prior precedent in this CHANGELOG.)
+
+```
+per-source DURBIN-WATSON detrended-residual lag-1 test (sorted by dwZAbsDesc)
+source         tenure  slope         rhoHatE  dw      dwZ      verdict
+-------------  ------  ------------  -------  ------  -------  -------------------
+vsc-redacted   265     12.22         0.1437   1.7124  -2.3411  borderline-positive
+claude-code    72      2920460.88    0.2022   1.5793  -1.7848  borderline-positive
+hermes         18      81288.23      0.3553   1.1910  -1.7161  borderline-positive
+openclaw       18      -11320736.76  0.1478   1.4573  -1.1513  independent
+opencode       15      -9486929.76   -0.1583  1.6421  -0.6931  independent
+```
+
+**Reading the live-smoke (real numbers):**
+
+- **`vsc-redacted`** is the **most autocorrelated**
+  source (`dwZ = -2.34`, `borderline-positive`).
+  Over its 265-day tenure the trend slope is a
+  modest +12.2 tokens/day -- nearly flat -- but
+  the residuals around that trend carry a
+  `rhoHat_e = +0.14` lag-1 autocorrelation that,
+  scaled by `sqrt(265)/2`, becomes statistically
+  detectable. Day-to-day residual usage is
+  **mildly persistent**: above-trend days tend to
+  be followed by above-trend days.
+- **`claude-code`** (`dwZ = -1.78`, `borderline-
+  positive`) shows a strong upward trend
+  (`slope approx 2.9M tokens/day` over 72 days)
+  with persistent positive residuals
+  (`rhoHat_e = +0.20`). Even after removing the
+  steep ramp, multi-day streaks of above- /
+  below-trend usage remain.
+- **`hermes`** (`dwZ = -1.72`, `borderline-
+  positive`) has the **highest residual lag-1
+  autocorrelation** of any source
+  (`rhoHat_e = +0.36`) over a short 18-day
+  tenure. The dwZ is borderline only because
+  `n = 18` is small; the underlying residual
+  persistence is the strongest in the table.
+- **`openclaw`** (`dwZ = -1.15`, `independent`)
+  has a sharply **negative** trend slope
+  (`-11.3M tokens/day`) -- usage falling fast --
+  but the residuals around that downward ramp
+  look essentially independent
+  (`rhoHat_e = +0.15`, `n = 18` insufficient
+  to call it).
+- **`opencode`** (`dwZ = -0.69`, `independent`)
+  also has a steep negative slope but **negative**
+  residual autocorrelation
+  (`rhoHat_e = -0.16`) over `n = 15` -- mildly
+  oscillating around the trend, opposite sign
+  from `hermes`/`vsc-redacted`/`claude-code`.
+
+The compositional reading: combining axis-162 with
+axis-161 (Jarque-Bera) decouples **marginal
+distribution** from **conditional dependence
+around a trend**. Sources can be:
+
+| profile                    | JB       | DW          |
+|----------------------------|----------|-------------|
+| iid Gaussian               | low      | approx 2    |
+| iid heavy-tailed           | high     | approx 2    |
+| Gaussian AR(1) residuals   | low      | far from 2  |
+| heavy-tail AR(1) residuals | high     | far from 2  |
+
+In our real data `vsc-redacted` and `claude-code`
+both already had `JB >> 0` (axis-161 verdict
+`strongly-non-gaussian`), and both now also have
+`dwZ < -1.6` -- they sit in the **fourth quadrant**
+(heavy-tailed and persistently autocorrelated
+around their trend), which is the "everything is
+non-stationary about this source" regime. Pure-
+ramp sources like `openclaw` are in the third
+quadrant (heavy-tailed marginal, independent
+residuals) -- a much more tractable regime to
+forecast.
+
 ## 0.6.424 — 2026-05-04
 
 ### Refinement — axis-161: derived shape-descriptor `jbSkewContribFraction`
