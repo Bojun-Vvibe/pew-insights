@@ -20622,6 +20622,7 @@ import type { DailyTokenPearsonSecondSkewnessReport } from './dailytokenpearsons
 import type { DailyTokenCucconiHalvesReport } from './dailytokencucconihalves.js';
 import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
 import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermunzelhalves.js';
+import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -26901,6 +26902,87 @@ export function renderDailyTokenBrunnerMunzelHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: bmPValue < 0.05 = REJECT stochastic-equality H0 at alpha=0.05 (two-sided Welch-Satterthwaite t reference). bmRelative = P_hat(X_A < Y_B) + 0.5 P_hat(X_A = Y_B); bmRelative > 0.5 = SECOND half stochastically larger; bmW > 0 same direction (matches axis-115 mwZ sign). KEY DIFFERENCE from axis-115: BM does not assume equal CDFs under H0 — placement variances S_A^2, S_B^2 estimate the true Behrens-Fisher variance separately, so BM rejects MEANINGFULLY differently from WMW when the two halves have unequal dispersions.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKlotzHalves(
+  r: DailyTokenKlotzHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-klotz-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KLOTZ 1962 NORMAL-SCORES SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the median-aligned, gap-filled daily total_tokens series. Score a(R_i) = ( Phi^{-1}(R_i/(n+1)) )^2 (squared van der Waerden 1953 normal score); statistic K = sum_{j in B} a(R_j); E[K] = n2 * abar, Var[K] = n1 n2 / (n(n-1)) * sum (a - abar)^2; klotzZ = (K - E[K]) / sqrt(Var[K]) ~ N(0,1) under H0. ONE-HUNDRED-AND-SEVENTY-SEVENTH cross-source axis. STRUCTURALLY DISTINCT: vs axis-117 Siegel-Tukey (linear outside-in ranks; ARE 0.608 vs F-test) and axis-170 Ansari-Bradley (folded linear ranks; ARE Klotz/AB = pi/2 ~ 1.57) Klotz uses SQUARED NORMAL SCORES with quadratically-growing tail weight and Pitman ARE 1.000 vs F under normal-scale alternatives — strictly more powerful for heavy-tailed dispersion shifts. vs axis-122/123 Brown-Forsythe/Bartlett (parametric on squared deviations) Klotz is distribution-free under H0 and holds nominal alpha under any continuous null. vs axis-115/176 Mann-Whitney/Brunner-Munzel (stochastic ordering) pure scale shift gives klotzZ != 0 while MW/BM ~ 0 — orthogonal channel. vs axes 174/175 Cucconi/Lepage (joint chi-2(2) location-scale) Klotz isolates the SCALE channel that C/L mash with location.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KLOTZ scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'klotzK',
+    'expK',
+    'klotzZ',
+    'klotzPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.klotzN1),
+    formatNumber(s.klotzN2),
+    s.klotzK.toFixed(4),
+    s.klotzExpK.toFixed(4),
+    s.klotzZ.toFixed(4),
+    s.klotzPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: klotzPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). klotzZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ and axis-170 abZ sign). Pitman ARE 1.000 vs F-test under normal-scale alternatives, the maximum possible for a rank scale test.)`,
     ),
   );
 
