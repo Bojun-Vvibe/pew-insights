@@ -6833,7 +6833,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: tokens | nout | frac | maxscore | ndays (default tokens). Applied before --top.',
+    'sort key: tokens | nout | frac | maxscore | meanscore | asymmetry | ndays (default tokens). Applied before --top.',
     'tokens',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -6866,9 +6866,9 @@ program
         if (!Number.isInteger(top) || top < 0) {
           throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
         }
-        const sort = opts.sort as 'tokens' | 'nout' | 'frac' | 'maxscore' | 'ndays';
-        if (!['tokens', 'nout', 'frac', 'maxscore', 'ndays'].includes(sort)) {
-          throw new Error(`--sort must be one of tokens|nout|frac|maxscore|ndays (got ${opts.sort})`);
+        const sort = opts.sort as 'tokens' | 'nout' | 'frac' | 'maxscore' | 'meanscore' | 'asymmetry' | 'ndays';
+        if (!['tokens', 'nout', 'frac', 'maxscore', 'meanscore', 'asymmetry', 'ndays'].includes(sort)) {
+          throw new Error(`--sort must be one of tokens|nout|frac|maxscore|meanscore|asymmetry|ndays (got ${opts.sort})`);
         }
         const queue = await readQueue(paths);
         const report = buildDailyTokenHampelOutlierCount(queue, {

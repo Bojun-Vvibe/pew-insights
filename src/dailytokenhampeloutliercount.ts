@@ -134,7 +134,7 @@ export interface DailyTokenHampelOutlierCountOptions {
    *   - 'maxscore':         maxScore desc, source asc.
    *   - 'ndays':            nFilledDays desc, source asc.
    */
-  sort?: 'tokens' | 'nout' | 'frac' | 'maxscore' | 'ndays';
+  sort?: 'tokens' | 'nout' | 'frac' | 'maxscore' | 'meanscore' | 'asymmetry' | 'ndays';
   /** Override for tests; bypasses Date.now(). */
   generatedAt?: string;
 }
@@ -171,6 +171,26 @@ export interface DailyTokenHampelOutlierCountSourceRow {
    */
   maxScore: number;
   /**
+   * MEAN of (|x[i] - median| / sigmaHat) across all days in the
+   * gap-filled series. Companion to `maxScore`: complements the
+   * single-most-extreme-day reading with the AVERAGE robust
+   * deviation. Two series with identical `maxScore` (one isolated
+   * spike) can have wildly different `meanAbsScore` (uniformly
+   * heavy vs single-spike-on-quiet-baseline). 0 with `flat: true`
+   * when sigmaHat = 0.
+   */
+  meanAbsScore: number;
+  /**
+   * Asymmetry of the outlier set: (nHigh - nLow) / nOut, in
+   * [-1, +1]. +1 = all outliers are HIGH (heavy spikes), -1 =
+   * all outliers are LOW (anomalous quiet days), 0 = balanced
+   * mix. 0 with `flatAsymmetry: true` when nOut = 0 (no
+   * outliers, asymmetry undefined).
+   */
+  asymmetry: number;
+  /** True iff asymmetry is undefined (nOut = 0) and reported as 0. */
+  flatAsymmetry: boolean;
+  /**
    * ISO YYYY-MM-DD of the day achieving `maxScore`. Earliest day
    * on tie. null when flat.
    */
@@ -190,7 +210,7 @@ export interface DailyTokenHampelOutlierCountReport {
   k: number;
   minDays: number;
   top: number;
-  sort: 'tokens' | 'nout' | 'frac' | 'maxscore' | 'ndays';
+  sort: 'tokens' | 'nout' | 'frac' | 'maxscore' | 'meanscore' | 'asymmetry' | 'ndays';
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -244,6 +264,7 @@ export function hampelOutlierSummary(
   nLow: number;
   nOut: number;
   maxScore: number;
+  meanAbsScore: number;
   argMaxIndex: number;
   flat: boolean;
 } {
@@ -259,6 +280,7 @@ export function hampelOutlierSummary(
       nLow: 0,
       nOut: 0,
       maxScore: 0,
+      meanAbsScore: 0,
       argMaxIndex: -1,
       flat: true,
     };
@@ -277,6 +299,7 @@ export function hampelOutlierSummary(
       nLow: 0,
       nOut: 0,
       maxScore: 0,
+      meanAbsScore: 0,
       argMaxIndex: -1,
       flat: true,
     };
@@ -287,11 +310,13 @@ export function hampelOutlierSummary(
   let nLow = 0;
   let maxScore = 0;
   let argMaxIndex = -1;
+  let sumScore = 0;
   for (let i = 0; i < n; i++) {
     const v = values[i]!;
     if (v > hi) nHigh += 1;
     else if (v < lo) nLow += 1;
     const score = Math.abs(v - med) / sigmaHat;
+    sumScore += score;
     if (score > maxScore) {
       maxScore = score;
       argMaxIndex = i;
@@ -307,6 +332,7 @@ export function hampelOutlierSummary(
     nLow,
     nOut: nHigh + nLow,
     maxScore,
+    meanAbsScore: sumScore / n,
     argMaxIndex,
     flat: false,
   };
@@ -341,9 +367,9 @@ export function buildDailyTokenHampelOutlierCount(
     throw new Error(`top must be a non-negative integer (got ${opts.top})`);
   }
   const sort = opts.sort ?? 'tokens';
-  if (!['tokens', 'nout', 'frac', 'maxscore', 'ndays'].includes(sort)) {
+  if (!['tokens', 'nout', 'frac', 'maxscore', 'meanscore', 'asymmetry', 'ndays'].includes(sort)) {
     throw new Error(
-      `sort must be one of tokens|nout|frac|maxscore|ndays (got ${opts.sort})`,
+      `sort must be one of tokens|nout|frac|maxscore|meanscore|asymmetry|ndays (got ${opts.sort})`,
     );
   }
   const sourceFilter = opts.source ?? null;
@@ -448,6 +474,9 @@ export function buildDailyTokenHampelOutlierCount(
       nOut: summary.nOut,
       outFraction: summary.nOut / nFilled,
       maxScore: summary.maxScore,
+      meanAbsScore: summary.meanAbsScore,
+      asymmetry: summary.nOut === 0 ? 0 : (summary.nHigh - summary.nLow) / summary.nOut,
+      flatAsymmetry: summary.nOut === 0,
       argMaxScoreDay: argDay,
       flat: summary.flat,
       firstActiveDay: first,
@@ -466,6 +495,12 @@ export function buildDailyTokenHampelOutlierCount(
         break;
       case 'maxscore':
         primary = b.maxScore - a.maxScore;
+        break;
+      case 'meanscore':
+        primary = b.meanAbsScore - a.meanAbsScore;
+        break;
+      case 'asymmetry':
+        primary = b.asymmetry - a.asymmetry;
         break;
       case 'ndays':
         primary = b.nFilledDays - a.nFilledDays;

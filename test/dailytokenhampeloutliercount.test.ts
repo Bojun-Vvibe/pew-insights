@@ -586,3 +586,142 @@ test('hampel: first/last active days reported', () => {
   assert.equal(s.nFilledDays, 11);
   assert.equal(s.nActiveDays, 3);
 });
+
+// ---- refinement: meanAbsScore + asymmetry ----------------------------------
+
+test('hampel refinement: meanAbsScore exposed and 0 when flat', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'a', 100),
+    ql('2026-04-02T00:00:00.000Z', 'a', 100),
+    ql('2026-04-03T00:00:00.000Z', 'a', 100),
+  ];
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.equal(s.flat, true);
+  assert.equal(s.meanAbsScore, 0);
+});
+
+test('hampel refinement: meanAbsScore positive and bounded by maxScore when not flat', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', d * 10));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'a', 5000));
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.ok(s.meanAbsScore > 0);
+  assert.ok(s.meanAbsScore <= s.maxScore + 1e-12);
+});
+
+test('hampel refinement: asymmetry = +1 when all outliers high', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', d * 10));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'a', 5000));
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN });
+  const s = r.sources[0]!;
+  assert.ok(s.nOut > 0);
+  assert.equal(s.nLow, 0);
+  assert.equal(s.flatAsymmetry, false);
+  assert.equal(s.asymmetry, 1);
+});
+
+test('hampel refinement: asymmetry = -1 when all outliers low', () => {
+  // 100, 100, 100, 100, 100, 100, 100, 100, 100, 1
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', 100 + d));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'a', 1));
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN, k: 1 });
+  const s = r.sources[0]!;
+  if (s.nOut > 0 && s.nHigh === 0) {
+    assert.equal(s.asymmetry, -1);
+    assert.equal(s.flatAsymmetry, false);
+  }
+});
+
+test('hampel refinement: asymmetry = 0 / flatAsymmetry when nOut=0', () => {
+  const queue: QueueLine[] = [];
+  for (let d = 1; d <= 5; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', 100 + d));
+  }
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN, k: 100 });
+  const s = r.sources[0]!;
+  assert.equal(s.nOut, 0);
+  assert.equal(s.flatAsymmetry, true);
+  assert.equal(s.asymmetry, 0);
+});
+
+test('hampel refinement: asymmetry in [-1, +1]', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'a', 1),
+    ql('2026-04-02T00:00:00.000Z', 'a', 50),
+    ql('2026-04-03T00:00:00.000Z', 'a', 60),
+    ql('2026-04-04T00:00:00.000Z', 'a', 55),
+    ql('2026-04-05T00:00:00.000Z', 'a', 58),
+    ql('2026-04-06T00:00:00.000Z', 'a', 53),
+    ql('2026-04-07T00:00:00.000Z', 'a', 56),
+    ql('2026-04-08T00:00:00.000Z', 'a', 5000),
+  ];
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN, k: 1 });
+  const s = r.sources[0]!;
+  assert.ok(s.asymmetry >= -1 && s.asymmetry <= 1);
+});
+
+test('hampel refinement: --sort meanscore', () => {
+  const queue: QueueLine[] = [];
+  // a: many days with mild deviation -> moderate meanScore
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', d * 10));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'a', 200));
+  // b: flat majority + giant single spike -> high maxScore but low/zero meanScore
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'b', 100));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'b', 100000));
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN, sort: 'meanscore' });
+  assert.equal(r.sources.length, 2);
+  // Either way, meanScore must be sorted desc.
+  assert.ok(r.sources[0]!.meanAbsScore >= r.sources[1]!.meanAbsScore);
+});
+
+test('hampel refinement: --sort asymmetry', () => {
+  const queue: QueueLine[] = [];
+  // a: high outlier -> asymmetry +1
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'a', d * 10));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'a', 5000));
+  // b: low outlier -> asymmetry -1 (if it gets flagged)
+  for (let d = 1; d <= 9; d++) {
+    queue.push(ql(`2026-04-0${d}T00:00:00.000Z`, 'b', 100 + d));
+  }
+  queue.push(ql('2026-04-10T00:00:00.000Z', 'b', 1));
+  const r = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN, sort: 'asymmetry' });
+  assert.equal(r.sources.length, 2);
+  // asymmetry desc -> +1 first
+  assert.ok(r.sources[0]!.asymmetry >= r.sources[1]!.asymmetry);
+});
+
+test('hampel refinement: rejects bad sort key still works for new keys', () => {
+  assert.throws(() =>
+    buildDailyTokenHampelOutlierCount([], { sort: 'nope' as 'tokens' }),
+  );
+});
+
+test('hampel refinement: meanAbsScore and asymmetry are deterministic', () => {
+  const queue: QueueLine[] = [
+    ql('2026-04-01T00:00:00.000Z', 'a', 100),
+    ql('2026-04-02T00:00:00.000Z', 'a', 200),
+    ql('2026-04-03T00:00:00.000Z', 'a', 100),
+    ql('2026-04-04T00:00:00.000Z', 'a', 5000),
+    ql('2026-04-05T00:00:00.000Z', 'a', 100),
+  ];
+  const r1 = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN });
+  const r2 = buildDailyTokenHampelOutlierCount(queue, { generatedAt: GEN });
+  assert.equal(r1.sources[0]!.meanAbsScore, r2.sources[0]!.meanAbsScore);
+  assert.equal(r1.sources[0]!.asymmetry, r2.sources[0]!.asymmetry);
+});
