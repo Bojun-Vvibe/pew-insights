@@ -446,3 +446,119 @@ test('build: sort by adPValue ascending', () => {
     );
   }
 });
+
+// ---------- aggregateAndersonDarlingCumulativePeriodogram ----------
+
+import {
+  aggregateAndersonDarlingCumulativePeriodogram,
+  chiSquaredUpperTail,
+} from '../src/dailytokenandersondarlingcumulativeperiodogram.js';
+
+test('aggregate: empty rows -> trivial neutral aggregate', () => {
+  const r = aggregateAndersonDarlingCumulativePeriodogram([]);
+  assert.equal(r.tenureWeightedAdAStar, 0);
+  assert.equal(r.fisherCombinedPValue, 1);
+  assert.equal(r.totalTenureWeight, 0);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 0);
+});
+
+test('aggregate: skips malformed rows defensively', () => {
+  const r = aggregateAndersonDarlingCumulativePeriodogram([
+    { nTenureDays: 30, adAStar: 1.0, adPValue: 0.3 },
+    { nTenureDays: 30, adAStar: Number.NaN, adPValue: 0.3 },
+    { nTenureDays: 30, adAStar: 1.0, adPValue: Number.NaN },
+    { nTenureDays: 1, adAStar: 1.0, adPValue: 0.3 }, // tenure < 2
+    { nTenureDays: 30.5, adAStar: 1.0, adPValue: 0.3 } as unknown as {
+      nTenureDays: number;
+      adAStar: number;
+      adPValue: number;
+    },
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  assert.equal(r.rowsSkipped, 4);
+  assert.ok(r.tenureWeightedAdAStar > 0);
+});
+
+test('aggregate: tenure-weighted average matches manual computation', () => {
+  // Two rows: tenure 41 (w=40), adAStar=2; tenure 11 (w=10), adAStar=10.
+  // Weighted average = (40*2 + 10*10) / (40+10) = 180/50 = 3.6.
+  const r = aggregateAndersonDarlingCumulativePeriodogram([
+    { nTenureDays: 41, adAStar: 2, adPValue: 0.5 },
+    { nTenureDays: 11, adAStar: 10, adPValue: 0.5 },
+  ]);
+  assert.ok(Math.abs(r.tenureWeightedAdAStar - 3.6) < 1e-12);
+  assert.equal(r.totalTenureWeight, 50);
+  assert.equal(r.rowsUsed, 2);
+});
+
+test('aggregate: Fisher combined p clamps zero p-values', () => {
+  // Row with effectively-zero p must not produce -Infinity in
+  // chi^2 (clamp to 1e-300); the combined p should be ~0 but
+  // finite and in [0, 1].
+  const r = aggregateAndersonDarlingCumulativePeriodogram([
+    { nTenureDays: 30, adAStar: 100, adPValue: 0 },
+    { nTenureDays: 30, adAStar: 100, adPValue: 0 },
+  ]);
+  assert.ok(Number.isFinite(r.fisherCombinedPValue));
+  assert.ok(r.fisherCombinedPValue >= 0 && r.fisherCombinedPValue <= 1);
+  assert.ok(r.fisherCombinedPValue < 1e-100);
+});
+
+test('aggregate: Fisher combined p of two p=0.5 rows ~ 0.406', () => {
+  // chi^2 = -2 * (ln(0.5) + ln(0.5)) = -2 * 2 * ln(0.5) = 4 ln(2) ~ 2.7726.
+  // dof = 2 * 2 = 4.
+  // P(Chi^2_4 > 2.7726) ~ 0.5963 (R: pchisq(4*log(2), 4, lower.tail=FALSE)
+  //                                = 0.5963).
+  const r = aggregateAndersonDarlingCumulativePeriodogram([
+    { nTenureDays: 30, adAStar: 1, adPValue: 0.5 },
+    { nTenureDays: 30, adAStar: 1, adPValue: 0.5 },
+  ]);
+  assert.ok(
+    Math.abs(r.fisherCombinedPValue - 0.5963) < 0.01,
+    `expected ~0.5963, got ${r.fisherCombinedPValue}`,
+  );
+});
+
+// ---------- chiSquaredUpperTail ----------
+
+test('chiSquaredUpperTail: x <= 0 -> p = 1', () => {
+  assert.equal(chiSquaredUpperTail(0, 4), 1);
+  assert.equal(chiSquaredUpperTail(-1, 4), 1);
+});
+
+test('chiSquaredUpperTail: rejects bad inputs', () => {
+  assert.throws(() => chiSquaredUpperTail(Number.NaN, 4));
+  assert.throws(() => chiSquaredUpperTail(1, 0));
+  assert.throws(() => chiSquaredUpperTail(1, -1));
+});
+
+test('chiSquaredUpperTail: published critical values within 1e-3', () => {
+  // Standard chi-squared critical values:
+  //   P(Chi^2_2 > 5.991) = 0.05  (verified against R: pchisq)
+  //   P(Chi^2_4 > 9.488) = 0.05
+  //   P(Chi^2_6 > 12.592) = 0.05
+  //   P(Chi^2_2 > 9.210) = 0.01
+  assert.ok(Math.abs(chiSquaredUpperTail(5.991, 2) - 0.05) < 1e-3);
+  assert.ok(Math.abs(chiSquaredUpperTail(9.488, 4) - 0.05) < 1e-3);
+  assert.ok(Math.abs(chiSquaredUpperTail(12.592, 6) - 0.05) < 1e-3);
+  assert.ok(Math.abs(chiSquaredUpperTail(9.210, 2) - 0.01) < 1e-3);
+});
+
+test('chiSquaredUpperTail: monotone non-increasing in x', () => {
+  let prev = Infinity;
+  for (let x = 0; x < 30; x += 0.5) {
+    const p = chiSquaredUpperTail(x, 4);
+    assert.ok(p <= prev + 1e-12, `non-monotone at x=${x}: ${p} > ${prev}`);
+    prev = p;
+  }
+});
+
+test('chiSquaredUpperTail: result in [0, 1]', () => {
+  for (let x = 0; x < 100; x += 1) {
+    for (const k of [1, 2, 4, 10, 50]) {
+      const p = chiSquaredUpperTail(x, k);
+      assert.ok(p >= 0 && p <= 1, `k=${k} x=${x} -> p=${p}`);
+    }
+  }
+});

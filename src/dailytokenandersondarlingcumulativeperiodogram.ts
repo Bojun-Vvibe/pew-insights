@@ -715,3 +715,197 @@ export function buildDailyTokenAndersonDarlingCumulativePeriodogram(
     sources: kept,
   };
 }
+
+/**
+ * Aggregate per-source A^2 results into a single corpus-level
+ * statistic and combined p-value, weighted by tenure-days.
+ *
+ * Two outputs:
+ *   - tenureWeightedAdAStar: weighted average of `adAStar`
+ *     across rows with weights `nTenureDays - 1` (the
+ *     effective degrees-of-freedom of each per-source statistic
+ *     under the Brownian-bridge asymptotic; matches the
+ *     numerator of `(K-1) * adA2`).
+ *   - fisherCombinedPValue: Fisher (1932) combined p-value
+ *
+ *       chi2 = -2 * sum_i log(p_i)
+ *       fisherCombinedPValue = P(Chi2_{2m} > chi2)
+ *
+ *     for m = number of rows. Computed via the regularised
+ *     upper incomplete gamma function with Lanczos series
+ *     expansion (no external table). Returns 1 when m == 0.
+ *
+ * Edge cases:
+ *   - empty `rows` -> { tenureWeightedAdAStar: 0,
+ *                       fisherCombinedPValue: 1,
+ *                       totalTenureWeight: 0 }.
+ *   - any row with non-finite `adAStar` or `adPValue` is
+ *     SKIPPED with a counter (the helper is defensive: it
+ *     never throws on a malformed row).
+ *   - p_i clamped to [1e-300, 1] before taking log to avoid
+ *     -infinity contributions when an individual source has
+ *     a numerically-zero p-value.
+ *
+ * The aggregate is RESEARCH-ORIENTED: it does NOT replace the
+ * per-source test (the per-source test is the published
+ * deployment). The aggregate is a convenience companion for
+ * corpus-level dashboards.
+ */
+export function aggregateAndersonDarlingCumulativePeriodogram(
+  rows: ReadonlyArray<{
+    nTenureDays: number;
+    adAStar: number;
+    adPValue: number;
+  }>,
+): {
+  tenureWeightedAdAStar: number;
+  fisherCombinedPValue: number;
+  totalTenureWeight: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+} {
+  if (rows.length === 0) {
+    return {
+      tenureWeightedAdAStar: 0,
+      fisherCombinedPValue: 1,
+      totalTenureWeight: 0,
+      rowsUsed: 0,
+      rowsSkipped: 0,
+    };
+  }
+  let weightedSum = 0;
+  let totalWeight = 0;
+  let chi2 = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    if (
+      !Number.isFinite(row.adAStar) ||
+      !Number.isFinite(row.adPValue) ||
+      !Number.isInteger(row.nTenureDays) ||
+      row.nTenureDays < 2
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const w = row.nTenureDays - 1;
+    weightedSum += w * row.adAStar;
+    totalWeight += w;
+    const pClamped = Math.max(1e-300, Math.min(1, row.adPValue));
+    chi2 += -2 * Math.log(pClamped);
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      tenureWeightedAdAStar: 0,
+      fisherCombinedPValue: 1,
+      totalTenureWeight: 0,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const tenureWeightedAdAStar = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  const dof = 2 * used;
+  const fisherCombinedPValue = chiSquaredUpperTail(chi2, dof);
+  return {
+    tenureWeightedAdAStar,
+    fisherCombinedPValue,
+    totalTenureWeight: totalWeight,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
+/**
+ * Upper-tail probability `P(Chi^2_k > x)` computed via the
+ * regularised upper incomplete gamma function
+ *
+ *   Q(s, x) = Gamma(s, x) / Gamma(s),   s = k/2, x = x/2
+ *
+ * using the Lentz continued-fraction expansion for x > s+1
+ * and the power series for x <= s+1 (Numerical Recipes 6.2).
+ *
+ * Edge cases:
+ *   - x <= 0 -> p = 1
+ *   - non-finite x or k <= 0 -> throws
+ *
+ * Convergence: ~1e-12 absolute in <= 100 iterations across
+ * the operating range used by the Fisher combined-p (k = 2m
+ * for m rows; typically k <= 200).
+ */
+export function chiSquaredUpperTail(x: number, k: number): number {
+  if (!Number.isFinite(x)) {
+    throw new Error(`chiSquaredUpperTail: non-finite x (${x})`);
+  }
+  if (!Number.isFinite(k) || k <= 0) {
+    throw new Error(`chiSquaredUpperTail: invalid dof k (${k}; need k > 0)`);
+  }
+  if (x <= 0) return 1;
+  const s = k / 2;
+  const xHalf = x / 2;
+  return regularisedUpperIncompleteGamma(s, xHalf);
+}
+
+function regularisedUpperIncompleteGamma(s: number, x: number): number {
+  if (x < s + 1) {
+    // Power series for the LOWER incomplete gamma; subtract
+    // from 1 to obtain the upper.
+    return 1 - lowerIncompleteGammaSeries(s, x);
+  }
+  return upperIncompleteGammaContinuedFraction(s, x);
+}
+
+function lowerIncompleteGammaSeries(s: number, x: number): number {
+  // P(s, x) = exp(-x) * x^s / Gamma(s) * sum_{n=0..} x^n /
+  //                                       (s)(s+1)...(s+n)
+  let term = 1 / s;
+  let sum = term;
+  for (let n = 1; n < 1000; n += 1) {
+    term *= x / (s + n);
+    sum += term;
+    if (Math.abs(term) < Math.abs(sum) * 1e-15) break;
+  }
+  return sum * Math.exp(-x + s * Math.log(x) - logGamma(s));
+}
+
+function upperIncompleteGammaContinuedFraction(s: number, x: number): number {
+  // Q(s, x) = exp(-x) * x^s / Gamma(s) * cf
+  // Lentz's modified algorithm for the continued fraction.
+  const FPMIN = 1e-300;
+  let b = x + 1 - s;
+  let c = 1 / FPMIN;
+  let d = 1 / b;
+  let h = d;
+  for (let i = 1; i < 1000; i += 1) {
+    const an = -i * (i - s);
+    b += 2;
+    d = an * d + b;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = b + an / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const delta = d * c;
+    h *= delta;
+    if (Math.abs(delta - 1) < 1e-15) break;
+  }
+  return h * Math.exp(-x + s * Math.log(x) - logGamma(s));
+}
+
+/** Lanczos approximation to ln Gamma(z), z > 0. */
+function logGamma(z: number): number {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+  ];
+  if (z < 0.5) {
+    // Reflection: not needed for our use (z = s = k/2 >= 0.5).
+    return Math.log(Math.PI / Math.sin(Math.PI * z)) - logGamma(1 - z);
+  }
+  z -= 1;
+  let a = c[0]!;
+  const t = z + g + 0.5;
+  for (let i = 1; i < g + 2; i += 1) a += c[i]! / (z + i);
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(a);
+}
