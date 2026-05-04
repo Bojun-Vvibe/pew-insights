@@ -2,6 +2,152 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.408 — 2026-05-04
+
+### Added — axis-154: `daily-token-pettitt-changepoint`
+
+Per-source non-parametric **Pettitt single-changepoint** statistic on
+the gap-filled per-source daily total_tokens series. For each source
+we form the gap-filled tenure series `x[0..n-1]` (n = nFilledDays,
+default minDays >= 4) and compute
+
+```
+U[t]   = sum_{i<=t} sum_{j>t} sign(x[i] - x[j])     (t = 0..n-2)
+KT     = max_t |U[t]|                                (Pettitt statistic)
+tStar  = argmax_t |U[t]|                             (changepoint index)
+ktNorm = KT / (n^2 / 4)                              (in [0, 1])
+pApprox = clamp(0,1)( 2 * exp( -6 * KT^2 / (n^3 + n^2) ) )
+                                                     (Pettitt 1979)
+meanBefore = mean(x[0..tStar])
+meanAfter  = mean(x[tStar+1..n-1])
+meanShift  = meanAfter - meanBefore
+```
+
+Implementation uses the O(n log n) average-rank reformulation
+`U[t] = 2 * sum(rank[0..t]) - (t+1)*(n+1)` with ties resolved via
+mean-rank assignment (matches R's `rank(..., ties.method="average")`).
+A constant series surfaces as `flat: true` with `kt = 0`,
+`ktNorm = 0`, `pApprox = 1`, `tStarDay = null`.
+
+### Orthogonality justification (single-changepoint, rank class)
+
+Pettitt is the canonical non-parametric **single-changepoint**
+statistic and is structurally orthogonal to every prior daily-token
+axis on this series:
+
+- **axis-153 (CUSUM max deviation, drift class):** uses centered
+  *magnitudes* `(x[i] - mean(x))` integrated as a path; KT uses
+  ranks only. A single 1e9 outlier shifts CUSUM by ~1e9 but shifts
+  Pettitt's |U[t]| by at most O(n). Pettitt also reports an
+  explicit *p-value*; CUSUM does not. Pettitt's tStar is bounded
+  in [0, n-2] (proper split point); CUSUM's argMax/argMin can be
+  the last index.
+- **daily-token-mann-kendall-tau (monotone trend, rank):** Mann-
+  Kendall sums sign(x[j]-x[i]) over all i<j and tests *whole-series
+  monotone trend*. Pettitt SPLITS the series at every t and asks
+  *which split has the strongest Mann-Whitney shift*. A V-shape
+  series (high → low → high) has small Mann-Kendall (no monotone
+  trend) but very large Pettitt KT (clean changepoint at the
+  vertex). The pair (tau, KT) jointly distinguishes monotone trend
+  from one-time regime change.
+- **daily-token-runs-test-z (Wald-Wolfowitz on above/below median):**
+  asks *do above/below-median days cluster about a global pivot?*
+  Pettitt asks *where is the SINGLE step shift?* — different
+  questions, different invariances.
+- **daily-token-cox-stuart, bartels-rank-vonneumann, second-diff-
+  sign-runs, monotone-run-length, difference-sign-test:** runs/sign
+  *randomness* tests; Pettitt is a *location-shift* test.
+- **all sort-invariant inequality scalars (gini, atkinson, theil-
+  l/t, zenga, pietra, palma, hoover, bonferroni, kolm-pollak,
+  mehran, wolfson, chakravarty, fgt, amato, esteban-ray, foster-
+  wolfson, var-of-logs, hill-tail-index, s-gini, gen-entropy-neg-
+  one, log-mean-abs-dev, ge-half/two/three/four):** continuous
+  shape statistics on the marginal — order-invariant. Pettitt is
+  strictly order-dependent on rank order.
+- **spectral / fractal / entropy class:** frequency / complexity
+  / fractal dimension. Pettitt is a single rank-based path
+  statistic — neither spectrum, complexity, nor fractal.
+
+The structural reading: axis-151 sees step-by-step VOLATILITY,
+axis-152 sees POINT-WISE outliers, axis-153 sees ACCUMULATED DRIFT
+(magnitude-weighted), axis-154 sees the *most likely SINGLE
+location-shift split point* (rank-based, magnitude-blind, with an
+explicit p-value).
+
+### Live-smoke (against `~/.config/pew/queue.jsonl`, 2026-05-04, since 2026-04-26)
+
+Sanitized output (one source name redacted to comply with the
+repo-level identifier policy; numeric values are unchanged).
+
+```
+$ pew-insights daily-token-pettitt-changepoint --since 2026-04-26T00:00:00.000Z
+pew-insights daily-token-pettitt-changepoint
+as of: 2026-05-04T01:46:11.185Z    sources: 6 (shown 6)    tokens: 13,284,448,259    min-days: 4    sort: tokens
+dropped: 0 bad hour_start, 0 zero-tokens, 0 by source filter, 0 below min-days, 0 below top cap
+(Pettitt KT = max_t |2*sum(rank[0..t]) - (t+1)*(n+1)| ...)
+
+per-source Pettitt changepoint (sorted by tokens)
+source       tokens         nActive  nFilled  kt      ktNorm  pApprox  tStarIdx  tStarDay    meanBefore   meanAfter    meanShift
+-----------  -------------  -------  -------  ------  ------  -------  --------  ----------  -----------  -----------  ------------
+opencode     6,459,143,595  15       15       30.0    0.533   0.4463   9         2026-04-29  480808701.6  330211315.8  -150597385.8
+claude-code  3,442,385,788  35       72       696.0   0.537   0.0009   39        2026-03-22  3278724.5    103476150.3  100197425.8
+openclaw     2,259,961,387  18       18       78.0    0.963   0.0053   9         2026-04-26  184543547.9  51815738.5   -132727809.4
+codex        809,624,660    8        8        11.0    0.688   0.5671   4         2026-04-17  53256578.8   181113922.0  127857343.2
+hermes       311,447,102    18       18       26.0    0.321   1.0000   9         2026-04-26  14579185.2   20706906.3   6127721.1
+[redacted]   1,885,727      73       265      3408.0  0.194   0.0480   191       2026-02-06  6630.9       8391.7       1760.7
+```
+
+Reading the live numbers:
+
+- **claude-code** (n=72) flags the strongest changepoint by p-value
+  alone — `KT = 696, ktNorm = 0.537, pApprox = 0.00092` at
+  `tStar = 39 (2026-03-22)`, with `meanBefore = 3.28M / day` and
+  `meanAfter = 103.48M / day`. That is a ~31× location shift and is
+  highly significant under the asymptotic.
+- **openclaw** (n=18) has the *highest normalized strength*
+  (`ktNorm = 0.963` — near the theoretical clean-step ceiling of 1.0)
+  with `pApprox = 0.0053` at `tStar = 9 (2026-04-26)`, marking a
+  drop from `meanBefore = 184.5M / day` to `meanAfter = 51.8M / day`
+  (-72%).
+- **opencode** (n=15) has a moderate negative shift at
+  `2026-04-29` (`meanShift = -150.6M / day`) but `pApprox = 0.45` —
+  the asymptotic does not flag it as significant given the short
+  series.
+- **hermes** (n=18) has `pApprox = 1.000` (`KT = 26, ktNorm = 0.321`)
+  — no significant single-changepoint at this window, despite an
+  apparent positive `meanShift = +6.1M / day`. Pettitt correctly
+  resists this as noise on a short series.
+- **codex** (n=8) sits at `pApprox = 0.567` — directional signal
+  (`meanShift = +127.9M / day`) but the series is too short for the
+  asymptotic to declare significance.
+- The redacted long-tail source (n=265, 73 active) has the largest
+  raw `KT = 3408` but the *smallest* normalized strength
+  (`ktNorm = 0.194`) — the changepoint is structurally weak relative
+  to series length, and the asymptotic gives `pApprox = 0.048`,
+  marginally significant.
+
+Cross-axis read 154 ↔ 153: claude-code's Pettitt tStar (`2026-03-22`)
+falls inside its CUSUM tenure and aligns with a strong positive
+drift regime. axis-153's CUSUM detected the *accumulated* drift;
+axis-154 pinpoints the *single most likely break point* and gives
+us a p-value the CUSUM axis cannot.
+
+### Tests
+
+51 new tests in `test/dailytokenpettittchangepoint.test.ts` covering:
+
+- option validation (minDays >= 4, top, sort, since/until)
+- pure helper `pettittSummary` on empty / single / constant / clean
+  step (up + down) / monotone (inc + dec) / V-shape / duplicates
+  (average ranks) / outlier robustness vs CUSUM / reverse symmetry
+- builder integration: aggregation, gap fill, source filter,
+  zero/bad-hour drops, since/until window, top cap, all sort keys
+  (`tokens | kt | ktnorm | p | abszshift | tstaridx | ndays`),
+  secondary tie-break on source, flat-source surfacing,
+  determinism, n=2 boundary, n=4 boundary
+
+Total suite: **12273 → 12324** tests (+51).
+
 ## 0.6.407 — 2026-05-04
 
 ### Added — axis-153: `daily-token-cusum-max-deviation`
