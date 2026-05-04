@@ -2,6 +2,183 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.444 — 2026-05-04
+
+### Added — axis-172 daily-token-kuiper-v-cumulative-periodogram
+
+New per-source subcommand
+**`pew-insights daily-token-kuiper-v-cumulative-periodogram`**
+implementing the **KUIPER V TEST** (Kuiper 1960, Proc.
+KNAW A 63:38-47) on the cumulative periodogram of the
+gap-filled mean-centred daily total_tokens series.
+
+#### Definition
+
+For the one-sided non-DC periodogram `P[k]`, k = 1..K with
+K = floor(n/2), the normalised cumulative periodogram is
+
+```
+C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]),  j = 1..K
+```
+
+Kuiper's V is the SUM of the two one-sided maxima of the
+deviation `C[j] - j/K`:
+
+```
+kpDPlus  = max_{j=1..K-1} ( C[j] - j/K )    (clamped at 0)
+kpDMinus = max_{j=1..K-1} ( j/K - C[j] )    (clamped at 0)
+kpV      = kpDPlus + kpDMinus               in [0, 1]
+```
+
+with the Stephens (1970, JRSS-B 32(1):115-122 eq. 1.5)
+finite-K standardisation
+
+```
+kpVStar = ( sqrt(K) + 0.155 + 0.24 / sqrt(K) ) * kpV
+```
+
+and the asymptotic survival series (Kuiper 1960 eq. 3.4)
+
+```
+P(V* > v) = sum_{m=1..} 2 (4 m^2 v^2 - 1) exp(-2 m^2 v^2)
+```
+
+evaluated to ~1e-12 absolute in <= 100 terms.
+
+#### Why Kuiper (FOURTH EDF axis on the cumulative periodogram)
+
+This axis completes a four-member family on the
+cumulative-periodogram domain:
+
+| axis | name                        | norm                       |
+| ---- | --------------------------- | -------------------------- |
+| 167  | Bartlett                    | sup-norm `max |D|`         |
+| 168  | Cramer-von Mises            | uniform L^2                |
+| 169  | Anderson-Darling            | tail-weighted L^2          |
+| 172  | **Kuiper V** (this axis)    | **sum of two one-sided sup**|
+
+The structurally-orthogonal claim is:
+
+- **vs Bartlett-167**. Bartlett is `max(D+, D-)`. Kuiper
+  is `D+ + D-`. A spectrum with both a notable LF excess
+  AND a notable HF deficit drives `kpV ~ 2*bD`; a one-
+  sided spectrum gives `kpV ~ bD`. The ratio `kpV / bD`
+  is a CALIBRATED MARKER of two-sided-vs-one-sided
+  cumulative-spectrum asymmetry. Kuiper is also
+  approximately CYCLIC-ROTATION-INVARIANT (its original
+  motivation: tests on the circle).
+- **vs CvM-168 / AD-169**. Those are L^2 functionals
+  (uniform / tail-weighted). A single-bin spike drives
+  `kpV` one-sided large but CvM/AD only modestly;
+  sustained two-sided shape drives all three large but
+  in different proportions.
+- **vs Fisher-g-166**. Bin-permutation-invariant
+  max-share of one bin; Kuiper is bin-permutation-
+  sensitive (cumulative ordering).
+- **vs all halves axes (115-118, 167-171 halves variants)**.
+  Halves axes compare two halves of the time series;
+  Kuiper-V-CPM tests the entire series's PSD against
+  uniform.
+
+#### Companion bin-indices
+
+Per source we also report `(kpJPlus, kpJMinus)` — the
+1-indexed bins achieving the two one-sided maxima.
+Small `jPlus` (close to 1) flags low-frequency cumulative
+excess; large `jPlus` (close to K-1) flags high-frequency
+cumulative excess. Symmetric for `jMinus`.
+
+#### Tests
+
+Test suite grew by **+19** tests (12944 → 12963):
+
+- `kuiperVSurvival`: published Stephens-1970 critical
+  values within 5e-3 (1.620, 1.747, 1.862, 2.001);
+  monotone non-increasing for v >= 0.5; range [0,1];
+  rejects non-finite input.
+- `kuiperVCumulativePeriodogramStatistic`: closed-form
+  anchors for flat power, single-spike at j=1, single-
+  spike at j=K; bin-reversal symmetry (kpDPlus and
+  kpDMinus swap, kpV invariant); domination of axis-167
+  Bartlett bD (kpV >= bD always; kpV <= 2*bD always).
+- `dailyTokenKuiperVCumulativePeriodogram`: shift-
+  invariance, scale-invariance, rejects too-short /
+  non-finite / constant input.
+- `buildDailyTokenKuiperVCumulativePeriodogram`: empty
+  queue, single-source happy path, dropped-counter
+  surfaces, invalid sort throws.
+
+All 12963 tests pass.
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node dist/cli.js daily-token-kuiper-v-cumulative-periodogram \
+    --min-tenure-days 16 --min-tokens 1000 --sort kpPValue
+
+source                       tenure  bins  kpDPlus   kpDMinus  kpV       kpVStar   kpPValue
+---------------------------  ------  ----  --------  --------  --------  --------  ----------
+claude-code                  72      36    0.313102  0.000000  0.313102  1.939665  1.5163e-2
+openclaw                     18      9     0.481829  0.000000  0.481829  1.558715  1.3525e-1
+hermes                       18      9     0.425384  0.000000  0.425384  1.376117  2.9791e-1
+[redacted-vscode-source]     265     132   0.115255  0.001569  0.116824  1.362754  3.1340e-1
+
+dropped: 0 bad hour_start, 0 non-positive tokens,
+         2 below min-tenure-days, 0 zero-variance,
+         0 zero-power-sum, 0 non-finite-fit
+```
+
+**Interpretation.**
+
+- `claude-code` REJECTS white-noise at 5%
+  (`kpVStar = 1.94 > 1.747`, `p = 0.0152`). All of the
+  cumulative-spectrum departure is one-sided
+  (`kpDMinus = 0`): the cumulative periodogram OVERSHOOTS
+  the uniform reference and never undershoots it,
+  peaking at bin `jPlus = 8 of 36`. So the PSD is biased
+  toward LOW frequencies — concretely, mass concentrated
+  in periods of ~9 days and longer. This is the same
+  source that axis-169 AD-CPM flagged most strongly
+  (`p ~ 1.5e-4`); Kuiper's two-sided sup-norm sees the
+  same low-frequency bias but reports a less extreme
+  p-value because the deviation is one-sided (so only
+  `kpDPlus` contributes — Kuiper has no two-sided
+  amplification advantage here).
+- `openclaw`, `hermes`, `[redacted-vscode-source]` all
+  show `kpDMinus = 0` (or near zero) — uniformly LF-
+  biased cumulative spectra — but their `kpVStar` falls
+  below the 5% critical value of 1.747, so we cannot
+  reject white noise for them.
+- The **ratio `kpV / bD` ≈ 1.0** for ALL four sources
+  (because `kpDMinus ≈ 0`): every source's PSD has a
+  ONE-SIDED cumulative excursion. This is the
+  orthogonality witness against axis-167 working as
+  expected: when `kpDMinus = 0`, Kuiper degenerates to
+  Bartlett's sup-norm and the two axes report the same
+  signal. A future source with both LF excess and HF
+  deficit will be the witness in the other direction.
+
+#### CLI
+
+```
+pew-insights daily-token-kuiper-v-cumulative-periodogram \
+  [--since <iso>] [--until <iso>] [--source <name>] \
+  [--min-tokens <n>] [--min-tenure-days <n>] [--top <n>] \
+  [--sort kpPValue|kpVStar|kpV|tokens|tenure|source] \
+  [--json]
+```
+
+Default sort is `kpPValue` (most-significant first).
+Default min-tenure-days is 32 (matches axes 167-169).
+
+#### Files
+
+- `src/dailytokenkuipervcumulativeperiodogram.ts` — new.
+- `src/cli.ts` — wire the subcommand.
+- `src/format.ts` — pretty renderer.
+- `test/dailytokenkuipervcumulativeperiodogram.test.ts` —
+  19 new unit tests.
+
 ## 0.6.443 — 2026-05-04
 
 ### Refined — axis-171 corpus-level Cochran-Mantel-Haenszel aggregator
