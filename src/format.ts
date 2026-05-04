@@ -20585,6 +20585,7 @@ import type { DailyTokenRunsTestDetrendedReport } from './dailytokenrunstestdetr
 import type { DailyTokenRankVonNeumannDetrendedReport } from './dailytokenrankvonneumanndetrended.js';
 import type { DailyTokenHoeffdingDLag1Report } from './dailytokenhoeffdingdlag1.js';
 import type { DailyTokenFisherGPeriodicityReport } from './dailytokenfishergperiodicity.js';
+import type { DailyTokenBartlettCumulativePeriodogramReport } from './dailytokenbartlettcumulativeperiodogram.js';
 import type { DailyTokenMannWhitneyHalvesReport } from './dailytokenmannwhitneyhalves.js';
 import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsythhalves.js';
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
@@ -26041,6 +26042,93 @@ export function renderDailyTokenFisherGPeriodicity(
   lines.push(
     chalk.dim(
       `(reference anchor: gStat near 1/K = uniform PSD = white-noise-compatible (gPValue near 1); gStat near 1 = single-bin spike = strong periodic component (gPValue near 0); gPValue < 0.05 = REJECT white-noise at 5% -- a single sinusoidal component is statistically significant. gNeg2LogP is chi-squared(2)-distributed under H0 and additive across independent sources for cross-source pooled evidence.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBartlettCumulativePeriodogram(
+  r: DailyTokenBartlettCumulativePeriodogramReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-bartlett-cumulative-periodogram'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedZeroPowerSum)} zero-power-sum, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BARTLETT'S CUMULATIVE PERIODOGRAM TEST -- the classical Bartlett (1955) Kolmogorov-Smirnov-style goodness-of-fit test for white-noise on the gap-filled mean-centred daily total_tokens series. C[j] = (sum_{k=1..j} P[k]) / (sum_{k=1..K} P[k]); bD = max_{j=1..K-1} |C[j] - j/K|; bLambda = sqrt(K-1)*bD; bPValue = Q_KS(bLambda) = 2*sum_{j=1..} (-1)^{j-1} exp(-2 j^2 lambda^2). ONE-HUNDRED-AND-SIXTY-SEVENTH cross-source axis. Where Fisher's g (axis-166) tests for ONE dominant bin, Bartlett asks whether the SHAPE of the spectral CDF deviates from uniform anywhere -- bin-permutation-SENSITIVE (the cleanest possible orthogonality vs axis-166 which is bin-permutation-INVARIANT). Companions: bSignedDevPositive (low-frequency mass overshoot), bSignedDevNegative (high-frequency mass overshoot), bArgMaxBin (frequency at peak discrepancy). References: Bartlett 1955 ch.9; Brockwell & Davis 1991 §10.2; Priestley 1981 §6.1.4.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BARTLETT'S CUMULATIVE PERIODOGRAM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'bins',
+    'mean',
+    'stddev',
+    'argMaxBin',
+    'bD',
+    'bLambda',
+    'bPValue',
+    'devPos',
+    'devNeg',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nFreqBins),
+    formatNumber(s.mean),
+    formatNumber(s.stddev),
+    formatNumber(s.bArgMaxBin),
+    s.bD.toFixed(6),
+    s.bLambda.toFixed(4),
+    s.bPValue.toExponential(4),
+    s.bSignedDevPositive.toFixed(6),
+    s.bSignedDevNegative.toFixed(6),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bD near 0 = C[j] tracks j/K = white-noise-compatible (bPValue near 1); bD large = cumulative spectrum bulges away from uniform = spectral mass concentrated on a CONTIGUOUS BAND (bPValue near 0); bPValue < 0.05 = REJECT white-noise at 5%. devPos > 0 indicates LOW-FREQUENCY mass overshoots uniform; devNeg < 0 indicates HIGH-FREQUENCY mass overshoots. argMaxBin marks the frequency at which the cumulative discrepancy is largest.)`,
     ),
   );
 
