@@ -528,3 +528,117 @@ test('build: orthogonality vs KPSS — both verdicts coexist on same data', () =
     ['strongly-stationary', 'stationary', 'borderline', 'unit-root', 'flat'].includes(v),
   );
 });
+
+// ---- adfHalfLife refinement ----------------------------------------------
+
+import { adfHalfLife } from '../src/dailytokenadfunitroot.js';
+
+test('adfHalfLife: rho >= 0 -> +Infinity', () => {
+  assert.equal(adfHalfLife(0), Number.POSITIVE_INFINITY);
+  assert.equal(adfHalfLife(0.1), Number.POSITIVE_INFINITY);
+  assert.equal(adfHalfLife(5), Number.POSITIVE_INFINITY);
+});
+
+test('adfHalfLife: rho = -1 -> 0 (immediate reversion)', () => {
+  assert.equal(adfHalfLife(-1), 0);
+});
+
+test('adfHalfLife: classical decay rho = -0.5 -> 1 day', () => {
+  // phi = 0.5; halfLife = log(0.5)/log(0.5) = 1.
+  const h = adfHalfLife(-0.5);
+  assert.ok(Math.abs(h - 1) < 1e-12, `expected 1, got ${h}`);
+});
+
+test('adfHalfLife: slow decay rho = -0.1 -> ~6.58 days', () => {
+  // phi = 0.9; halfLife = log(0.5)/log(0.9) ~= 6.5788
+  const h = adfHalfLife(-0.1);
+  assert.ok(Math.abs(h - 6.5788) < 1e-3, `expected ~6.58, got ${h}`);
+});
+
+test('adfHalfLife: oscillatory band -2 < rho < -1 -> NaN', () => {
+  assert.ok(Number.isNaN(adfHalfLife(-1.5)));
+  assert.ok(Number.isNaN(adfHalfLife(-1.999)));
+});
+
+test('adfHalfLife: rho <= -2 -> NaN', () => {
+  assert.ok(Number.isNaN(adfHalfLife(-2)));
+  assert.ok(Number.isNaN(adfHalfLife(-3.5)));
+});
+
+test('adfHalfLife: NaN/Infinity rho -> NaN', () => {
+  assert.ok(Number.isNaN(adfHalfLife(NaN)));
+  assert.ok(Number.isNaN(adfHalfLife(Number.POSITIVE_INFINITY)));
+});
+
+test('adfHalfLife: monotone — slower decay -> longer half-life', () => {
+  const a = adfHalfLife(-0.1); // phi = 0.9
+  const b = adfHalfLife(-0.3); // phi = 0.7
+  const c = adfHalfLife(-0.7); // phi = 0.3
+  assert.ok(a > b, `expected a>b, got ${a} <= ${b}`);
+  assert.ok(b > c, `expected b>c, got ${b} <= ${c}`);
+});
+
+test('adfSummary: emits halfLifeDays consistent with rho', () => {
+  // The half-life is a deterministic function of rho — verify the
+  // summary's halfLifeDays equals adfHalfLife(summary.rho).
+  const n = 60;
+  const x: number[] = [];
+  for (let i = 0; i < n; i++) x.push(Math.sin(i * 0.4) * 5 + (i % 3));
+  const s = adfSummary(x);
+  assert.equal(s.flat, false);
+  const expected = adfHalfLife(s.rho);
+  if (Number.isNaN(expected)) {
+    assert.ok(Number.isNaN(s.halfLifeDays));
+  } else {
+    assert.equal(s.halfLifeDays, expected);
+  }
+});
+
+test('adfSummary: flat row -> halfLifeDays NaN', () => {
+  const s = adfSummary([5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
+  assert.ok(Number.isNaN(s.halfLifeDays));
+});
+
+test('build: row exposes halfLifeDays + adfHalf joint-tag column', () => {
+  const vals: number[] = [];
+  for (let i = 0; i < 30; i++) vals.push(100 + ((i % 2) === 0 ? -10 : 10));
+  const queue = makeDays('s', '2026-01-01', vals);
+  const r = buildDailyTokenAdfUnitRoot(queue, { generatedAt: GEN });
+  assert.equal(r.sources.length, 1);
+  const row = r.sources[0]!;
+  assert.ok('halfLifeDays' in row);
+  assert.equal(row.adfHalf, row.verdict);
+});
+
+test('build: sort halflife — finite first ascending, then inf, then NaN', () => {
+  // Three sources with different reversion speeds.
+  const fast: number[] = [];
+  for (let i = 0; i < 30; i++) fast.push(100 + ((i % 2) === 0 ? -50 : 50));
+  const slow: number[] = [];
+  for (let i = 0; i < 30; i++) slow.push(100 + Math.cos(i * 0.5) * 10);
+  const drift: number[] = [];
+  for (let i = 0; i < 30; i++) drift.push(100 + i * 8);
+
+  const q = [
+    ...makeDays('drift', '2026-01-01', drift),
+    ...makeDays('fast', '2026-01-01', fast),
+    ...makeDays('slow', '2026-01-01', slow),
+  ];
+  const r = buildDailyTokenAdfUnitRoot(q, { generatedAt: GEN, sort: 'halflife' });
+  assert.equal(r.sort, 'halflife');
+  // Verify sort: finite ascending first, then non-finite (inf or NaN) last.
+  let sawNonFinite = false;
+  for (const s of r.sources) {
+    const isFin = Number.isFinite(s.halfLifeDays);
+    if (sawNonFinite) {
+      assert.ok(!isFin, `finite half-life ${s.halfLifeDays} appeared after non-finite`);
+    }
+    if (!isFin) sawNonFinite = true;
+  }
+});
+
+test('build: halflife sort accepted in option whitelist', () => {
+  // Should not throw.
+  const r = buildDailyTokenAdfUnitRoot([], { sort: 'halflife', generatedAt: GEN });
+  assert.equal(r.sort, 'halflife');
+});

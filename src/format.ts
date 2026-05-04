@@ -25224,6 +25224,7 @@ export function renderDailyTokenAdfUnitRoot(
     'pMax',
     'nReg',
     'pApprox',
+    'halfLife',
     'verdict',
     'flat',
     'first',
@@ -25241,6 +25242,13 @@ export function renderDailyTokenAdfUnitRoot(
     s.flat ? '-' : String(s.pMax),
     s.flat || s.degenerate ? '-' : String(s.nReg),
     s.flat || s.degenerate ? '-' : s.pApprox.toFixed(4),
+    s.flat || s.degenerate
+      ? '-'
+      : Number.isNaN(s.halfLifeDays)
+        ? 'NaN'
+        : s.halfLifeDays === Number.POSITIVE_INFINITY
+          ? 'inf'
+          : s.halfLifeDays.toFixed(2),
     s.verdict,
     s.flat ? 'y' : 'n',
     s.firstActiveDay,

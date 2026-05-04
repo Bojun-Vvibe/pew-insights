@@ -115,7 +115,8 @@ export type DailyTokenAdfUnitRootSortKey =
   | 'rho'
   | 'ndays'
   | 'verdict'
-  | 'papprox';
+  | 'papprox'
+  | 'halflife';
 
 export type AdfVerdict =
   | 'strongly-stationary'
@@ -158,6 +159,24 @@ export interface DailyTokenAdfUnitRootSourceRow {
   verdict: AdfVerdict;
   /** Approximate one-sided p-value via 3-anchor interpolation on tau. */
   pApprox: number;
+  /**
+   * Half-life of mean reversion in days, derived from the AR(1)
+   * coefficient phi = 1 + rho via halfLife = log(0.5) / log(phi).
+   * Defined only when -2 < rho < 0 (so 0 < phi < 1, i.e. genuinely
+   * mean-reverting in the AR sense). Set to +Infinity when rho >= 0
+   * (no mean reversion, or explosive); set to NaN when phi <= 0
+   * (oscillatory or pathological); set to NaN when flat/degenerate.
+   */
+  halfLifeDays: number;
+  /**
+   * Joint (KPSS-from-axis-156, ADF-from-axis-157) cross-tab class
+   * placeholder. axis-156 verdict is NOT recomputed here (would
+   * couple two axes); this field surfaces only the ADF half of the
+   * joint tag and equals the verdict above. Provided so downstream
+   * consumers have a stable column name when they merge axis-156
+   * and axis-157 reports for cross-tab analysis.
+   */
+  adfHalf: AdfVerdict;
   /** True iff series has zero variance — ADF undefined. */
   flat: boolean;
   /** True iff regression numerics broke (singular X'X) — fall back to flat-like row. */
@@ -193,8 +212,36 @@ export interface AdfSummary {
   nReg: number;
   verdict: AdfVerdict;
   pApprox: number;
+  halfLifeDays: number;
   flat: boolean;
   degenerate: boolean;
+}
+
+/**
+ * Half-life of mean reversion in days from the AR(1) coefficient
+ * phi = 1 + rho. Solves phi^h = 0.5 -> h = log(0.5) / log(phi).
+ *
+ *   - rho >= 0           : not mean-reverting at the AR(1) level. We
+ *                          return +Infinity (no finite half-life).
+ *   - -1 < rho < 0       : 0 < phi < 1, classical exponential decay.
+ *                          Returns a finite positive half-life in days.
+ *   - rho == -1          : phi = 0, immediate one-step reversion.
+ *                          Returns 0.
+ *   - -2 < rho < -1      : phi in (-1, 0), oscillatory decay; the
+ *                          phi^h = 0.5 equation has no real solution
+ *                          (phi^h is negative for odd h). Returns NaN.
+ *   - rho <= -2          : |phi| >= 1 (oscillatory non-decay or
+ *                          explosive); returns NaN.
+ */
+export function adfHalfLife(rho: number): number {
+  if (!Number.isFinite(rho)) return NaN;
+  if (rho >= 0) return Number.POSITIVE_INFINITY;
+  if (rho === -1) return 0;
+  const phi = 1 + rho;
+  if (phi <= 0) return NaN;
+  if (phi >= 1) return Number.POSITIVE_INFINITY;
+  const h = Math.log(0.5) / Math.log(phi);
+  return Number.isFinite(h) && h > 0 ? h : NaN;
 }
 
 // Standard Dickey-Fuller asymptotic critical values, "tau_mu" model
@@ -349,6 +396,7 @@ export function adfSummary(values: number[]): AdfSummary {
     nReg: 0,
     verdict: 'flat',
     pApprox: 0.99,
+    halfLifeDays: NaN,
     flat: true,
     degenerate: false,
   };
@@ -426,6 +474,7 @@ export function adfSummary(values: number[]): AdfSummary {
       nReg: T,
       verdict: adfVerdict(tau, false),
       pApprox: adfPApprox(tau),
+      halfLifeDays: adfHalfLife(rho),
       flat: false,
       degenerate: false,
     };
@@ -440,6 +489,7 @@ export function adfSummary(values: number[]): AdfSummary {
     nReg: 0,
     verdict: 'unit-root',
     pApprox: 0.99,
+    halfLifeDays: NaN,
     flat: false,
     degenerate: true,
   };
@@ -465,6 +515,7 @@ const SORT_KEYS: DailyTokenAdfUnitRootSortKey[] = [
   'ndays',
   'verdict',
   'papprox',
+  'halflife',
 ];
 
 const VERDICT_RANK: Record<AdfVerdict, number> = {
@@ -584,6 +635,8 @@ export function buildDailyTokenAdfUnitRoot(
       nReg: summary.nReg,
       verdict: summary.verdict,
       pApprox: summary.pApprox,
+      halfLifeDays: summary.halfLifeDays,
+      adfHalf: summary.verdict,
       flat: summary.flat,
       degenerate: summary.degenerate,
       firstActiveDay: first,
@@ -612,6 +665,23 @@ export function buildDailyTokenAdfUnitRoot(
         break;
       case 'papprox':
         primary = a.pApprox - b.pApprox;
+        break;
+      case 'halflife':
+        // Sort by half-life ascending: NaN last, +Infinity second-last,
+        // smallest finite (fastest reverters) first.
+        {
+          const ax = Number.isNaN(a.halfLifeDays)
+            ? Number.POSITIVE_INFINITY
+            : a.halfLifeDays;
+          const bx = Number.isNaN(b.halfLifeDays)
+            ? Number.POSITIVE_INFINITY
+            : b.halfLifeDays;
+          // Tie NaN behind +Infinity by tagging.
+          const aTag = Number.isNaN(a.halfLifeDays) ? 1 : 0;
+          const bTag = Number.isNaN(b.halfLifeDays) ? 1 : 0;
+          if (aTag !== bTag) primary = aTag - bTag;
+          else primary = ax - bx;
+        }
         break;
       case 'tokens':
       default:

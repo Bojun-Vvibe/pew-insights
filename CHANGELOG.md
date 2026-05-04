@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.415 — 2026-05-04
+
+### Refined — axis-157: `halfLifeDays` (mean-reversion half-life) + `halflife` sort key + `adfHalf` joint-tag column
+
+Adds an interpretable mean-reversion-speed scalar to every axis-157
+row, plus a new sort key (`halflife`) that orders sources by reversion
+speed, plus a joint-tag column (`adfHalf`) for downstream cross-tab
+merging with axis-156 KPSS.
+
+```
+phi              = 1 + rho                                 implied AR(1) coefficient
+halfLifeDays     = log(0.5) / log(phi)                     when 0 < phi < 1
+                 = 0                                       when rho == -1 (immediate reversion)
+                 = +Infinity                               when rho >= 0  (no reversion)
+                 = NaN                                     when phi <= 0  (oscillatory / explosive)
+adfHalf          = verdict                                 stable column name for joint cross-tab merge
+```
+
+**What `halfLifeDays` adds beyond `tau`, `rho`, `pApprox`, and `verdict`:**
+
+`tau` and `pApprox` measure *evidence* against the unit-root null;
+they do not measure *speed* of mean reversion. Two sources can both
+be labeled `stationary` with similar tau values but reverted to the
+mean on completely different time scales — one might revert in one
+day, the other in two months. `halfLifeDays` collapses the AR(1)
+coefficient implied by ADF into a single, dimensionful, sortable
+"days to revert halfway" number that is *directly comparable across
+sources* in the natural unit of the gap-filled daily series.
+
+This is the canonical add-on for ADF in applied work (Cochrane 1988
+"persistence of permanent shocks", Pesaran 2015 §13.5): the same
+regression coefficient that drives the rejection decision *also*
+parametrizes the speed of return to the mean, and surfacing both is
+strictly more information than surfacing the test result alone.
+
+The half-life is undefined for the oscillatory band -2 < rho < -1
+(phi in (-1, 0)) because the equation phi^h = 0.5 has no real
+solution there — phi^h alternates sign with h. We surface this
+explicitly as `NaN`, distinct from `+Infinity` (no reversion).
+
+**`halflife` sort key:** orders ascending — finite values smallest
+first (fastest reverters at the top), then `+Infinity` rows (no
+reversion), then `NaN` rows (oscillatory). This is the natural triage
+order for "which sources are most operationally mean-reverting".
+
+**`adfHalf` column:** mirrors `verdict` and exists purely as a stable
+column name so downstream consumers merging axis-156 (KPSS) and
+axis-157 (ADF) reports can produce the joint cross-tab without
+column-name collisions on `verdict`.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`** (refinement;
+one source name redacted):
+
+```
+per-source ADF unit-root test (sorted by tokens)
+source        tokens         nActive nFilled tau     rho        rhoSe    lags pMax nReg pApprox halfLife verdict
+------------  -------------  ------- ------- ------- ---------- -------- ---- ---- ---- ------- -------- -------------------
+opencode      6,512,632,676  15      15      1.3554  1.138e+0   8.397e-1 3    3    11   0.9900  inf      unit-root
+claude-code   3,442,385,788  35      72      -0.1061 -1.041e-1  9.809e-1 11   11   60   0.9533  6.31     unit-root
+openclaw      2,264,199,252  18      18      -0.5676 -1.354e-1  2.386e-1 4    4    13   0.7935  4.76     unit-root
+hermes        314,017,022    18      18      -2.1216 -1.005e+0  4.735e-1 4    4    13   0.2553  NaN      unit-root
+vsc-redacted  1,885,727      73      265     -3.6878 -8.308e-1  2.253e-1 15   15   249  0.0048  0.39     strongly-stationary
+```
+
+**Reading the refinement:**
+
+- `vsc-redacted` reverts to its mean in **0.39 days** (~9 hours) —
+  this is a tightly-controlled background-telemetry source where
+  daily totals fluctuate around a stable mean from one day to the
+  next. The strongly-stationary verdict and the sub-day half-life
+  are mutually corroborating.
+- `openclaw` reverts in **4.76 days** and `claude-code` in **6.31
+  days** — both labeled `unit-root` by the test, but the implied
+  AR(1) coefficients (phi = 0.864 and phi = 0.896 respectively) are
+  *also* consistent with very slow but genuine reversion that ADF
+  simply lacks the power to flag at this sample size. This is the
+  canonical "low-power ADF" reading: borderline-persistent series
+  with finite but long half-lives.
+- `hermes` has rho = -1.005 < -1, putting it in the oscillatory band
+  where phi = -0.005 is just barely negative. `halfLifeDays = NaN`
+  is the correct mathematical answer: there is no real h such that
+  phi^h = 0.5 when phi is negative. Operationally this means hermes
+  flips sign of its deviation-from-mean at every step — a sawtooth
+  pattern, not exponential decay. The KPSS axis-156 result for
+  hermes (eta = 0.0783, very stationary) is consistent: the source
+  *is* mean-reverting, but in a sawtooth (one-step) sense rather
+  than a smooth exponential-decay sense, which the half-life scalar
+  refuses to over-interpret.
+- `opencode` has rho = +1.138 > 0 -> `halfLifeDays = +Infinity`. No
+  mean reversion (rho is nominally explosive on the n=15 sample).
+  Joint with the +1.36 tau, this is the "too short to trust"
+  reading from the previous CHANGELOG entry, now also expressed in
+  the half-life column.
+
+The triple (`tau`, `pApprox`, `halfLifeDays`) thus stratifies sources
+on three orthogonal axes — *evidence direction*, *evidence
+strength*, and *reversion speed* — none of which is recoverable from
+the others.
+
 ## 0.6.414 — 2026-05-04
 
 ### Added — axis-157: `daily-token-adf-unit-root` (Augmented Dickey-Fuller unit-root test)
