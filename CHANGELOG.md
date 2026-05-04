@@ -2,6 +2,138 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.471 — 2026-05-05
+
+### Refactor — `classifyHlMwShiftAgreement` cross-axis joiner (axes 186 + 115)
+
+Adds a pure-function reporter that joins per-source rows
+from axis-186 Hodges-Lehmann signed shift estimator and
+axis-115 Mann-Whitney rank-sum z by `source` and assigns
+each joined row to one of six mutually-exclusive
+shift-agreement buckets at configurable two-sided alpha.
+
+THE CORE CONTRIBUTION: handling the OPPOSITE SIGN
+CONVENTIONS of the two axes. Axis-186 reports
+`hlSign = +1` IFF the second-half median is larger;
+axis-115 reports `mwZ > 0` IFF the FIRST-half is
+stochastically larger (because U is computed from the
+first-half rank sum). The classifier embeds this
+inversion in its bucket logic so callers do not need to
+remember it:
+
+  - `shift-agree-second-larger`: hlSign > 0 AND mwZ < 0
+  - `shift-agree-first-larger`:  hlSign < 0 AND mwZ > 0
+  - `shift-only-hl-decisive`:    HL CI excludes 0;
+                                 |mwZ| below z_crit.
+                                 Diagnoses heavy-tied
+                                 series whose pooled-
+                                 rank sum is dominated
+                                 by ties.
+  - `shift-only-mw-decisive`:    HL CI straddles 0;
+                                 |mwZ| above z_crit.
+                                 Diagnoses series whose
+                                 within-half dispersion
+                                 widens the CI past 0
+                                 even though the rank-
+                                 sum is clearly
+                                 unbalanced.
+  - `shift-sign-conflict`:       both decisive AND
+                                 signs strictly
+                                 disagree on which half
+                                 is larger.
+                                 Antipodal-influence
+                                 diagnostic.
+  - `no-decisive-shift`:         neither decisive.
+
+The reporter also surfaces `bothDecisive`,
+`atLeastOneDecisive`, `signConflicts`, the count of
+sources only in HL, and the count of sources only in
+MW (so the caller can detect coverage gaps when the two
+axis builders use different filters, e.g. different
+`--min-tenure-days`).
+
+WHY THIS IS THE RIGHT JOIN. axis-186 (HL shift
+estimator + Lehmann CI) and axis-115 (MW rank-sum) are
+designed to test the EXACT SAME location-shift null
+under different lossy summaries: the HL CI summarizes
+the FULL DISTRIBUTION of the n1*n2 pairwise differences,
+while the MW Z summarizes the ORDER STATISTICS via a
+single weighted rank-sum. Their CROSS-PRODUCT decision
+table directly recovers the SHAPE of the location
+departure:
+
+  - both decisive, signs agree => clean monotone shift
+  - HL only decisive          => median pairwise diff
+                                 bounded away from 0
+                                 but rank sum diluted
+                                 by ties / sparse rows
+  - MW only decisive          => rank-sum unbalanced
+                                 but within-half spread
+                                 widens the CI past 0
+  - both decisive, conflict   => bimodal-within-half /
+                                 heavy-tied location
+                                 departure where the two
+                                 summaries disagree on
+                                 which half is larger
+
+19 new unit tests cover empty-input handling, alpha-
+range validation, duplicate-source rejection, non-finite
+hlDelta / mwZ rejection, invalid-hlSign rejection, all
+six bucket transitions, hlSign === 0 routing (defers to
+MW sign when HL CI excludes 0), source-set asymmetry
+surfacing, bucket-count integrity (sum equals row
+count), z_crit accuracy at alpha=0.01 (~ 2.576) and
+alpha=0.05 (~ 1.96), and deterministic source-asc
+ordering.
+
+#### Live cross-axis read
+
+Joining the four axis-186 HL rows from v0.6.470 with
+the same sources from a fresh axis-115 MW run shows the
+expected agreement pattern:
+
+```
+source       hlDelta       hlCiExcl0  mwZ      bucket
+-----------  ------------  ---------  -------  -----------------------
+claude-code  +18,998,644   no         -3.27    shift-only-mw-decisive
+hermes       +8,905,175    no         -0.50    no-decisive-shift
+openclaw     -119,325,554  YES        +2.31    shift-agree-first-larger
+vscode-cp    0             no         +0.81    no-decisive-shift
+```
+
+INTERPRETATION:
+
+  - **openclaw** has both axes decisive AND sign-agree:
+    HL says second-half is decisively SMALLER (CI
+    [-200.8M, -25.0M] excludes 0), MW says second-half
+    is decisively SMALLER (mwZ > 0 with the inverted
+    convention => first-half larger). The classifier
+    routes to `shift-agree-first-larger` — the cleanest
+    LOCATION verdict in the corpus.
+  - **claude-code** is the most diagnostic case:
+    `shift-only-mw-decisive`. The MW rank-sum says the
+    first-half is decisively larger (mwZ = -3.27, HL
+    convention agrees with positive shift), but the HL
+    CI [0, +37.5M] just barely INCLUDES 0. This is the
+    "rank-sum unbalanced but within-half spread widens
+    the CI past 0" diagnostic: the second half does
+    have stochastically larger ranks, but the
+    cross-pair median difference distribution is wide
+    enough that the 95% CI cannot exclude 0. Useful
+    operational read: claude-code's level shift is
+    REAL but the EFFECT SIZE is fragile.
+  - **hermes** and **vscode-cp** both land in
+    `no-decisive-shift`, confirming the negative
+    location verdict from the original axis-186 read
+    (vscode-cp's hlDelta = 0 also routes here because
+    |mwZ| = 0.81 below z_crit = 1.96).
+
+This is a STRICTLY STRONGER diagnostic than either
+axis alone or the existing axis-184/185 cross-axis
+joiner (which addresses the joint location-AND-scale
+question, not the location-only "shift estimate vs
+rank-test agreement" question).
+
 ## 0.6.470 — 2026-05-05
 
 ### Feature — `daily-token-hodges-lehmann-shift-halves` (axis-186)
