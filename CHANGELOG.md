@@ -2,6 +2,116 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.412 — 2026-05-04
+
+### Added — axis-156: `daily-token-kpss-stationarity`
+
+Per-source KPSS (Kwiatkowski-Phillips-Schmidt-Shin, 1992) level-
+stationarity test on the gap-filled daily `total_tokens` series.
+
+```
+e[i]      = x[i] - mu                                 demeaned residual
+S[t]      = sum_{i<=t} e[i]                           partial sum
+gamma[h]  = (1/n) sum_{i=h..n-1} e[i] * e[i-h]        sample autocovariance
+w(h, L)   = 1 - h / (L + 1)                           Bartlett kernel weight
+sigma2_lr = gamma[0] + 2 * sum_{h=1..L} w(h,L) * gamma[h]    HAC long-run var
+L         = max(1, floor(4 * (n / 100)^(1/4)))        Schwert (1989) bandwidth
+eta       = sum_{t=0..n-1} S[t]^2 / (n^2 * sigma2_lr) KPSS statistic
+```
+
+`verdict` cutoffs are KPSS Table 1 (level model):
+
+```
+eta < 0.347              -> "stationary"             (cannot reject H0 at 10%)
+0.347 <= eta < 0.463     -> "borderline"             (reject at 10%, not 5%)
+0.463 <= eta < 0.739     -> "nonstationary"          (reject at 5%, not 1%)
+eta >= 0.739             -> "strongly-nonstationary" (reject at 1%)
+```
+
+**Why this is the genuinely-new orthogonal class** (not a Buishand /
+Pettitt / CUSUM / Mann-Kendall variant):
+
+- **Inverted hypothesis.** Buishand R/U (axis-155), Pettitt
+  (axis-154), and CUSUM-max (axis-153) all test H0 = no changepoint,
+  rejecting in favor of a structural break. KPSS tests H0 =
+  *level stationarity*, rejecting in favor of a unit root or trend.
+  Same partial-sum object S[t] is reused, but the inference logic is
+  reversed.
+- **HAC long-run variance.** Buishand standardizes by the i.i.d.
+  population sigma; KPSS divides by a Bartlett-kernel HAC long-run
+  variance estimator (Newey-West, 1987) that *explicitly absorbs
+  serial dependence* via the truncated Bartlett-tapered autocovariance
+  spectrum out to L = floor(4 * (n / 100)^0.25) lags. No prior axis
+  uses an HAC normalization.
+- **L2 (integrated) vs sup-norm path statistic.** CUSUM-max
+  (axis-153) is a sup norm; Buishand R is a range. KPSS is the L2
+  norm of the partial-sum process (sum of squared partial sums).
+- **Concrete asymptotic-table cutoffs.** Mann-Kendall, Cox-Stuart,
+  Pettitt, Buishand all expose either tau / S statistics or
+  uncalibrated R/Q. KPSS surfaces a categorical `verdict` derived
+  directly from the published critical-value table, so a non-statistician
+  can read "stationary | borderline | nonstationary | strongly-
+  nonstationary" without converting eta to a p-value.
+
+**Knobs:**
+
+- `--min-days <n>` (default 8): minimum gap-filled tenure. Schwert
+  bandwidth is `floor(4 * (n / 100)^0.25)`; below n=8 the bandwidth is
+  too small relative to the sample for the HAC variance to be
+  meaningful, so the floor enforces n >= 8.
+- `--top <n>` (default 0 = no cap).
+- `--sort <key>` (default `tokens`): `tokens | eta | bandwidth |
+  lrvariance | ndays | verdict`.
+
+**Live-smoke against real `~/.config/pew/queue.jsonl`:**
+
+```
+per-source KPSS level-stationarity (sorted by tokens)
+source         tokens         nActive  nFilled  eta     L  lrVar      gamma0     verdict
+-------------  -------------  -------  -------  ------  -  ---------  ---------  -------------
+opencode       6,496,141,646  15       15       0.2495  2  2.849e+16  3.333e+16  stationary
+claude-code    3,442,385,788  35       72       0.6042  3  4.736e+16  2.367e+16  nonstationary
+openclaw       2,262,784,742  18       18       0.4759  2  1.668e+16  9.002e+15  nonstationary
+codex          809,624,660    8        8        0.2324  2  1.564e+16  1.506e+16  stationary
+hermes         313,219,758    18       18       0.0782  2  1.360e+14  9.293e+13  stationary
+vsc-redacted   1,885,727      73       265      0.0873  5  1.033e+9   7.303e+8   stationary
+```
+
+(One real source name is redacted in this CHANGELOG; KPSS is computed
+on raw queue rows so live values are unaffected.)
+
+**Reading the live-smoke:**
+
+- `claude-code` (eta = 0.6042) clears the 5% cutoff (0.463) and lands
+  in the **nonstationary** band — consistent with the heavy regime
+  shift Buishand R already flagged (axis-155 rStar = 1.7577, axis-154
+  Pettitt detected the 2026-04-21 split). KPSS's HAC normalization
+  *inflates* lrVar to 4.7e16 (vs gamma0 = 2.4e16, so a factor 2.0x
+  inflation from positive serial dependence) which **shrinks** eta
+  relative to the i.i.d. version — yet eta is still > 0.463. This is
+  the strongest "the mean is genuinely moving" signal in the dataset.
+- `openclaw` (eta = 0.4759) is just over the 5% cutoff: the recent
+  step-up from the 2026-04-19 spike onwards is enough to reject
+  level-stationarity but not strongly. Its lrVar > gamma0 confirms
+  positive lag-1+ autocorrelation (typical of a step shift).
+- `opencode` (eta = 0.2495) — solidly **stationary** at the 10%
+  level. Its lrVar (2.85e16) is *smaller* than gamma0 (3.33e16),
+  meaning there's net negative serial dependence — burst-then-rest
+  rhythm rather than persistent drift. Surprising given its high
+  rStar (1.2621); this is exactly what KPSS adds over Buishand —
+  Buishand sees the path range, KPSS asks whether there's a *trend*
+  in the mean and answers "no, it's mean-reverting noise around a
+  stable level".
+- `hermes` (eta = 0.0782) is the cleanest stationary source — small
+  partial-sum excursions, lrVar barely above gamma0.
+- `codex` sits at n = 8 (the floor) with eta = 0.2324 — stationary,
+  but with only 8 days the HAC bandwidth is L = 2 and the cutoffs
+  are conservative; treat as a weak-evidence verdict.
+
+The KPSS verdict and Buishand rStar / Pettitt KT are now three
+independently calibrated lenses on the same per-source mean
+trajectory.
+
 ## 0.6.411 — 2026-05-04
 
 ### Refined — axis-155: `rOverQ` shape descriptor (one-sided vs V-shape)
