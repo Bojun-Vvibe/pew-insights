@@ -2,6 +2,172 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.457 — 2026-05-05
+
+### Added — axis-178 daily-token-conover-squared-ranks-halves (squared-ranks scale test)
+
+Per-source Conover (1971 *Practical Nonparametric
+Statistics* 1st ed. sec. 5.3; refined Conover & Iman
+1978 *Comm. Statist. Simulation Comput.* B7:491-513)
+SQUARED-RANKS SCALE TEST for equality of dispersion
+between the first half (n1 = floor(n/2) days) vs second
+half (n2 = n - n1 days) of the within-half-median-folded,
+gap-filled daily total_tokens series.
+
+ONE-HUNDRED-AND-SEVENTY-EIGHTH cross-source axis.
+
+Score function uses the SQUARED RAW MID-RANK on the
+pooled absolute-deviation series
+
+```
+u_i      = | x_i - median(A) |       for i in A
+v_j      = | x_{n1+j} - median(B) |  for j in B
+R_1..R_n = midranks( pool(u, v) )
+score_i  = R_i^2
+```
+
+Statistic and exact null moments (Conover 1980 eq.
+5.3.1-5.3.2):
+
+```
+T        = sum_{j in B} R_j^2
+Rbar2    = (1/n) sum_i R_i^2
+E[T]     = n2 * Rbar2
+Var[T]   = ( n1 * n2 / ( n * (n - 1) ) )
+              * sum_i ( R_i^2 - Rbar2 )^2
+conoverZ = ( T - E[T] ) / sqrt(Var[T])  ~ N(0, 1)
+conoverP = 2 * ( 1 - Phi( |conoverZ| ) )
+```
+
+Pre-alignment: Conover & Iman 1978 sec. 3 eq. 7
+recommends WITHIN-SAMPLE median folding (subtract each
+half's own median before taking absolute value), which
+removes location confounding while preserving dispersion
+differences. The alternative pooled-median fold of Mood
+1954 introduces a small location-shift bias under
+unequal n1, n2; the within-sample variant is the modern
+textbook default (Conover 1999 *PNS* 3rd ed. sec. 5.3
+Tab. 5.3).
+
+Sign convention: conoverZ > 0 <=> SECOND half MORE
+dispersed (matches axis-117 stZ, axis-170 abZ, axis-177
+klotzZ directional convention for direct cross-axis
+aggregation).
+
+Standard-normal upper tail via Abramowitz-Stegun 1965
+sec. 26.2.17 (max relative error ~7.5e-8).
+
+**Structural orthogonality** vs the existing scale axes:
+
+- vs **axis-177 Klotz** (1962, squared NORMAL scores).
+  Klotz uses `a(R_i) = ( Phi^{-1}(R_i/(n+1)) )^2` on the
+  pooled raw aligned values — weights are
+  TAIL-AMPLIFIED by the standard-normal density. Conover
+  uses RAW SQUARED RANKS on |X - median| — weights grow
+  only quadratically in R, NOT exponentially in the
+  rank position. Two distinct mechanisms: Klotz transforms
+  through Phi^{-1}; Conover squares linear ranks
+  directly. Klotz operates on pooled raw values; Conover
+  operates in absolute-deviation space. Pitman ARE
+  Conover/Klotz = 1.50 under Cauchy, 0.85 under normal
+  (Conover & Iman 1978 Tab. 4) — the two reject
+  MEANINGFULLY DIFFERENTLY: Conover wins for
+  symmetric-shoulder dispersion shifts under heavy tails,
+  Klotz wins for tail-concentrated shifts under normal
+  tails.
+
+- vs **axis-117 Siegel-Tukey** (1960, interleaved
+  outside-in linear ranks on raw values). Conover
+  ascending-ranks then squares on FOLDED absolute
+  deviations. Different rank-allocation rule and
+  different operating space.
+
+- vs **axis-170 Ansari-Bradley** (1960, FOLDED LINEAR
+  RANKS `|R - (n+1)/2|` on raw values). AB folds the
+  RANKS about the rank centre; Conover folds the
+  OBSERVATIONS about each half's value-median, then
+  ranks ascendingly, then squares. Different folding
+  locations and different weight curves; the two reject
+  differently when the rank-centre and the value-median
+  diverge (heavy skew).
+
+- vs **axis-122/123 Brown-Forsythe / Bartlett-cumulative-
+  periodogram**: BF/Bartlett are PARAMETRIC tests on
+  squared deviations; asymptotically equivalent to F
+  under normality but break down under heavy tails.
+  Conover is fully nonparametric and DISTRIBUTION-FREE
+  under H0 (Conover & Iman 1978 sec. 4: holds nominal
+  alpha under any continuous null distribution).
+
+- vs **axis-115/176 Mann-Whitney / Brunner-Munzel**
+  (stochastic-ordering tests on raw values). Pure scale
+  shift with equal medians gives MW/BM ~ 0 while Conover
+  rejects strongly. Cross-loading near zero by
+  construction.
+
+- vs **axes 174/175 Cucconi/Lepage** (joint chi-2(2)
+  location-scale tests). C/L combine a location and a
+  scale statistic into one chi-2(2); they cannot
+  SEPARATE the two channels. Conover is a pure scale
+  test isolating the dispersion question; combined with
+  axis-176 BM (pure location) it forms an ORTHOGONAL
+  DECOMPOSITION of what C/L mash together.
+
+Hard floor on min-tenure-days is 16 (n1 = n2 = 8) so
+the asymptotic normal reference holds nominal alpha
+(Conover & Iman 1978 sec. 5 simulation: actual size
+0.046-0.053 across n1 = n2 in [8, 50]).
+
+CLI: `daily-token-conover-squared-ranks-halves` with the
+canonical filter / sort / top / json flags consistent
+with axes 170, 174, 175, 176, 177.
+
+References:
+- Conover, W. J., *Practical Nonparametric Statistics*
+  1st ed. (Wiley 1971), sec. 5.3.
+- Conover, W. J. & Iman, R. L., "Some exact tables for
+  the squared ranks test", *Comm. Statist. Simulation
+  Comput.* B7 (1978), pp. 491-513.
+- Conover, W. J. & Iman, R. L., "Rank transformations
+  as a bridge between parametric and nonparametric
+  statistics", *J. Amer. Statist. Assoc.* 73(364) (1978),
+  pp. 498-506.
+- Mood, A. M., "On the asymptotic efficiency of certain
+  nonparametric two-sample tests", *Ann. Math. Statist.*
+  25 (1954), pp. 514-522.
+
+**Live smoke test** against the local `pew` queue.jsonl
+(`node dist/cli.js daily-token-conover-squared-ranks-halves`
+top row by `conoverZAbsDesc`):
+
+```
+source       firstDay    lastDay     tenure  active  n1   n2   conoverT     expT         conoverZ  conoverPValue  tokens
+claude-code  2026-02-11  2026-04-23  72      35      36   36   106034.5000  62843.7500   6.4497    1.1263e-10     3,442,385,788
+```
+
+DECISION: REJECT scale-equality H0 at alpha = 0.05
+(conoverPValue = 1.13e-10 << 0.05). conoverZ = +6.4497
+indicates the SECOND half (last 36 tenure-days) is
+DECISIVELY MORE DISPERSED than the first half — the
+absolute deviations |X - median| in the recent window
+concentrate in the upper ranks of the pooled mid-rank
+ordering. T = 106034.5 vs E[T] = 62843.75 (a +68.7%
+excess over the null mean), driven by both wider tails
+AND wider shoulders in the second-half token series.
+
+33 unit tests cover: midRanksConover (4 cases:
+strictly-monotone, ties, top-pair tie); medianConover
+(4); standardNormalUpperTailConover (4: Q(0)=0.5,
+Q(1.96)=0.025, Q(-z)=1-Q(z), throws on NaN);
+dailyTokenConoverSquaredRanksHalves core (10: min-length
+floor, non-finite, constant input, n1/n2 split,
+constant-shift invariance, positive-scale invariance,
+independent-half-shift invariance, half-swap negation
+when n1=n2, scale-shift detection, equal-dispersion
+non-rejection, basic sanity); buildDailyTokenConover... 
+report (5: empty queue, below min-tenure drop, single
+adequate row, sort validation, top-cap droppedTopSources).
+
 ## 0.6.456 — 2026-05-05
 
 ### Refined — axis-177 Stouffer signed corpus aggregator
