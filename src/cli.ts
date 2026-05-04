@@ -211,6 +211,7 @@ import {
   renderDailyTokenFlignerPolicelloHalves,
   renderDailyTokenYuenWelchHalves,
   renderDailyTokenSavageHalves,
+  renderDailyTokenBwsHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -690,6 +691,10 @@ import {
   buildDailyTokenSavageHalves,
   type DailyTokenSavageHalvesSort,
 } from './dailytokensavagehalves.js';
+import {
+  buildDailyTokenBaumgartnerWeissSchindlerHalves,
+  type DailyTokenBwsHalvesSort,
+} from './dailytokenbaumgartnerweisschindlerhalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -44647,6 +44652,108 @@ program
           process.stdout.write(
             renderDailyTokenSavageHalves(report) + '\n',
           );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-baumgartner-weiss-schindler-halves')
+  .description(
+    "Per-source BAUMGARTNER-WEISS-SCHINDLER (BWS) 1998 NONPARAMETRIC COMBINED LOCATION-AND-SCALE TWO-SAMPLE TEST between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTY-FIFTH cross-source axis). Statistic bwsB = (B + B') / 2 where B = (1/n1) sum_i (R_i - i(N+1)/(n1+1))^2 / ((i/(n1+1)) (1 - i/(n1+1)) n2 (N+1)/(n1+1)) (Baumgartner-Weiss-Schindler 1998 Biometrics 54:1129-1135 eq. 2). Asymptotic upper-tail p-value via Murakami 2006 J. Stat. Comput. Simul. 76:545-561 truncated eigen-series. STRUCTURAL ORTHOGONALITY: vs axis-175 LEPAGE / axis-174 CUCCONI BWS is a SINGLE quadratic functional of the ECDF (no orthogonal location/scale decomposition); Pitman ARE BWS/Lepage ~ 1.06 at normal location-shift. vs axis-115 MW / axis-184 SAVAGE / axis-181 VDW / axis-183 YW (pure-location) BWS rejects under EITHER location OR scale departure; high bwsB with small MW |z| diagnoses pure-scale shift. vs axis-179 MOOD / axis-177 KLOTZ / axis-178 CONOVER / axis-180 SUKHATME / axis-170 AB (pure-scale) BWS picks up location-only shifts those miss. Companion bwsSign = sign(median(B-half pooled ranks) - median(A-half pooled ranks)) preserves SECOND-half-positive cross-axis convention without altering canonical BWS p-value. Refs: Baumgartner-Weiss-Schindler 1998; Murakami 2006; Marozzi 2009 Comm. Stat. Sim. Comp. 38:1318-1334.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8 by Murakami 2006 sec. 4). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bwsBDesc (default) | bwsB | bwsPValue | bwsPValueDesc | bwsSignedB | bwsSignedBAbsDesc | tokens | tenure | source.',
+    'bwsBDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bwsB',
+          'bwsBDesc',
+          'bwsPValue',
+          'bwsPValueDesc',
+          'bwsSignedB',
+          'bwsSignedBAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBaumgartnerWeissSchindlerHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenBwsHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(renderDailyTokenBwsHalves(report) + '\n');
         }
       } catch (e) {
         die(e);

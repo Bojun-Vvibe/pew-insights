@@ -20630,6 +20630,7 @@ import type { DailyTokenVanDerWaerdenHalvesReport } from './dailytokenvanderwaer
 import type { DailyTokenFlignerPolicelloHalvesReport } from './dailytokenflignerpolicellohalves.js';
 import type { DailyTokenYuenWelchHalvesReport } from './dailytokenyuenwelchhalves.js';
 import type { DailyTokenSavageHalvesReport } from './dailytokensavagehalves.js';
+import type { DailyTokenBwsHalvesReport } from './dailytokenbaumgartnerweisschindlerhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27567,6 +27568,89 @@ export function renderDailyTokenSavageHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: savPValue < 0.05 = REJECT identical-distribution H0 at alpha=0.05 (two-sided standard-normal reference). savZ > 0 = SECOND half ranks cluster at the LARGER end of the pooled sample (B stochastically dominates A; lehmann theta < 1). Matches axis-117/170/176-183 SECOND-half-positive convention. Cross-axis with axis-115 MW: agreement under uniform stochastic shift; disagreement (Savage strong, MW weak) flags right-tail concentration. Cross-axis with axis-181 VDW: agreement under symmetric F; disagreement flags exponential vs normal tail shape.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBwsHalves(
+  r: DailyTokenBwsHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-baumgartner-weiss-schindler-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BAUMGARTNER-WEISS-SCHINDLER 1998 nonparametric combined LOCATION-AND-SCALE two-sample test. bwsB = (B + B') / 2 where each half-contribution is a chi-square-weighted sum of squared deviations of pooled sub-sample order statistics from their hypergeometric expectations (Baumgartner-Weiss-Schindler 1998 Biometrics 54:1129-1135 eq. 2). Asymptotic p-value via Murakami 2006 truncated eigen-series. ONE-HUNDRED-AND-EIGHTY-FIFTH cross-source axis. STRUCTURALLY ORTHOGONAL: vs axis-175 LEPAGE / axis-174 CUCCONI BWS is a SINGLE quadratic functional of the ECDF (Pitman ARE BWS/Lepage ~ 1.06 at normal location-shift). vs axis-115 MW / axis-184 SAVAGE / axis-181 VDW (pure-location) BWS rejects under EITHER location OR scale departure. vs axis-179 MOOD / axis-177 KLOTZ / axis-180 SUKHATME (pure-scale) BWS picks up location-only shifts those miss. Companion bwsSign = sign(median(B-half ranks) - median(A-half ranks)) preserves SECOND-half-positive cross-axis convention.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BWS combined location-and-scale test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'BfromA',
+    'BfromB',
+    'bwsB',
+    'bwsPValue',
+    'sign',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.bwsN1),
+    formatNumber(s.bwsN2),
+    s.bwsBfromA.toFixed(4),
+    s.bwsBfromB.toFixed(4),
+    s.bwsB.toFixed(4),
+    s.bwsPValue.toExponential(4),
+    s.bwsSign === 1 ? '+' : s.bwsSign === -1 ? '-' : '0',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bwsPValue < 0.05 = REJECT identical-distribution H0 at alpha=0.05. bwsB is non-negative omnibus statistic; sign of departure encoded in companion bwsSign (+: second-half pooled-rank median larger; -: first-half larger; 0: tied medians, pure-scale departure). Cross-axis with axis-115 MW: high bwsB + small MW |z| flags pure-scale shift. Cross-axis with axis-179 MOOD: high bwsB + small MOOD flags pure-location shift. Cross-axis with axis-175 LEPAGE: agreement under joint location-scale departure; disagreement diagnoses ECDF-shape departures Lepage's rank-decomposition misses.)`,
     ),
   );
 
