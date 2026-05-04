@@ -209,6 +209,7 @@ import {
   renderDailyTokenSukhatmeHalves,
   renderDailyTokenVanDerWaerdenHalves,
   renderDailyTokenFlignerPolicelloHalves,
+  renderDailyTokenYuenWelchHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -680,6 +681,10 @@ import {
   buildDailyTokenFlignerPolicelloHalves,
   type DailyTokenFlignerPolicelloHalvesSort,
 } from './dailytokenflignerpolicellohalves.js';
+import {
+  buildDailyTokenYuenWelchHalves,
+  type DailyTokenYuenWelchHalvesSort,
+} from './dailytokenyuenwelchhalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -44415,6 +44420,125 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenFlignerPolicelloHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-yuen-welch-halves')
+  .description(
+    "Per-source YUEN-WELCH 1974 TRIMMED-MEAN LOCATION TEST with WELCH-SATTERTHWAITE df on WINSORIZED variances between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-EIGHTY-THIRD cross-source axis). Symmetric trim fraction gamma per side, default 0.2 (Wilcox 2017 sec. 5.3). Statistic ywT = (tm(B) - tm(A)) / sqrt(d(A) + d(B)) ~ Student-t(ywDf) under H0 (Yuen 1974 eq. 1-3). STRUCTURALLY ORTHOGONAL: vs axis-182 Fligner-Policello YW is a MOMENT test on trimmed central mass with re-descending influence; FP is a RANK test (placement-count truncated). vs axis-181 VDW / axis-115 MW / axis-176 BM YW uses a Student-t reference and dominates power under heavy-tailed F (Yuen 1974 Table 1; Wilcox 2017 sec. 5.3.4). vs the entire scale family (170 AB, 174 Cucconi, 175 Lepage, 177 Klotz, 178 Conover, 179 Mood, 180 Sukhatme) YW isolates the LOCATION channel at the trimmed-mean influence band. Refs: Yuen 1974 Biometrika 61:165-170; Welch 1947 Biometrika 34:28-35; Wilcox 2017 sec. 5.3.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8 leaves h1 = h2 = 4 effective trimmed obs at gamma = 0.2). Default 16.',
+    '16',
+  )
+  .option(
+    '--trim-fraction <g>',
+    'symmetric trim fraction per side; must be in [0, 0.5). Default 0.2 (Wilcox 2017).',
+    '0.2',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: ywTAbsDesc (default) | ywT | ywPValue | ywPValueDesc | tokens | tenure | source.',
+    'ywTAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        trimFraction: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const trimFraction = Number.parseFloat(opts.trimFraction);
+        if (
+          !Number.isFinite(trimFraction) ||
+          trimFraction < 0 ||
+          trimFraction >= 0.5
+        ) {
+          throw new Error(
+            `--trim-fraction must be in [0, 0.5) (got ${opts.trimFraction})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'ywT',
+          'ywTAbsDesc',
+          'ywPValue',
+          'ywPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenYuenWelchHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          trimFraction,
+          top,
+          sort: opts.sort as DailyTokenYuenWelchHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenYuenWelchHalves(report) + '\n',
           );
         }
       } catch (e) {

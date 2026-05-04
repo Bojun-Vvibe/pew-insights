@@ -20628,6 +20628,7 @@ import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
 import type { DailyTokenVanDerWaerdenHalvesReport } from './dailytokenvanderwaerdenhalves.js';
 import type { DailyTokenFlignerPolicelloHalvesReport } from './dailytokenflignerpolicellohalves.js';
+import type { DailyTokenYuenWelchHalvesReport } from './dailytokenyuenwelchhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27401,3 +27402,89 @@ export function renderDailyTokenFlignerPolicelloHalves(
   return lines.join('\n').replace(/\n+$/, '');
 }
 
+export function renderDailyTokenYuenWelchHalves(
+  r: DailyTokenYuenWelchHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-yuen-welch-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    trim: ${r.trimFraction.toFixed(2)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source YUEN-WELCH 1974 TRIMMED-MEAN LOCATION TEST with WELCH-SATTERTHWAITE df on WINSORIZED variances. Trim fraction gamma per side, default 0.2 (Wilcox 2017 sec. 5.3). ywT = (tm(B) - tm(A)) / sqrt(d(A) + d(B)) ~ Student-t(ywDf) under H0. ONE-HUNDRED-AND-EIGHTY-THIRD cross-source axis. STRUCTURALLY ORTHOGONAL: vs axis-182 Fligner-Policello YW is a MOMENT test on trimmed central mass with re-descending influence; FP is a RANK test (placement-count truncated). vs axis-181 VDW / axis-115 MW / axis-176 BM: YW uses Student-t reference instead of normal/Welch-t-on-ranks; dominant power under heavy-tailed F (Yuen 1974 Table 1; Wilcox 2017 sec. 5.3.4). vs the entire scale family (170/174/175/177-180): YW isolates LOCATION at the trimmed-mean influence band. Refs: Yuen 1974 Biometrika 61:165-170; Welch 1947 Biometrika 34:28-35; Wilcox 2017 sec. 5.3.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source YUEN-WELCH trimmed-mean location test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'h1',
+    'h2',
+    'tmA',
+    'tmB',
+    'ywT',
+    'ywDf',
+    'ywPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.ywN1),
+    formatNumber(s.ywN2),
+    formatNumber(s.ywH1),
+    formatNumber(s.ywH2),
+    s.ywTrimmedMeanA.toFixed(2),
+    s.ywTrimmedMeanB.toFixed(2),
+    s.ywT.toFixed(4),
+    s.ywDf.toFixed(2),
+    s.ywPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: ywPValue < 0.05 = REJECT trimmed-mean equality H0 at alpha=0.05 (two-sided Student-t reference). ywT > 0 = SECOND half has LARGER trimmed mean (matches axis-117/170/176-182 SECOND-half-positive convention). Compared with axis-181 vdwZ and axis-182 fpZ: cross-axis sign agreement under symmetric F; disagreement flags skew (YW captures, rank obscures) or heavy tails (rank wins on robustness).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
