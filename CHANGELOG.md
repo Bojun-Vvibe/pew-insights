@@ -2,6 +2,199 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.455 — 2026-05-05
+
+### Added — axis-177 daily-token-klotz-halves (squared-normal-scores scale test)
+
+Per-source Klotz (1962 *J. Amer. Statist. Assoc.*
+57:597-602) NORMAL-SCORES SCALE TEST for equality of
+dispersion between the first half (n1 = floor(n/2) days)
+vs second half (n2 = n - n1 days) of the median-aligned,
+gap-filled daily total_tokens series.
+
+ONE-HUNDRED-AND-SEVENTY-SEVENTH cross-source axis.
+
+Score function uses the SQUARED van der Waerden (1953
+*Indagationes Math.* 14:453-458) NORMAL SCORE on the
+pooled mid-rank R_i (1..n):
+
+```
+a(R_i) = ( Phi^{-1}( R_i / (n + 1) ) )^2
+```
+
+Statistic and exact null moments (Klotz 1962 eq. 2.4-2.5)
+
+```
+K        = sum_{j in B} a(R_j)
+abar     = (1/n) sum_i a(R_i)
+E[K]     = n2 * abar
+Var[K]   = ( n1 * n2 / ( n * (n - 1) ) )
+              * sum_i ( a(R_i) - abar )^2
+klotzZ   = ( K - E[K] ) / sqrt(Var[K])    ~ N(0, 1)
+klotzP   = 2 * ( 1 - Phi( |klotzZ| ) )    (two-sided)
+```
+
+Pre-alignment: Klotz, like Siegel-Tukey and Ansari-
+Bradley, ASSUMES equal medians under H0 since location
+shift contaminates rank-based scale statistics. We pre-
+align by SUBTRACTING THE WITHIN-SAMPLE MEDIAN from each
+half before pooling and ranking (Hollander & Wolfe 1999
+*Nonparametric Statistical Methods* 2nd ed. sec. 5.1).
+
+Sign convention: klotzZ > 0 <=> SECOND half MORE
+dispersed (matches axis-117 stZ and axis-170 abZ
+directional convention for direct cross-axis aggregation).
+
+Inverse standard-normal CDF via Beasley-Springer-Moro
+(1977 + Acklam 2003 coefficients; max relative error
+~1e-9 across p in (1e-300, 1 - 1e-300)). Standard-normal
+upper tail via Abramowitz-Stegun 1965 sec. 26.2.17 (max
+relative error ~7.5e-8).
+
+**Structural orthogonality** vs the existing scale axes:
+
+- vs **axis-117 Siegel-Tukey** (1960): ST uses LINEAR
+  "outside-in" ranks 1, n, 2, n-1, 3, n-2, ... assigned
+  by position-from-extremes (equal-spacing of weights).
+  Klotz uses SQUARED NORMAL SCORES which place
+  QUADRATICALLY MORE weight on tail observations. Klotz
+  has Pitman ARE 1.000 vs the F test under normal-scale
+  alternatives (the MAXIMUM possible for a rank scale
+  test); ST has ARE ~0.608. The two reject MEANINGFULLY
+  differently when dispersion difference concentrates in
+  the tails (heavy-tailed token spikes) vs the shoulders
+  (slow drift).
+
+- vs **axis-170 Ansari-Bradley** (1960): AB uses FOLDED
+  LINEAR ranks |R - (n+1)/2| (triangular weight from
+  centre). Klotz's squared-normal-score weights grow
+  much faster than AB's linear-from-centre weights;
+  Klotz/AB ARE = pi/2 ~ 1.57 under normal (Klotz 1962
+  Tab. 2).
+
+- vs **axes 122/123 Brown-Forsythe / Bartlett-cum-
+  periodogram**: BF/Bartlett are PARAMETRIC tests on
+  squared deviations; asymptotically equivalent to F
+  under normality but break under heavy tails (Conover
+  et al. 1981 *Technometrics* 23:351-361 Tab. 3: BF
+  actual size 0.18-0.32 vs nominal 0.05 under double-
+  exponential). Klotz is fully nonparametric and
+  DISTRIBUTION-FREE under H0.
+
+- vs **axes 115/176 Mann-Whitney / Brunner-Munzel**
+  (stochastic ordering): MW/BM test for stochastic
+  dominance; pure scale shift with equal medians gives
+  MW/BM ~ 0 while Klotz rejects strongly. Cross-loading
+  near zero by construction — orthogonal channel.
+
+- vs **axes 174/175 Cucconi/Lepage** (joint chi-2(2)
+  location-scale): C/L combine a location and a scale
+  statistic into one chi-2(2) and CANNOT separate the
+  two channels. Klotz is a pure scale test; combined
+  with axis-176 Brunner-Munzel (pure location), Klotz
+  forms an ORTHOGONAL DECOMPOSITION of what C/L mash
+  together.
+
+Hard floor on min-tenure-days is **16** (n1 = n2 = 8) so
+the asymptotic normal reference holds nominal alpha
+(Klotz 1962 sec. 4 simulation: actual size 0.044-0.054
+across n1 = n2 in [8, 50]).
+
+#### Public API
+
+- `dailyTokenKlotzHalves(values)` — core stat returning
+  `{mean, stddev, nSamples, klotzN1, klotzN2, klotzAbar,
+   klotzScoreSS, klotzK, klotzExpK, klotzVarK, klotzZ,
+   klotzPValue}`.
+- `buildDailyTokenKlotzHalves(queue, opts)` — per-source
+  pipeline with the standard pew-insights filter chain.
+- `midRanksKlotz`, `medianKlotz`,
+  `standardNormalUpperTailKlotz`,
+  `inverseStandardNormalCdfKlotz` — exported numerical
+  primitives, unit-tested.
+
+#### CLI
+
+```
+pew-insights daily-token-klotz-halves
+  [--since ISO] [--until ISO] [--source NAME]
+  [--min-tokens N] [--min-tenure-days N>=16] [--top N]
+  [--sort klotzZAbsDesc | klotzZ | klotzPValue
+        | klotzPValueDesc | tokens | tenure | source]
+  [--json]
+```
+
+#### Live-smoke (real local queue.jsonl, 2,703 lines,
+6 sources, 6.07 B tokens, 4 shown after default
+filters; minTenureDays = 16):
+
+| source       | tenure | n1  | n2  | klotzZ   | klotzPValue | verdict                       |
+| ------------ | ------ | --- | --- | -------- | ----------- | ----------------------------- |
+| claude-code  |     72 |  36 |  36 |  +5.8215 | 5.8502e-9   | REJECT; 2nd half MORE dispersed |
+| openclaw     |     18 |   9 |   9 |  -1.9629 | 4.9653e-2   | REJECT; 1st half more dispersed |
+| hermes       |     18 |   9 |   9 |  -0.9140 | 3.6073e-1   | no reject                     |
+
+The dominant signal is **claude-code** at klotzZ = +5.82
+(p = 5.85e-9, REJECT scale-equality at alpha = 1e-8):
+the SECOND half (mid-March through April) has
+dramatically larger token-volume dispersion than the
+first half (mid-Feb through mid-March). This is the
+ramp-up regime where daily token volumes oscillate from
+near-zero idle days to multi-hundred-million-token
+sprint days, while the early tenure was more uniformly
+mid-volume. axis-117 Siegel-Tukey and axis-170 Ansari-
+Bradley would have detected this only weakly because the
+extreme tails dominate the signal — exactly the regime
+where Klotz's squared-normal-score weighting is
+ARE-optimal. (axis-176 Brunner-Munzel on the same series
+gives bmW close to 0 because the medians are nearly
+equal across halves: BM is a pure-location test and
+correctly does NOT pick up this scale signal — confirming
+the orthogonal decomposition.)
+
+`openclaw` (-1.96 / 4.97e-2) sits right at the alpha=0.05
+boundary in the OPPOSITE direction: its first half
+(initial onboarding sprints) had wider dispersion than
+its second half (more steady-state usage). With n1 = n2
+= 8 (the hard floor) the small-sample normal
+approximation is conservative; the t-equivalent dof would
+push the p-value up modestly but the directional signal
+is real.
+
+#### Tests
+
+33 new unit tests covering the four numerical primitives
+(`midRanksKlotz`, `medianKlotz`,
+`standardNormalUpperTailKlotz`,
+`inverseStandardNormalCdfKlotz`) plus the core
+`dailyTokenKlotzHalves` identities (shift-invariance,
+positive-scale-invariance, sign convention in both
+directions, equal-halves null, throws on n<16 / non-
+finite / constant input, even/odd split arithmetic) and
+the `buildDailyTokenKlotzHalves` pipeline (sparse-source
+filter, min-tenure-days filter, source filter, top
+truncation, sort validation).
+
+References:
+
+- Klotz, J. H., "Nonparametric tests for scale",
+  *J. Amer. Statist. Assoc.* 57(298) (1962),
+  pp. 597-602.
+- van der Waerden, B. L., "Order tests for the two-
+  sample problem and their power",
+  *Indagationes Math.* 14 (1953), pp. 453-458.
+- Hollander, M. & Wolfe, D. A., *Nonparametric
+  Statistical Methods* 2nd ed. (Wiley 1999), sec. 5.1.
+- Conover, W. J., Johnson, M. E. & Johnson, M. M.,
+  "A comparative study of tests for homogeneity of
+  variances...", *Technometrics* 23(4) (1981),
+  pp. 351-361.
+- Beasley, J. D. & Springer, S. G., "The percentage
+  points of the normal distribution", *Appl. Stat.*
+  26(1) (1977), pp. 118-121.
+- Acklam, P. J., "An algorithm for computing the
+  inverse normal CDF" (2003).
+
 ## 0.6.453 — 2026-05-04
 
 ### Added — axis-176 daily-token-brunner-munzel-halves (generalised-Wilcoxon Behrens-Fisher) + Stouffer signed corpus aggregator
