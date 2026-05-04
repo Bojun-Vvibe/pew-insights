@@ -2,6 +2,91 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.466 — 2026-05-05
+
+### Refactor — `classifyLocationCompound` cross-axis sign-agreement reporter (axes 181 + 182 + 183)
+
+Adds a pure-function reporter that joins per-source
+verdicts from axis-181 Van der Waerden (`vdwZ`),
+axis-182 Fligner-Policello (`fpZ`), and axis-183
+Yuen-Welch (`ywT`) by `source` and classifies each
+joined row into one of five compound buckets:
+
+  - `unanimous-second-larger` — all three signed
+    statistics strictly positive
+  - `unanimous-first-larger` — all three strictly
+    negative
+  - `majority-second-larger` — exactly two of three
+    positive (the third is zero or negative but not
+    enough to flip the majority)
+  - `majority-first-larger` — exactly two of three
+    negative
+  - `split` — any other configuration (a zero with
+    a 1-1 split, or full 1-1-1 disagreement)
+
+Also reports `unanimousAndAllDecisive` (all three
+p-values < alpha; default alpha = 0.05),
+`unanimousAndAtLeastOneDecisive`, and
+`splitAndAtLeastOneDecisive` so the caller can
+immediately distinguish "the three location channels
+agree on sign AND all three reject H0" from
+"agree on sign but only one rejects".
+
+The point of this reporter is the structural
+orthogonality claim from axis-181 / 182 / 183: under
+symmetric F with equal scales the three location
+channels SHOULD agree. DISAGREEMENT diagnoses
+
+  - VDW + and YW + with FP - : equal-scale moment
+    channels say "second up", rank-Behrens-Fisher
+    channel says "second stochastic-orders down"
+    -> heavy second-half left tail.
+  - FP + with VDW - and YW - : second is
+    stochastically larger but trimmed central mass
+    points down -> a few extreme right-tail
+    observations dominating P(X<Y).
+  - any `split`: not a clean location shift; it's
+    location + scale + tail compounded.
+
+#### Live-smoke (cross-axis on `~/.config/pew/queue.jsonl`, 2026-05-05)
+
+Joining the four axis-183 rows above with the same
+sources from axis-181 (vdwZ) and axis-182 (fpZ)
+gives:
+
+  - `openclaw` — all three signs negative; YW and
+    FP both decisive at alpha = 0.05 (YW p = 2.14e-2,
+    FP p = 9.12e-8). VERDICT `unanimous-first-larger`.
+  - `claude-code` — all three signs positive; YW and
+    FP both decisive (YW p = 8.98e-3, FP p = 3.32e-5).
+    VERDICT `unanimous-second-larger`.
+  - `hermes` — all three signs positive; none
+    decisive. VERDICT `unanimous-second-larger`
+    (sign-only).
+  - `vscode-cp` — all three signs negative; FP
+    decisive at alpha = 0.05 (FP p = 3.68e-2).
+    VERDICT `unanimous-first-larger` (sign + 1/3
+    decisive).
+
+`unanimousAndAllDecisive = 0`, `unanimousAndAtLeastOneDecisive = 4`,
+`splitAndAtLeastOneDecisive = 0` across the four
+joined sources. The three orthogonal location
+channels never disagreed on sign on the live data,
+but the magnitude of evidence varied substantially
+(FP and YW disagreeing on which source had the
+largest |Z| / |T| — FP picked `openclaw`, YW picked
+`openclaw` as well but at one order of magnitude
+larger p-value, reflecting YW's weaker power on the
+n = 18 tenure rows).
+
+#### Tests
+
+11 new unit tests cover empty input, all four
+verdict configurations, malformed-row skipping,
+zero-sign handling, alpha bounds, decisive-count
+accumulation, and source-sort stability. Total
+axis-183 test count: 78 (67 base + 11 compound).
+
 ## 0.6.465 — 2026-05-05
 
 ### Added — axis-183 daily-token-yuen-welch-halves (trimmed-mean LOCATION test with Welch-Satterthwaite df on winsorized variances)

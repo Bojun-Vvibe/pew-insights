@@ -12,6 +12,7 @@ import {
   standardNormalUpperTailYw,
   aggregateYuenWelchHalves,
   labelYuenWelchHalvesRow,
+  classifyLocationCompound,
 } from '../src/dailytokenyuenwelchhalves.js';
 import type { QueueLine } from '../src/types.js';
 
@@ -503,4 +504,193 @@ test('yw label: respects custom alpha (0.01)', () => {
   // alpha=0.01 -> lean band [0.01, 0.02), p=0.03 falls outside both -> no-evidence
   const l = labelYuenWelchHalvesRow({ ywT: 2, ywPValue: 0.03 }, 0.01);
   assert.equal(l, 'no-evidence-of-trimmed-mean-shift');
+});
+
+// ---------- compound location reporter ----------
+
+test('yw compound: empty rows -> empty report', () => {
+  const r = classifyLocationCompound([]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rows.length, 0);
+});
+
+test('yw compound: all positive -> unanimous-second-larger', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: 2.5,
+      vdwPValue: 0.01,
+      fpZ: 2.1,
+      fpPValue: 0.03,
+      ywT: 2.0,
+      ywPValue: 0.05,
+    },
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  assert.equal(r.rows[0]!.verdict, 'unanimous-second-larger');
+  assert.equal(r.verdictCounts['unanimous-second-larger'], 1);
+});
+
+test('yw compound: all negative -> unanimous-first-larger', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: -2.5,
+      vdwPValue: 0.01,
+      fpZ: -2.1,
+      fpPValue: 0.03,
+      ywT: -2.0,
+      ywPValue: 0.04,
+    },
+  ]);
+  assert.equal(r.rows[0]!.verdict, 'unanimous-first-larger');
+});
+
+test('yw compound: 2-pos 1-neg -> majority-second-larger', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: 2,
+      vdwPValue: 0.04,
+      fpZ: 1.5,
+      fpPValue: 0.13,
+      ywT: -0.8,
+      ywPValue: 0.43,
+    },
+  ]);
+  assert.equal(r.rows[0]!.verdict, 'majority-second-larger');
+});
+
+test('yw compound: 2-neg 1-pos -> majority-first-larger', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: -2,
+      vdwPValue: 0.04,
+      fpZ: -1.5,
+      fpPValue: 0.13,
+      ywT: 0.8,
+      ywPValue: 0.43,
+    },
+  ]);
+  assert.equal(r.rows[0]!.verdict, 'majority-first-larger');
+});
+
+test('yw compound: zero+pos+pos -> majority-second (zero counts as neither)', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: 0,
+      vdwPValue: 1,
+      fpZ: 1.5,
+      fpPValue: 0.13,
+      ywT: 0.8,
+      ywPValue: 0.43,
+    },
+  ]);
+  assert.equal(r.rows[0]!.verdict, 'majority-second-larger');
+});
+
+test('yw compound: pos+neg+zero -> split (no majority)', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: 0,
+      vdwPValue: 1,
+      fpZ: 1.5,
+      fpPValue: 0.13,
+      ywT: -0.8,
+      ywPValue: 0.43,
+    },
+  ]);
+  assert.equal(r.rows[0]!.verdict, 'split');
+});
+
+test('yw compound: malformed rows skipped', () => {
+  const r = classifyLocationCompound([
+    {
+      source: '',
+      vdwZ: 1,
+      vdwPValue: 0.5,
+      fpZ: 1,
+      fpPValue: 0.5,
+      ywT: 1,
+      ywPValue: 0.5,
+    },
+    {
+      source: 'a',
+      vdwZ: NaN,
+      vdwPValue: 0.5,
+      fpZ: 1,
+      fpPValue: 0.5,
+      ywT: 1,
+      ywPValue: 0.5,
+    },
+    {
+      source: 'a',
+      vdwZ: 1,
+      vdwPValue: 1.5,
+      fpZ: 1,
+      fpPValue: 0.5,
+      ywT: 1,
+      ywPValue: 0.5,
+    },
+  ]);
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 3);
+});
+
+test('yw compound: throws on bad alpha', () => {
+  assert.throws(() => classifyLocationCompound([], 0));
+  assert.throws(() => classifyLocationCompound([], 0.6));
+});
+
+test('yw compound: unanimousAndAllDecisive counts triple-decisive only', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'a',
+      vdwZ: 5,
+      vdwPValue: 1e-6,
+      fpZ: 5,
+      fpPValue: 1e-6,
+      ywT: 5,
+      ywPValue: 1e-6,
+    },
+    {
+      source: 'b',
+      vdwZ: 5,
+      vdwPValue: 1e-6,
+      fpZ: 5,
+      fpPValue: 1e-6,
+      ywT: 1.5,
+      ywPValue: 0.13,
+    },
+  ]);
+  assert.equal(r.unanimousAndAllDecisive, 1);
+  assert.equal(r.unanimousAndAtLeastOneDecisive, 2);
+});
+
+test('yw compound: rows sorted by source ascending', () => {
+  const r = classifyLocationCompound([
+    {
+      source: 'zeta',
+      vdwZ: 1,
+      vdwPValue: 0.3,
+      fpZ: 1,
+      fpPValue: 0.3,
+      ywT: 1,
+      ywPValue: 0.3,
+    },
+    {
+      source: 'alpha',
+      vdwZ: 1,
+      vdwPValue: 0.3,
+      fpZ: 1,
+      fpPValue: 0.3,
+      ywT: 1,
+      ywPValue: 0.3,
+    },
+  ]);
+  assert.equal(r.rows[0]!.source, 'alpha');
+  assert.equal(r.rows[1]!.source, 'zeta');
 });

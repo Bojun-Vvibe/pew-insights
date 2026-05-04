@@ -1070,3 +1070,191 @@ export function labelYuenWelchHalvesRow(
   }
   return 'no-evidence-of-trimmed-mean-shift';
 }
+
+/**
+ * Cross-axis SIGN-AGREEMENT reporter for the
+ * three-channel LOCATION compound diagnostic
+ * (axis-181 Van der Waerden + axis-182 Fligner-Policello
+ * + axis-183 Yuen-Welch). Joins per-source rows by
+ * `source` and classifies each into one of five
+ * compound buckets:
+ *
+ *   - 'unanimous-second-larger' if all three signed
+ *     statistics are strictly positive
+ *   - 'unanimous-first-larger' if all three signed
+ *     statistics are strictly negative
+ *   - 'majority-second-larger' if exactly two of three
+ *     are strictly positive
+ *   - 'majority-first-larger' if exactly two of three
+ *     are strictly negative
+ *   - 'split' otherwise (any zero, or 1-1-1 disagreement
+ *     pattern that does not reduce to majority/unanimous)
+ *
+ * For each bucket we also report the per-axis decisive
+ * counts (p < alpha; default alpha = 0.05) so the caller
+ * can immediately see whether the agreement holds at
+ * the rejection threshold or only at the sign level.
+ *
+ * The point of this reporter is the structural
+ * orthogonality claim from axis-181/182/183: under
+ * symmetric F with equal scales, the three location
+ * channels SHOULD agree on sign and approximately on
+ * magnitude. DISAGREEMENT diagnoses:
+ *
+ *   - VDW + and YW + with FP - : the equal-scale-
+ *     assuming channels (VDW moment proxy via
+ *     normal scores, YW trimmed moment) say "second
+ *     half is up", but the Behrens-Fisher robust rank
+ *     channel (FP) says "second half stochastic-orders
+ *     down" -> heavy second-half left tail dragging
+ *     the rank verdict.
+ *   - FP + with VDW - and YW - : second half is
+ *     stochastically larger but the trimmed central
+ *     mass and the normal-score location both point
+ *     down -> heavy second-half right tail (a few
+ *     extreme observations dominating P(X<Y)).
+ *   - any 'split' verdict: the three location channels
+ *     contradict, which is itself a strong negative
+ *     finding (the change is not a clean location
+ *     shift; it's location + scale + tail + maybe
+ *     skew compounded).
+ *
+ * This is a PURE FUNCTION over already-computed per-row
+ * arrays; it does not re-fit any axis. Callers wire it
+ * downstream of the three `buildDailyToken*Halves`
+ * builders.
+ */
+export interface LocationCompoundJoinedRow {
+  source: string;
+  vdwZ: number;
+  vdwPValue: number;
+  fpZ: number;
+  fpPValue: number;
+  ywT: number;
+  ywPValue: number;
+}
+
+export type LocationCompoundVerdict =
+  | 'unanimous-second-larger'
+  | 'unanimous-first-larger'
+  | 'majority-second-larger'
+  | 'majority-first-larger'
+  | 'split';
+
+export interface LocationCompoundClassifiedRow {
+  source: string;
+  vdwSign: -1 | 0 | 1;
+  fpSign: -1 | 0 | 1;
+  ywSign: -1 | 0 | 1;
+  vdwDecisive: boolean;
+  fpDecisive: boolean;
+  ywDecisive: boolean;
+  verdict: LocationCompoundVerdict;
+}
+
+export interface LocationCompoundReport {
+  rows: LocationCompoundClassifiedRow[];
+  verdictCounts: Record<LocationCompoundVerdict, number>;
+  unanimousAndAllDecisive: number;
+  unanimousAndAtLeastOneDecisive: number;
+  splitAndAtLeastOneDecisive: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+function signOf(x: number): -1 | 0 | 1 {
+  if (!Number.isFinite(x)) return 0;
+  if (x > 0) return 1;
+  if (x < 0) return -1;
+  return 0;
+}
+
+export function classifyLocationCompound(
+  rows: ReadonlyArray<LocationCompoundJoinedRow>,
+  alpha = 0.05,
+): LocationCompoundReport {
+  if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 0.5) {
+    throw new Error(
+      `classifyLocationCompound: alpha must be in (0, 0.5] (got ${alpha})`,
+    );
+  }
+  const verdictCounts: Record<LocationCompoundVerdict, number> = {
+    'unanimous-second-larger': 0,
+    'unanimous-first-larger': 0,
+    'majority-second-larger': 0,
+    'majority-first-larger': 0,
+    split: 0,
+  };
+  const out: LocationCompoundClassifiedRow[] = [];
+  let unanimousAllDec = 0;
+  let unanimousAtLeastOneDec = 0;
+  let splitAtLeastOneDec = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      typeof r.source !== 'string' ||
+      r.source === '' ||
+      !Number.isFinite(r.vdwZ) ||
+      !Number.isFinite(r.fpZ) ||
+      !Number.isFinite(r.ywT) ||
+      !Number.isFinite(r.vdwPValue) ||
+      !Number.isFinite(r.fpPValue) ||
+      !Number.isFinite(r.ywPValue) ||
+      r.vdwPValue < 0 ||
+      r.vdwPValue > 1 ||
+      r.fpPValue < 0 ||
+      r.fpPValue > 1 ||
+      r.ywPValue < 0 ||
+      r.ywPValue > 1
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const vs = signOf(r.vdwZ);
+    const fs = signOf(r.fpZ);
+    const ys = signOf(r.ywT);
+    const vd = r.vdwPValue < alpha;
+    const fd = r.fpPValue < alpha;
+    const yd = r.ywPValue < alpha;
+
+    let verdict: LocationCompoundVerdict;
+    const positives = (vs === 1 ? 1 : 0) + (fs === 1 ? 1 : 0) + (ys === 1 ? 1 : 0);
+    const negatives = (vs === -1 ? 1 : 0) + (fs === -1 ? 1 : 0) + (ys === -1 ? 1 : 0);
+    if (positives === 3) verdict = 'unanimous-second-larger';
+    else if (negatives === 3) verdict = 'unanimous-first-larger';
+    else if (positives === 2 && negatives <= 1) verdict = 'majority-second-larger';
+    else if (negatives === 2 && positives <= 1) verdict = 'majority-first-larger';
+    else verdict = 'split';
+
+    verdictCounts[verdict] += 1;
+    const decisiveCount = (vd ? 1 : 0) + (fd ? 1 : 0) + (yd ? 1 : 0);
+    if (verdict === 'unanimous-second-larger' || verdict === 'unanimous-first-larger') {
+      if (decisiveCount === 3) unanimousAllDec += 1;
+      if (decisiveCount >= 1) unanimousAtLeastOneDec += 1;
+    }
+    if (verdict === 'split' && decisiveCount >= 1) splitAtLeastOneDec += 1;
+
+    out.push({
+      source: r.source,
+      vdwSign: vs,
+      fpSign: fs,
+      ywSign: ys,
+      vdwDecisive: vd,
+      fpDecisive: fd,
+      ywDecisive: yd,
+      verdict,
+    });
+    used += 1;
+  }
+  out.sort((a, b) => (a.source < b.source ? -1 : a.source > b.source ? 1 : 0));
+  return {
+    rows: out,
+    verdictCounts,
+    unanimousAndAllDecisive: unanimousAllDec,
+    unanimousAndAtLeastOneDecisive: unanimousAtLeastOneDec,
+    splitAndAtLeastOneDecisive: splitAtLeastOneDec,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
