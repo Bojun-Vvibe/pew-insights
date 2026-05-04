@@ -2,6 +2,111 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.443 — 2026-05-04
+
+### Refined — axis-171 corpus-level Cochran-Mantel-Haenszel aggregator
+
+New public helper exposed from the axis-171 module:
+**`aggregateMoodsMedianHalves(rows)`** — combines per-
+source 2x2 tables into a single corpus-level summary via
+the **COCHRAN-MANTEL-HAENSZEL POOLED CHI-SQUARE** (Cochran
+1954, Biometrics 10(4):417-451; Mantel & Haenszel 1959,
+J. Natl. Cancer Inst. 22(4):719-748):
+
+```
+cmhChi2 = ( |sum_i (a_i - E[a_i])| - 0.5 )^2 / sum_i Var[a_i]
+```
+
+with the hypergeometric mean / variance under H0 of equal
+medians within each stratum:
+
+```
+E[a_i]   = n1_i * colAbove_i / n_i
+Var[a_i] = n1_i * n2_i * colAbove_i * colBelow_i / ( n_i^2 * (n_i - 1) )
+```
+
+and the 0.5 is the canonical Mantel-Haenszel continuity
+correction. Under the global H0 (all sources have equal
+medians across their two halves AND the sources are
+independent), `cmhChi2 ~ Chi-Square(1)`.
+
+#### Why CMH (this axis) instead of Stouffer (axis-170 aggregator)
+
+The per-source statistic here is a 2x2 contingency table —
+the natural pooled statistic is the stratified Mantel-
+Haenszel chi-square, which weights each table by its
+INFORMATION (variance) under the hypergeometric null.
+This is more efficient than a Stouffer combination of
+per-source `mdZ` when stratum sizes vary widely — a
+small-n source with `|mdZ| = 3` carries less
+hypergeometric information than a large-n source with
+`|mdZ| = 1.5`. CMH is the canonical pooled chi-square
+in epidemiology / categorical-data analysis (Agresti
+2013 sec. 6.3) and matches the SAS `PROC FREQ /CMH` and
+R `mantelhaen.test()` defaults.
+
+Returns:
+
+- `cmhChi2` — pooled Yates-style chi-square(1).
+- `cmhTwoSidedP` — `1 - F_{ChiSq(1)}(cmhChi2)`.
+- `cmhSignedZ` — `sign(sum_i (a_i - E[a_i])) * sqrt(cmhChi2)`;
+  positive = corpus-level MEDIAN DROPPED on average
+  (more above-median values fell in the FIRST halves).
+- `sumObservedMinusExpected`, `sumVariance` — diagnostics.
+- `rowsUsed` / `rowsSkipped` — defensive book-keeping.
+  Malformed rows (non-integer counts, n1<1 or n2<1,
+  zero column marginals) are SKIPPED with a counter
+  rather than throwing.
+
+#### Tests
+
+Test suite grew by **+6** tests (12938 → 12944). Coverage:
+
+- empty input returns NaN with rowsUsed=0;
+- malformed rows skipped with counter (n1=0,
+  non-integer, zero-column-marginal);
+- single-row closed-form: n1=n2=8, a=0, colAbove=8 →
+  `cmhChi2 = 11.484375` exactly;
+- opposing-sign rows cancel exactly (`cmhSignedZ = 0`);
+- `cmhTwoSidedP` always in [0, 1];
+- large stratum dominates small stratum (CMH follows
+  the variance-weighted direction).
+
+#### Live-smoke (against `~/.config/pew/queue.jsonl`)
+
+```
+$ node -e "import { buildDailyTokenMoodsMedianHalves,
+    aggregateMoodsMedianHalves } from
+    './dist/dailytokenmoodsmedianhalves.js';
+    ... feed the same 5-source set as v0.6.442 smoke ..."
+
+per-source rows used:        5
+cmhChi2:                     1.3601
+cmhSignedZ:                  +1.1662
+cmhTwoSidedP:                0.2435
+sumObservedMinusExpected:    +5.8711
+sumVariance:                 21.2103
+rowsUsed: 5    rowsSkipped: 0
+```
+
+**Interpretation.** The 5 valid sources contribute a net
+`+5.87` excess of above-median observations in their
+first halves (corpus-wide tendency: median DROPPED).
+After variance-weighting (sum 21.21), the pooled CMH
+chi-square is 1.36 — `p = 0.244`, NOT significant at α =
+0.05. So while individual sources `openclaw` and
+`claude-code` reach per-source significance in opposite
+directions, the corpus-wide pooled test is null:
+**the per-source dispersion of medians-shifts cancels
+out at the corpus level.**
+
+This is exactly the kind of insight the CMH aggregator
+adds beyond per-source rows — answering the headline
+question "is the WHOLE pew daily-token median getting
+SYSTEMATICALLY higher or lower across all sources?" with
+a calibrated single-number test, properly weighting each
+stratum by its information content.
+
 ## 0.6.442 — 2026-05-04
 
 ### Added — axis-171: `daily-token-moods-median-halves`

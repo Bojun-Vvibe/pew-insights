@@ -711,3 +711,146 @@ export function buildDailyTokenMoodsMedianHalves(
     sources: kept,
   };
 }
+
+/**
+ * Corpus-level aggregator for axis-171 per-source results
+ * via the COCHRAN-MANTEL-HAENSZEL POOLED CHI-SQUARE
+ * (Cochran 1954, Biometrics 10(4):417-451; Mantel &
+ * Haenszel 1959, J. Natl. Cancer Inst. 22(4):719-748).
+ *
+ * For K independent 2x2 tables (one per source), the
+ * Mantel-Haenszel statistic is
+ *
+ *   cmhChi2 = ( |sum_i (a_i - E[a_i])| - 0.5 )^2
+ *             / sum_i Var[a_i]
+ *
+ * where for source i with marginals (n1_i, n2_i,
+ * colAbove_i, colBelow_i) and total n_i = n1_i + n2_i,
+ *
+ *   E[a_i]   = n1_i * colAbove_i / n_i
+ *   Var[a_i] = n1_i * n2_i * colAbove_i * colBelow_i
+ *              / ( n_i^2 * (n_i - 1) )
+ *
+ * (the hypergeometric mean / variance of a_i under the
+ * H0 of equal medians within each stratum). The 0.5 is
+ * the canonical Mantel-Haenszel continuity correction.
+ *
+ * Under the global H0 that ALL sources have equal
+ * medians across their two halves AND the sources are
+ * independent, cmhChi2 ~ Chi-Square(1).
+ *
+ * Why CMH (this axis) vs Stouffer (axis-170 aggregator):
+ * the per-source statistic here is a 2x2 contingency
+ * table -- the natural pooled statistic is the
+ * stratified Mantel-Haenszel chi-square, which weights
+ * each table by its INFORMATION (variance) under the
+ * hypergeometric null. This is more efficient than a
+ * Stouffer combination of per-source mdZ when stratum
+ * sizes vary widely -- a small-n source with |mdZ| = 3
+ * carries less hypergeometric information than a large-n
+ * source with |mdZ| = 1.5.
+ *
+ * Returns:
+ *   cmhChi2          -- pooled Yates-style chi-square(1).
+ *   cmhTwoSidedP     -- 1 - F_{ChiSq(1)}(cmhChi2).
+ *   cmhSignedZ       -- sign(sum_i (a_i - E[a_i])) * sqrt(cmhChi2);
+ *                       positive = corpus-level MEDIAN DROPPED
+ *                       (more above-median values fell in the
+ *                       first halves on average).
+ *   sumObservedMinusExpected -- sum_i (a_i - E[a_i]).
+ *   sumVariance      -- sum_i Var[a_i].
+ *   rowsUsed / rowsSkipped -- defensive book-keeping.
+ *
+ * Malformed rows (non-finite fields, non-integer counts,
+ * zero variance) are SKIPPED with a counter rather than
+ * throwing.
+ */
+export interface MoodsMedianHalvesCorpusAggregate {
+  cmhChi2: number;
+  cmhTwoSidedP: number;
+  cmhSignedZ: number;
+  sumObservedMinusExpected: number;
+  sumVariance: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateMoodsMedianHalves(
+  rows: ReadonlyArray<{
+    mdN1: number;
+    mdN2: number;
+    mdAboveA: number;
+    mdAboveB: number;
+  }>,
+): MoodsMedianHalvesCorpusAggregate {
+  let sumOmE = 0;
+  let sumVar = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isInteger(r.mdN1) ||
+      !Number.isInteger(r.mdN2) ||
+      !Number.isInteger(r.mdAboveA) ||
+      !Number.isInteger(r.mdAboveB) ||
+      r.mdN1 < 1 ||
+      r.mdN2 < 1
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const a = r.mdAboveA;
+    const n1 = r.mdN1;
+    const n2 = r.mdN2;
+    const n = n1 + n2;
+    const colAbove = r.mdAboveA + r.mdAboveB;
+    const colBelow = n - colAbove;
+    if (
+      colAbove < 1 ||
+      colBelow < 1 ||
+      a < 0 ||
+      a > n1 ||
+      r.mdAboveB < 0 ||
+      r.mdAboveB > n2 ||
+      n < 2
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const expectedA = (n1 * colAbove) / n;
+    const varA =
+      (n1 * n2 * colAbove * colBelow) / (n * n * (n - 1));
+    if (!Number.isFinite(expectedA) || !Number.isFinite(varA) || varA <= 0) {
+      skipped += 1;
+      continue;
+    }
+    sumOmE += a - expectedA;
+    sumVar += varA;
+    used += 1;
+  }
+  if (used === 0 || sumVar <= 0) {
+    return {
+      cmhChi2: Number.NaN,
+      cmhTwoSidedP: Number.NaN,
+      cmhSignedZ: Number.NaN,
+      sumObservedMinusExpected: sumOmE,
+      sumVariance: sumVar,
+      rowsUsed: used,
+      rowsSkipped: skipped,
+    };
+  }
+  const corrected = Math.max(0, Math.abs(sumOmE) - 0.5);
+  const cmhChi2 = (corrected * corrected) / sumVar;
+  const cmhTwoSidedP = chiSquare1UpperTail(cmhChi2);
+  const sign = sumOmE > 0 ? 1 : sumOmE < 0 ? -1 : 0;
+  const cmhSignedZ = sign * Math.sqrt(cmhChi2);
+  return {
+    cmhChi2,
+    cmhTwoSidedP,
+    cmhSignedZ,
+    sumObservedMinusExpected: sumOmE,
+    sumVariance: sumVar,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}

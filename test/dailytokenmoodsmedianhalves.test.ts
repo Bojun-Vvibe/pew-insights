@@ -557,3 +557,72 @@ test('buildDailyTokenMoodsMedianHalves: sort by source returns alphabetical', ()
     ['alpha', 'mango', 'zebra'],
   );
 });
+
+// ---------- aggregator: Cochran-Mantel-Haenszel ----------
+
+import { aggregateMoodsMedianHalves } from '../src/dailytokenmoodsmedianhalves.js';
+
+test('aggregateMoodsMedianHalves: empty input returns NaN', () => {
+  const r = aggregateMoodsMedianHalves([]);
+  assert.ok(Number.isNaN(r.cmhChi2));
+  assert.equal(r.rowsUsed, 0);
+  assert.equal(r.rowsSkipped, 0);
+});
+
+test('aggregateMoodsMedianHalves: skips malformed rows', () => {
+  const r = aggregateMoodsMedianHalves([
+    { mdN1: 8, mdN2: 8, mdAboveA: 0, mdAboveB: 8 }, // valid
+    { mdN1: 0, mdN2: 8, mdAboveA: 0, mdAboveB: 4 }, // n1=0
+    { mdN1: 8.5, mdN2: 8, mdAboveA: 4, mdAboveB: 4 }, // non-integer
+    { mdN1: 8, mdN2: 8, mdAboveA: 8, mdAboveB: 8 }, // colBelow=0 -> degenerate
+    { mdN1: 8, mdN2: 8, mdAboveA: 0, mdAboveB: 0 }, // colAbove=0 -> degenerate
+  ]);
+  assert.equal(r.rowsUsed, 1);
+  assert.equal(r.rowsSkipped, 4);
+});
+
+test('aggregateMoodsMedianHalves: single row produces signed cmh', () => {
+  // n1=n2=8, n=16, a=0, colAbove=8, colBelow=8.
+  // E[a] = 8*8/16 = 4; Var[a] = 8*8*8*8/(256*15) = 4096/3840 = 1.0667.
+  // sumOmE = 0 - 4 = -4. corrected = |-4| - 0.5 = 3.5.
+  // cmhChi2 = 3.5^2 / 1.0667 = 12.25 / 1.0667 = 11.4844.
+  // sign = -1 -> cmhSignedZ = -sqrt(11.4844) = -3.3889.
+  const r = aggregateMoodsMedianHalves([
+    { mdN1: 8, mdN2: 8, mdAboveA: 0, mdAboveB: 8 },
+  ]);
+  assert.ok(Math.abs(r.cmhChi2 - 11.484375) < 1e-6, `cmhChi2=${r.cmhChi2}`);
+  assert.ok(r.cmhSignedZ < 0, `expected negative, got ${r.cmhSignedZ}`);
+  assert.ok(r.cmhTwoSidedP < 0.001);
+});
+
+test('aggregateMoodsMedianHalves: opposing-sign rows partially cancel', () => {
+  // Two identical-magnitude opposite-direction sources:
+  // a1=0/8 (sumOmE_1 = -4), a2=8/8 (sumOmE_2 = +4).
+  // sumOmE = 0; corrected = 0; cmhChi2 = 0.
+  const r = aggregateMoodsMedianHalves([
+    { mdN1: 8, mdN2: 8, mdAboveA: 0, mdAboveB: 8 },
+    { mdN1: 8, mdN2: 8, mdAboveA: 8, mdAboveB: 0 },
+  ]);
+  assert.ok(Math.abs(r.cmhChi2) < 1e-12, `cmhChi2=${r.cmhChi2}`);
+  assert.equal(r.cmhSignedZ, 0);
+});
+
+test('aggregateMoodsMedianHalves: cmhTwoSidedP in [0,1]', () => {
+  const r = aggregateMoodsMedianHalves([
+    { mdN1: 30, mdN2: 30, mdAboveA: 5, mdAboveB: 25 },
+  ]);
+  assert.ok(r.cmhTwoSidedP >= 0 && r.cmhTwoSidedP <= 1);
+});
+
+test('aggregateMoodsMedianHalves: large stratum dominates small stratum', () => {
+  // Small stratum strongly negative; large stratum mildly
+  // positive. CMH should follow the large stratum's
+  // direction because variance scales with n.
+  const r = aggregateMoodsMedianHalves([
+    { mdN1: 4, mdN2: 4, mdAboveA: 0, mdAboveB: 4 }, // small, strong negative
+    { mdN1: 100, mdN2: 100, mdAboveA: 60, mdAboveB: 40 }, // large, mild positive
+  ]);
+  // Small: E[a]=2, sumOmE_1=-2.
+  // Large: E[a]=50, sumOmE_2=+10. Total sumOmE = +8.
+  assert.ok(r.cmhSignedZ > 0, `expected positive, got ${r.cmhSignedZ}`);
+});
