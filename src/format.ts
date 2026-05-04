@@ -25587,6 +25587,7 @@ export function renderDailyTokenJarqueBera(
     'jb',
     'jbZ',
     'pApprox',
+    'sFrac',
     'verdict',
     'tokens',
   ];
@@ -25604,6 +25605,7 @@ export function renderDailyTokenJarqueBera(
       s.jb.toFixed(4),
       s.jbZ.toFixed(4),
       s.jbPApprox.toExponential(2),
+      s.jbSkewContribFraction.toFixed(4),
       s.verdict,
       formatNumber(s.totalTokens),
     ];

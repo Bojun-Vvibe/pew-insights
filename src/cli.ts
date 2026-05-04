@@ -42050,7 +42050,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: jbDesc (default) | jb | jbZ | jbZDesc | skewAbs | skewAbsDesc | kurtAbs | kurtAbsDesc | tokens | tenure | source.',
+    'sort key: jbDesc (default) | jb | jbZ | jbZDesc | skewAbs | skewAbsDesc | kurtAbs | kurtAbsDesc | skewContribFraction | skewContribFractionDesc | tokens | tenure | source.',
     'jbDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -42096,6 +42096,8 @@ program
           'skewAbsDesc',
           'kurtAbs',
           'kurtAbsDesc',
+          'skewContribFraction',
+          'skewContribFractionDesc',
           'tokens',
           'tenure',
           'source',

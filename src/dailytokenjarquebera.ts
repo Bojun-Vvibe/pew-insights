@@ -178,6 +178,8 @@ export type DailyTokenJarqueBeraSort =
   | 'skewAbsDesc'
   | 'kurtAbs'
   | 'kurtAbsDesc'
+  | 'skewContribFraction'
+  | 'skewContribFractionDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -219,6 +221,32 @@ export interface DailyTokenJarqueBeraSourceRow {
   jbZ: number;
   /** Closed-form upper-tail Chi-Square(2) p-value: exp(-JB / 2). */
   jbPApprox: number;
+  /**
+   * Fraction of JB driven by SKEWNESS rather than EXCESS
+   * KURTOSIS:
+   *
+   *   jbSkewContribFraction = S^2 / ( S^2 + K^2 / 4 )
+   *
+   * In [0, 1]. 1 means the rejection is entirely
+   * skewness-driven (asymmetric heavy tail on one side);
+   * 0 means entirely kurtosis-driven (symmetric heavy
+   * tails / sharp peak); 0.5 means the two moments
+   * contribute equally to JB. The complement
+   * (1 - jbSkewContribFraction) is the kurtosis share.
+   * Defined as 0 when the denominator is exactly 0
+   * (only possible when both S and K are exactly 0,
+   * i.e. a perfectly Gaussian-moment sample).
+   *
+   * This is the JB "axis of rejection" -- two sources
+   * with the same JB can have very different
+   * jbSkewContribFraction and therefore very different
+   * marginal-shape stories. The original axis-161 caveat
+   * notes that "JB is BLIND TO WHICH MOMENT drives
+   * rejection -- inspect skewness and excessKurtosis
+   * directly to attribute"; jbSkewContribFraction is the
+   * single-number summary of that attribution.
+   */
+  jbSkewContribFraction: number;
   /** Verdict by Chi-Square(2) cutoffs (see VERDICT_CUTOFFS). */
   verdict: JbVerdict;
 }
@@ -408,6 +436,8 @@ export function buildDailyTokenJarqueBera(
     'skewAbsDesc',
     'kurtAbs',
     'kurtAbsDesc',
+    'skewContribFraction',
+    'skewContribFractionDesc',
     'tokens',
     'tenure',
     'source',
@@ -533,6 +563,13 @@ export function buildDailyTokenJarqueBera(
       jb: result.jb,
       jbZ: result.jbZ,
       jbPApprox: result.jbPApprox,
+      jbSkewContribFraction: (() => {
+        const s2 = result.skewness * result.skewness;
+        const k2over4 =
+          (result.excessKurtosis * result.excessKurtosis) / 4;
+        const denom = s2 + k2over4;
+        return denom === 0 ? 0 : s2 / denom;
+      })(),
       verdict: classifyJb(result.jb),
     });
     totalTokensSum += acc.totalTokens;
@@ -564,6 +601,12 @@ export function buildDailyTokenJarqueBera(
         break;
       case 'kurtAbsDesc':
         primary = Math.abs(b.excessKurtosis) - Math.abs(a.excessKurtosis);
+        break;
+      case 'skewContribFraction':
+        primary = a.jbSkewContribFraction - b.jbSkewContribFraction;
+        break;
+      case 'skewContribFractionDesc':
+        primary = b.jbSkewContribFraction - a.jbSkewContribFraction;
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;
