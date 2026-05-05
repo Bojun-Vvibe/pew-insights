@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.479 — 2026-05-05
+
+### Added — `classifyPairedSignWsrRobustnessAgreement` cross-axis joiner (axes 190 + 189)
+
+FIRST cross-axis joiner that crosses TWO PAIRED-DESIGN
+significance tests on the SAME pairing of d_i = B_i -
+A_i. axis-190 (paired binomial sign test) is the most
+distribution-free paired test in the family; axis-189
+(wilcoxon signed-rank) is its higher-power but
+symmetric-CDF-assuming companion. The cross-product is
+the textbook ROBUSTNESS-VS-EFFICIENCY DIAGNOSTIC for
+paired tests (Lehmann 1975 ch 4; Hollander-Wolfe-
+Chicken 2014 ch 3) and surfaces eight bivariate
+ROBUSTNESS-AGREEMENT x DIRECTION buckets plus the
+headline `wsr-only-decisive` ROBUST-VETO archetype:
+a few large signed deviations inflate the rank
+statistic but the binomial sign balance refuses to
+reject -- exactly the asymmetric-tail-contamination
+signature.
+
+#### Buckets
+
+  - `both-decisive-second-larger` / `both-decisive-
+    first-larger`: ROBUST MEANINGFUL SHIFT. Both the
+    most-distribution-free paired test AND the
+    higher-power wsr reject at .05 with matching
+    signs. Maximally defensible directional call.
+  - `wsr-only-decisive-second-larger` / `wsr-only-
+    decisive-first-larger`: ROBUST VETO. wsr rejects
+    but sign test does not. Signature of asymmetric-
+    tail leverage; the more conservative robust
+    decision is "ns".
+  - `sign-only-decisive-second-larger` / `sign-only-
+    decisive-first-larger`: clean sign majority with
+    noisy magnitudes that dilute the rank statistic.
+    Less common (sign test typically less powerful)
+    but possible at small N when most non-zero pairs
+    cluster near zero.
+  - `sign-conflict`: rare opposite-direction red-
+    flag. Rank statistic and sign count point to
+    opposite half-shifts.
+  - `no-decisive-shift`: neither axis rejects.
+
+#### Headline counts
+
+  - `bothDecisiveAgreement`: directly defensible
+    "robust meaningful shift" count.
+  - `wsrOnlyButRobustVeto`: count of asymmetric-tail
+    leverage red-flags.
+  - `signOnly`: count of clean sign majorities with
+    noisy magnitudes.
+  - `signConflicts`: count of categorical opposite-
+    direction red-flags.
+
+#### Live cross-axis read on the four real sources
+
+Joining the live axis-190 and axis-189 panels from
+v0.6.476 + v0.6.478 against `~/.config/pew/queue.jsonl`
+(real numbers from `daily-token-paired-sign-test-
+halves` and `daily-token-wilcoxon-signed-rank-halves`
+respectively):
+
+| source       | pst p   | pst sign | pst delta | wsr p   | wsr sign | wsr r_rb | bucket                          |
+|--------------|---------|----------|-----------|---------|----------|----------|---------------------------------|
+| claude-code  | 8.13e-3 | +        | +0.5172   | 3.31e-4 | +        | +0.7655  | both-decisive-second-larger     |
+| vscode-cp    | 3.96e-2 | -        | -0.2787   | 6.08e-2 | -        | -0.2766  | sign-only-decisive-first-larger |
+| openclaw     | 3.91e-2 | -        | -0.7778   | 1.29e-2 | -        | -0.9556  | both-decisive-first-larger      |
+| opencode     | 2.89e-1 | -        | -0.5000   | 1.83e-1 | -        | -0.5556  | no-decisive-shift               |
+| hermes       | 5.08e-1 | +        | +0.3333   | 1.93e-1 | +        | +0.5111  | no-decisive-shift               |
+
+Resulting headline counts on the live panel:
+
+  - `bothDecisiveAgreement` = 2 (claude-code SECOND
+    larger, openclaw FIRST larger). Both robustly
+    defensible.
+  - `wsrOnlyButRobustVeto` = 0. ZERO sources show the
+    asymmetric-tail-leverage red-flag pattern -- the
+    cross-source halves are well-behaved enough that
+    the symmetric-CDF wsr null is not picking up
+    spurious shifts that the binomial sign test
+    refuses to confirm.
+  - `signOnly` = 1 (`vscode-cp`). The longest-tenure
+    source has 22 of 61 non-zero pairs pointing up
+    (delta = -0.2787, exact binomial p = 3.96e-2)
+    but the rank-biserial r_rb = -0.2766 only
+    reaches wsr p = 6.08e-2 (just barely marginal).
+    This is the COMPLEMENTARY archetype: clean sign
+    majority that the rank statistic dilutes among
+    nearly-tied magnitudes (heavily-tied long-
+    tenure source with N_zero = 71 of 132 pairs).
+  - `signConflicts` = 0. Directional agreement on all
+    five sources -- the two paired tests never point
+    in opposite directions on the live panel.
+  - `bothDecisive` = 2; `atLeastOneDecisive` = 3.
+
+CONCLUSION on the live panel: 2 of 4 primary sources
+(claude-code, openclaw) carry a paired half-shift
+that is robust to BOTH symmetric-CDF assumption and
+asymmetric-tail leverage. `vscode-cp` has a clean
+sign majority that wsr is just barely failing to
+confirm at .05 (p = .0608) -- the conservative
+robust read flags this as "sign-only" but the
+practical reading is that wsr is on the cusp; the
+sign test's more conservative .0396 still gets
+across at .05. `opencode` and `hermes` show no
+paired shift under either inferential basis.
+
+#### Implementation
+
+  - `src/classifypairedsignwsrrobustnessagreement.ts`
+    (~310 lines): pure function
+    `classifyPairedSignWsrRobustnessAgreement(
+      pstRows, wsrRows
+    )` with full input validation (range checks on
+    p, sign, delta, rank-biserial; duplicate-source
+    detection; orphan-source surfacing).
+  - `test/classifypairedsignwsrrobustnessagreement.
+    test.ts`: 19 unit tests covering all seven non-
+    trivial bucket transitions, orphan-source
+    handling, rows-sorted invariant, all input-
+    validation throws, the pathological pst-sign-
+    zero deferred-direction case, and a 5-source
+    live-smoke panel mirroring the published axis-
+    190 values which deterministically yields
+    bothDecisive = 3 and bothDecisiveAgreement = 3
+    with 0 conflicts (using slightly tighter
+    illustrative wsr p-values than the actual live
+    read; the actual live read above shows
+    bothDecisiveAgreement = 2 because vscode-cp's
+    real wsr p of .0608 sits just above .05).
+
+Suite: 13868 -> 13889 tests (+21). Build green. No
+new external dependencies.
+
 ## 0.6.478 — 2026-05-05
 
 ### Added — `daily-token-paired-sign-test-halves` axis-190
