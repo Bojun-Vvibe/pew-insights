@@ -20637,6 +20637,7 @@ import type { DailyTokenPermutationTstatHalvesReport } from './dailytokenpermuta
 import type { DailyTokenWilcoxonSignedRankHalvesReport } from './dailytokenwilcoxonsignedrankhalves.js';
 import type { DailyTokenPairedSignTestHalvesReport } from './dailytokenpairedsigntesthalves.js';
 import type { DailyTokenCliffsDeltaHalvesReport } from './dailytokencliffsdeltahalves.js';
+import type { DailyTokenKuiperTwoSampleHalvesReport } from './dailytokenkuipertwosamplehalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -28211,6 +28212,95 @@ export function renderDailyTokenCliffsDeltaHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: delta = 0 is the no-dominance anchor; CI excluding 0 is the significance criterion. vs axis-187 A12: A12 = (delta+1)/2 only when no ties; under ties Cliff drops them while A12 splits at 0.5. The bootstrap CI here is non-parametric and respects the discrete tie structure of the data; axis-187 uses the closed-form Mee 1990 approximation. vs axes 189/190 paired-design tests: those leverage the within-pair pairing of d_i = B_i - A_i; Cliff's delta uses ALL m*n cross-pair comparisons treating the halves as independent samples.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKuiperTwoSampleHalves(
+  r: DailyTokenKuiperTwoSampleHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-kuiper-two-sample-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KUIPER TWO-SAMPLE TEST on the half-split daily series. kpV = sup(F_A - F_B) + sup(F_B - F_A) in [0, 2]. Bracketed by axis-118 KS as ksD <= kpV <= 2*ksD: equal on the LEFT only when one ECDF lobe is zero (clean one-sided shift), equal on the RIGHT only under perfectly balanced two-sided crossing. ROTATION-INVARIANT supremum-sum makes Kuiper especially powerful against TWO-SIDED ECDF CROSSINGS (scale shift with equal medians, multimodality emergence) where KS sees only the larger lobe. ONE-HUNDRED-AND-NINETY-SECOND cross-source axis. Refs: Kuiper 1960; Stephens 1965; Numerical Recipes 3rd ed. eqs. 14.3.20-21.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Kuiper V two-sample test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'kpDPlus',
+    'kpDMinus',
+    'kpV',
+    'direction',
+    'kpVCrit05',
+    'kpLambda',
+    'kpP',
+    'kpZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.kpN1),
+    formatNumber(s.kpN2),
+    s.kpDPlus.toFixed(4),
+    s.kpDMinus.toFixed(4),
+    s.kpV.toFixed(4),
+    s.kpVDirection,
+    s.kpVCrit05.toFixed(4),
+    s.kpLambda.toFixed(4),
+    s.kpP.toExponential(2),
+    (s.kpZ >= 0 ? '+' : '') + s.kpZ.toFixed(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference: kpVCrit_{0.05} ~= 1.747/(sqrt(en) + 0.155 + 0.24/sqrt(en)). kpV > kpVCrit05 rejects equal-distribution at .05. The 'direction' field is INFORMATIONAL: Kuiper is two-sided and direction-agnostic. The kpZ sign reflects the dominant lobe; magnitude reflects |Phi^{-1}(kpP/2)|. Kuiper is the rotation-invariant complement to KS axis-118: KS uses max(D+, D-), Kuiper uses D+ + D-. The two are bracketed (ksD <= kpV <= 2*ksD) but capture opposite features of ECDF-difference shape.)`,
     ),
   );
 

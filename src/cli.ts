@@ -218,6 +218,7 @@ import {
   renderDailyTokenWilcoxonSignedRankHalves,
   renderDailyTokenPairedSignTestHalves,
   renderDailyTokenCliffsDeltaHalves,
+  renderDailyTokenKuiperTwoSampleHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -725,6 +726,10 @@ import {
   buildDailyTokenCliffsDeltaHalves,
   type DailyTokenCliffsDeltaHalvesSort,
 } from './dailytokencliffsdeltahalves.js';
+import {
+  buildDailyTokenKuiperTwoSampleHalves,
+  type DailyTokenKuiperTwoSampleHalvesSort,
+} from './dailytokenkuipertwosamplehalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -45436,6 +45441,112 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCliffsDeltaHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-kuiper-two-sample-halves')
+  .description(
+    "Per-source KUIPER TWO-SAMPLE TEST comparing the empirical CDFs of the FIRST half (n1 = floor(n/2) days) vs SECOND half (n2 = n - n1 days) of the gap-filled daily total_tokens series (ONE-HUNDRED-AND-NINETY-SECOND cross-source axis). Class-TWO-SAMPLE-FULL-DISTRIBUTION-EQUALITY-TEST with TWO-SIDED CROSSING SENSITIVITY (Kuiper 1960, Proceedings of the Koninklijke Nederlandse Akademie van Wetenschappen Series A 63:38-47; Stephens 1965, Biometrika 52(3-4):309-321; Numerical Recipes 3rd ed. eqs. 14.3.20-21): kpDPlus = sup_t (F_A - F_B), kpDMinus = sup_t (F_B - F_A), kpV = kpDPlus + kpDMinus in [0, 2], kpLambda = (sqrt(en) + 0.155 + 0.24/sqrt(en))*kpV with en = n1*n2/(n1+n2), kpP = 2 sum_{k>=1} (4 k^2 kpLambda^2 - 1) exp(-2 k^2 kpLambda^2), kpVCrit_{0.05} ~= 1.747/inflation. Bracketed by axis-118 KS as ksD <= kpV <= 2*ksD: equal on the LEFT only when one ECDF lobe is zero (clean one-sided shift), equal on the RIGHT only under perfectly balanced two-sided crossing. ROTATION-INVARIANT supremum-sum makes Kuiper especially powerful against TWO-SIDED ECDF CROSSINGS (scale shift with equal medians, multimodality emergence) where KS sees only the larger lobe. Distinct from axis-115 MW (location only), axes 116/117 (scale only), axis-119 AD (tail-weighted L2 vs uniform-weighted supremum sum).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for Stephens 1965 calibrated regime). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: kpVDesc (default) | kpV | kpZ | kpZDesc | kpZAbs | kpZAbsDesc | kpP | kpPDesc | tokens | tenure | source.',
+    'kpVDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'kpV',
+          'kpVDesc',
+          'kpZ',
+          'kpZDesc',
+          'kpZAbs',
+          'kpZAbsDesc',
+          'kpP',
+          'kpPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKuiperTwoSampleHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenKuiperTwoSampleHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenKuiperTwoSampleHalves(report) + '\n',
           );
         }
       } catch (e) {
