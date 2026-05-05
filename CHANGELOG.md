@@ -2,6 +2,164 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.507 — 2026-05-05
+
+### Added — `daily-token-hogg-adaptive-halves` (axis-204 HOGG-FISHER-RANDLES 1975 ADAPTIVE TWO-SAMPLE LOCATION TEST)
+
+Per-source HOGG-FISHER-RANDLES 1975 ADAPTIVE TWO-SAMPLE
+LOCATION TEST comparing the first half (n1 = floor(n/2)
+days) vs second half (n2 = n - n1 days) of the gap-
+filled daily total_tokens series.
+
+TWO-HUNDRED-AND-FOURTH cross-source axis.
+
+**Mechanism.** Hogg, Fisher & Randles (1975 *JASA*
+70(351):656-661) propose a META-TEST that first measures
+the TAIL WEIGHT of the POOLED sample via the SELECTOR
+STATISTIC
+
+    Q = ( U_05 - M_50 ) / ( M_50 - L_05 )
+
+where `U_05` = mean of the upper 5% of pooled order
+statistics, `L_05` = mean of the lower 5%, and `M_50` =
+mean of the middle 50% (25th-to-75th percentile trimmed
+mean). Q ~ 1 indicates symmetric medium-tail; Q >> 1
+indicates right-skew / heavy upper tail; Q << 1
+indicates left-skew / heavy lower tail.
+
+The test then DISPATCHES to the asymptotically-most-
+efficient location test by Q's value (HFR 1975 Table 1
+thresholds, also Hettmansperger & McKean 2011 sec.
+2.6.2 Table 2.6.2):
+
+  - `Q < 0.5` -> HFR1 Mood's median test
+  - `0.5 <= Q < 0.8` -> HFR2 Wilcoxon rank-sum
+  - `0.8 <= Q <= 1.25` -> HFR3 van der Waerden normal-scores
+  - `1.25 < Q <= 2.0` -> HFR2 Wilcoxon rank-sum
+  - `Q > 2.0` -> HFR1 Mood's median test
+
+The dispatched test's standardised Z is reported as
+`hoggZ`, the dispatched test's two-sided p-value as
+`hoggPValue`, and the dispatched test label itself
+(`HFR1-mood-median` / `HFR2-wilcoxon` /
+`HFR3-vanderwaerden`) as `hoggDispatch`.
+
+**Sign convention.** `hoggZ > 0` <=> SECOND half
+located ABOVE first half (median / mean / centred-
+rank-sum), sign-aligned with axis-110 mannwhitneyZ,
+axis-181 vanDerWaerdenZ, axis-189 wilcoxonSignedRankZ
+for direct cross-axis aggregation.
+
+### Structural orthogonality (axis-204 vs every prior axis)
+
+This is the FIRST adaptive / data-driven test-selection
+axis in the codebase. Distinct from:
+
+  - axis-110 Mann-Whitney-halves, axis-181 Van-der-
+    Waerden-halves, axis-171 Mood's-median-halves: each
+    of these uses a SINGLE FIXED score function on EVERY
+    input regardless of the underlying tail shape. Hogg-
+    Adaptive uses a DATA-DRIVEN selector Q to CHOOSE
+    which score function to apply. Two sources with
+    identical Mann-Whitney Z but different tail weights
+    will get DIFFERENT hoggZ. The DISPATCH LABEL itself
+    is a NEW per-source feature not exposed by any prior
+    axis.
+  - axis-201 Kamat-range-ratio / axis-200 Mielke / axes
+    117/170/177-179/199 scale tests: those probe SCALE;
+    Hogg-Adaptive probes LOCATION. Orthogonal by
+    alternative.
+  - axis-185 Baumgartner-Weiss-Schindler (joint
+    location-scale): BWS combines location and scale
+    into a SINGLE QUADRATIC-WEIGHT statistic and cannot
+    tell you WHICH family of alternative is most
+    consistent with the data; Hogg-Adaptive isolates
+    LOCATION while ROUTING through a tail-weight
+    selector and makes the selection EXPLICIT and
+    EXPOSED.
+  - axis-203 David-Barton runs / axis-202 Noether: those
+    are sign-pattern and lag-cyclic respectively; Hogg-
+    Adaptive is neither.
+
+### Files
+
+  - `src/dailytokenhoggadaptivehalves.ts` — pure
+    implementation with strict input validation; pooled
+    selector, dispatch routing, three inline-implemented
+    dispatched tests (Mood-median, Wilcoxon, van der
+    Waerden), Stouffer corpus aggregator with dispatch-
+    count tracking.
+  - `test/dailytokenhoggadaptivehalves.test.ts` — 45
+    unit tests covering primitives (median, mid-ranks,
+    normal CDF / inverse), selector behaviour
+    (symmetric vs left/right skew), dispatch threshold
+    boundaries, dispatched-test sign correctness, end-
+    to-end determinism, edge cases (n < 20, constant
+    series, NaN inputs), end-to-end report (source
+    filter, min-tokens, min-tenure, sort, build).
+  - `src/cli.ts` — CLI subcommand
+    `daily-token-hogg-adaptive-halves` with full option
+    surface.
+  - `src/format.ts` — pretty renderer
+    `renderDailyTokenHoggAdaptiveHalves` including
+    dispatch-counts header line.
+
+### Live-smoke output (`~/.config/pew/queue.jsonl`)
+
+Captured verbatim from
+`pew-insights daily-token-hogg-adaptive-halves --top 10`
+against the local pew queue at v0.6.507 (`vscode-cp`
+source name redacted in this changelog to comply with
+the workspace banned-string list; the underlying queue
+data is unmodified):
+
+```
+pew-insights daily-token-hogg-adaptive-halves
+sources: 6 (shown 2)    tokens: 3,444,271,515    min-tokens: 1,000    min-tenure-days: 20    sort: hoggZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 4 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+dispatch: HFR1-mood-median=2    HFR2-wilcoxon=0    HFR3-vanderwaerden=0
+
+source       firstDay    lastDay     tenure  active  n1   n2   hoggQ      dispatch          hoggZ    hoggPValue   tokens
+-----------  ----------  ----------  ------  ------  ---  ---  ---------  ----------------  -------  -----------  -------------
+claude-code  2026-02-11  2026-04-23  72      35      36   36   170.992    HFR1-mood-median  +2.5757  1.0005e-02   3,442,385,788
+vscode-cp    2025-07-30  2026-04-20  265     73      132  133  3047.037   HFR1-mood-median  -2.0965  3.6041e-02   1,885,727
+```
+
+**Headline interpretation.** Both sources have
+extremely heavy-right-tail pooled distributions
+(`Q = 170.99` and `Q = 3047.04`, both massively above
+the 2.0 dispatch cutoff), so Hogg-Adaptive correctly
+routes BOTH to the most-extreme-tail-robust dispatched
+test (Mood's median). For `claude-code`, `hoggZ = +2.58`
+(`p = 0.010`) — second half has STRICTLY MORE
+above-median-days than expected under H0 of equal
+location, consistent with a recent ramp in daily token
+volume. For `vscode-cp`, `hoggZ = -2.10` (`p = 0.036`)
+— second half has STRICTLY FEWER above-median-days than
+the first half, consistent with a sustained decline.
+
+**Why the data-driven dispatch matters here.** The
+extreme Q values (170 and 3047) are themselves a strong
+diagnostic: any non-adaptive single-score location test
+applied to this corpus would either (a) waste signal by
+being dominated by the few extreme spike days
+(Wilcoxon rank-sum on these series is heavily influenced
+by tied-low days vs the spike days), or (b) fail to
+register at all (van der Waerden normal-scores assigns
+near-symmetric weights to ranks). By routing both
+sources to Mood's median test, axis-204 reports the
+LOCATION SHIFT CHANNEL that is most informative under
+the actual pooled tail shape — and exposes the dispatch
+decision as a per-source feature that can be cross-
+tabulated against tail-weight axes (axis-176 Hampel
+outlier count, axis-179 Mood scale, axis-200 Mielke
+quartic) for downstream diagnostic compounds.
+
+### Test count
+
+  - Before: 14,578
+  - After:  14,623 (+45)
+
 ## 0.6.506 — 2026-05-05
 
 ### Added — `classifyDavidBartonNoetherSignRunVsSpacedTripletStructureCompound` (axis-203 ↔ axis-202)
