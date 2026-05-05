@@ -216,6 +216,7 @@ import {
   renderDailyTokenSpearmanFootruleTime,
   renderDailyTokenWallisMoorePhaseFrequency,
   renderDailyTokenDanielsRankCorrelationTime,
+  renderDailyTokenBrownMoodMedianTrend,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -736,6 +737,10 @@ import {
   buildDailyTokenDanielsRankCorrelationTime,
   type DailyTokenDanielsRankCorrelationTimeSort,
 } from './dailytokendanielsrankcorrelationtime.js';
+import {
+  buildDailyTokenBrownMoodMedianTrend,
+  type DailyTokenBrownMoodMedianTrendSort,
+} from './dailytokenbrownmoodmediantrend.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47633,6 +47638,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenDanielsRankCorrelationTime(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-brown-mood-median-trend')
+  .description(
+    "Per-source BROWN-MOOD MEDIAN TREND TEST on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-ELEVENTH cross-source axis). Splits the time-ordered series at h = floor(n/2), counts above-global-median exceedances per half into a 2x2 contingency table (a/b/c/d), and computes the standard Pearson chi-square 1-df statistic bmChi2 = n*(ad-bc)^2 / ((a+b)(c+d)(a+c)(b+d)) with matching SIGNED Z form bmZ = (p1-p2)/sqrt(pHat*(1-pHat)*(1/n1+1/n2)) and two-sided normal-tail p-value 2*(1-Phi(|bmZ|)). bmChi2 = bmZ^2 (algebraic identity). SIGN: bmZ >> 0 = MORE above-median in FIRST half = MONOTONE DOWN-TREND; bmZ << 0 = more above-median in SECOND half = MONOTONE UP-TREND; bmZ ~ 0 = no median-level trend. STRUCTURALLY DISTINCT from axis-210 Daniels (full value-rank vs identity-rank correlation -- continuous-rank vs binary above/not bit), from axis-209 Wallis-Moore (LOCAL phase-shape on first-difference signs vs GLOBAL median-level binary count), from axis-205 Cox-Stuart (paired half-lag sign test vs unpaired bin-count), from axis-206 Jonckheere-Terpstra (k=4 blocks ordered alternative on full distribution vs k=2 blocks on binary above-median bit), from axis-207 Pitman MSSD (squared first-difference L2 magnitude), from Mann-Kendall (n*(n-1)/2 pairwise sign comparisons vs 2x2 chi-square). Tied values: ties at the median go into the NOT-ABOVE cell (Hollander-Wolfe-Chicken 2014 convention); nAtMedian count surfaced for transparency. Refs: Brown-Mood 1951 Proc. Second Berkeley Symp. vol. 1: 159-166; Hollander-Wolfe-Chicken 2014 sec. 6.6; Conover 1999 sec. 4.3; Gibbons-Chakraborti 2003 sec. 9.5.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (matches axis-205/206/207/208/209/210 trend trilogy and gives chi-square 1-df normal approximation a fair shot at Cochran 1954 expected-cell-count guidelines). Default 12.',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bmZAbsDesc (default) | bmZ | bmPValue | bmPValueDesc | bmChi2 | bmChi2Desc | tokens | tenure | source.',
+    'bmZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bmZ',
+          'bmZAbsDesc',
+          'bmPValue',
+          'bmPValueDesc',
+          'bmChi2',
+          'bmChi2Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBrownMoodMedianTrend(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenBrownMoodMedianTrendSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenBrownMoodMedianTrend(report) + '\n',
           );
         }
       } catch (e) {

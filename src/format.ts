@@ -20641,6 +20641,7 @@ import type { DailyTokenPitmanPermutationMssdRandomnessReport } from './dailytok
 import type { DailyTokenSpearmanFootruleTimeReport } from './dailytokenspearmanfootruletime.js';
 import type { DailyTokenWallisMoorePhaseFrequencyReport } from './dailytokenwallismoorephasefrequency.js';
 import type { DailyTokenDanielsRankCorrelationTimeReport } from './dailytokendanielsrankcorrelationtime.js';
+import type { DailyTokenBrownMoodMedianTrendReport } from './dailytokenbrownmoodmediantrend.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29822,6 +29823,83 @@ export function renderDailyTokenDanielsRankCorrelationTime(
   lines.push(
     chalk.dim(
       `(reference anchor: drPValue < 0.05 = REJECT random-permutation H0 at alpha=0.05 (two-sided normal-tail). drZ >> 0 = ranks RISE WITH TIME (monotone up-trend); drZ << 0 = ranks FALL WITH TIME (monotone down-trend). The Daniels rho is the L2 squared-rank-deviation analog of the axis-208 Spearman footrule L1 absolute-rank-deviation; both detect monotone trend but Daniels is more sensitive to outlier rank dislocations. Complementary to axis-209 Wallis-Moore which captures LOCAL phase-shape rather than GLOBAL rank alignment.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBrownMoodMedianTrend(
+  r: DailyTokenBrownMoodMedianTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-brown-mood-median-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedDegenerateSplit)} degenerate-split, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BROWN-MOOD MEDIAN TREND TEST on the gap-filled daily total_tokens series. Splits at h = floor(n/2); 2x2 contingency table (a/b/c/d) of above-vs-not-above the GLOBAL SAMPLE MEDIAN per half. bmChi2 = n*(ad-bc)^2/((a+b)(c+d)(a+c)(b+d)); bmZ is the matching SIGNED Z (bmChi2 = bmZ^2). SIGN: bmZ >> 0 = MORE above-median in FIRST half = MONOTONE DOWN-TREND; bmZ << 0 = more above-median in SECOND half = MONOTONE UP-TREND. TWO-HUNDRED-AND-ELEVENTH cross-source axis. STRUCTURALLY DISTINCT from axis-210 Daniels (continuous-rank vs binary above/not bit), from axis-209 Wallis-Moore (LOCAL phase-shape on diffs vs GLOBAL median-level binary count), from axis-205 Cox-Stuart (paired half-lag vs unpaired bin-count), from axis-206 JT (k=4 ordered alternative on full distribution vs k=2 on binary bit), from MK (n*(n-1)/2 pairwise vs 2x2). Ties at the median go to NOT-ABOVE. Refs: Brown-Mood 1951 Berkeley Symp. vol. 1: 159-166; Hollander-Wolfe-Chicken 2014 sec. 6.6; Conover 1999 sec. 4.3.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BROWN-MOOD median-trend test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'median',
+    'a/b/c/d',
+    'bmZ',
+    'bmChi2',
+    'bmPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.median.toFixed(2),
+    `${s.aFirstAbove}/${s.bFirstNotAbove}/${s.cSecondAbove}/${s.dSecondNotAbove}`,
+    s.bmZ.toFixed(4),
+    s.bmChi2.toFixed(4),
+    s.bmPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bmPValue < 0.05 = REJECT median-level no-trend H0 at alpha=0.05 (two-sided normal-tail / chi-square 1-df). bmZ >> 0 = above-median MASS HAS MIGRATED FROM SECOND TO FIRST HALF = MONOTONE DOWN-TREND; bmZ << 0 = above-median MASS HAS MIGRATED FROM FIRST TO SECOND HALF = MONOTONE UP-TREND. The Brown-Mood test is the maximally-coarse 2x2 binary trend test; it is much more ROBUST to outliers than continuous-rank tests but much less POWERFUL against smooth trends. Complementary to axis-210 Daniels (continuous rank vs time) and axis-209 Wallis-Moore (local phase-shape).)`,
     ),
   );
 
