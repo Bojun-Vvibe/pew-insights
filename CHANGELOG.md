@@ -2,6 +2,154 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.473 — 2026-05-05
+
+### Refactor — `classifyA12HlSignificanceMagnitudeCompound` cross-axis joiner (axes 187 + 186)
+
+Adds a pure-function reporter that joins per-source rows
+from axis-187 Vargha-Delaney A12 effect-size with
+axis-186 Hodges-Lehmann signed shift estimator on
+`source` and assigns each joined row to one of eight
+mutually-exclusive bivariate SIGNIFICANCE x MAGNITUDE x
+DIRECTION buckets.
+
+THE CORE CONTRIBUTION: this is the FIRST cross-axis
+joiner that crosses a SIGNED-DIRECTION SCALE-FREE
+EFFECT SIZE (axis-187 A12 with VD-2000 magnitude
+bucket) with a SIGNED-DIRECTION RAW-UNIT POINT
+ESTIMATE (axis-186 hlDelta in tokens). Unlike the
+existing `classifyHlMwShiftAgreement` (axes 186 + 115)
+which crosses two SIGNIFICANCE-DECISION axes, this
+joiner directly answers the question "is the
+location shift on this source MEANINGFUL or merely
+DETECTABLE", which is exactly the question Vargha &
+Delaney 2000 introduced A12 to answer:
+
+  - `agree-second-larger-meaningful`: both decisive,
+    signs agree on second-larger, A12 magnitude is
+    medium or large
+  - `agree-second-larger-trivial`: both decisive,
+    signs agree on second-larger, A12 magnitude is
+    negligible or small (the
+    "significant-but-meaningless" archetype that
+    arises when n is large enough to clear the
+    asymptotic test on a sub-threshold effect)
+  - `agree-first-larger-meaningful` / `-trivial`:
+    mirrors of the above for first-half-larger
+  - `a12-only-decisive`: A12 CI excludes 0.5 but HL
+    CI straddles 0 (heavy-tail pairwise distribution
+    widens the HL CI past 0)
+  - `hl-only-decisive`: HL CI excludes 0 but A12 CI
+    straddles 0.5 (small n inflates the
+    placement-rank SE past 0.5 even though the
+    pairwise-difference distribution is bounded
+    away from 0)
+  - `sign-conflict`: both decisive AND signs strictly
+    disagree on which half is stochastically larger
+    (only possible under heavy-tied bimodal data)
+  - `no-decisive-shift`: neither decisive
+
+The reporter also surfaces `bothDecisive`,
+`atLeastOneDecisive`, `signConflicts`,
+`largeAndSignificant` (the headline actionable
+count: decisive AND signs agree AND A12 magnitude
+is `large`), and `significantButNegligible` (the
+"ignore this signal" count surfaced for
+transparency: decisive AND signs agree AND A12
+magnitude is `negligible`). Source-set asymmetry is
+returned as `sourcesOnlyInA12` / `sourcesOnlyInHl`
+to detect coverage gaps when the two axis builders
+use different filters.
+
+WHY THIS IS THE RIGHT JOIN. axis-187 (A12 + VD
+magnitude bucket) and axis-186 (HL signed shift +
+Lehmann CI) measure the SAME location alternative
+through TWO COMPLEMENTARY AND
+MAXIMALLY-INDEPENDENT-SCALED LENSES:
+
+  - axis-186 reports a SIGNED RAW-UNIT POINT ESTIMATE
+    (median of n1*n2 pairwise differences, in
+    tokens). Tells you HOW MUCH the location moved
+    in the units the user actually cares about.
+  - axis-187 reports an UNSIGNED-MAGNITUDE +
+    SIGNED-DIRECTION SCALE-FREE EFFECT SIZE in
+    [0, 1] (probability that a random second-half
+    day exceeds a random first-half day). Tells
+    you HOW MEANINGFUL the move is INDEPENDENT of
+    the source's token volume — making rows with
+    very different token magnitudes directly
+    comparable.
+
+The cross-product directly recovers the four
+canonical reporting quadrants in Vargha-Delaney
+2000 sec. 4 (effect-size methodology) crossed
+with the two HL decision states.
+
+16 new unit tests cover empty-input handling, all
+eight bucket transitions including the trivial /
+meaningful split at the medium / small magnitude
+boundary, sign-conflict routing, source-set
+asymmetry surfacing, deterministic source-asc
+ordering, bucket-count integrity (sum equals row
+count), out-of-range A12 rejection [0, 1], non-
+finite hlDelta rejection, invalid magnitude
+rejection, invalid hlSign rejection, duplicate-
+source rejection on both sides, and a four-
+source live-shape regression test that mirrors
+the v0.6.472 axis-187 + v0.6.470 axis-186 reads
+on the corpus.
+
+#### Live cross-axis read
+
+Joining the four axis-187 A12 rows from v0.6.472
+with the four axis-186 HL rows from v0.6.470 on
+the same `~/.config/pew/queue.jsonl` corpus
+yields:
+
+```
+source       a12     vdMag       hlDelta       hlExcl0  bucket
+-----------  ------  ----------  ------------  -------  ------------------------------
+claude-code  0.7369  large       +18,998,644   no       a12-only-decisive
+hermes       0.6420  medium      +8,905,175    no       no-decisive-shift
+openclaw     0.0988  large       -119,325,554  YES      agree-first-larger-meaningful
+vscode-cp    0.4417  negligible   0            no       a12-only-decisive
+```
+
+Reading:
+
+  - **openclaw** is the ONE actionable signal:
+    `agree-first-larger-meaningful`, large A12,
+    HL CI excludes 0, signs agree on first-half
+    larger. Counted in `largeAndSignificant = 1`.
+  - **claude-code** lands in `a12-only-decisive`:
+    A12 = 0.74 with CI [0.68, 0.79] is a clean
+    SECOND-half-larger reading, but the axis-186
+    HL CI on the same source straddles 0
+    (per CHANGELOG v0.6.470). The bivariate
+    surface flags this honestly: the location
+    effect is real on the rank scale but its
+    raw-token magnitude is not bounded away from
+    0 by the Lehmann CI, so the user should
+    distrust any quoted hlDelta on this source.
+  - **hermes** is `no-decisive-shift` on the
+    bivariate surface even though A12 = 0.64
+    looks suggestive — at n1 = n2 = 9 both CIs
+    straddle their nulls. The compound
+    correctly suppresses a row that either axis
+    alone might over-report.
+  - **vscode-cp** lands in `a12-only-decisive`
+    with `vdMagnitude = negligible`: the
+    significant-but-negligible archetype, made
+    visible to the user precisely because the
+    bivariate joiner refuses to upgrade it to a
+    `agree-*-meaningful` bucket.
+
+The single
+`largeAndSignificant = 1` /
+`significantButNegligible = 0` summary on this
+read is the headline actionable answer the
+joiner was designed to produce.
+
 ## 0.6.472 — 2026-05-05
 
 ### Feature — `daily-token-vargha-delaney-halves` (axis-187)
