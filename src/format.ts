@@ -20638,6 +20638,7 @@ import type { DailyTokenHoggAdaptiveHalvesReport } from './dailytokenhoggadaptiv
 import type { DailyTokenCoxStuartSignPairsReport } from './dailytokencoxstuartsignpairs.js';
 import type { DailyTokenJonckheereTerpstraQuartileBlocksReport } from './dailytokenjonckheereterpstraquartileblocks.js';
 import type { DailyTokenPitmanPermutationMssdRandomnessReport } from './dailytokenpitmanpermutationmssdrandomness.js';
+import type { DailyTokenSpearmanFootruleTimeReport } from './dailytokenspearmanfootruletime.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29586,6 +29587,83 @@ export function renderDailyTokenPitmanPermutationMssdRandomness(
   lines.push(
     chalk.dim(
       `(reference anchor: ppPValue < 0.05 = REJECT exchangeable-ordering H0 at alpha=0.05 (two-sided Monte-Carlo permutation p-value). ppZ << 0 = SMOOTHNESS / positive lag-1 serial dependence (adjacent days atypically similar); ppZ >> 0 = OSCILLATION / negative lag-1 serial dependence. UNLIKE rank-asymptotic Bartels test (rank successive-difference ratio + asymptotic normal) PITMAN MSSD uses RAW values (sensitive to magnitudes -- a few large outliers can dominate) AND a PERMUTATION reference (exact size at alpha=(k+1)/(B+1)). UNLIKE axis-206 JT (block-ordering trend test) PITMAN tests lag-1 exchangeability across the entire series. UNLIKE axis-203 David-Barton (sign-only summary of lag-1 differences) PITMAN uses the SQUARED MAGNITUDE of lag-1 differences. PRNG seed is deterministic across runs and machines via SplitMix64.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSpearmanFootruleTime(
+  r: DailyTokenSpearmanFootruleTimeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-spearman-footrule-time'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SPEARMAN 1906 FOOTRULE RANK DISTANCE D = sum |R(x[i]) - i| between value-rank vector (mid-ranks for ties) and time-identity-rank vector (1..n) of the gap-filled daily total_tokens series. E[D] = (n^2 - 1)/3, Var[D] = (n+1)(2 n^2 + 7)/45 (Diaconis-Graham 1977 eq. 2.2). sfZ = (D - E[D]) / sqrt(Var[D]); two-sided normal-tail p-value 2 * (1 - Phi(|sfZ|)). SIGN: sfZ << 0 = STRONG MONOTONE INCREASING TREND (rank-vector close to identity). sfZ >> 0 = STRONG MONOTONE DECREASING TREND (rank-vector close to reverse-identity). TWO-HUNDRED-AND-EIGHTH cross-source axis. Pre-processing: NONE. Statistic uses MID-RANKS so ties are handled by averaging. Distinct from Mann-Kendall tau (L1 vs U-statistic), from lag-1 Spearman autocorrelation (global vs local), from axis-206 JT (whole-series vs k=4 blocks), from axis-207 Pitman MSSD (monotone trend vs lag-1 serial exchangeability), from axis-205 Cox-Stuart (full rank permutation vs paired-sign on first/second-half offset). Refs: Spearman 1906 Brit. J. Psychol. 2:89-108; Diaconis-Graham 1977 J. Roy. Stat. Soc. B 39:262-268; Hoeffding 1951 Ann. Math. Stat. 22:558-566.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SPEARMAN footrule rank-vs-time L1 distance test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'sfD',
+    'sfDExp',
+    'sfZ',
+    'sfPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.sfD.toFixed(2),
+    s.sfDExpected.toFixed(2),
+    s.sfZ.toFixed(4),
+    s.sfPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: sfPValue < 0.05 = REJECT uniform-permutation H0 at alpha=0.05 (two-sided normal-tail). sfZ << 0 = MONOTONE UP-TREND (value ranks track time identity); sfZ >> 0 = MONOTONE DOWN-TREND (value ranks anti-correlate with time identity). Footrule has D in [0, floor(n^2/2)] with D = 0 iff perfect identity (perfect up-trend) and D = floor(n^2/2) iff perfect reverse (perfect down-trend). UNLIKE Mann-Kendall (U-statistic of pairwise concordances) Spearman footrule is L1 rank-distance (linear in n, not pairwise). UNLIKE lag-1 Spearman autocorrelation (local lag-1 only) it integrates the full rank-vs-time alignment globally.)`,
     ),
   );
 

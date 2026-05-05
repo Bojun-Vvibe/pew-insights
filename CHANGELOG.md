@@ -2,6 +2,147 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.516 — 2026-05-05
+
+### Added — `daily-token-spearman-footrule-time` (axis-208)
+
+Per-source SPEARMAN 1906 FOOTRULE RANK DISTANCE
+`D = sum |R(x[i]) - i|` between the value-rank vector
+(mid-ranks for ties) and the time-identity-rank vector
+`(1, 2, ..., n)` of the gap-filled daily total_tokens
+series.
+
+**TWO-HUNDRED-AND-EIGHTH cross-source axis.**
+
+Closed-form moments under the uniform-random-permutation
+null (Diaconis & Graham 1977 *J. Roy. Statist. Soc. B*
+39: 262-268, eq. 2.2):
+
+```
+E[D]   = (n^2 - 1) / 3
+Var[D] = (n + 1)(2 n^2 + 7) / 45      (n >= 2)
+sfZ    = (D - E[D]) / sqrt(Var[D])
+sfP    = 2 * (1 - Phi(|sfZ|))         (two-sided normal)
+```
+
+**Sign convention.** `sfZ << 0` = D much SMALLER than
+its uniform-permutation expectation = STRONG MONOTONE
+INCREASING TREND (rank-vector close to identity, since
+the identity permutation minimises the L1 footrule
+distance at `D = 0`). `sfZ >> 0` = D much LARGER than
+expected = STRONG MONOTONE DECREASING TREND
+(rank-vector close to reverse-identity, which maximises
+the footrule at `D = floor(n^2 / 2)`). `sfZ ~ 0` = no
+detectable monotone trend in the rank-vs-time L1
+metric.
+
+**Structural orthogonality.**
+
+  - vs Mann-Kendall tau: tau is a U-statistic of order
+    2 over signed pairwise concordances; footrule is an
+    L-statistic of order 1 over per-element rank
+    displacements. A permutation with many small local
+    rank displacements (each `i` swapped with `i+1`)
+    gives footrule `D = n` but tau `~ -1 + 2/n`.
+  - vs lag-1 Spearman autocorrelation: lag-1 is a LOCAL
+    correlation; footrule is the GLOBAL L1 distance
+    from the identity permutation.
+  - vs axis-206 Jonckheere-Terpstra: JT tests ordered
+    alternative across `k = 4` chronological blocks via
+    sums of pairwise U-counts; footrule uses the WHOLE
+    series at finer resolution and the L1 (not
+    pairwise-count) metric.
+  - vs axis-207 Pitman MSSD: Pitman tests LAG-1 SERIAL
+    EXCHANGEABILITY via squared first-differences
+    against a permutation reference; footrule tests
+    GLOBAL MONOTONE TREND via L1 rank distance. A linear
+    trend with iid noise gives `sfZ << 0` (clear trend)
+    but `ppZ ~ 0` (no lag-1 dependence beyond the trend
+    line); a smooth zigzag gives `ppZ << 0` (smoothness)
+    but `sfZ ~ 0` (no monotone trend).
+  - vs axis-205 Cox-Stuart: Cox-Stuart pairs `v[i]` with
+    `v[i + ceil(n/2)]` and counts sign-of-difference;
+    footrule uses ALL `n` values and the ENTIRE rank
+    permutation.
+
+**Pre-processing.** NONE (raw values, gap-filled with
+zeros for absent days). MID-RANKS for ties (very common
+when two days have the same gap-filled token total of
+zero). Footrule `D` is shift-invariant and scale-
+invariant (rank-only), as is `sfZ`. **Hard floor on
+`min-tenure-days`: 12** (matches axis-205/206/207 trend
+trilogy and gives reasonable Hoeffding combinatorial-
+CLT normal-approximation accuracy). **Determinism.**
+Pure deterministic function of the input series; no
+PRNG.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Verbatim output of `node dist/cli.js
+daily-token-spearman-footrule-time --json` rendered as
+one row per source:
+
+```
+claude-code     sfD=    1174  sfZ= -4.2678  sfP= 1.98e-05  tenure= 72
+openclaw        sfD=     172  sfZ=  2.8889  sfP= 3.87e-03  tenure= 19
+opencode        sfD=     102  sfZ=  1.2141  sfP= 2.25e-01  tenure= 16
+vscode-copilot  sfD=   23066  sfZ= -0.3753  sfP= 7.07e-01  tenure= 265
+hermes          sfD=     114  sfZ= -0.3333  sfP= 7.39e-01  tenure= 19
+```
+
+Reading. Two sources are decisive at alpha=0.05:
+**claude-code** (sfZ = -4.27, sfP = 1.98e-5) shows a
+*very strong* MONOTONE INCREASING TREND -- value ranks
+track the time index much more closely than under any
+random permutation, the strongest signal in the corpus.
+**openclaw** (sfZ = +2.89, sfP = 3.87e-3) shows a
+significant MONOTONE DECREASING TREND (value ranks
+anti-correlate with time identity). The other three
+sources are non-decisive -- vscode-copilot and hermes
+sit essentially at the uniform-permutation null
+(|sfZ| < 0.4), and opencode is borderline (sfZ = 1.21,
+sfP = 0.22 -- a hint of down-trend that does not
+clear alpha=0.05). The L1 rank-distance metric thus
+splits the corpus cleanly into a sharp-up source
+(claude-code), a sharp-down source (openclaw), and
+three trend-null sources, mirroring the axis-205/206
+ordering signal but at a *finer per-element resolution*
+than the block-based JT (axis-206) and at a different
+metric (L1) than the squared-difference reference of
+Pitman MSSD (axis-207).
+
+### Files
+
+  - `src/dailytokenspearmanfootruletime.ts` -- adds
+    `dailyTokenSpearmanFootruleTime`,
+    `buildDailyTokenSpearmanFootruleTime`,
+    `aggregateSpearmanFootruleTime`,
+    `spearmanFootruleMidRanks`,
+    `spearmanFootruleStatistic`,
+    `spearmanFootruleExpectedD`,
+    `spearmanFootruleVarianceD`,
+    `standardNormalUpperTailSpearmanFootruleTime`.
+  - `test/dailytokenspearmanfootruletime.test.ts` --
+    +47 tests covering mid-rank generation, statistic
+    edge cases (perfect identity / reverse / zigzag),
+    closed-form moments, normal-tail approximation,
+    determinism, shift- and scale-invariance, build()
+    filtering, top cap, source filter, and the
+    Stouffer aggregator.
+  - `src/cli.ts` -- new
+    `daily-token-spearman-footrule-time` subcommand
+    with `--since`, `--until`, `--source`,
+    `--min-tokens`, `--min-tenure-days`, `--top`,
+    `--sort`, `--json`.
+  - `src/format.ts` -- new
+    `renderDailyTokenSpearmanFootruleTime` pretty
+    renderer with reference-anchor footer.
+
+### Test count
+
+  - Before: 14,840
+  - After:  14,887 (+47)
+
 ## 0.6.515 — 2026-05-05
 
 ### Added — `summarizeAxis207Axis206PitmanMssdJonckheereTerpstraReport`

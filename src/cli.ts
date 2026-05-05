@@ -213,6 +213,7 @@ import {
   renderDailyTokenCoxStuartSignPairs,
   renderDailyTokenJonckheereTerpstraQuartileBlocks,
   renderDailyTokenPitmanPermutationMssdRandomness,
+  renderDailyTokenSpearmanFootruleTime,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -721,6 +722,10 @@ import {
   buildDailyTokenPitmanPermutationMssdRandomness,
   type DailyTokenPitmanPermutationMssdRandomnessSort,
 } from './dailytokenpitmanpermutationmssdrandomness.js';
+import {
+  buildDailyTokenSpearmanFootruleTime,
+  type DailyTokenSpearmanFootruleTimeSort,
+} from './dailytokenspearmanfootruletime.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47306,6 +47311,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenPitmanPermutationMssdRandomness(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-spearman-footrule-time')
+  .description(
+    "Per-source SPEARMAN 1906 FOOTRULE RANK DISTANCE D = sum |R(x[i]) - i| between the value-rank vector (mid-ranks for ties) and the time-identity-rank vector (1..n) of the gap-filled daily total_tokens series (TWO-HUNDRED-AND-EIGHTH cross-source axis). E[D] = (n^2 - 1)/3, Var[D] = (n+1)(2 n^2 + 7)/45 (Diaconis-Graham 1977 eq. 2.2). sfZ = (D - E[D]) / sqrt(Var[D]); two-sided normal-tail p-value 2 * (1 - Phi(|sfZ|)). SIGN: sfZ << 0 = D much SMALLER than E[D] = STRONG MONOTONE INCREASING TREND (rank-vector close to identity). sfZ >> 0 = D much LARGER than E[D] = STRONG MONOTONE DECREASING TREND (rank-vector far from identity). STRUCTURALLY DISTINCT from Mann-Kendall tau (L1 rank-distance vs U-statistic of pairwise concordances), from lag-1 Spearman autocorrelation (global L1 distance from identity vs local lag-1 correlation), from axis-206 JT (whole-series rank-vs-time vs k=4 block ordered-alternative), from axis-207 Pitman MSSD (global monotone trend vs lag-1 serial exchangeability), from axis-205 Cox-Stuart (full rank permutation vs first-vs-second-half sign pairing). Pre-processing: NONE; rank-only so shift- and scale-invariant. Refs: Spearman 1906 Brit. J. Psychol. 2:89-108; Diaconis-Graham 1977 J. Roy. Stat. Soc. B 39:262-268; Hoeffding 1951 Ann. Math. Stat. 22:558-566.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (matches axis-205/206/207 trend trilogy and gives reasonable Hoeffding combinatorial-CLT normal-approximation accuracy). Default 12.',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: sfZAbsDesc (default) | sfZ | sfPValue | sfPValueDesc | sfD | sfDDesc | tokens | tenure | source.',
+    'sfZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'sfZ',
+          'sfZAbsDesc',
+          'sfPValue',
+          'sfPValueDesc',
+          'sfD',
+          'sfDDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenSpearmanFootruleTime(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenSpearmanFootruleTimeSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenSpearmanFootruleTime(report) + '\n',
           );
         }
       } catch (e) {
