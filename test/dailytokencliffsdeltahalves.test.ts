@@ -539,3 +539,131 @@ test('cd: build dominance counts add up to m*n', () => {
   const r = report.sources[0]!;
   assert.equal(r.cdNGreater + r.cdNLess + r.cdNEqual, r.cdMSize * r.cdNSize);
 });
+
+// ---------- v0.6.481 refinement: extra edge-case tests ----------
+
+test('cd: bootstrap CI is monotone in alpha (smaller alpha => wider or equal CI)', () => {
+  // For the same data + seed, alpha=0.01 (99% CI) must be at least as wide
+  // as alpha=0.05 (95% CI) which must be at least as wide as alpha=0.10 (90% CI).
+  const a = Array.from({ length: 30 }, (_, i) => 100 + (i * 13) % 47);
+  const b = Array.from({ length: 30 }, (_, i) => 130 + (i * 17) % 47);
+  const widths: number[] = [];
+  for (const alpha of [0.01, 0.05, 0.1]) {
+    const rng = makeMulberry32('mono');
+    const r = cliffsDeltaBootstrapCi(a, b, 299, alpha, rng);
+    widths.push(r.ciHigh - r.ciLow);
+  }
+  assert.ok(
+    widths[0]! >= widths[1]! - 1e-9,
+    `99% width ${widths[0]} should be >= 95% ${widths[1]}`,
+  );
+  assert.ok(
+    widths[1]! >= widths[2]! - 1e-9,
+    `95% width ${widths[1]} should be >= 90% ${widths[2]}`,
+  );
+});
+
+test('cd: ties-only sample yields delta=0 and large nEqual', () => {
+  const a = [5, 5, 5, 5];
+  const b = [5, 5, 5, 5];
+  const r = cliffsDelta(a, b);
+  assert.equal(r.nGreater, 0);
+  assert.equal(r.nLess, 0);
+  assert.equal(r.nEqual, 16);
+  assert.equal(r.delta, 0);
+});
+
+test('cd: build seed is per-source (different sources => independent CIs)', () => {
+  // Two sources with identical numerical data should still get DIFFERENT
+  // bootstrap CIs because the seed is keyed on source name.
+  const queue: QueueLine[] = [];
+  const vals = [100, 200, 150, 250, 175, 225, 190, 210, 180, 220, 185, 215, 195, 205, 198, 202, 199, 201, 200, 200];
+  for (let i = 0; i < vals.length; i += 1) {
+    queue.push(ql(dayIso(i), 'src-X', vals[i]!));
+    queue.push(ql(dayIso(i), 'src-Y', vals[i]!));
+  }
+  const report = buildDailyTokenCliffsDeltaHalves(queue, {
+    minTokens: 1,
+    minTenureDays: 16,
+    nBoot: 199,
+    generatedAt: '2026-05-05T00:00:00.000Z',
+  });
+  assert.equal(report.sources.length, 2);
+  const x = report.sources.find((s) => s.source === 'src-X')!;
+  const y = report.sources.find((s) => s.source === 'src-Y')!;
+  // Point estimates are identical (same data, same split).
+  assert.equal(x.cdDelta, y.cdDelta);
+  // Bootstrap CIs differ because of the per-source seed.
+  assert.notEqual(`${x.cdCiLow},${x.cdCiHigh}`, `${y.cdCiLow},${y.cdCiHigh}`);
+});
+
+test('cd: build sort=ciHalfWidth orders by tightest CI first', () => {
+  const queue: QueueLine[] = [];
+  // src-tight: 30 days, narrower CI expected.
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'src-tight', i < 15 ? 100 + i : 200 + i));
+  }
+  // src-wide: 16 days, wider CI expected.
+  for (let i = 0; i < 16; i += 1) {
+    queue.push(ql(dayIso(i), 'src-wide', i < 8 ? 100 : 110));
+  }
+  const report = buildDailyTokenCliffsDeltaHalves(queue, {
+    minTokens: 1,
+    minTenureDays: 16,
+    nBoot: 199,
+    sort: 'ciHalfWidth',
+    generatedAt: '2026-05-05T00:00:00.000Z',
+  });
+  assert.equal(report.sources.length, 2);
+  assert.equal(report.sources[0]!.source, 'src-tight');
+});
+
+test('cd: build sort=absDeltaDescCiExcludesZero puts ci!=0 sources first', () => {
+  const queue: QueueLine[] = [];
+  // Big shift on src-decisive (CI excludes 0).
+  for (let i = 0; i < 30; i += 1) {
+    queue.push(ql(dayIso(i), 'src-decisive', i < 15 ? 100 : 1000));
+  }
+  // Tiny noisy shift on src-noisy (CI includes 0, but very small magnitude).
+  for (let i = 0; i < 16; i += 1) {
+    queue.push(ql(dayIso(i), 'src-noisy', i < 8 ? 100 : 100 + (i % 2)));
+  }
+  const report = buildDailyTokenCliffsDeltaHalves(queue, {
+    minTokens: 1,
+    minTenureDays: 16,
+    nBoot: 199,
+    sort: 'absDeltaDescCiExcludesZero',
+    generatedAt: '2026-05-05T00:00:00.000Z',
+  });
+  assert.equal(report.sources[0]!.source, 'src-decisive');
+  assert.ok(report.sources[0]!.cdCiExcludesZero);
+});
+
+test('cd: cliffs delta is bounded by [-1, +1] under random fuzz', () => {
+  let s = 7777;
+  const rng = () => {
+    s = (s * 1664525 + 1013904223) & 0x7fffffff;
+    return s % 1000;
+  };
+  for (let trial = 0; trial < 50; trial += 1) {
+    const m = 5 + (rng() % 20);
+    const n = 5 + (rng() % 20);
+    const a = Array.from({ length: m }, () => rng());
+    const b = Array.from({ length: n }, () => rng());
+    const r = cliffsDelta(a, b);
+    assert.ok(r.delta >= -1 && r.delta <= 1, `trial=${trial} delta=${r.delta}`);
+    assert.equal(r.nGreater + r.nLess + r.nEqual, m * n);
+  }
+});
+
+test('cd: bootstrap CI endpoints are bounded by [-1, +1]', () => {
+  const a = [1, 2, 3, 4, 5, 6, 7, 8];
+  const b = [10, 11, 12, 13, 14, 15, 16, 17];
+  const rng = makeMulberry32('bound-check');
+  const r = cliffsDeltaBootstrapCi(a, b, 299, 0.05, rng);
+  assert.ok(r.ciLow >= -1 && r.ciLow <= 1);
+  assert.ok(r.ciHigh >= -1 && r.ciHigh <= 1);
+  for (const d of r.bootDeltas) {
+    assert.ok(d >= -1 && d <= 1);
+  }
+});

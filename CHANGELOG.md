@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.481 — 2026-05-05
+
+### Added — axis-191 refinement: 7 additional invariant + edge-case tests
+
+Hardens the axis-191 `daily-token-cliffs-delta-halves` test
+suite with 7 new invariants that were not exercised by the
+v0.6.480 ship:
+
+  - **CI monotone in alpha.** For the same data + seed,
+    99% CI width >= 95% CI width >= 90% CI width.
+  - **Ties-only sample.** Constant-vs-constant samples
+    yield delta = 0 with all m*n cross-pairs landing in
+    nEqual.
+  - **Per-source seed independence.** Two sources with
+    IDENTICAL numerical data get IDENTICAL point delta
+    but DIFFERENT bootstrap CIs (seed = source name).
+  - **`sort=ciHalfWidth`** orders sources from tightest
+    CI to widest.
+  - **`sort=absDeltaDescCiExcludesZero`** puts CI-excludes-
+    zero sources ahead of NS sources, breaking ties by
+    |delta| descending.
+  - **Random-fuzz delta bound.** delta in [-1, +1] across
+    50 random (m, n) pairs.
+  - **Bootstrap endpoints bound.** Every individual
+    bootstrap deltaHat* AND the resulting CI endpoints
+    are bounded by [-1, +1].
+
+Total axis-191 test count: 47 -> 54.
+
 ## 0.6.480 — 2026-05-05
 
 ### Added — axis-191 `daily-token-cliffs-delta-halves` (Cliff's delta with bootstrap percentile CI)
