@@ -20633,6 +20633,7 @@ import type { DailyTokenCaponHalvesReport } from './dailytokencaponhalves.js';
 import type { DailyTokenMielkeQuarticHalvesReport } from './dailytokenmielkequartichalves.js';
 import type { DailyTokenKamatRangeRatioHalvesReport } from './dailytokenkamatrangeratiohalves.js';
 import type { DailyTokenNoetherCyclicalTrendReport } from './dailytokennoethercyclicaltrend.js';
+import type { DailyTokenDavidBartonRunsUpDownReport } from './dailytokendavidbartonrunsupdown.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29171,6 +29172,87 @@ export function renderDailyTokenNoetherCyclicalTrend(
   lines.push(
     chalk.dim(
       `(reference anchor: noetherPValue < 0.05 = REJECT i.i.d.-continuous H0 at alpha=0.05 (two-sided normal reference, permutation-studentised). noetherZ > 0 = MORE monotonic lag-${r.noetherLag} spaced triplets than chance = lag-${r.noetherLag} PERSISTENCE / TREND; noetherZ < 0 = FEWER = lag-${r.noetherLag} CYCLIC / mean-reverting structure. UNLIKE Wallis-Moore (lag-1 turning-points), Noether at lag ${r.noetherLag} sees PERSISTENCE-OR-REVERSION AT TWO-DAY SCALE — patterns invisible to lag-1 statistics.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenDavidBartonRunsUpDown(
+  r: DailyTokenDavidBartonRunsUpDownReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-david-barton-runs-up-down'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DAVID & BARTON 1958 RUNS-UP-AND-DOWN TEST. dbR = number of maximal runs of identically-signed first differences (zero diffs absorbed by carry-forward, Bradley 1968 conv. C). E[dbR] = (2n-1)/3, Var[dbR] = (16n-29)/90 under H0 i.i.d. continuous. dbZ ~~ N(0,1) for n>=12. SIGN: dbZ > 0 = MORE runs than chance = HIGH-FREQUENCY OSCILLATION; dbZ < 0 = FEWER runs = LOW-FREQUENCY PERSISTENCE / trend. TWO-HUNDRED-AND-THIRD cross-source axis. Pre-processing: NONE (sign of first differences is shift-invariant and positive-scale-invariant). Distribution-free under H0; deterministic. Refs: David & Barton 1958 Biometrika 45:253-256; Levene 1952 Annals Math Stat 23:34-56.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source DAVID-BARTON runs-up-and-down (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'diffs',
+    'zeros',
+    'dbR',
+    'expR',
+    'dbZ',
+    'dbPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.dbDiffs),
+    formatNumber(s.dbZeros),
+    formatNumber(s.dbR),
+    s.dbExpR.toFixed(2),
+    s.dbZ.toFixed(4),
+    s.dbPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: dbPValue < 0.05 = REJECT i.i.d.-continuous H0 at alpha=0.05 (two-sided normal reference). dbZ > 0 = HIGH-FREQUENCY DAILY OSCILLATION (more sign-flips than chance, mean-reverting); dbZ < 0 = LOW-FREQUENCY PERSISTENCE (longer monotone stretches than chance, trending). UNLIKE Wallis-Moore (lag-1 turning-points) David-Barton uses run COUNTS rather than turning-point counts and has a distinct standardisation under tied data; UNLIKE Wald-Wolfowitz (median-dichotomised runs) David-Barton operates on first-difference signs not on (v - median) signs.)`,
     ),
   );
 

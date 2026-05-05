@@ -208,6 +208,7 @@ import {
   renderDailyTokenMielkeQuarticHalves,
   renderDailyTokenKamatRangeRatioHalves,
   renderDailyTokenNoetherCyclicalTrend,
+  renderDailyTokenDavidBartonRunsUpDown,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -696,6 +697,10 @@ import {
   buildDailyTokenNoetherCyclicalTrend,
   type DailyTokenNoetherCyclicalTrendSort,
 } from './dailytokennoethercyclicaltrend.js';
+import {
+  buildDailyTokenDavidBartonRunsUpDown,
+  type DailyTokenDavidBartonRunsUpDownSort,
+} from './dailytokendavidbartonrunsupdown.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -46749,6 +46754,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenNoetherCyclicalTrend(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-david-barton-runs-up-down')
+  .description(
+    "Per-source DAVID & BARTON 1958 RUNS-UP-AND-DOWN TEST on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-THIRD cross-source axis). Statistic dbR = number of maximal runs of identically-signed first differences d[i] = v[i+1]-v[i] (zero diffs absorbed by carry-forward, Bradley 1968 conv. C). Under H0 of i.i.d. continuous: E[dbR] = (2n-1)/3, Var[dbR] = (16n-29)/90 (David & Barton 1958 Biometrika 45:253-256; Levene 1952 Annals Math Stat 23:34-56 eq. 4.2). dbZ = (dbR - E[dbR]) / sqrt(Var[dbR]) ~~ N(0,1) for n>=12. SIGN: dbZ > 0 = MORE runs than chance = HIGH-FREQUENCY OSCILLATION / mean-reverting daily structure; dbZ < 0 = FEWER runs = LONGER monotone stretches = LOW-FREQUENCY PERSISTENCE / trend. STRUCTURALLY DISTINCT from axis-202 Noether-cyclical-trend (lag-2 monotonic SPACED triplets vs lag-1 sign-RUN structure); from daily-token-turning-point-rate (Wallis-Moore counts strict local extrema = (dbR-1) under no ties; standardisation differs and ties dissociate them); from daily-token-runs-test-z (Wald-Wolfowitz dichotomises at MEDIAN, not at zero of first differences); from daily-token-bartels-rank-von-neumann (magnitude-of-successive-differences, magnitude-sensitive; David-Barton sign-only); from mann-kendall-tau (global all-pairs S vs adjacent-pair sign-runs); from autocorrelation lag1/lag7 (parametric linear). Pre-processing: NONE (sign of first differences is shift-invariant and positive-scale-invariant). Distribution-free under H0; deterministic. Refs: David & Barton 1958 Biometrika 45:253-256; Edgington 1961 American Statistician 15(4):8; Bradley 1968 Distribution-Free Statistical Tests sec. 12.3.4; Levene 1952 Annals Math Stat 23:34-56.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (n-1=11 first differences, Levene 1952 asymptotic-normal validity band). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: dbZAbsDesc (default) | dbZ | dbPValue | dbPValueDesc | dbR | dbRDesc | tokens | tenure | source.',
+    'dbZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'dbZ',
+          'dbZAbsDesc',
+          'dbPValue',
+          'dbPValueDesc',
+          'dbR',
+          'dbRDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDavidBartonRunsUpDown(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenDavidBartonRunsUpDownSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenDavidBartonRunsUpDown(report) + '\n',
           );
         }
       } catch (e) {
