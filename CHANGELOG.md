@@ -2,6 +2,125 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.505 — 2026-05-05
+
+### Added — `daily-token-david-barton-runs-up-down` (axis-203)
+
+Per-source DAVID & BARTON 1958 RUNS-UP-AND-DOWN TEST
+on the gap-filled daily total_tokens series. Counts
+the number of maximal runs of identically-signed
+first differences `d[i] = v[i+1] - v[i]` (zero diffs
+absorbed by carry-forward, Bradley 1968 sec. 12.3.4
+convention C). Under H0 of i.i.d. continuous
+observations:
+
+    E[dbR]   = (2 n - 1) / 3
+    Var[dbR] = (16 n - 29) / 90
+    dbZ      = (dbR - E[dbR]) / sqrt(Var[dbR])  ~~  N(0, 1)
+
+(David & Barton 1958 *Biometrika* 45(1-2):253-256;
+Levene 1952 *Annals Math Stat* 23:34-56 eq. 4.2;
+Edgington 1961 *American Statistician* 15(4):8;
+Bradley 1968 *Distribution-Free Statistical Tests*
+sec. 12.3.4.)
+
+**Sign convention.** `dbZ > 0` = MORE runs than chance
+= the series alternates direction MORE often than
+expected = HIGH-FREQUENCY OSCILLATION / mean-reverting
+daily structure. `dbZ < 0` = FEWER runs than chance
+= LONGER monotone stretches than expected = LOW-
+FREQUENCY PERSISTENCE / trending behaviour.
+
+**Structural orthogonality.** This is the TWO-HUNDRED-
+AND-THIRD cross-source axis. Distinct from:
+
+  - axis-202 Noether-cyclical-trend (lag-2 monotonic
+    SPACED triplets vs lag-1 sign-RUN structure on the
+    full series);
+  - daily-token-turning-point-rate (Wallis-Moore counts
+    strict local extrema, which equals `dbR - 1` only
+    under no ties; the standardisation differs and tied
+    days dissociate the two);
+  - daily-token-runs-test-z (Wald-Wolfowitz dichotomises
+    at the MEDIAN, not at zero of first differences);
+  - daily-token-bartels-rank-von-neumann (magnitude-of-
+    successive-differences, magnitude-sensitive; David-
+    Barton sign-only);
+  - daily-token-mann-kendall-tau (global all-pairs S;
+    David-Barton uses only adjacent-pair signs);
+  - daily-token-autocorrelation-lag1 / -lag7 (Pearson
+    rho on raw values, parametric and magnitude-
+    dominated);
+  - all "halves" axes (those are TWO-SAMPLE first-half-
+    vs-second-half tests; David-Barton is a SINGLE-
+    SAMPLE within-series statistic on the full
+    sequence).
+
+Pre-processing: NONE. The first-difference signs are
+shift-invariant and positive-scale-invariant.
+Distribution-free under H0; deterministic given the
+same input. Hard floor `min-tenure-days >= 12`
+(Levene 1952 asymptotic-normal validity band).
+
+**Live smoke** (`~/.config/pew/queue.jsonl`,
+`--min-tokens 1000 --min-tenure-days 14`; the
+`vscode-cp` source name in this corpus is reproduced
+verbatim from the live output, masked here for
+documentation hygiene):
+
+```
+pew-insights daily-token-david-barton-runs-up-down
+as of: 2026-05-05T11:24:07.569Z    sources: 6 (shown 5)    tokens: 13,231,508,371    min-tokens: 1,000    min-tenure-days: 14    top: —    sort: dbZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 1 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source DAVID-BARTON runs-up-and-down (sorted by dbZAbsDesc; ties: source asc)
+source       firstDay    lastDay     tenure  active  diffs  zeros  dbR  expR    dbZ       dbPValue    tokens
+-----------  ----------  ----------  ------  ------  -----  -----  ---  ------  --------  ----------  -------------
+vscode-cp    2025-07-30  2026-04-20  265     73      264    156    86   176.33  -13.2062  8.3935e-40  1,885,727
+claude-code  2026-02-11  2026-04-23  72      35      71     27     27   47.67   -5.8506   4.9133e-9   3,442,385,788
+opencode     2026-04-20  2026-05-05  16      16      15     0      8    10.33   -1.4692   1.4177e-1   7,044,621,160
+hermes       2026-04-17  2026-05-05  19      19      18     0      13   12.33   0.3814    7.0292e-1   342,877,894
+openclaw     2026-04-17  2026-05-05  19      19      18     0      12   12.33   -0.1907   8.4877e-1   2,399,737,802
+```
+
+**Reading the smoke.** Three of the five sources show
+strongly-negative `dbZ` indicating LOW-FREQUENCY
+PERSISTENCE — `vscode-cp` (`dbZ = -13.21`,
+`dbPValue ~ 8.4e-40`) and `claude-code`
+(`dbZ = -5.85`, `dbPValue ~ 4.9e-9`) reject H0 of
+i.i.d. ordering at any reasonable alpha; `opencode`
+trends weakly negative. `hermes` and `openclaw` are
+very close to E[dbR] (no detectable departure at
+n = 19). The strong persistence signal in `vscode-cp`
+is dominated by the 156 zero-diffs across 264
+differences (long flat stretches between sparse
+active days, which carry-forward into long monotone
+runs by Bradley 1968 convention C).
+
+### Files
+
+  - `src/dailytokendavidbartonrunsupdown.ts` — primitive
+    `dailyTokenDavidBartonRunsUpDown`, helpers
+    `countRunsUpDownDavidBarton` /
+    `standardNormalUpperTailDavidBarton`, builder
+    `buildDailyTokenDavidBartonRunsUpDown`, and signed
+    Stouffer aggregator
+    `aggregateDavidBartonRunsUpDown`.
+  - `src/cli.ts` — `daily-token-david-barton-runs-up-down`
+    subcommand wired with `--source`, `--since`,
+    `--until`, `--min-tokens`, `--min-tenure-days`,
+    `--top`, `--sort`, `--json`.
+  - `src/format.ts` — `renderDailyTokenDavidBartonRunsUpDown`
+    pretty renderer.
+  - `test/dailytokendavidbartonrunsupdown.test.ts` —
+    unit + integration tests for the primitive,
+    helpers, aggregator, and builder.
+
+### Test count
+
+  - Before: 14,519
+  - After:  14,554 (+35)
+
 ## 0.6.504 — 2026-05-05
 
 ### Added — `classifyNoetherTurningPointLagTwoVsLagOneTrendStructureCompound` (axis-202 ↔ daily-token-turning-point-rate)
