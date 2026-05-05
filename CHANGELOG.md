@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.524 — 2026-05-05
+
+### Added — `classifyAxis210Axis209DanielsWallisMooreGlobalRankAlignmentVsLocalPhaseSmoothnessCompound`
+
+New cross-axis 7-bucket diagnostic joining axis-210
+DANIELS RANK CORRELATION WITH TIME (`drZ`, `drPValue`)
+with axis-209 WALLIS-MOORE PHASE-FREQUENCY (`wmZ`,
+`wmPValue`) on a per-source basis.
+
+**Structural orthogonality.** Daniels is a GLOBAL L2
+RANK-CORRELATION between value-ranks and the time-
+identity sequence (sensitive to OVERALL rank-vs-time
+ALIGNMENT); Wallis-Moore is a LOCAL CONTIGUOUS-PHASE
+counting statistic on the SIGN PATTERN of consecutive
+first-differences (sensitive to LOCAL SMOOTHNESS /
+OSCILLATION FREQUENCY). Different information
+content, different scale, different tie behaviour
+(WM skips tied diffs; Daniels uses midranks). Note
+the SIGN CONVENTION is OPPOSITE to the v0.6.521
+axis-209 ↔ axis-208 compound: drZ >> 0 = up-trend
+(Daniels is a CORRELATION, large = aligned), whereas
+axis-208 footrule had sfZ << 0 = up-trend (footrule
+is a DISTANCE, small = aligned).
+
+**Buckets** (alpha default 0.05):
+
+  - `smooth-up-trend`: wmZ < 0 AND drZ > 0, both decisive
+  - `smooth-down-trend`: wmZ < 0 AND drZ < 0, both decisive
+  - `zigzag-with-trend`: wmZ > 0, dr decisive (sawtooth-with-drift)
+  - `smoothness-only-smooth`: wmZ < 0, dr not decisive
+  - `smoothness-only-zigzag`: wmZ > 0, dr not decisive
+  - `daniels-only`: dr decisive, wm not decisive
+  - `no-evidence`: neither decisive
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Composing the v0.6.523 axis-210 Daniels output with
+the existing axis-209 Wallis-Moore output via the new
+classifier on the same live queue snapshot
+(`scripts/livesmoke-axis210x209.mjs`):
+
+```
+axis-210xaxis-209 alpha=0.05 n=5 both=2/5 qd[smU/smD/zgU/zgD]=1/1/0/0 buckets[smU/smD/zwT/sos/soz/do/ne]=1/1/0/0/0/1/2
+---
+claude-code: drZ=4.0682 drP=4.740e-5 wmZ=-5.8506 wmP=4.913e-9 bucket=smooth-up-trend qd=smoothUp
+hermes: drZ=0.5657 drP=5.716e-1 wmZ=0.3814 wmP=7.029e-1 bucket=no-evidence qd=-
+openclaw: drZ=-2.9029 drP=3.698e-3 wmZ=-0.1907 wmP=8.488e-1 bucket=daniels-only qd=-
+opencode: drZ=-1.4125 drP=1.578e-1 wmZ=-1.4692 wmP=1.418e-1 bucket=no-evidence qd=-
+vscode-copilot: drZ=-2.1731 drP=2.977e-2 wmZ=-13.2062 wmP=8.394e-40 bucket=smooth-down-trend qd=smoothDown
+```
+
+Two of five sources land in the `smooth-X-trend`
+quadrant: **claude-code** is a clean `smooth-up-trend`
+(both axes strongly decisive, Daniels rho=+0.48 over
+n=72, WM phase-count Z=-5.85), and **vscode-copilot**
+is a clean `smooth-down-trend` (Daniels rho=-0.13 with
+Z=-2.17 over n=265, WM phase-count Z=-13.21 -- the
+extreme WM result reflects the highly serially-
+correlated long-tail tenure). **openclaw** is
+`daniels-only`: Daniels detects a clear monotone
+DOWN-trend (Z=-2.90) but Wallis-Moore is non-decisive
+(Z=-0.19) -- the trend is statistically real at the
+GLOBAL rank-vs-time level but the LOCAL phase
+structure looks essentially random, consistent with a
+weak global drift overlaid on iid noise. hermes and
+opencode are `no-evidence`.
+
+### Files
+
+  - `src/classifyaxis210axis209danielswallismooreglobalrankalignmentvslocalphasesmoothnesscompound.ts`
+    -- pure classifier + summarizer.
+  - `test/classifyaxis210axis209danielswallismooreglobalrankalignmentvslocalphasesmoothnesscompound.test.ts`
+    -- +22 tests covering all 7 buckets, joint quadrants,
+    duplicate/missing/non-finite input validation,
+    source ordering, summarize formatting.
+  - `scripts/livesmoke-axis210x209.mjs` -- live-smoke
+    harness pairing axis-210 with axis-209 against
+    `~/.config/pew/queue.jsonl`.
+
+### Test count
+
+  - Before: 15,050
+  - After:  15,072 (+22)
+
 ## 0.6.523 — 2026-05-05
 
 ### Added — `daily-token-daniels-rank-correlation-time` (axis-210)
