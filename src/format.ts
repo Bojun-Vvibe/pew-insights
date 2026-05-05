@@ -20642,6 +20642,7 @@ import type { DailyTokenSpearmanFootruleTimeReport } from './dailytokenspearmanf
 import type { DailyTokenWallisMoorePhaseFrequencyReport } from './dailytokenwallismoorephasefrequency.js';
 import type { DailyTokenDanielsRankCorrelationTimeReport } from './dailytokendanielsrankcorrelationtime.js';
 import type { DailyTokenBrownMoodMedianTrendReport } from './dailytokenbrownmoodmediantrend.js';
+import type { DailyTokenOlmsteadTukeyCornerTestReport } from './dailytokenolmsteadtukeycornertest.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29900,6 +29901,83 @@ export function renderDailyTokenBrownMoodMedianTrend(
   lines.push(
     chalk.dim(
       `(reference anchor: bmPValue < 0.05 = REJECT median-level no-trend H0 at alpha=0.05 (two-sided normal-tail / chi-square 1-df). bmZ >> 0 = above-median MASS HAS MIGRATED FROM SECOND TO FIRST HALF = MONOTONE DOWN-TREND; bmZ << 0 = above-median MASS HAS MIGRATED FROM FIRST TO SECOND HALF = MONOTONE UP-TREND. The Brown-Mood test is the maximally-coarse 2x2 binary trend test; it is much more ROBUST to outliers than continuous-rank tests but much less POWERFUL against smooth trends. Complementary to axis-210 Daniels (continuous rank vs time) and axis-209 Wallis-Moore (local phase-shape).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenOlmsteadTukeyCornerTest(
+  r: DailyTokenOlmsteadTukeyCornerTestReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-olmstead-tukey-corner-test'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source OLMSTEAD-TUKEY CORNER TEST FOR ASSOCIATION on the gap-filled daily total_tokens series. Computes 4 corner run-lengths (nNE/nNW/nSE/nSW) of consecutive observations from each x-edge that lie strictly above/below the GLOBAL SAMPLE MEDIAN; the signed Q-statistic is otQ = (nNE + nSW) - (nSE + nNW). otZ = otQ / sqrt(8) (moment-matched normal approximation). SIGN: otQ >> 0 = HIGH values cluster at HIGH x AND LOW values at LOW x = MONOTONE UP-TREND; otQ << 0 = MONOTONE DOWN-TREND. TWO-HUNDRED-AND-TWELFTH cross-source axis. STRUCTURALLY DISTINCT from axis-211 Brown-Mood (whole-half binary count vs corner-only run-lengths), from axis-210 Daniels (continuous full-rank correlation vs 4 binary corner runs), from axis-209 Wallis-Moore (LOCAL phase-shape on first-difference signs vs EXTREMAL corner runs on raw values), from axis-205 Cox-Stuart (paired half-lag vs unpaired corner-runs), from axis-206 JT (k=4 ordered alternative on full distribution vs 4 edge-runs), from axis-207 Pitman MSSD (squared first-difference L2 magnitude vs binary edge-runs), from MK (n*(n-1)/2 pairwise vs 4 edge-runs). Ties at the median BREAK the run at that corner. Refs: Olmstead-Tukey 1947 Ann. Math. Statist. 18(4): 495-513; Hollander-Wolfe-Chicken 2014 sec. 8.5; Mosteller-Rourke 1973 ch. 6.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source OLMSTEAD-TUKEY corner test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'median',
+    'NE/NW/SE/SW',
+    'otQ',
+    'otZ',
+    'otPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.median.toFixed(2),
+    `${s.nNE}/${s.nNW}/${s.nSE}/${s.nSW}`,
+    String(s.otQ),
+    s.otZ.toFixed(4),
+    s.otPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: otPValue < 0.05 = REJECT no-association H0 at alpha=0.05 (two-sided normal-tail; |Q| >= 9 in Olmstead-Tukey 1947 exact tables). otQ >> 0 = MONOTONE UP-TREND (high values cluster at high x); otQ << 0 = MONOTONE DOWN-TREND. The corner test is the maximally-EXTREMAL trend test: it ignores everything in the interior of the time window and uses only the run-lengths at the 4 edges. Complementary to axis-211 Brown-Mood (whole-half binary count) and axis-210 Daniels (continuous full-rank correlation).)`,
     ),
   );
 

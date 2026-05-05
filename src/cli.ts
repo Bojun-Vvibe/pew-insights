@@ -217,6 +217,7 @@ import {
   renderDailyTokenWallisMoorePhaseFrequency,
   renderDailyTokenDanielsRankCorrelationTime,
   renderDailyTokenBrownMoodMedianTrend,
+  renderDailyTokenOlmsteadTukeyCornerTest,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -741,6 +742,10 @@ import {
   buildDailyTokenBrownMoodMedianTrend,
   type DailyTokenBrownMoodMedianTrendSort,
 } from './dailytokenbrownmoodmediantrend.js';
+import {
+  buildDailyTokenOlmsteadTukeyCornerTest,
+  type DailyTokenOlmsteadTukeyCornerTestSort,
+} from './dailytokenolmsteadtukeycornertest.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47742,6 +47747,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenBrownMoodMedianTrend(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-olmstead-tukey-corner-test')
+  .description(
+    "Per-source OLMSTEAD-TUKEY CORNER TEST FOR ASSOCIATION on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWELFTH cross-source axis). Computes 4 corner run-lengths (nNE/nNW/nSE/nSW) of consecutive observations from each x-edge that lie strictly above/below the GLOBAL SAMPLE MEDIAN; signed Q-statistic otQ = (nNE+nSW) - (nSE+nNW); standardized otZ = otQ/sqrt(8) (moment-matched normal approximation, cross-checked against Olmstead-Tukey 1947 exact tables: |Q|>=9 ~ alpha 0.05, |Q|>=11 ~ alpha 0.01). SIGN: otQ >> 0 = HIGH values cluster at HIGH x AND LOW values at LOW x = MONOTONE UP-TREND; otQ << 0 = MONOTONE DOWN-TREND; otQ ~ 0 = no extremal corner agreement. STRUCTURALLY DISTINCT from axis-211 Brown-Mood (whole-half binary count vs corner-only run-lengths -- BM uses every observation, OT uses only edge runs), from axis-210 Daniels (continuous full-rank correlation vs 4 binary corner runs), from axis-209 Wallis-Moore (LOCAL phase-shape on first-difference signs vs EXTREMAL corner runs on raw values), from axis-205 Cox-Stuart (paired half-lag), from axis-206 JT (k=4 ordered alternative on full distribution), from axis-207 Pitman MSSD (squared first-difference L2 magnitude), from MK (n*(n-1)/2 pairwise sign comparisons). Ties at the median BREAK the run at that corner. Refs: Olmstead-Tukey 1947 Ann. Math. Statist. 18(4): 495-513; Hollander-Wolfe-Chicken 2014 sec. 8.5; Mosteller-Rourke 1973 ch. 6; Conover 1999 sec. 5.5.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (parity with axis-205..-211 trend trilogy). Default 12.',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: otZAbsDesc (default) | otZ | otQ | otQAbsDesc | otPValue | otPValueDesc | tokens | tenure | source.',
+    'otZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'otZ',
+          'otZAbsDesc',
+          'otQ',
+          'otQAbsDesc',
+          'otPValue',
+          'otPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenOlmsteadTukeyCornerTest(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenOlmsteadTukeyCornerTestSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenOlmsteadTukeyCornerTest(report) + '\n',
           );
         }
       } catch (e) {
