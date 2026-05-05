@@ -214,6 +214,7 @@ import {
   renderDailyTokenJonckheereTerpstraQuartileBlocks,
   renderDailyTokenPitmanPermutationMssdRandomness,
   renderDailyTokenSpearmanFootruleTime,
+  renderDailyTokenWallisMoorePhaseFrequency,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -726,6 +727,10 @@ import {
   buildDailyTokenSpearmanFootruleTime,
   type DailyTokenSpearmanFootruleTimeSort,
 } from './dailytokenspearmanfootruletime.js';
+import {
+  buildDailyTokenWallisMoorePhaseFrequency,
+  type DailyTokenWallisMoorePhaseFrequencySort,
+} from './dailytokenwallismoorephasefrequency.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47415,6 +47420,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSpearmanFootruleTime(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-wallis-moore-phase-frequency')
+  .description(
+    "Per-source WALLIS-MOORE 1941 PHASE-FREQUENCY TEST: count h of COMPLETE monotone phases (maximal runs of equal-sign first differences, excluding the first/last incomplete phases) of the gap-filled daily total_tokens series (TWO-HUNDRED-AND-NINTH cross-source axis). E[h] = (2n - 7)/3, Var[h] = (16n - 29)/90 (Wallis-Moore 1941 JASA 36:401-409 / Bradley 1968 sec. 13.2). wmZ = (h - E[h]) / sqrt(Var[h]); two-sided normal-tail p-value 2 * (1 - Phi(|wmZ|)). SIGN: wmZ << 0 = TOO FEW phases = SMOOTH/TRENDING dynamics (long monotone stretches). wmZ >> 0 = TOO MANY phases = ZIGZAG/ANTI-CORRELATED dynamics (frequent reversals). STRUCTURALLY DISTINCT from turning-points (TP count vs phase count -- different mean (2(n-2)/3 vs (2n-7)/3) but coincidentally identical variance), from axis-201 Levene runs-up-down (counts ALL runs incl. incomplete vs only COMPLETE phases, mean offset 4/3), from axis-205 Cox-Stuart (paired-sign first-vs-second-half), from axis-206 JT (k=4 block ordered alternative), from axis-207 Pitman MSSD (squared first-difference L2 magnitude), from axis-208 Spearman footrule (global L1 rank-vs-time alignment). Pre-processing: NONE. Tied differences SKIPPED (Bradley 1968 sec. 13.2 / Gibbons-Chakraborti 2003 sec. 3.4). Refs: Wallis-Moore 1941 JASA 36:401-409; Bradley 1968 sec. 13.2; Kendall-Stuart 1976 vol. 3 sec. 45.10; Gibbons-Chakraborti 2003 sec. 3.4.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (matches axis-205/206/207/208 trend trilogy and gives reasonable Wallis-Moore normal approximation accuracy). Default 12.',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: wmZAbsDesc (default) | wmZ | wmPValue | wmPValueDesc | wmH | wmHDesc | tokens | tenure | source.',
+    'wmZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'wmZ',
+          'wmZAbsDesc',
+          'wmPValue',
+          'wmPValueDesc',
+          'wmH',
+          'wmHDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWallisMoorePhaseFrequency(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenWallisMoorePhaseFrequencySort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWallisMoorePhaseFrequency(report) + '\n',
           );
         }
       } catch (e) {

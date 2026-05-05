@@ -20639,6 +20639,7 @@ import type { DailyTokenCoxStuartSignPairsReport } from './dailytokencoxstuartsi
 import type { DailyTokenJonckheereTerpstraQuartileBlocksReport } from './dailytokenjonckheereterpstraquartileblocks.js';
 import type { DailyTokenPitmanPermutationMssdRandomnessReport } from './dailytokenpitmanpermutationmssdrandomness.js';
 import type { DailyTokenSpearmanFootruleTimeReport } from './dailytokenspearmanfootruletime.js';
+import type { DailyTokenWallisMoorePhaseFrequencyReport } from './dailytokenwallismoorephasefrequency.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29664,6 +29665,85 @@ export function renderDailyTokenSpearmanFootruleTime(
   lines.push(
     chalk.dim(
       `(reference anchor: sfPValue < 0.05 = REJECT uniform-permutation H0 at alpha=0.05 (two-sided normal-tail). sfZ << 0 = MONOTONE UP-TREND (value ranks track time identity); sfZ >> 0 = MONOTONE DOWN-TREND (value ranks anti-correlate with time identity). Footrule has D in [0, floor(n^2/2)] with D = 0 iff perfect identity (perfect up-trend) and D = floor(n^2/2) iff perfect reverse (perfect down-trend). UNLIKE Mann-Kendall (U-statistic of pairwise concordances) Spearman footrule is L1 rank-distance (linear in n, not pairwise). UNLIKE lag-1 Spearman autocorrelation (local lag-1 only) it integrates the full rank-vs-time alignment globally.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWallisMoorePhaseFrequency(
+  r: DailyTokenWallisMoorePhaseFrequencyReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-wallis-moore-phase-frequency'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WALLIS-MOORE 1941 PHASE-FREQUENCY TEST: count h of COMPLETE monotone phases (maximal runs of equal-sign first differences, excluding the first/last incomplete phases) of the gap-filled daily total_tokens series. E[h] = (2n - 7)/3, Var[h] = (16n - 29)/90 (Wallis-Moore 1941 JASA 36:401-409). wmZ = (h - E[h]) / sqrt(Var[h]); two-sided normal-tail p-value 2 * (1 - Phi(|wmZ|)). SIGN: wmZ << 0 = TOO FEW phases = SMOOTH/TRENDING dynamics. wmZ >> 0 = TOO MANY phases = ZIGZAG/ANTI-CORRELATED dynamics. TWO-HUNDRED-AND-NINTH cross-source axis. Pre-processing: NONE. Tied differences SKIPPED. Distinct from turning-points (TP count vs phase count -- different mean (2(n-2)/3 vs (2n-7)/3) but coincidentally identical variance), from axis-201 Levene runs-up-down (counts ALL runs incl. incomplete vs only COMPLETE phases), from axis-205/206/207/208 (paired-sign / blocked / squared-diff / footrule). Refs: Wallis-Moore 1941 JASA 36:401-409; Bradley 1968 sec. 13.2; Kendall-Stuart 1976 vol. 3 sec. 45.10.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source WALLIS-MOORE phase-frequency randomness test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'nNonTied',
+    'wmH',
+    'wmHExp',
+    'wmZ',
+    'wmPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nNonTied),
+    formatNumber(s.wmH),
+    s.wmHExpected.toFixed(2),
+    s.wmZ.toFixed(4),
+    s.wmPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: wmPValue < 0.05 = REJECT random-permutation H0 at alpha=0.05 (two-sided normal-tail). wmZ << 0 = TOO FEW PHASES = monotone trend or positive serial correlation; wmZ >> 0 = TOO MANY PHASES = high-frequency zigzag / anti-correlated dynamics. The Wallis-Moore variance happens to coincide with the David-Barton/Noether turning-points variance (16n - 29)/90 -- but the means differ (E[h] = (2n - 7)/3 vs E[TP] = 2(n-2)/3 = (2n - 4)/3) so the standardised statistics are NOT identical. The phase-count mechanism is sensitive to the SHAPE of the local oscillation pattern -- complementary to footrule (axis-208) which is sensitive to the GLOBAL rank-vs-time alignment.)`,
     ),
   );
 

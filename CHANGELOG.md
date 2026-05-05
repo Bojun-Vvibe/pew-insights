@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.520 — 2026-05-05
+
+### Added — `daily-token-wallis-moore-phase-frequency` (axis-209)
+
+New TWO-HUNDRED-AND-NINTH cross-source axis: per-source
+**WALLIS-MOORE 1941 PHASE-FREQUENCY TEST FOR
+RANDOMNESS** applied to the gap-filled daily
+`total_tokens` series.
+
+Mechanism. Wallis & Moore (1941 *JASA* 36: 401-409 /
+*Biometrika* 32: 148-159) decompose the sign-of-first-
+difference vector into PHASES (maximal monotone runs
+of equal-sign differences). The number of COMPLETE
+phases h (excluding the first/last incomplete ones at
+the series boundary) has closed-form moments under the
+random-permutation null:
+
+```
+E[h]   = (2 n - 7) / 3
+Var[h] = (16 n - 29) / 90
+wmZ    = (h - E[h]) / sqrt(Var[h])
+```
+
+with two-sided normal-tail p-value
+`2 * (1 - Phi(|wmZ|))`. Tied differences are skipped
+per Bradley 1968 sec. 13.2 / Gibbons-Chakraborti 2003
+sec. 3.4.
+
+**Sign convention.**
+  - `wmZ << 0`: TOO FEW phases = SMOOTH/TRENDING dynamics.
+  - `wmZ >> 0`: TOO MANY phases = ZIGZAG/ANTI-CORRELATED dynamics.
+  - `wmZ ~ 0`: phase count consistent with iid random
+    ordering.
+
+**Structural orthogonality.** Distinct from
+turning-points (TP count vs phase count -- different
+mean (2(n-2)/3 vs (2n-7)/3) but coincidentally
+identical variance (16n-29)/90); from axis-201 Levene
+runs-up-down (counts ALL runs incl. incomplete vs only
+COMPLETE phases, mean offset 4/3); from axis-205
+Cox-Stuart (paired-sign first-vs-second-half global);
+from axis-206 JT (k=4 block ordered alternative); from
+axis-207 Pitman MSSD (squared first-difference L2
+magnitude); from axis-208 Spearman footrule (global L1
+rank-vs-time alignment vs local contiguous-phase
+counting).
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Running `node dist/cli.js
+daily-token-wallis-moore-phase-frequency --json` on
+the live queue (13.32 GB total tokens across 6 sources;
+1 source dropped below min-tenure-days). Verbatim
+per-source `(wmH, wmHExp, wmZ, wmPValue)`:
+
+```
+vscode-copilot  n=265  wmH=84   wmHExp=174.33  wmZ=-13.2062  wmPValue=8.394e-40
+claude-code     n=72   wmH=25   wmHExp=45.67   wmZ=-5.8506   wmPValue=4.913e-9
+opencode        n=16   wmH=6    wmHExp=8.33    wmZ=-1.4692   wmPValue=1.418e-1
+hermes          n=19   wmH=11   wmHExp=10.33   wmZ=+0.3814   wmPValue=7.029e-1
+openclaw        n=19   wmH=10   wmHExp=10.33   wmZ=-0.1907   wmPValue=8.488e-1
+```
+
+Reading: `vscode-copilot` and `claude-code` both
+strongly REJECT the random-permutation null at
+alpha=0.05 with very negative wmZ -- their daily
+token series have FAR FEWER phases than expected,
+indicating SMOOTH/TRENDING dynamics over their full
+tenure (consistent with the v0.6.518 axis-208 finding
+that claude-code shows a coherent up-trend).
+`opencode` is borderline (wmZ ~ -1.47, suggestive of
+mild trend smoothing but not significant at 0.05).
+`hermes` and `openclaw` are decisively non-significant
+-- their phase counts are consistent with iid random
+ordering of the daily totals.
+
+The `vscode-copilot` row's extreme wmZ (~-13.2) is
+striking: with 265 tenure days but only 73 active
+days and many tied zero-fill days, the non-tied sign
+sequence is dominated by long monotone stretches.
+Phase-count is bound to be much smaller than the
+random expectation in a sparse series -- which is the
+*correct* phase-frequency reading.
+
+### Files
+
+  - `src/dailytokenwallismoorephasefrequency.ts` --
+    full builder + per-source statistic + Stouffer
+    aggregator + closed-form moments.
+  - `src/format.ts` -- `renderDailyTokenWallisMoorePhaseFrequency`
+    pretty renderer.
+  - `src/cli.ts` -- `daily-token-wallis-moore-phase-frequency`
+    subcommand wired with the standard
+    `--since/--until/--source/--min-tokens/--min-tenure-days/--top/--sort/--json`
+    options.
+  - `test/dailytokenwallismoorephasefrequency.test.ts`
+    -- 36 unit tests covering signs, phase counting,
+    moments, normal tail, statistic, aggregator, and
+    builder edge cases.
+
+### Test count
+
+  - Before: 14,927
+  - After:  14,980 (+53; +36 new axis tests +
+    incidental neighbour suite changes)
+
 ## 0.6.519 — 2026-05-05
 
 ### Added — `summarizeCoherentTrendDirectionConsensus`
