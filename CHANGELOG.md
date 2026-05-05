@@ -2,6 +2,173 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.525 — 2026-05-06
+
+### Added — `daily-token-brown-mood-median-trend` (axis-211)
+
+New TWO-HUNDRED-AND-ELEVENTH cross-source axis: per-source
+BROWN-MOOD MEDIAN TREND TEST on the gap-filled daily
+total_tokens series (Brown & Mood 1951, *Proc. Second
+Berkeley Symp. on Math. Stat. Probab.*, vol. 1: 159-166).
+
+Splits the time-ordered series at h = floor(n/2) and
+counts above-vs-not-above the GLOBAL SAMPLE MEDIAN per
+half into a 2x2 contingency table (a/b/c/d). Computes
+the Pearson chi-square 1-df statistic
+
+```
+bmChi2 = n * (a*d - b*c)^2
+         / ((a + b) * (c + d) * (a + c) * (b + d))
+```
+
+with matching SIGNED Z form
+
+```
+p1   = a / nFirst,    p2 = c / nSecond
+pHat = (a + c) / n
+bmZ  = (p1 - p2)
+       / sqrt(pHat * (1 - pHat) * (1/nFirst + 1/nSecond))
+```
+
+and two-sided normal-tail p-value `2 * (1 - Phi(|bmZ|))`.
+By construction `bmChi2 = bmZ^2` (algebraic identity,
+verified to 1e-9 by `buildDailyTokenBrownMoodMedianTrend:
+Phi(|bmZ|) consistent with bmChi2`).
+
+**Sign convention.** Deliberately documented as OPPOSITE
+to the rank-vs-time axes: `bmZ >> 0` means the FIRST half
+contains MORE above-median values = MONOTONE DOWN-TREND;
+`bmZ << 0` means the SECOND half contains more above-
+median values = MONOTONE UP-TREND. Downstream joiners
+(future axis-211 x axis-NNN compounds) must invert sign
+when comparing with axis-210 Daniels (`drZ`) or axis-208
+Spearman footrule (where `>> 0` directly encodes up-
+trend).
+
+**Structural orthogonality.** Brown-Mood is the
+maximally-coarse 2x2 binary trend test: each observation
+collapses to a SINGLE BIT (above / not-above the global
+median) and is binned into one of TWO time buckets.
+This is fundamentally different from every recent trend
+axis:
+
+  - vs axis-210 Daniels: continuous-rank vs time
+    correlation; BM uses a single binary bit per
+    observation. Daniels uses n distinct ranks; BM uses
+    only 2 categories x 2 bins.
+  - vs axis-209 Wallis-Moore: LOCAL phase-shape on first-
+    difference signs; BM is a GLOBAL median-level binary
+    count on raw values.
+  - vs axis-205 Cox-Stuart: PAIRED half-lag sign
+    statistic on n/2 paired comparisons; BM is UNPAIRED
+    bin counts.
+  - vs axis-206 Jonckheere-Terpstra: k=4 ordered
+    alternative on the FULL within-block distribution;
+    BM uses k=2 blocks and only the BINARY above-median
+    indicator.
+  - vs axis-207 Pitman MSSD: squared first-difference L2
+    magnitude statistic; BM uses no differencing and no
+    value magnitudes.
+  - vs `daily-token-mann-kendall-tau`: n*(n-1)/2 PAIRWISE
+    sign comparisons; BM is a single 2x2 chi-square that
+    never compares observations to each other.
+
+BM is much more ROBUST to outliers than any continuous-
+rank or magnitude statistic (a single huge spike
+contributes the same bit as a moderate above-median
+value) but much less POWERFUL against smooth trends --
+the explicit complement to the high-power, low-robust
+continuous-rank axes.
+
+**Tied values.** Ties at the median go into the
+NOT-ABOVE cell (Hollander-Wolfe-Chicken 2014 sec. 6.6
+convention). The `nAtMedian` count is surfaced for
+downstream consumers to detect heavy-tie regimes where
+the test loses power but remains valid.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Real numerical output from `scripts/livesmoke-axis211.mjs`
+against the live queue snapshot (the `vsc-redacted`
+source ID is the scrubbed form of a vendor IDE source
+name per the operator's redaction rule):
+
+```
+claude-code: n=72 med=0.00 cells[a=12,b=24,c=23,d=13] bmZ=-2.5937 bmChi2=6.7274 bmP=9.494e-3
+hermes: n=19 med=21333523.00 cells[a=3,b=6,c=6,d=4] bmZ=-1.1624 bmChi2=1.3511 bmP=2.451e-1
+openclaw: n=19 med=83004949.00 cells[a=7,b=2,c=2,d=8] bmZ=2.5185 bmChi2=6.3427 bmP=1.179e-2
+opencode: n=16 med=427757160.50 cells[a=6,b=2,c=2,d=6] bmZ=2.0000 bmChi2=4.0000 bmP=4.550e-2
+vsc-redacted: n=265 med=0.00 cells[a=44,b=88,c=29,d=104] bmZ=2.1004 bmChi2=4.4118 bmP=3.569e-2
+---
+totalSources=6 shown=5
+```
+
+Three of five sources reject the median-level no-trend
+H0 at alpha=0.05 with INFORMATIVE direction:
+
+  - **claude-code** (`bmZ=-2.59`, `bmP=9.5e-3`): clean
+    UP-TREND signal at the median level. The first half
+    contains 12 above-median days vs 24 not-above (cells
+    `a=12, b=24`), the second half flips to 23 above vs
+    13 not-above (`c=23, d=13`). Above-median mass has
+    migrated from the first to the second half. The
+    median itself is 0 because of a heavy zero-day floor
+    (idle days dominate); the test still has power
+    because the binary above-vs-not-above split is
+    informative on the long-tail active days.
+  - **openclaw** (`bmZ=+2.52`, `bmP=1.2e-2`): clean
+    DOWN-TREND. The first half is heavily above-median
+    (`a=7, b=2`), the second half flips to below
+    (`c=2, d=8`). Strong signal despite the small n=19.
+  - **opencode** (`bmZ=+2.00`, `bmP=4.6e-2`): borderline
+    DOWN-TREND, just clearing alpha=0.05. Same direction
+    as openclaw but smaller magnitude over n=16.
+  - **vsc-redacted** (`bmZ=+2.10`, `bmP=3.6e-2`): a more
+    subtle DOWN-TREND signal -- only 33% above-median in
+    the first half (44/132) drops to 21.8% in the second
+    half (29/133). The continuous-rank tests (axis-210
+    Daniels) similarly flagged this as a down-trend
+    direction.
+  - **hermes** (`bmZ=-1.16`, `bmP=0.25`): no rejection
+    at alpha=0.05; insufficient n=19 to detect the
+    direction even if present.
+
+Note that **claude-code** and **vsc-redacted** receive
+OPPOSITE direction signals from BM at the median level
+(claude-code up-trend, vsc-redacted down-trend), in
+agreement with the directions that axis-210 Daniels
+reported in the v0.6.523 live-smoke (claude-code drZ
+strongly positive; vsc-redacted drZ negative). The
+sign-convention inversion (BM bmZ << 0 = up-trend vs
+Daniels drZ >> 0 = up-trend) makes this a non-trivial
+cross-axis check and confirms BM and Daniels are
+detecting the SAME underlying direction at this scale.
+
+### Files
+
+  - `src/dailytokenbrownmoodmediantrend.ts` -- pure
+    statistic + report builder + Stouffer aggregator.
+  - `test/dailytokenbrownmoodmediantrend.test.ts` --
+    +45 tests covering median selection, contingency
+    construction, signed-Z / chi-square algebraic
+    identity, sign convention on clean up- and down-
+    trends, balanced-series non-rejection, degenerate-
+    split error path, all sort keys, source filter,
+    `top` cap, drop-counter accounting, tie-stable
+    sort fallback, and Stouffer aggregator behaviour.
+  - `scripts/livesmoke-axis211.mjs` -- live-smoke
+    harness against `~/.config/pew/queue.jsonl` (with
+    a vendor-IDE source-name scrubbed to `vsc-redacted`
+    for committable output).
+  - `src/cli.ts` -- new `daily-token-brown-mood-median-
+    trend` subcommand wiring.
+  - `src/format.ts` -- pretty-print renderer.
+
+### Test count
+
+  - Before: 15,072
+  - After:  15,117 (+45)
+
 ## 0.6.524 — 2026-05-05
 
 ### Added — `classifyAxis210Axis209DanielsWallisMooreGlobalRankAlignmentVsLocalPhaseSmoothnessCompound`
