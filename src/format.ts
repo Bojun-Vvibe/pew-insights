@@ -20599,6 +20599,7 @@ import type { DailyTokenTukeyQuickHalvesReport } from './dailytokentukeyquickhal
 import type { DailyTokenWaldWolfowitzRunsHalvesReport } from './dailytokenwaldwolfowitzrunshalves.js';
 import type { DailyTokenRosenbaumAdjacencyHalvesReport } from './dailytokenrosenbaumadjacencyhalves.js';
 import type { DailyTokenFlignerKilleenHalvesReport } from './dailytokenflignerkilleenhalves.js';
+import type { DailyTokenWestenbergHalvesReport } from './dailytokenwestenberghalves.js';
 import type { DailyTokenFosterStuartSReport } from './dailytokenfosterstuarts.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
@@ -28666,6 +28667,91 @@ export function renderDailyTokenFlignerKilleenHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: fkX2 = 0 = no scale evidence; fkX2 large (positive fkZ) = SECOND half MORE dispersed; negative fkZ = FIRST half MORE dispersed. |fkZ| >= 1.96 (= fkX2 >= 3.84) is significant at alpha = 0.05 two-sided. The Fligner-Killeen test is INVARIANT under (a) global shift x + c, (b) positive scale a*x, (c) independent within-half location shifts -- it isolates dispersion change after median-centring each half. Cross-check vs axis-177 Klotz: Klotz uses U-shaped squared-normal scores on signed values; FK uses monotone half-normal scores on |z| -- they reject differently when dispersion change is asymmetric (one-tailed dispersion grows but not the other).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWestenbergHalves(
+  r: DailyTokenWestenbergHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-westenberg-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WESTENBERG (1948) INTERQUARTILE-RANGE EXCEEDANCE SCALE TEST on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-EIGHTH cross-source axis. Westenberg 1948 Proc. Kon. Nederl. Akad. Wetensch. 51:252-261; Conover 1999 Practical Nonparametric Statistics 3rd ed., sec. 5.3 pp. 309-310. Pipeline: Q1_A and Q3_A of FIRST half via Hyndman-Fan 1996 type-7 quantile (R / NumPy default), then count k = #{ b in B : b < Q1_A or b > Q3_A } and standardize against Binomial(n2, 0.5) via westZ = (2*k - n2) / sqrt(n2) ~ N(0,1). Sign convention: westZ > 0 = SECOND half MORE dispersed. ORTHOGONAL to axis-196 Fligner-Killeen (continuous-rank-score test on |z|; Westenberg uses A's IQR boundary + B inside/outside 0/1 only), to axis-179 Mood (location test on POOLED MEDIAN; Westenberg is scale on A's IQR), to axis-193 Tukey-quick (extreme-tail driven via min/max; Westenberg is mid-tail driven via 25/75th percentiles), to axes 117/170/177 Siegel-Tukey/Ansari-Bradley/Klotz (full pooled rank order vs only inside/outside status). Distribution-free under any continuous null even with heavy tails or point masses outside the IQR.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source WESTENBERG IQR-exceedance scale test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'q1A',
+    'q3A',
+    'k',
+    'E[k]',
+    'westZ',
+    'p',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.westN1),
+    formatNumber(s.westN2),
+    s.westQ1A.toFixed(1),
+    s.westQ3A.toFixed(1),
+    formatNumber(s.westK),
+    s.westExpectedK.toFixed(1),
+    s.westZ.toFixed(3),
+    s.westPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: westZ = 0 = exactly half of B falls outside A's IQR (the H0 expectation); westZ > 0 = MORE B's outside than expected = SECOND half MORE DISPERSED; westZ < 0 = FEWER B's outside = SECOND half MORE CONCENTRATED. |westZ| >= 1.96 is significant at alpha = 0.05 two-sided. The Westenberg test is INVARIANT under (a) global shift x + c, (b) positive scale a*x, (c) any STRICTLY-INCREASING monotone transformation applied UNIFORMLY to all observations -- it isolates dispersion change via tail-mass exchange across A's quartile boundaries. Cross-check vs axis-196 Fligner-Killeen: FK is a continuous rank-score test on within-half median-deviations; Westenberg uses ONLY A's quartile boundaries and B's 0/1 inside/outside membership -- they reject differently when scale change is concentrated in the EXTREME TAILS rather than in the MID-DISPERSION.)`,
     ),
   );
 

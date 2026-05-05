@@ -224,6 +224,7 @@ import {
   renderDailyTokenWaldWolfowitzRunsHalves,
   renderDailyTokenRosenbaumAdjacencyHalves,
   renderDailyTokenFlignerKilleenHalves,
+  renderDailyTokenWestenbergHalves,
   renderDailyTokenFosterStuartS,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -740,6 +741,7 @@ import { buildDailyTokenTukeyQuickHalves } from './dailytokentukeyquickhalves.js
 import { buildDailyTokenWaldWolfowitzRunsHalves } from './dailytokenwaldwolfowitzrunshalves.js';
 import { buildDailyTokenRosenbaumAdjacencyHalves } from './dailytokenrosenbaumadjacencyhalves.js';
 import { buildDailyTokenFlignerKilleenHalves } from './dailytokenflignerkilleenhalves.js';
+import { buildDailyTokenWestenbergHalves } from './dailytokenwestenberghalves.js';
 import { buildDailyTokenFosterStuartS } from './dailytokenfosterstuarts.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -38424,6 +38426,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenFlignerKilleenHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+         die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-westenberg-halves')
+  .description(
+    "Per-source WESTENBERG (1948) INTERQUARTILE-RANGE EXCEEDANCE SCALE TEST comparing the dispersion of the FIRST half (n1 = floor(n/2)) vs SECOND half (n2 = n - n1) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-EIGHTH cross-source axis. Westenberg 1948 Proc. Kon. Nederl. Akad. Wetensch. 51:252-261; Conover 1999 Practical Nonparametric Statistics 3rd ed., sec. 5.3 pp. 309-310. Pipeline: (1) compute Q1_A and Q3_A of the FIRST half via Hyndman-Fan 1996 type-7 sample-quantile (R / NumPy default); (2) count k = #{ b in B : b < Q1_A or b > Q3_A } (B observations strictly OUTSIDE A's IQR); (3) under H0 each B has p = 0.5 of falling outside, so k ~ Binomial(n2, 0.5); (4) westZ = (2*k - n2) / sqrt(n2) ~ N(0,1) by DeMoivre-Laplace. Sign convention: westZ > 0 = MORE B's outside A's IQR than expected = SECOND half MORE DISPERSED. ORTHOGONAL to axis-196 Fligner-Killeen (FK uses HALF-NORMAL SCORES on POOLED MID-RANKS of within-half-median absolute deviations -- a CONTINUOUS-SCORE rank test; Westenberg uses ONLY A's quartile boundaries and B's INSIDE/OUTSIDE 0/1 status -- a COUNT-WITHIN-RANGE test); to axis-179 Mood (counts above/below the POOLED MEDIAN -- a LOCATION test on a 2x2 chi^2; Westenberg uses A's IQR -- a SCALE test on a 2x1 binomial); to axis-193 Tukey-quick (uses sample MIN/MAX as boundaries -- extreme-tail driven; Westenberg uses 25th/75th percentiles -- mid-tail driven, reject differently when scale change is in tails vs shoulders); to axes 117/170/177 Siegel-Tukey/Ansari-Bradley/Klotz (those use FULL POOLED RANK ORDER; Westenberg only the inside/outside status of B). Defaults: min-tenure-days=16 (Conover 1999 sec. 3.2 binomial-normal approx valid for n2 >= 8).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8 for the Binomial(n2,0.5) -> N(n2/2,n2/4) normal approximation; Conover 1999 sec. 3.2). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: westZAbsDesc (default) | westZ | westZDesc | westZAbs | westK | westKDesc | westPValue | westPValueDesc | tokens | tenure | source.',
+    'westZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'westZ',
+          'westZDesc',
+          'westZAbs',
+          'westZAbsDesc',
+          'westK',
+          'westKDesc',
+          'westPValue',
+          'westPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWestenbergHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'westZ'
+            | 'westZDesc'
+            | 'westZAbs'
+            | 'westZAbsDesc'
+            | 'westK'
+            | 'westKDesc'
+            | 'westPValue'
+            | 'westPValueDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWestenbergHalves(report) + '\n',
           );
         }
       } catch (e) {
