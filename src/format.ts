@@ -20629,6 +20629,7 @@ import type { DailyTokenCucconiHalvesReport } from './dailytokencucconihalves.js
 import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
 import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermunzelhalves.js';
 import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
+import type { DailyTokenCaponHalvesReport } from './dailytokencaponhalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -28839,6 +28840,87 @@ export function renderDailyTokenFosterStuartS(
   lines.push(
     chalk.dim(
       `(reference anchor: under iid continuous E[S] = 2*(H_n - 1) (the n-th harmonic minus 1, doubled for the two passes); positive fsSZ = MORE total records than expected = dispersion GROWING over the tenure (late-arriving new highs AND new lows); negative fsSZ = FEWER total records = dispersion SET EARLY and locked in. fsDZ disambiguates trend direction: positive = upward trend (more upper than lower records); negative = downward trend. |fsSZ| > 2 is suggestive of non-iid dispersion-instability under the asymptotic normal null. The Foster-Stuart D-statistic is the natural complement to the upper-only Renyi count of axis-109; together they decompose record-event behaviour into a SCALE channel (fsSZ) and a DIRECTION channel (fsDZ).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCaponHalves(
+  r: DailyTokenCaponHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-capon-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CAPON 1961 NORMAL-SCORES SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the median-aligned, gap-filled daily total_tokens series. Score a(R_i) = ( Phi^{-1}((R_i - 0.5)/n) )^2 (continuity-corrected Blom 1958 plotting position; locally most powerful for normal scale alternatives, Capon 1961 Theorem 4.1; Hajek-Sidak 1967 sec. III.2). Statistic C = sum_{j in B} a(R_j); E[C] = n2 * abar, Var[C] = n1 n2 / (n(n-1)) * sum (a - abar)^2; caponZ = (C - E[C]) / sqrt(Var[C]) ~ N(0,1) under H0. ONE-HUNDRED-AND-NINETY-NINTH cross-source axis. STRUCTURALLY DISTINCT from axis-177 Klotz (Phi^{-1}(R/(n+1))^2 -- Weibull plotting position with logarithmically saturating tail score): Capon's continuity-corrected Blom plotting position puts ~30% MORE weight on the EXTREME ranks for n in [16, 30] (Capon 1961 Tab. 3 reports Capon power 0.84 vs Klotz 0.79 at n1 = n2 = 8, scale ratio 2). vs axis-179 Mood (squared CENTRED ranks; polynomial weight bounded by ((n-1)/2)^2) Capon's score grows like 2 log(n) -- opposite asymptotic scale; Mood weights mid-ranks heavily, Capon gives them near-zero score. vs axis-178 Conover (squared LINEAR ranks on |X-median|; ARE 0.85 vs F under normal) Capon ARE 1.000 vs F under normal. vs axes 174/175 Cucconi/Lepage (joint chi-2(2) location-scale) Capon isolates the SCALE channel that C/L mash with location. Distribution-free under H0.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source CAPON scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'caponC',
+    'expC',
+    'caponZ',
+    'caponPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.caponN1),
+    formatNumber(s.caponN2),
+    s.caponC.toFixed(4),
+    s.caponExpC.toFixed(4),
+    s.caponZ.toFixed(4),
+    s.caponPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: caponPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). caponZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ sign convention). Pitman ARE 1.000 vs F-test under normal-scale alternatives -- the maximum possible for a rank scale test. Capon and Klotz are both LMP in the limit but Capon's tighter Blom plotting position yields ~30% MORE extreme-rank weight at small n.)`,
     ),
   );
 

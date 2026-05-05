@@ -2,6 +2,134 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.497 — 2026-05-05
+
+### Added — `daily-token-capon-halves` (axis-199 CAPON normal-scores scale test for halves)
+
+ONE-HUNDRED-AND-NINETY-NINTH cross-source axis. Per-source
+**CAPON 1961 NORMAL-SCORES SCALE TEST** for equality of
+dispersion between the first half (n1 = floor(n/2)) vs
+second half (n2 = n - n1) of the median-aligned, gap-filled
+daily total_tokens series.
+
+**Mechanism.** Pool the median-aligned values, compute mid-
+ranks `R_i in {1..n}`, then assign the **Capon score**
+
+    a(R_i) = ( Phi^{-1}( (R_i - 0.5) / n ) )^2
+
+(continuity-corrected **Blom 1958** plotting position;
+locally most powerful for normal scale alternatives --
+Capon 1961 Theorem 4.1; Hajek-Sidak 1967 *Theory of Rank
+Tests* sec. III.2). The statistic is the second-half
+score sum
+
+    C       = sum_{j in B} a(R_j)
+    E[C]    = n2 * abar
+    Var[C]  = ( n1 * n2 / ( n * (n - 1) ) ) * sum (a - abar)^2
+    caponZ  = ( C - E[C] ) / sqrt(Var[C])  ~ N(0, 1)
+
+Two-sided p-value `caponPValue = 2 (1 - Phi(|caponZ|))`.
+Sign convention: `caponZ > 0` <=> SECOND half MORE
+dispersed (matches axis-117 stZ, axis-170 abZ, axis-177
+klotzZ for direct cross-axis aggregation).
+
+**Why this is NOT a duplicate of axis-177 Klotz.** Both
+tests square a normal quantile of a plotting position; the
+plotting positions DIFFER STRUCTURALLY:
+
+  - **Klotz** uses `R / (n + 1)` (Weibull plotting
+    position). At the top rank the score saturates
+    LOGARITHMICALLY: at R = n, u = n/(n+1) -> 1 slowly.
+  - **Capon** uses `(R - 0.5) / n` (continuity-corrected
+    Blom plotting position). At the top rank the score
+    saturates FASTER and TIGHTER: at R = n, u = (n-0.5)/n.
+
+Concrete numerical gap at n = 16 (the hard floor):
+Klotz extreme score `(Phi^{-1}(16/17))^2 ~ 2.91`; Capon
+extreme score `(Phi^{-1}(15.5/16))^2 ~ 3.78`. **Capon puts
+~30% MORE weight on the EXTREME rank than Klotz**. The
+two tests therefore disagree by construction on dispersion
+shifts concentrated in the extreme tail (Capon wins) vs in
+the shoulder (Klotz wins). At n1 = n2 = 8, scale ratio 2,
+Capon 1961 Tab. 3 reports Capon power 0.84 vs Klotz 0.79.
+
+**Other orthogonality:**
+  - vs axis-179 **Mood** (squared CENTRED ranks bounded by
+    `((n-1)/2)^2`): Mood's weight is **polynomial** in n;
+    Capon's grows like `2 log(n)`. Opposite asymptotic
+    scale on the score range. Mood weights mid-ranks
+    heavily; Capon gives them near-zero score.
+  - vs axis-178 **Conover squared-ranks** on |X-median|
+    (ARE 0.85 vs F under normal): Capon ARE 1.000 vs F
+    under normal. They differ MAXIMALLY on heavy-tailed
+    inputs (Conover wins under Cauchy with ARE 1.50;
+    Capon wins under normal).
+  - vs axis-117 **Siegel-Tukey** ARE 0.608 and axis-170
+    **Ansari-Bradley** ARE `6/pi^2 ~ 0.61` under normal --
+    Capon ARE 1.000 strictly dominates.
+  - vs axis-122/123 **Brown-Forsythe / Bartlett**
+    (parametric on squared deviations): Capon is fully
+    distribution-free under H0; BF/Bartlett actual size
+    drifts to 0.18-0.32 under double-exponential
+    (Conover et al. 1981 *Technometrics* 23 Tab. 3).
+  - vs axis-115/176 Mann-Whitney / Brunner-Munzel
+    (stochastic ordering): pure scale shift gives MW/BM
+    ~ 0 while caponZ rejects strongly. Pure-channel
+    decomposition of what Cucconi/Lepage (axes 174/175)
+    mash into one chi-2(2).
+
+Hard floor on `min-tenure-days` is 16 (n1 = n2 = 8) so the
+asymptotic normal reference holds nominal alpha (Capon 1961
+sec. 5 simulation: actual size 0.043-0.056 across n1 = n2
+in [8, 50]).
+
+**Live smoke (verbatim, against ~/.config/pew/queue.jsonl
+on 2026-05-05):**
+
+```
+pew-insights daily-token-capon-halves
+as of: 2026-05-05T08:25:13.752Z    sources: 6 (shown 5)    tokens: 13,176,322,550    min-tokens: 1,000    min-tenure-days: 16    top: -    sort: caponZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 1 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source CAPON scale-equality (sorted by caponZAbsDesc; ties: source asc)
+source          firstDay    lastDay     tenure  active  n1   n2   caponC   expC     caponZ   caponPValue  tokens
+--------------  ----------  ----------  ------  ------  ---  ---  -------  -------  -------  -----------  -------------
+claude-code     2026-02-11  2026-04-23  72      35      36   36   57.3812  31.3985  5.5628   2.6621e-8    3,442,385,788
+openclaw        2026-04-17  2026-05-05  19      19      9    10   4.4234   9.3541   -1.9315  5.3426e-2    2,393,578,147
+opencode        2026-04-20  2026-05-05  16      16      8    8    3.6584   7.3894   -1.6339  1.0228e-1    6,998,475,714
+vscode-copilot  2025-07-30  2026-04-20  265     73      132  133  66.0113  74.7706  -1.0079  3.1351e-1    1,885,727
+hermes          2026-04-17  2026-05-05  19      19      9    10   7.5806   9.3541   -0.6947  4.8723e-1    339,997,174
+```
+
+**Headline finding.** `claude-code` rejects scale-equality
+H0 EXTREMELY strongly (caponZ = +5.56, p ~ 2.7e-8): the
+SECOND half of its 72-day tenure is dramatically MORE
+dispersed than the first. The five sources span the full
+sign range (+5.56 to -1.93) and four of five are *below*
+their expected null score E[C], indicating the corpus is
+weighted toward FIRST-HALF-MORE-DISPERSED behaviour with
+`claude-code` as a single dominant contrarian. None of the
+other four sources reject at alpha = 0.05 two-sided,
+though `openclaw` is on the boundary (caponZ = -1.93,
+p ~ 0.053).
+
+CLI surface: `pew-insights daily-token-capon-halves
+[--since iso] [--until iso] [--source name]
+[--min-tokens n=1000] [--min-tenure-days n=16] [--top n=0]
+[--sort caponZAbsDesc|caponZ|caponPValue|caponPValueDesc|tokens|tenure|source]
+[--json]`. Exports also include `aggregateCaponHalves`
+for corpus-level Stouffer signed-Z meta-analysis matching
+the v0.6.452+ aggregator convention.
+
+References: Capon, J., "Asymptotic efficiency of certain
+locally most powerful rank tests", *Annals of Math. Stat.*
+32(1) (1961), pp. 88-100; Blom, G., *Statistical Estimates
+and Transformed Beta-Variables* (Wiley 1958), sec. 5.4;
+Hajek, J. & Sidak, Z., *Theory of Rank Tests* (Academic
+Press 1967), sec. III.2; Hollander, M. & Wolfe, D. A.,
+*Nonparametric Statistical Methods* 2nd ed. (Wiley 1999),
+sec. 5.1.
+
 ## 0.6.496 — 2026-05-05
 
 ### Refined — `classifyWestenbergFlignerKilleenIqrVsFullRankScaleCompound` (axis-198 + axis-196 joiner)

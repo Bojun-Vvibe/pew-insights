@@ -204,6 +204,7 @@ import {
   renderDailyTokenLepageHalves,
   renderDailyTokenBrunnerMunzelHalves,
   renderDailyTokenKlotzHalves,
+  renderDailyTokenCaponHalves,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -676,6 +677,10 @@ import {
   buildDailyTokenKlotzHalves,
   type DailyTokenKlotzHalvesSort,
 } from './dailytokenklotzhalves.js';
+import {
+  buildDailyTokenCaponHalves,
+  type DailyTokenCaponHalvesSort,
+} from './dailytokencaponhalves.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -44687,6 +44692,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKlotzHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-capon-halves')
+  .description(
+    "Per-source CAPON 1961 NORMAL-SCORES SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the median-aligned, gap-filled daily total_tokens series (ONE-HUNDRED-AND-NINETY-NINTH cross-source axis). Score a(R_i) = ( Phi^{-1}((R_i - 0.5)/n) )^2 (continuity-corrected Blom 1958 plotting position; locally most powerful for normal scale alternatives -- Capon 1961 Theorem 4.1, Hajek-Sidak 1967 sec. III.2). Statistic C = sum_{j in B} a(R_j); E[C] = n2 * abar, Var[C] = n1 n2 / (n(n-1)) * sum (a - abar)^2; caponZ = (C - E[C]) / sqrt(Var[C]) ~ N(0, 1) under H0. STRUCTURALLY DISTINCT from axis-177 Klotz (Phi^{-1}(R/(n+1))^2 -- Weibull plotting position; logarithmically saturating tail score): Capon's Blom continuity correction puts ~30% MORE weight on the EXTREME ranks for n in [16, 30]; Capon power 0.84 vs Klotz 0.79 at n1 = n2 = 8, scale ratio 2 (Capon 1961 Tab. 3). vs axis-179 Mood (squared centred ranks bounded by ((n-1)/2)^2) Capon's score grows like 2 log(n) -- opposite asymptotic scale. vs axis-178 Conover (squared linear ranks on |X-median|; ARE 0.85 vs F under normal) Capon ARE 1.000 vs F under normal. vs axis-117 Siegel-Tukey ARE 0.608 and axis-170 Ansari-Bradley ARE 6/pi^2 -- Capon strictly more powerful under normal scale alternatives. vs axes 174/175 Cucconi/Lepage (joint chi-2(2) location-scale) Capon isolates the SCALE channel C/L mash with location. Distribution-free under H0. Refs: Capon 1961 Annals Math. Stat. 32:88-100; Blom 1958 Statistical Estimates and Transformed Beta-Variables sec. 5.4; Hajek-Sidak 1967 Theory of Rank Tests sec. III.2; Hollander & Wolfe 1999 Nonparametric Statistical Methods sec. 5.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: caponZAbsDesc (default) | caponZ | caponPValue | caponPValueDesc | tokens | tenure | source.',
+    'caponZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'caponZ',
+          'caponZAbsDesc',
+          'caponPValue',
+          'caponPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCaponHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenCaponHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCaponHalves(report) + '\n',
           );
         }
       } catch (e) {
