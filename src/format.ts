@@ -20634,6 +20634,7 @@ import type { DailyTokenMielkeQuarticHalvesReport } from './dailytokenmielkequar
 import type { DailyTokenKamatRangeRatioHalvesReport } from './dailytokenkamatrangeratiohalves.js';
 import type { DailyTokenNoetherCyclicalTrendReport } from './dailytokennoethercyclicaltrend.js';
 import type { DailyTokenDavidBartonRunsUpDownReport } from './dailytokendavidbartonrunsupdown.js';
+import type { DailyTokenHoggAdaptiveHalvesReport } from './dailytokenhoggadaptivehalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29253,6 +29254,92 @@ export function renderDailyTokenDavidBartonRunsUpDown(
   lines.push(
     chalk.dim(
       `(reference anchor: dbPValue < 0.05 = REJECT i.i.d.-continuous H0 at alpha=0.05 (two-sided normal reference). dbZ > 0 = HIGH-FREQUENCY DAILY OSCILLATION (more sign-flips than chance, mean-reverting); dbZ < 0 = LOW-FREQUENCY PERSISTENCE (longer monotone stretches than chance, trending). UNLIKE Wallis-Moore (lag-1 turning-points) David-Barton uses run COUNTS rather than turning-point counts and has a distinct standardisation under tied data; UNLIKE Wald-Wolfowitz (median-dichotomised runs) David-Barton operates on first-difference signs not on (v - median) signs.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHoggAdaptiveHalves(
+  r: DailyTokenHoggAdaptiveHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-hogg-adaptive-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dispatch: HFR1-mood-median=${formatNumber(r.dispatchCounts['HFR1-mood-median'])}    HFR2-wilcoxon=${formatNumber(r.dispatchCounts['HFR2-wilcoxon'])}    HFR3-vanderwaerden=${formatNumber(r.dispatchCounts['HFR3-vanderwaerden'])}`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HOGG-FISHER-RANDLES 1975 ADAPTIVE TWO-SAMPLE LOCATION TEST comparing the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the gap-filled daily total_tokens series. First computes the tail-weight selector Q = (U_05 - M_50) / (M_50 - L_05) on the POOLED sample, then DISPATCHES to one of three asymptotically-most-efficient location tests by Q's value: Q<0.5 or Q>2.0 -> Mood's median; 0.5<=Q<0.8 or 1.25<Q<=2.0 -> Wilcoxon rank-sum; 0.8<=Q<=1.25 -> van der Waerden normal-scores. Dispatched test's standardised Z is reported as hoggZ. TWO-HUNDRED-AND-FOURTH cross-source axis. STRUCTURALLY DISTINCT from EVERY prior axis: this is the FIRST adaptive / data-driven test-selection axis. Two sources with identical Mann-Whitney Z but different tail weights get DIFFERENT hoggZ. The DISPATCH LABEL is itself a NEW per-source feature not exposed by any prior axis. Refs: Hogg-Fisher-Randles 1975 JASA 70:656-661; Hettmansperger & McKean 2011 sec. 2.6.2; Hajek & Sidak 1967 sec. 2.4.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source HOGG-FISHER-RANDLES adaptive location test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'hoggQ',
+    'dispatch',
+    'hoggZ',
+    'hoggPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.hoggN1),
+    formatNumber(s.hoggN2),
+    s.hoggQ.toFixed(3),
+    s.hoggDispatch,
+    s.hoggZ.toFixed(4),
+    s.hoggPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: hoggPValue < 0.05 = REJECT location-equality H0 at alpha=0.05 (two-sided normal reference, dispatched test's asymptotic null). hoggZ > 0 = SECOND half located ABOVE first half (median / mean / centred-rank-sum) — sign-aligned with axis-110 mannwhitneyZ, axis-181 vanDerWaerdenZ, axis-189 wilcoxonSignedRankZ. The DISPATCH LABEL exposes the data-driven test-selection: dispatch shifts at Q-thresholds 0.5 / 0.8 / 1.25 / 2.0 (HFR 1975 Table 1). UNLIKE every prior single-score location axis, hoggZ adapts to the POOLED tail weight before computing.)`,
     ),
   );
 

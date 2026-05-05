@@ -209,6 +209,7 @@ import {
   renderDailyTokenKamatRangeRatioHalves,
   renderDailyTokenNoetherCyclicalTrend,
   renderDailyTokenDavidBartonRunsUpDown,
+  renderDailyTokenHoggAdaptiveHalves,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -701,6 +702,10 @@ import {
   buildDailyTokenDavidBartonRunsUpDown,
   type DailyTokenDavidBartonRunsUpDownSort,
 } from './dailytokendavidbartonrunsupdown.js';
+import {
+  buildDailyTokenHoggAdaptiveHalves,
+  type DailyTokenHoggAdaptiveHalvesSort,
+} from './dailytokenhoggadaptivehalves.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -46858,6 +46863,109 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenDavidBartonRunsUpDown(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-hogg-adaptive-halves')
+  .description(
+    "Per-source HOGG-FISHER-RANDLES 1975 ADAPTIVE TWO-SAMPLE LOCATION TEST comparing the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the gap-filled daily total_tokens series (TWO-HUNDRED-AND-FOURTH cross-source axis). First computes the tail-weight selector Q = (U_05 - M_50) / (M_50 - L_05) on the POOLED sample, then DISPATCHES to the asymptotically-most-efficient location test by Q's value: Q<0.5 or Q>2.0 -> Mood's median; 0.5<=Q<0.8 or 1.25<Q<=2.0 -> Wilcoxon rank-sum; 0.8<=Q<=1.25 -> van der Waerden normal-scores. The dispatched test's standardised Z is reported as hoggZ. SIGN: hoggZ > 0 = SECOND half located ABOVE first half (sign-aligned with axis-110, axis-181, axis-189). STRUCTURALLY DISTINCT from EVERY prior axis: this is the FIRST adaptive / data-driven test-selection axis. Two sources with identical Mann-Whitney Z but different tail weights get DIFFERENT hoggZ. The DISPATCH LABEL itself is a NEW per-source feature not exposed by any prior axis. Distribution-free under H0; deterministic given the same input. Refs: Hogg-Fisher-Randles 1975 JASA 70:656-661; Hettmansperger & McKean 2011 sec. 2.6.2; Hajek & Sidak 1967 sec. 2.4.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 20 (n1 = n2 = 10). Default 20.',
+    '20',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hoggZAbsDesc (default) | hoggZ | hoggPValue | hoggPValueDesc | hoggQ | tokens | tenure | source.',
+    'hoggZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 20) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 20 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'hoggZ',
+          'hoggZAbsDesc',
+          'hoggPValue',
+          'hoggPValueDesc',
+          'hoggQ',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHoggAdaptiveHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenHoggAdaptiveHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenHoggAdaptiveHalves(report) + '\n',
           );
         }
       } catch (e) {
