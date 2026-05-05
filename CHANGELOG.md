@@ -2,6 +2,210 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.478 — 2026-05-05
+
+### Added — `daily-token-paired-sign-test-halves` axis-190
+
+Per-source PAIRED BINOMIAL SIGN TEST on the half-split
+gap-filled daily total_tokens series.
+ONE-HUNDRED-AND-NINETIETH cross-source axis and the
+SECOND PAIRED-DESIGN axis in the cross-source family
+(axis-189 wilcoxon-signed-rank-halves was the first;
+every other prior cross-source axis -- 115 MW, 178 BWS,
+181 vdW, 182 FP, 183 YW, 184 Savage, 185 BWS, 186 HL,
+187 A12, 188 perm-t, etc. -- is an INDEPENDENT TWO-
+SAMPLE test).
+
+Day i of the first half (n1 = floor(n/2) days) is
+PAIRED with day i of the second half (when n is odd
+the median day is dropped so the halves have identical
+length and the pairing is unambiguous). Differences
+d_i = B_i - A_i are reduced to PURE SIGNS sign(d_i)
+in {-1, 0, +1}; zero diffs are dropped Pratt 1959
+zero-elimination style. The test statistic is
+
+    S+ = #{ i : d_i > 0 }   (count of positive d_i)
+
+referenced to its EXACT BINOMIAL(N_nz, 1/2) null
+under H0 of within-pair symmetry of d_i around 0
+(where N_nz = S+ + S- = #{i : d_i != 0}). Two-sided
+p uses the symmetry of Bin(N_nz, 1/2) around its
+mean: pTwoSided = Pr(X <= n/2 - dev) + Pr(X >= n/2 +
+dev) where dev = |S+ - n/2|. NO normal-approximation
+in the p itself; a continuity-corrected normal-
+approximation Z
+
+    Z = (S+ - N_nz/2 - 0.5 * sign(S+ - N_nz/2))
+        / sqrt(N_nz / 4)
+
+is surfaced separately for cross-axis comparability
+to other Z-scaled axes. Sign convention: positive Z
+= SECOND half larger (matches the cross-axis
+convention from axes 115/186/187/188/189).
+
+Effect-size conjugate: sign-balance proportion
+piPlus = S+ / N_nz in [0, 1] and directional sign-
+balance delta = (S+ - S-) / N_nz in [-1, +1]
+(delta = 2 * piPlus - 1). Both are scale-free and
+directly comparable across sources of widely
+different token volumes.
+
+5-level decision: highly-significant <=.001, very-
+significant <=.01, significant <=.05, marginal
+<=.10, ns.
+
+#### Orthogonality vs prior axes
+
+  - **vs axis-189 wilcoxon-signed-rank-halves**:
+    Both are paired-design tests on the SAME pairing
+    of d_i = B_i - A_i, but they are MAXIMALLY
+    COMPLEMENTARY. axis-189 keeps the FULL RANKS of
+    |d_i| (and pays for it with a stronger
+    distributional assumption -- symmetry of the
+    paired-difference CDF F_d around 0). axis-190
+    DISCARDS all rank-magnitude information and
+    keeps ONLY the signs (paying nothing -- the
+    binomial sign null requires only that each d_i
+    be EXCHANGEABLE WITH ITS NEGATION, a strictly
+    weaker condition than CDF symmetry; this holds
+    for ANY continuous symmetric paired distribution
+    whatever, including heavy-tailed and asymmetric-
+    about-zero contaminations that BREAK Wilcoxon).
+    axis-190 is therefore the MOST DISTRIBUTION-FREE
+    paired test in the family. The two together
+    form a ROBUSTNESS SANDWICH: axis-189 has more
+    power under symmetric tails, axis-190 still has
+    Type-I control under arbitrary asymmetric tails.
+  - **vs axis-115 MW** (independent two-sample rank-
+    sum). MW treats the halves as INDEPENDENT and
+    tests stochastic dominance F_A != F_B. axis-190
+    treats them as PAIRED observations of the same
+    calendar day-position. The paired null is
+    strictly stronger whenever pairing reduces
+    variance.
+  - **vs axis-188 perm-t** (independent two-sample,
+    pooled exchangeability null on raw values).
+    axis-190 only uses SIGNS of within-pair
+    differences under per-pair exchange with the
+    negation; raw value magnitudes are entirely
+    discarded.
+  - **vs axis-186 HL** (Hodges-Lehmann two-sample
+    point estimator + Lehmann CI). HL estimates the
+    location-shift MAGNITUDE; axis-190 reports a
+    paired-design SIGNIFICANCE p with sign-balance
+    effect sizes -- it does not estimate magnitude.
+  - **vs axis-187 A12** (Vargha-Delaney probability-
+    of-superiority unsigned rank-overlap effect-
+    size). axis-190 is a SIGNED paired-design
+    hypothesis test using only binary up/down info.
+  - **vs axis-113 difference-sign-test** (Mood's
+    difference-sign trend test). axis-113 sums
+    POSITIVE CONSECUTIVE FIRST DIFFERENCES x[i+1] -
+    x[i] (n - 1 trials, monotone-trend sensitive).
+    axis-190 sums positive PAIRED HALF-DIFFERENCES
+    x[half + i] - x[i] (n/2 trials, sustained-
+    level-shift sensitive, INSENSITIVE to within-
+    half oscillation). Different pairings of
+    different index-pairs answering different
+    questions.
+
+#### Live cross-source read against `~/.config/pew/queue.jsonl`
+
+Real exact-binomial paired-sign test results across
+the four real sources (plus auxiliaries) from
+`pew-insights daily-token-paired-sign-test-halves`,
+sorted by |Z| descending:
+
+  - **claude-code** (tenure 72 d, 36 pairs,
+    N_nz = 29, S+ = 22, S- = 7): Z = +2.5997,
+    pTwoSided = 8.13e-3, piPlus = 0.7586,
+    delta = +0.5172 -> **very-significant** SECOND-
+    half-larger sustained shift. The largest source
+    by token volume (3.44 B tokens) and the
+    strongest paired-shift signal in the cross-axis
+    panel.
+  - **vscode-cp** (tenure 265 d, 132 pairs,
+    N_nz = 61, S+ = 22, S- = 39): Z = -2.0486,
+    pTwoSided = 3.96e-2, piPlus = 0.3607,
+    delta = -0.2787 -> **significant** FIRST-half-
+    larger shift. The longest-tenure source in the
+    panel; pair count N_nz = 61 dominates the
+    cross-source binomial-degrees-of-freedom budget.
+  - **openclaw** (tenure 19 d, 9 pairs, N_nz = 9,
+    S+ = 1, S- = 8): Z = -2.0000, pTwoSided =
+    3.91e-2, piPlus = 0.1111, delta = -0.7778 ->
+    **significant** FIRST-half-larger shift with the
+    LARGEST |delta| in the panel (only 1 of 9 paired
+    half-deltas points up). Short tenure (only 19 d)
+    so the binomial p is at the edge of detectable.
+  - **opencode** (tenure 16 d, 8 pairs, N_nz = 8,
+    S+ = 2, S- = 6): Z = -1.0607, pTwoSided =
+    2.89e-1, piPlus = 0.2500, delta = -0.5000 -> ns
+    despite |delta| = 0.5; minimum-tenure source
+    (n = 16 = floor) so binomial p simply has no
+    resolution to detect anything below 2/256
+    even at S+ = 0 or 8.
+  - **hermes** (tenure 19 d, 9 pairs, N_nz = 9,
+    S+ = 6, S- = 3): Z = +0.6667, pTwoSided =
+    5.08e-1, piPlus = 0.6667, delta = +0.3333 -> ns.
+
+Sign-balance summary across the four primary
+sources: 1 of 4 has a SECOND-half-larger paired
+shift detectable at p <= .05 (claude-code, large
+delta); 2 of 4 have a FIRST-half-larger paired
+shift detectable at p <= .05 (vscode-cp moderate
+delta, openclaw very large delta); the remaining
+two short-tenure sources have ns binomial p despite
+substantial |delta| (resolution-limited).
+
+Cross-axis read vs axis-189 wsr: directional
+agreement on all five sources (signs match), and
+the absolute Z's are within ~30% of axis-189 on
+every source -- exactly the expected behaviour
+when the paired differences are approximately
+symmetric (axis-189 picks up modest extra power
+from the rank magnitudes). The two axes agree on
+which sources cross the .05 boundary (claude-code,
+vscode-cp, openclaw), confirming that the
+distribution-free sign test is not under-powered
+relative to wsr at these sample sizes -- so the
+sandwich gives FREE robustness without sacrificing
+detection.
+
+#### Implementation
+
+  - `src/dailytokenpairedsigntesthalves.ts` (~530
+    lines) -- pure functions
+    `dailyTokenPairedSignTestHalves`,
+    `binomialHalfPmf`, `binomialHalfCdfLower`,
+    `binomialHalfCdfUpper`, `binomialHalfTwoSidedP`,
+    `pairedSignTestDecision`, plus a
+    `buildDailyTokenPairedSignTestHalves` reporter
+    over `QueueLine[]`. Exact binomial p via stable
+    log-space Lanczos lgamma -- handles N up to
+    ~10^4 without overflow.
+  - `src/cli.ts` -- new
+    `daily-token-paired-sign-test-halves` subcommand
+    with `--since/--until/--source/--min-tokens/
+    --min-tenure-days/--top/--sort/--json` flags.
+    Sort keys: `absZDesc` (default), `sPlus`,
+    `pTwoSided`, `absDeltaDesc`, `tokens`, `tenure`,
+    `source`.
+  - `src/format.ts` -- pretty `renderDailyToken
+    PairedSignTestHalves` mirroring axis-189's table
+    columns.
+  - `test/dailytokenpairedsigntesthalves.test.ts` --
+    38 unit tests covering decision buckets,
+    binomial PMF/CDF symmetry identities, exact-p
+    matching of hand-worked small cases, Pratt
+    zero-elimination, half-pair drop on odd n,
+    continuity-correction sign behaviour, build()
+    sort + filter behaviour, and two invariant
+    tests (sign(z) consistency and pTwoSided <= 2 *
+    min tail identity).
+
+Suite: 13830 -> 13868 tests (+38). Build green.
+
 ## 0.6.477 — 2026-05-05
 
 ### Refinement — axis-189 invariant tests (4 added; suite now 32)
