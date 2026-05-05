@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.500 — 2026-05-05
+
+### Added — `classifyMielkeMoodTailVsBulkCompound` (axis-200 ↔ axis-179 tail-vs-bulk dispersion-localisation diagnostic)
+
+Cross-axis compound classifier joining axis-200 MIELKE
+1972 quartic-centered-ranks scale test with axis-179
+MOOD 1954 squared-centered-ranks scale test on a per-
+source basis.
+
+**Structural claim.** Both tests are members of the
+MIELKE 1972 POWER-OF-RANKS family `T_p = sum_{j in B}
+(R_j - (n+1)/2)^p`: Mood is `T_2`, Mielke quartic is
+`T_4`. Both are PURE SCALE TESTS with U-shape weight
+symmetric about the rank midpoint. They DIVERGE on
+WHERE the dispersion shift lives: Mood spreads weight
+quadratically across the U-shape, Mielke concentrates
+weight on the EXTREME ranks (at n=16 the extreme/
+median weight ratio is 7.5^4 / 0.5^4 ≈ 50000x).
+
+**Bucket map** at configurable alpha (default 0.05)
+and tolerance (default 1e-9):
+
+  - `tail-amplified-second` / `tail-amplified-first`:
+    both Z share sign AND `|mielkeZ| > |moodZ|` by
+    strict margin AND any decisive. Dispersion shift
+    concentrated in EXTREME tails — token-spike-driven.
+  - `bulk-amplified-second` / `bulk-amplified-first`:
+    both Z share sign AND `|moodZ| > |mielkeZ|` by
+    strict margin AND any decisive. Dispersion shift
+    in mid-to-upper SHOULDER ranks — gradual scale
+    drift.
+  - `coherent`: signs agree AND `||mielkeZ|-|moodZ|| <=
+    tolerance` AND any decisive. Uniform U-shape
+    dispersion shift — clean parametric scale change.
+  - `sign-conflict`: signs disagree AND any decisive.
+    Pathological — bimodal-within-half configurations
+    where bulk-rank mass and tail-rank mass favour
+    different halves.
+  - `no-evidence`: neither decisive.
+
+Returns the joined-row table plus aggregate counts
+(`bothDecisive`, `atLeastOneDecisive`, `signConflicts`,
+`unanimousAgreement`) and the asymmetric source-
+membership lists `sourcesOnlyInMielke` /
+`sourcesOnlyInMood`.
+
+Pure function: deterministic source-asc ordering,
+strict input validation (rejects duplicates, non-
+finite Z, p-values outside (0,1], invalid alpha or
+tolerance, empty source strings).
+
+**Reference.** Mielke, P. W., "Asymptotic behavior of
+two-sample tests based on powers of ranks for
+detecting scale and location alternatives", *J. Amer.
+Statist. Assoc.* 67(340) (1972), pp. 850-854. Mood,
+A. M., "On the asymptotic efficiency of certain
+nonparametric two-sample tests", *Ann. Math. Statist.*
+25 (1954), pp. 514-522.
+
 ## 0.6.499 — 2026-05-05
 
 ### Added — `daily-token-mielke-quartic-halves` (axis-200 MIELKE 1972 quartic-centered-ranks scale test for halves)
