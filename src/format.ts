@@ -20596,6 +20596,7 @@ import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyh
 import type { DailyTokenAnsariBradleyHalvesReport } from './dailytokenansaribradleyhalves.js';
 import type { DailyTokenMoodsMedianHalvesReport } from './dailytokenmoodsmedianhalves.js';
 import type { DailyTokenTukeyQuickHalvesReport } from './dailytokentukeyquickhalves.js';
+import type { DailyTokenWaldWolfowitzRunsHalvesReport } from './dailytokenwaldwolfowitzrunshalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -28395,6 +28396,95 @@ export function renderDailyTokenTukeyQuickHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: tqW = 0 = full sort-order overlap of the two halves (no end-exceedance); tqW >= 7 = significant location/tail-shift at alpha = 0.05; tqW >= 10 = alpha = 0.01; tqW >= 13 = alpha = 0.001 (Tukey 1959 Table 1, validated 5 <= n1, n2 <= 30, mildly conservative outside). Sign convention: positive tqSignedW = SECOND HALF is "high" sample (location ROSE across the tenure); negative tqSignedW = FIRST HALF is "high" (location DROPPED). Indeterminate (indet=yes) = one half's RANGE envelopes the other -- correctly reported as no-test rather than spurious zero. Tukey's W is INVARIANT under any strictly monotone transform of the data (uses only sort order at the extremes). Cross-check vs axis-115 Mann-Whitney halves: when MW rejects but Tukey does not, the shift is IN THE CENTRAL MASS (extremes overlap); when Tukey rejects but MW does not, a SINGLE TAIL of one half has separated from the other (rare-event signal that rank-sum tests dilute).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWaldWolfowitzRunsHalves(
+  r: DailyTokenWaldWolfowitzRunsHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-wald-wolfowitz-runs-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WALD-WOLFOWITZ TWO-SAMPLE RUNS TEST on the pooled-sorted label sequence comparing the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-FOURTH cross-source axis. Class-TWO-SAMPLE-OMNIBUS-DISTRIBUTION-EQUALITY-TEST (Wald & Wolfowitz 1940 Annals of Mathematical Statistics 11(2):147-162; Granger 1963 JRSS B 25(1):220-225). wwR = number of maximal label runs (2 <= wwR <= n; wwR = 2 = perfect separation, wwR = n = perfect alternation). E[R] = 2*n1*n2/n + 1; Var[R] = 2*n1*n2*(2*n1*n2 - n) / (n^2 * (n-1)). wwZ continuity-corrected (R +/- 0.5 - E[R])/sqrt(Var). wwSignedDirection = sign(median(B) - median(A)) is a navigational aid only; the runs test rejects on |wwZ| alone. ORTHOGONAL to all rank-sum tests (axis-115 MW, axis-187 A12, axis-191 Cliff's delta -- those are functionals of pooled ranks, wwR is a functional of label-sequence alternations), to all ECDF-gap tests (axis-186 KS, axis-192 Kuiper -- those are sup-magnitude functionals, wwR is a transition-count functional), to all paired tests (axis-189 Wilcoxon signed-rank, axis-190 paired sign), to mean-shift tests (axis-188 perm-Welch-t -- pure scale or shape shift gives perm-t near zero but wwR can be highly non-null), to end-exceedance tests (axis-193 Tukey's quick test -- END pairs only; wwR uses the FULL pooled-sort adjacency pattern), to scale tests (axis-117 Siegel-Tukey -- folded-rank rank sum), and to single-sample randomness tests (axis-126 runs-test-z -- within-sample sign runs in TIME order; wwR is group-of-origin label runs in POOLED-SORT order).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source WALD-WOLFOWITZ runs R (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'medA',
+    'medB',
+    'wwR',
+    'E[R]',
+    'sd[R]',
+    'wwZ',
+    'p',
+    'dir',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.wwN1),
+    formatNumber(s.wwN2),
+    formatNumber(s.wwMedianA),
+    formatNumber(s.wwMedianB),
+    formatNumber(s.wwR),
+    s.wwExpR.toFixed(3),
+    Math.sqrt(s.wwVarR).toFixed(3),
+    s.wwZ.toFixed(3),
+    s.wwTwoSidedP.toExponential(3),
+    s.wwSignedDirection > 0 ? '+' : s.wwSignedDirection < 0 ? '-' : '0',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: wwR = E[R] = no evidence against H0; wwR much LESS than E[R] (negative wwZ) = clustering of labels in the pooled sort = distributional difference signal; wwR much GREATER than E[R] (positive wwZ) = anti-clustering / over-mixing (rare). |wwZ| >= 1.96 = significant at alpha = 0.05 two-sided. The Wald-Wolfowitz test is INVARIANT under any strictly monotone transform of the data (depends only on POOLED SORT ORDER + LABELS). Cross-check vs axis-186 KS halves: when KS rejects but ww does not, the largest cumulative ECDF gap is large but the labels are still well-mixed in the sort (rare); when ww rejects but KS does not, labels are clustered without a single dominating ECDF gap (multimodal alternative).)`,
     ),
   );
 

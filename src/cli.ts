@@ -221,6 +221,7 @@ import {
   renderDailyTokenKuiperTwoSampleHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenTukeyQuickHalves,
+  renderDailyTokenWaldWolfowitzRunsHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -733,6 +734,7 @@ import {
 } from './dailytokenkuipertwosamplehalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenTukeyQuickHalves } from './dailytokentukeyquickhalves.js';
+import { buildDailyTokenWaldWolfowitzRunsHalves } from './dailytokenwaldwolfowitzrunshalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -38054,6 +38056,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenTukeyQuickHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-wald-wolfowitz-runs-halves')
+  .description(
+    "Per-source WALD-WOLFOWITZ TWO-SAMPLE RUNS TEST comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series via the LABEL-RUN COUNT in the POOLED-SORTED ORDER (ONE-HUNDRED-AND-NINETY-FOURTH cross-source axis). Class-TWO-SAMPLE-OMNIBUS-DISTRIBUTION-EQUALITY-TEST (Wald & Wolfowitz 1940 Annals of Mathematical Statistics 11(2):147-162 'On a test whether two samples are from the same population'; Granger 1963 JRSS B 25(1):220-225 continuity-correction refinement). Pool all n values, sort ascending, replace by source-of-origin labels A/B; wwR = number of maximal label runs in the pooled-sorted label sequence (2 <= wwR <= n; wwR = 2 iff perfect separation, wwR = n iff perfect alternation). Under H0 of identical distributions: E[R] = 2*n1*n2/n + 1, Var[R] = 2*n1*n2*(2*n1*n2 - n) / (n^2 * (n-1)). wwZ = continuity-corrected (R +/- 0.5 - E[R])/sqrt(Var); two-sided p via the standard normal. wwSignedDirection = sign(median(B) - median(A)) is reported as a navigational aid (independent of the runs test, which rejects on |wwZ| alone). ORTHOGONAL to axis-115 Mann-Whitney halves and axis-191 Cliff's delta (both are functionals of POOLED RANKS / RANK SUM; wwR is a functional of LABEL-SEQUENCE ALTERNATIONS -- two configurations with the same rank sum can have wwR = 2 or wwR = n), axis-186 KS halves (KS = sup ECDF-gap = magnitude of cumulative difference; wwR = count of label transitions, insensitive to gap magnitude), axis-187 Vargha-Delaney A12 (monotone in MW U), axis-188 perm-Welch-t (mean-shift-sensitive; wwR detects ANY distributional difference including pure scale or shape), axis-189 Wilcoxon signed-rank halves and axis-190 paired sign test (PAIRED tests on time-aligned i-th obs; wwR is UNPAIRED on the pooled sort), axis-192 Kuiper (sum of two ECDF suprema; wwR has no ECDF connection), axis-193 Tukey's quick test (END-EXCEEDANCE PAIRS only; wwR uses the FULL pooled-sort adjacency pattern), axis-117 Siegel-Tukey (folded-rank SCALE = rank sum on permuted scale; wwR is not a rank sum), and axis-126 single-sample runs-test-z (within-sample sign runs in TIME ORDER; wwR is group-of-origin label runs in POOLED-SORT ORDER). OMNIBUS: positive power against ANY distributional alternative (location, scale, shape, multimodality), generally less powerful than focused tests for any single alternative class -- its strength is mechanism-independence. Tie handling: tied-value blocks containing both labels collapse to a single label adjacency (conservative lower bound on R; standard treatment per Sprent & Smeeton 2001 section 6.4.2).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for the Wald-Wolfowitz normal approximation validity band). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: wwZAbsDesc (default) | wwR | wwRDesc | wwZ | wwZDesc | wwZAbs | wwP | wwPDesc | tokens | tenure | source.',
+    'wwZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'wwR',
+          'wwRDesc',
+          'wwZ',
+          'wwZDesc',
+          'wwZAbs',
+          'wwZAbsDesc',
+          'wwP',
+          'wwPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenWaldWolfowitzRunsHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'wwR'
+            | 'wwRDesc'
+            | 'wwZ'
+            | 'wwZDesc'
+            | 'wwZAbs'
+            | 'wwZAbsDesc'
+            | 'wwP'
+            | 'wwPDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenWaldWolfowitzRunsHalves(report) + '\n',
           );
         }
       } catch (e) {
