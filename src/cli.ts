@@ -216,6 +216,7 @@ import {
  renderDailyTokenVarghaDelaneyHalves,
   renderDailyTokenPermutationTstatHalves,
   renderDailyTokenWilcoxonSignedRankHalves,
+  renderDailyTokenPairedSignTestHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -715,6 +716,10 @@ import {
   buildDailyTokenWilcoxonSignedRankHalves,
   type DailyTokenWilcoxonSignedRankHalvesSort,
 } from './dailytokenwilcoxonsignedrankhalves.js';
+import {
+  buildDailyTokenPairedSignTestHalves,
+  type DailyTokenPairedSignTestHalvesSort,
+} from './dailytokenpairedsigntesthalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -45199,6 +45204,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWilcoxonSignedRankHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-paired-sign-test-halves')
+  .description(
+    "Per-source PAIRED BINOMIAL SIGN TEST on the half-split gap-filled daily total_tokens series (ONE-HUNDRED-AND-NINETIETH cross-source axis; SECOND PAIRED-DESIGN cross-source axis after axis-189). Day i of the first half is PAIRED with day i of the second half (n forced even by dropping the median day when odd). Differences d_i = B_i - A_i are reduced to PURE SIGNS sign(d_i); zero diffs dropped Pratt-style. S+ = count of strictly positive d_i ~ Binomial(N_nz, 1/2) under H0 of within-pair symmetry around 0. EXACT two-sided binomial p uses Bin(N_nz, 1/2) symmetry around the mean. Continuity-corrected normal-approx Z surfaced for cross-axis comparability; positive Z = SECOND half larger. 5-level decision: highly-significant <=.001, very-significant <=.01, significant <=.05, marginal <=.10, ns. Effect-size: piPlus = S+/N_nz in [0,1] and delta = (S+ - S-)/N_nz in [-1, +1]. STRUCTURALLY ORTHOGONAL: vs axis-189 wilcoxon-signed-rank which uses FULL RANKS of |d_i|; axis-190 discards rank magnitudes -- the MOST DISTRIBUTION-FREE paired test in the family (only requires per-pair exchangeability with negation, strictly weaker than CDF symmetry). vs axis-115 MW (independent two-sample). vs axis-188 perm-t (pooled exchangeability). vs axis-186 HL (point estimator). vs axis-113 difference-sign (sums positive consecutive first-differences for monotone trend; axis-190 sums positive PAIRED half-differences for sustained level shift). Refs: Arbuthnott 1710 *Phil. Trans.* 27:186-190; Dixon-Mood 1946 *J. Amer. Stat. Assoc.* 41(236):557-566; Pratt 1959 *J. Amer. Stat. Assoc.* 54(287):655-667; Conover 1999 *Practical Nonparametric Statistics* sec 3.4.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16. Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absZDesc (default) | sPlus | pTwoSided | absDeltaDesc | tokens | tenure | source.',
+    'absZDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'sPlus',
+          'absZDesc',
+          'pTwoSided',
+          'absDeltaDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPairedSignTestHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenPairedSignTestHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPairedSignTestHalves(report) + '\n',
           );
         }
       } catch (e) {

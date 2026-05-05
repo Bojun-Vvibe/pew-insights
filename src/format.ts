@@ -20635,6 +20635,7 @@ import type { DailyTokenHlShiftHalvesReport } from './dailytokenhodgeslehmannshi
 import type { DailyTokenVarghaDelaneyHalvesReport } from './dailytokenvarghadelaneyhalves.js';
 import type { DailyTokenPermutationTstatHalvesReport } from './dailytokenpermutationtstathalves.js';
 import type { DailyTokenWilcoxonSignedRankHalvesReport } from './dailytokenwilcoxonsignedrankhalves.js';
+import type { DailyTokenPairedSignTestHalvesReport } from './dailytokenpairedsigntesthalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -28015,6 +28016,103 @@ export function renderDailyTokenWilcoxonSignedRankHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: Z = 0 is the no-shift anchor under H0 of within-pair symmetry around 0. Decision buckets: highly-significant <=.001, very-significant <=.01, significant <=.05, marginal <=.10, ns. Cross-axis vs axis-188 perm-t: axis-188's null is exchangeability of the POOLED sample under independent two-sample design; axis-189's null is symmetry of the WITHIN-PAIR difference under paired design. The two are MAXIMALLY COMPLEMENTARY when there is shared within-pair signal across halves (e.g., aligned weekly seasonality). vs axis-186 HL: HL estimates the SHIFT magnitude with a Lehmann CI; axis-189 reports a paired-symmetry SIGNIFICANCE p with a rank-biserial effect-size conjugate.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPairedSignTestHalves(
+  r: DailyTokenPairedSignTestHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-paired-sign-test-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PAIRED BINOMIAL SIGN TEST on the half-split daily series. Day i of the first half is paired with day i of the second half (median day dropped when n is odd). Differences d_i = B_i - A_i are reduced to PURE SIGNS sign(d_i); zero diffs dropped Pratt-style. S+ = count of positive d_i ~ Binomial(N_nz, 1/2) under H0 of within-pair symmetry around 0. EXACT two-sided binomial p; positive Z = SECOND half larger. ONE-HUNDRED-AND-NINETIETH cross-source axis; SECOND PAIRED-DESIGN axis. Effect-size: piPlus = S+/N_nz in [0,1] and delta = (S+ - S-)/N_nz in [-1, +1]. STRUCTURALLY ORTHOGONAL: vs axis-189 wilcoxon-signed-rank which uses FULL RANKS of |d_i|; axis-190 discards rank magnitudes and is the MOST DISTRIBUTION-FREE paired test in the family. Together they form a robustness sandwich. Refs: Arbuthnott 1710; Dixon-Mood 1946; Pratt 1959; Conover 1999 sec 3.4.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source paired binomial sign test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'nNonZero',
+    'nZero',
+    'S+',
+    'S-',
+    'E[S+]',
+    'Z',
+    'p (2sd)',
+    'p upper',
+    'p lower',
+    'sign',
+    'piPlus',
+    'delta',
+    'decision',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.pstNPairs),
+    formatNumber(s.pstNNonZero),
+    formatNumber(s.pstNZeroDropped),
+    formatNumber(s.pstSPlus),
+    formatNumber(s.pstSMinus),
+    s.pstExpectedSPlus.toFixed(2),
+    (s.pstZ >= 0 ? '+' : '') + s.pstZ.toFixed(4),
+    s.pstPTwoSided.toExponential(2),
+    s.pstPUpper.toExponential(2),
+    s.pstPLower.toExponential(2),
+    s.pstSign === 1 ? '+' : s.pstSign === -1 ? '-' : '0',
+    s.pstPiPlus.toFixed(4),
+    (s.pstDelta >= 0 ? '+' : '') + s.pstDelta.toFixed(4),
+    s.pstDecision,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: S+ = N_nz/2 is the no-shift anchor under H0. EXACT binomial p uses Bin(N_nz, 1/2) symmetry around the mean; cross-axis vs axis-189 wsr: axis-189 keeps rank magnitudes (more power under symmetric tails); axis-190 discards them (Type-I control under arbitrary asymmetric tails). vs axis-113 difference-sign trend test: axis-113 sums positive consecutive first-differences (n-1 trials, monotone-trend sensitive); axis-190 sums positive PAIRED half-differences (n/2 trials, sustained-level-shift sensitive, insensitive to within-half oscillation).)`,
     ),
   );
 
