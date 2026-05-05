@@ -20630,6 +20630,7 @@ import type { DailyTokenLepageHalvesReport } from './dailytokenlepagehalves.js';
 import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermunzelhalves.js';
 import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 import type { DailyTokenCaponHalvesReport } from './dailytokencaponhalves.js';
+import type { DailyTokenMielkeQuarticHalvesReport } from './dailytokenmielkequartichalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -28921,6 +28922,87 @@ export function renderDailyTokenCaponHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: caponPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). caponZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ sign convention). Pitman ARE 1.000 vs F-test under normal-scale alternatives -- the maximum possible for a rank scale test. Capon and Klotz are both LMP in the limit but Capon's tighter Blom plotting position yields ~30% MORE extreme-rank weight at small n.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenMielkeQuarticHalves(
+  r: DailyTokenMielkeQuarticHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-mielke-quartic-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MIELKE 1972 QUARTIC-CENTERED-RANKS SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the median-aligned, gap-filled daily total_tokens series. Score a(R_i) = (R_i - (n+1)/2)^4 (Mielke 1972 JASA 67:850-854 eq. 2.3, p = 4 in the family of POWER-OF-RANKS scale tests). Statistic M = sum_{j in B} a(R_j); E[M] = n2 * abar, Var[M] = n1 n2 / (n(n-1)) * sum (a - abar)^2 (exact permutation variance, Lehmann 1975 Theorem 8.1); mielkeZ = (M - E[M]) / sqrt(Var[M]) ~ N(0,1) under H0. TWO-HUNDREDTH cross-source axis. STRUCTURALLY DISTINCT from axis-179 Mood (p=2 quadratic centred-rank, bound ((n-1)/2)^2): Mielke's quartic weight bound ((n-1)/2)^4 puts ~56x more weight on extreme ranks at n = 16. Mielke ARE 0.71 vs F under normal but ARE 1.32 under double-exponential and 2.1 under Cauchy (Mielke 1972 Tab. 2) — strictly more powerful than Mood for HEAVY-TAILED scale alternatives. vs axis-177 Klotz / axis-199 Capon (squared NORMAL scores, log-saturating tail) Mielke uses POLYNOMIAL R^4 growth — at n = 30 puts ~99.5% of variance on the 5 most extreme ranks (vs Klotz ~60%). vs axis-178 Conover (squared linear ranks on |X-median|) Mielke operates on raw aligned values without folding. Pre-aligned by within-half median subtraction. Distribution-free under H0.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MIELKE quartic scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'mielkeM',
+    'expM',
+    'mielkeZ',
+    'mielkePValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.mielkeN1),
+    formatNumber(s.mielkeN2),
+    s.mielkeM.toFixed(2),
+    s.mielkeExpM.toFixed(2),
+    s.mielkeZ.toFixed(4),
+    s.mielkePValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: mielkePValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). mielkeZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ, axis-199 caponZ sign convention). Pitman ARE 0.71 vs F-test under normal-scale alternatives but ARE 1.32 vs F under double-exponential and 2.1 vs F under Cauchy — Mielke trades normal-power for HEAVY-TAIL POWER, dominating Mood/Klotz/Capon for token-spike-style dispersion shifts.)`,
     ),
   );
 

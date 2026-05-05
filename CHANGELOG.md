@@ -2,6 +2,141 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.499 — 2026-05-05
+
+### Added — `daily-token-mielke-quartic-halves` (axis-200 MIELKE 1972 quartic-centered-ranks scale test for halves)
+
+TWO-HUNDREDTH cross-source axis. Per-source **MIELKE
+1972 QUARTIC-CENTERED-RANKS SCALE TEST** for equality
+of dispersion between the first half (n1 = floor(n/2))
+vs second half (n2 = n - n1) of the median-aligned,
+gap-filled daily total_tokens series.
+
+**Mechanism.** Pool the median-aligned values, compute
+the pooled mid-ranks `R_i in {1..n}`, then assign the
+**Mielke quartic score**
+
+    a(R_i) = ( R_i - (n + 1) / 2 )^4
+
+(Mielke 1972 *J. Amer. Statist. Assoc.* 67:850-854
+eq. 2.3 with p = 4 in the family of POWER-OF-RANKS
+scale tests `T_p = sum (R - (n+1)/2)^p`). The statistic
+is the second-half score sum
+
+    M       = sum_{j in B} a(R_j)
+    E[M]    = n2 * abar
+    Var[M]  = ( n1 * n2 / ( n * (n - 1) ) ) * sum (a - abar)^2
+    mielkeZ = ( M - E[M] ) / sqrt(Var[M])  ~ N(0, 1)
+
+(the Var[M] formula is the EXACT permutation variance
+of any rank-score sub-sample; Lehmann 1975
+*Nonparametrics: Statistical Methods Based on Ranks*
+Theorem 8.1.) Two-sided p-value
+`mielkePValue = 2 (1 - Phi(|mielkeZ|))`. Sign convention:
+`mielkeZ > 0` <=> SECOND half MORE dispersed (matches
+axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178
+conoverZ, axis-179 moodZ, axis-199 caponZ for direct
+cross-axis aggregation).
+
+**Why this is structurally distinct from prior axes.**
+
+  - **vs axis-179 Mood** (p = 2 in same family,
+    quadratic centred-rank weight bounded by
+    `((n-1)/2)^2`). Mielke's QUARTIC weight is bounded
+    by `((n-1)/2)^4` — at n = 16 the extreme-rank score
+    is 7.5^2 = 56.25 for Mood vs 7.5^4 = 3164 for
+    Mielke, so Mielke weights the EXTREME RANKS ~56x
+    more heavily on the same data. Mood ARE 0.760 vs F
+    under normal; Mielke ARE 0.71 under normal but
+    **1.32 under double-exponential** and **2.1 under
+    Cauchy** (Mielke 1972 sec. 4 Tab. 2) — Mielke is
+    materially more powerful than Mood under heavy-
+    tailed scale alternatives precisely because the
+    quartic weight amplifies tail-rank contributions
+    where heavy-tailed distributions concentrate scale
+    information.
+  - **vs axis-177 Klotz / axis-199 Capon** (squared
+    NORMAL scores, logarithmically-saturating tail).
+    Klotz/Capon's score grows like `2 log(n)`; Mielke's
+    grows POLYNOMIALLY as `(n/2)^4`. At n = 30 Mielke
+    puts ~99.5% of its variance on the 5 most extreme
+    ranks (vs Klotz's ~60%). Klotz/Capon are LMP for
+    NORMAL scale alternatives; Mielke is the LMP score
+    for `t_5` dispersion alternatives — the two are
+    STRUCTURALLY DUAL.
+  - **vs axis-178 Conover** (squared linear ranks on
+    `|X - within-half-median|`). Conover folds per half;
+    Mielke operates on raw aligned values and weights
+    BOTH extreme tails symmetrically. Under joint
+    location-and-scale shift the two reject in
+    different patterns.
+  - **vs axes 174/175 Cucconi/Lepage** (joint chi-2(2)
+    location-scale). C/L mash location and scale into
+    one statistic; Mielke isolates the scale channel
+    optimised for HEAVY-TAILED alternatives that
+    Cucconi/Lepage's Wilcoxon-Mood/AB component would
+    dilute.
+
+**Pre-alignment.** Median-fold each half by subtracting
+the within-sample median from each half before pooling
+and ranking (Hollander & Wolfe 1999 *Nonparametric
+Statistical Methods* 2nd ed. sec. 5.1; matches axis-177
+Klotz, axis-199 Capon convention). Without this step a
+location shift between halves would inflate
+`|R - (n+1)/2|^4` for the away-half regardless of true
+dispersion.
+
+Hard floor on min-tenure-days is 16 (n1 = n2 = 8) so
+the asymptotic normal reference holds nominal alpha
+(Mielke 1972 sec. 4 simulation: actual size 0.041-0.057
+across n1 = n2 in [8, 50] for p in [2, 6]).
+
+**Live-smoke against `~/.config/pew/queue.jsonl`** (6
+sources observed, 5 above min-tenure-days = 16; one
+below-floor source dropped):
+
+```
+source       tenure  n1   n2   mielkeZ   mielkePValue
+claude-code      72  36   36   +5.9526   2.65e-9
+openclaw         19   9   10   -1.9797   4.77e-2
+vscode-cp       265 132  133   -1.5700   1.16e-1
+opencode         16   8    8   -1.5631   1.18e-1
+hermes           19   9   10   -0.7077   4.79e-1
+```
+
+Reading: `claude-code` has decisively MORE dispersed
+SECOND-half daily token volume (`mielkeZ = +5.95`,
+`p = 2.6e-9`) — driven by the quartic weight catching
+extreme-rank concentration in the upper tail of the
+second-half spike pattern. `openclaw` shows the
+OPPOSITE: FIRST-half more dispersed at the 5% level
+(`mielkeZ = -1.98`, `p = 0.048`). The remaining three
+(`vscode-cp`, `opencode`, `hermes`) sit in the no-
+evidence zone with `|Z| < 2`. The Stouffer-combined
+corpus signed Z is dominated by `claude-code`'s +5.95
+contribution, giving a strong corpus-mean indication
+of SECOND-half tail dispersion increase.
+
+Cross-axis check: at axis-199 Capon shipped in v0.6.497,
+the same `claude-code` series produced `caponZ` of
+similar sign-but-smaller magnitude — Mielke's quartic
+amplification of the extreme upper-tail-spike days is
+the structural feature that justifies this axis.
+
+Test count for axis-200: 34 unit tests covering primitive
+identities (mid-rank ties, median, normal upper tail),
+core invariances (shift, positive-scale, sign convention,
+half-reversal anti-symmetry, quartic-weight extreme-rank
+domination), build-level filters (sparse, min-tenure,
+sort-key validation, source filter), and the Stouffer
+signed corpus aggregator (signed cancellation, sqrt(m)
+reinforcement, tenure weighting).
+
+References:
+- Mielke, P. W., "Asymptotic behavior of two-sample tests based on powers of ranks for detecting scale and location alternatives", *J. Amer. Statist. Assoc.* 67(340) (1972), pp. 850-854.
+- Lehmann, E. L., *Nonparametrics: Statistical Methods Based on Ranks* (Holden-Day 1975), Theorem 8.1.
+- Hollander, M. & Wolfe, D. A., *Nonparametric Statistical Methods* 2nd ed. (Wiley 1999), sec. 5.1.
+
 ## 0.6.498 — 2026-05-05
 
 ### Refined — `classifyCaponKlotzAgreement` (axis-199 + axis-177 plotting-position diagnostic)

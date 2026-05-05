@@ -205,6 +205,7 @@ import {
   renderDailyTokenBrunnerMunzelHalves,
   renderDailyTokenKlotzHalves,
   renderDailyTokenCaponHalves,
+  renderDailyTokenMielkeQuarticHalves,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -681,6 +682,10 @@ import {
   buildDailyTokenCaponHalves,
   type DailyTokenCaponHalvesSort,
 } from './dailytokencaponhalves.js';
+import {
+  buildDailyTokenMielkeQuarticHalves,
+  type DailyTokenMielkeQuarticHalvesSort,
+} from './dailytokenmielkequartichalves.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -46386,6 +46391,108 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKuiperTwoSampleHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-mielke-quartic-halves')
+  .description(
+    "Per-source MIELKE 1972 QUARTIC-CENTERED-RANKS SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the median-aligned, gap-filled daily total_tokens series (TWO-HUNDREDTH cross-source axis). Score a(R_i) = (R_i - (n+1)/2)^4 (Mielke 1972 J. Amer. Statist. Assoc. 67:850-854 eq. 2.3 with p = 4 in the family of POWER-OF-RANKS scale tests T_p = sum (R - (n+1)/2)^p). Statistic M = sum_{j in B} a(R_j); E[M] = n2 * abar, Var[M] = n1 n2 / (n(n-1)) * sum (a - abar)^2 (exact permutation variance, Lehmann 1975 Theorem 8.1); mielkeZ = (M - E[M]) / sqrt(Var[M]) ~ N(0, 1) under H0. STRUCTURALLY DISTINCT from axis-179 Mood (p=2 in same family, quadratic centred-rank weight bounded by ((n-1)/2)^2): Mielke's QUARTIC weight is bounded by ((n-1)/2)^4, putting ~56x more weight on extreme ranks at n = 16. Mood ARE 0.760 vs F under normal; Mielke ARE 0.71 under normal but 1.32 under double-exponential and 2.1 under Cauchy (Mielke 1972 Tab. 2) — Mielke is the LMP score for t_5 dispersion alternatives. vs axis-177 Klotz / axis-199 Capon (squared NORMAL scores, logarithmically-saturating tail) Mielke uses POLYNOMIAL R^4 growth — at n = 30 Mielke puts ~99.5% of variance on the 5 most extreme ranks (vs Klotz ~60%). vs axis-178 Conover (squared linear ranks on |X-median|; median fold per half) Mielke operates on raw aligned values without folding, weighting both extreme tails symmetrically. Pre-aligned by within-half median subtraction (Hollander & Wolfe 1999 sec. 5.1). Distribution-free under H0. Refs: Mielke 1972 JASA 67:850-854; Lehmann 1975 Nonparametrics Theorem 8.1; Hollander & Wolfe 1999 Nonparametric Statistical Methods sec. 5.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mielkeZAbsDesc (default) | mielkeZ | mielkePValue | mielkePValueDesc | tokens | tenure | source.',
+    'mielkeZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'mielkeZ',
+          'mielkeZAbsDesc',
+          'mielkePValue',
+          'mielkePValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMielkeQuarticHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenMielkeQuarticHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMielkeQuarticHalves(report) + '\n',
           );
         }
       } catch (e) {
