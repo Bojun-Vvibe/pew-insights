@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.498 — 2026-05-05
+
+### Refined — `classifyCaponKlotzAgreement` (axis-199 + axis-177 plotting-position diagnostic)
+
+Cross-axis agreement classifier reconciling axis-199
+**CAPON** (Blom 1958 continuity-corrected plotting position
+`(R - 0.5) / n`) with axis-177 **KLOTZ** (Weibull plotting
+position `R / (n + 1)`) on a per-source basis. Both tests
+are SQUARED-NORMAL-QUANTILE scale tests on pooled mid-ranks
+and are LMP for normal scale alternatives in the limit, so
+they should agree on the SIGN of the dispersion shift; they
+DIVERGE on the MAGNITUDE because their plotting positions
+weight the extreme ranks differently.
+
+Bucket map. Given per-source `caponZ` and `klotzZ`:
+
+  - `tail-amplified`: `|caponZ| > |klotzZ|` AND signs
+    agree. The Capon plotting position's tighter
+    extreme-rank weight wins -- the dispersion shift is
+    concentrated in the EXTREME TAIL where Capon's
+    quadratically-amplified score `(Phi^{-1}((n-0.5)/n))^2`
+    dominates Klotz's logarithmically-saturating
+    `(Phi^{-1}(n/(n+1)))^2`.
+  - `shoulder-amplified`: `|klotzZ| > |caponZ|` AND signs
+    agree. Klotz's gentler tail saturation wins -- the
+    dispersion shift is in the SHOULDER (mid-to-upper
+    ranks) rather than the extreme tail; Klotz's broader
+    score support captures the signal Capon misses.
+  - `sign-conflict`: signs DISAGREE. Rare under the
+    asymptotic null (both tests should agree on direction)
+    -- indicates a mid-tail dispersion pattern that the
+    two scoring schemes parse differently. Watch-list.
+  - `coherent`: `||caponZ| - |klotzZ|| <= 1e-9` AND signs
+    agree. The dispersion shift is uniformly distributed
+    across all rank classes; plotting-position choice is
+    irrelevant.
+
+Mechanism. The numerical gap at n = 16 is concrete: Klotz
+extreme score `(Phi^{-1}(16/17))^2 ~ 2.91`; Capon extreme
+score `(Phi^{-1}(15.5/16))^2 ~ 3.78` -- Capon weights the
+top rank ~30% MORE. The bucket label is therefore a clean
+diagnostic for WHERE in the rank distribution the
+dispersion shift lives. Combined with the per-source
+caponZ / klotzZ pair, the bucket label is an actionable
+hint for downstream interpretation: tail-amplified =
+"investigate the most extreme observations"; shoulder-
+amplified = "investigate the upper-middle of the
+distribution".
+
+Six new tests cover all four bucket transitions (incl.
+zero-on-one-side edge cases that should NOT flag
+sign-conflict), float-tolerance equality at the coherent
+boundary, and non-finite input rejection. Test count for
+axis-199: 45 (was 39 at v0.6.497).
+
 ## 0.6.497 — 2026-05-05
 
 ### Added — `daily-token-capon-halves` (axis-199 CAPON normal-scores scale test for halves)

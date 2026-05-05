@@ -352,3 +352,47 @@ test('aggregateCaponHalves: tenure weighting differs from unweighted mean', () =
   assert.ok(Math.abs(r.meanCaponZ - 1.0) < 1e-9);
   assert.ok(r.tenureWeightedMeanCaponZ > 4.5);
 });
+
+// ---------- refinement: classifyCaponKlotzAgreement ----------
+
+import { classifyCaponKlotzAgreement } from '../src/dailytokencaponhalves.js';
+
+test('classifyCaponKlotzAgreement: tail-amplified when |caponZ| > |klotzZ| same sign', () => {
+  assert.equal(classifyCaponKlotzAgreement(3.5, 2.5), 'tail-amplified');
+  assert.equal(classifyCaponKlotzAgreement(-3.5, -2.5), 'tail-amplified');
+});
+
+test('classifyCaponKlotzAgreement: shoulder-amplified when |klotzZ| > |caponZ| same sign', () => {
+  assert.equal(classifyCaponKlotzAgreement(2.0, 3.5), 'shoulder-amplified');
+  assert.equal(classifyCaponKlotzAgreement(-2.0, -3.5), 'shoulder-amplified');
+});
+
+test('classifyCaponKlotzAgreement: sign-conflict when signs disagree', () => {
+  assert.equal(classifyCaponKlotzAgreement(2.0, -2.0), 'sign-conflict');
+  assert.equal(classifyCaponKlotzAgreement(-3.0, 1.0), 'sign-conflict');
+});
+
+test('classifyCaponKlotzAgreement: coherent when magnitudes equal within tolerance', () => {
+  assert.equal(classifyCaponKlotzAgreement(2.0, 2.0), 'coherent');
+  assert.equal(classifyCaponKlotzAgreement(-1.5, -1.5), 'coherent');
+  assert.equal(
+    classifyCaponKlotzAgreement(2.0, 2.0 + 1e-12),
+    'coherent',
+  );
+});
+
+test('classifyCaponKlotzAgreement: zero on one side does not flag sign-conflict', () => {
+  assert.equal(classifyCaponKlotzAgreement(0, 1.5), 'shoulder-amplified');
+  assert.equal(classifyCaponKlotzAgreement(2.0, 0), 'tail-amplified');
+});
+
+test('classifyCaponKlotzAgreement: rejects non-finite', () => {
+  assert.throws(
+    () => classifyCaponKlotzAgreement(Number.NaN, 1),
+    /finite/,
+  );
+  assert.throws(
+    () => classifyCaponKlotzAgreement(1, Number.POSITIVE_INFINITY),
+    /finite/,
+  );
+});

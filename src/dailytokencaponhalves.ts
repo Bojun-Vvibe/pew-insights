@@ -838,3 +838,73 @@ export function buildDailyTokenCaponHalves(
     sources: kept,
   };
 }
+
+/**
+ * REFINEMENT (v0.6.498): cross-axis agreement diagnostic
+ * for axis-199 (Capon) vs axis-177 (Klotz). Both tests are
+ * SQUARED-NORMAL-QUANTILE scale tests on pooled mid-ranks
+ * but use STRUCTURALLY DIFFERENT plotting positions:
+ *
+ *     Klotz:  u = R / (n + 1)        (Weibull)
+ *     Capon:  u = (R - 0.5) / n      (continuity-corrected
+ *                                     Blom 1958)
+ *
+ * At small n (n in [16, 30]) the Capon plotting position
+ * puts ~30% MORE weight on extreme ranks than Klotz. The
+ * two tests therefore tend to AGREE on the SIGN of the
+ * dispersion shift (both are LMP for normal scale
+ * alternatives in the limit) but DISAGREE on the
+ * MAGNITUDE: when the dispersion shift is concentrated in
+ * the EXTREME TAIL Capon |z| > Klotz |z|, when it is
+ * concentrated in the SHOULDER Klotz |z| > Capon |z|.
+ *
+ * This helper buckets a per-source pair (caponZ, klotzZ)
+ * into one of four mutually-exclusive diagnostic buckets:
+ *
+ *   - `tail-amplified`: |caponZ| > |klotzZ| AND
+ *     sign(caponZ) == sign(klotzZ). Capon's tighter
+ *     extreme-rank weight wins; the dispersion shift is
+ *     concentrated in the extreme tail.
+ *   - `shoulder-amplified`: |klotzZ| > |caponZ| AND
+ *     sign(klotzZ) == sign(caponZ). Klotz's gentler tail
+ *     saturation wins; the dispersion shift is in the
+ *     shoulder rather than the extreme tail.
+ *   - `sign-conflict`: sign(caponZ) != sign(klotzZ). Rare
+ *     -- both tests should agree on direction in the
+ *     asymptotic limit. Indicates a mid-tail dispersion
+ *     pattern that the two scoring schemes disagree on
+ *     (watch-list).
+ *   - `coherent`: |caponZ| == |klotzZ| (within 1e-9
+ *     tolerance) AND signs agree. The dispersion shift is
+ *     uniformly distributed across all rank classes;
+ *     plotting-position choice is irrelevant.
+ */
+export type CaponKlotzAgreementBucket =
+  | 'tail-amplified'
+  | 'shoulder-amplified'
+  | 'sign-conflict'
+  | 'coherent';
+
+export function classifyCaponKlotzAgreement(
+  caponZ: number,
+  klotzZ: number,
+): CaponKlotzAgreementBucket {
+  if (!Number.isFinite(caponZ) || !Number.isFinite(klotzZ)) {
+    throw new Error(
+      `classifyCaponKlotzAgreement: requires finite caponZ and klotzZ (got ${caponZ}, ${klotzZ})`,
+    );
+  }
+  // Sign agreement: zero on either side counts as
+  // sign-agreement with whichever side is signed.
+  const sCapon = Math.sign(caponZ);
+  const sKlotz = Math.sign(klotzZ);
+  if (sCapon !== 0 && sKlotz !== 0 && sCapon !== sKlotz) {
+    return 'sign-conflict';
+  }
+  const aCapon = Math.abs(caponZ);
+  const aKlotz = Math.abs(klotzZ);
+  if (Math.abs(aCapon - aKlotz) <= 1e-9) {
+    return 'coherent';
+  }
+  return aCapon > aKlotz ? 'tail-amplified' : 'shoulder-amplified';
+}
