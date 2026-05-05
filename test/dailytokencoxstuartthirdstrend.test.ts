@@ -711,3 +711,90 @@ test('build: deterministic on fixed input', () => {
   });
   assert.deepEqual(a, b);
 });
+
+// ---------- aggregateCoxStuartThirdsTrend (refinement) ----------
+
+import { aggregateCoxStuartThirdsTrend } from '../src/dailytokencoxstuartthirdstrend.js';
+
+test('aggregate: empty input -> rowsUsed=0, p=1, NaN means', () => {
+  const a = aggregateCoxStuartThirdsTrend([]);
+  assert.equal(a.rowsUsed, 0);
+  assert.equal(a.rowsSkipped, 0);
+  assert.equal(a.stoufferZ, 0);
+  assert.equal(a.stoufferTwoSidedPValue, 1);
+  assert.ok(Number.isNaN(a.meanCsTZ));
+  assert.ok(Number.isNaN(a.tenureWeightedMeanCsTZ));
+});
+
+test('aggregate: skips malformed rows (non-finite Z, bad pValue, low NonTies)', () => {
+  const a = aggregateCoxStuartThirdsTrend([
+    { csTZ: NaN, csTPValue: 0.5, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 1.5, csTPValue: 0, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 1.5, csTPValue: 1.5, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 1.5, csTPValue: 0.5, csTNonTies: 7, nTenureDays: 30 },
+    { csTZ: 1.5, csTPValue: 0.5, csTNonTies: 10, nTenureDays: 0 },
+  ]);
+  assert.equal(a.rowsUsed, 0);
+  assert.equal(a.rowsSkipped, 5);
+});
+
+test('aggregate: single row -> stoufferZ = csTZ', () => {
+  const a = aggregateCoxStuartThirdsTrend([
+    { csTZ: 2.0, csTPValue: 0.045, csTNonTies: 10, nTenureDays: 30 },
+  ]);
+  assert.equal(a.rowsUsed, 1);
+  assert.ok(Math.abs(a.stoufferZ - 2.0) < 1e-12);
+  assert.ok(Math.abs(a.meanCsTZ - 2.0) < 1e-12);
+  assert.ok(Math.abs(a.tenureWeightedMeanCsTZ - 2.0) < 1e-12);
+});
+
+test('aggregate: two equal-Z rows -> stoufferZ = sqrt(2)*z', () => {
+  const a = aggregateCoxStuartThirdsTrend([
+    { csTZ: 1.0, csTPValue: 0.32, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 1.0, csTPValue: 0.32, csTNonTies: 10, nTenureDays: 30 },
+  ]);
+  assert.equal(a.rowsUsed, 2);
+  assert.ok(Math.abs(a.stoufferZ - Math.sqrt(2)) < 1e-12);
+  assert.ok(Math.abs(a.meanCsTZ - 1.0) < 1e-12);
+});
+
+test('aggregate: opposite-sign rows cancel in stouffer Z but not in absolute Z', () => {
+  const a = aggregateCoxStuartThirdsTrend([
+    { csTZ: 2.0, csTPValue: 0.045, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: -2.0, csTPValue: 0.045, csTNonTies: 10, nTenureDays: 30 },
+  ]);
+  assert.ok(Math.abs(a.stoufferZ) < 1e-12);
+  assert.ok(Math.abs(a.meanCsTZ) < 1e-12);
+});
+
+test('aggregate: tenure-weighting weights longer-tenure rows more', () => {
+  const a = aggregateCoxStuartThirdsTrend([
+    { csTZ: 1.0, csTPValue: 0.32, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 3.0, csTPValue: 0.003, csTNonTies: 10, nTenureDays: 90 },
+  ]);
+  // weighted = (30*1 + 90*3)/120 = 300/120 = 2.5
+  assert.ok(Math.abs(a.tenureWeightedMeanCsTZ - 2.5) < 1e-12);
+  // unweighted = 2.0
+  assert.ok(Math.abs(a.meanCsTZ - 2.0) < 1e-12);
+});
+
+test('aggregate: stoufferTwoSidedPValue in [0, 1]', () => {
+  const a = aggregateCoxStuartThirdsTrend([
+    { csTZ: 5.0, csTPValue: 1e-6, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 4.0, csTPValue: 1e-4, csTNonTies: 10, nTenureDays: 30 },
+  ]);
+  assert.ok(a.stoufferTwoSidedPValue >= 0);
+  assert.ok(a.stoufferTwoSidedPValue <= 1);
+  // Expect strongly significant
+  assert.ok(a.stoufferTwoSidedPValue < 1e-6);
+});
+
+test('aggregate: rowsUsed + rowsSkipped = total input rows', () => {
+  const rows = [
+    { csTZ: 1.5, csTPValue: 0.13, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: NaN, csTPValue: 0.5, csTNonTies: 10, nTenureDays: 30 },
+    { csTZ: 2.0, csTPValue: 0.045, csTNonTies: 9, nTenureDays: 27 },
+  ];
+  const a = aggregateCoxStuartThirdsTrend(rows);
+  assert.equal(a.rowsUsed + a.rowsSkipped, rows.length);
+});

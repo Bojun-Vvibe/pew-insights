@@ -473,6 +473,83 @@ export function dailyTokenCoxStuartThirdsTrend(values: number[]): {
   };
 }
 
+/**
+ * Corpus-level SIGNED aggregator for axis-215. Combines
+ * per-source SIGNED csTZ via Stouffer's Z-method
+ * (Stouffer et al. 1949 *The American Soldier*, Vol. 1
+ * sec. 3). Skips malformed rows.
+ *
+ * Stouffer's Z = sum(z_i) / sqrt(k); under H0 of a global
+ * absence of head-vs-tail trend across all k surfaced
+ * sources, Stouffer's Z is approximately N(0, 1) and the
+ * two-sided p-value is 2 * (1 - Phi(|stoufferZ|)).
+ *
+ * Returns NaN means when no rows are usable.
+ */
+export interface CoxStuartThirdsTrendCorpusAggregate {
+  stoufferZ: number;
+  stoufferTwoSidedPValue: number;
+  meanCsTZ: number;
+  tenureWeightedMeanCsTZ: number;
+  rowsUsed: number;
+  rowsSkipped: number;
+}
+
+export function aggregateCoxStuartThirdsTrend(
+  rows: ReadonlyArray<{
+    csTZ: number;
+    csTPValue: number;
+    csTNonTies: number;
+    nTenureDays: number;
+  }>,
+): CoxStuartThirdsTrendCorpusAggregate {
+  let zSum = 0;
+  let weightedZSum = 0;
+  let totalTenure = 0;
+  let used = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    if (
+      !Number.isFinite(r.csTZ) ||
+      !Number.isFinite(r.csTPValue) ||
+      r.csTPValue <= 0 ||
+      r.csTPValue > 1 ||
+      !Number.isInteger(r.csTNonTies) ||
+      r.csTNonTies < 8 ||
+      !Number.isInteger(r.nTenureDays) ||
+      r.nTenureDays <= 0
+    ) {
+      skipped += 1;
+      continue;
+    }
+    zSum += r.csTZ;
+    weightedZSum += r.nTenureDays * r.csTZ;
+    totalTenure += r.nTenureDays;
+    used += 1;
+  }
+  if (used === 0) {
+    return {
+      stoufferZ: 0,
+      stoufferTwoSidedPValue: 1,
+      meanCsTZ: Number.NaN,
+      tenureWeightedMeanCsTZ: Number.NaN,
+      rowsUsed: 0,
+      rowsSkipped: skipped,
+    };
+  }
+  const stoufferZ = zSum / Math.sqrt(used);
+  const stoufferTwoSidedPValue =
+    2 * standardNormalUpperTailCoxStuartThirds(Math.abs(stoufferZ));
+  return {
+    stoufferZ,
+    stoufferTwoSidedPValue,
+    meanCsTZ: zSum / used,
+    tenureWeightedMeanCsTZ: weightedZSum / totalTenure,
+    rowsUsed: used,
+    rowsSkipped: skipped,
+  };
+}
+
 function addUtcDays(ymd: string, days: number): string {
   const ms = Date.parse(`${ymd}T00:00:00.000Z`);
   return new Date(ms + days * 86_400_000).toISOString().slice(0, 10);

@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.534 — 2026-05-06
+
+### Refined — `daily-token-cox-stuart-thirds-trend` (axis-215) corpus aggregator + tests
+
+Refinement on top of v0.6.533: adds the corpus-level
+SIGNED aggregator `aggregateCoxStuartThirdsTrend`
+(Stouffer 1949 Z-method) for axis-215, mirroring the
+axis-205 `aggregateCoxStuartSignPairs` API surface.
+
+```
+stoufferZ              = sum(csTZ_i) / sqrt(k)
+stoufferTwoSidedPValue = 2 * (1 - Phi(|stoufferZ|))
+meanCsTZ               = sum(csTZ_i) / k
+tenureWeightedMeanCsTZ = sum(nTenureDays_i * csTZ_i) /
+                         sum(nTenureDays_i)
+```
+
+Skips rows with non-finite csTZ, csTPValue out of (0, 1],
+csTNonTies < 8, or non-positive tenure (same gating as
+the per-source builder). When no rows are usable, returns
+stoufferZ = 0, stoufferTwoSidedPValue = 1, mean fields =
+NaN.
+
+8 additional unit tests covering:
+  - empty input -> rowsUsed=0, p=1, NaN means
+  - skips malformed rows (5 distinct gating paths)
+  - single row -> stoufferZ = csTZ
+  - two equal-Z rows -> stoufferZ = sqrt(2) * z
+  - opposite-sign rows cancel in stoufferZ
+  - tenure-weighted mean follows weighted average
+  - stoufferTwoSidedPValue clamped to [0, 1]
+  - rowsUsed + rowsSkipped = total input rows
+
+Test count delta for axis-215: 60 -> 68 (+8).
+Total suite: 15474 -> 15482.
+
 ## 0.6.533 — 2026-05-06
 
 ### Added — `daily-token-cox-stuart-thirds-trend` (axis-215)
