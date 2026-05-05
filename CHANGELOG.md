@@ -2,6 +2,143 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.489 — 2026-05-05
+
+### Added — `daily-token-rosenbaum-adjacency-halves` (axis-195)
+
+ONE-HUNDRED-AND-NINETY-FIFTH cross-source axis. Per-source
+ROSENBAUM TWO-SAMPLE ADJACENCY TEST (Rosenbaum 1954
+*Annals of Mathematical Statistics* 25(1):146-150
+"Tables for a nonparametric test of location";
+Hettmansperger 1984 *Statistical Inference Based on
+Ranks*; Sprent & Smeeton 2001 *Applied Nonparametric
+Statistical Methods* 3rd ed., section 6.3.1) comparing
+the FIRST HALF (n1 = floor(n/2)) vs SECOND HALF
+(n2 = n - n1) of the gap-filled daily total_tokens
+series via the count of EXTREME observations.
+
+#### Mechanism
+
+    rsTUpper = #{ b in B : b > max(A) }
+    rsTLower = #{ a in A : a < min(B) }
+    rsT      = rsTUpper + rsTLower
+
+with 0 <= rsT <= n. Asymptotic moments (Hettmansperger
+1984, condition C3.4):
+
+    E[rsT]   = n / (n1 + 1)  +  n / (n2 + 1)
+    Var[rsT] = 2 * n * (n1 - 1) * (n2 - 1)
+               / ((n1 + 2) * (n2 + 2))
+
+Continuity-corrected z-score:
+
+    rsZ = (rsT - 0.5 - E[rsT]) / sqrt(Var[rsT])   if rsT > E[rsT]
+        = (rsT + 0.5 - E[rsT]) / sqrt(Var[rsT])   if rsT < E[rsT]
+        = 0                                        if rsT == E[rsT]
+
+Two-sided p via standard normal:
+`rsTwoSidedP = 2 * Phi(-|rsZ|)`.
+
+`rsSignedDirection = sign(rsTUpper - rsTLower)`
+decomposes any rejection into UPPER-tail vs LOWER-tail
+stretching: +1 = second half stretches upper tail; -1 =
+lower tail; 0 = balanced.
+
+#### Why this axis is structurally orthogonal
+
+`rsT` depends ONLY on a TINY SUBSET of the n*(n-1)/2
+pairwise relations -- specifically those involving
+`max(A)` or `min(B)`. This is fundamentally different
+from rank-sum statistics (axis-115 Mann-Whitney,
+axis-187 Vargha-Delaney A12, axis-191 Cliff's delta)
+which use ALL pairwise comparisons; from ECDF-supremum
+statistics (axis-186 KS, axis-192 Kuiper) which depend
+on the LARGEST CUMULATIVE GAP anywhere in the support;
+and from label-runs (axis-194 Wald-Wolfowitz) which
+depend on the FULL pooled-sort label-alternation
+pattern.
+
+The most notable orthogonality is vs axis-194
+(Wald-Wolfowitz runs `wwR`):
+
+  - Perfect alternation (`wwR = n`): `rsT = 0` (every
+    extreme has a same-half neighbour ranked below or
+    above it).
+  - Perfect separation (`wwR = 2`): `rsT = n` (every B
+    > max(A) AND every A < min(B)).
+
+So `wwR` and `rsT` measure ORTHOGONAL aspects of the
+same pooled-sort: `wwR` = INTERIOR alternation; `rsT` =
+BOUNDARY exclusion. Together they discriminate boundary
+shifts from interior shape changes.
+
+vs axis-193 (Tukey's quick test): mathematically rsT and
+Tukey W share the same support (extreme-count
+statistic), but Tukey W uses fixed cut-points calibrated
+only for n1 = n2 in [5, 30]; rsT yields a graduated
+z-score and p-value for arbitrary n1, n2 -- the two are
+calibration-orthogonal even on identical data.
+
+#### Properties verified by the test suite
+
+- Shift invariance: `rsT(x + c) === rsT(x)`
+- Positive scale invariance: `rsT(a*x) === rsT(x)` for
+  `a > 0`
+- Monotone-increasing transform invariance:
+  `rsT(f(x)) === rsT(x)` for any strictly increasing `f`
+  (depends only on POOLED ORDER STATISTICS)
+- Bounds: `0 <= rsT <= n`
+- Strict-inequality tie treatment (conservative under
+  H1; standard per Hettmansperger 1984 section 3.4.2)
+
+#### Live smoke (`~/.config/pew/queue.jsonl`)
+
+```
+$ pew-insights daily-token-rosenbaum-adjacency-halves \
+    --top 6 --sort rsZAbsDesc
+
+per-source ROSENBAUM rsT (sorted by rsZAbsDesc)
+
+source         tenure  n1   n2   maxA         minB        rsTu  rsTl  rsT  E[T]   sd[T]   rsZ      p          dir
+hermes         19      9    10   34,683,508   3,470,982   0     0     0    3.627  4.553   -0.687   4.921e-1   0
+openclaw       19      9    10   354,037,834  7,583,230   0     0     0    3.627  4.553   -0.687   4.921e-1   0
+opencode       16      8    8    724,269,445  96,665,876  0     1     1    3.556  3.960   -0.519   6.037e-1   -
+claude-code    72      36   36   73,514,193   0           7     0     7    3.892  11.053  +0.236   8.135e-1   +
+vscode-cp      265     132  133  181,775      0           2     0     2    3.970  22.508  -0.065   9.479e-1   +
+```
+
+Reading: NO source crosses |rsZ| >= 1.96 today. The
+strongest signal is `claude-code` with `rsTUpper = 7`
+(seven days in the second half exceeded `max(A) =
+73,514,193`) but the variance is large (sd[T] = 11.053
+across n = 72 days) so rsZ stays modest at +0.236. The
+asymmetry is informative: `claude-code` second half ONLY
+stretches the upper tail (`rsTLower = 0`), consistent
+with a unidirectional ramp-up rather than a symmetric
+spread. `hermes` and `openclaw` register `rsT = 0` --
+both halves' extremes lie strictly inside the opposite
+half's envelope; combined with their negative rsZ
+(rsT < E[rsT] = 3.627) this is a mild "envelope
+compression" signal but well within H0.
+
+(Source name `vscode-cp` in this transcript redacts the
+upstream product name per Bojun-Vvibe house style.)
+
+#### Files
+
+- `src/dailytokenrosenbaumadjacencyhalves.ts` -- core
+  test + builder
+- `test/dailytokenrosenbaumadjacencyhalves.test.ts` --
+  26 unit + builder tests (invariances, exact moments,
+  strict-tie handling, perfect-separation / perfect-
+  overlap edge cases, signed-direction decomposition,
+  builder filters, sort, top cap)
+- `src/cli.ts` -- new subcommand
+  `daily-token-rosenbaum-adjacency-halves` with
+  `--since`, `--until`, `--source`, `--min-tokens`,
+  `--min-tenure-days`, `--top`, `--sort`, `--json`
+- `src/format.ts` -- `renderDailyTokenRosenbaumAdjacencyHalves`
+
 ## 0.6.487 — 2026-05-05
 
 ### Added — `daily-token-wald-wolfowitz-runs-halves` (axis-194)
