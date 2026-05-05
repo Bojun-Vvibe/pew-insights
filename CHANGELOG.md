@@ -2,6 +2,184 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.485 — 2026-05-05
+
+### Added — `daily-token-tukey-quick-halves` axis-193
+
+NEW orthogonal cross-source axis: per-source TUKEY'S
+QUICK TEST (a.k.a. Tukey's compact test, end-count
+exceedance test) comparing the first half (n1 =
+floor(n/2) days) vs second half (n2 = n - n1 days) of
+the gap-filled daily total_tokens series via the
+SUM-OF-END-EXCEEDANCES STATISTIC.
+
+#### Definition
+
+Label the half with the LARGER MAX as "high" and the
+half with the SMALLER MIN as "low". If the SAME half is
+both high and low (its range envelopes the other), the
+test is INDETERMINATE. In the non-degenerate case:
+
+  tqHi = #{values in "high" sample STRICTLY ABOVE max(other)}
+  tqLo = #{values in "low"  sample STRICTLY BELOW min(other)}
+  tqW  = tqHi + tqLo
+
+Sign convention: tqSignedW = +tqW if SECOND HALF is
+"high" (location ROSE across the tenure); tqSignedW =
+-tqW if FIRST HALF is "high" (location DROPPED).
+
+Critical values (Tukey 1959 Table 1, NEARLY
+distribution-free AND sample-size-free for 5 <= n1, n2
+<= 30):
+
+  tqW >= 7   ->  reject at alpha = 0.05
+  tqW >= 10  ->  reject at alpha = 0.01
+  tqW >= 13  ->  reject at alpha = 0.001
+
+Two-sided p-value via the Neave 1966 closed-form
+approximation:
+
+  tqTwoSidedP = min(1, (n1/n)^tqW + (n2/n)^tqW)
+
+with tqTwoSidedP = 1 for tqW = 0 or tqIndeterminate.
+
+#### Why this axis is structurally orthogonal to axes 181-192
+
+The CORE structural claim: Tukey's W is supported only
+on the END-EXCEEDANCE TAILS of the pooled support, while
+EVERY other halves-axis to date uses functionals
+supported on the INTERIOR (rank-sum, ECDF supremum,
+folded ranks, normal scores, signed-rank halves, etc).
+
+  - vs axis-115 Mann-Whitney halves. MW uses ALL n1*n2
+    cross-pair indicators I{x_i < y_j}; Tukey uses only
+    EXCEEDANCE PAIRS (a measure-zero subset in the
+    continuous limit). DISJOINT functional support.
+  - vs axis-186 Hodges-Lehmann halves. HL is a POINT
+    ESTIMATE (median of cross-pair differences); Tukey
+    is a TEST STATISTIC on sort-order overlap that
+    discards differences entirely.
+  - vs axis-187 Vargha-Delaney A12 halves. A12 = U /
+    (n1*n2) is a monotone function of the full rank sum;
+    Tukey's W is NOT a function of the rank sum (two
+    samples with the same rank sum can have W = 0 or
+    W = n-2 depending on the sort-order partition).
+  - vs axis-188 perm-Welch-t halves. Perm-Welch-t
+    detects MEAN SHIFTS even when extremes overlap
+    fully; Tukey W = 0 whenever supports overlap,
+    regardless of mean. ORTHOGONAL ZERO SETS.
+  - vs axis-189 Wilcoxon signed-rank halves and axis-190
+    paired sign halves. Both PAIR observations across
+    halves and break for n odd; Tukey is unpaired and
+    handles n1 != n2 natively.
+  - vs axis-191 Cliff's delta halves. Cliff = scaled MW;
+    same kernel/support as MW, DISJOINT from Tukey.
+  - vs axis-192 Kuiper halves. Kuiper = sum of two ECDF
+    SUPREMA at INTERIOR argmax; Tukey = sum of two
+    end-counts at the BOUNDARY of the pooled support.
+    Kuiper is CONTINUOUS in the data (small
+    perturbations move the supremum smoothly); Tukey
+    is DISCRETE (small perturbations may flip an
+    end-count by an integer). The two are dual-mode
+    "sum-of-two one-sided functionals" with DISJOINT
+    EVALUATION POINTS in the typical alternative.
+  - vs axis-117 Siegel-Tukey halves. Same surname only:
+    ST is a SCALE test on FOLDED RANKS of MEDIAN-CENTRED
+    values; Tukey-quick is a LOCATION test on
+    TAIL-MASS MIGRATION at the extremes.
+
+ASSUMPTION-DIFFERENCE ARGUMENT. The other axes either
+(a) require continuity of an interior functional (KS,
+Cramer-von Mises, AD, Kuiper) or (b) reduce to ranks
+and discard tail magnitude (MW, Cliff, A12, BWS,
+van der Waerden, Wilcoxon, sign). Tukey's W requires
+NEITHER -- only the SORT ORDER AT THE BOUNDARY of the
+pooled support. It is the ONLY axis in the family whose
+null distribution shape is governed by the BINOMIAL
+extreme-end allocation rather than a rank-sum CLT or an
+ECDF Brownian-bridge limit. Operative consequence:
+Tukey's W is the canonical detector for SINGLE-OUTLIER
+TAIL-SHIFT alternatives (one half acquires one or two
+values that escape the other half's support entirely),
+which axes 181-192 dilute by averaging over interior
+mass.
+
+#### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Run with default `--min-tenure-days 14`; 5 of 6 sources
+qualify (one source filtered as below-min-tenure). Source
+labels in this table use the `vscode-cp` abbreviation
+for the IDE assistant source.
+
+| source      | n1 | n2  | tqHi | tqLo | tqW | tqSignedW | tqP       | tqIndeterminate | interpretation                              |
+|-------------|----|-----|------|------|-----|-----------|-----------|------------------|---------------------------------------------|
+| openclaw    | 9  | 10  | 5    | 7    | 12  | -12       | 5.79e-04  | false            | LARGE first-larger; alpha=.001 strong reject |
+| claude-code | 36 | 36  | 7    | 0    | 7   | +7        | 1.5625e-02 | false            | second-larger; alpha=.05 reject              |
+| hermes      | 9  | 10  | 2    | 1    | 3   | -3        | 2.52e-01  | false            | small first-larger; not significant          |
+| vscode-cp   | 132| 133 | 2    | 0    | 2   | +2        | 5.00e-01  | false            | tiny second-larger; not significant          |
+| opencode    | 8  | 8   | 0    | 0    | 0   | 0         | 1.00e+00  | true             | INDETERMINATE: first-half range envelopes second |
+
+Headline read across the panel:
+
+  - `openclaw` rejects at alpha = 0.001 with tqW = 12,
+    tqSignedW = -12 (FIRST half "high"). Both upper-
+    and lower-end exceedances contribute (tqHi = 5,
+    tqLo = 7), indicating the FIRST half occupies a
+    HIGHER and WIDER range than the second -- consistent
+    with the axis-191 Cliff's delta read of -0.901
+    (LARGE first-larger) and the axis-192 Kuiper kpV =
+    0.70 borderline-reject. The Tukey end-count
+    DECISIVELY rejects where Kuiper is just-below
+    threshold, illustrating Tukey's power on extremal
+    alternatives.
+  - `claude-code` rejects at alpha = 0.05 with tqW = 7,
+    tqSignedW = +7 (SECOND half "high"). All
+    exceedances are at the upper end (tqHi = 7, tqLo =
+    0), indicating the second half acquired SEVEN values
+    that exceed every first-half value. Coherent with
+    axis-191's medium-magnitude positive Cliff's delta
+    (+0.474) and axis-192's significant kpP = 6.69e-04:
+    the `claude-code` ramp-up is detected by all three
+    axes, but Tukey identifies that it is driven
+    SPECIFICALLY by NEW UPPER-TAIL OUTLIERS in the
+    second half rather than a uniform shift.
+  - `hermes` does not reject (tqW = 3, tqP = 0.252).
+    Concordant with axis-191/192 both not rejecting.
+  - `vscode-cp` does not reject (tqW = 2, tqP = 0.500).
+    Concordant with the steady-state operational
+    profile axes 186/189/190/191/192 all independently
+    identified for this 265-day-tenure source.
+  - `opencode` is INDETERMINATE (first-half range
+    [17.1M, 724.3M] envelopes second-half range
+    [78.2M, 484.6M]). The axis correctly reports
+    `tqIndeterminate = true` rather than emitting a
+    spurious zero. This is the signature of a HIGH-
+    VARIANCE-FIRST-HALF / LOW-VARIANCE-SECOND-HALF
+    pattern -- axis-117 Siegel-Tukey territory.
+    Cross-axis hand-off recommendation: when
+    tqIndeterminate=true, defer to scale-test axes
+    (Brown-Forsythe / Siegel-Tukey / Ansari-Bradley)
+    because Tukey's location-shift mechanism cannot
+    resolve range-envelope cases.
+
+#### Test coverage
+
+Adds 22 unit tests in `test/dailytokentukeyquickhalves.test.ts`:
+core test (rejects too-few/non-finite/zero-variance,
+clean-separated-halves W=8, signed-direction, interleaved
+W=2, indeterminate envelope, shift/scale/monotone
+invariance, tied-extremes conservativeness, Neave p-value
+match, odd-n split) + builder pipeline (defaults, bad
+options, zero-variance drop, below-tenure drop, source
+filter, top cap, sort by tqWAbsDesc, indeterminate row
+surfaces).
+
+Refs: Tukey 1959 *Technometrics* 1(1):31-48 "A Quick,
+Compact, Two-Sample Test to Duckworth's Specifications";
+Neave 1966 *Technometrics* 8(2):241-249 "A development
+of Tukey's quick test of location"; Duckworth 1957
+unpublished MS (precursor problem statement).
+
 ## 0.6.484 — 2026-05-05
 
 ### Added — `classifyKuiperCliffShapeVsDominanceCompound` cross-axis joiner (axes 192 + 191)
