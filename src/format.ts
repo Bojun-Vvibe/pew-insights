@@ -20636,6 +20636,7 @@ import type { DailyTokenVarghaDelaneyHalvesReport } from './dailytokenvarghadela
 import type { DailyTokenPermutationTstatHalvesReport } from './dailytokenpermutationtstathalves.js';
 import type { DailyTokenWilcoxonSignedRankHalvesReport } from './dailytokenwilcoxonsignedrankhalves.js';
 import type { DailyTokenPairedSignTestHalvesReport } from './dailytokenpairedsigntesthalves.js';
+import type { DailyTokenCliffsDeltaHalvesReport } from './dailytokencliffsdeltahalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -28113,6 +28114,103 @@ export function renderDailyTokenPairedSignTestHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: S+ = N_nz/2 is the no-shift anchor under H0. EXACT binomial p uses Bin(N_nz, 1/2) symmetry around the mean; cross-axis vs axis-189 wsr: axis-189 keeps rank magnitudes (more power under symmetric tails); axis-190 discards them (Type-I control under arbitrary asymmetric tails). vs axis-113 difference-sign trend test: axis-113 sums positive consecutive first-differences (n-1 trials, monotone-trend sensitive); axis-190 sums positive PAIRED half-differences (n/2 trials, sustained-level-shift sensitive, insensitive to within-half oscillation).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCliffsDeltaHalves(
+  r: DailyTokenCliffsDeltaHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-cliffs-delta-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}    nBoot: ${formatNumber(r.nBoot)}    alpha: ${r.alpha}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source CLIFF'S DELTA ordinal effect-size with BOOTSTRAP PERCENTILE CI on the half-split daily series. delta = (#{B>A} - #{A>B}) / (m*n) in [-1, +1]; ties contribute 0 to the numerator (Cliff's preferred convention). Bootstrap resamples A and B with replacement nBoot times under a deterministic Mulberry32 PRNG seeded by source name; CI is the (alpha/2, 1-alpha/2) percentile of the deltaHat* distribution. ONE-HUNDRED-AND-NINETY-FIRST cross-source axis; SECOND ordinal effect-size axis after axis-187 A12. STRUCTURALLY ORTHOGONAL to axis-187 by formula (Cliff drops ties; A12 splits at 0.5) AND by CI method (bootstrap percentile vs analytical Mee 1990). Magnitude buckets per Romano-Coraggio-Skowronski 2006: |delta|>=.474 large, >=.33 medium, >=.147 small, else negligible. Decision crosses CI-exclusion-of-zero with magnitude. Refs: Cliff 1993 *Psychological Bulletin* 114(3):494-509; Cliff 1996 *Ordinal Methods* ch.5; Romano-Coraggio-Skowronski 2006; Efron 1979 *Annals of Statistics* 7(1):1-26.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Cliff's delta with bootstrap percentile CI (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'm',
+    'n',
+    'nGreater',
+    'nLess',
+    'nEqual',
+    'delta',
+    '|delta|',
+    'magnitude',
+    'sign',
+    'ciLow',
+    'ciHigh',
+    'ciHW',
+    'ci!=0',
+    'decision',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.cdMSize),
+    formatNumber(s.cdNSize),
+    formatNumber(s.cdNGreater),
+    formatNumber(s.cdNLess),
+    formatNumber(s.cdNEqual),
+    (s.cdDelta >= 0 ? '+' : '') + s.cdDelta.toFixed(4),
+    s.cdAbsDelta.toFixed(4),
+    s.cdMagnitude,
+    s.cdSign === 1 ? '+' : s.cdSign === -1 ? '-' : '0',
+    (s.cdCiLow >= 0 ? '+' : '') + s.cdCiLow.toFixed(4),
+    (s.cdCiHigh >= 0 ? '+' : '') + s.cdCiHigh.toFixed(4),
+    s.cdCiHalfWidth.toFixed(4),
+    s.cdCiExcludesZero ? 'yes' : 'no',
+    s.cdDecision,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: delta = 0 is the no-dominance anchor; CI excluding 0 is the significance criterion. vs axis-187 A12: A12 = (delta+1)/2 only when no ties; under ties Cliff drops them while A12 splits at 0.5. The bootstrap CI here is non-parametric and respects the discrete tie structure of the data; axis-187 uses the closed-form Mee 1990 approximation. vs axes 189/190 paired-design tests: those leverage the within-pair pairing of d_i = B_i - A_i; Cliff's delta uses ALL m*n cross-pair comparisons treating the halves as independent samples.)`,
     ),
   );
 

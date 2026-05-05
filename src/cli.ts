@@ -217,6 +217,7 @@ import {
   renderDailyTokenPermutationTstatHalves,
   renderDailyTokenWilcoxonSignedRankHalves,
   renderDailyTokenPairedSignTestHalves,
+  renderDailyTokenCliffsDeltaHalves,
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
@@ -720,6 +721,10 @@ import {
   buildDailyTokenPairedSignTestHalves,
   type DailyTokenPairedSignTestHalvesSort,
 } from './dailytokenpairedsigntesthalves.js';
+import {
+  buildDailyTokenCliffsDeltaHalves,
+  type DailyTokenCliffsDeltaHalvesSort,
+} from './dailytokencliffsdeltahalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
@@ -45306,6 +45311,131 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenPairedSignTestHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-cliffs-delta-halves')
+  .description(
+    "Per-source CLIFF'S DELTA ordinal effect-size with BOOTSTRAP PERCENTILE CI on the half-split gap-filled daily total_tokens series (ONE-HUNDRED-AND-NINETY-FIRST cross-source axis; SECOND ordinal effect-size axis after axis-187 A12). delta = (#{B>A} - #{A>B}) / (m*n) in [-1, +1]; ties contribute 0 to the numerator (Cliff 1993 *Psychological Bulletin* 114(3):494-509 preferred convention). Bootstrap resamples A and B with replacement nBoot times under a deterministic Mulberry32 PRNG seeded by source name; CI is the (alpha/2, 1-alpha/2) percentile of the deltaHat* distribution. Magnitude buckets per Romano-Coraggio-Skowronski 2006: |delta|>=.474 large, >=.33 medium, >=.147 small, else negligible. Decision crosses CI-exclusion-of-zero with magnitude. STRUCTURALLY ORTHOGONAL: vs axis-187 A12 by formula (Cliff drops ties; A12 splits at 0.5; algebraically equivalent only when no ties) AND by CI method (bootstrap percentile vs Mee 1990 analytical). vs axis-115 MW (rank-sum significance, effect-size buried in U). vs axis-186 HL (location point estimator, units of data). vs axes 189/190 paired-design (within-pair pairing; Cliff uses ALL m*n cross-pair comparisons). Refs: Cliff 1993; Cliff 1996 *Ordinal Methods* ch.5; Romano-Coraggio-Skowronski 2006; Efron 1979 *Annals of Statistics* 7(1):1-26.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16. Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: absDeltaDesc (default) | ciHalfWidth | absDeltaDescCiExcludesZero | tokens | tenure | source.',
+    'absDeltaDesc',
+  )
+  .option(
+    '--n-boot <n>',
+    'number of bootstrap resamples for the percentile CI (default 999, min 99)',
+    '999',
+  )
+  .option(
+    '--alpha <a>',
+    'two-sided alpha for the percentile CI (default 0.05 -> 95% CI)',
+    '0.05',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        nBoot: string;
+        alpha: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const nBoot = Number.parseInt(opts.nBoot, 10);
+        if (!Number.isInteger(nBoot) || nBoot < 99) {
+          throw new Error(
+            `--n-boot must be an integer >= 99 (got ${opts.nBoot})`,
+          );
+        }
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha <= 0 || alpha >= 1) {
+          throw new Error(`--alpha must be in (0, 1) (got ${opts.alpha})`);
+        }
+        const validSorts = [
+          'absDeltaDesc',
+          'ciHalfWidth',
+          'absDeltaDescCiExcludesZero',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCliffsDeltaHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenCliffsDeltaHalvesSort,
+          nBoot,
+          alpha,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCliffsDeltaHalves(report) + '\n',
           );
         }
       } catch (e) {
