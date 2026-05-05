@@ -2,6 +2,94 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.496 — 2026-05-05
+
+### Refined — `classifyWestenbergFlignerKilleenIqrVsFullRankScaleCompound` (axis-198 + axis-196 joiner)
+
+Cross-axis joiner reconciling axis-198 WESTENBERG IQR-
+EXCEEDANCE SCALE TEST (`westZ`; one-bit-per-B test on
+A's quartile-membership, p ~ Binomial(n2, 0.5) under
+H0) with axis-196 FLIGNER-KILLEEN MEDIAN-CENTERED
+SCALE TEST (`fkZ`; continuous half-normal scores on
+pooled mid-ranks of within-half median-centred |z|) on
+a per-source join, producing five mutually-exclusive
+bivariate buckets that decompose the dispersion-shift
+signal into a MID-TAIL / IQR-MEMBERSHIP channel and a
+CONTINUOUS-RANK-SCORE channel.
+
+Mechanistic orthogonality. Both axes test for EQUALITY
+OF DISPERSION between two halves, but they aggregate
+the dispersion signal through MAXIMALLY DIFFERENT
+functionals, and there are concrete configurations on
+which they DISAGREE BY CONSTRUCTION:
+
+  1. **Information bandwidth differs**. Westenberg is a
+     ONE-BIT-PER-OBSERVATION test on B (each B value is
+     either INSIDE A's IQR or OUTSIDE -- two states).
+     FK is a CONTINUOUS-SCORE test (each observation
+     contributes a real-valued half-normal score in
+     `[0, +inf)`). FK extracts more dispersion
+     information per observation when it exists;
+     Westenberg extracts the same one bit regardless.
+  2. **Boundary location differs**. Westenberg's
+     boundaries are A's 25th and 75th percentiles ONLY.
+     FK's effective "boundary" is each half's MEDIAN.
+     A dispersion change that REDISTRIBUTES MASS within
+     A's IQR but symmetrically about each half's median
+     fires FK and leaves Westenberg unchanged.
+     Conversely, a dispersion change that PUSHES MASS
+     ACROSS A's IQR boundaries while preserving the
+     |z|-rank ordering fires Westenberg and leaves FK
+     weak.
+  3. **Median-centring scope differs**. FK centres each
+     half by ITS OWN MEDIAN before computing |z|.
+     Westenberg centres only by A's quartiles. A pure
+     LOCATION SHIFT of B (with preserved dispersion)
+     fires Westenberg (B's inside/outside status of A's
+     IQR changes) but leaves FK exactly null (within-
+     half median-centring removes the shift). This
+     manifests as `westZ` rejecting while `fkZ ~ 0` on
+     the canonical pure-shift signature -- a CLEAN
+     LOCATION-CONFOUNDING DIAGNOSTIC for axis-198.
+
+Bucket map. Let `westReject = |westZ| >= 1.96` and
+`fkReject = |fkZ| >= 1.96` (alpha = 0.05 two-sided
+normal):
+
+  - `iqr-and-rank-coherent`: BOTH REJECT and
+    `sign(westZ) == sign(fkZ)`. Canonical broad-
+    dispersion signal.
+  - `iqr-only-no-rank`: WESTENBERG REJECTS but FK does
+    NOT. Either (a) pure LOCATION SHIFT of B (FK is
+    shift-invariant; Westenberg is NOT), or (b)
+    tail-mass exchange across A's quartile boundaries
+    that preserves the full |z|-rank distribution.
+    Hand off to axis-115 / axis-191 to disambiguate.
+  - `rank-only-no-iqr`: FK REJECTS but Westenberg does
+    NOT. Within-IQR mass-redistribution signal that
+    Westenberg cannot see.
+  - `iqr-and-rank-conflict`: both REJECT but signs
+    DISAGREE. Tail-vs-shoulder asymmetry watch-list;
+    direction defers to FK (continuous-score is more
+    robust than the one-bit Westenberg call).
+  - `both-ns`: neither rejects.
+
+Headline counts: `iqrAndRankCoherent`,
+`iqrOnlyNoRank` (axis-198 location-confound diagnostic),
+`rankOnlyNoIqr` (within-IQR mass-redistribution signal
+axis-198 cannot see), `iqrAndRankConflict`
+(tail-vs-shoulder asymmetry watch-list).
+
+Refs: Westenberg 1948 *Proc. Kon. Nederl. Akad.
+Wetensch.* 51:252-261; Conover 1999 *Practical
+Nonparametric Statistics* 3rd ed., sec. 5.3 pp.
+309-310; Fligner & Killeen 1976 *J. Amer. Statist.
+Assoc.* 71:210-213; Conover, Johnson & Johnson 1981
+*Technometrics* 23(4):351-361 Tab. 5.
+
+Test coverage: 21 unit tests, all passing
+(`test/classifywestenbergflignerkilleeniqrvsfullrankscalecompound.test.ts`).
+
 ## 0.6.495 — 2026-05-05
 
 ### Added — `daily-token-westenberg-halves` (axis-198, Westenberg 1948 IQR-exceedance scale test)
