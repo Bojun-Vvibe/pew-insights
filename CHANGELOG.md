@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.530 — 2026-05-06
+
+### Added — `classifyAxis213Axis212PageLOlmsteadTukeyLocalBlockOrderingVsExtremalCornerTrendCompound`
+
+Refinement compound classifier joining axis-213
+PAGE'S L TEST FOR ORDERED ALTERNATIVES (`pageZ`,
+`pagePValue`) with axis-212 OLMSTEAD-TUKEY CORNER TEST
+FOR ASSOCIATION (`otQ`, `otPValue`) on a per-source
+basis.
+
+**Structural claim.** Both axes test for monotone
+trend in the gap-filled daily token series, but at
+MAXIMALLY-OPPOSITE LOCALITY SCALES along the time
+axis: Page's L scans the ENTIRE INTERIOR in tiny 3-day
+chunks, OT uses ONLY the EDGE RUN-LENGTHS at the 4
+corners. Both axes are sign-correctly oriented
+(positive = up-trend), so the compound runs in the
+unified `*TrendUpSignal` frame for unambiguous
+direction-comparison.
+
+Buckets (alpha default 0.05):
+
+  - `robust-up-trend`   — both decisive, pageZ > 0 AND
+    otQ > 0
+  - `robust-down-trend` — both decisive, pageZ < 0 AND
+    otQ < 0
+  - `direction-conflict` — both decisive, signs
+    disagree (interior says one direction, edges say
+    the other)
+  - `page-l-only-up` / `page-l-only-down` — page
+    decisive only (interior 3-day blocks all drift one
+    way, edges flat)
+  - `olmstead-tukey-only-up` / `olmstead-tukey-only-down`
+    — OT decisive only (edge extremes drive the
+    signal, interior randomly ordered)
+  - `no-evidence`
+
+Pure function — no I/O, no globals; throws on
+malformed input (duplicate sources, non-finite stats,
+pvalue out of (0, 1]). Asymmetric coverage is
+surfaced via `sourcesOnlyInPageL` and
+`sourcesOnlyInOlmsteadTukey`. Companion summarizer
+emits a one-line log-friendly digest:
+
+```
+axis-213xaxis-212 alpha=<a> n=<rows> both=<k>/<rows> qd[rUp/rDn/cPuOd/cPdOu]=a/b/c/d buckets[ru/rd/dc/plu/pld/otu/otd/ne]=...
+```
+
+Implementation in
+`src/classifyaxis213axis212pagelolmsteadtukeylocalblockorderingvsextremalcornertrendcompound.ts`;
+49 new tests cover input validation (empty source,
+non-finite pageZ/pagePValue/otQ/otZ/otPValue,
+duplicate sources, alpha bounds), asymmetric joins
+(only-in-page, only-in-OT, intersection), every bucket
+assignment path (no-evidence, page-l-only-up/down,
+olmstead-tukey-only-up/down, robust-up/down,
+direction-conflict in both quadrants), boundary cases
+(pageZ=0, otQ=0 with decisive p), bucket-count
+invariance under repetition, alpha sensitivity (tighter
+collapses to no-evidence; looser promotes to robust),
+summary line format.
+
 ## 0.6.529 — 2026-05-06
 
 ### Added — `daily-token-page-l-block-trend` (axis-213)
