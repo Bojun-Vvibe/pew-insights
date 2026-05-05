@@ -341,3 +341,57 @@ test('consensus: deterministic', () => {
     coherentTrendDirectionConsensus(r),
   );
 });
+
+// ---------- summarizeCoherentTrendDirectionConsensus ----------
+
+import { summarizeCoherentTrendDirectionConsensus } from '../src/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.js';
+
+test('summarize-consensus: empty -> no-coherent-evidence stamp', () => {
+  const r = classify([], []);
+  const s = summarizeCoherentTrendDirectionConsensus(
+    coherentTrendDirectionConsensus(r),
+  );
+  assert.match(s, /^axis-208xaxis-205-consensus dir=no-coherent-evidence/);
+  assert.match(s, /up=0 down=0 contributing=0/);
+});
+
+test('summarize-consensus: pure up rendered correctly', () => {
+  const r = classify(
+    [sf('a', -3.0, 0.001), sf('b', -2.5, 0.005)],
+    [cs('a', 2.5, 0.01), cs('b', 2.0, 0.04)],
+  );
+  const s = summarizeCoherentTrendDirectionConsensus(
+    coherentTrendDirectionConsensus(r),
+  );
+  assert.match(s, /dir=up/);
+  assert.match(s, /up=2 down=0 contributing=2/);
+});
+
+test('summarize-consensus: tied rendered correctly', () => {
+  const r = classify(
+    [sf('a', -3.0, 0.001), sf('b', 3.0, 0.001)],
+    [cs('a', 2.5, 0.01), cs('b', -2.5, 0.01)],
+  );
+  const s = summarizeCoherentTrendDirectionConsensus(
+    coherentTrendDirectionConsensus(r),
+  );
+  assert.match(s, /dir=tied/);
+  assert.match(s, /up=1 down=1 contributing=2/);
+});
+
+test('summarize-consensus: single-line invariant', () => {
+  const r = classify([sf('a', -3.0, 0.001)], [cs('a', 2.5, 0.01)]);
+  const s = summarizeCoherentTrendDirectionConsensus(
+    coherentTrendDirectionConsensus(r),
+  );
+  assert.equal(s.includes('\n'), false);
+});
+
+test('summarize-consensus: deterministic across repeated calls', () => {
+  const r = classify([sf('a', -3.0, 0.001)], [cs('a', 2.5, 0.01)]);
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(
+    summarizeCoherentTrendDirectionConsensus(c),
+    summarizeCoherentTrendDirectionConsensus(c),
+  );
+});

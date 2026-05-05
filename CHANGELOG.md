@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.519 — 2026-05-05
+
+### Added — `summarizeCoherentTrendDirectionConsensus`
+
+Pure helper that renders the
+`coherentTrendDirectionConsensus` result as a one-line,
+log-friendly headline:
+
+```
+axis-208xaxis-205-consensus dir=<direction> up=<u> down=<d> contributing=<c>
+```
+
+Pairs cleanly with
+`summarizeAxis208Axis205SpearmanFootruleCoxStuartReport`
+on the same dashboard line: the first gives the full
+4-quadrant + 7-bucket cross-tab, the second gives the
+one-word directional verdict over the coherent-trend
+buckets.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Composed `summarize` + `summarizeCoherentTrendDirectionConsensus`
+on the v0.6.517 axis-208 ↔ axis-205 join. Verbatim:
+
+```
+axis-208xaxis-205 alpha=0.05 n=2 both=1/2 qd[bU/bD/sUcD/sDcU]=1/0/0/0 buckets[cuT/cdT/dc/goU/goD/hpo/ne]=1/0/0/0/0/1/0
+axis-208xaxis-205-consensus dir=up up=1 down=0 contributing=1
+```
+
+Two-line dashboard header: full diagnostic on line 1,
+directional verdict on line 2. The verdict
+(`dir=up up=1 down=0 contributing=1`) confirms the
+single coherent-up-trend row (claude-code) reading
+from v0.6.518 -- the corpus-level directional verdict
+on this snapshot is unambiguously **up**.
+
+### Files
+
+  - `src/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.ts`
+    -- adds `summarizeCoherentTrendDirectionConsensus(consensus)
+    -> string` alongside the existing classifier,
+    summarizer, and consensus helper.
+  - `test/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.test.ts`
+    -- +5 tests: empty rendering, pure-up rendering,
+    tied rendering, single-line invariant,
+    deterministic across repeated calls.
+
+### Test count
+
+  - Before: 14,922
+  - After:  14,927 (+5)
+
 ## 0.6.518 — 2026-05-05
 
 ### Added — `coherentTrendDirectionConsensus`

@@ -470,3 +470,25 @@ export function coherentTrendDirectionConsensus(
   else direction = 'tied';
   return { direction, upCount, downCount, contributingRows };
 }
+
+/**
+ * Render the coherentTrendDirectionConsensus result as
+ * a single-line, log-friendly headline:
+ *
+ *   axis-208xaxis-205-consensus dir=<direction> up=<u> down=<d> contributing=<c>
+ *
+ * Pure deterministic; no I/O. Useful for piping into
+ * release notes alongside the summarize() output --
+ * the pair gives both the full bucket/quadrant cross-
+ * tab AND the one-word directional verdict on a single
+ * dashboard line.
+ */
+export function summarizeCoherentTrendDirectionConsensus(
+  consensus: ReturnType<typeof coherentTrendDirectionConsensus>,
+): string {
+  return (
+    `axis-208xaxis-205-consensus dir=${consensus.direction} ` +
+    `up=${consensus.upCount} down=${consensus.downCount} ` +
+    `contributing=${consensus.contributingRows}`
+  );
+}
