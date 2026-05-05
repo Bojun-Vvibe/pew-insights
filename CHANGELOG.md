@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.548 — 2026-05-06
+
+### Added — axis-220 x axis-219 compound classifier
+
+REFINEMENT to v0.6.546. New pure-library compound
+`classifyAxis220Axis219HamedRaoSenAdichieAutocorrCorrectedVsSeasonStratifiedTrendCompound`
+joins the axis-220 Hamed-Rao 1998 autocorrelation-
+corrected Mann-Kendall (`hrZ`, `hrPValue`, `hrTau`,
+`hrEta`) with the v0.6.543 axis-219 Sen-Adichie 1967
+season-stratified aligned-rank trend test (`saZ`,
+`saPValue`, `saRho`) on a per-source basis.
+
+Mechanism orthogonality. Both axes test for monotone
+trend on the gap-filled daily total_tokens series and
+emit signed standardised statistics, but they handle
+serial dependence DIFFERENTLY:
+
+  - axis-220 Hamed-Rao: UNSTRATIFIED Mann-Kendall S on
+    the full n-series, with the null variance INFLATED
+    by the observed rank-autocorrelation function across
+    all significant lags 1..n-3 (captures AR(1),
+    period-7, AND longer memory as a single variance
+    correction).
+  - axis-219 Sen-Adichie: SEASON-STRATIFIED L_2 aligned-
+    rank inner product across 7 weekday cohorts, with
+    the null computed under the working assumption of
+    cross-cohort independence (handles ONLY period-7 by
+    partitioning).
+
+The compound is therefore the SERIAL-DEPENDENCE-HANDLING
+dual of the season-stratification axis. Sign agreement +
+joint decisiveness = the strongest possible per-source
+evidence for monotone trend; sign disagreement is
+diagnostic of period-7 amplitude pattern dominating one
+direction while within-cohort aligned ranks trend the
+other.
+
+4-quadrant signed compound (matches the axis-217xaxis-214,
+axis-219xaxis-218 family scheme): emits 9 buckets
+(`agree-up`, `agree-down`, `conflict-hr-up`,
+`conflict-hr-down`, `hr-only-up`, `hr-only-down`,
+`sa-only-up`, `sa-only-down`, `no-evidence`) and a
+non-null `jointQuadrant` (`agreeUp` | `agreeDown` |
+`conflictHrUp` | `conflictHrDown`) only when both axes
+are decisive. Decisiveness is `hrPValue < alpha` and
+`saPValue < alpha` independently. Tracks
+`sourcesOnlyInHamedRao` and `sourcesOnlyInSenAdichie`.
+
+### Tests
+
+18 new tests in
+`test/classifyaxis220axis219hamedraosenadichieautocorrcorrectedvsseasonstratifiedtrendcompound.test.ts`
+covering all 9 buckets, alpha threshold respect, source-
+set asymmetry, lexicographic row ordering, summarize
+formatting, and input validation. Full suite: 15839 tests
+green (was 15821).
+
+### Surface
+
+Pure library export only -- no CLI subcommand and no
+format.ts renderer (consistent with the
+axis-219xaxis-218 compound classifier shape).
+
 ## 0.6.546 — 2026-05-06
 
 ### Added — `daily-token-hamed-rao-mann-kendall-corrected` (axis-220)
