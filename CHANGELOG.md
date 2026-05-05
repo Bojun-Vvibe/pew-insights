@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.514 — 2026-05-05
+
+### Added — `classifyAxis207Axis206PitmanMssdJonckheereTerpstraSerialVsBlockTrendCompound` (axis-207 ↔ axis-206)
+
+Cross-axis 5-bucket compound classifier joining the new
+axis-207 PITMAN 1937 PERMUTATION TEST FOR RANDOMNESS via
+MSSD (`ppZ`, `ppPValue`) with the axis-206 JONCKHEERE
+1954 / TERPSTRA 1952 ORDERED-ALTERNATIVE RANK TEST
+(`jtZ`, `jtPValue`) on a per-source basis.
+
+**Structural claim.** Both probes test for departures
+from EXCHANGEABLE ORDERING of the gap-filled daily
+token series, but at STRUCTURALLY ORTHOGONAL SCALES:
+
+  - PITMAN MSSD (axis-207) tests for LAG-1 SERIAL
+    EXCHANGEABILITY using the SQUARED MAGNITUDE of
+    successive differences against a Monte-Carlo
+    PERMUTATION REFERENCE on the RAW VALUES. The
+    LAG-1 MICROSTRUCTURE probe.
+  - JT (axis-206) tests for MONOTONIC ORDERED-
+    ALTERNATIVE across k=4 chronological blocks via
+    rank-aggregated pairwise Mann-Whitney U
+    comparisons. The k=4 BLOCK-MACROSTRUCTURE probe.
+
+The two probes are STRUCTURALLY ORTHOGONAL because they
+target different exchangeability-violation modes at
+different temporal scales:
+
+  - A series with a steady linear trend + iid noise
+    produces jtZ >> 0 (block-monotonic) but ppZ ~ 0
+    (lag-1 exchangeability holds) -- "block-trend-only".
+  - A stationary AR(1) process with no trend produces
+    ppZ << 0 (smoothness) but jtZ ~ 0 -- "lag1-only".
+  - A SMOOTHLY MONOTONIC series (e.g. exponential
+    growth) produces both ppZ << 0 AND jtZ >> 0 --
+    "coherent-smooth-drift" (the unambiguous slow-
+    drift signature).
+  - A trend + ZIGZAG NOISE series produces ppZ >> 0
+    AND jtZ >> 0 -- "osc-with-block-trend" (the
+    "trending oscillator" signature; surfaced
+    separately from coherent-smooth-drift to
+    distinguish driver dynamics).
+
+**Buckets** (alpha default 0.05): `coherent-smooth-
+drift`, `lag1-only`, `block-trend-only`, `osc-with-
+block-trend`, and `no-evidence`.
+
+The `byJointSignQuadrant` cross-tab counts each row
+into exactly one of {smoothBlockTrendUp,
+smoothBlockTrendDown, oscBlockTrendUp,
+oscBlockTrendDown, anyMissingDecisive} and is the
+headline scalar payload, answering "of the sources
+with both lag-1 and block-level departures from
+exchangeability, what fraction are in each
+microstructure-x-macrostructure quadrant".
+
+### Files
+
+  - `src/classifyaxis207axis206pitmanmssdjonckheereterpstraserialvsblocktrendcompound.ts`
+    -- pure cross-axis classifier with strict input
+    validation, alpha-configurable bucket assignment,
+    joint-sign-quadrant cross-tab tracking, and
+    asymmetric-membership tracking.
+  - `test/classifyaxis207axis206pitmanmssdjonckheereterpstraserialvsblocktrendcompound.test.ts`
+    -- 28 unit tests covering validation (alpha range,
+    duplicate sources, invalid p/Z, empty source),
+    asymmetric membership, all 5 buckets, all 4 joint-
+    sign quadrants, signal recoding, alpha sensitivity,
+    source-asc row ordering, bucketCounts-sum-to-rows
+    invariant, byJointSignQuadrant cross-tab sum
+    invariant, ppDecisive/jtDecisive flag boundary,
+    null jointSignQuadrant when not bothDecisive, and
+    a realistic mixed dataset distributing across all
+    5 buckets.
+
+### Test count
+
+  - Before: 14,807
+  - After:  14,835 (+28)
+
 ## 0.6.513 — 2026-05-05
 
 ### Added — `daily-token-pitman-permutation-mssd-randomness` (axis-207 PITMAN 1937 PERMUTATION TEST FOR RANDOMNESS via MSSD)
