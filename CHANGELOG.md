@@ -2,6 +2,152 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.476 — 2026-05-05
+
+### Added — `daily-token-wilcoxon-signed-rank-halves` axis-189
+
+Per-source WILCOXON SIGNED-RANK PAIRED test on the
+half-split gap-filled daily total_tokens series.
+ONE-HUNDRED-AND-EIGHTY-NINTH cross-source axis and
+the FIRST PAIRED-DESIGN axis in the cross-source
+family — every prior axis (115 MW, 178 BWS, 181 vdW,
+182 FP, 183 YW, 184 Savage, 185 BWS, 186 HL, 187 A12,
+188 perm-t, etc.) is an INDEPENDENT TWO-SAMPLE test.
+
+Day i of the first half (n1 = floor(n/2) days) is
+PAIRED with day i of the second half (when n is odd
+the median day is dropped so the halves have
+identical length and the pairing is unambiguous).
+Differences d_i = B_i - A_i are signed-ranked under
+Pratt 1959 zero-elimination; W+ = sum of positive
+ranks, referenced to its asymptotic normal null with
+CONTINUITY CORRECTION and TIE-CORRECTED variance:
+
+  E[W+]   = N (N + 1) / 4
+  Var[W+] = N (N + 1) (2N + 1) / 24
+            - sum_g t_g (t_g - 1) (t_g + 1) / 48
+
+where N = nNonZero and t_g is the size of each tie
+group of |d_i| (Lehmann 1975 *Nonparametrics* sec
+4.1.2). Continuity-corrected Z:
+
+  Z = (W+ - E[W+] - 0.5 * sign(W+ - E[W+]))
+      / sqrt(Var[W+])
+
+Sign convention: positive Z = SECOND-half larger
+(preserves the second-half-positive cross-axis
+convention).
+
+EFFECT-SIZE CONJUGATE. Matched-pairs RANK-BISERIAL
+correlation r_rb = (W+ - W-) / (W+ + W-) in [-1, 1]
+(Kerby 2014 *Comprehensive Psychology* 3:Article 1,
+the simple-difference formula). Scale-free; directly
+comparable across sources of widely different token
+volumes.
+
+5-level decision bucket: highly-significant <=.001,
+very-significant <=.01, significant <=.05, marginal
+<=.10, ns.
+
+WHY THIS IS THE RIGHT ORTHOGONAL AXIS. axis-189 sits
+in a SEPARATE INFERENTIAL DESIGN from every prior
+axis:
+
+  - vs axis-115 MW (independent two-sample rank-sum):
+    MW treats halves as independent samples and tests
+    stochastic dominance F_A != F_B. axis-189 treats
+    them as PAIRED observations of the same calendar
+    day-position and tests within-pair symmetry of
+    d_i around 0. The paired null is STRICTLY
+    STRONGER than the unpaired one whenever pairing
+    reduces variance (e.g., aligned weekly
+    seasonality across halves).
+  - vs axis-188 perm-t (raw values, pooled-
+    exchangeability null on independent samples):
+    axis-188 permutes labels under H0: F_A = F_B on
+    the pooled sample. axis-189 ranks WITHIN-PAIR
+    differences under H0: median(d) = 0 with
+    symmetric F_d. Different design, different null,
+    different statistic.
+  - vs axis-186 HL (point estimator + Lehmann CI on
+    cross-sample Walsh averages): HL ESTIMATES the
+    shift magnitude with a normal-approx CI on the
+    Walsh-average rank. axis-189 is a pure
+    SIGNIFICANCE-DECISION test on signed ranks of
+    within-pair differences — different statistic on
+    a different design.
+  - vs axis-187 A12 (unsigned rank-overlap effect-
+    size with Brunner-Munzel placement CI): A12 is
+    an EFFECT-SIZE measure on independent samples
+    with no significance decision. axis-189 is a
+    paired-design HYPOTHESIS TEST. (axis-189 ships
+    its own scale-free effect-size conjugate via the
+    matched-pairs rank-biserial correlation, so the
+    two roles are unified within a single paired-
+    design report.)
+
+28 new unit tests cover decision-bucket boundaries
+on each side of .001 / .01 / .05 / .10, midRank tie
+averaging with explicit tie-group-size accounting,
+n<16 / non-finite-value / fewer-than-6-non-zero-
+differences rejection paths, max-positive-shift case
+(W+ = 36, W- = 0, r_rb = +1), max-negative-shift
+case (W+ = 0, W- > 0, r_rb = -1), identical-halves
+null behaviour (|z| < 1.5, p > .10), Pratt zero-
+elimination semantics on a constructed input with
+exactly two zero pairs (drops them, recomputes W+
+on the remaining 6), odd-length median-day drop
+(n=17 produces 8 pairs identical to the n=16 case),
+tie-corrected variance strictly below the no-tie
+baseline, rank-biserial algebraic identity, and
+deterministic re-run. Builder tests cover sparse /
+short / zero-variance source dropping, source-asc
+tie-break, top-cap dropped count, invalid sort /
+minTenureDays / since / until rejection, non-positive
+tokens / invalid hour_start counters, and source-
+filter accept+drop accounting.
+
+LIVE-SMOKE OUTPUT (against `~/.config/pew/queue.jsonl`,
+2,756 rows; source name `vscode-copilot` shown as
+`vscode-cp` per per-tick policy):
+
+  pew-insights daily-token-wilcoxon-signed-rank-halves
+  as of: 2026-05-05T01:25:11.867Z
+  sources: 6 (shown 5)    tokens: 13,039,871,140
+  min-tokens: 1,000    min-tenure-days: 16    sort: absZDesc
+  dropped: 0 bad hour_start, 0 non-positive tokens,
+    0 source-filter, 0 below min-tokens,
+    1 below min-tenure-days, 0 zero-variance,
+    0 non-finite-fit, 0 below top cap
+
+  per-source Wilcoxon signed-rank paired test
+  (sorted by absZDesc; ties: source asc)
+  source       tenure  pairs  nNonZero  nZero  W+    W-     E[W+]   Z         p (2sd)   sign  r_rb      decision
+  -----------  ------  -----  --------  -----  ----  -----  ------  --------  --------  ----  --------  ------------------
+  claude-code  72      36     29        7      384   51     217.50  +3.5895   3.31e-04  +     +0.7655   highly-significant
+  openclaw     19      9      9         0      1     44     22.50   -2.4879   1.29e-02  -     -0.9556   significant
+  vscode-cp    265     132    61        71     684   1,207  945.50  -1.8747   6.08e-02  -     -0.2766   marginal
+  opencode     16      8      8         0      8     28     18.00   -1.3303   1.83e-01  -     -0.5556   ns
+  hermes       19      9      9         0      34    11     22.50   +1.3032   1.93e-01  +     +0.5111   ns
+
+Headline read on the live corpus: claude-code is the
+ONLY source where the paired-design test decisively
+detects a SECOND-half-larger shift (Z = +3.59,
+p = 3.3e-4, r_rb = +0.77 — large effect, with 7 of
+36 day-pairs tied/zero and 22 of 29 non-zero pairs
+favouring the second half). openclaw shows a
+significant SECOND-half-SMALLER shift (r_rb =
+-0.956, p = .013) — the paired design surfaces this
+clearly because openclaw has only 9 day pairs and
+ALL 9 non-zero diffs save 1 favour the first half,
+which the within-pair rank-sum captures with much
+less variance than the independent-samples
+analogue. vscode-cp lands at marginal (p = .061)
+despite having the most pairs (132) because the
+within-pair rank mass is only weakly asymmetric
+(r_rb = -0.28). opencode and hermes are not
+decisively distinguishable from the symmetric null.
+
 ## 0.6.475 — 2026-05-05
 
 ### Refactor — `classifyPermTstatA12SignificanceMagnitudeCompound` cross-axis joiner (axes 188 + 187)
