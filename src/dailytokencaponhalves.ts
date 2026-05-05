@@ -317,6 +317,13 @@ export function medianCapon(values: number[]): number {
  *   - For x = repeat(constant) the test is undefined
  *     (zero score variance after alignment); we throw to
  *     be filtered upstream.
+ *   - When n1 = n2 (even n) and there are no ties,
+ *     swapping halves negates the numerator (C - E[C]) up
+ *     to sign while leaving Var[C] symmetric in the
+ *     labels, hence caponZ(reverse(x)) === -caponZ(x).
+ *     This identity is the cleanest sign-convention
+ *     diagnostic for downstream cross-axis sign-coherence
+ *     checks (matches axis-177 klotzZ behaviour).
  */
 export function dailyTokenCaponHalves(values: number[]): {
   mean: number;
