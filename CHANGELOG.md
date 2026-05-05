@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.504 — 2026-05-05
+
+### Added — `classifyNoetherTurningPointLagTwoVsLagOneTrendStructureCompound` (axis-202 ↔ daily-token-turning-point-rate)
+
+Cross-axis 7-bucket compound classifier joining the
+new axis-202 NOETHER 1956 cyclical-trend test
+(`noetherZ`, `noetherPValue`, lag m=2 monotonic spaced
+triplets) with the existing WALLIS-MOORE turning-point
+rate (`tprZ`, `tprPValue`, lag-1 strict local extrema)
+on a per-source basis.
+
+**Structural claim.** Both axes target identical
+structural alternatives (persistence vs cyclic-
+reversion in the daily-token series) but probe them at
+different time scales — lag 1 (turning-point rate) vs
+lag 2 (Noether). The default lag-2 choice for axis-202
+is precisely what makes it ORTHOGONAL by construction:
+Noether at lag 1 is affine-equivalent to the negated
+Wallis-Moore turning-point count (Hettmansperger 1984,
+sec. 4.5). The compound classifier exploits the
+LAG-1 / LAG-2 GAP to distinguish coherent regimes,
+scale-dependent flips, single-lag-only signals, and
+no-evidence cases.
+
+**Sign-axis recoding.** Each z-statistic is mapped to
+a "trend signal at that lag" so they can be compared
+on a common axis:
+
+    lag1TrendSignal = - tprZ      ( + = lag-1 trend
+                                    - = lag-1 cyclic )
+    lag2TrendSignal = + noetherZ  ( + = lag-2 trend
+                                    - = lag-2 cyclic )
+
+**Buckets** (alpha default 0.05):
+
+  - `coherent-trend`: lag-1 trend (`tprZ < 0`) AND
+    lag-2 trend (`noetherZ > 0`), both decisive.
+    Strongest cross-lag evidence of directional drift.
+  - `coherent-cyclic`: lag-1 cyclic (`tprZ > 0`) AND
+    lag-2 cyclic (`noetherZ < 0`), both decisive.
+    Bounded-range oscillation around a slow level.
+  - `cross-lag-flip-trend-lag2-only`: lag-1 jagged
+    (`tprZ > 0`) AND lag-2 trend (`noetherZ > 0`),
+    both decisive. Two-day-cycle-within-upward-drift
+    pattern; CANONICAL Noether signature win, invisible
+    to lag-1 statistics.
+  - `cross-lag-flip-trend-lag1-only`: lag-1 smooth
+    (`tprZ < 0`) AND lag-2 cyclic (`noetherZ < 0`),
+    both decisive. Triangle-wave at period ~4. Rare;
+    watch-list.
+  - `lag1-only`: only `tprZ` decisive at alpha.
+    Structure visible only at the daily scale.
+  - `lag2-only`: only `noetherZ` decisive at alpha.
+    Structure visible only at the two-day scale —
+    DIRECT EVIDENCE of axis-202 contributing
+    non-redundant signal.
+  - `no-evidence`: neither decisive at alpha.
+
+**Output.** Joined-row table with per-source
+`bucket`, `lag1TrendSignal`, `lag2TrendSignal`,
+`noetherDecisive`, `tprDecisive`; aggregate counts
+(`bothDecisive`, `atLeastOneDecisive`, `coherentRows`,
+`crossLagFlipRows`, `lagSpecificRows`); asymmetric
+source-membership lists (`sourcesOnlyInNoether`,
+`sourcesOnlyInTurningPoint`).
+
+**Pure function.** Deterministic source-asc ordering;
+throws on duplicate sources, non-finite inputs,
+p-values outside (0, 1], or alpha outside (0, 0.5].
+16 unit tests; full suite 14519/14519 pass.
+
+**References.**
+  - Noether, G. E., "Two sequential tests against
+    trend", *Annals of Mathematical Statistics* 27(2)
+    (1956), pp. 441-450.
+  - Wallis, W. A. & Moore, G. H., "A significance test
+    for time series analyses", *J. Amer. Statist.
+    Assoc.* 36(215) (1941), pp. 401-409.
+  - Hettmansperger, T. P., *Statistical Inference Based
+    on Ranks* (Wiley 1984), sec. 4.5.
+
 ## 0.6.503 — 2026-05-05
 
 ### Added — `daily-token-noether-cyclical-trend` (axis-202 NOETHER 1956 cyclical-trend test at lag-m=2 monotonic spaced triplets)
