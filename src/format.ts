@@ -20631,6 +20631,7 @@ import type { DailyTokenBrunnerMunzelHalvesReport } from './dailytokenbrunnermun
 import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 import type { DailyTokenCaponHalvesReport } from './dailytokencaponhalves.js';
 import type { DailyTokenMielkeQuarticHalvesReport } from './dailytokenmielkequartichalves.js';
+import type { DailyTokenKamatRangeRatioHalvesReport } from './dailytokenkamatrangeratiohalves.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29003,6 +29004,89 @@ export function renderDailyTokenMielkeQuarticHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: mielkePValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference). mielkeZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ, axis-199 caponZ sign convention). Pitman ARE 0.71 vs F-test under normal-scale alternatives but ARE 1.32 vs F under double-exponential and 2.1 vs F under Cauchy — Mielke trades normal-power for HEAVY-TAIL POWER, dominating Mood/Klotz/Capon for token-spike-style dispersion shifts.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenKamatRangeRatioHalves(
+  r: DailyTokenKamatRangeRatioHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-kamat-range-ratio-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    permutations: ${formatNumber(r.permutations)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KAMAT 1956 SAMPLE-RANGE-RATIO SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the median-aligned, gap-filled daily total_tokens series. Statistic kamatStat = log(R_B / R_A) where R_A and R_B are the per-half ranges (max - min) on median-aligned values. Studentised by deterministic fixed-seed permutation: 8000 random label permutations of the pooled aligned values are drawn (FNV-1a-seeded SplitMix32) and the empirical permutation variance of log(R_B*/R_A*) is the standardising denominator. kamatZ ~~ N(0,1) under H0. TWO-HUNDRED-AND-FIRST cross-source axis. STRUCTURALLY DISTINCT from EVERY prior scale axis (117/170/177/178/179/199/200): all rank-based scale tests reduce data to pooled ranks first then apply a score function; Kamat NEVER COMPUTES RANKS, operating directly on the EXTREME ORDER STATISTICS (max - min) per half. vs axis-181 Rosenbaum (count-based using one extreme threshold), Kamat uses ALL FOUR extremes and forms a continuous log-ratio. Pre-aligned by within-half median subtraction (Hollander & Wolfe 1999 sec. 5.1). Distribution-free under H0; deterministic given the same input. Refs: Kamat 1956 Biometrika 43:131-135; David 1981 Order Statistics sec. 9.3.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source KAMAT log-range-ratio scale-equality (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'rangeA',
+    'rangeB',
+    'kamatStat',
+    'kamatZ',
+    'kamatPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.kamatN1),
+    formatNumber(s.kamatN2),
+    s.kamatRangeA.toFixed(2),
+    s.kamatRangeB.toFixed(2),
+    s.kamatStat.toFixed(4),
+    s.kamatZ.toFixed(4),
+    s.kamatPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: kamatPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference, studentised log-range-ratio). kamatZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ, axis-199 caponZ, axis-200 mielkeZ sign convention). UNLIKE rank-based scale tests Kamat uses ONLY the four per-half extremes (min, max) and ignores within-half ordering — uniquely sensitive to ISOLATED EXTREME SPIKES that drive R_B without contributing materially to rank-score sums.)`,
     ),
   );
 

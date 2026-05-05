@@ -206,6 +206,7 @@ import {
   renderDailyTokenKlotzHalves,
   renderDailyTokenCaponHalves,
   renderDailyTokenMielkeQuarticHalves,
+  renderDailyTokenKamatRangeRatioHalves,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -686,6 +687,10 @@ import {
   buildDailyTokenMielkeQuarticHalves,
   type DailyTokenMielkeQuarticHalvesSort,
 } from './dailytokenmielkequartichalves.js';
+import {
+  buildDailyTokenKamatRangeRatioHalves,
+  type DailyTokenKamatRangeRatioHalvesSort,
+} from './dailytokenkamatrangeratiohalves.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -46493,6 +46498,121 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMielkeQuarticHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-kamat-range-ratio-halves')
+  .description(
+    "Per-source KAMAT 1956 SAMPLE-RANGE-RATIO SCALE TEST for equality of dispersion between the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the median-aligned, gap-filled daily total_tokens series (TWO-HUNDRED-AND-FIRST cross-source axis). Statistic kamatStat = log( R_B / R_A ) where R_A = max(A_aligned)-min(A_aligned), R_B = max(B_aligned)-min(B_aligned) (Kamat 1956 Biometrika 43:131-135 sec. 3). Studentised by deterministic fixed-seed permutation: 8000 random label permutations of the pooled aligned values are drawn (FNV-1a-seeded SplitMix32 PRNG) and the empirical permutation variance of log(R_B*/R_A*) is the standardising denominator; kamatZ = kamatStat / sqrt(kamatVar) ~~ N(0,1) under H0 (David 1981 Order Statistics sec. 9.3). STRUCTURALLY DISTINCT from EVERY prior scale axis (117/170/177/178/179/199/200): all rank-based scale tests reduce data to pooled ranks first then apply a score function; Kamat NEVER COMPUTES RANKS, operating directly on the EXTREME ORDER STATISTICS (max - min) per half. Two halves with identical rank patterns can have arbitrarily different range ratios; conversely identical ranges can have very different rank-based scores. vs axis-181 Rosenbaum (count-based using one extreme threshold), Kamat uses ALL FOUR extremes and forms a continuous log-ratio. Pre-aligned by within-half median subtraction (Hollander & Wolfe 1999 sec. 5.1). Distribution-free under H0; deterministic given the same input. Refs: Kamat 1956 Biometrika 43:131-135; David 1981 Order Statistics sec. 9.3; Hollander & Wolfe 1999 sec. 5.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8). Default 16.',
+    '16',
+  )
+  .option(
+    '--permutations <n>',
+    'permutations for the studentised null variance estimate. Default 8000; must be >= 200.',
+    '8000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: kamatZAbsDesc (default) | kamatZ | kamatPValue | kamatPValueDesc | tokens | tenure | source.',
+    'kamatZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        permutations: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const permutations = Number.parseInt(opts.permutations, 10);
+        if (!Number.isInteger(permutations) || permutations < 200) {
+          throw new Error(
+            `--permutations must be an integer >= 200 (got ${opts.permutations})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'kamatZ',
+          'kamatZAbsDesc',
+          'kamatPValue',
+          'kamatPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKamatRangeRatioHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          permutations,
+          top,
+          sort: opts.sort as DailyTokenKamatRangeRatioHalvesSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenKamatRangeRatioHalves(report) + '\n',
           );
         }
       } catch (e) {
