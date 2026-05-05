@@ -223,6 +223,7 @@ import {
   renderDailyTokenTukeyQuickHalves,
   renderDailyTokenWaldWolfowitzRunsHalves,
   renderDailyTokenRosenbaumAdjacencyHalves,
+  renderDailyTokenFlignerKilleenHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -737,6 +738,7 @@ import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.
 import { buildDailyTokenTukeyQuickHalves } from './dailytokentukeyquickhalves.js';
 import { buildDailyTokenWaldWolfowitzRunsHalves } from './dailytokenwaldwolfowitzrunshalves.js';
 import { buildDailyTokenRosenbaumAdjacencyHalves } from './dailytokenrosenbaumadjacencyhalves.js';
+import { buildDailyTokenFlignerKilleenHalves } from './dailytokenflignerkilleenhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -38302,6 +38304,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenRosenbaumAdjacencyHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-fligner-killeen-halves')
+  .description(
+    "Per-source FLIGNER-KILLEEN MEDIAN-CENTERED SCALE TEST comparing the dispersion of the FIRST half (n1 = floor(n/2)) vs SECOND half (n2 = n - n1) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-SIXTH cross-source axis. Fligner & Killeen 1976 J. Amer. Statist. Assoc. 71:210-213; recommended median-modified form per Conover, Johnson & Johnson 1981 Technometrics 23(4):351-361 Table 5. Pipeline: (1) within-half median-centred ABSOLUTE deviations z_ij = |x_ij - median_i|; (2) pooled mid-ranks of |z|; (3) HALF-NORMAL SCORES a(R) = Phi^{-1}(0.5 + R/(2(n+1))); (4) fkX2 = n1*(abarA - abar)^2 / (v*(1-n1/n)) ~ chi^2(1) with v = (1/(n-1)) sum (a(R_i)-abar)^2. Signed Z = sign(abar - abarA)*sqrt(fkX2) ~ N(0,1); positive = SECOND half MORE dispersed. ORTHOGONAL to axis-177 Klotz (squared FULL-normal-scores on signed-aligned values; FK uses HALF-normal-scores on absolute deviations -- Klotz scoring is U-shaped in rank, FK monotone), to axes 117/170 Siegel-Tukey/Ansari-Bradley (those use folded ranks on POOLED ORDERING; FK uses ranks on |z| ORDERING), to axis-178 Conover squared-ranks (quadratic-in-centred-rank vs probit-in-upper-rank score functions; identical chi^2(1) null but different power profiles). Recommended as the most ROBUST nonparametric scale test under non-normality (Conover et al 1981 Tab. 5).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 16 (n1 = n2 = 8 for the chi^2(1) reference; Conover et al 1981 Table 5). Default 16.',
+    '16',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: fkZAbsDesc (default) | fkZ | fkZDesc | fkZAbs | fkX2 | fkX2Desc | fkPValue | fkPValueDesc | tokens | tenure | source.',
+    'fkZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 16) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 16 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'fkZ',
+          'fkZDesc',
+          'fkZAbs',
+          'fkZAbsDesc',
+          'fkX2',
+          'fkX2Desc',
+          'fkPValue',
+          'fkPValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenFlignerKilleenHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'fkZ'
+            | 'fkZDesc'
+            | 'fkZAbs'
+            | 'fkZAbsDesc'
+            | 'fkX2'
+            | 'fkX2Desc'
+            | 'fkPValue'
+            | 'fkPValueDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenFlignerKilleenHalves(report) + '\n',
           );
         }
       } catch (e) {

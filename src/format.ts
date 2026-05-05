@@ -20598,6 +20598,7 @@ import type { DailyTokenMoodsMedianHalvesReport } from './dailytokenmoodsmedianh
 import type { DailyTokenTukeyQuickHalvesReport } from './dailytokentukeyquickhalves.js';
 import type { DailyTokenWaldWolfowitzRunsHalvesReport } from './dailytokenwaldwolfowitzrunshalves.js';
 import type { DailyTokenRosenbaumAdjacencyHalvesReport } from './dailytokenrosenbaumadjacencyhalves.js';
+import type { DailyTokenFlignerKilleenHalvesReport } from './dailytokenflignerkilleenhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -28581,6 +28582,89 @@ export function renderDailyTokenRosenbaumAdjacencyHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: rsT = E[rsT] = no evidence against H0; rsT >> E[rsT] (positive rsZ) = TAIL-STRETCHING (one half has values strictly outside the support of the other); rsT << E[rsT] is rare (envelope compression). |rsZ| >= 1.96 = significant at alpha = 0.05 two-sided. Rosenbaum's test is INVARIANT under any strictly monotone transform (depends only on POOLED ORDER STATISTICS). dir = +1 means second half stretches UPPER tail (rsTUpper > rsTLower); -1 means LOWER tail; 0 balanced. Cross-check vs axis-194 wwR: rsT and wwR are STRUCTURALLY ORTHOGONAL -- a perfectly alternating pool (wwR maximal, rsT = 0) shows no extremes; a perfectly separated pool (wwR = 2, rsT maximal) shows total tail dominance; the two together discriminate boundary vs interior structure of any distributional shift.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenFlignerKilleenHalves(
+  r: DailyTokenFlignerKilleenHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-fligner-killeen-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source FLIGNER-KILLEEN MEDIAN-CENTERED SCALE TEST on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-SIXTH cross-source axis. Fligner & Killeen 1976 J. Amer. Statist. Assoc. 71:210-213; Conover, Johnson & Johnson 1981 Technometrics 23(4):351-361 Tab. 5. Pipeline: within-half median-centred |z|, pooled mid-ranks, half-normal scores Phi^{-1}(0.5 + R/(2(n+1))), then fkX2 ~ chi^2(1) and signed fkZ ~ N(0,1) (positive = SECOND half MORE dispersed). ORTHOGONAL to axis-177 Klotz (squared full-normal scores on signed values; FK uses half-normal on |z|), to axes 117/170 Siegel-Tukey/Ansari-Bradley (folded ranks on POOLED ordering vs |z| ordering), to axis-178 Conover squared-ranks (quadratic-in-centred-rank vs probit-in-upper-rank scoring; same chi^2(1) null but different power profiles). Recommended as the most ROBUST nonparametric scale test under non-normality (Conover et al 1981 Tab. 5).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source FLIGNER-KILLEEN scale test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'abarA',
+    'abar',
+    'fkX2',
+    'fkZ',
+    'p',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.fkN1),
+    formatNumber(s.fkN2),
+    s.fkAbarA.toFixed(4),
+    s.fkAbar.toFixed(4),
+    s.fkX2.toFixed(3),
+    s.fkZ.toFixed(3),
+    s.fkPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: fkX2 = 0 = no scale evidence; fkX2 large (positive fkZ) = SECOND half MORE dispersed; negative fkZ = FIRST half MORE dispersed. |fkZ| >= 1.96 (= fkX2 >= 3.84) is significant at alpha = 0.05 two-sided. The Fligner-Killeen test is INVARIANT under (a) global shift x + c, (b) positive scale a*x, (c) independent within-half location shifts -- it isolates dispersion change after median-centring each half. Cross-check vs axis-177 Klotz: Klotz uses U-shaped squared-normal scores on signed values; FK uses monotone half-normal scores on |z| -- they reject differently when dispersion change is asymmetric (one-tailed dispersion grows but not the other).)`,
     ),
   );
 
