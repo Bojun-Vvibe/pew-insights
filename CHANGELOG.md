@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.510 — 2026-05-05
+
+### Added — `classifyCoxStuartDavidBartonGlobalLocalTrendCompound` (axis-205 ↔ axis-203)
+
+Cross-axis 7-bucket compound classifier joining the new
+axis-205 COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES
+TREND TEST (`csZ`, `csPValue`) with the axis-203 DAVID
+& BARTON 1958 RUNS-UP-AND-DOWN TEST (`dbZ`, `dbPValue`)
+on a per-source basis.
+
+**Structural claim.** Both probes target trend-vs-mean-
+reversion in the daily token series but operate at
+MAXIMALLY DIFFERENT TIME SCALES:
+
+  - Cox-Stuart pairs v[i] with v[i+c] at spacing
+    c=ceil(n/2) -- a GLOBAL trend probe at the longest
+    possible lag.
+  - David-Barton counts maximal runs of identically-
+    signed first differences -- a LAG-1 LOCAL
+    oscillation probe.
+
+Recoded on a common trend-positive sign axis:
+csTrendSignal = +csZ ( + = global UP / - = global DOWN)
+and dbTrendSignal = -dbZ ( + = lag-1 persistence / - =
+lag-1 oscillation). The two probes can AGREE (steady
+drift -> csZ>>0 AND dbZ<<0) or DISAGREE in informative
+ways: a series with sharp daily oscillations on a
+slowly-rising baseline yields csZ>>0 (global trend) but
+dbZ>>0 (local oscillation) -- the canonical
+"drift + AR(1)-noise" signature.
+
+**Buckets** (alpha default 0.05):
+`coherent-trend` (with `coherentTrendDirection` = 'up'
+or 'down'), `global-trend-on-local-noise`,
+`local-persistence-no-global-trend`,
+`global-trend-only`, `local-oscillation-no-global-trend`,
+`global-trend-with-decisive-cs-only-dual-direction`
+(reserved, always 0 in valid joins -- documented for
+audit), and `no-evidence`.
+
+The `byCoherentDirection` cross-tab (#up-trend coherent
+vs #down-trend coherent) is the headline scalar payload
+and directly answers "of the sources that look trending
+at BOTH global and local scales, how many are going up
+vs down".
+
+### Files
+
+  - `src/classifycoxstuartdavidbartongloballocaltrendcompound.ts`
+    -- pure cross-axis classifier with strict input
+    validation, alpha-configurable bucket assignment,
+    coherent-direction tracking, reserved-bucket
+    audit-zero, and asymmetric-membership tracking.
+  - `test/classifycoxstuartdavidbartongloballocaltrendcompound.test.ts`
+    -- 24 unit tests covering validation, all 7
+    buckets, alpha sensitivity, byCoherentDirection
+    cross-tab, asymmetric membership, source-asc row
+    ordering, bucketCounts-sum-to-rows invariant, and
+    the dual-direction reserved-zero audit check.
+
+### Test count
+
+  - Before: 14,675
+  - After:  14,699 (+24)
+
 ## 0.6.509 — 2026-05-05
 
 ### Added — `daily-token-cox-stuart-sign-pairs` (axis-205 COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES TREND TEST)
