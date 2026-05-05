@@ -2,6 +2,102 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.521 — 2026-05-05
+
+### Added — `classifyAxis209Axis208WallisMooreSpearmanFootrulePhaseSmoothnessVsRankAlignmentCompound`
+
+New cross-axis 7-bucket diagnostic joining axis-209
+WALLIS-MOORE PHASE-FREQUENCY (`wmZ`, `wmPValue`) with
+axis-208 SPEARMAN FOOTRULE RANK DISTANCE vs TIME
+(`sfZ`, `sfPValue`) on a per-source basis.
+
+**Structural orthogonality.** Wallis-Moore is a LOCAL
+contiguous-phase counting statistic on the SIGN PATTERN
+of consecutive first-differences (smoothness vs zigzag
+axis); Spearman footrule is a GLOBAL L1 RANK-DISTANCE
+between the value-rank vector and the time-identity-
+rank vector (monotone-trend direction axis). They use
+DIFFERENT INFORMATION (sign pattern vs full rank
+permutation), at DIFFERENT SCALES (local vs global),
+with DIFFERENT TIE BEHAVIOUR (skip vs mid-rank).
+
+**Buckets** (alpha default 0.05):
+
+  - `smooth-up-trend`: wm decisive (wmZ < 0) AND sf
+    decisive (sfZ < 0) -- smooth + UP trend.
+  - `smooth-down-trend`: wm decisive (wmZ < 0) AND sf
+    decisive (sfZ > 0) -- smooth + DOWN trend.
+  - `zigzag-with-trend`: wm decisive (wmZ > 0) AND sf
+    decisive -- ANTI-CORRELATED dynamics yet a clear
+    rank-vs-time alignment (sawtooth-with-drift).
+  - `smoothness-only-smooth`: wm decisive (wmZ < 0)
+    and sf NOT decisive -- smooth but no trend
+    (positively-serially-correlated stationary).
+  - `smoothness-only-zigzag`: wm decisive (wmZ > 0)
+    and sf NOT decisive -- zigzag but no trend
+    (negatively-serially-correlated stationary).
+  - `footrule-only`: sf decisive but wm NOT decisive
+    -- a clear rank-vs-time alignment with neutral
+    phase count.
+  - `no-evidence`: neither decisive.
+
+The `byJointSignQuadrant` cross-tab counts each
+both-decisive row into one of {smoothUp, smoothDown,
+zigzagUp, zigzagDown}.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Composing the v0.6.520 axis-209 wallis-moore output
+with the existing axis-208 spearman-footrule output
+on the live queue, the cross-tab summary line and
+per-row breakdown are (verbatim from
+`scripts/livesmoke-axis209x208.mjs`):
+
+```
+axis-209xaxis-208 alpha=0.05 n=5 both=1/5 qd[smU/smD/zgU/zgD]=1/0/0/0 buckets[smU/smD/zwT/sos/soz/fo/ne]=1/0/0/1/0/1/2
+---
+claude-code:    wmZ=-5.8506   wmP=4.913e-9   sfZ=-4.2678  sfP=1.976e-5  bucket=smooth-up-trend         qd=smoothUp
+hermes:         wmZ=0.3814    wmP=7.029e-1   sfZ=-0.3333  sfP=7.389e-1  bucket=no-evidence             qd=-
+openclaw:       wmZ=-0.1907   wmP=8.488e-1   sfZ=2.8889   sfP=3.866e-3  bucket=footrule-only           qd=-
+opencode:       wmZ=-1.4692   wmP=1.418e-1   sfZ=1.2141   sfP=2.247e-1  bucket=no-evidence             qd=-
+vscode-copilot: wmZ=-13.2062  wmP=8.394e-40  sfZ=-0.3753  sfP=7.074e-1  bucket=smoothness-only-smooth  qd=-
+```
+
+Reading: across 5 jointly-classified sources exactly
+ONE source falls in the `smooth-up-trend` bucket
+(claude-code: smooth + up-trend, both decisive at
+alpha=0.05). ONE source is `smoothness-only-smooth`
+(vscode-copilot: extreme smoothness wmZ=-13.21 but
+sf p-value = 0.71, no rank-vs-time alignment). ONE
+source is `footrule-only` (openclaw: sf decisive
+DOWN-trend at p=0.0039 but wm p-value = 0.85, no
+phase-count signal). The remaining two
+(hermes, opencode) are `no-evidence`.
+
+Notably the corpus has ZERO `zigzag-with-trend` rows
+this snapshot -- no source shows the
+sawtooth-with-drift signature. The presence of a
+`footrule-only` row (openclaw) is itself
+informative: a clear rank-vs-time alignment that the
+phase-count test does NOT corroborate -- typical of a
+short tenure (n=19) where the rank trend can be
+strong globally without producing many monotone
+phases.
+
+### Files
+
+  - `src/classifyaxis209axis208wallismoorespearmanfootrulephasesmoothnessvsrankalignmentcompound.ts`
+    -- the classifier + summarizer.
+  - `test/classifyaxis209axis208wallismoorespearmanfootrulephasesmoothnessvsrankalignmentcompound.test.ts`
+    -- 24 tests covering all 7 buckets, 4 quadrants,
+    edge cases, alpha override, validation, and
+    summarizer output format.
+
+### Test count
+
+  - Before: 14,980
+  - After:  15,004 (+24)
+
 ## 0.6.520 — 2026-05-05
 
 ### Added — `daily-token-wallis-moore-phase-frequency` (axis-209)
