@@ -2,6 +2,156 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.484 — 2026-05-05
+
+### Added — `classifyKuiperCliffShapeVsDominanceCompound` cross-axis joiner (axes 192 + 191)
+
+SECOND axis-192 cross-axis joiner. Reconciles axis-192
+KUIPER TWO-SAMPLE TEST (omnibus ECDF gap functional kpV
+= sup(F_A - F_B) + sup(F_B - F_A); kpP) with axis-191
+CLIFF'S DELTA bootstrap-percentile-CI (signed ordinal
+dominance deltaHat = P(B > A) - P(A > B); cdCiExcludesZero)
+on a per-source join, into six mutually-exclusive
+SHAPE-vs-DOMINANCE buckets.
+
+#### Why this join is structurally orthogonal
+
+Kuiper V is MAXIMISED by symmetric two-sided ECDF
+crossings (e.g. A = N(0, 1) vs B = N(0, 4): two equal
+lobes, kpV >> 0). Cliff's delta is IDENTICALLY ZERO on
+the same alternative (P(B > A) = P(A > B) = 0.5 by
+symmetry). The two axes are therefore MAXIMALLY
+DECOUPLED on exactly the alternative against which
+Kuiper recovers power vs MW / Cliff / KS, and TIGHTLY
+COUPLED on monotone stochastic shifts where both should
+agree. The joint significance table
+
+  - kpReject x cdCiExcludesZero -> shape-and-dominance
+  - kpReject x !cdCiExcludesZero -> shape-only-no-dominance
+                                    (carved-out:
+                                     shape-with-large-effect-
+                                     ns-ci when |delta| >= 0.474
+                                     so a strong point-estimate
+                                     dominance with wide CI
+                                     does NOT pollute the
+                                     pure-shape signal)
+  - !kpReject x cdCiExcludesZero -> dominance-only-shape-ns
+  - !kpReject x !cdCiExcludesZero -> both-ns-large-shape-ratio
+                                     when |delta| >= 0.147
+                                     else both-ns-negligible
+
+surfaces the SIGN/MAGNITUDE of the disagreement as a
+first-class diagnostic rather than as noise.
+
+#### Buckets
+
+  - `shape-only-no-dominance`: Kuiper REJECTS but Cliff
+    CI INCLUDES ZERO and |delta| is not large. The
+    canonical PURE-SHAPE-SHIFT signature. Pairs with
+    follow-up scale tests (axis-116 Brown-Forsythe,
+    axis-117 Siegel-Tukey, Ansari-Bradley).
+  - `shape-and-dominance`: COHERENT joint signal. Both
+    axes agree the two halves differ. Direction taken
+    from the sign of cdDelta.
+  - `dominance-only-shape-ns`: SMALL, BROAD stochastic
+    shift. Every pair-comparison favours one half by a
+    consistent margin but no localised ECDF gap drives
+    Kuiper's supremum-sum.
+  - `shape-with-large-effect-ns-ci`: strong point-
+    estimate dominance with too-wide CI. Shape signal
+    carries more interpretive weight here.
+  - `both-ns-large-shape-ratio`: watch-list. Both axes
+    ns but |delta| at least small (>= 0.147).
+  - `both-ns-negligible`: no detectable shift in either
+    shape or ordinal dominance.
+
+#### Headline counts
+
+  - `shapeOnlyNoDominance`: count of pure-shape-shift
+    sources (the canonical Kuiper-vs-Cliff disagreement
+    in Kuiper's favour).
+  - `shapeAndDominance`: coherent-joint-signal count.
+  - `dominanceOnlyShapeNs`: reverse disagreement count.
+
+#### Live cross-axis read on the five real sources
+
+Joining the live axis-192 panel (`daily-token-kuiper-
+two-sample-halves` v0.6.483) and axis-191 panel
+(`daily-token-cliffs-delta-halves` v0.6.481) against
+`~/.config/pew/queue.jsonl`, default `--min-tenure-days
+14` so 5 of 6 sources qualify:
+
+| source      | kpV    | kpP     | cdDelta | cdCi                | excl0 | mag        | bucket                       |
+|-------------|--------|---------|---------|---------------------|-------|------------|------------------------------|
+| claude-code | 0.5278 | 6.69e-4 | +0.4738 | [+0.249, +0.681]    | true  | medium     | shape-and-dominance          |
+| hermes      | 0.6889 | 7.20e-2 | +0.2840 | [-0.309, +0.852]    | false | small      | both-ns-large-shape-ratio    |
+| openclaw    | 0.7000 | 6.20e-2 | -0.9012 | [-1.000, -0.654]    | true  | large      | dominance-only-shape-ns      |
+| opencode    | 0.7500 | 6.30e-2 | -0.5000 | [-1.000, +0.125]    | false | large      | both-ns-large-shape-ratio    |
+| vscode-cp   | 0.1303 | 7.07e-1 | -0.1150 | [-0.225, +0.001]    | false | negligible | both-ns-negligible           |
+
+Resulting headline counts on the live panel:
+
+  - `shapeOnlyNoDominance` = 0. The panel does NOT
+    contain a pure-shape-shift source on this corpus
+    half-split: every Kuiper rejection is accompanied
+    by a CI-excludes-zero Cliff's delta call, and
+    every wide-CI Cliff row also has a Kuiper kpP > .05.
+    Consistent with the panel exhibiting primarily
+    LOCATION/STOCHASTIC shifts (axis-186/189/190/191
+    chorus) rather than pure scale shifts.
+  - `shapeAndDominance` = 1 (`claude-code`). The only
+    source where both axes agree the two halves differ:
+    kpP = 6.69e-4 AND Cliff CI [+0.249, +0.681] excludes
+    zero with cdDelta = +0.4738 (medium-magnitude
+    second-larger). Joint-signal confirmation of the
+    `claude-code` ramp-up across the half-split.
+  - `dominanceOnlyShapeNs` = 1 (`openclaw`). cdCi
+    [-1.000, -0.654] excludes zero with cdDelta = -0.901
+    (LARGE first-larger), but Kuiper kpP = 0.062 just
+    above the .05 threshold. Pattern: every cross-pair
+    favours the first half overwhelmingly (deltaHat
+    near -1 means almost every (i, j) has B_j < A_i),
+    so the ordinal-dominance signal saturates while
+    the localised ECDF gap (kpV = 0.7) sits just under
+    Kuiper's conservative inflation factor at n1 = 9 /
+    n2 = 10. Exactly the small-but-broad-stochastic-shift
+    pattern this bucket is designed to surface.
+  - `hermes` and `opencode` both land in
+    `both-ns-large-shape-ratio`: |cdDelta| at small or
+    large magnitude but neither axis individually
+    rejects at .05. Watch-list rows: distribution
+    differences are detectable in point estimates but
+    inferentially inconclusive at the corpus scale.
+  - `vscode-cp` lands in `both-ns-negligible` despite
+    its 265-day tenure: kpV = 0.13 and |cdDelta| = 0.115
+    are both small. No detectable distribution shift in
+    EITHER axis -- consistent with the steady-state
+    operational profile axis-186/189/190/191 each
+    independently identified.
+
+#### Why this compound is the right join
+
+axis-191 and axis-192 are MAXIMALLY DECOUPLED on
+symmetric two-sided alternatives -- the exact regime
+against which Kuiper was designed to recover power vs
+rank-based dominance tests. Their disagreement
+patterns are therefore PRIMARY DIAGNOSTIC SIGNAL, not
+noise. The compound surfaces these patterns as named
+buckets that map directly to follow-up actions
+(scale tests for shape-only-no-dominance; rank-based
+sequential tests for dominance-only-shape-ns). Reuses
+the Romano-Coraggio-Skowronski 2006 magnitude bins
+(0.147 / 0.33 / 0.474) from axis-191 verbatim so the
+carve-outs stay calibration-consistent with the
+underlying axis.
+
+Refs: Kuiper 1960 *Proc. Koninklijke Nederlandse
+Akademie van Wetenschappen Series A* 63:38-47; Cliff
+1993 *Psychological Bulletin* 114(3):494-509;
+Romano, Coraggio & Skowronski 2006 *Annual Meeting of
+the Florida Association of Institutional Research*;
+Stephens 1965 *Biometrika* 52(3-4):309-321.
+
 ## 0.6.483 — 2026-05-05
 
 ### Added — `classifyKuiperKsCrossingDiagnostic` cross-axis joiner (axes 192 + 118)
