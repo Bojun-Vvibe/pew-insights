@@ -222,6 +222,7 @@ import {
   renderDailyTokenTheilSenSlope,
   renderDailyTokenCoxStuartThirdsTrend,
   renderDailyTokenBuysBallotPeriod7Anova,
+  renderDailyTokenLaplaceCentroidTrend,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -766,6 +767,10 @@ import {
   buildDailyTokenBuysBallotPeriod7Anova,
   type DailyTokenBuysBallotPeriod7AnovaSort,
 } from './dailytokenbuysballotperiod7anova.js';
+import {
+  buildDailyTokenLaplaceCentroidTrend,
+  type DailyTokenLaplaceCentroidTrendSort,
+} from './dailytokenlaplacecentroidtrend.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48302,6 +48307,111 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenBuysBallotPeriod7Anova(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-laplace-centroid-trend')
+  .description(
+    "Per-source LAPLACE 1773 MASS-WEIGHTED POSITION-CENTROID TREND TEST applied to the gap-filled daily total_tokens series (TWO-HUNDRED-AND-SEVENTEENTH cross-source axis). Computes the mass-weighted centroid cBar = sum(i*x_i)/sum(x_i) of day-indices 1..n; under H0 of mass uniformly distributed across positions cBar concentrates at (n+1)/2 with variance (n^2-1)/(12*nEff) where nEff = (sum x)^2 / sum(x^2) is the Cox-Lewis 1966 sec. 3.3 effective sample size. lapZ = (cBar - (n+1)/2) / sqrt(var) ~ N(0,1) two-sided; lapPValue = 2*(1 - Phi(|lapZ|)) via Abramowitz-Stegun 7.1.26 erf approximation; lapCBarNorm = (cBar - midpoint)/((n-1)/2) in [-1, +1] is a directly-interpretable effect-size. SIGN: lapZ > 0 = MASS BACK-LOADED (centroid late, growing source); lapZ < 0 = MASS FRONT-LOADED (centroid early, declining source); lapZ ~ 0 = mass uniform along tenure. STRUCTURALLY DISTINCT from cumulative-tokens-midpoint (DESCRIPTIVE 50%-percentile lookup with NO null distribution; the centroid uses the FIRST MOMENT of the entire mass distribution and can differ in sign from the median for asymmetric mass profiles), from monotone-trend axes (Mann-Kendall, Theil-Sen, Cox-Stuart-thirds; rank/sign tests blind to magnitude), from Buys-Ballot period-7 ANOVA axis-216 (mean-centers within-column; invariant under detrending), from Pettitt change-point (single ABRUPT MEAN SHIFT; max of cumulative U), from CUSUM-max-deviation (L-infinity functional vs Laplace's L-1 first-moment), from Buishand R range (rescaled-range of cumulative deviations). FIRST L-1 first-moment position-dependent hypothesis-test axis in the suite. Refs: Laplace 1773; Cox & Lewis 1966 sec. 3.3; Feller 1968 vol. 1 sec. IX.5; Abramowitz-Stegun 7.1.26; Ascher & Feingold 1984 sec. 3.5.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 14 (need nEff comfortably above the Cox-Lewis 1966 sec. 3.3 floor of ~10). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: lapAbsZDesc (default) | lapZ | lapZDesc | lapPValue | lapPValueDesc | lapCBarNorm | lapCBarNormDesc | tokens | tenure | source.',
+    'lapAbsZDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 14) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 14 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'lapZ',
+          'lapZDesc',
+          'lapAbsZDesc',
+          'lapPValue',
+          'lapPValueDesc',
+          'lapCBarNorm',
+          'lapCBarNormDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLaplaceCentroidTrend(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenLaplaceCentroidTrendSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLaplaceCentroidTrend(report) + '\n',
           );
         }
       } catch (e) {

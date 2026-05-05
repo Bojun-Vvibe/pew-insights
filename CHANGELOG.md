@@ -2,6 +2,191 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.538 — 2026-05-06
+
+### Added — `daily-token-laplace-centroid-trend` (axis-217)
+
+TWO-HUNDRED-AND-SEVENTEENTH cross-source axis. Per-source
+LAPLACE 1773 MASS-WEIGHTED POSITION-CENTROID TREND TEST
+on the gap-filled daily total_tokens series. The L-1 / first-
+moment companion to the rank/sign monotone-trend family
+(axis-110 Mann-Kendall tau, axis-214 Theil-Sen slope,
+axis-215 Cox-Stuart-thirds) and to the L-infinity
+cumulative-deviation family (CUSUM-max, Buishand R).
+
+Mechanism. Compute the mass-weighted day-index centroid
+
+```
+cBar = sum_{i=1..n} i * x_i / sum_{i=1..n} x_i
+```
+
+on the gap-filled tenure series x[0..n-1] (1-indexed for
+Laplace 1773 convention). Under H0 of mass uniformly
+distributed across positions, cBar concentrates at the
+tenure midpoint (n+1)/2 with closed-form variance
+(n^2-1)/(12*nEff), where the Cox-Lewis 1966 sec. 3.3
+EFFECTIVE SAMPLE SIZE
+
+```
+nEff = (sum x_i)^2 / sum (x_i^2)
+```
+
+corrects for non-iid mass weights. The standardised
+statistic
+
+```
+lapZ = (cBar - (n+1)/2) / sqrt((n^2-1)/(12*nEff))
+```
+
+is asymptotically N(0, 1) two-sided; lapPValue =
+2*(1 - Phi(|lapZ|)) via Abramowitz-Stegun 1964 eq. 7.1.26
+erf approximation (max abs error ~1.5e-7). The
+NORMALISED CENTROID OFFSET
+
+```
+lapCBarNorm = (cBar - (n+1)/2) / ((n - 1) / 2)
+```
+
+in [-1, +1] is a directly-interpretable effect-size
+INDEPENDENT of nEff (saturated at +1 when all mass sits
+at position n, at -1 when all mass sits at position 1).
+
+SIGN convention.
+
+  - lapZ > 0  =>  cBar > midpoint  =>  MASS BACK-LOADED
+                  (centroid LATE; growing source)
+  - lapZ < 0  =>  cBar < midpoint  =>  MASS FRONT-LOADED
+                  (centroid EARLY; declining source)
+  - lapZ ~ 0  =>  mass roughly uniform across tenure
+
+STRUCTURAL ORTHOGONALITY (the core claim):
+
+  - vs `cumulative-tokens-midpoint` (`midpointPctTenure`):
+    DESCRIPTIVE 50%-percentile lookup with NO null
+    distribution and NO p-value. lapZ uses the FIRST
+    MOMENT of the entire mass distribution; the median
+    can disagree with the centroid for asymmetric mass
+    profiles.
+  - vs rank/sign monotone-trend axes (axis-110 Mann-
+    Kendall, axis-214 Theil-Sen, axis-215 Cox-Stuart-
+    thirds): those are MAGNITUDE-BLIND. A series that
+    increases monotonically from 1 to 1.0001 has rank
+    trend ~+1 but lapZ ~ 0. A series [1,1,...,1,1e9] has
+    rank trend ~0 but loads strongly positive on lapZ.
+  - vs `daily-token-buys-ballot-period7-anova` (axis-216):
+    period-7 ANOVA mean-centers within-column and is
+    INVARIANT under detrending. The Laplace test is a
+    PURE FIRST-MOMENT TREND test BLIND to within-week
+    periodic structure.
+  - vs `daily-token-pettitt-changepoint`: Pettitt is the
+    MAX of cumulative Mann-Whitney U for a SINGLE
+    ABRUPT MEAN SHIFT at unknown location; Laplace is
+    SMOOTH-TREND on the first moment.
+  - vs `daily-token-cusum-max-deviation` and
+    `daily-token-buishand-range`: those are L-infinity
+    functionals of the cumulative-deviation curve;
+    Laplace is the L-1 / first-moment functional.
+    Different functionals of the same underlying
+    object: a symmetric V-shaped deviation has large
+    CUSUM and large Buishand R but lapZ ~ 0; a smooth
+    monotone ramp has small CUSUM but large lapZ.
+  - vs spectral / fractal-dimension / inequality axes:
+    those are amplitude-only or PERMUTATION-INVARIANT
+    functionals. Laplace is fundamentally POSITION-
+    DEPENDENT (shuffling the daily values rearranges
+    cBar).
+
+FIRST L-1 first-moment position-dependent hypothesis-test
+axis in the suite.
+
+CLI:
+
+```
+pew-insights daily-token-laplace-centroid-trend
+pew-insights daily-token-laplace-centroid-trend --top 5 --sort lapAbsZDesc
+pew-insights daily-token-laplace-centroid-trend --source vsc-redacted --json
+```
+
+Sort keys: lapAbsZDesc (default) | lapZ | lapZDesc |
+lapPValue | lapPValueDesc | lapCBarNorm | lapCBarNormDesc
+| tokens | tenure | source.
+
+57 unit tests covering: standardNormalCdfLaplace
+identities (Phi(0) = 0.5, symmetry, Phi(1.96) ~ 0.975,
++/- inf handling, monotonicity); twoSidedNormalP
+identities (p(0) = 1, p(1.96) ~ 0.05, sign-symmetry,
+range [0,1]); effectiveSampleSizeLaplace identities
+(nEff(uniform) = n, nEff(single mass) = 1, scale-
+invariance, permutation-invariance, range [1, n], input
+validation); core test invariants (n >= 14 floor,
+non-negative weight floor, zero-variance gate, lapCBar
+in [1, n], lapMidpoint = (n+1)/2, lapCBarNorm in
+[-1, +1], scale-invariance, reversal-negates-Z-and-
+CBarNorm-preserves-p, monotone ramp gives expected
+centroid (2n+1)/3, single-mass-position triggers
+nEff < 2 gate); builder integration (sparse-source
+filter, min-tenure cutoff, zero-variance drop, source-
+filter, invalid-hour-start, non-positive tokens, top
+cap, sort lapZDesc ordering, option validation, input
+determinism).
+
+Live smoke against `~/.config/pew/queue.jsonl` (one
+upstream source name redacted to `vsc-redacted` per
+project policy):
+
+```
+pew-insights daily-token-laplace-centroid-trend
+as of: 2026-05-05T21:11:21.871Z    sources: 6 (shown 5)    tokens: 13,443,822,126    min-tokens: 1,000    min-tenure-days: 14    top: -    sort: lapAbsZDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 1 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source Laplace centroid Z (sorted by lapAbsZDesc; ties: source asc)
+source          firstDay    lastDay     tenure  cBar     midpoint  nEff   lapZ     lapCBarNorm  lapPValue  tokens
+--------------  ----------  ----------  ------  -------  --------  -----  -------  -----------  ---------  -------------
+claude-code     2026-02-11  2026-04-23  72      62.883   36.50     6.34   3.1966   0.7432       1.391e-3   3,442,385,788
+openclaw        2026-04-17  2026-05-05  19       7.837   10.00     12.74  -1.4098  -0.2403      1.586e-1   2,436,451,556
+vsc-redacted    2025-07-30  2026-04-20  265    143.047  133.00     17.18  0.5444   0.0761       5.862e-1   1,885,727
+hermes          2026-04-17  2026-05-05  19      10.523   10.00     15.51  0.3763   0.0581       7.067e-1   352,285,807
+opencode        2026-04-20  2026-05-05  16       8.303    8.50     14.36  -0.1620  -0.0263      8.713e-1   7,210,813,248
+```
+
+Reading the live smoke:
+
+  - `claude-code` is the only source with a STATISTICALLY
+    SIGNIFICANT centroid displacement (lapZ = +3.20,
+    p = 1.4e-3 < 0.05): mass is heavily BACK-LOADED with
+    cBar = 62.9 days against a midpoint of 36.5 days
+    (lapCBarNorm = +0.74, i.e. the centroid sits 74% of
+    the half-tenure beyond the midpoint).
+  - `openclaw` is borderline FRONT-LOADED (lapZ = -1.41,
+    p = 0.16) -- a real negative offset (lapCBarNorm =
+    -0.24) but the short n = 19 with nEff = 12.7 leaves
+    the test under-powered.
+  - The other three sources sit comfortably under
+    |lapZ| < 1, lapPValue >> 0.05: no detectable mass
+    displacement from a uniform tenure distribution.
+  - 1 source dropped below the 14-day min-tenure floor.
+
+References:
+
+  - Laplace, P. S., "Memoire sur la probabilite des
+    causes par les evenements", *Memoires de
+    Mathematique et de Physique presentes a l'Academie
+    Royale des Sciences*, vol. 6 (1773), pp. 621-656.
+  - Cox, D. R. & Lewis, P. A. W., *The Statistical
+    Analysis of Series of Events*, Methuen 1966, sec.
+    3.3 (effective sample size for mass-weighted
+    statistics).
+  - Feller, W., *An Introduction to Probability Theory
+    and Its Applications*, 3rd ed., Wiley 1968, vol. 1,
+    sec. IX.5 (variance of discrete uniform: (n^2-1)/12).
+  - Abramowitz, M. & Stegun, I. A., *Handbook of
+    Mathematical Functions*, NBS 1964, eq. 7.1.26
+    (rational erf approximation).
+  - Ascher, H. & Feingold, H., *Repairable Systems
+    Reliability*, Marcel Dekker 1984, sec. 3.5
+    (Laplace test as locally-most-powerful test
+    against exponential trend in NHPP intensity).
+
 ## 0.6.536 — 2026-05-06
 
 ### Refined — `classifyAxis216Axis215BuysBallotCoxStuartThirdsWeekdayPeriodicityVsHeadVsTailTrendCompound` (axis-216 ↔ axis-215)

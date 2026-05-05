@@ -20647,6 +20647,7 @@ import type { DailyTokenPageLBlockTrendReport } from './dailytokenpagelblocktren
 import type { DailyTokenTheilSenSlopeReport } from './dailytokentheilsenslope.js';
 import type { DailyTokenCoxStuartThirdsTrendReport } from './dailytokencoxstuartthirdstrend.js';
 import type { DailyTokenBuysBallotPeriod7AnovaReport } from './dailytokenbuysballotperiod7anova.js';
+import type { DailyTokenLaplaceCentroidTrendReport } from './dailytokenlaplacecentroidtrend.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30304,6 +30305,85 @@ export function renderDailyTokenBuysBallotPeriod7Anova(
   lines.push(
     chalk.dim(
       `(reference anchor: bbPValue < 0.05 and bbEta2 > 0.10 = WEEKDAY-OF-WEEK STRUCTURE explains > 10% of daily-token variance with statistical significance; bbPValue >= 0.05 = no detectable weekday-of-week mean structure under iid Normal residuals. F-test is invariant to constant-shift and positive-scale; cyclic-shift of the index leaves bbF unchanged but PERMUTES the column-mean vector. Compare against Fisher-g-periodicity for unknown-frequency search; compare against monotone-trend axes (axis-110 / axis-214 / axis-215) for orthogonal monotone alternatives.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenLaplaceCentroidTrend(
+  r: DailyTokenLaplaceCentroidTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-laplace-centroid-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LAPLACE 1773 MASS-WEIGHTED POSITION-CENTROID TREND TEST. cBar = sum(i*x_i)/sum(x_i) on the gap-filled tenure series. lapZ = (cBar - (n+1)/2) / sqrt((n^2-1)/(12*nEff)) ~ N(0,1) under H0 of mass uniformly distributed across positions, with nEff = (sum x)^2 / sum(x^2) the Cox-Lewis 1966 sec. 3.3 effective sample size. lapCBarNorm = (cBar - midpoint) / ((n-1)/2) in [-1, +1] is a directly-interpretable effect-size. SIGN: lapZ > 0 = MASS BACK-LOADED (centroid LATE; growing source); lapZ < 0 = MASS FRONT-LOADED (centroid EARLY; declining source). TWO-HUNDRED-AND-SEVENTEENTH cross-source axis. STRUCTURALLY DISTINCT from cumulative-tokens-midpoint (descriptive 50%-percentile lookup, no test), from rank/sign monotone-trend axes (Mann-Kendall, Theil-Sen, Cox-Stuart-thirds; magnitude-blind), from Buys-Ballot period-7 ANOVA axis-216 (invariant under detrending), from Pettitt change-point (single abrupt mean shift), from CUSUM / Buishand range (L-infinity functionals vs Laplace's L-1 first-moment). FIRST L-1 first-moment position-dependent hypothesis-test axis. Refs: Laplace 1773; Cox & Lewis 1966 sec. 3.3; Feller 1968 vol. 1 sec. IX.5; Abramowitz-Stegun 7.1.26.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Laplace centroid Z (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'cBar',
+    'midpoint',
+    'nEff',
+    'lapZ',
+    'lapCBarNorm',
+    'lapPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.lapCBar.toFixed(3),
+    s.lapMidpoint.toFixed(2),
+    s.lapNEff.toFixed(2),
+    s.lapZ.toFixed(4),
+    s.lapCBarNorm.toFixed(4),
+    s.lapPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: |lapZ| > 1.96 and |lapCBarNorm| > 0.05 = STATISTICALLY SIGNIFICANT mass displacement of > 5% of half-tenure away from the midpoint at alpha = 0.05; lapPValue >= 0.05 = no detectable centroid displacement under uniform-mass null. Test is invariant under positive-scaling of mass; reversal of the series along positions negates lapZ and lapCBarNorm but preserves lapPValue. Compare against cumulative-tokens-midpoint for the descriptive 50%-percentile, against monotone-trend axes (axis-110 / axis-214 / axis-215) for orthogonal rank-based alternatives, against Buys-Ballot axis-216 for periodic structure orthogonal to first-moment displacement.)`,
     ),
   );
 
