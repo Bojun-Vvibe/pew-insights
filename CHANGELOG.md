@@ -2,6 +2,168 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.529 — 2026-05-06
+
+### Added — `daily-token-page-l-block-trend` (axis-213)
+
+New TWO-HUNDRED-AND-THIRTEENTH cross-source axis: per-
+source PAGE'S L TEST FOR ORDERED ALTERNATIVES on
+consecutive 3-day time-block within-rank scores,
+applied to the gap-filled daily total_tokens series
+(Page 1963, *J. Amer. Statist. Assoc.* 58(301):
+216-230).
+
+Splits the gap-filled series into b = floor(n/3)
+consecutive non-overlapping 3-day blocks, midrank-
+orders the 3 daily values WITHIN each block to ranks
+1..3, and forms
+
+```
+pageL = sum_b (1*R_{b,1} + 2*R_{b,2} + 3*R_{b,3})
+```
+
+with predicted ordinal scores 1, 2, 3 for early/mid/
+late slots. Standardized via Page's exact moments
+(T=3):
+
+```
+pageEL    = b * T * (T+1)^2 / 4 = 12 b
+pageVarL  = b * T^2 * (T-1) * (T+1)^2 / 144 = 2 b
+pageZ     = (pageL - pageEL) / sqrt(pageVarL)
+pagePValue = 2 * (1 - Phi(|pageZ|))
+```
+
+Asymptotic normal approximation good for b >= 4
+(Page 1963 sec. 4); we require minTenureDays >= 12 to
+guarantee b >= 4 (parity with axis-205..-212 trend
+trilogy).
+
+**Sign convention.** `pageZ >> 0` = within-block ranks
+SYSTEMATICALLY INCREASE early -> mid -> late across
+3-day windows = MONOTONE LOCAL UP-TREND on the 3-day
+timescale. `pageZ << 0` = MONOTONE LOCAL DOWN-TREND.
+`pageZ ~ 0` = no consistent within-block ordering.
+
+**Tie handling.** Within-block ties resolved by MIDRANK
+(average of tied positions). Page's exact variance is
+mildly OVERSTATED under ties (Z mildly conservative).
+`nTiedBlocks` surfaced for transparency.
+
+**Trailing days.** If n is not a multiple of 3, the
+trailing (n mod 3) days are dropped; `nTrailingDropped`
+surfaced.
+
+**Structural orthogonality.** Maximally-LOCAL
+ordered-alternative trend test:
+
+  - vs axis-212 Olmstead-Tukey: OT is an EXTREMAL
+    EDGE-RUN statistic that ignores the interior of
+    the window; Page scans the ENTIRE interior in
+    3-day chunks. A series flat at the edges but
+    drifting smoothly through the middle gives
+    otQ ~ 0 but pageZ >> 0; opposite for sharp
+    corners with a noisy interior.
+  - vs axis-211 Brown-Mood: BM thresholds the entire
+    series at the GLOBAL median into a 2x2 whole-half
+    table; Page operates on WITHIN-BLOCK RANKS at
+    3-day scale and never compares across blocks. A
+    two-tier series (low first half, high second half)
+    gives bmZ very large but pageZ ~ 0.
+  - vs axis-210 Daniels: continuous full-rank vs time
+    correlation on n distinct ranks; Page uses LOCAL
+    within-block predicted-ordinal scores. Page is
+    BLIND to across-block trend.
+  - vs axis-209 Wallis-Moore: WM counts monotone
+    phases in the first-difference SIGN sequence;
+    Page never differences. Many short alternating-
+    direction phases give WM high but pageZ ~ 0.
+  - vs axis-206 JT: k=4 large quartile blocks compared
+    BETWEEN; Page b = n/3 tiny blocks scored
+    INTERNALLY. Different rank topology.
+  - vs axis-205 Cox-Stuart: half-lag PAIRED-SIGN; Page
+    no pairing across half-lag.
+  - vs axis-207 Pitman MSSD: L2 squared-difference
+    magnitude; Page is rank-based, no magnitudes.
+  - vs Mann-Kendall S: n*(n-1)/2 pairwise sign
+    comparisons; Page uses 3*b = n predicted-ordinal
+    scores.
+  - vs Friedman / Kruskal-Wallis: Friedman tests the
+    OMNIBUS alternative; Page tests SPECIFICALLY for
+    ordered theta_1 <= ... <= theta_T -- more powerful
+    against ordered trends.
+
+CLI:
+
+```
+pew-insights daily-token-page-l-block-trend \
+    [--since ISO] [--until ISO] [--source NAME] \
+    [--min-tokens N] [--min-tenure-days N] [--top N] \
+    [--sort pageZAbsDesc|pageZ|pageL|pageLAbsDesc|pagePValue|...] \
+    [--json]
+```
+
+Implementation lives in
+`src/dailytokenpagelblocktrend.ts`; renderer in
+`src/format.ts::renderDailyTokenPageLBlockTrend`;
+62 new tests cover midrank computation (distinct/
+all-tied/two-tied/empty), within-block tie detection,
+standard normal upper-tail approximation, exact
+pageL/pageZ formulas on monotone-up/down/zigzag
+series, trailing-day dropping (n=13, n=14), tied-block
+counting, Stouffer aggregator (skip invalid, weighted
+mean, tenure-weighted), and build() filters/sorts
+(source/tokens/tenure/pageZ/pageL/pageLAbsDesc/
+pagePValue/pagePValueDesc) and degenerate inputs
+(zero-variance, below-min-tokens, below-min-tenure,
+invalid hour_start, non-positive tokens, source
+filter, top cap, since/until window, gap-fill).
+
+### Live smoke
+
+Run against the real local `~/.config/pew/queue.jsonl`
+on 2026-05-05 (one source name scrubbed: `vscode-c*` ->
+`vsc-redacted`, in keeping with the project's
+identifier-redaction policy):
+
+```
+pew-insights daily-token-page-l-block-trend
+as of: 2026-05-05T17:42:23.438Z    sources: 6 (shown 5)    tokens: 13,376,980,666    min-tokens: 1,000    min-tenure-days: 12    top: —    sort: pageZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 1 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source PAGE'S L block trend (sorted by pageZAbsDesc; ties: source asc)
+source          firstDay    lastDay     tenure  b   drop  tied  pageL    E[L]     pageZ    pagePValue  tokens
+--------------  ----------  ----------  ------  --  ----  ----  -------  -------  -------  ----------  -------------
+openclaw        2026-04-17  2026-05-05  19      6   1     0     69.00    72.00    -0.8660  3.8648e-1   2,425,741,655
+hermes          2026-04-17  2026-05-05  19      6   1     0     70.00    72.00    -0.5774  5.6370e-1   349,267,941
+claude-code     2026-02-11  2026-04-23  72      24  0     12    291.50   288.00   0.5052   6.1343e-1   3,442,385,788
+vsc-redacted    2025-07-30  2026-04-20  265     88  1     67    1061.50  1056.00  0.4146   6.7845e-1   1,885,727
+opencode        2026-04-20  2026-05-05  16      5   1     0     61.00    60.00    0.3162   7.5183e-1   7,157,699,555
+```
+
+**Reading.** No source crosses pagePValue < 0.05 in this
+window; all |pageZ| < 1 indicates the local 3-day
+within-block ordering is essentially random across all
+6 retained sources. The two short-tenure right-edge
+sources (openclaw, hermes -- 19 days each, b=6 blocks)
+register weak negative pageZ (within-block ranks
+slightly DECREASING early -> late on the 3-day scale
+in the recent 3 weeks); the long-tenure historical
+sources (claude-code 24 blocks, vsc-redacted 88 blocks)
+register weak positive pageZ. The vsc-redacted source
+has 67 of 88 blocks with at least one within-block tie
+(76%) -- expected because that data path is dominated
+by zero-token gap-filled days, so most 3-day windows
+contain at least one zero. The conservative-under-ties
+variance correction means its true pageZ may be
+slightly larger in magnitude than the reported 0.41.
+None of the 6 are sufficient to reject Page's H0 of
+no-within-block-trend at any conventional alpha; the
+local 3-day trend signal is genuinely absent in this
+corpus, complementing axis-212 OT (which also showed
+no per-source corner agreement) and axis-211 BM (which
+showed weak whole-half mass migration only for
+openclaw / hermes).
+
 ## 0.6.528 — 2026-05-06
 
 ### Added — `daily-token-olmstead-tukey-corner-test` (axis-212)

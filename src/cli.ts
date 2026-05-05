@@ -218,6 +218,7 @@ import {
   renderDailyTokenDanielsRankCorrelationTime,
   renderDailyTokenBrownMoodMedianTrend,
   renderDailyTokenOlmsteadTukeyCornerTest,
+  renderDailyTokenPageLBlockTrend,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -746,6 +747,10 @@ import {
   buildDailyTokenOlmsteadTukeyCornerTest,
   type DailyTokenOlmsteadTukeyCornerTestSort,
 } from './dailytokenolmsteadtukeycornertest.js';
+import {
+  buildDailyTokenPageLBlockTrend,
+  type DailyTokenPageLBlockTrendSort,
+} from './dailytokenpagelblocktrend.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47851,6 +47856,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenOlmsteadTukeyCornerTest(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-page-l-block-trend')
+  .description(
+    "Per-source PAGE'S L TEST FOR ORDERED ALTERNATIVES on consecutive 3-day time-block within-rank scores, applied to the gap-filled daily total_tokens series (TWO-HUNDRED-AND-THIRTEENTH cross-source axis). Splits the gap-filled series into b = floor(n/3) consecutive non-overlapping 3-day blocks, midrank-orders the 3 daily values WITHIN each block to ranks 1..3, and forms Page's L = sum_b (1*R_{b,1} + 2*R_{b,2} + 3*R_{b,3}) with predicted ordinal scores 1,2,3 for early/mid/late slots. Standardized via Page 1963 exact moments: E[L] = 12 b, Var[L] = 2 b (T=3), pageZ = (L - 12 b) / sqrt(2 b). SIGN: pageZ >> 0 = within-block ranks SYSTEMATICALLY INCREASE early -> mid -> late = MONOTONE LOCAL UP-TREND on the 3-day timescale; pageZ << 0 = MONOTONE LOCAL DOWN-TREND. STRUCTURALLY DISTINCT from axis-212 Olmstead-Tukey (extremal edge-runs vs interior 3-day block scan), from axis-211 Brown-Mood (whole-half median binary count vs within-block rank ordering), from axis-210 Daniels (continuous global rank-vs-time correlation vs local within-block rank-against-predicted-ordinal score -- Page is BLIND to across-block trend), from axis-209 Wallis-Moore (first-difference phase count vs predicted-ordinal block score), from axis-205 Cox-Stuart (paired half-lag), from axis-206 JT (k=4 ordered-alternative across large quartile blocks vs k=3 ordered-alternative within tiny 3-day blocks), from axis-207 Pitman MSSD (L2 magnitude). Trailing (n mod 3) days are dropped. Within-block ties resolved by midrank (variance mildly conservative under ties). Refs: Page 1963 JASA 58(301): 216-230; Hollander-Wolfe-Chicken 2014 sec. 7.2; Conover 1999 sec. 5.8; Siegel-Castellan 1988 ch. 7.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (parity with axis-205..-212 trend trilogy; ensures b >= 4 complete 3-day blocks). Default 12.',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: pageZAbsDesc (default) | pageZ | pageL | pageLAbsDesc | pagePValue | pagePValueDesc | tokens | tenure | source.',
+    'pageZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'pageZ',
+          'pageZAbsDesc',
+          'pageL',
+          'pageLAbsDesc',
+          'pagePValue',
+          'pagePValueDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPageLBlockTrend(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenPageLBlockTrendSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPageLBlockTrend(report) + '\n',
           );
         }
       } catch (e) {

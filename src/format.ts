@@ -20643,6 +20643,7 @@ import type { DailyTokenWallisMoorePhaseFrequencyReport } from './dailytokenwall
 import type { DailyTokenDanielsRankCorrelationTimeReport } from './dailytokendanielsrankcorrelationtime.js';
 import type { DailyTokenBrownMoodMedianTrendReport } from './dailytokenbrownmoodmediantrend.js';
 import type { DailyTokenOlmsteadTukeyCornerTestReport } from './dailytokenolmsteadtukeycornertest.js';
+import type { DailyTokenPageLBlockTrendReport } from './dailytokenpagelblocktrend.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29978,6 +29979,87 @@ export function renderDailyTokenOlmsteadTukeyCornerTest(
   lines.push(
     chalk.dim(
       `(reference anchor: otPValue < 0.05 = REJECT no-association H0 at alpha=0.05 (two-sided normal-tail; |Q| >= 9 in Olmstead-Tukey 1947 exact tables). otQ >> 0 = MONOTONE UP-TREND (high values cluster at high x); otQ << 0 = MONOTONE DOWN-TREND. The corner test is the maximally-EXTREMAL trend test: it ignores everything in the interior of the time window and uses only the run-lengths at the 4 edges. Complementary to axis-211 Brown-Mood (whole-half binary count) and axis-210 Daniels (continuous full-rank correlation).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPageLBlockTrend(
+  r: DailyTokenPageLBlockTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-page-l-block-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PAGE'S L TEST FOR ORDERED ALTERNATIVES on consecutive 3-day time-block within-rank scores. Splits the gap-filled daily series into b = floor(n/3) consecutive non-overlapping 3-day blocks, midrank-orders the 3 daily values WITHIN each block, and forms Page's L = sum_b (1*R_{b,1} + 2*R_{b,2} + 3*R_{b,3}). Standardized via Page 1963 exact moments (T=3): E[L] = 12 b, Var[L] = 2 b, pageZ = (L - 12 b) / sqrt(2 b). SIGN: pageZ >> 0 = within-block ranks INCREASE early -> mid -> late = MONOTONE LOCAL UP-TREND on the 3-day timescale; pageZ << 0 = MONOTONE LOCAL DOWN-TREND. TWO-HUNDRED-AND-THIRTEENTH cross-source axis. STRUCTURALLY DISTINCT from axis-212 Olmstead-Tukey (extremal edge-runs vs interior 3-day block scan), from axis-211 Brown-Mood (whole-half median binary count vs within-block rank ordering), from axis-210 Daniels (continuous global rank-vs-time vs local within-block predicted-ordinal score), from axis-209 Wallis-Moore (first-difference phase count vs predicted-ordinal block score), from axis-205 Cox-Stuart (paired half-lag), from axis-206 JT (k=4 large quartile blocks vs k=3 tiny 3-day blocks). Ties resolved by midrank. Refs: Page 1963 JASA 58(301): 216-230; Hollander-Wolfe-Chicken 2014 sec. 7.2; Conover 1999 sec. 5.8.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source PAGE'S L block trend (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'b',
+    'drop',
+    'tied',
+    'pageL',
+    'E[L]',
+    'pageZ',
+    'pagePValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    String(s.nBlocks),
+    String(s.nTrailingDropped),
+    String(s.nTiedBlocks),
+    s.pageL.toFixed(2),
+    s.pageEL.toFixed(2),
+    s.pageZ.toFixed(4),
+    s.pagePValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: pagePValue < 0.05 = REJECT no-within-block-trend H0 at alpha=0.05 (two-sided normal-tail; Page 1963 normal approx good for b >= 4). pageZ >> 0 = within-block ranks SYSTEMATICALLY INCREASE early -> mid -> late across 3-day windows = MONOTONE LOCAL UP-TREND; pageZ << 0 = MONOTONE LOCAL DOWN-TREND. Page's L is the maximally-LOCAL ordered-alternative trend test: it scans the entire interior of the time window in tiny 3-day chunks and uses every observation. Complementary to axis-212 Olmstead-Tukey (edge-only) and axis-210 Daniels (global rank correlation).)`,
     ),
   );
 
