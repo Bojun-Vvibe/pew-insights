@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.542 — 2026-05-06
+
+### Added — `classifyAxis218Axis216HirschSlackBuysBallotSeasonalRankTrendVsWeekdayMeanStructureCompound`
+
+Refinement compound classifier joining axis-218 (Hirsch-
+Slack 1984 seasonal Mann-Kendall) with axis-216 (Buys-
+Ballot 1847 period-7 ANOVA F-test) on a per-source basis.
+Six-bucket scheme:
+
+```
+'weekday-and-up-cohort-trend'     bbDecisive AND hsDecisive AND hsZ > 0
+'weekday-and-down-cohort-trend'   bbDecisive AND hsDecisive AND hsZ < 0
+'weekday-only'                    bbDecisive AND NOT hsDecisive
+'up-cohort-trend-only'            hsDecisive AND NOT bbDecisive AND hsZ > 0
+'down-cohort-trend-only'          hsDecisive AND NOT bbDecisive AND hsZ < 0
+'no-evidence'                     neither decisive
+```
+
+The two axes are MUTUALLY ORTHOGONAL by construction:
+each tests an alternative the OTHER takes as a NUISANCE.
+Buys-Ballot is INVARIANT under within-column detrending
+(blind to the within-cohort trend that Hirsch-Slack
+isolates); Hirsch-Slack is INVARIANT under any per-cohort
+additive shift (blind to the weekday mean structure that
+Buys-Ballot isolates). The four DECISIVE buckets cover
+the four independent corners of the (periodic, monotone)
+plane.
+
+Because Buys-Ballot is UNSIGNED (F-test), this compound
+abandons the 4-quadrant direction-conflict frame used by
+axis-217xaxis-214 / axis-213xaxis-212; the joint
+quadrant collapses to `weekdayUpCohortTrend` vs
+`weekdayDownCohortTrend` driven entirely by the sign of
+hsZ when both axes are decisive.
+
+### Added — tests
+
+- `test/classifyaxis218axis216hirschslackbuysballotseasonalranktrendvsweekdaymeanstructurecompound.test.ts`:
+  +16 unit tests covering input validation (alpha range,
+  malformed rows, duplicate sources), the 6-bucket
+  classification logic on synthetic per-source rows, the
+  alpha-threshold respect property, and stable
+  lexicographic source ordering. Test suite total +16:
+  15721 -> 15737 tests, all green.
+
+### Bumped
+
+- `package.json` 0.6.540 -> 0.6.542.
+
 ## 0.6.540 — 2026-05-06
 
 ### Added — `daily-token-hirsch-slack-seasonal-kendall` (axis-218)
