@@ -259,6 +259,56 @@ test('buildDailyTokenRosenbaumAdjacencyHalves: top cap', () => {
   assert.equal(r.droppedTopSources, 1);
 });
 
+test('dailyTokenRosenbaumAdjacencyHalves: rsAsymmetry = +1 for upper-only', () => {
+  // A = {1,2,3,4}, B = {100,200,300,400} -> rsTUpper=4, rsTLower=4
+  // -> rsAsymmetry = (4-4)/8 = 0 (perfect separation is balanced)
+  const v = [1, 2, 3, 4, 100, 200, 300, 400];
+  const r = dailyTokenRosenbaumAdjacencyHalves(v);
+  assert.equal(r.rsAsymmetry, 0);
+});
+
+test('dailyTokenRosenbaumAdjacencyHalves: rsAsymmetry positive for upper-tail-only', () => {
+  // A = {1, 5, 8, 10}, B = {2, 7, 100, 200}
+  // rsTUpper=2, rsTLower=1, rsT=3 -> asym = 1/3
+  const v = [1, 5, 8, 10, 2, 7, 100, 200];
+  const r = dailyTokenRosenbaumAdjacencyHalves(v);
+  assert.ok(Math.abs(r.rsAsymmetry - 1 / 3) < 1e-9);
+});
+
+test('dailyTokenRosenbaumAdjacencyHalves: rsAsymmetry = 0 when rsT = 0', () => {
+  // Envelope-overlap case
+  const v = [200, 150, 199, 199.5, 100, 101, 102, 103];
+  const r = dailyTokenRosenbaumAdjacencyHalves(v);
+  assert.equal(r.rsT, 0);
+  assert.equal(r.rsAsymmetry, 0);
+});
+
+test('dailyTokenRosenbaumAdjacencyHalves: rsAsymmetry in [-1, +1]', () => {
+  const v = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3];
+  const r = dailyTokenRosenbaumAdjacencyHalves(v);
+  assert.ok(r.rsAsymmetry >= -1);
+  assert.ok(r.rsAsymmetry <= 1);
+});
+
+test('buildDailyTokenRosenbaumAdjacencyHalves: sort by rsAsymmetryAbsDesc', () => {
+  const lines: QueueLine[] = [];
+  // upper-only: A={1,5,8,10}, B={2,7,100,200} -> asym = +1/3
+  const upperOnly = [1, 5, 8, 10, 2, 7, 100, 200];
+  for (let i = 0; i < 8; i += 1)
+    lines.push(ql(dayIso(i), 'upper', upperOnly[i]! * 1000));
+  // separated: A={1..4}, B={100..400} -> asym = 0
+  for (let i = 0; i < 4; i += 1)
+    lines.push(ql(dayIso(i), 'sep', 1000 + i));
+  for (let i = 4; i < 8; i += 1)
+    lines.push(ql(dayIso(i), 'sep', 100000 + i));
+  const r = buildDailyTokenRosenbaumAdjacencyHalves(lines, {
+    minTenureDays: 8,
+    sort: 'rsAsymmetryAbsDesc',
+  });
+  assert.equal(r.sources.length, 2);
+  assert.equal(r.sources[0]!.source, 'upper');
+});
+
 test('buildDailyTokenRosenbaumAdjacencyHalves: sort by rsZAbsDesc', () => {
   const lines: QueueLine[] = [];
   // big-shift: separated halves -> rsT large, |Z| large

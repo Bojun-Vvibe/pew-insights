@@ -196,6 +196,10 @@ export type DailyTokenRosenbaumAdjacencyHalvesSort =
   | 'rsZAbsDesc'
   | 'rsP'
   | 'rsPDesc'
+  | 'rsAsymmetry'
+  | 'rsAsymmetryDesc'
+  | 'rsAsymmetryAbs'
+  | 'rsAsymmetryAbsDesc'
   | 'tokens'
   | 'tenure'
   | 'source';
@@ -270,6 +274,19 @@ export interface DailyTokenRosenbaumAdjacencyHalvesSourceRow {
    *  0 if balanced.
    */
   rsSignedDirection: number;
+  /**
+   * Asymmetry index in [-1, +1]:
+   *
+   *     rsAsymmetry = (rsTUpper - rsTLower) / max(rsT, 1)
+   *
+   * = +1 iff all extremes lie in the upper tail
+   * (rsTLower = 0 and rsTUpper > 0); = -1 iff all
+   * extremes lie in the lower tail; = 0 iff balanced or
+   * rsT = 0. Provides a continuous-valued direction
+   * signal complementary to the discrete
+   * rsSignedDirection sign. Refinement (v0.6.490).
+   */
+  rsAsymmetry: number;
 }
 
 export interface DailyTokenRosenbaumAdjacencyHalvesReport {
@@ -355,6 +372,7 @@ export function dailyTokenRosenbaumAdjacencyHalves(values: number[]): {
   rsZ: number;
   rsTwoSidedP: number;
   rsSignedDirection: number;
+  rsAsymmetry: number;
 } {
   const n = values.length;
   if (n < 8) {
@@ -451,6 +469,10 @@ export function dailyTokenRosenbaumAdjacencyHalves(values: number[]): {
   if (rsTUpper > rsTLower) signedDir = 1;
   else if (rsTUpper < rsTLower) signedDir = -1;
 
+  // Asymmetry index in [-1, +1]: continuous-valued
+  // complement to rsSignedDirection sign.
+  const rsAsymmetry = rsT > 0 ? (rsTUpper - rsTLower) / rsT : 0;
+
   if (
     !Number.isFinite(rsT) ||
     !Number.isFinite(expT) ||
@@ -481,6 +503,7 @@ export function dailyTokenRosenbaumAdjacencyHalves(values: number[]): {
     rsZ: z,
     rsTwoSidedP: p,
     rsSignedDirection: signedDir,
+    rsAsymmetry,
   };
 }
 
@@ -526,6 +549,10 @@ export function buildDailyTokenRosenbaumAdjacencyHalves(
     'rsZAbsDesc',
     'rsP',
     'rsPDesc',
+    'rsAsymmetry',
+    'rsAsymmetryDesc',
+    'rsAsymmetryAbs',
+    'rsAsymmetryAbsDesc',
     'tokens',
     'tenure',
     'source',
@@ -660,6 +687,7 @@ export function buildDailyTokenRosenbaumAdjacencyHalves(
       rsZ: result.rsZ,
       rsTwoSidedP: result.rsTwoSidedP,
       rsSignedDirection: result.rsSignedDirection,
+      rsAsymmetry: result.rsAsymmetry,
     });
     totalTokensSum += acc.totalTokens;
   }
@@ -690,6 +718,18 @@ export function buildDailyTokenRosenbaumAdjacencyHalves(
         break;
       case 'rsPDesc':
         primary = b.rsTwoSidedP - a.rsTwoSidedP;
+        break;
+      case 'rsAsymmetry':
+        primary = a.rsAsymmetry - b.rsAsymmetry;
+        break;
+      case 'rsAsymmetryDesc':
+        primary = b.rsAsymmetry - a.rsAsymmetry;
+        break;
+      case 'rsAsymmetryAbs':
+        primary = Math.abs(a.rsAsymmetry) - Math.abs(b.rsAsymmetry);
+        break;
+      case 'rsAsymmetryAbsDesc':
+        primary = Math.abs(b.rsAsymmetry) - Math.abs(a.rsAsymmetry);
         break;
       case 'tokens':
         primary = b.totalTokens - a.totalTokens;

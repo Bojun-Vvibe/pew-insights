@@ -28551,6 +28551,7 @@ export function renderDailyTokenRosenbaumAdjacencyHalves(
     'sd[T]',
     'rsZ',
     'p',
+    'asym',
     'dir',
     'tokens',
   ];
@@ -28571,6 +28572,7 @@ export function renderDailyTokenRosenbaumAdjacencyHalves(
     Math.sqrt(s.rsVarT).toFixed(3),
     s.rsZ.toFixed(3),
     s.rsTwoSidedP.toExponential(3),
+    s.rsAsymmetry.toFixed(3),
     s.rsSignedDirection > 0 ? '+' : s.rsSignedDirection < 0 ? '-' : '0',
     formatNumber(s.totalTokens),
   ]);

@@ -38213,7 +38213,7 @@ program
   )
   .option(
     '--sort <key>',
-    'sort key: rsZAbsDesc (default) | rsT | rsTDesc | rsZ | rsZDesc | rsZAbs | rsP | rsPDesc | tokens | tenure | source.',
+    'sort key: rsZAbsDesc (default) | rsT | rsTDesc | rsZ | rsZDesc | rsZAbs | rsP | rsPDesc | rsAsymmetry | rsAsymmetryDesc | rsAsymmetryAbs | rsAsymmetryAbsDesc | tokens | tenure | source.',
     'rsZAbsDesc',
   )
   .option('--json', 'emit JSON instead of a pretty report')
@@ -38259,6 +38259,10 @@ program
           'rsZAbsDesc',
           'rsP',
           'rsPDesc',
+          'rsAsymmetry',
+          'rsAsymmetryDesc',
+          'rsAsymmetryAbs',
+          'rsAsymmetryAbsDesc',
           'tokens',
           'tenure',
           'source',
@@ -38285,6 +38289,10 @@ program
             | 'rsZAbsDesc'
             | 'rsP'
             | 'rsPDesc'
+            | 'rsAsymmetry'
+            | 'rsAsymmetryDesc'
+            | 'rsAsymmetryAbs'
+            | 'rsAsymmetryAbsDesc'
             | 'tokens'
             | 'tenure'
             | 'source',

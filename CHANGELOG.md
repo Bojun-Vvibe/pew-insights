@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.490 — 2026-05-05
+
+### Refined — `daily-token-rosenbaum-adjacency-halves` (axis-195 polish)
+
+Adds a continuous-valued `rsAsymmetry` field to the
+Rosenbaum adjacency report, complementary to the
+discrete `rsSignedDirection` sign:
+
+    rsAsymmetry = (rsTUpper - rsTLower) / max(rsT, 1)
+
+with values in `[-1, +1]`:
+
+  - `+1` iff ALL extremes lie in the upper tail
+    (`rsTLower = 0` AND `rsTUpper > 0`)
+  - `-1` iff ALL extremes lie in the lower tail
+  - `0` iff balanced (or `rsT = 0`, no extremes at all)
+
+Note: perfect-separation (every B > max(A) AND every A
+< min(B)) gives `rsT = n` BUT `rsAsymmetry = 0` because
+the two extreme counts coincide. `rsAsymmetry` is
+therefore a SHAPE-OF-EXTREMES signal that is INDEPENDENT
+of `rsT`'s magnitude -- a small `rsT` with `rsAsymmetry
+= +1` (e.g. one lonely upper-extreme) is qualitatively
+different from a small `rsT` with `rsAsymmetry = 0`
+(symmetric envelope creep).
+
+#### Added sort keys
+
+`rsAsymmetry`, `rsAsymmetryDesc`, `rsAsymmetryAbs`,
+`rsAsymmetryAbsDesc` -- enables surfacing sources with
+the strongest one-tail-dominant Rosenbaum signature
+even when `rsT` is small and `rsZ` is non-significant.
+
+#### Live smoke (`~/.config/pew/queue.jsonl`)
+
+```
+$ pew-insights daily-token-rosenbaum-adjacency-halves \
+    --top 6 --sort rsAsymmetryAbsDesc
+
+source         tenure  n1   n2   rsTu  rsTl  rsT  rsZ      asym    dir
+hermes         19      9    10   0     0     0    -0.687    0.000   0
+openclaw       19      9    10   0     0     0    -0.687    0.000   0
+opencode       16      8    8    0     1     1    -0.519   -1.000   -
+claude-code    72      36   36   7     0     7    +0.236   +1.000   +
+vscode-cp      265     132  133  2     0     2    -0.065   +1.000   +
+```
+
+Reading: the new `asym` column reveals THREE sources
+with PURE one-tail-only extreme patterns: `claude-code`
+and `vscode-cp` with `asym = +1` (ALL extremes lie in
+the upper tail -- second half stretches the upper end);
+`opencode` with `asym = -1` (the single extreme is in
+the lower tail -- second half stretches the lower end).
+`hermes` and `openclaw` register `asym = 0` (no
+extremes at all -- both halves' supports overlap fully).
+The `rsZ` column shows that NONE of these patterns
+crosses statistical significance (all `|rsZ| < 1`) --
+the `asym` field is providing a SHAPE signal that is
+INDEPENDENT of statistical strength, useful for
+qualitative cohort segmentation when `rsZ` lies in the
+noise band.
+
+#### Files
+
+- `src/dailytokenrosenbaumadjacencyhalves.ts` --
+  added `rsAsymmetry` to row + sort enum
+- `test/dailytokenrosenbaumadjacencyhalves.test.ts` --
+  +5 tests (asym = 0 for perfect-separation, asym = 1/3
+  for upper-tail-only mixture, asym = 0 for envelope-
+  overlap, asym in [-1,+1] bound, builder sort by
+  `rsAsymmetryAbsDesc`)
+- `src/cli.ts` -- 4 new sort keys
+- `src/format.ts` -- new `asym` column
+
 ## 0.6.489 — 2026-05-05
 
 ### Added — `daily-token-rosenbaum-adjacency-halves` (axis-195)
