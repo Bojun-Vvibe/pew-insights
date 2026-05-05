@@ -2,6 +2,137 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.495 — 2026-05-05
+
+### Added — `daily-token-westenberg-halves` (axis-198, Westenberg 1948 IQR-exceedance scale test)
+
+ONE-HUNDRED-AND-NINETY-EIGHTH cross-source axis. New
+subcommand applies Westenberg's (1948 *Proc. Kon.
+Nederl. Akad. Wetensch.* 51:252-261) INTERQUARTILE-
+RANGE EXCEEDANCE scale test to the gap-filled daily
+total_tokens series, comparing the dispersion of the
+FIRST half (n1 = floor(n/2) days) vs the SECOND half
+(n2 = n - n1 days). Pipeline:
+
+  1. Compute Q1_A and Q3_A of the FIRST half via the
+     Hyndman-Fan 1996 *Amer. Statist.* 50(4):361-365
+     Definition 7 (the R / NumPy default) sample-
+     quantile estimator.
+  2. Count `k = #{ b in B : b < Q1_A or b > Q3_A }`,
+     i.e. the number of SECOND-half observations that
+     fall STRICTLY OUTSIDE the FIRST-half IQR.
+  3. Under H0 (equal continuous distribution) each B
+     observation has probability `p0 = 0.5` of falling
+     OUTSIDE A's IQR, so `k ~ Binomial(n2, 0.5)`. The
+     standardized statistic
+     `westZ = (2*k - n2) / sqrt(n2) ~ N(0, 1)`
+     by DeMoivre-Laplace.
+
+Sign convention: `westZ > 0` = MORE B's outside than
+expected = SECOND half MORE DISPERSED; `westZ < 0` =
+FEWER B's outside = SECOND half MORE CONCENTRATED
+(equivalently FIRST half more dispersed). Matches the
+axis-117/170/177/196 directional convention for direct
+cross-axis aggregation.
+
+Mechanistic orthogonality. Westenberg differs from
+prior scale axes on a fundamental design choice:
+
+  - vs axis-196 Fligner-Killeen (continuous-rank-score
+    test on |x_ij - median_i|): FK aggregates RANK
+    INFORMATION across the entire pooled sample via
+    half-normal scores `Phi^{-1}(0.5 + R/(2(n+1)))`.
+    Westenberg uses ONLY A's quartile boundaries as a
+    fixed threshold and B's INSIDE/OUTSIDE 0/1 status.
+    FK is locally-most-powerful for half-normal-
+    distributed dispersion alternatives; Westenberg is
+    locally-most-powerful for tail-mass scale-inflation
+    alternatives (e.g. heavy-tailed mixture
+    contamination).
+
+  - vs axis-179 Mood (median test): Mood counts B
+    observations above/below the POOLED MEDIAN -- a
+    LOCATION test on a 2x2 contingency. Westenberg
+    counts B observations OUTSIDE A's IQR -- a SCALE
+    test on a 2x1 binomial. Different parameter
+    (median vs IQR), different alternative (location
+    vs scale).
+
+  - vs axis-193 Tukey-quick: Tukey-quick uses the
+    OPPOSITE SAMPLE'S MIN/MAX as boundaries (extreme-
+    tail driven). Westenberg uses A's 25th and 75th
+    percentiles (mid-tail / shoulder driven). They
+    reject differently when dispersion change is
+    concentrated in the TAILS vs in the SHOULDERS.
+
+  - vs axes 117/170/177 Siegel-Tukey/Ansari-Bradley/
+    Klotz (full pooled rank-order tests): those
+    require the entire pooled rank order. Westenberg
+    only requires A's quartile boundaries and the
+    inside/outside status of B. It is exactly
+    distribution-free under any continuous null even
+    with heavy tails or point masses outside the IQR.
+
+INVARIANCES. Westenberg is invariant under (a) global
+shift `x + c`, (b) positive scale `a*x` for `a > 0`,
+and (c) any STRICTLY-INCREASING monotone
+transformation applied UNIFORMLY to all observations
+(preserves order, preserves which B's are outside A's
+IQR). It is NOT invariant under within-half shifts
+(unlike FK), reflecting its sensitivity to LOCATION
+shifts that move B mass across A's quartile boundary
+without changing its dispersion. This is mechanistic,
+not a defect: Westenberg confounds a location shift of
+B with a dispersion change, while FK isolates pure
+dispersion via within-half median-centring. The two
+are therefore COMPLEMENTARY diagnostics, not
+substitutes.
+
+Hard floor on min-tenure-days is 16 (n1 = n2 = 8) so
+the Binomial(n2, 0.5) -> N(n2/2, n2/4) normal
+approximation is reliable (Conover 1999 sec. 3.2
+Table 3.2: normal-tail size within +/- 0.005 of
+nominal alpha = 0.05 for n2 >= 8). Degenerate-IQR
+sources (where Q1_A == Q3_A, i.e. A has at least
+n1/2 + 1 repeated values) are filtered upstream as
+`droppedNonFiniteFit`.
+
+Sort keys: `westZAbsDesc` (default) | `westZ` |
+`westZDesc` | `westZAbs` | `westK` | `westKDesc` |
+`westPValue` | `westPValueDesc` | `tokens` | `tenure`
+| `source`.
+
+Live-smoke against `~/.config/pew/queue.jsonl`
+(6 sources, 13.17B tokens, sort westZAbsDesc):
+
+  - `vscode-copilot`  n1=132 n2=133  Q1_A=0.0    Q3_A=2,934.5     k=22  E[k]=66.5  westZ=-7.717  p=1.20e-14
+  - `opencode`        n1=8   n2=8    Q1_A=4.38e8 Q3_A=6.05e8      k=7   E[k]=4.0   westZ= 2.121  p=3.39e-2
+  - `openclaw`        n1=9   n2=10   Q1_A=9.92e7 Q3_A=2.57e8      k=8   E[k]=5.0   westZ= 1.897  p=5.78e-2
+  - `claude-code`     n1=36  n2=36   Q1_A=0.0    Q3_A=1,377,745.5 k=23  E[k]=18.0  westZ= 1.667  p=9.56e-2
+  - `hermes`          n1=9   n2=10   Q1_A=8.05e6 Q3_A=2.21e7      k=6   E[k]=5.0   westZ= 0.632  p=5.27e-1
+
+Headline reading. Of the five sources surviving the
+n >= 16 filter, `vscode-copilot` rejects with
+`westZ = -7.72` (p ~ 1e-14), reading as MASSIVE
+dispersion COLLAPSE in the second half: only 22 of
+133 second-half daily counts fall outside the first-
+half IQR `[0.0, 2934.5]`, vs the H0 expectation of
+66.5. Cross-checked against axis-196 fligner-killeen-
+halves which fired `fkZ` strongly negative on the
+same source, confirming the second half is more
+concentrated; both axes agree on direction but the
+mechanism is different (FK weights rank-distance
+continuously; Westenberg only sees inside/outside).
+`opencode` and `openclaw` reject mildly in the
+OPPOSITE direction (westZ ~ +2.0): second-half
+dispersion expansion driven by the pre-split being
+biased toward smaller days. The remaining sources
+(`claude-code`, `hermes`) are not significant at
+alpha = 0.05.
+
+Test coverage: 45 unit tests, all passing
+(`test/dailytokenwestenberghalves.test.ts`).
+
 ## 0.6.494 — 2026-05-05
 
 ### Refined — `classifyFosterStuartUpperRecordsBilateralVsUnilateralCompound` (axis-197 + axis-109 joiner)
