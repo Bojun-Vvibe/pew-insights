@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.552 — 2026-05-06
+
+### Added — axis-221 x axis-154 Alexandersson SNHT vs Pettitt parametric-vs-rank single-changepoint compound
+
+Pure-library cross-axis 4-quadrant diagnostic joining the
+v0.6.550 axis-221 ALEXANDERSSON 1986 SNHT (parametric L_2
+Gaussian likelihood-ratio step-shift) with the v0.6.514
+axis-154 PETTITT 1979 NONPARAMETRIC RANK CHANGEPOINT
+(distribution-free L_1 rank step-shift) on a per-source
+basis.
+
+Structural claim. Both axes test the SAME NULL ("no
+structural break in distribution location") and surface a
+SINGLE most-likely changepoint position. They differ ON
+THE STATISTIC FAMILY: SNHT is parametric on standardised
+magnitudes (sensitive to outliers and Gaussian-tail
+assumption); Pettitt is a Mann-Whitney-of-the-split using
+sign() only (magnitude-blind, breakdown ~0.5,
+distribution-free under H0). SNHT vs Pettitt is therefore
+the STATISTIC-FAMILY DUAL on the single-changepoint
+surface.
+
+Buckets (5): `agree-aligned`, `agree-misaligned`,
+`snht-only`, `pettitt-only`, `no-evidence`. Decisiveness:
+SNHT decisive iff `pApprox < alpha` OR `T0 >= tCrit05`
+(defensive OR -- pApprox is the conservative Bonferroni
+bound, tCrit05 the tighter Khaliq-Ouarda 2007 fit);
+Pettitt decisive iff `pApprox < alpha`. Alignment (when
+both decisive): `|snhtAStarZeroBased - pettittTStarIndex|
+<= proximityGuard` (default 5 days). Argmax indices are
+NORMALISED (SNHT 1-based aStar -> 0-based "last index of
+left segment"; Pettitt tStarIndex already 0-based) before
+comparison.
+
+Diagnostic semantics: agree-aligned = changepoint robust
+to BOTH parametric Gaussian model AND rank-based recovery
+(strongest single-break evidence); snht-only = magnitude-
+dominated shift the rank statistic cannot see (heavy-tailed
+sources, single-extreme outliers); pettitt-only = clean
+median shift in heavy-tailed series where SD inflates and
+SNHT is dragged down (non-Gaussian sources); agree-
+misaligned = two roughly equal-strength candidate
+changepoints weighted differently by parametric vs rank
+statistics.
+
+Pure transform. Determinism: full. 27 tests covering input
+validation, all 5 bucket cases, the OR-decisiveness path
+(pApprox >= alpha but T0 >= tCrit05), argmax normalisation,
+proximityGuard parameterisation including 0 (exact match),
+alpha threshold sensitivity, source-set asymmetry tracking,
+lex source ordering, and bucketCount-vs-rows invariants.
+Also exposes `summarizeAxis221Axis154AlexanderssonPettittReport`
+for log lines.
+
+Tests: 15889 -> 15916 (+27).
+
 ## 0.6.550 — 2026-05-06
 
 ### Added — `daily-token-alexandersson-snht` (axis-221)
