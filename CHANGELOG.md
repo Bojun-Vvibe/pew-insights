@@ -2,6 +2,118 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.501 — 2026-05-05
+
+### Added — `daily-token-kamat-range-ratio-halves` (axis-201 KAMAT 1956 sample-range-ratio scale test for halves)
+
+TWO-HUNDRED-AND-FIRST cross-source axis. Per-source
+**KAMAT 1956 SAMPLE-RANGE-RATIO SCALE TEST** for
+equality of dispersion between the first half
+(n1 = floor(n/2)) vs second half (n2 = n - n1) of the
+median-aligned, gap-filled daily total_tokens series.
+
+**Mechanism.** For each half compute the SAMPLE RANGE
+(max - min) of the median-aligned values:
+
+    R_A = max(A) - min(A)   (first-half range)
+    R_B = max(B) - min(B)   (second-half range)
+
+Form the LOG-RANGE-RATIO statistic
+
+    kamatStat = log( R_B / R_A )
+
+(Kamat 1956 *Biometrika* 43:131-135 sec. 3 defines the
+two-sample range-ratio scale test using R_B / R_A as
+the test statistic; the log transform symmetrises the
+null about 0 and matches the sign-of-Z convention used
+in axes 117/170/177-179/199/200). Studentised by
+DETERMINISTIC FIXED-SEED PERMUTATION: 8000 random label
+permutations of the pooled aligned values are drawn
+(FNV-1a-seeded SplitMix32 PRNG) and the empirical
+permutation variance of log(R_B-star / R_A-star) is the
+standardising denominator
+
+    kamatVar = (1/(m-1)) sum_b ( s_b - sbar )^2
+    kamatZ   = kamatStat / sqrt(kamatVar)  ~~ N(0, 1)
+
+Two-sided p-value `kamatPValue = 2 (1 - Phi(|kamatZ|))`.
+Sign convention: `kamatZ > 0` <=> SECOND half MORE
+dispersed (matches axis-117 stZ, axis-170 abZ, axis-177
+klotzZ, axis-178 conoverZ, axis-179 moodZ, axis-199
+caponZ, axis-200 mielkeZ).
+
+**Structural orthogonality.** Distinct from EVERY prior
+scale axis. All rank-based scale tests (117 Siegel-
+Tukey, 170 Ansari-Bradley, 177 Klotz, 178 Conover, 179
+Mood, 199 Capon, 200 Mielke) reduce data to POOLED
+RANKS first then apply a score function `a(R)` and form
+a sum. **Kamat NEVER COMPUTES RANKS**: it operates
+directly on the EXTREME ORDER STATISTICS (max, min) per
+half. Two halves with identical rank patterns can have
+arbitrarily different range ratios; conversely two
+halves with identical ranges can have very different
+rank-based dispersion scores. vs axis-181 Rosenbaum
+(count-based, uses ONE extreme threshold), Kamat uses
+ALL FOUR extremes and forms a continuous log-ratio.
+Pre-aligned by within-half median subtraction
+(Hollander & Wolfe 1999 sec. 5.1). Distribution-free
+under H0; deterministic given the same input.
+
+**Live smoke output** against `~/.config/pew/queue.jsonl`
+(default `--top 0`, `--sort kamatZAbsDesc`, 8000
+permutations, 13.21B tokens across 6 sources, 1 dropped
+below min-tenure-days=16):
+
+```
+source          tenure  n1   n2   rangeA          rangeB           kamatStat  kamatZ   kamatPValue
+claude-code     72      36   36     73,514,193    1,052,011,841    +2.6610    +2.5086  1.21e-2
+openclaw        19      9    10    286,451,089      121,626,653    -0.8566    -2.4046  1.62e-2
+opencode        16      8    8     707,121,929      317,702,911    -0.8001    -0.9996  3.18e-1
+vscode-copilot  265     132  133       181,775          240,730    +0.2809    +0.6489  5.16e-1
+hermes          19      9    10     30,901,273       26,137,861    -0.1674    -0.3557  7.22e-1
+```
+
+**Findings.** Two of five eligible sources REJECT
+scale-equality H0 at alpha=0.05 (two-sided): `claude-
+code` (kamatZ +2.51, p=1.21e-2) shows a SECOND-HALF
+range explosion (1.05B vs 73.5M, log-ratio +2.66 — the
+second half's max-token-day is ~14x the first half's
+max-token-day after median-alignment, consistent with
+heavy ramp in the past 36 days), and `openclaw`
+(kamatZ -2.40, p=1.62e-2) shows a FIRST-HALF range
+spike (286M vs 122M, log-ratio -0.86 — first 9 days
+contained an isolated mega-day that the second half
+never matched). `opencode` log-ratio is comparably
+large (-0.80) but the n=16 hard-floor tenure produces
+high permutation variance, so the studentised Z=-1.00
+is non-decisive. `vscode-copilot` and `hermes` show
+near-zero range shifts (|kamatZ| < 0.65) — stable
+dispersion across both halves.
+
+**Cross-axis cross-check.** The kamat-vs-mielke
+agreement on `claude-code` (both positive Z, both
+flagging second-half dispersion increase) and on
+`openclaw` (both negative Z) is the EXPECTED structural
+overlap when scale shifts are driven by changes in the
+extreme-rank tail mass — exactly the regime where
+Mielke quartic and Kamat range converge. Disagreement
+under SMOOTH dispersion shifts (where Mielke fires from
+mid-rank shoulder mass while Kamat sees stable
+extremes) is the orthogonal-information channel that
+motivates carrying both axes.
+
+Pure function with strict input validation (rejects
+n < 16, non-finite values, zero centred variance,
+permutations < 200) and deterministic kamatZ given the
+same input series (FNV-1a seed of IEEE-754 byte
+representation of input).
+
+**Reference.** Kamat, A. R., "A two-sample distribution-
+free test", *Biometrika* 43(1/2) (1956), pp. 131-135.
+David, H. A., *Order Statistics* 2nd ed. (Wiley 1981),
+sec. 9.3. Hollander, M. & Wolfe, D. A., *Nonparametric
+Statistical Methods* 2nd ed. (Wiley 1999), sec. 5.1.
+
 ## 0.6.500 — 2026-05-05
 
 ### Added — `classifyMielkeMoodTailVsBulkCompound` (axis-200 ↔ axis-179 tail-vs-bulk dispersion-localisation diagnostic)
