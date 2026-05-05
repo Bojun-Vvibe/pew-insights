@@ -2,6 +2,139 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.523 — 2026-05-05
+
+### Added — `daily-token-daniels-rank-correlation-time` (axis-210)
+
+New TWO-HUNDRED-AND-TENTH cross-source axis: per-source
+DANIELS 1944 RANK CORRELATION (Spearman rho) of value-
+ranks vs the time-identity sequence (1, 2, ..., n) on
+the gap-filled daily total_tokens series.
+
+```
+Var[rho] = 1 / (n - 1)            (Daniels 1944)
+drZ      = drRho * sqrt(n - 1)
+drPValue = 2 * (1 - Phi(|drZ|))
+```
+
+SIGN: drZ >> 0 = ranks rise with time = MONOTONE
+UP-TREND; drZ << 0 = MONOTONE DOWN-TREND; drZ ~ 0 =
+no monotone trend. Tied values handled via the
+standard MIDRANK convention (Pearson correlation form
+on midranks).
+
+### Structural orthogonality vs every prior trend/randomness axis
+
+This is the orthogonality justification required by
+the dispatcher.
+
+  - **vs axis-208 Spearman footrule.** Footrule is the
+    L1 sum `sum |R[i] - i|` (absolute-rank-deviation,
+    Diaconis-Graham 1977). Daniels uses the L2 form
+    `sum (R[i] - i)^2` (squared-rank-deviation). Same
+    direction, different power profile and different
+    null variance: footrule null variance is
+    `(n^2 - 1)/3` whereas Daniels rho null variance is
+    `1/(n - 1)`. Daniels is more sensitive to outlier
+    rank dislocations (a single index with R[i]-i = +k
+    contributes k^2 to Daniels but only |k| to
+    footrule); footrule is more robust to many small
+    dislocations.
+
+  - **vs daily-token-mann-kendall-tau.** Mann-Kendall
+    tau is a CONCORDANT-PAIR-COUNT statistic (S =
+    sum_{i<j} sign(x[j] - x[i])); it does not use the
+    explicit RANK VALUES. Daniels squares the
+    rank-vs-time deviations directly. Null variances
+    differ: Var[tau] = 2(2n+5)/(9n(n-1)) vs
+    Var[rho] = 1/(n-1). Standardised Z statistics are
+    NOT equal in finite samples.
+
+  - **vs daily-token-spearman-autocorrelation-lag1.**
+    That is a SERIAL rank correlation between R[i] and
+    R[i+1] (LOCAL); Daniels is GLOBAL rank correlation
+    between R[i] and i. A trend with iid noise gives
+    near-zero lag-1 rank correlation but high Daniels
+    drZ; smooth AR(1) drift with no trend gives high
+    lag-1 rank correlation but near-zero drZ.
+
+  - **vs axis-209 Wallis-Moore phase-frequency.** WM
+    counts COMPLETE MONOTONE PHASES of the sign-of-
+    first-difference sequence (LOCAL CONTIGUOUS SHAPE
+    on differences). Daniels uses the GLOBAL RANK
+    ALIGNMENT of values with time. A globally trending
+    but locally noisy series gives drZ >> 0 but wmZ
+    near 0. A perfectly RANK-SHUFFLED-but-LOCALLY-
+    SMOOTH series gives wmZ << 0 but drZ near 0.
+
+  - **vs axis-205 Cox-Stuart sign-pairs / axis-206 JT
+    blocked / axis-207 Pitman MSSD.** Cox-Stuart is a
+    HALF-LAG SIGN-OF-PAIR statistic on n/2 paired
+    comparisons. JT is a k=4 BLOCKED ordered-
+    alternative U-count. Pitman MSSD uses SQUARED
+    FIRST-DIFFERENCES of the raw values (scale-
+    sensitive L2 magnitude on differences). Daniels
+    is rank-based (scale- and monotone-transform-
+    invariant) and uses ALL n rank-time pairs in a
+    single GLOBAL Pearson correlation.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Verbatim output of `node scripts/livesmoke-axis210.mjs`
+on the live queue snapshot:
+
+```
+claude-code: n=72 drRho=0.4828 drZ=4.0682 drP=4.740e-5
+hermes: n=19 drRho=0.1333 drZ=0.5657 drP=5.716e-1
+openclaw: n=19 drRho=-0.6842 drZ=-2.9029 drP=3.698e-3
+opencode: n=16 drRho=-0.3647 drZ=-1.4125 drP=1.578e-1
+vscode-copilot: n=265 drRho=-0.1337 drZ=-2.1731 drP=2.977e-2
+---
+totalSources=6 shown=5
+```
+
+Three sources reject the no-trend null at alpha=0.05:
+**claude-code** drZ=+4.07 (strong monotone UP-trend),
+**openclaw** drZ=-2.90 (strong monotone DOWN-trend),
+and **vscode-copilot** drZ=-2.17 (mild monotone
+DOWN-trend over the long n=265 tenure window). hermes
+and opencode show no significant monotone trend.
+
+### Files
+
+  - `src/dailytokendanielsrankcorrelationtime.ts` --
+    helpers (`danielsMidranks`,
+    `danielsRankCorrelationRho`, `danielsRhoVariance`,
+    `standardNormalUpperTailDanielsRankCorrelationTime`),
+    per-series statistic
+    (`dailyTokenDanielsRankCorrelationTime`), corpus
+    Stouffer aggregator
+    (`aggregateDanielsRankCorrelationTime`), and
+    queue-driven builder
+    (`buildDailyTokenDanielsRankCorrelationTime`).
+  - `src/format.ts` --
+    `renderDailyTokenDanielsRankCorrelationTime`
+    (chalked report with per-source table).
+  - `src/cli.ts` -- new
+    `daily-token-daniels-rank-correlation-time`
+    subcommand with the standard since/until/source/
+    min-tokens/min-tenure-days/top/sort/json options.
+  - `test/dailytokendanielsrankcorrelationtime.test.ts`
+    -- +39 tests covering midrank ties, rho boundary
+    cases (rho=+1, rho=-1, rho~0), variance and Z
+    formulas, normal upper-tail accuracy, builder
+    drop-counts (sparse, low-tenure, zero-variance,
+    invalid hour_start, source filter, top cap),
+    aggregate empty/skip/Stouffer/tenure-weighted
+    paths.
+  - `scripts/livesmoke-axis210.mjs` -- live-smoke
+    harness against `~/.config/pew/queue.jsonl`.
+
+### Test count
+
+  - Before: 15,011
+  - After:  15,050 (+39)
+
 ## 0.6.522 — 2026-05-05
 
 ### Added — `smoothCoherentTrendDirectionVerdict` + `summarizeSmoothCoherentTrendDirectionVerdict`
