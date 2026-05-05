@@ -20599,6 +20599,7 @@ import type { DailyTokenTukeyQuickHalvesReport } from './dailytokentukeyquickhal
 import type { DailyTokenWaldWolfowitzRunsHalvesReport } from './dailytokenwaldwolfowitzrunshalves.js';
 import type { DailyTokenRosenbaumAdjacencyHalvesReport } from './dailytokenrosenbaumadjacencyhalves.js';
 import type { DailyTokenFlignerKilleenHalvesReport } from './dailytokenflignerkilleenhalves.js';
+import type { DailyTokenFosterStuartSReport } from './dailytokenfosterstuarts.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -28665,6 +28666,93 @@ export function renderDailyTokenFlignerKilleenHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: fkX2 = 0 = no scale evidence; fkX2 large (positive fkZ) = SECOND half MORE dispersed; negative fkZ = FIRST half MORE dispersed. |fkZ| >= 1.96 (= fkX2 >= 3.84) is significant at alpha = 0.05 two-sided. The Fligner-Killeen test is INVARIANT under (a) global shift x + c, (b) positive scale a*x, (c) independent within-half location shifts -- it isolates dispersion change after median-centring each half. Cross-check vs axis-177 Klotz: Klotz uses U-shaped squared-normal scores on signed values; FK uses monotone half-normal scores on |z| -- they reject differently when dispersion change is asymmetric (one-tailed dispersion grows but not the other).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenFosterStuartS(
+  r: DailyTokenFosterStuartSReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-foster-stuart-s'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source FOSTER-STUART S-STATISTIC for INSTABILITY-OF-DISPERSION via combined STRICT UPPER + STRICT LOWER RECORD COUNTS over the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-SEVENTH cross-source axis. Foster & Stuart 1954 J. R. Statist. Soc. B 16(1):1-22; index 0 EXCLUDED from both passes. S = U + L tests for DISPERSION INSTABILITY (new highs AND new lows arriving past the iid harmonic clock); D = U - L tests for TREND DIRECTION. Closed-form null via Renyi 1962 record-indicator decomposition: E[S] = 2*(H_n - 1), Var[S] ~ 2*(H_n - H_n^(2)) (asymptotic). fsSZ ~ N(0,1), fsDZ ~ N(0,1). ORTHOGONAL to axis-109 (one-sided upper records only; FS-S is bilateral) and to axis-110 Mann-Kendall (all-pairs concordance vs prefix-extremum events; growing-variance series have tau ~ 0 but fsSZ much greater than 0).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source FOSTER-STUART S (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'U',
+    'L',
+    'Uloose',
+    'Lloose',
+    'S',
+    'D',
+    'E[S]',
+    'fsSZ',
+    'fsDZ',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nUpperRecordsFs),
+    formatNumber(s.nLowerRecordsFs),
+    formatNumber(s.nUpperRecordsLooseFs),
+    formatNumber(s.nLowerRecordsLooseFs),
+    formatNumber(s.fsS),
+    formatNumber(s.fsD),
+    s.fsExpectedS.toFixed(4),
+    s.fsSZ.toFixed(4),
+    s.fsDZ.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: under iid continuous E[S] = 2*(H_n - 1) (the n-th harmonic minus 1, doubled for the two passes); positive fsSZ = MORE total records than expected = dispersion GROWING over the tenure (late-arriving new highs AND new lows); negative fsSZ = FEWER total records = dispersion SET EARLY and locked in. fsDZ disambiguates trend direction: positive = upward trend (more upper than lower records); negative = downward trend. |fsSZ| > 2 is suggestive of non-iid dispersion-instability under the asymptotic normal null. The Foster-Stuart D-statistic is the natural complement to the upper-only Renyi count of axis-109; together they decompose record-event behaviour into a SCALE channel (fsSZ) and a DIRECTION channel (fsDZ).)`,
     ),
   );
 

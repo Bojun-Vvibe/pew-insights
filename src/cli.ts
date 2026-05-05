@@ -224,6 +224,7 @@ import {
   renderDailyTokenWaldWolfowitzRunsHalves,
   renderDailyTokenRosenbaumAdjacencyHalves,
   renderDailyTokenFlignerKilleenHalves,
+  renderDailyTokenFosterStuartS,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -739,6 +740,7 @@ import { buildDailyTokenTukeyQuickHalves } from './dailytokentukeyquickhalves.js
 import { buildDailyTokenWaldWolfowitzRunsHalves } from './dailytokenwaldwolfowitzrunshalves.js';
 import { buildDailyTokenRosenbaumAdjacencyHalves } from './dailytokenrosenbaumadjacencyhalves.js';
 import { buildDailyTokenFlignerKilleenHalves } from './dailytokenflignerkilleenhalves.js';
+import { buildDailyTokenFosterStuartS } from './dailytokenfosterstuarts.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -38422,6 +38424,128 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenFlignerKilleenHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-foster-stuart-s')
+  .description(
+    "Per-source FOSTER-STUART S-STATISTIC for INSTABILITY-OF-DISPERSION via combined STRICT UPPER + STRICT LOWER RECORD COUNTS over the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-SEVENTH cross-source axis. Foster & Stuart 1954 J. R. Statist. Soc. B 16(1):1-22 (with discussion); index 0 EXCLUDED from both record passes per Foster-Stuart 1954 sec. 2 convention. Pipeline: (1) for i in {1, .., n-1}, u_i = 1[x[i] > max(x[0..i-1])] and l_i = 1[x[i] < min(x[0..i-1])]; (2) U = sum u_i, L = sum l_i; (3) S = U + L (dispersion-instability), D = U - L (trend-direction); (4) closed-form null via Renyi 1962: each u_i, l_i is Bernoulli(1/(i+1)); E[S] = 2*(H_n - 1), Var[S] ~ 2*(H_n - H_n^(2)) (asymptotic; Foster-Stuart 1954 Table 1 / Glick 1978 Amer. Math. Monthly 85:2-26 sec. 4 leading-order independence approximation). fsSZ = (S - 2*(H_n - 1)) / sqrt(2*(H_n - H_n^(2))) ~ N(0,1) and fsDZ = D / sqrt(2*(H_n - H_n^(2))) ~ N(0,1). Sign convention: positive fsSZ = MORE total records than expected = dispersion GROWING; positive fsDZ = upward trend. ORTHOGONAL to axis-109 daily-token-upper-records-count (Renyi-style ONE-SIDED count including index 0; FS-S is bilateral and excludes index 0); to axis-106 turning-point-rate (LOCAL three-window first-difference statistic vs GLOBAL prefix-extremum events); to axis-110 Mann-Kendall (all-pairs concordance vs prefix-extremum events; growing-variance series have tau ~ 0 but fsSZ much greater than 0); to axes 194 / 195 (TWO-SAMPLE label/order tests vs SINGLE-SAMPLE FULL-SERIES extremum-event count). Loose (>=, <=) record counts surfaced as side quantities for the zero-padded sparse-day regime; headline statistics are always the strict variants matching the closed-form null. Defaults: min-tenure-days=14.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 6 (mu_2(6) ~ 0.96). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: fsSZAbsDesc (default) | s | sDesc | fsSZ | fsSZDesc | fsSZAbs | fsDZ | fsDZDesc | fsDZAbs | fsDZAbsDesc | tokens | tenure | source.',
+    'fsSZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 6) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 6 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          's',
+          'sDesc',
+          'fsSZ',
+          'fsSZDesc',
+          'fsSZAbs',
+          'fsSZAbsDesc',
+          'fsDZ',
+          'fsDZDesc',
+          'fsDZAbs',
+          'fsDZAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenFosterStuartS(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 's'
+            | 'sDesc'
+            | 'fsSZ'
+            | 'fsSZDesc'
+            | 'fsSZAbs'
+            | 'fsSZAbsDesc'
+            | 'fsDZ'
+            | 'fsDZDesc'
+            | 'fsDZAbs'
+            | 'fsDZAbsDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenFosterStuartS(report) + '\n',
           );
         }
       } catch (e) {

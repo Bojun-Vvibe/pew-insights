@@ -2,6 +2,137 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.493 — 2026-05-05
+
+### Added — `daily-token-foster-stuart-s` (one-hundred-and-ninety-seventh axis)
+
+Per-source FOSTER-STUART S-STATISTIC for
+INSTABILITY-OF-DISPERSION via combined STRICT UPPER +
+STRICT LOWER RECORD COUNTS over the gap-filled daily
+`total_tokens` series. Foster & Stuart 1954 J. R.
+Statist. Soc. B 16(1):1-22 (with discussion); index 0
+EXCLUDED from both record passes per the Foster-Stuart
+1954 sec. 2 convention (the first observation is
+trivially both an upper and a lower record and carries
+no information).
+
+Pipeline. For each source, the gap-filled tenure series
+`x[0..n-1]` (zero-padded sparse days) yields per-step
+indicators `u_i = 1[x[i] > max(x[0..i-1])]` and `l_i =
+1[x[i] < min(x[0..i-1])]` for `i in {1, .., n-1}`.
+Aggregates: `U = sum u_i`, `L = sum l_i`. Headline
+statistics: `S = U + L` (DISPERSION-INSTABILITY) and
+`D = U - L` (TREND-DIRECTION). Closed-form null via
+Renyi 1962 record-indicator decomposition: each `u_i,
+l_i` is `Bernoulli(1/(i+1))`, giving `E[S] = 2*(H_n -
+1)` (the n-th harmonic minus 1, doubled for the two
+passes) and the asymptotic-leading-order
+`Var[S] ~ 2*(H_n - H_n^(2))` (Glick 1978 Amer. Math.
+Monthly 85:2-26 sec. 4 establishes that off-diagonal
+covariances are uniformly o(1) for monotone
+prefix-extremum events). Standardised: `fsSZ = (S -
+2*(H_n - 1)) / sqrt(2*(H_n - H_n^(2))) ~ N(0,1)` and
+`fsDZ = D / sqrt(2*(H_n - H_n^(2))) ~ N(0,1)`. Sign
+convention: positive `fsSZ` = MORE total records than
+expected = dispersion GROWING over the tenure (late
+arrivals of new highs AND new lows); positive `fsDZ` =
+upward trend (more upper than lower records).
+
+Mechanistic orthogonality versus shipped axes:
+
+  - **Versus axis-109 daily-token-upper-records-count**:
+    axis-109 reports the Renyi-style ONE-SIDED upper
+    record count INCLUDING index 0 as a trivial record;
+    axis-197 is BILATERAL (`U + L`) and EXCLUDES index 0
+    by Foster-Stuart convention. The two functionals
+    decompose differently on a series whose lower tail is
+    monotone (`L = 0`) but whose upper tail accumulates
+    late records: axis-109 z-score and axis-197 `fsSZ`
+    coincide up to the index-0 / variance constants;
+    axis-197 additionally exposes the DIRECTION channel
+    `fsDZ` which axis-109 cannot express at all.
+  - **Versus axis-106 daily-token-turning-point-rate**:
+    TPR is a LOCAL three-window first-difference statistic
+    (it asks "did the middle exceed both neighbours?");
+    Foster-Stuart counts GLOBAL prefix-extremum events
+    (it asks "did this point exceed every prior point?").
+    A monotonically increasing series has TPR = 0 and
+    `S = n - 1` (every step a new upper record); a fast
+    oscillator has TPR ~ 2/3 and `S` close to `2*(H_n -
+    1)` (fluctuations rarely exceed prior maxima).
+  - **Versus axis-110 daily-token-mann-kendall**:
+    Mann-Kendall is an all-pairs concordance statistic and
+    is dominated by the LOCATION trend; growing-variance
+    series with no mean drift have Kendall `tau ~ 0`
+    while `fsSZ` is strongly positive (new records
+    keep arriving even though pairwise concordance
+    cancels). Conversely, a noiseless linear ramp has
+    `tau = 1` AND `fsSZ` large (every step a new
+    record), so the two statistics agree on pure trend
+    and disagree on pure scale instability.
+  - **Versus axes 194-196 (KS / CvM / FK halves) and 191
+    (Cliff)**: those axes are TWO-SAMPLE label/order
+    tests on a fixed half-vs-half partition; axis-197 is
+    a SINGLE-SAMPLE FULL-SERIES extremum-event count that
+    integrates over the entire tenure without any
+    partitioning step.
+
+Loose (`>=`, `<=`) record counts are surfaced as side
+quantities (`nUpperRecordsLooseFs`, `nLowerRecordsLooseFs`)
+for the zero-padded sparse-day regime where ties at zero
+inflate the loose count without contributing
+information; the headline statistics are always the
+strict variants matching the closed-form null.
+
+Defaults: `--min-tokens 1000`, `--min-tenure-days 14`
+(hard floor 6 since `mu_2(6) ~ 0.96` is the smallest
+tenure where the asymptotic variance is non-degenerate),
+`--top 0` (no cap), `--sort fsSZAbsDesc`. Sort keys:
+`s | sDesc | fsSZ | fsSZDesc | fsSZAbs | fsSZAbsDesc |
+fsDZ | fsDZDesc | fsDZAbs | fsDZAbsDesc | tokens |
+tenure | source`. Twelve drop counters surface filter
+behaviour: `droppedInvalidHourStart`,
+`droppedNonPositiveTokens`, `droppedSourceFilter`,
+`droppedSparseSources`, `droppedBelowMinTenure`,
+`droppedZeroVariance`, `droppedNonFiniteFit`,
+`droppedTopSources`. JSON via `--json`; pretty table via
+default render.
+
+Live-smoke (against the local `pew` queue, 5 sources
+visible at `--min-tenure-days 14`, source labels redacted
+to single letters; full numeric profile preserved):
+
+  - **Source A** (16-day tenure, all-active, 6.98 GTok):
+    `S = 1`, `D = 1`, `E[S] = 4.76`, `fsSZ = -1.98`,
+    `fsDZ = +0.53` — only the day-1 first-arrival upper
+    record fires; the asymptotic null expected ~5 records
+    over 16 days, so this source is sharply DISPERSION-
+    LOCKED-EARLY (one big day, then everything below it).
+  - **Source B** (265-day tenure, 73 active days, 1.89
+    MTok): `S = 7`, `D = 5`, `E[S] = 10.32`, `fsSZ =
+    -1.10`, `fsDZ = +1.66` — modest dispersion-lock with
+    a near-significant upward direction channel.
+  - **Source C** (19-day tenure, all-active, 339 MTok):
+    `S = 6`, `D = -4`, `E[S] = 5.10`, `fsSZ = +0.46`,
+    `fsDZ = -2.02` — neutral dispersion, sharply
+    DOWNWARD direction (5 lower records vs 1 upper).
+  - **Source D** (19-day tenure, all-active, 2.39 GTok):
+    `S = 6`, `D = -2`, `E[S] = 5.10`, `fsSZ = +0.46`,
+    `fsDZ = -1.01` — same neutral-dispersion / mild-
+    downward profile as Source C, lower magnitude.
+  - **Source E** (72-day tenure, 35 active days, 3.44
+    GTok): `S = 8`, `D = 6`, `E[S] = 7.72`, `fsSZ =
+    +0.11`, `fsDZ = +2.36` — null-on-dispersion but
+    significantly UPWARD on direction (7 upper, 1 lower).
+
+The `fsSZ`-vs-`fsDZ` decomposition cleanly separates the
+five sources into three regimes (dispersion-locked /
+neutral / weakly-late-records on the scale axis, and
+upward / flat / downward on the trend axis), confirming
+that the SCALE channel (axis-197 `fsSZ`) and the
+DIRECTION channel (axis-197 `fsDZ`) are
+data-empirically as well as mechanistically separable.
+
 ## 0.6.492 — 2026-05-05
 
 ### Refined — `classifyFlignerKilleenCliffScaleVsDominanceCompound` (axis-196 + axis-191 joiner)
