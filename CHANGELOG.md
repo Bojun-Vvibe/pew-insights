@@ -2,6 +2,184 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.513 — 2026-05-05
+
+### Added — `daily-token-pitman-permutation-mssd-randomness` (axis-207 PITMAN 1937 PERMUTATION TEST FOR RANDOMNESS via MSSD)
+
+Per-source PITMAN 1937 PERMUTATION TEST FOR RANDOMNESS
+applied to the gap-filled daily total_tokens series via
+the MEAN-OF-SQUARED-SUCCESSIVE-DIFFERENCES (MSSD)
+statistic, evaluated against a FIXED-SEED MONTE-CARLO
+PERMUTATION REFERENCE on the RAW VALUES.
+
+TWO-HUNDRED-AND-SEVENTH cross-source axis.
+
+**Mechanism.** Pitman (1937 *Biometrika* 29: 322-335)
+proposes a fully nonparametric test for the H0 of
+exchangeable ordering (any of n! permutations
+equiprobable) that uses the SAME RAW-VALUE STATISTIC
+under both the observed ordering and every permutation,
+evaluating significance by the EXACT PERMUTATION
+REFERENCE DISTRIBUTION rather than an asymptotic limit.
+The summary statistic chosen here is the MSSD
+
+  mssd(x) = (1/(n-1)) sum_{i=1..n-1} (x[i] - x[i-1])^2
+
+(the von Neumann 1941 numerator, applied to the RAW
+VALUES rather than to the ranks). For B Monte-Carlo
+permutations pi_1, ..., pi_B drawn via a deterministic
+SplitMix64 PRNG, the +1/(B+1) Monte-Carlo p-value
+(Davison-Hinkley 1997 eq. 4.10):
+
+  ppMcLowerOneSided = (1 + #{b : mssd(pi_b(x)) <= mssd(x)}) / (B+1)
+  ppPValue          = 2 * min(ppMcLowerOneSided, 1 - ppMcLowerOneSided + 1/(B+1))
+
+is exact at size alpha = (k+1)/(B+1). The standardised
+Z-score is computed against the closed-form permutation
+expectation E[mssd] = 2*ssBar and the EMPIRICAL Monte-
+Carlo variance Var_MC[mssd] (sample variance of the B
+permutation mssd values):
+
+  ppZ = (mssd(x) - 2 * ssBar) / sqrt(Var_MC[mssd])
+
+with reference being the PERMUTATION DISTRIBUTION
+ITSELF rather than any asymptotic approximation -- the
+fundamental Pitman 1937 principle.
+
+**Sign convention.** ppZ << -1.96 = mssd much smaller
+than its permutation expectation = SMOOTHNESS /
+POSITIVE LAG-1 SERIAL DEPENDENCE (adjacent days
+atypically similar). ppZ >> +1.96 = OSCILLATION /
+NEGATIVE LAG-1 SERIAL DEPENDENCE.
+
+**Structural orthogonality.**
+
+  - vs daily-token-bartels-rank-von-neumann: Bartels
+    uses RANKS of the values (rank-based statistic)
+    AND an ASYMPTOTIC NORMAL reference. Pitman MSSD
+    uses RAW VALUES (sensitive to actual magnitudes,
+    not just ordinal positions) AND a FIXED-SEED MONTE
+    CARLO PERMUTATION REFERENCE (no asymptotic
+    approximation, exact size at alpha=(k+1)/(B+1)).
+    A series with a few extreme outliers but otherwise
+    smooth dynamics gives a Bartels statistic
+    dominated by rank smoothness (low Bartels => smooth)
+    but a Pitman MSSD dominated by the squared outlier
+    differences (high MSSD => oscillation), and the
+    two probes will DISAGREE -- the "value-magnitude
+    vs rank-pattern" axis.
+  - vs axis-206 Jonckheere-Terpstra: JT tests for
+    MONOTONIC ORDERED-ALTERNATIVE across k=4
+    chronological blocks. Pitman MSSD tests for LAG-1
+    SERIAL EXCHANGEABILITY -- a series with strong
+    global trend but lag-1 randomness gives jtZ >> 0
+    but ppZ ~ 0.
+  - vs axis-205 Cox-Stuart sign-pairs: paired-sign at
+    LAG c=ceil(n/2); Pitman MSSD aggregates SQUARED
+    differences at LAG 1. Different lag, different
+    reduction (sign vs squared magnitude), different
+    reference (asymptotic vs Monte-Carlo permutation).
+  - vs axis-203 David-Barton runs-up-down: David-
+    Barton uses SIGN-ONLY summary at lag 1; Pitman
+    MSSD uses SQUARED MAGNITUDE at lag 1. The
+    "magnitude axis" of lag-1 dependence.
+  - vs all halves-comparison axes (Mann-Whitney,
+    Brown-Forsyth, etc.): halves test for
+    MEAN/SCALE EQUALITY between contiguous halves;
+    Pitman MSSD tests for LAG-1 EXCHANGEABILITY
+    across the ENTIRE series.
+
+**Determinism.** SplitMix64 (Steele-Lea-Flood 2014) PRNG
+seeded from (n, x[0], x[n-1]) -- same input series
+yields the same B permutations, the same MC mssd values,
+the same p-value, and the same Z-score across runs and
+across machines.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Real output verbatim (one source name redacted per repo
+policy on banned product strings):
+
+```
+pew-insights daily-token-pitman-permutation-mssd-randomness
+as of: 2026-05-05T14:04:02.553Z    sources: 6 (shown 5)    tokens: 13,289,047,346    min-tokens: 1,000    min-tenure-days: 12    permutations: 999    top: -    sort: ppZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 1 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source PITMAN MSSD permutation randomness test (sorted by ppZAbsDesc; ties: source asc)
+source          firstDay    lastDay     tenure  active  mssd       mssdExp    ppZ      ppPValue   tokens
+--------------  ----------  ----------  ------  ------  ---------  ---------  -------  ---------  -------------
+claude-code     2026-02-11  2026-04-23  72      35      3.200e+16  4.734e+16  -3.0797  6.4000e-2  3,442,385,788
+[REDACTED]      2025-07-30  2026-04-20  265     73      1.254e+9   1.461e+9   -2.3615  7.0000e-2  1,885,727
+openclaw        2026-04-17  2026-05-05  19      19      8.605e+15  1.667e+16  -2.0456  3.0000e-2  2,407,298,027
+hermes          2026-04-17  2026-05-05  19      19      9.738e+13  1.572e+14  -1.6524  6.0000e-2  345,219,501
+opencode        2026-04-20  2026-05-05  16      16      4.432e+16  5.107e+16  -0.5462  4.3200e-1  7,092,258,303
+```
+
+Interpretation:
+
+  - Five of five tested sources show NEGATIVE ppZ --
+    the mssd is consistently SMALLER than the
+    permutation expectation 2*ssBar. The lag-1
+    successive squared differences are atypically
+    SMALL relative to a random shuffle of the same
+    values, indicating SMOOTHNESS / POSITIVE LAG-1
+    SERIAL DEPENDENCE (autocorrelation) in the
+    daily token series across all sources.
+  - `claude-code` has the largest |ppZ| = 3.08
+    (smoothness signal -- the 72-day series is
+    notably non-exchangeable in the smoothness
+    direction); however the two-sided MC p-value is
+    6.4e-2, just above alpha=0.05, reflecting Monte-
+    Carlo granularity at B=999 and the heavy-tailed
+    permutation null on the raw token magnitudes.
+  - `openclaw` is the only source with ppPValue
+    below 0.05 (3.0e-2 at ppZ=-2.05 over 19-day
+    tenure) -- short-tenure burst-like usage with
+    strong day-to-day persistence rejects
+    exchangeability decisively.
+  - `opencode` (16-day tenure) shows |ppZ|=0.55
+    with ppPValue=0.43 -- consistent with
+    exchangeable ordering; no detectable lag-1
+    dependence.
+
+### Files
+
+  - `src/dailytokenpitmanpermutationmssdrandomness.ts`
+    -- pure analytical core: `pitmanSplitMix64`,
+    `pitmanSeedFromSeries`, `pitmanLcgPrng`,
+    `pitmanMeanSquaredSuccessiveDifference`,
+    `pitmanFisherYatesShuffleInPlace`,
+    `pitmanCentredVarianceBar`,
+    `dailyTokenPitmanPermutationMssdRandomness`,
+    `aggregatePitmanPermutationMssdRandomness`,
+    builder with strict input validation and gap-fill.
+  - `src/format.ts` -- pretty renderer with full
+    descriptive header and reference anchor footer.
+  - `src/cli.ts` -- subcommand registration with all
+    standard options (`--since`, `--until`, `--source`,
+    `--min-tokens`, `--min-tenure-days`,
+    `--permutations`, `--top`, `--sort`, `--json`).
+  - `test/dailytokenpitmanpermutationmssdrandomness.test.ts`
+    -- 56 unit tests covering SplitMix64 mixing,
+    deterministic seed-from-series, PRNG repeatability
+    and uint32 range, MSSD identities (constant=0,
+    AP=1, shift-invariance, scale=a^2), Fisher-Yates
+    multiset preservation and determinism, centred
+    variance bar, Pitman MSSD direction (monotone =>
+    ppZ<<0; zigzag => ppZ>>0), determinism across runs,
+    closed-form expectation, p-value bounds, normal-
+    tail Q (anchors at 0, 1.96, symmetry), all
+    builder dropped counters (sparse / tenure /
+    variance / top / source-filter / bad-hour /
+    non-positive-tokens), all sort orderings, and the
+    Stouffer corpus aggregator (skipping invalid rows,
+    weighted-mean, sum/sqrt identity).
+
+### Test count
+
+  - Before: 14,751
+  - After:  14,807 (+56)
+
 ## 0.6.512 — 2026-05-05
 
 ### Added — `classifyJonckheereTerpstraCoxStuartBlockVsPairTrendCompound` (axis-206 ↔ axis-205)
