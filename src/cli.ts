@@ -223,6 +223,7 @@ import {
   renderDailyTokenCoxStuartThirdsTrend,
   renderDailyTokenBuysBallotPeriod7Anova,
   renderDailyTokenLaplaceCentroidTrend,
+  renderDailyTokenHirschSlackSeasonalKendall,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -771,6 +772,10 @@ import {
   buildDailyTokenLaplaceCentroidTrend,
   type DailyTokenLaplaceCentroidTrendSort,
 } from './dailytokenlaplacecentroidtrend.js';
+import {
+  buildDailyTokenHirschSlackSeasonalKendall,
+  type DailyTokenHirschSlackSeasonalKendallSort,
+} from './dailytokenhirschslackseasonalkendall.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48412,6 +48417,112 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenLaplaceCentroidTrend(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-hirsch-slack-seasonal-kendall')
+  .description(
+    "Per-source HIRSCH-SLACK 1984 SEASONAL MANN-KENDALL TREND TEST with period s=7 (weekday-of-week seasons) on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-EIGHTEENTH cross-source axis). Partition the n-day series into 7 cohorts by i mod 7; compute within-cohort Mann-Kendall S_g = sum_{j<k} sign(x_k - x_j) and tie-corrected variance Var(S_g) = (n_g*(n_g-1)*(2*n_g+5) - sum_t t*(t-1)*(2*t+5))/18 (Kendall 1975 sec. 4.2); pool S^{HS} = sum_g S_g and Var(S^{HS}) = sum_g Var(S_g) (the simpler Hirsch-Slack 1984 form, working zero-cross-season-covariance assumption; the 1982 Hirsch-Slack-Smith covariance-corrected variant is reserved for a separate axis). Continuity-corrected hsZ = (S^{HS} - sign(S^{HS}))/sqrt(Var(S^{HS})) ~ N(0,1) two-sided; hsPValue = 2*(1 - Phi(|hsZ|)) via Abramowitz-Stegun 7.1.26 erf approximation; hsTau = S^{HS}/sum_g[n_g*(n_g-1)/2] in [-1,+1]; hsConcordantSeasons in {0,..,7} counts cohorts with S_g > 0. SIGN: hsZ > 0 = weekday cohorts collectively trend UP across weeks; hsZ < 0 = trend DOWN; hsZ ~ 0 = no within-cohort monotone trend. STRUCTURALLY DISTINCT from plain Mann-Kendall axis-110 (conflates period-7 mean shift with monotone trend; a series with weekday-vs-weekend step but no underlying trend loads strongly on plain MK but ZERO on Hirsch-Slack), Theil-Sen axis-214 (same conflation on slope estimator), Cox-Stuart-thirds axis-215 (thirds-mean comparison contaminated by weekday-aligned periodicity), Buys-Ballot period-7 ANOVA axis-216 (tests within-column MEAN structure under H0 of equal weekday means, INVARIANT under within-column detrending; complementary -- a series with strong weekday step but no within-cohort trend loads on Buys-Ballot but not on Hirsch-Slack; vice-versa for monotone drift without weekday structure), Laplace centroid axis-217 (L-1 first-moment magnitude functional; a single late spike loads on Laplace but not on Hirsch-Slack). Test is INVARIANT under any per-cohort additive shift. Refs: Hirsch & Slack 1984 *Water Resources Research* 20(6):727-732; Mann 1945 *Econometrica* 13(3):245-259; Kendall 1975 *Rank Correlation Methods* sec. 4.2; Abramowitz-Stegun 1964 eq. 7.1.26.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21 (each of 7 weekday cohorts needs >= 3 obs per Hirsch-Slack 1984 sec. 4 simulation floor for Normal approximation). Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hsAbsZDesc (default) | hsZ | hsZDesc | hsPValue | hsPValueDesc | hsTau | hsTauDesc | hsConcordantSeasonsDesc | tokens | tenure | source.',
+    'hsAbsZDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'hsZ',
+          'hsZDesc',
+          'hsAbsZDesc',
+          'hsPValue',
+          'hsPValueDesc',
+          'hsTau',
+          'hsTauDesc',
+          'hsConcordantSeasonsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHirschSlackSeasonalKendall(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenHirschSlackSeasonalKendallSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenHirschSlackSeasonalKendall(report) + '\n',
           );
         }
       } catch (e) {

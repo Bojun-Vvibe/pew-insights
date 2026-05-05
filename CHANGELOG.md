@@ -2,6 +2,225 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.540 — 2026-05-06
+
+### Added — `daily-token-hirsch-slack-seasonal-kendall` (axis-218)
+
+TWO-HUNDRED-AND-EIGHTEENTH cross-source axis. Per-source
+HIRSCH-SLACK 1984 SEASONAL MANN-KENDALL TREND TEST with
+period s = 7 (weekday-of-week seasons) on the gap-filled
+daily total_tokens series. The seasonal-stratified rank-
+trend companion to the unstratified Mann-Kendall family
+(axis-110, axis-214 Theil-Sen, axis-215 Cox-Stuart-thirds)
+and to the period-7 mean-structure axis (axis-216 Buys-
+Ballot ANOVA).
+
+Mechanism. Partition the n-day series into 7 cohorts by
+i mod 7. Within each cohort g compute the Mann-Kendall
+S statistic
+
+```
+S_g = sum_{j<k} sign(x_k - x_j)
+```
+
+and its Kendall 1975 sec. 4.2 tie-corrected variance
+
+```
+Var(S_g) = ( n_g*(n_g-1)*(2*n_g+5)
+             - sum_t t*(t-1)*(2*t+5) ) / 18
+```
+
+where the inner sum is over groups of tied ranks (t the
+size of each tie group). Pool
+
+```
+S^{HS}     = sum_{g=0..6} S_g
+Var(S^{HS}) = sum_{g=0..6} Var(S_g)
+```
+
+under the working assumption of zero cross-season
+covariance (the simpler Hirsch-Slack 1984 form; the 1982
+Hirsch-Slack-Smith covariance-corrected variant is
+reserved for a separate axis). The continuity-corrected
+standardised statistic
+
+```
+hsZ = (S^{HS} - sign(S^{HS})) / sqrt(Var(S^{HS}))
+```
+
+is asymptotically N(0, 1) two-sided; hsPValue = 2*(1 -
+Phi(|hsZ|)) via Abramowitz-Stegun 1964 eq. 7.1.26 erf
+approximation (max abs error ~1.5e-7). Surfaced
+diagnostics: hsTau = S^{HS} / sum_g[n_g*(n_g-1)/2] in
+[-1, +1] (the seasonal analogue of Kendall's tau);
+hsConcordantSeasons in {0, .., 7} (count of cohorts
+with S_g > 0); hsConcordanceRatio in [0, 1].
+
+SIGN convention.
+
+  - hsZ > 0  =>  S^{HS} > 0  =>  weekday cohorts
+                 collectively trend UP across weeks
+  - hsZ < 0  =>  S^{HS} < 0  =>  weekday cohorts
+                 collectively trend DOWN across weeks
+  - hsZ ~ 0  =>  no within-cohort monotone trend
+
+STRUCTURAL ORTHOGONALITY (the core claim):
+
+  - vs `daily-token-mann-kendall-tau` (axis-110): plain
+    Mann-Kendall is computed on the WHOLE series and
+    CONFLATES period-7 mean shift with monotone trend.
+    A series with a strong weekday-vs-weekend mean step
+    repeated week after week loads strongly on plain MK
+    but registers hsZ ~ 0 because every within-cohort
+    rank ordering is flat. Hirsch-Slack is the correct
+    seasonal-stratified analogue.
+  - vs axis-214 Theil-Sen: same conflation on the slope
+    estimator (the Theil-Sen line through a weekday-
+    amplified series picks up the trend OF THE WEEKDAY
+    MEANS rather than the within-cohort trend);
+    Hirsch-Slack is invariant under per-cohort additive
+    shifts.
+  - vs axis-215 Cox-Stuart-thirds: thirds-mean
+    comparison contaminated by weekday-aligned
+    periodicity when 21 mod 7 = 0 aligns thirds with
+    cohort boundaries; Hirsch-Slack stays within-cohort
+    by construction.
+  - vs axis-216 Buys-Ballot period-7 ANOVA: Buys-Ballot
+    tests for WEEKDAY MEAN STRUCTURE under H0 of equal
+    weekday means and is INVARIANT under within-column
+    detrending. Hirsch-Slack tests for WITHIN-COLUMN
+    MONOTONE TREND under H0 of no within-column trend
+    and takes weekday structure as a NUISANCE. The two
+    are mutually orthogonal: a series with strong
+    weekday step but no within-cohort trend loads on
+    Buys-Ballot but not on Hirsch-Slack; a series with
+    smooth monotone drift but no weekday structure
+    loads on Hirsch-Slack but not on Buys-Ballot; a
+    series with both loads independently on each.
+  - vs axis-217 Laplace centroid: the Laplace centroid
+    is an L-1 first-moment MAGNITUDE functional. A
+    single late spike shifts the centroid right but
+    creates essentially no within-weekday rank-trend
+    signal (only one cohort sees the spike, as one
+    observation). Conversely, a series with no
+    magnitude shift but a strict within-weekday rank
+    ordering across weeks loads on Hirsch-Slack but
+    not on the Laplace centroid (mass roughly
+    uniform across positions). MAGNITUDE vs RANK
+    AND aggregated vs season-stratified ortho.
+
+Caveats.
+
+  - HARD FLOOR n >= 21 days. Each weekday cohort needs
+    at least 3 observations for the within-season
+    variance to be well-defined and the Normal
+    approximation to be reasonable (Hirsch-Slack 1984
+    sec. 4 simulation evidence for n_g >= 3).
+  - WORKING ASSUMPTION zero cross-season covariance.
+    Cross-day positive autocorrelation INFLATES the
+    true variance and so the simpler form's hsPValue
+    is anti-conservative in that direction. Users
+    wanting the conservative covariance-corrected
+    p-value should consult the (forthcoming) Hirsch-
+    Slack-Smith 1982 axis.
+
+References.
+
+  - Hirsch, R. M. & Slack, J. R., "A nonparametric trend
+    test for seasonal data with serial dependence",
+    *Water Resources Research* 20(6) (1984), pp. 727-732.
+  - Mann, H. B., "Nonparametric tests against trend",
+    *Econometrica* 13(3) (1945), pp. 245-259.
+  - Kendall, M. G., *Rank Correlation Methods*, 4th ed.,
+    Griffin 1975, sec. 4.2 (variance with tie
+    correction).
+  - Abramowitz, M. & Stegun, I. A., *Handbook of
+    Mathematical Functions*, NBS 1964, eq. 7.1.26.
+
+LIVE-SMOKE OUTPUT (`~/.config/pew/queue.jsonl`,
+2026-05-05; upstream source identifiers redacted to
+`vsc-redacted` per repo policy):
+
+```
+$ pew-insights daily-token-hirsch-slack-seasonal-kendall \
+    --sort hsAbsZDesc
+
+pew-insights daily-token-hirsch-slack-seasonal-kendall
+sources: 6 (shown 2)    tokens: 3,444,271,515
+min-tokens: 1,000    min-tenure-days: 21    sort: hsAbsZDesc
+dropped: 4 below min-tenure-days, 0 zero-variance,
+         0 non-finite-fit
+
+per-source Hirsch-Slack seasonal Kendall Z
+source         firstDay    lastDay     tenure  hsS    hsVar     hsZ      hsTau    concSeasons  hsPValue   tokens
+-------------  ----------  ----------  ------  -----  --------  -------  -------  -----------  ---------  -------------
+claude-code    2026-02-11  2026-04-23  72       135     723.0   +4.9835  +0.4030  7/7          6.254e-07  3,442,385,788
+vsc-redacted   2025-07-30  2026-04-20  265     -324   24772.7   -2.0522  -0.0663  0/7          4.015e-02      1,885,727
+```
+
+Interpretation:
+
+  - `claude-code` (n=72, 10 weeks, 7 active cohorts):
+    hsS = +135, hsZ = +4.98, hsPValue = 6.3e-7,
+    hsTau = +0.40, hsConcordantSeasons = 7/7. EVERY
+    weekday cohort trends UP across the 10 weeks of
+    tenure -- a unanimous within-cohort up-drift that
+    survives stratification on weekday and so cannot
+    be attributed to day-of-week mean structure.
+    HIGHLY SIGNIFICANT seasonal-stratified up-trend.
+  - `vsc-redacted` (n=265, ~38 weeks, 7 active cohorts):
+    hsS = -324, hsZ = -2.05, hsPValue = 4.0e-2,
+    hsTau = -0.066, hsConcordantSeasons = 0/7. ZERO
+    weekday cohorts trend up; the aggregate is
+    significant at alpha = 0.05 but the per-cohort
+    effect size is tiny (tau = -0.07). MARGINALLY
+    SIGNIFICANT seasonal-stratified down-drift.
+  - The two sources have OPPOSITE seasonal-stratified
+    trend signs: `claude-code` ramping in across all
+    weekdays as it onboards; `vsc-redacted` slowly
+    decaying across all weekdays in long tenure.
+  - 4 sources dropped below min-tenure-days = 21:
+    short-lived sources whose tenure does not span 3
+    weeks are filtered to keep each weekday cohort at
+    >= 3 observations per the Hirsch-Slack 1984 sec. 4
+    Normal-approximation floor.
+
+ORTHOGONALITY EVIDENCE on the same data:
+
+  - vs axis-217 Laplace centroid: both sources have
+    significant axis-218 hsZ but axis-217 lapZ is
+    statistically zero for `vsc-redacted` (no centroid
+    displacement despite a real seasonal-stratified
+    rank-trend) -- demonstrating the magnitude-vs-rank
+    orthogonality predicted by the structural argument.
+  - vs axis-216 Buys-Ballot period-7 ANOVA: axis-218
+    finds within-cohort trend after stratifying away
+    the weekday mean structure that axis-216 isolates;
+    the two carry independent information about the
+    same series.
+
+### Added — wiring & tests
+
+- `src/dailytokenhirschslackseasonalkendall.ts` (new
+  axis-218 builder + render-companion exports).
+- `src/cli.ts`: registers
+  `daily-token-hirsch-slack-seasonal-kendall` subcommand
+  with `--since/--until/--source/--min-tokens/--min-
+  tenure-days/--top/--sort/--json` options.
+- `src/format.ts`: `renderDailyTokenHirschSlackSeasonal-
+  Kendall` pretty renderer.
+- `test/dailytokenhirschslackseasonalkendall.test.ts`:
+  +32 unit tests covering Phi/erf parity, within-season
+  Mann-Kendall S identities, tie-corrected variance,
+  per-cohort additive-shift INVARIANCE (the orthogonality-
+  to-Buys-Ballot witness), reversal-negates-Z identity,
+  builder filter & sort behaviour. Test suite total
+  +32: 15689 -> 15721 tests, all green.
+
+### Bumped
+
+- `package.json` 0.6.538 -> 0.6.540.
+
 ## 0.6.538 — 2026-05-06
 
 ### Added — `daily-token-laplace-centroid-trend` (axis-217)

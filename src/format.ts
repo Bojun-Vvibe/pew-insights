@@ -20648,6 +20648,7 @@ import type { DailyTokenTheilSenSlopeReport } from './dailytokentheilsenslope.js
 import type { DailyTokenCoxStuartThirdsTrendReport } from './dailytokencoxstuartthirdstrend.js';
 import type { DailyTokenBuysBallotPeriod7AnovaReport } from './dailytokenbuysballotperiod7anova.js';
 import type { DailyTokenLaplaceCentroidTrendReport } from './dailytokenlaplacecentroidtrend.js';
+import type { DailyTokenHirschSlackSeasonalKendallReport } from './dailytokenhirschslackseasonalkendall.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30384,6 +30385,85 @@ export function renderDailyTokenLaplaceCentroidTrend(
   lines.push(
     chalk.dim(
       `(reference anchor: |lapZ| > 1.96 and |lapCBarNorm| > 0.05 = STATISTICALLY SIGNIFICANT mass displacement of > 5% of half-tenure away from the midpoint at alpha = 0.05; lapPValue >= 0.05 = no detectable centroid displacement under uniform-mass null. Test is invariant under positive-scaling of mass; reversal of the series along positions negates lapZ and lapCBarNorm but preserves lapPValue. Compare against cumulative-tokens-midpoint for the descriptive 50%-percentile, against monotone-trend axes (axis-110 / axis-214 / axis-215) for orthogonal rank-based alternatives, against Buys-Ballot axis-216 for periodic structure orthogonal to first-moment displacement.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenHirschSlackSeasonalKendall(
+  r: DailyTokenHirschSlackSeasonalKendallReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-hirsch-slack-seasonal-kendall'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HIRSCH-SLACK 1984 SEASONAL MANN-KENDALL TREND TEST with period s=7 (weekday-of-week seasons). Partition the gap-filled tenure series into 7 cohorts by i mod 7; within each cohort compute the Mann-Kendall S statistic S_g = sum_{j<k} sign(x_k - x_j) and its Kendall 1975 sec. 4.2 tie-corrected variance Var(S_g) = (n_g*(n_g-1)*(2*n_g+5) - sum_t t*(t-1)*(2*t+5))/18; pool S^{HS} = sum_g S_g and Var(S^{HS}) = sum_g Var(S_g) under the working assumption of zero cross-season covariance (the simpler Hirsch-Slack 1984 form; the 1982 Hirsch-Slack-Smith covariance-corrected variant is reserved for a separate axis). Continuity-corrected hsZ = (S^{HS} - sign(S^{HS})) / sqrt(Var(S^{HS})) ~ N(0,1) two-sided; hsPValue via Abramowitz-Stegun 7.1.26 erf approximation; hsTau = S^{HS} / sum_g [n_g*(n_g-1)/2] in [-1,+1]; hsConcordantSeasons in {0,..,7}. SIGN: hsZ > 0 = weekday cohorts collectively trend UP across weeks; hsZ < 0 = trend DOWN. TWO-HUNDRED-AND-EIGHTEENTH cross-source axis. STRUCTURALLY DISTINCT from plain Mann-Kendall (axis-110; conflates period-7 mean shift with monotone trend), Theil-Sen (axis-214; same conflation on slope), Cox-Stuart-thirds (axis-215; thirds-based mean comparison), Buys-Ballot period-7 ANOVA (axis-216; tests within-column MEAN structure, INVARIANT under detrending; complementary), Laplace centroid (axis-217; L-1 first-moment magnitude functional). Refs: Hirsch & Slack 1984 *Water Resources Research* 20(6); Mann 1945 *Econometrica* 13(3); Kendall 1975 *Rank Correlation Methods* sec. 4.2; Abramowitz-Stegun 7.1.26.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Hirsch-Slack seasonal Kendall Z (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'hsS',
+    'hsVar',
+    'hsZ',
+    'hsTau',
+    'concSeasons',
+    'hsPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.hsS.toFixed(0),
+    s.hsVar.toFixed(1),
+    s.hsZ.toFixed(4),
+    s.hsTau.toFixed(4),
+    `${s.hsConcordantSeasons}/${s.hsActiveSeasons}`,
+    s.hsPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: |hsZ| > 1.96 = STATISTICALLY SIGNIFICANT seasonal monotone trend at alpha = 0.05 after stratifying on weekday cohort; hsPValue >= 0.05 = no detectable seasonal trend. Test is INVARIANT under any per-cohort additive shift -- precisely what makes it orthogonal to Buys-Ballot axis-216. Reversing the series along time NEGATES hsS and hsZ but preserves hsVar and hsPValue. Compare against axis-110 plain Mann-Kendall for the unstratified analogue, against axis-216 Buys-Ballot for the orthogonal weekday-mean test, against axis-217 Laplace centroid for the orthogonal L-1 first-moment magnitude test.)`,
     ),
   );
 
