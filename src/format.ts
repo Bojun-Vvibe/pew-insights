@@ -20646,6 +20646,7 @@ import type { DailyTokenOlmsteadTukeyCornerTestReport } from './dailytokenolmste
 import type { DailyTokenPageLBlockTrendReport } from './dailytokenpagelblocktrend.js';
 import type { DailyTokenTheilSenSlopeReport } from './dailytokentheilsenslope.js';
 import type { DailyTokenCoxStuartThirdsTrendReport } from './dailytokencoxstuartthirdstrend.js';
+import type { DailyTokenBuysBallotPeriod7AnovaReport } from './dailytokenbuysballotperiod7anova.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30226,6 +30227,83 @@ export function renderDailyTokenCoxStuartThirdsTrend(
   lines.push(
     chalk.dim(
       `(reference anchor: csTZ much greater than +1.96 = significant LAST-THIRD-DOMINATES UP-DRIFT (head-vs-tail); csTZ much less than -1.96 = significant LAST-THIRD-LOSES DOWN-DRIFT; |csTZ| < 1.96 = no detectable head-vs-tail location shift. Pair lag gap = ceil(2n/3) gives ~4/3 the per-pair signal-to-noise of the half-pair Cox-Stuart for slow monotone drifts (Cox-Stuart 1955 sec. 5). Compare against axis-111 / axis-205 to see whether the half-pair signal agrees; axis-215 specifically ignores the middle third while axis-111 / axis-205 use every observation pair-wise.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenBuysBallotPeriod7Anova(
+  r: DailyTokenBuysBallotPeriod7AnovaReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-buys-ballot-period7-anova'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source BUYS-BALLOT 1847 PERIOD-7 ONE-WAY ANOVA F-TEST. Folds the gap-filled daily-token series into a 7-column table c[i] = i mod 7; partitions total SS into between-weekday and within-weekday components; bbF = (SsBetween/(p-1))/(SsWithin/(n-p)) ~ F(6, n-7) under H0 of no weekday effect. Eta^2 = SsBetween/SsTotal in [0,1]. TWO-HUNDRED-AND-SIXTEENTH cross-source axis. STRUCTURALLY DISTINCT from iso-weekday-of-week-entropy (entropy of mass distribution, blind to intra-weekday variance), from weekend-weekday-ratio (2-level not 7-level), from Fisher-g-periodicity (search over ALL Fourier frequencies vs FIXED period 7), from spectral PSD descriptors (continuous-frequency vs single-frequency hypothesis test), from monotone-trend axes (Mann-Kendall, Theil-Sen, Cox-Stuart-thirds; period-7 ANOVA invariant to detrending). FIRST single-pre-specified-period hypothesis-test axis. Refs: Buys-Ballot 1847; Brockwell & Davis 1991 sec. 1.4; Wei 2006 sec. 2.7; Scheffe 1959 sec. 2.4; Numerical Recipes 3rd ed. sec. 6.4.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Buys-Ballot F (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'dfB',
+    'dfW',
+    'bbF',
+    'bbEta2',
+    'bbPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    String(s.bbDfBetween),
+    String(s.bbDfWithin),
+    Number.isFinite(s.bbF) ? s.bbF.toFixed(4) : '+inf',
+    s.bbEta2.toFixed(4),
+    s.bbPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: bbPValue < 0.05 and bbEta2 > 0.10 = WEEKDAY-OF-WEEK STRUCTURE explains > 10% of daily-token variance with statistical significance; bbPValue >= 0.05 = no detectable weekday-of-week mean structure under iid Normal residuals. F-test is invariant to constant-shift and positive-scale; cyclic-shift of the index leaves bbF unchanged but PERMUTES the column-mean vector. Compare against Fisher-g-periodicity for unknown-frequency search; compare against monotone-trend axes (axis-110 / axis-214 / axis-215) for orthogonal monotone alternatives.)`,
     ),
   );
 

@@ -221,6 +221,7 @@ import {
   renderDailyTokenPageLBlockTrend,
   renderDailyTokenTheilSenSlope,
   renderDailyTokenCoxStuartThirdsTrend,
+  renderDailyTokenBuysBallotPeriod7Anova,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -761,6 +762,10 @@ import {
   buildDailyTokenCoxStuartThirdsTrend,
   type DailyTokenCoxStuartThirdsTrendSort,
 } from './dailytokencoxstuartthirdstrend.js';
+import {
+  buildDailyTokenBuysBallotPeriod7Anova,
+  type DailyTokenBuysBallotPeriod7AnovaSort,
+} from './dailytokenbuysballotperiod7anova.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48193,6 +48198,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCoxStuartThirdsTrend(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-buys-ballot-period7-anova')
+  .description(
+    "Per-source BUYS-BALLOT 1847 PERIOD-7 ONE-WAY ANOVA F-TEST for a fixed weekday-of-week periodicity in the gap-filled daily total_tokens series (TWO-HUNDRED-AND-SIXTEENTH cross-source axis). Folds the series into a 7-column Buys-Ballot table c[i] = i mod 7; partitions total SS into between-weekday and within-weekday components; bbF = (SsBetween/(p-1))/(SsWithin/(n-p)) ~ F(6, n-7) under H0 of no weekday effect with iid Normal residuals; bbEta2 = SsBetween/SsTotal in [0,1] (Cohen 1988 sec. 8.2.1) is reported as effect size. SIGN: F is one-sided non-negative; large bbF (small bbPValue) = SIGNIFICANT WEEKDAY-OF-WEEK PERIODICITY; small bbF = no detectable weekday structure. STRUCTURALLY DISTINCT from iso-weekday-of-week-entropy (Shannon entropy of weekday MASS distribution, blind to intra-weekday variance), from weekend-weekday-ratio (2-level not 7-level test), from daily-token-fisher-g-periodicity (search over ALL Fourier frequencies vs FIXED period 7; F has 6 numerator DOF vs Fisher-g's 1; period-7 ANOVA detects non-sinusoidal weekday shifts that leak Fourier mass to harmonics), from spectral-flatness / spectral-entropy / spectral-peak (continuous-frequency PSD descriptors vs single-frequency hypothesis test), from monotone-trend axes (Mann-Kendall, Theil-Sen, Cox-Stuart-thirds; period-7 ANOVA is invariant to detrending and orthogonal to monotone alternatives), from Page-L axis-213 (within-3-day-block ordered alternative vs unordered 7-cell ANOVA). FIRST hypothesis-test axis in the suite at a single PRE-SPECIFIED period. Refs: Buys-Ballot 1847; Brockwell & Davis 1991 sec. 1.4; Wei 2006 sec. 2.7; Scheffe 1959 sec. 2.4; Numerical Recipes 3rd ed. sec. 6.4 (Lentz incomplete-beta); Cohen 1988 sec. 8.2.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 28 (need n - 7 >= 21). Default 28.',
+    '28',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: bbFDesc (default) | bbF | bbPValue | bbPValueDesc | bbEta2 | bbEta2Desc | tokens | tenure | source.',
+    'bbFDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 28) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 28 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'bbF',
+          'bbFDesc',
+          'bbPValue',
+          'bbPValueDesc',
+          'bbEta2',
+          'bbEta2Desc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenBuysBallotPeriod7Anova(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenBuysBallotPeriod7AnovaSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenBuysBallotPeriod7Anova(report) + '\n',
           );
         }
       } catch (e) {

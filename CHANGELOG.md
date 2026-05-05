@@ -2,6 +2,137 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.535 — 2026-05-06
+
+### Added — `daily-token-buys-ballot-period7-anova` (axis-216)
+
+New TWO-HUNDRED-AND-SIXTEENTH cross-source axis: per-
+source BUYS-BALLOT 1847 PERIOD-7 ONE-WAY ANOVA F-TEST
+for a fixed weekday-of-week periodicity in the gap-
+filled daily total_tokens series (Buys-Ballot, *Les
+Changements Periodiques de Temperature*, Utrecht: Kemink
+1847; modern treatment in Brockwell & Davis 1991 sec.
+1.4; Wei 2006 sec. 2.7).
+
+Fold the n-day series into a 7-column Buys-Ballot table
+by `c[i] = i mod 7` and run a one-way fixed-effect ANOVA
+on the column factor:
+
+```
+SS_between = sum_j n_j * (mu_j - mu)^2
+SS_within  = sum_i (x[i] - mu_{c[i]})^2
+SS_total   = SS_between + SS_within
+bbF        = (SS_between / 6) / (SS_within / (n - 7))
+bbEta2     = SS_between / SS_total              in [0, 1]
+```
+
+Under H0 of "no weekday effect" with iid Normal
+residuals, `bbF ~ F(6, n - 7)` (Scheffe 1959 sec. 2.4;
+Searle 1971 sec. 6.3). The upper-tail p-value is
+
+```
+bbPValue = 1 - F_{6, n-7}(bbF)
+         = I_x(  (n - 7)/2,  3  )
+                where x = (n - 7) / ((n - 7) + 6 * bbF)
+```
+
+via a self-contained Lentz continued-fraction evaluation
+of the regularised incomplete beta (Numerical Recipes
+3rd ed. sec. 6.4), accurate to ~1e-10.
+
+`bbEta2 = SS_between / SS_total` is reported as a
+directly-interpretable EFFECT SIZE (Cohen 1988 sec.
+8.2.1), independent of n.
+
+SIGN: F is one-sided non-negative. Large `bbF` (small
+`bbPValue`) = SIGNIFICANT WEEKDAY-OF-WEEK PERIODICITY.
+Small `bbF` = no detectable weekday structure.
+
+**Why this is a new orthogonal primitive (vs axes 181-
+215).**
+
+  - vs `daily-token-fisher-g-periodicity`: Fisher's g is
+    a periodogram-MAX over ALL Fourier frequencies omega_k
+    = 2*pi*k/n; axis-216 fixes period p=7 a priori. F has
+    6 numerator DOF vs Fisher-g's 1, and axis-216 detects
+    NON-SINUSOIDAL weekday shifts (e.g. only Sat is high)
+    that leak Fourier mass to harmonics and reduce the
+    period-7 periodogram ordinate.
+  - vs spectral-flatness / spectral-entropy / spectral-
+    peak-frequency: those are continuous-frequency PSD
+    descriptors of the entire spectrum; axis-216 is a
+    hypothesis-test statistic at a SINGLE pre-specified
+    frequency.
+  - vs `iso-weekday-of-week-entropy`: that is a Shannon
+    entropy of the WEEKDAY MASS DISTRIBUTION and is BLIND
+    TO INTRA-WEEKDAY VARIANCE. Two sources with identical
+    weekday entropy can have opposite `bbPValues`.
+  - vs `weekend-weekday-ratio`: 2-level vs 7-level test;
+    a strong Wed-vs-Tue contrast registers on axis-216
+    and not on weekend-weekday-ratio.
+  - vs axes 110 / 214 / 215 (Mann-Kendall, Theil-Sen,
+    Cox-Stuart-thirds — all monotone-trend tests):
+    period-7 ANOVA is INVARIANT to detrending (linear
+    trend leaves all column means equally affected on
+    average). The two statistic families test
+    structurally orthogonal alternatives.
+  - vs axis-213 Page-L: Page-L is a within-3-day-block
+    ORDERED-ALTERNATIVE midrank test; axis-216 is an
+    UNORDERED 7-cell ANOVA F.
+
+**FIRST SINGLE-PRE-SPECIFIED-PERIOD HYPOTHESIS-TEST
+AXIS** in the suite (all prior periodicity-related axes
+are either omnibus-frequency-search or
+descriptive-PSD-amplitude).
+
+CLI subcommand:
+
+```
+pew-insights daily-token-buys-ballot-period7-anova
+pew-insights daily-token-buys-ballot-period7-anova \
+  --source vsc-redacted --json
+pew-insights daily-token-buys-ballot-period7-anova \
+  --sort bbFDesc
+```
+
+Live-smoke output against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights daily-token-buys-ballot-period7-anova
+sources: 6 (shown 2)    tokens: 3,444,271,515
+min-tokens: 1,000    min-tenure-days: 28
+sort: bbFDesc
+dropped: 0 bad hour_start, 0 non-positive tokens,
+         0 source-filter, 0 below min-tokens,
+         4 below min-tenure-days, 0 zero-variance,
+         0 non-finite-fit, 0 below top cap
+
+source         firstDay    lastDay     tenure dfB dfW bbF     bbEta2  bbPValue   tokens
+-------------- ----------- ----------- ------ --- --- ------- ------- ---------- -------------
+vsc-redacted   2025-07-30  2026-04-20  265    6   258 1.6547  0.0371  1.326e-1   1,885,727
+claude-code    2026-02-11  2026-04-23  72     6   65  0.4766  0.0421  8.234e-1   3,442,385,788
+```
+
+Interpretation: NEITHER source shows a statistically
+significant weekday-of-week mean structure at alpha=0.05
+(`vsc-redacted` p = 0.13, `claude-code` p = 0.82). Effect
+sizes are small (eta^2 = 3.7% and 4.2% of total daily-
+token variance respectively). This is consistent with
+both sources being driven primarily by long-tenure
+session intensity rather than calendar-week rhythm —
+exactly the orthogonality claim vs the
+isoweekdayofweekentropy axis (which would catch a
+weekday MASS imbalance even with high intra-weekday
+variance).
+
+Files:
+  - `src/dailytokenbuysballotperiod7anova.ts` (new, ~640 lines)
+  - `src/cli.ts` (added subcommand + dispatch wiring)
+  - `src/format.ts` (added `renderDailyTokenBuysBallotPeriod7Anova`)
+  - `test/dailytokenbuysballotperiod7anova.test.ts` (new, 61 tests)
+
+Test count delta: 15482 -> 15543 (+61).
+
 ## 0.6.534 — 2026-05-06
 
 ### Refined — `daily-token-cox-stuart-thirds-trend` (axis-215) corpus aggregator + tests
