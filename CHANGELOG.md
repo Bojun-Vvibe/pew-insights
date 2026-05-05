@@ -2,6 +2,128 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.511 — 2026-05-05
+
+### Added — `daily-token-jonckheere-terpstra-quartile-blocks` (axis-206 JONCKHEERE 1954 / TERPSTRA 1952 ORDERED-ALTERNATIVE RANK TEST)
+
+Per-source JONCKHEERE-TERPSTRA ordered-alternative rank
+test on the gap-filled daily total_tokens series
+partitioned into k=4 chronological blocks.
+
+TWO-HUNDRED-AND-SIXTH cross-source axis.
+
+**Mechanism.** Terpstra (1952 *Indag. Math.* 14:
+327-333) and independently Jonckheere (1954 *Biometrika*
+41: 133-145) propose a NONPARAMETRIC TEST FOR ORDERED
+ALTERNATIVES across k>=3 independent samples. We
+partition the n-day gap-filled series into k=4
+chronologically-consecutive blocks of size n/4 +/- 1.
+The JT statistic is the sum of pairwise Mann-Whitney U
+counts over all 6 ordered block pairs:
+
+  jtJ = sum_{i<j} U(G_i, G_j)
+  U(G_i, G_j) = #{(a,b): a in G_i, b in G_j, a<b}
+              + 0.5 * #{(a,b): a==b}
+
+Under H0 (no monotonic block ordering):
+
+  E[jtJ]   = (n^2 - sum_g n_g^2) / 4
+  Var[jtJ] = (n^2 (2n+3) - sum_g n_g^2 (2 n_g + 3)) / 72
+  jtZ = (jtJ - E[jtJ]) / sqrt(Var[jtJ]) ~~ N(0,1)
+
+(Jonckheere 1954 eqs. 5-6; Hollander-Wolfe-Chicken
+2014 eqs. 6.20-6.21, no-ties form.)
+
+**Sign convention.** jtZ > +1.96 = late blocks
+systematically outrank early blocks = MONOTONIC
+INCREASING ORDERED-BLOCK TREND. jtZ < -1.96 =
+MONOTONIC DECREASING.
+
+**Structural orthogonality.**
+
+  - vs axis-205 Cox-Stuart sign-pairs: paired-sign at
+    lag c=ceil(n/2) is a SINGLE-PAIR-OFFSET probe; JT
+    is a k=4 BLOCK U-AGGREGATE -- robust to within-
+    block heterogeneity that would noise-up Cox-Stuart.
+  - vs axis-203 David-Barton runs-up-down: lag-1 sign-
+    RUN counts (LOCAL oscillation vs persistence); JT
+    measures GLOBAL block-level rank ordering.
+  - vs axis-202 Noether cyclical-trend: lag-2 spaced
+    TRIPLETS; JT uses k=4 block U-aggregate.
+  - vs ALL halves-comparison axes (Mann-Whitney etc.):
+    halves split into k=2 groups; JT splits into k=4
+    chronological groups and tests for an ORDERED
+    ALTERNATIVE -- detects monotonicity across multiple
+    blocks, not merely a single early-vs-late shift.
+    A U-shape (Q1 high, Q2/Q3 low, Q4 high) is
+    invisible to halves-tests but JT correctly returns
+    jtZ ~ 0 (cancellation -- demonstrated in unit test
+    `U-shape returns near-zero jtZ`).
+  - vs Mann-Kendall tau: O(n^2) full pairwise sign vs
+    O(k^2) block-level U; JT is robust to within-
+    block noise.
+
+**Pre-processing.** NONE. JT is a rank-based U-statistic
+-- shift-, positive-scale-, and any-strictly-monotone-
+transform-invariant.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Real output verbatim (with one source-name line redacted
+per repo policy on banned product strings):
+
+```
+pew-insights daily-token-jonckheere-terpstra-quartile-blocks
+as of: 2026-05-05T13:05:29.609Z    sources: 6 (shown 2)    tokens: 3,444,271,515    min-tokens: 1,000    min-tenure-days: 20    top: -    sort: jtZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 4 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source JONCKHEERE-TERPSTRA quartile-block ordered-alternative test (sorted by jtZAbsDesc; ties: source asc)
+source          firstDay    lastDay     tenure  active  blockSizes   jtJ      jtExp    jtZ      jtPValue   tokens
+--------------  ----------  ----------  ------  ------  -----------  -------  -------  -------  ---------  -------------
+claude-code     2026-02-11  2026-04-23  72      35      18/18/18/18  1330.5   972.0    3.6063   3.1062e-4  3,442,385,788
+[REDACTED]      2025-07-30  2026-04-20  265     73      67/66/66/66  11726.5  13167.0  -2.0646  3.8963e-2  1,885,727
+```
+
+Interpretation:
+
+  - `claude-code` over 72-day tenure shows STRONG
+    POSITIVE JT (jtZ=+3.61, p=3.1e-4 << 0.05) -- late
+    blocks systematically outrank early blocks. The
+    observed jtJ=1330.5 vs expected 972.0 means the
+    Q4 block U-dominates Q1/Q2/Q3 by 358.5 above null
+    -- robust monotonic-increasing trend.
+  - The other source over 265-day tenure shows MILD
+    NEGATIVE JT (jtZ=-2.06, p=3.9e-2 marginal at
+    alpha=0.05) -- a slow monotonic-decreasing trend
+    detected across the four chronological blocks.
+
+### Files
+
+  - `src/dailytokenjonckheereterpstraquartileblocks.ts`
+    -- pure analytical core: `partitionIntoConsecutive
+    Blocks`, `pairwiseMannWhitneyUCountJonckheere`,
+    `dailyTokenJonckheereTerpstraQuartileBlocks`,
+    `aggregateJonckheereTerpstraQuartileBlocks`,
+    builder with strict input validation and gap-fill.
+  - `src/format.ts` -- pretty renderer with full
+    descriptive header and reference anchor footer.
+  - `src/cli.ts` -- subcommand registration with all
+    standard options (`--since`, `--until`, `--source`,
+    `--min-tokens`, `--min-tenure-days`, `--top`,
+    `--sort`, `--json`).
+  - `test/dailytokenjonckheereterpstraquartileblocks.test.ts`
+    -- 33 unit tests covering partition, pairwise U,
+    normal-tail Q, all algebraic identities (shift /
+    scale / negation / strict-monotone), the U-shape
+    cancellation case, all dropped counters, sort
+    ordering, top cap, source filter, and the corpus
+    Stouffer aggregator.
+
+### Test count
+
+  - Before: 14,699
+  - After:  14,732 (+33)
+
 ## 0.6.510 — 2026-05-05
 
 ### Added — `classifyCoxStuartDavidBartonGlobalLocalTrendCompound` (axis-205 ↔ axis-203)

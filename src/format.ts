@@ -20636,6 +20636,7 @@ import type { DailyTokenNoetherCyclicalTrendReport } from './dailytokennoethercy
 import type { DailyTokenDavidBartonRunsUpDownReport } from './dailytokendavidbartonrunsupdown.js';
 import type { DailyTokenHoggAdaptiveHalvesReport } from './dailytokenhoggadaptivehalves.js';
 import type { DailyTokenCoxStuartSignPairsReport } from './dailytokencoxstuartsignpairs.js';
+import type { DailyTokenJonckheereTerpstraQuartileBlocksReport } from './dailytokenjonckheereterpstraquartileblocks.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29424,6 +29425,87 @@ export function renderDailyTokenCoxStuartSignPairs(
   lines.push(
     chalk.dim(
       `(reference anchor: csPValue < 0.05 = REJECT no-monotonic-trend H0 at alpha=0.05 (two-sided normal reference, sign-test asymptotic null). csZ > 0 = MONOTONIC INCREASING (late half systematically above early); csZ < 0 = MONOTONIC DECREASING. UNLIKE axis-203 David-Barton (lag-1 sign-RUN counts) Cox-Stuart pairs at lag c=ceil(n/2) -- maximally distant pairing -- and is a paired-design GLOBAL trend probe; UNLIKE axis-202 Noether (lag-2 spaced TRIPLETS) Cox-Stuart uses far-paired PAIRS; UNLIKE all halves-comparison axes (Mann-Whitney etc.) Cox-Stuart preserves the pairing structure rather than pooling halves into two independent samples.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenJonckheereTerpstraQuartileBlocks(
+  r: DailyTokenJonckheereTerpstraQuartileBlocksReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-jonckheere-terpstra-quartile-blocks',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source JONCKHEERE 1954 / TERPSTRA 1952 ORDERED-ALTERNATIVE RANK TEST on the gap-filled daily total_tokens series partitioned into k=4 chronological blocks. jtJ = sum_{i<j} U(G_i,G_j) over all 6 ordered pairs of consecutive blocks. Under H0 of no monotonic ordering jtJ ~ N( (n^2 - sum_g n_g^2)/4, (n^2(2n+3) - sum_g n_g^2(2n_g+3))/72 ). SIGN: jtZ > 0 = LATE BLOCKS SYSTEMATICALLY OUTRANK EARLY BLOCKS = MONOTONIC INCREASING ORDERED-BLOCK TREND; jtZ < 0 = MONOTONIC DECREASING ORDERED-BLOCK TREND. TWO-HUNDRED-AND-SIXTH cross-source axis. Pre-processing: NONE (rank-based U-statistic; shift- and positive-scale-invariant; invariant under any strictly monotone transform). Distribution-free under H0; deterministic. Refs: Terpstra 1952 Indag. Math. 14:327-333; Jonckheere 1954 Biometrika 41:133-145; Hollander-Wolfe-Chicken 2014 sec. 6.2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source JONCKHEERE-TERPSTRA quartile-block ordered-alternative test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'blockSizes',
+    'jtJ',
+    'jtExp',
+    'jtZ',
+    'jtPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.jtBlockSizes.join('/'),
+    s.jtJ.toFixed(1),
+    s.jtExpected.toFixed(1),
+    s.jtZ.toFixed(4),
+    s.jtPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: jtPValue < 0.05 = REJECT no-ordered-alternative H0 at alpha=0.05 (two-sided normal reference, JT asymptotic null). jtZ > 0 = MONOTONIC INCREASING across the four chronological blocks; jtZ < 0 = MONOTONIC DECREASING. UNLIKE axis-205 Cox-Stuart (paired-sign at lag c=ceil(n/2)) JT pools all observations into k=4 ORDERED GROUPS and aggregates pairwise U-comparisons (rank-based block-level ordering); UNLIKE axis-203 David-Barton (lag-1 sign-RUN counts) JT measures GLOBAL block-level rank ordering; UNLIKE all halves-comparison axes (Mann-Whitney etc.) JT splits into k=4 chronological groups and tests for an ORDERED ALTERNATIVE -- robust to within-block heterogeneity that would noise-up pair-by-pair tests.)`,
     ),
   );
 

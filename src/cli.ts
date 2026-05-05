@@ -211,6 +211,7 @@ import {
   renderDailyTokenDavidBartonRunsUpDown,
   renderDailyTokenHoggAdaptiveHalves,
   renderDailyTokenCoxStuartSignPairs,
+  renderDailyTokenJonckheereTerpstraQuartileBlocks,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -711,6 +712,10 @@ import {
   buildDailyTokenCoxStuartSignPairs,
   type DailyTokenCoxStuartSignPairsSort,
 } from './dailytokencoxstuartsignpairs.js';
+import {
+  buildDailyTokenJonckheereTerpstraQuartileBlocks,
+  type DailyTokenJonckheereTerpstraQuartileBlocksSort,
+} from './dailytokenjonckheereterpstraquartileblocks.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47075,6 +47080,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenCoxStuartSignPairs(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-jonckheere-terpstra-quartile-blocks')
+  .description(
+    "Per-source JONCKHEERE 1954 / TERPSTRA 1952 ORDERED-ALTERNATIVE RANK TEST on the gap-filled daily total_tokens series partitioned into k=4 chronological blocks (TWO-HUNDRED-AND-SIXTH cross-source axis). jtJ = sum_{i<j} U(G_i,G_j) over all 6 ordered block pairs; U uses mid-rank tie weighting (Hollander-Wolfe-Chicken 2014 eq. 6.18). Under H0 of no monotonic block ordering jtJ ~ N( (n^2 - sum_g n_g^2)/4, (n^2(2n+3) - sum_g n_g^2(2n_g+3))/72 ) (Jonckheere 1954 eqs. 5-6). SIGN: jtZ > 0 = LATE BLOCKS SYSTEMATICALLY OUTRANK EARLY BLOCKS = MONOTONIC INCREASING ORDERED-BLOCK TREND; jtZ < 0 = MONOTONIC DECREASING. STRUCTURALLY DISTINCT from axis-205 Cox-Stuart (paired-sign at lag c=ceil(n/2) -- single far-pair statistic vs k=4 block U-aggregate); from axis-203 David-Barton (lag-1 sign-RUN counts -- LOCAL oscillation vs GLOBAL block ordering); from axis-202 Noether-cyclical (lag-2 spaced TRIPLETS vs k=4 block U-aggregate); from ALL halves-comparison axes (k=2 vs k=4 ordered groups; halves test cannot detect U-shapes or non-monotone block patterns). Pre-processing: NONE (rank-based U-statistic; shift- and positive-scale-invariant; invariant under any strictly monotone transform). Distribution-free under H0; deterministic. Refs: Terpstra 1952 Indag. Math. 14:327-333; Jonckheere 1954 Biometrika 41:133-145; Hollander-Wolfe-Chicken 2014 sec. 6.2.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 20 (each of k=4 blocks has size >= 5, Jonckheere 1954 Table 1 normal-approximation validity band). Default 20.',
+    '20',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: jtZAbsDesc (default) | jtZ | jtPValue | jtPValueDesc | jtJ | jtJDesc | tokens | tenure | source.',
+    'jtZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 20) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 20 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'jtZ',
+          'jtZAbsDesc',
+          'jtPValue',
+          'jtPValueDesc',
+          'jtJ',
+          'jtJDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenJonckheereTerpstraQuartileBlocks(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenJonckheereTerpstraQuartileBlocksSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenJonckheereTerpstraQuartileBlocks(report) + '\n',
           );
         }
       } catch (e) {
