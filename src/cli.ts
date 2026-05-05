@@ -207,6 +207,7 @@ import {
   renderDailyTokenCaponHalves,
   renderDailyTokenMielkeQuarticHalves,
   renderDailyTokenKamatRangeRatioHalves,
+  renderDailyTokenNoetherCyclicalTrend,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -691,6 +692,10 @@ import {
   buildDailyTokenKamatRangeRatioHalves,
   type DailyTokenKamatRangeRatioHalvesSort,
 } from './dailytokenkamatrangeratiohalves.js';
+import {
+  buildDailyTokenNoetherCyclicalTrend,
+  type DailyTokenNoetherCyclicalTrendSort,
+} from './dailytokennoethercyclicaltrend.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -46613,6 +46618,137 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKamatRangeRatioHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-noether-cyclical-trend')
+  .description(
+    "Per-source NOETHER 1956 CYCLICAL-TREND TEST on the gap-filled daily total_tokens series at LAG-m=2 monotonic spaced triplets (TWO-HUNDRED-AND-SECOND cross-source axis). Statistic noetherM = #{ i in [0, n-2m) : (v[i],v[i+m],v[i+2m]) is strictly monotonic up or down }. Under H0 of i.i.d. continuous E[noetherM] = (n - 2m)/3. Var is studentised by deterministic fixed-seed permutation: 8000 random permutations of the input series are drawn (FNV-1a-seeded SplitMix32 PRNG seeded by the input itself) and the empirical permutation variance of noetherM is the standardising denominator; noetherZ ~~ N(0,1) under H0. SIGN: noetherZ > 0 = MORE monotonic spaced triplets than chance (lag-m persistence/trend); noetherZ < 0 = FEWER monotonic spaced triplets (lag-m cyclic / mean-reversion). STRUCTURALLY DISTINCT from daily-token-turning-point-rate (Wallis-Moore lag-1 turning-point count is the AFFINE complement of Noether at LAG 1; this axis defaults to LAG 2 to be ORTHOGONAL by construction); from daily-token-mann-kendall-tau (global all-pairs S, dominated by long-range comparisons; Noether is local short-range); from daily-token-bartels-rank-von-neumann (rank-magnitude-of-successive-differences, lag-1, magnitude-sensitive; Noether is sign-pattern-only, lag-tunable); from autocorrelation lag1/lag7 (parametric linear); from runs tests (median dichotomy). Pre-processing: NONE (within-triplet ordering is monotone-invariant). Distribution-free under H0; deterministic given the same input. Refs: Noether 1956 Annals of Math Stat 27(2):441-450; Wallis & Moore 1941 JASA 36(215):401-409; Hettmansperger 1984 Statistical Inference Based on Ranks sec. 4.5.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 2*lag + 6 (= 10 at default lag 2). Default 14.',
+    '14',
+  )
+  .option(
+    '--noether-lag <m>',
+    'spacing m for the spaced triplet (v[i], v[i+m], v[i+2m]). Must be integer >= 2 (lag 1 is the negated Wallis-Moore turning-point statistic; this axis would not be orthogonal at lag 1). Default 2.',
+    '2',
+  )
+  .option(
+    '--permutations <n>',
+    'permutations for the studentised null variance estimate. Default 8000; must be >= 200.',
+    '8000',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: noetherZAbsDesc (default) | noetherZ | noetherPValue | noetherPValueDesc | noetherM | noetherMDesc | tokens | tenure | source.',
+    'noetherZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        noetherLag: string;
+        permutations: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const noetherLag = Number.parseInt(opts.noetherLag, 10);
+        if (!Number.isInteger(noetherLag) || noetherLag < 2) {
+          throw new Error(
+            `--noether-lag must be an integer >= 2 (got ${opts.noetherLag})`,
+          );
+        }
+        const minFloor = 2 * noetherLag + 6;
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < minFloor) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= ${minFloor} for lag ${noetherLag} (got ${opts.minTenureDays})`,
+          );
+        }
+        const permutations = Number.parseInt(opts.permutations, 10);
+        if (!Number.isInteger(permutations) || permutations < 200) {
+          throw new Error(
+            `--permutations must be an integer >= 200 (got ${opts.permutations})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'noetherZ',
+          'noetherZAbsDesc',
+          'noetherPValue',
+          'noetherPValueDesc',
+          'noetherM',
+          'noetherMDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenNoetherCyclicalTrend(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          noetherLag,
+          permutations,
+          top,
+          sort: opts.sort as DailyTokenNoetherCyclicalTrendSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenNoetherCyclicalTrend(report) + '\n',
           );
         }
       } catch (e) {

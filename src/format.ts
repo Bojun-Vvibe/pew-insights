@@ -20632,6 +20632,7 @@ import type { DailyTokenKlotzHalvesReport } from './dailytokenklotzhalves.js';
 import type { DailyTokenCaponHalvesReport } from './dailytokencaponhalves.js';
 import type { DailyTokenMielkeQuarticHalvesReport } from './dailytokenmielkequartichalves.js';
 import type { DailyTokenKamatRangeRatioHalvesReport } from './dailytokenkamatrangeratiohalves.js';
+import type { DailyTokenNoetherCyclicalTrendReport } from './dailytokennoethercyclicaltrend.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29087,6 +29088,89 @@ export function renderDailyTokenKamatRangeRatioHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: kamatPValue < 0.05 = REJECT scale-equality H0 at alpha=0.05 (two-sided normal reference, studentised log-range-ratio). kamatZ > 0 = SECOND half MORE dispersed (matches axis-117 stZ, axis-170 abZ, axis-177 klotzZ, axis-178 conoverZ, axis-179 moodZ, axis-199 caponZ, axis-200 mielkeZ sign convention). UNLIKE rank-based scale tests Kamat uses ONLY the four per-half extremes (min, max) and ignores within-half ordering — uniquely sensitive to ISOLATED EXTREME SPIKES that drive R_B without contributing materially to rank-score sums.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenNoetherCyclicalTrend(
+  r: DailyTokenNoetherCyclicalTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-noether-cyclical-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    noether-lag: ${r.noetherLag}    permutations: ${formatNumber(r.permutations)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source NOETHER 1956 CYCLICAL-TREND TEST on the gap-filled daily total_tokens series at LAG-m=${r.noetherLag} monotonic spaced triplets. noetherM = #{ i : (v[i],v[i+m],v[i+2m]) strictly monotonic }. E[noetherM] = (n - 2m)/3 under H0. Studentised by deterministic fixed-seed permutation (FNV-1a-seeded SplitMix32, ${formatNumber(r.permutations)} perms). noetherZ ~~ N(0,1) under H0. SIGN: noetherZ > 0 = MORE monotonic spaced triplets than chance (lag-m persistence/trend); noetherZ < 0 = FEWER monotonic spaced triplets (lag-m cyclic / mean-reversion). TWO-HUNDRED-AND-SECOND cross-source axis. STRUCTURALLY DISTINCT from daily-token-turning-point-rate (Wallis-Moore lag-1 turning-point count is the AFFINE complement of Noether at LAG 1; this axis defaults to LAG ${r.noetherLag} to be ORTHOGONAL by construction); from daily-token-mann-kendall-tau (global all-pairs S, dominated by long-range comparisons); from daily-token-bartels-rank-von-neumann (rank-magnitude lag-1, magnitude-sensitive); from autocorrelation lag1/lag7 (parametric linear); from runs tests (median dichotomy). Pre-processing: NONE (within-triplet ordering is monotone-invariant). Distribution-free under H0; deterministic given the same input. Refs: Noether 1956 Annals of Math Stat 27(2):441-450; Wallis & Moore 1941 JASA 36(215):401-409.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source NOETHER monotonic-spaced-triplet count at lag ${r.noetherLag} (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'lag',
+    'triplets',
+    'noetherM',
+    'expM',
+    'ties',
+    'noetherZ',
+    'noetherPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.noetherLag),
+    formatNumber(s.noetherTriplets),
+    formatNumber(s.noetherM),
+    s.noetherExpM.toFixed(2),
+    formatNumber(s.noetherTies),
+    s.noetherZ.toFixed(4),
+    s.noetherPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: noetherPValue < 0.05 = REJECT i.i.d.-continuous H0 at alpha=0.05 (two-sided normal reference, permutation-studentised). noetherZ > 0 = MORE monotonic lag-${r.noetherLag} spaced triplets than chance = lag-${r.noetherLag} PERSISTENCE / TREND; noetherZ < 0 = FEWER = lag-${r.noetherLag} CYCLIC / mean-reverting structure. UNLIKE Wallis-Moore (lag-1 turning-points), Noether at lag ${r.noetherLag} sees PERSISTENCE-OR-REVERSION AT TWO-DAY SCALE — patterns invisible to lag-1 statistics.)`,
     ),
   );
 
