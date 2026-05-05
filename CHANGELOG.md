@@ -2,6 +2,121 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.491 — 2026-05-05
+
+### Added — `daily-token-fligner-killeen-halves` (axis-196)
+
+ONE-HUNDRED-AND-NINETY-SIXTH cross-source axis: per-source
+**Fligner-Killeen median-centered scale test** comparing
+the dispersion of the FIRST half (n1 = floor(n/2)) vs
+SECOND half (n2 = n - n1) of the gap-filled daily
+total_tokens series.
+
+Pipeline (Fligner & Killeen 1976 *J. Amer. Statist.
+Assoc.* 71:210-213; recommended median-modified form per
+Conover, Johnson & Johnson 1981 *Technometrics*
+23(4):351-361 Table 5):
+
+  1. Within-half median-centred ABSOLUTE deviations
+     `z_ij = | x_ij - median_i |`
+  2. Pooled mid-ranks of `|z|`
+  3. **Half-normal scores**
+     `a(R) = Phi^{-1}( 0.5 + R / (2 (n + 1)) )`
+  4. `fkX2 = n1 * (abarA - abar)^2 / ( v * (1 - n1/n) )`
+     `~ chi^2(1)` with
+     `v = (1/(n-1)) sum (a(R_i) - abar)^2`
+  5. Signed `fkZ = sign(abar - abarA) * sqrt(fkX2) ~ N(0,1)`;
+     positive `fkZ` = SECOND half MORE dispersed,
+     negative `fkZ` = FIRST half MORE dispersed.
+
+#### Structural orthogonality
+
+  - **vs axis-177 Klotz.** Klotz uses SQUARED FULL-
+    normal-scores on the SIGNED median-aligned values
+    (U-shaped in rank: small AND large ranks both score
+    high). FK uses HALF-normal-scores on the ABSOLUTE
+    median-deviations (monotone-increasing in rank). They
+    reject differently when the dispersion change is
+    ASYMMETRIC (e.g., the second half has occasional huge
+    spikes but is otherwise tight, vs both tighter centre
+    AND larger tails).
+  - **vs axes 117/170 Siegel-Tukey / Ansari-Bradley.** Both
+    use folded ranks on the POOLED ORDERING of signed
+    values; FK ranks on the |z| ORDERING. Two
+    configurations with the same folded-rank sum can have
+    radically different |z| rank sums.
+  - **vs axis-178 Conover squared-ranks.** Conover uses
+    `(R - (n+1)/2)^2` (quadratic-in-centred-rank); FK uses
+    `Phi^{-1}(0.5 + R/(2(n+1)))` (probit-in-upper-rank).
+    Identical chi^2(1) null distribution but different
+    score-function shapes → different power profiles.
+  - **vs axes 174/175 Cucconi/Lepage.** Joint chi^2(2)
+    location-scale tests cannot SEPARATE the two channels.
+    FK is a pure scale test; combined with axis-176
+    Brunner-Munzel (pure location) it forms an
+    ORTHOGONAL DECOMPOSITION of what C/L mash together.
+
+Recommended in the literature as the **most ROBUST**
+nonparametric scale test under deviations from normality
+(Conover et al. 1981 Tab. 5: actual size 0.046-0.054 vs
+nominal 0.05 across n1 = n2 in [10, 50] under FOUR diverse
+null distributions; default `var.test` replacement in R's
+`stats::fligner.test`).
+
+#### Live smoke (`~/.config/pew/queue.jsonl`)
+
+```
+$ pew-insights daily-token-fligner-killeen-halves \
+    --top 6 --sort fkZAbsDesc
+
+source         tenure  n1   n2    abarA   abar    fkX2     fkZ      p
+claude-code    72      36   36    0.3681  0.7858  38.662   +6.218   5.06e-10
+openclaw       19      9    10    1.0304  0.7700   4.009   -2.002   4.53e-2
+vscode-cp      265     132  133   0.8394  0.7780   3.373   -1.836   6.63e-2
+opencode       16      8    8     0.9755  0.7664   2.489   -1.578   1.15e-1
+hermes         19      9    10    0.9298  0.7700   1.510   -1.229   2.19e-1
+```
+
+Reading: `claude-code` shows a STRONGLY SIGNIFICANT
+positive `fkZ = +6.22` (`p = 5e-10`) — the second half
+of its 72-day tenure is dramatically more dispersed
+than the first (the half-normal-score mean on group A,
+`abarA = 0.37`, lies far BELOW the pooled mean
+`abar = 0.79`, meaning A's |median-deviations| are
+concentrated at LOW ranks while B's occupy the HIGH
+ranks). `openclaw` rejects MARGINALLY at alpha 0.05 in
+the OPPOSITE direction (`fkZ = -2.00`, `p = 0.045`):
+the FIRST half is more dispersed, consistent with an
+early ramp-up burst followed by a tighter operating
+band. `vscode-cp`, `opencode`, and `hermes` all show
+`fkZ` in `[-1.84, -1.23]`: directional but
+non-significant first-half-more-dispersed signal —
+qualitatively consistent across three independent
+sources, suggesting a corpus-wide settling pattern.
+
+#### Files
+
+- `src/dailytokenflignerkilleenhalves.ts` — new axis
+  implementation (~750 LOC including the docstring,
+  builder, half-normal score function via the
+  Beasley-Springer-Moro inverse-normal CDF, and
+  Conover-Iman-Keselman 1981 chi^2(1) statistic)
+- `test/dailytokenflignerkilleenhalves.test.ts` — 33 unit
+  tests covering: input validation (too few samples,
+  non-finite values, zero variance), score-function
+  helpers (mid-ranks, median, inverse-normal, upper
+  tail), exact identities (`fkZ(x+c) = fkZ(x)`,
+  `fkZ(a*x) = fkZ(x)` for `a > 0`, independent half-shift
+  invariance, `fkX2 = fkZ^2`), directional sign
+  convention (B more dispersed → positive `fkZ`; A more
+  dispersed → negative `fkZ`), and the builder surface
+  (sparse-source / zero-variance / source-filter / top-cap
+  drops, deterministic output)
+- `src/cli.ts` — new `daily-token-fligner-killeen-halves`
+  subcommand
+- `src/format.ts` — new `renderDailyTokenFlignerKilleenHalves`
+  pretty-printer
+
 ## 0.6.490 — 2026-05-05
 
 ### Refined — `daily-token-rosenbaum-adjacency-halves` (axis-195 polish)
