@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.515 — 2026-05-05
+
+### Added — `summarizeAxis207Axis206PitmanMssdJonckheereTerpstraReport`
+
+Pure helper that renders an
+`Axis207Axis206PitmanMssdJonckheereTerpstraReport`
+into a single-line, log-friendly summary suitable
+for piping into release notes, smoke logs, and
+dashboards. Deterministic; alpha-stamped; no I/O.
+
+**Format** (single line):
+
+```
+axis-207xaxis-206 alpha=<alpha> n=<rows> both=<k>/<rows> qd[smU/smD/osU/osD]=a/b/c/d buckets[csd/l1/bt/owb/ne]=v/w/x/y/z
+```
+
+  - `qd[smU/smD/osU/osD]` = the four bothDecisive
+    joint-sign quadrants (smoothBlockTrendUp,
+    smoothBlockTrendDown, oscBlockTrendUp,
+    oscBlockTrendDown).
+  - `buckets[csd/l1/bt/owb/ne]` = the five 5-bucket
+    counts (coherent-smooth-drift, lag1-only,
+    block-trend-only, osc-with-block-trend, no-evidence).
+
+The tokens are deliberately short so multiple compound
+summaries fit on one terminal line; the alpha stamp
+makes the summary unambiguous when compounds at
+different alphas are compared side-by-side.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Joined the v0.6.513 axis-207 (`pew-insights daily-token-
+pitman-permutation-mssd-randomness --json`) with the
+v0.6.511 axis-206 (`pew-insights daily-token-jonckheere-
+terpstra-quartile-blocks --json`) outputs through the
+v0.6.514 compound classifier, then ran the new
+summarizer. Verbatim:
+
+```
+SUMMARY: axis-207xaxis-206 alpha=0.05 n=2 both=0/2 qd[smU/smD/osU/osD]=0/0/0/0 buckets[csd/l1/bt/owb/ne]=0/0/2/0/0
+---
+  claude-code       ppZ= -3.080  ppP=  6.40e-2  jtZ=  3.606  jtP=  3.11e-4  bucket=block-trend-only       quad=null
+  vscode-copilot    ppZ= -2.361  ppP=  7.00e-2  jtZ= -2.065  jtP=  3.90e-2  bucket=block-trend-only       quad=null
+---
+bothDecisive=0  atLeastOneDecisive=2
+bucketCounts={"coherent-smooth-drift":0,"lag1-only":0,"block-trend-only":2,"osc-with-block-trend":0,"no-evidence":0}
+byJointSignQuadrant={"smoothBlockTrendUp":0,"smoothBlockTrendDown":0,"oscBlockTrendUp":0,"oscBlockTrendDown":0,"anyMissingDecisive":2}
+```
+
+Reading: only two sources survive BOTH axis-207 and
+axis-206 minTenureDays filters and pass the join. Both
+fall in `block-trend-only` -- jtPValue is decisive
+(claude-code 3.11e-4 monotonic up, vscode-copilot 3.90e-2
+monotonic down), but the lag-1 microstructure probe is
+borderline non-decisive at alpha=0.05 (ppPValue 6.40e-2
+and 7.00e-2 -- both strongly negative ppZ ~ -3 and -2.4
+respectively, hinting at smoothness, but not crossing
+the 0.05 threshold under the B=999 Monte-Carlo
+permutation reference). No source qualifies for the
+unambiguous coherent-smooth-drift quadrant on this
+corpus snapshot. The summarizer renders the entire
+joint-state in one ~110-char line; downstream
+dashboards can grep `qd[smU/smD/osU/osD]=` to track
+the bothDecisive composition over time.
+
+### Files
+
+  - `src/classifyaxis207axis206pitmanmssdjonckheereterpstraserialvsblocktrendcompound.ts`
+    -- adds `summarizeAxis207Axis206PitmanMssdJonckheereTerpstraReport(report) -> string` alongside the existing classifier; pure function of the report; deterministic.
+  - `test/classifyaxis207axis206pitmanmssdjonckheereterpstraserialvsblocktrendcompound.test.ts`
+    -- +5 tests: empty-report rendering, single-line invariant + axis-tag prefix, populated quadrant/bucket counts, deterministic across repeated calls, alpha-stamp reflects classifier alpha.
+
+### Test count
+
+  - Before: 14,835
+  - After:  14,840 (+5)
+
 ## 0.6.514 — 2026-05-05
 
 ### Added — `classifyAxis207Axis206PitmanMssdJonckheereTerpstraSerialVsBlockTrendCompound` (axis-207 ↔ axis-206)

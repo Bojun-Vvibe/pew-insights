@@ -378,3 +378,40 @@ export function classifyAxis207Axis206PitmanMssdJonckheereTerpstraSerialVsBlockT
     sourcesOnlyInJonckheereTerpstra,
   };
 }
+
+/**
+ * Render a one-line, log-friendly summary of an
+ * Axis207Axis206PitmanMssdJonckheereTerpstraReport,
+ * suitable for piping into release notes, smoke logs,
+ * or dashboards. Format (deterministic, alpha-stamped):
+ *
+ *   axis-207xaxis-206 alpha=<alpha> n=<rows> both=<k>/<rows> qd[smU/smD/osU/osD]=a/b/c/d buckets[csd/l1/bt/owb/ne]=v/w/x/y/z
+ *
+ * where the joint quadrant cells are:
+ *   smU = smoothBlockTrendUp
+ *   smD = smoothBlockTrendDown
+ *   osU = oscBlockTrendUp
+ *   osD = oscBlockTrendDown
+ *
+ * and the bucket cells are:
+ *   csd = coherent-smooth-drift
+ *   l1  = lag1-only
+ *   bt  = block-trend-only
+ *   owb = osc-with-block-trend
+ *   ne  = no-evidence
+ *
+ * Pure function of the report; deterministic; no I/O.
+ */
+export function summarizeAxis207Axis206PitmanMssdJonckheereTerpstraReport(
+  report: Axis207Axis206PitmanMssdJonckheereTerpstraReport,
+): string {
+  const n = report.rows.length;
+  const a = report.alpha;
+  const q = report.byJointSignQuadrant;
+  const b = report.bucketCounts;
+  return (
+    `axis-207xaxis-206 alpha=${a} n=${n} both=${report.bothDecisive}/${n} ` +
+    `qd[smU/smD/osU/osD]=${q.smoothBlockTrendUp}/${q.smoothBlockTrendDown}/${q.oscBlockTrendUp}/${q.oscBlockTrendDown} ` +
+    `buckets[csd/l1/bt/owb/ne]=${b['coherent-smooth-drift']}/${b['lag1-only']}/${b['block-trend-only']}/${b['osc-with-block-trend']}/${b['no-evidence']}`
+  );
+}
