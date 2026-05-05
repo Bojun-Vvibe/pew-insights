@@ -339,3 +339,79 @@ test('wsr: builder rejects invalid since/until', () => {
     /invalid until/,
   );
 });
+
+// ---------- v0.6.477 refinement: extra invariants ----------
+
+test('wsr: rank-biserial is bounded in [-1, 1] across many random inputs', () => {
+  // Deterministic LCG so we don't depend on Math.random.
+  let s = 1234567 >>> 0;
+  const rng = () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 0x1_0000_0000;
+  };
+  for (let trial = 0; trial < 20; trial += 1) {
+    const v = Array.from({ length: 16 }, () => Math.floor(rng() * 1_000_000) + 1);
+    // Skip degenerate (zero-variance / all-zero diff) trials.
+    let r;
+    try {
+      r = dailyTokenWilcoxonSignedRankHalves(v);
+    } catch {
+      continue;
+    }
+    assert.ok(
+      r.rankBiserial >= -1 && r.rankBiserial <= 1,
+      `r_rb out of bounds on trial ${trial}: ${r.rankBiserial}`,
+    );
+    assert.ok(
+      r.pTwoSided >= 0 && r.pTwoSided <= 1,
+      `pTwoSided out of bounds on trial ${trial}: ${r.pTwoSided}`,
+    );
+    // Two-sided p never exceeds the smaller one-sided p doubled.
+    const minSide = 2 * Math.min(r.pUpper, r.pLower);
+    assert.ok(
+      r.pTwoSided <= minSide + 1e-12,
+      `pTwoSided ${r.pTwoSided} > 2*min(pUp,pLow) ${minSide}`,
+    );
+  }
+});
+
+test('wsr: W+ + W- = N(N+1)/2 (signed-rank conservation identity)', () => {
+  const v = [
+    1, 2, 3, 4, 5, 6, 7, 8,
+    10, 1, 30, 1, 50, 1, 70, 1,
+  ];
+  const r = dailyTokenWilcoxonSignedRankHalves(v);
+  const N = r.nNonZero;
+  const expectedSum = (N * (N + 1)) / 2;
+  assert.equal(r.wPlus + r.wMinus, expectedSum);
+});
+
+test('wsr: continuity correction always pulls Z toward 0', () => {
+  // Construct a case with W+ > E[W+]: continuity-corrected |Z| should be
+  // strictly less than the un-corrected |Z|.
+  const v = [
+    1, 2, 3, 4, 5, 6, 7, 8,
+    10, 20, 30, 40, 50, 60, 70, 80,
+  ];
+  const r = dailyTokenWilcoxonSignedRankHalves(v);
+  const dev = r.wPlus - r.expectedWPlus;
+  const naiveZ = dev / Math.sqrt(r.varianceWPlus);
+  assert.ok(Math.abs(r.z) < Math.abs(naiveZ), `cc-Z |${r.z}| should be < naive |${naiveZ}|`);
+  assert.equal(Math.sign(r.z), Math.sign(naiveZ));
+});
+
+test('wsr: large tie block (all |d_i| equal) collapses variance correctly', () => {
+  // 16 days; second half is exactly first half + constant 100 -> all |d_i| = 100.
+  const v = [
+    10, 20, 30, 40, 50, 60, 70, 80,
+    110, 120, 130, 140, 150, 160, 170, 180,
+  ];
+  const r = dailyTokenWilcoxonSignedRankHalves(v);
+  // All 8 differences positive and tied at 100 -> all ranks = 4.5.
+  assert.equal(r.nNonZero, 8);
+  assert.equal(r.wPlus, 36); // 8 * 4.5
+  assert.equal(r.wMinus, 0);
+  // Tie correction: one tie group of size 8 -> 8*7*9/48 = 10.5.
+  // Base var: 8*9*17/24 = 51. Tie-corrected var: 51 - 10.5 = 40.5.
+  assert.ok(Math.abs(r.varianceWPlus - 40.5) < 1e-9);
+});

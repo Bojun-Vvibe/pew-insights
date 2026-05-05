@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.477 — 2026-05-05
+
+### Refinement — axis-189 invariant tests (4 added; suite now 32)
+
+Adds four extra invariant tests for axis-189
+WILCOXON SIGNED-RANK HALVES that catch regressions
+not covered by the v0.6.476 functional tests:
+
+  - **rank-biserial bounded in [-1, 1] over 20 random
+    16-day inputs** drawn from a deterministic LCG.
+    Also asserts pTwoSided in [0, 1] and the standard
+    `pTwoSided <= 2 * min(pUpper, pLower)` two-sided
+    consistency identity on every trial.
+  - **signed-rank conservation identity W+ + W- =
+    N(N+1)/2** under Pratt zero-elimination. This
+    catches any rank-assignment bug that double-
+    counts or skips ranks.
+  - **continuity correction always pulls Z toward 0**.
+    Asserts `|Z_corrected| < |Z_naive|` and
+    `sign(Z_corrected) == sign(Z_naive)` on a
+    constructed input where W+ > E[W+]. Catches a
+    sign-flip in the cc term.
+  - **large tie block collapses variance correctly**.
+    Constructs a series where all 8 paired differences
+    equal exactly +100; verifies W+ = 8 * mid-rank =
+    36, W- = 0, and tie-corrected variance =
+    51 - 10.5 = 40.5 (one tie group of size 8 —
+    8*7*9/48 = 10.5). This is the only test that
+    pins the EXACT numeric value of the
+    Lehmann-1975 tie-correction term.
+
 ## 0.6.476 — 2026-05-05
 
 ### Added — `daily-token-wilcoxon-signed-rank-halves` axis-189
