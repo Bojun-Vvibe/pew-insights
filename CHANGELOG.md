@@ -2,6 +2,92 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.536 — 2026-05-06
+
+### Refined — `classifyAxis216Axis215BuysBallotCoxStuartThirdsWeekdayPeriodicityVsHeadVsTailTrendCompound` (axis-216 ↔ axis-215)
+
+Refinement on top of v0.6.535: adds a cross-axis 6-bucket
+compound classifier joining the v0.6.535 axis-216
+BUYS-BALLOT 1847 PERIOD-7 ANOVA (`bbF`, `bbEta2`,
+`bbPValue`) with the v0.6.534 axis-215 COX-STUART 1955
+sec. 5 THIRDS-VARIANT SIGN TEST (`csTZ`, `csTPValue`)
+on a per-source basis.
+
+The two axes target MAXIMALLY-OPPOSITE alternative
+hypotheses about how the gap-filled daily-token series
+departs from "iid noise about a constant mean":
+
+  - Buys-Ballot is a PERIODIC-MEAN-STRUCTURE F-test at
+    FIXED period 7 (weekday-of-week), INVARIANT under
+    DETRENDING and so blind to head-vs-tail location
+    shift.
+  - Cox-Stuart-thirds is a SIGN-TEST on
+    head-vs-tail paired differences at lag ceil(2n/3),
+    deliberately DROPPING THE MIDDLE THIRD, INSENSITIVE
+    to within-third periodic structure.
+
+Because Buys-Ballot's F is one-sided non-negative
+(undirected) and Cox-Stuart-thirds carries direction
+via the sign of csTZ, the compound bucket scheme is
+2 x 3 = 6 (NOT the standard 4-quadrant
+direction-conflict scheme used by signed-x-signed
+classifiers like axis-213 x axis-212):
+
+```
+'weekday-and-up-drift'    bbDecisive AND csTDecisive AND csTZ >= 0
+'weekday-and-down-drift'  bbDecisive AND csTDecisive AND csTZ <  0
+'weekday-only'            bbDecisive AND NOT csTDecisive
+'up-drift-only'           NOT bbDecisive AND csTDecisive AND csTZ >= 0
+'down-drift-only'         NOT bbDecisive AND csTDecisive AND csTZ <  0
+'no-evidence'             NOT bbDecisive AND NOT csTDecisive
+```
+
+THIS IS THE FIRST COMPOUND CLASSIFIER IN THE SUITE that
+pairs an UNDIRECTED ANOVA F-test with a SIGNED trend
+test; all prior compound classifiers (axis-213 x
+axis-212, axis-211 x axis-210, axis-209 x axis-208,
+axis-208 x axis-205, axis-207 x axis-206, axis-212 x
+axis-211, etc.) join two SIGNED tests under a 4-quadrant
+direction-conflict frame.
+
+Also adds `summarizeAxis216Axis215BuysBallotCoxStuartThirdsReport`
+(deterministic; one-line log-friendly format).
+
+65 additional unit tests covering:
+  - alpha range validation (0, 0.5]; default 0.05;
+    boundaries 0.001 and 0.5
+  - input validation (empty source, non-finite bbF
+    /bbEta2/bbPValue, bbEta2 out of [0,1], bbPValue
+    out of [0,1], non-finite csTZ, csTPValue out of
+    (0,1], duplicate sources)
+  - the 6 buckets in isolation (each reachable)
+  - decisiveness boundary at exactly alpha (strict
+    less-than)
+  - alpha sensitivity (loose vs tight)
+  - csTZ = 0 boundary convention (csTZ >= 0 -> up)
+  - sources only in bb / only in csT (lex-sorted)
+  - joined rows in lex source order
+  - row preserves all axis-216 and axis-215 fields
+  - bucketCount sum invariant equals rows.length
+  - byJointQuadrant sum invariant equals rows.length
+  - bothDecisive = sum of weekday-and-* buckets
+  - atLeastOneDecisive = rows.length - no-evidence
+  - 5-source cross-product hits 5 distinct buckets
+  - all 6 buckets reachable in a single 6-source
+    classification
+  - jointQuadrant null vs non-null for every bucket
+  - 8-case bb-state x csT-state cross-product
+  - 100-source synthetic invariant
+  - summarize: empty / non-default-alpha / 6-bucket
+    populated / determinism
+
+Test count delta: 15543 -> 15608 (+65).
+Total suite: now 15608.
+
+Files:
+  - `src/classifyaxis216axis215buysballotcoxstuartthirdsweekdayperiodicityvsheadvstailtrendcompound.ts` (new, ~340 lines)
+  - `test/classifyaxis216axis215buysballotcoxstuartthirdsweekdayperiodicityvsheadvstailtrendcompound.test.ts` (new, 65 tests)
+
 ## 0.6.535 — 2026-05-06
 
 ### Added — `daily-token-buys-ballot-period7-anova` (axis-216)
