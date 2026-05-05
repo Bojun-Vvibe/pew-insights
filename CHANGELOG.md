@@ -2,6 +2,185 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.550 — 2026-05-06
+
+### Added — `daily-token-alexandersson-snht` (axis-221)
+
+TWO-HUNDRED-AND-TWENTY-FIRST cross-source axis. Per-source
+ALEXANDERSSON 1986 STANDARD NORMAL HOMOGENEITY TEST (SNHT)
+for a SINGLE STEP SHIFT in mean on the gap-filled daily
+total_tokens series. The first axis on the daily token
+series to test for a single mean changepoint under a
+GAUSSIAN likelihood-ratio framework with TABULATED
+critical values.
+
+Mechanism. Standardise under the constant-mean null:
+
+```
+z[i] = (x[i] - mean(x)) / sd(x)
+```
+
+For each candidate split a in {1, ..., n-1} compute
+
+```
+z1bar(a) = (1/a)     * sum_{i<a}    z[i]
+z2bar(a) = (1/(n-a)) * sum_{i>=a}   z[i]
+T(a)     = a * z1bar(a)^2 + (n-a) * z2bar(a)^2
+```
+
+The SNHT statistic is `T0 = max_a T(a)` and the most-
+likely changepoint is `aStar = argmax_a T(a)` (Alexandersson
+1986 *J. Climatology* 6:661-675, eq. 3-5).
+
+Critical values via the Khaliq-Ouarda 2007 *IJC*
+27:681-687 cubic-in-`ln(n)` polynomial fit to the
+Alexandersson 1986 Monte-Carlo grid (validity n in
+[10, 70000]):
+
+```
+T_crit(n, alpha) = c0 + c1*ln(n) + c2*ln(n)^2 + c3*ln(n)^3
+```
+
+with separate (c0, c1, c2, c3) tuples at alpha in
+{0.01, 0.05, 0.10}. `significant05` is set iff
+`T0 >= tCrit05`. A complementary CONSERVATIVE Bonferroni
+normal-tail upper bound `pApprox = min(1, (n-1) * exp(-T0/2))`
+is exposed; the Khaliq-Ouarda critical values are
+preferred for decisions.
+
+Diagnostic surfaces: `aStar` and `aStarDay`; `muBefore`,
+`muAfter`, `meanShift = muAfter - muBefore`; standardised
+shift `zShift = z2bar(aStar) - z1bar(aStar)`;
+`tEdgeRatio = max(T(1), T(n-1)) / T0` for edge-of-window
+changepoints; `t2Star`, `aStar2`, `t2OverT` for regime
+multiplicity (second-best T(a) outside a guard window
+of +/- max(3, floor(n/10)) around aStar).
+
+Orthogonality vs the recent axes 200-220.
+
+  - vs axis-154 Pettitt: Pettitt is RANK-BASED (uses
+    sign(x[i]-x[j]) only) — magnitude-blind, breakdown
+    ~0.5. SNHT is the PARAMETRIC GAUSSIAN-LIKELIHOOD-
+    RATIO DUAL: it operates on STANDARDISED MAGNITUDES
+    and exposes the maximum-likelihood mean estimates on
+    each side. The two tests can disagree sharply: a
+    single 100x outlier barely shifts Pettitt KT but
+    dominates SNHT T0; a clean median step with non-
+    Gaussian tails gives high Pettitt KT but moderate
+    SNHT T0. STATISTIC FAMILY ORTHOGONAL.
+  - vs axis-155 Buishand R: Buishand R is the L-infinity
+    RANGE of the centered cumulative deviation. SNHT is
+    the L-2 likelihood-ratio for a step shift with EXACT
+    Khaliq-Ouarda critical values; Buishand has no
+    tabulated critical values from this lineage and no
+    aStar.
+  - vs axis-153 cusum-max-deviation: no variance
+    normalisation, no critical values, no aStar p-value.
+  - vs axis-156 KPSS / axis-157 ADF: KPSS and ADF test
+    the LEVEL nature of the series (stationary vs unit-
+    root) ASSUMING NO STRUCTURAL BREAK. SNHT tests
+    EXPLICITLY for a STRUCTURAL BREAK in the mean and is
+    COMPLEMENTARY: a series can be KPSS-stationary AND
+    have a clean SNHT changepoint.
+  - vs axis-220 Hamed-Rao Mann-Kendall: Mann-Kendall
+    tests for a MONOTONE TREND (every adjacent pair
+    sign-counted, autocorrelation-corrected variance);
+    SNHT tests for a SINGLE STEP SHIFT (two-mean
+    partition). A V-shape gives Mann-Kendall ~ 0 but a
+    strong SNHT at the V vertex; a smooth linear trend
+    gives a strong Mann-Kendall but a weak SNHT (spread
+    over many candidate splits, no single dominant a*).
+  - vs axis-218 Hirsch-Slack / axis-219 Sen-Adichie:
+    season-stratified rank trend tests for monotone
+    trend. SNHT does NOT stratify and tests for a step
+    shift, not a trend.
+  - vs axis-217 Laplace centroid: L-1 magnitude
+    functional of the time centroid; not a changepoint
+    test, not a step-shift detector.
+  - vs axis-214 Theil-Sen: point estimator of the
+    monotone slope; no changepoint, no inferential
+    variance.
+
+Headline question: **"For each source, is there a
+statistically significant SINGLE STEP SHIFT in the mean
+of daily total_tokens, and if so, on which day?"**
+
+Live-smoke (verbatim, redacted source labels):
+
+```
+$ pew-insights daily-token-alexandersson-snht
+sources: 6 (shown 2)    tokens: 3,444,271,515
+dropped: 4 below min-tenure-days
+
+source        firstDay    lastDay     tenure  T0      aStar  aStarDay    tCrit05  sig05  pApprox   meanShift  zShift  t2OverT
+claude-code   2026-02-11  2026-04-23  72      29.338  66     2026-04-18  7.795    YES    3.023e-5  355348428  2.310   0.501
+vsc-redacted  2025-07-30  2026-04-20  265     17.169  261    2026-04-17  10.192   YES    4.937e-2  56416      2.088   0.157
+```
+
+Verdict. **Both sources show statistically significant
+SINGLE STEP SHIFTS in mean daily total_tokens at
+alpha = 0.05.**
+
+  - `claude-code` (n = 72): T0 = 29.338 vastly exceeds
+    tCrit05 = 7.795 (and tCrit01 ~ 10.5), conservative
+    Bonferroni pApprox = 3.0e-5. The most-likely change-
+    point is aStar = 66, on 2026-04-18 -- the series
+    transitions from a low-token regime to a high-token
+    regime over a +355M token/day mean shift (zShift =
+    +2.31 SDs). t2OverT = 0.501 indicates a second
+    candidate changepoint of ~half the strength,
+    hinting at multi-regime structure (peel off T0 by
+    re-running on the segments).
+  - `vsc-redacted` (n = 265, vscode-based second source):
+    T0 = 17.169 narrowly exceeds tCrit05 = 10.192,
+    pApprox = 4.9e-2 (just below the 0.05 line). The
+    most-likely changepoint is aStar = 261, on
+    2026-04-17 -- VERY CLOSE TO THE SERIES END. tEdge
+    behaviour is the canonical SNHT caveat: late-edge
+    changepoints can be inflated by mechanical
+    chi-square-2 boundary effects. The +56k token/day
+    upward step is real but should be interpreted as
+    "trend in the last few days has accelerated" rather
+    than "stable two-regime split".
+
+This is exactly what SNHT is designed to surface
+relative to the existing axes: axis-220 Hamed-Rao
+flagged a significant up-trend in `claude-code` (hrPValue
+~ 2e-5) but COULD NOT TELL YOU WHEN the regime change
+happened. SNHT pinpoints aStarDay = 2026-04-18 and tells
+you the standardised shift is +2.31 SDs of the gap-filled
+series.
+
+### Added — tests
+
+- `test/dailytokenalexanderssonsnht.test.ts`: +50 unit
+  tests covering Phi/two-sided p, snhtCriticalValue
+  monotonicity in alpha and n, snhtSummary on degenerate
+  / constant / clean-step / down-step / time-reversal
+  invariance / shift-magnitude scale-invariance under
+  standardisation / two-step regime multiplicity, builder
+  validation, builder synthetic-step detection, sparse-
+  source / below-min-tenure / zero-variance / source-filter
+  / lex-tie-break / top-cap / invalid-hour-start /
+  non-positive-tokens drops, sort by aStar / tokens /
+  tenure, gap-fill behaviour, and significant05 flag
+  consistency. All green. Full suite: 15889 tests green
+  (was 15839).
+
+### Wiring
+
+- `src/cli.ts` — new `daily-token-alexandersson-snht`
+  subcommand with the standard --since/--until/--source/
+  --min-tokens/--min-tenure-days/--top/--sort/--json
+  flags.
+- `src/format.ts` — `renderDailyTokenAlexanderssonSnht`
+  pretty renderer with full citation-style mechanism
+  block and reference anchor on tCrit05.
+
+### Bumped
+
+- `package.json` 0.6.548 -> 0.6.550.
+
 ## 0.6.548 — 2026-05-06
 
 ### Added — axis-220 x axis-219 compound classifier

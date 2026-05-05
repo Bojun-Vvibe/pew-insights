@@ -1753,6 +1753,92 @@ export function renderDailyTokenHamedRaoMannKendallCorrected(
 }
 
 
+export function renderDailyTokenAlexanderssonSnht(
+  r: DailyTokenAlexanderssonSnhtReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-alexandersson-snht'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ALEXANDERSSON 1986 STANDARD NORMAL HOMOGENEITY TEST (SNHT) for a SINGLE STEP SHIFT in mean on the gap-filled tenure series. z[i] = (x[i] - mean(x)) / sd(x); T(a) = a * z1bar(a)^2 + (n-a) * z2bar(a)^2 for a in {1..n-1}; T0 = max_a T(a); aStar = argmax_a T(a). Khaliq-Ouarda 2007 polynomial critical values at alpha={0.01,0.05,0.10} via T_crit(n,alpha) = c0 + c1*ln(n) + c2*ln(n)^2 + c3*ln(n)^3 (validity n in [10, 70000]). Bonferroni-conservative pApprox = min(1, (n-1) * exp(-T0/2)). TWO-HUNDRED-AND-TWENTY-FIRST cross-source axis. STRUCTURALLY DISTINCT from axis-154 Pettitt (RANK-based KT, magnitude-blind), axis-155 Buishand R (L-infinity range of cumulative deviation), axis-153 cusum (no variance normalisation, no critical values), axis-156 KPSS / axis-157 ADF (level/unit-root tests, ASSUME NO BREAK), axis-220 Hamed-Rao Mann-Kendall (monotone trend with autocorrelation correction, NOT a step shift), axis-219/218 season-stratified rank trends. SNHT is the L-2 maximum-LIKELIHOOD step-shift test under a Gaussian model -- the parametric DUAL of axis-154 Pettitt's rank-based step-shift test. Detects a SINGLE break only; pair t2OverT close to 1 with re-run on each segment for multiple breaks. Refs: Alexandersson 1986 *J. Climatology* 6:661-675; Alexandersson-Moberg 1997 *IJC* 17:25-34; Khaliq-Ouarda 2007 *IJC* 27:681-687; Wijngaard et al. 2003 *IJC* 23:679-692; Hawkins 1977 *JASA* 72:180-186; Abramowitz-Stegun 7.1.26.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source SNHT T0 with Khaliq-Ouarda 2007 critical values (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'T0',
+    'aStar',
+    'aStarDay',
+    'tCrit05',
+    'sig05',
+    'pApprox',
+    'meanShift',
+    'zShift',
+    't2OverT',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.t0.toFixed(3),
+    `${s.aStar}`,
+    s.aStarDay ?? '-',
+    s.tCrit05.toFixed(3),
+    s.significant05 ? 'YES' : 'no',
+    s.pApprox.toExponential(3),
+    s.meanShift.toFixed(0),
+    s.zShift.toFixed(3),
+    s.t2OverT.toFixed(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: T0 >= tCrit05 (Khaliq-Ouarda 2007) = STATISTICALLY SIGNIFICANT single step shift in mean at alpha = 0.05; the most-likely changepoint is BEFORE x[aStar] (so on day aStarDay the new regime begins). pApprox is the CONSERVATIVE Bonferroni-corrected normal-tail upper bound (n-1) * exp(-T0/2) -- prefer tCrit05 for decisions. meanShift = muAfter - muBefore; positive = step UP, negative = step DOWN. zShift is the same shift on the standardised z-scale and is comparable across sources. tEdgeRatio close to 1 = aStar near the series edge (caveat); t2OverT close to 1 = a SECOND nearly-equal candidate changepoint (regime multiplicity, peel off iteratively). REVERSING the series along time SWAPS muBefore and muAfter (NEGATES meanShift, zShift) but PRESERVES T0 up to relabelling aStar -> n - aStar. Compare against axis-154 Pettitt for the rank-based step-shift dual; against axis-155 Buishand R for the L-infinity range diagnostic; against axis-220 Hamed-Rao Mann-Kendall for monotone trend.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+
 export function renderDailyTokenSginiIndex(
   r: DailyTokenSginiReport,
 ): string {
@@ -20737,6 +20823,7 @@ import type { DailyTokenLaplaceCentroidTrendReport } from './dailytokenlaplacece
 import type { DailyTokenHirschSlackSeasonalKendallReport } from './dailytokenhirschslackseasonalkendall.js';
 import type { DailyTokenSenAdichieAlignedRankTrendReport } from './dailytokensenadichiealignedranktrend.js';
 import type { DailyTokenHamedRaoMannKendallCorrectedReport } from './dailytokenhamedraomannkendallcorrected.js';
+import type { DailyTokenAlexanderssonSnhtReport } from './dailytokenalexanderssonsnht.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';

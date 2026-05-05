@@ -226,6 +226,7 @@ import {
   renderDailyTokenHirschSlackSeasonalKendall,
   renderDailyTokenSenAdichieAlignedRankTrend,
   renderDailyTokenHamedRaoMannKendallCorrected,
+  renderDailyTokenAlexanderssonSnht,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -786,6 +787,10 @@ import {
   buildDailyTokenHamedRaoMannKendallCorrected,
   type DailyTokenHamedRaoMannKendallCorrectedSort,
 } from './dailytokenhamedraomannkendallcorrected.js';
+import {
+  buildDailyTokenAlexanderssonSnht,
+  type DailyTokenAlexanderssonSnhtSort,
+} from './dailytokenalexanderssonsnht.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48746,6 +48751,114 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenHamedRaoMannKendallCorrected(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-alexandersson-snht')
+  .description(
+    "Per-source ALEXANDERSSON 1986 STANDARD NORMAL HOMOGENEITY TEST (SNHT) for a SINGLE STEP SHIFT in mean on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-FIRST cross-source axis). z[i] = (x[i] - mean(x)) / sd(x); T(a) = a*z1bar(a)^2 + (n-a)*z2bar(a)^2 for a in {1..n-1}; T0 = max_a T(a); aStar = argmax. Khaliq-Ouarda 2007 polynomial critical values at alpha={0.01,0.05,0.10}: T_crit(n,alpha) = c0 + c1*ln(n) + c2*ln(n)^2 + c3*ln(n)^3 (validity n in [10, 70000]). significant05 = (T0 >= tCrit05). Conservative Bonferroni pApprox = min(1, (n-1) * exp(-T0/2)). Diagnostic surfaces: meanShift = muAfter - muBefore; zShift on the standardised scale; tEdgeRatio for edge-of-window changepoints; t2Star/t2OverT for regime multiplicity. STRUCTURALLY DISTINCT from axis-154 Pettitt (RANK-based KT, magnitude-blind, breakdown ~0.5 -- SNHT is the parametric Gaussian-LR DUAL), axis-155 Buishand R (L-infinity range of cumulative deviation, no critical-value normalisation), axis-153 cusum (no variance normalisation), axis-156 KPSS / axis-157 ADF (level/unit-root tests ASSUMING NO BREAK), axis-220 Hamed-Rao Mann-Kendall (monotone trend with autocorrelation correction, NOT a step shift), axis-219/218 season-stratified rank trends. Detects a SINGLE break only; pair t2OverT close to 1 with re-run on each segment for multiple breaks. Refs: Alexandersson 1986 *J. Climatology* 6:661-675; Khaliq-Ouarda 2007 *IJC* 27:681-687; Wijngaard et al. 2003 *IJC* 23:679-692; Hawkins 1977 *JASA* 72:180-186; Abramowitz-Stegun 7.1.26.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: t0Desc (default) | t0 | pApprox | pApproxDesc | absShift | absShiftDesc | aStar | aStarDesc | t2OverT | t2OverTDesc | tokens | tenure | source.',
+    't0Desc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          't0',
+          't0Desc',
+          'pApprox',
+          'pApproxDesc',
+          'absShift',
+          'absShiftDesc',
+          'aStar',
+          'aStarDesc',
+          't2OverT',
+          't2OverTDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAlexanderssonSnht(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenAlexanderssonSnhtSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenAlexanderssonSnht(report) + '\n',
           );
         }
       } catch (e) {
