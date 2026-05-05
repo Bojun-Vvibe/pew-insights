@@ -20634,6 +20634,7 @@ import type { DailyTokenBwsHalvesReport } from './dailytokenbaumgartnerweisschin
 import type { DailyTokenHlShiftHalvesReport } from './dailytokenhodgeslehmannshifthalves.js';
 import type { DailyTokenVarghaDelaneyHalvesReport } from './dailytokenvarghadelaneyhalves.js';
 import type { DailyTokenPermutationTstatHalvesReport } from './dailytokenpermutationtstathalves.js';
+import type { DailyTokenWilcoxonSignedRankHalvesReport } from './dailytokenwilcoxonsignedrankhalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27919,6 +27920,101 @@ export function renderDailyTokenPermutationTstatHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: t = 0 is the no-shift anchor. permPTwoSided is the EXACT add-one-corrected Monte-Carlo permutation p-value; the smallest reportable value is 1/(B+1). Decision buckets: highly-significant <=.001, very-significant <=.01, significant <=.05, marginal <=.10, ns. Cross-axis vs axis-183 YW: axis-183's p-value rests on the Welch-Satterthwaite t-distribution under H0 of approx-normal trimmed means; axis-188's p-value rests ONLY on exchangeability of the pooled sample and is therefore VALID under heavy-tail / skewed / bimodal data. vs axis-187 A12: A12 measures EFFECT SIZE, axis-188 measures SIGNIFICANCE; together they characterise BOTH the size AND the detectability of the location effect on independent inferential bases.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenWilcoxonSignedRankHalves(
+  r: DailyTokenWilcoxonSignedRankHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-wilcoxon-signed-rank-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source WILCOXON SIGNED-RANK PAIRED test on the half-split daily series. Day i of the first half is paired with day i of the second half (median day dropped when n is odd). Differences d_i = B_i - A_i; Pratt 1959 zero-elimination. W+ = sum of positive ranks; Z = (W+ - E[W+] +/- 0.5) / sqrt(Var[W+]) with continuity correction and tie-corrected variance; positive Z = SECOND half larger. ONE-HUNDRED-AND-EIGHTY-NINTH cross-source axis; FIRST PAIRED-DESIGN axis. STRUCTURALLY ORTHOGONAL: vs axis-115 MW (independent two-sample); axis-189 is paired and gains power whenever pairing reduces variance. vs axis-188 perm-t (pooled-exchangeability null on raw values); axis-189 is a within-pair symmetry null on signed ranks. vs axis-186 HL (point estimator + Lehmann CI); axis-189 is a significance-decision test. Refs: Wilcoxon 1945; Pratt 1959; Lehmann 1975 sec 4.1.2; Kerby 2014.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Wilcoxon signed-rank paired test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'pairs',
+    'nNonZero',
+    'nZero',
+    'W+',
+    'W-',
+    'E[W+]',
+    'Z',
+    'p (2sd)',
+    'p upper',
+    'p lower',
+    'sign',
+    'r_rb',
+    'decision',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.wsrNPairs),
+    formatNumber(s.wsrNNonZero),
+    formatNumber(s.wsrNZeroDropped),
+    formatNumber(s.wsrWPlus),
+    formatNumber(s.wsrWMinus),
+    s.wsrExpectedWPlus.toFixed(2),
+    (s.wsrZ >= 0 ? '+' : '') + s.wsrZ.toFixed(4),
+    s.wsrPTwoSided.toExponential(2),
+    s.wsrPUpper.toExponential(2),
+    s.wsrPLower.toExponential(2),
+    s.wsrSign === 1 ? '+' : s.wsrSign === -1 ? '-' : '0',
+    (s.wsrRankBiserial >= 0 ? '+' : '') + s.wsrRankBiserial.toFixed(4),
+    s.wsrDecision,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: Z = 0 is the no-shift anchor under H0 of within-pair symmetry around 0. Decision buckets: highly-significant <=.001, very-significant <=.01, significant <=.05, marginal <=.10, ns. Cross-axis vs axis-188 perm-t: axis-188's null is exchangeability of the POOLED sample under independent two-sample design; axis-189's null is symmetry of the WITHIN-PAIR difference under paired design. The two are MAXIMALLY COMPLEMENTARY when there is shared within-pair signal across halves (e.g., aligned weekly seasonality). vs axis-186 HL: HL estimates the SHIFT magnitude with a Lehmann CI; axis-189 reports a paired-symmetry SIGNIFICANCE p with a rank-biserial effect-size conjugate.)`,
     ),
   );
 
