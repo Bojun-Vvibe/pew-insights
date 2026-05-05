@@ -20645,6 +20645,7 @@ import type { DailyTokenBrownMoodMedianTrendReport } from './dailytokenbrownmood
 import type { DailyTokenOlmsteadTukeyCornerTestReport } from './dailytokenolmsteadtukeycornertest.js';
 import type { DailyTokenPageLBlockTrendReport } from './dailytokenpagelblocktrend.js';
 import type { DailyTokenTheilSenSlopeReport } from './dailytokentheilsenslope.js';
+import type { DailyTokenCoxStuartThirdsTrendReport } from './dailytokencoxstuartthirdstrend.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30144,6 +30145,87 @@ export function renderDailyTokenTheilSenSlope(
   lines.push(
     chalk.dim(
       `(reference anchor: theilSenSlope > 0 = ROBUST UP-DRIFT in tokens/day; theilSenSlope < 0 = ROBUST DOWN-DRIFT; theilSenSlope = 0 = no drift. CI excludes 0 iff slope is significantly different from 0 at the configured confidence-level (default 95%). naive = (x[n-1] - x[0])/(n-1) is the non-robust two-endpoint slope. Sen 1968 CI is order-statistic, non-symmetric in general, and exact distribution-free under the iid permutation null. Compare against the unitless rank tests in axis-110 (Mann-Kendall), axis-210 (Daniels), axis-213 (Page-L) -- those tell you IF a trend exists; this tells you HOW STEEP it is.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCoxStuartThirdsTrend(
+  r: DailyTokenCoxStuartThirdsTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-cox-stuart-thirds-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source COX-STUART 1955 sec. 5 THIRDS-VARIANT sign test for trend on the gap-filled daily total_tokens series. Pair lag gap = n - floor(n/3) = ceil(2n/3); pair count m = floor(n/3). The middle third is dropped entirely. csTPlus ~ Bin(csTNonTies, 1/2) under H0; csTZ = (csTPlus - csTNonTies/2)/sqrt(csTNonTies/4) ~ N(0,1). TWO-HUNDRED-AND-FIFTEENTH cross-source axis. STRUCTURALLY DISTINCT from axis-111 / axis-205 (HALF-pair Cox-Stuart, lag = floor(n/2), m = floor(n/2)) by both pair-lag and pair-count, from axis-110 Mann-Kendall (all C(n,2) pairs vs floor(n/3) head-vs-tail pairs), from axis-214 Theil-Sen (slope MAGNITUDE in tokens/day vs unitless sign-Z), from axis-213 Page-L (within-3-day-block ordered alternative vs head-vs-tail global). FIRST head-vs-tail sign test in the suite that EXPLICITLY DROPS the middle third for stronger slow-drift power. Refs: Cox & Stuart 1955 JRSS-B 17(1):222-228 sec. 5; Daniel 1990 ch. 2; Hollander, Wolfe & Chicken 2014 ch. 3; Conover 1999 p. 159.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source CS-thirds Z (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'pairs',
+    'gap',
+    'plus',
+    'minus',
+    'ties',
+    'csTZ',
+    'csTPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    String(s.csTPairs),
+    String(s.csTGap),
+    String(s.csTPlus),
+    String(s.csTMinus),
+    String(s.csTTies),
+    s.csTZ.toFixed(4),
+    s.csTPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: csTZ much greater than +1.96 = significant LAST-THIRD-DOMINATES UP-DRIFT (head-vs-tail); csTZ much less than -1.96 = significant LAST-THIRD-LOSES DOWN-DRIFT; |csTZ| < 1.96 = no detectable head-vs-tail location shift. Pair lag gap = ceil(2n/3) gives ~4/3 the per-pair signal-to-noise of the half-pair Cox-Stuart for slow monotone drifts (Cox-Stuart 1955 sec. 5). Compare against axis-111 / axis-205 to see whether the half-pair signal agrees; axis-215 specifically ignores the middle third while axis-111 / axis-205 use every observation pair-wise.)`,
     ),
   );
 

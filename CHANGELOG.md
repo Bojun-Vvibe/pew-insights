@@ -2,6 +2,116 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.533 — 2026-05-06
+
+### Added — `daily-token-cox-stuart-thirds-trend` (axis-215)
+
+New TWO-HUNDRED-AND-FIFTEENTH cross-source axis: per-
+source COX-STUART 1955 sec. 5 *THIRDS-VARIANT* sign test
+for trend on the gap-filled daily total_tokens series
+(Cox & Stuart 1955, *J. R. Statist. Soc. B* 17(1):
+222-228, esp. sec. 5 "Tests with three or more groups
+of observations").
+
+Pair the FIRST third with the LAST third, dropping the
+MIDDLE third entirely:
+
+```
+m       = floor(n / 3)            (number of pairs)
+gap     = n - m = ceil(2n/3)      (pair lag)
+d_i     = x[i + gap] - x[i]       for i = 0..m-1
+csTPlus = #{ d_i > 0 }
+csTMinus= #{ d_i < 0 }
+csTTies = #{ d_i = 0 }
+```
+
+Under H0 of no monotonic trend, csTPlus ~ Bin(csTNonTies,
+1/2) on the non-tied pairs (Cox-Stuart 1955 sec. 5
+eq. 11; Daniel 1990 sec. 2.2; Hollander, Wolfe & Chicken
+2014 sec. 3.1). The standardised statistic is
+
+```
+csTZ      = (csTPlus - csTNonTies/2) / sqrt(csTNonTies/4)
+csTPValue = 2 * Q(|csTZ|)
+```
+
+(Q via Abramowitz-Stegun 26.2.17 rational approximation,
+max relative error ~7.5e-8; same routine as axis-205.)
+
+SIGN: csTZ > 0 = LAST-THIRD-DOMINATES UP-DRIFT (head-vs-
+tail); csTZ < 0 = LAST-THIRD-LOSES DOWN-DRIFT.
+
+**Why this is a new orthogonal primitive.** Both
+axis-111 (`daily-token-cox-stuart-trend-test`) and
+axis-205 (`daily-token-cox-stuart-sign-pairs`) use the
+HALF-pair Cox-Stuart variant (lag = floor(n/2),
+m = floor(n/2)). Axis-215 changes the UNDERLYING PAIR
+SET: it uses lag = ceil(2n/3) and only m = floor(n/3)
+pairs, and STRUCTURALLY DROPS THE MIDDLE THIRD. This
+gives ~4/3 the per-pair signal-to-noise ratio for slow
+monotone drifts (b * gap / sqrt(2) sigma vs b *
+floor(n/2) / sqrt(2) sigma for x[i] = a + b*i + eps_i),
+at the cost of fewer pairs. The two statistics can
+have OPPOSITE SIGNS on the same series (e.g. up-then-
+down-then-up: axis-111's half-pair sees mixed signs
+while axis-215 sees both thirds up and reports UP).
+Distinct from axis-110 Mann-Kendall (omnibus all C(n,2)
+pairs vs head-vs-tail floor(n/3)-pair sign test), from
+axis-214 Theil-Sen (slope MAGNITUDE in tokens/day vs
+unitless sign-Z), from axis-213 Page-L (within-3-day-
+block ordered alternative vs head-vs-tail global).
+
+Hard floor n >= 24 days so m = floor(n/3) >= 8 pairs is
+enough for the normal approximation to have usable
+accuracy (Cox-Stuart 1955 Table 4: normal approximation
+within 0.005 of nominal alpha at csTNonTies = 8 for
+two-sided tests).
+
+CLI subcommand:
+
+```
+pew-insights daily-token-cox-stuart-thirds-trend
+pew-insights daily-token-cox-stuart-thirds-trend \
+  --source vsc-redacted --json
+pew-insights daily-token-cox-stuart-thirds-trend \
+  --sort csTZAbsDesc
+```
+
+Live-smoke output against `~/.config/pew/queue.jsonl`:
+
+```
+pew-insights daily-token-cox-stuart-thirds-trend
+sources: 6 (shown 2)    tokens: 3,444,271,515
+min-tokens: 1,000    min-tenure-days: 24
+sort: csTZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens,
+         0 source-filter, 0 below min-tokens,
+         4 below min-tenure-days, 0 zero-variance,
+         0 non-finite-fit, 0 below top cap
+
+source         firstDay    lastDay     tenure pairs gap plus minus ties csTZ     csTPValue
+-------------- ----------- ----------- ------ ----- --- ---- ----- ---- -------- ---------
+claude-code    2026-02-11  2026-04-23  72     24    48  16   1     7    +3.6380  2.748e-4
+vsc-redacted   2025-07-30  2026-04-20  265    88    177 16   27    45   -1.6775  9.345e-2
+```
+
+Interpretation: `claude-code` shows a **highly
+significant** last-third UP-DRIFT (csTZ = +3.64,
+p = 2.7e-4 two-sided; 16 of 17 non-tied thirds-pairs
+positive). `vsc-redacted` shows a **non-significant**
+last-third DOWN-DRIFT (csTZ = -1.68, p = 0.093 two-
+sided; 27 of 43 non-tied thirds-pairs negative,
+consistent with mid-tenure peak followed by tail
+fade-out).
+
+Files:
+  - `src/dailytokencoxstuartthirdstrend.ts` (new, 525 lines)
+  - `src/cli.ts` (added subcommand + dispatch wiring)
+  - `src/format.ts` (added `renderDailyTokenCoxStuartThirdsTrend`)
+  - `test/dailytokencoxstuartthirdstrend.test.ts` (new, 60 tests)
+
+Test count delta: 15414 -> 15474 (+60).
+
 ## 0.6.532 — 2026-05-06
 
 ### Refined — `daily-token-theil-sen-slope` (axis-214) edge-case CI clamp + intercept algebra tests

@@ -220,6 +220,7 @@ import {
   renderDailyTokenOlmsteadTukeyCornerTest,
   renderDailyTokenPageLBlockTrend,
   renderDailyTokenTheilSenSlope,
+  renderDailyTokenCoxStuartThirdsTrend,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -756,6 +757,10 @@ import {
   buildDailyTokenTheilSenSlope,
   type DailyTokenTheilSenSlopeSort,
 } from './dailytokentheilsenslope.js';
+import {
+  buildDailyTokenCoxStuartThirdsTrend,
+  type DailyTokenCoxStuartThirdsTrendSort,
+} from './dailytokencoxstuartthirdstrend.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48084,6 +48089,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenTheilSenSlope(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-cox-stuart-thirds-trend')
+  .description(
+    "Per-source COX-STUART 1955 sec. 5 THIRDS-VARIANT sign test for trend on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-FIFTEENTH cross-source axis). Pair lag gap = n - floor(n/3) = ceil(2n/3); pair count m = floor(n/3); the middle third is dropped entirely. csTPlus ~ Bin(csTNonTies, 1/2) under H0; csTZ = (csTPlus - csTNonTies/2)/sqrt(csTNonTies/4) ~ N(0,1). SIGN: csTZ > 0 = LAST-THIRD-DOMINATES UP-DRIFT; csTZ < 0 = DOWN-DRIFT. STRUCTURALLY DISTINCT from axis-111 / axis-205 (HALF-pair Cox-Stuart, lag = floor(n/2), m = floor(n/2)) by both pair-lag and pair-count, from axis-110 Mann-Kendall (all C(n,2) pairs vs floor(n/3) head-vs-tail pairs), from axis-214 Theil-Sen (slope MAGNITUDE in tokens/day vs unitless sign-Z), from axis-213 Page-L (within-3-day-block ordered alternative vs head-vs-tail global). FIRST head-vs-tail sign test in the suite that EXPLICITLY DROPS the middle third for stronger slow-drift power. Refs: Cox & Stuart 1955 JRSS-B 17(1):222-228 sec. 5; Daniel 1990 ch. 2; Hollander, Wolfe & Chicken 2014 ch. 3; Conover 1999 p. 159.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 24 (need m = floor(n/3) >= 8). Default 24.',
+    '24',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: csTZAbsDesc (default) | csTZ | csTPValue | csTPValueDesc | csTPlus | csTPlusDesc | tokens | tenure | source.',
+    'csTZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 24) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 24 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'csTZ',
+          'csTZAbsDesc',
+          'csTPValue',
+          'csTPValueDesc',
+          'csTPlus',
+          'csTPlusDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCoxStuartThirdsTrend(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenCoxStuartThirdsTrendSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCoxStuartThirdsTrend(report) + '\n',
           );
         }
       } catch (e) {
