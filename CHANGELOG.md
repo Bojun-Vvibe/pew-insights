@@ -2,6 +2,203 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.531 — 2026-05-06
+
+### Added — `daily-token-theil-sen-slope` (axis-214)
+
+New TWO-HUNDRED-AND-FOURTEENTH cross-source axis: per-
+source THEIL-SEN MEDIAN PAIRWISE SLOPE on the gap-filled
+daily total_tokens series, with rank-based confidence
+interval inverted from the tie-corrected Mann-Kendall
+variance (Theil 1950, *Indagationes Mathematicae* 12;
+Sen 1968, *J. Amer. Statist. Assoc.* 63(324): 1379-1389).
+
+Forms all C(n, 2) pairwise slopes against the integer day
+index t = 0, 1, ..., n-1:
+
+```
+s_{i,j}      = (x[j] - x[i]) / (j - i)    for i < j
+theilSenSlope = median_{i<j} s_{i,j}                  [tokens/day]
+theilSenIntercept = median_i (x[i] - theilSenSlope * i)
+```
+
+The Sen 1968 distribution-free CI uses the Hipel-McLeod
+1994 tie-corrected Mann-Kendall variance:
+
+```
+VarS    = ( n*(n-1)*(2n+5) - sum_g t_g*(t_g-1)*(2*t_g+5) ) / 18
+C_alpha = z_{1 - alpha/2} * sqrt(VarS)
+M_lo    = floor((N - C_alpha) / 2)
+M_hi    = ceil((N + C_alpha) / 2) + 1
+CI      = ( s_(M_lo) , s_(M_hi) )
+```
+
+with N = n*(n-1)/2 the total pair count and t_g the size
+of the g-th group of tied values. The inverse-normal
+quantile is supplied by a self-contained Beasley-Springer-
+Moro (1977/1995) implementation accurate to |error| <
+1.15e-9.
+
+**Sign convention.** `theilSenSlope > 0` = ROBUST UP-DRIFT
+in tokens/day; `< 0` = DOWN-DRIFT; `= 0` = no drift.
+
+**Robustness.** Asymptotic breakdown ~29.3 percent (Wilcox
+2017 ch. 10): up to ~3-in-10 outlier days can be moved
+arbitrarily without dragging the slope median past a
+finite limit. Test `dailyTokenTheilSenSlope: outlier-
+robust -- single huge spike does not move slope`
+exercises this: ramp `[1..9, 1000]` keeps `theilSenSlope`
+exactly at 1 (vs `naiveEndpointSlope = 111`).
+
+**Pair partition.** `pairsPositive + pairsNegative +
+pairsZero = nPairs`, and `pairsPositive - pairsNegative`
+recovers the Mann-Kendall S statistic exactly (axis-110)
+-- but in tokens/day units rather than unitless rank.
+
+**Min-tenure floor.** 4 days (need at least C(4,2)=6
+pairwise slopes for a stable median); CLI default 14.
+
+**Structural orthogonality.** FIRST daily-token axis to
+yield a directly-interpretable TOKENS-PER-DAY slope
+MAGNITUDE with a distribution-free CI:
+
+  - vs axis-110 Mann-Kendall: MK tau is the unitless
+    normalised pair-concordance count in [-1, +1] ("does
+    a trend exist?"). Theil-Sen answers "what is the
+    slope magnitude in tokens/day?" using the same N
+    pairs but reducing them by MEDIAN of slope values,
+    not by sign-tally. A series can have MK tau ~ +1
+    with a small slope (slow steady drift) OR with a
+    large slope (fast steady drift); MK tau cannot
+    distinguish.
+  - vs axis-210 Daniels rank correlation with time:
+    saturated rank correlation in [-1, +1] vs slope
+    magnitude.
+  - vs axis-213 Page's L block trend: within-3-day-block
+    ordered-alternative test on midranks (LOCAL,
+    saturated) vs all-pairs slope median (GLOBAL, with
+    magnitude).
+  - vs axis-211 Brown-Mood / axis-212 Olmstead-Tukey:
+    binary 2x2 contingency / corner-count tests on
+    median- or extremal-classified observations vs raw-
+    valued pairwise slopes.
+  - vs OLS slope (no current daily-token axis -- per-
+    source `source-daily-token-trend-slope` is OLS on
+    daily aggregates): OLS has 0% breakdown; Theil-Sen
+    is invariant to outliers up to the ~29% bound.
+  - vs the per-row `source-row-token-theil-sen-slope`:
+    per-MESSAGE row index (tokens/row) vs gap-filled
+    calendar-day index (tokens/day); different units,
+    different sample spaces, different null
+    distributions. The two ranks routinely disagree --
+    bursty single-day spikes show up in the per-row
+    estimator as many concordant row pairs but in the
+    per-day estimator as a single daily aggregate.
+
+Real numerical output from `scripts/livesmoke-axis214.mjs`
+against `~/.config/pew/queue.jsonl` at v0.6.531
+(generatedAt = 2026-05-06):
+
+```
+claude-code:  n=72  nPairs=2556  pos/neg/zero=1358/532/666   naive=    116635.32  slope=    134851.38  ci95=[       0.00,    453696.54]
+hermes:       n=19  nPairs= 171  pos/neg/zero=  86/ 85/  0   naive=    317474.28  slope=      9271.00  ci95=[ -803496.80,   1008321.00]
+openclaw:     n=19  nPairs= 171  pos/neg/zero=  41/130/  0   naive=   -922349.39  slope=  -6732125.33  ci95=[-17618646.15,  -1783896.29]
+opencode:     n=16  nPairs= 120  pos/neg/zero=  41/ 79/  0   naive=  20058554.73  slope= -15206024.94  ci95=[-26697087.75,   3509125.50]
+vsc-redacted: n=265 nPairs=34980 pos/neg/zero=7071/9573/18336 naive=       -11.84  slope=         0.00  ci95=[       0.00,         0.00]
+---
+totalSources=6 shown=5 cl=0.95
+```
+
+**Headline read.**
+
+  - `claude-code` shows a clear UP-DRIFT (slope = +134,851
+    tokens/day; 1,358 pos pairs vs only 532 neg pairs).
+    The 95% Sen CI lower bound just touches 0
+    (`ci95=[0.00, ...]`), so the up-trend is on the
+    boundary of significance at alpha=0.05 -- consistent
+    with axis-213 Page-L showing a recent-block up-trend
+    on this source.
+  - `hermes` is INDETERMINATE -- pos and neg pairs almost
+    balanced (86 vs 85), slope barely above 0, CI spans
+    +/-1M tokens/day. No detectable monotone trend.
+  - `openclaw` shows a STRONG DOWN-DRIFT (slope =
+    -6,732,125 tokens/day; 130 neg pairs vs 41 pos pairs;
+    CI = [-17.6M, -1.8M] excludes 0). Robust signal of
+    declining usage.
+  - `opencode` shows a PARADOX: naive endpoint slope is
+    +20M (last day much larger than first) BUT robust
+    median slope is -15.2M. Sign disagreement is the
+    signature of an outlier-dominated endpoint -- the
+    last day is a huge spike on top of an otherwise-
+    declining series. CI [-26.7M, +3.5M] straddles 0,
+    so the down-trend is not significant at 95%.
+  - `vsc-redacted` is FLAT in the median sense
+    (theilSenSlope = 0) despite slight negative naive
+    slope. With 18,336 zero pairs (53% of all 34,980
+    pairs) the median pairwise slope sits exactly on the
+    zero spike. CI = [0, 0] (degenerate at the zero
+    cluster). This is the expected regime for a sparsely-
+    active source over a long calendar window.
+
+**Comparison to recent trend axes on the same data.**
+
+  - axis-110 Mann-Kendall (unitless tau) tells you
+    DIRECTION but not MAGNITUDE; the same `claude-code`
+    that sits on the alpha-boundary here would still
+    register tau > 0 there with no token/day units.
+  - axis-213 Page-L (within-3-day-block ordered
+    alternative) saturates on monotone series and is
+    blind to slope magnitude; the `openclaw` extreme
+    decline rate (-6.7M tokens/day) is invisible to
+    Page-L which only knows the within-block ranks went
+    down.
+  - The OLS-style endpoint slope (`naiveEndpointSlope`)
+    disagrees with Theil-Sen for 3 of 5 sources
+    (`claude-code` mildly, `hermes` directionally,
+    `openclaw` magnitude, `opencode` SIGN). Theil-Sen
+    median is the robust choice when single-day spikes
+    can dominate the endpoints.
+
+Implementation in
+`src/dailytokentheilsenslope.ts`; 37 new tests cover
+input validation (n<4, non-finite values, confidenceLevel
+out of (0, 1), bad sort/top/since/until, bad min-tokens /
+min-tenure-days), closed-form sanity (monotone +1 / -1,
+constant zero, scale 5, time-reversal sign-flip,
+additive-shift invariance), outlier robustness (single
+spike does not move slope), pair-partition algebra
+(pos+neg+zero=nPairs; pos-neg recovers MK S), CI
+properties (brackets the slope median, tighter cl widens
+CI, monotone series excludes 0), tied-zero handling
+(pairsZero, tie-corrected VarS), end-to-end builder paths
+(14-day ramp, gap-filled sparse activity, drops below-
+min-tenure / zero-variance / sparse / source-filter /
+invalid hour_start / non-positive tokens, top cap, sorts
+by slopeAbsDesc and slope ascending, since/until window,
+report shape with confidenceLevel and Sen CI ranks).
+
+Files added:
+
+  - `src/dailytokentheilsenslope.ts` -- pure builder +
+    primitive `dailyTokenTheilSenSlope(values,
+    confidenceLevel)`.
+  - `test/dailytokentheilsenslope.test.ts` -- 37 unit
+    tests.
+  - `scripts/livesmoke-axis214.mjs` -- live-smoke
+    harness against `~/.config/pew/queue.jsonl`.
+
+Files modified:
+
+  - `src/cli.ts` -- new `daily-token-theil-sen-slope`
+    subcommand with `--confidence-level` flag (default
+    0.95) and Sen-CI-aware sort keys (slope,
+    slopeDesc, slopeAbs, slopeAbsDesc, tokens, tenure,
+    source).
+  - `src/format.ts` -- `renderDailyTokenTheilSenSlope`
+    pretty-printer with full pair-partition columns
+    (nPairs / pos / neg / zero), naive endpoint slope,
+    Theil-Sen slope, and Sen 1968 CI bounds.
+
 ## 0.6.530 — 2026-05-06
 
 ### Added — `classifyAxis213Axis212PageLOlmsteadTukeyLocalBlockOrderingVsExtremalCornerTrendCompound`

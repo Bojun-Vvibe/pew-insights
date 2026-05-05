@@ -219,6 +219,7 @@ import {
   renderDailyTokenBrownMoodMedianTrend,
   renderDailyTokenOlmsteadTukeyCornerTest,
   renderDailyTokenPageLBlockTrend,
+  renderDailyTokenTheilSenSlope,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -751,6 +752,10 @@ import {
   buildDailyTokenPageLBlockTrend,
   type DailyTokenPageLBlockTrendSort,
 } from './dailytokenpagelblocktrend.js';
+import {
+  buildDailyTokenTheilSenSlope,
+  type DailyTokenTheilSenSlopeSort,
+} from './dailytokentheilsenslope.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47960,6 +47965,125 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenPageLBlockTrend(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-theil-sen-slope')
+  .description(
+    "Per-source THEIL-SEN MEDIAN PAIRWISE SLOPE on the gap-filled daily total_tokens series, with rank-based confidence interval inverted from the tie-corrected Mann-Kendall variance (TWO-HUNDRED-AND-FOURTEENTH cross-source axis). theilSenSlope = median over all C(n,2) pairs (i, j) of (x[j] - x[i]) / (j - i), in TOKENS PER DAY. Asymptotic breakdown ~29.3 percent (Sen 1968 sec. 5). Sen 1968 CI is the order-statistic pair (s_(M_lo), s_(M_hi)) where M_lo = floor((N - C_alpha)/2), M_hi = ceil((N + C_alpha)/2)+1, C_alpha = z_{1-alpha/2} * sqrt(VarS), VarS = (n*(n-1)*(2n+5) - sum_g t_g*(t_g-1)*(2*t_g+5))/18. SIGN: theilSenSlope > 0 = ROBUST UP-DRIFT in tokens/day; < 0 = DOWN-DRIFT. STRUCTURALLY DISTINCT from axis-110 Mann-Kendall (unitless tau in [-1, +1] vs tokens/day magnitude), from axis-210 Daniels (saturated rank correlation vs slope magnitude), from axis-213 Page-L (within-3-day-block ordered-alternative vs all-pairs slope median), from the per-row source-row-token-theil-sen-slope (per-row vs per-day; tokens/row vs tokens/day). FIRST daily-token axis to yield a directly-interpretable TOKENS-PER-DAY slope MAGNITUDE with a distribution-free CI. Refs: Theil 1950 Indagationes Math. 12; Sen 1968 JASA 63(324):1379-1389; Hipel & McLeod 1994 ch. 23; Wilcox 2017 ch. 10.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 4. Default 14.',
+    '14',
+  )
+  .option(
+    '--confidence-level <p>',
+    'two-sided confidence level for the Sen 1968 CI, in (0, 1). Default 0.95.',
+    '0.95',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: slopeAbsDesc (default) | slope | slopeDesc | slopeAbs | tokens | tenure | source.',
+    'slopeAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        confidenceLevel: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 4) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 4 (got ${opts.minTenureDays})`,
+          );
+        }
+        const confidenceLevel = Number.parseFloat(opts.confidenceLevel);
+        if (
+          !Number.isFinite(confidenceLevel) ||
+          confidenceLevel <= 0 ||
+          confidenceLevel >= 1
+        ) {
+          throw new Error(
+            `--confidence-level must be in (0, 1) (got ${opts.confidenceLevel})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'slope',
+          'slopeDesc',
+          'slopeAbs',
+          'slopeAbsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenTheilSenSlope(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          confidenceLevel,
+          top,
+          sort: opts.sort as DailyTokenTheilSenSlopeSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenTheilSenSlope(report) + '\n',
           );
         }
       } catch (e) {

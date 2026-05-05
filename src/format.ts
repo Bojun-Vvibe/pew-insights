@@ -20644,6 +20644,7 @@ import type { DailyTokenDanielsRankCorrelationTimeReport } from './dailytokendan
 import type { DailyTokenBrownMoodMedianTrendReport } from './dailytokenbrownmoodmediantrend.js';
 import type { DailyTokenOlmsteadTukeyCornerTestReport } from './dailytokenolmsteadtukeycornertest.js';
 import type { DailyTokenPageLBlockTrendReport } from './dailytokenpagelblocktrend.js';
+import type { DailyTokenTheilSenSlopeReport } from './dailytokentheilsenslope.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30060,6 +30061,89 @@ export function renderDailyTokenPageLBlockTrend(
   lines.push(
     chalk.dim(
       `(reference anchor: pagePValue < 0.05 = REJECT no-within-block-trend H0 at alpha=0.05 (two-sided normal-tail; Page 1963 normal approx good for b >= 4). pageZ >> 0 = within-block ranks SYSTEMATICALLY INCREASE early -> mid -> late across 3-day windows = MONOTONE LOCAL UP-TREND; pageZ << 0 = MONOTONE LOCAL DOWN-TREND. Page's L is the maximally-LOCAL ordered-alternative trend test: it scans the entire interior of the time window in tiny 3-day chunks and uses every observation. Complementary to axis-212 Olmstead-Tukey (edge-only) and axis-210 Daniels (global rank correlation).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTheilSenSlope(
+  r: DailyTokenTheilSenSlopeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-theil-sen-slope'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    confidence-level: ${r.confidenceLevel.toFixed(4)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source THEIL-SEN MEDIAN PAIRWISE SLOPE on the gap-filled daily total_tokens series, with rank-based confidence interval inverted from the tie-corrected Mann-Kendall variance (Sen 1968). theilSenSlope = median over all C(n,2) pairs (i, j), i < j of (x[j] - x[i]) / (j - i), in TOKENS PER DAY. Asymptotic breakdown ~29.3 percent (Sen 1968 sec. 5): up to ~3-in-10 outlier days can be moved arbitrarily without dragging the slope median past a finite limit. Sen 1968 CI is the order-statistic pair (s_(M_lo), s_(M_hi)) where M_lo = floor((N - C_alpha)/2), M_hi = ceil((N + C_alpha)/2)+1, C_alpha = z_{1-alpha/2} * sqrt(VarS), VarS = (n*(n-1)*(2n+5) - sum_g t_g*(t_g-1)*(2*t_g+5))/18. TWO-HUNDRED-AND-FOURTEENTH cross-source axis. STRUCTURALLY DISTINCT from axis-110 Mann-Kendall (unitless tau in [-1, +1] vs tokens/day magnitude), from axis-210 Daniels (saturated rank correlation vs slope magnitude), from axis-213 Page-L (within-3-day-block ordered-alternative vs all-pairs slope median), from the per-row source-row-token-theil-sen-slope (per-row index vs per-day calendar index; tokens/row vs tokens/day). FIRST daily-token axis to yield a directly-interpretable TOKENS-PER-DAY slope MAGNITUDE with a distribution-free CI. Refs: Theil 1950 Indagationes Math. 12; Sen 1968 JASA 63(324):1379-1389; Hipel & McLeod 1994 ch. 23; Wilcox 2017 ch. 10.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source THEIL-SEN slope (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'nPairs',
+    'pos',
+    'neg',
+    'zero',
+    'naive',
+    'slope',
+    'ciLow',
+    'ciHigh',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    String(s.nPairs),
+    String(s.pairsPositive),
+    String(s.pairsNegative),
+    String(s.pairsZero),
+    s.naiveEndpointSlope.toFixed(4),
+    s.theilSenSlope.toFixed(4),
+    s.theilSenSlopeCiLow.toFixed(4),
+    s.theilSenSlopeCiHigh.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: theilSenSlope > 0 = ROBUST UP-DRIFT in tokens/day; theilSenSlope < 0 = ROBUST DOWN-DRIFT; theilSenSlope = 0 = no drift. CI excludes 0 iff slope is significantly different from 0 at the configured confidence-level (default 95%). naive = (x[n-1] - x[0])/(n-1) is the non-robust two-endpoint slope. Sen 1968 CI is order-statistic, non-symmetric in general, and exact distribution-free under the iid permutation null. Compare against the unitless rank tests in axis-110 (Mann-Kendall), axis-210 (Daniels), axis-213 (Page-L) -- those tell you IF a trend exists; this tells you HOW STEEP it is.)`,
     ),
   );
 
