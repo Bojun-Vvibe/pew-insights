@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.517 — 2026-05-05
+
+### Added — `classifyAxis208Axis205SpearmanFootruleCoxStuartGlobalVsHalfPairTrendCompound` (axis-208 ↔ axis-205)
+
+Cross-axis 7-bucket compound classifier joining the
+v0.6.516 axis-208 SPEARMAN 1906 FOOTRULE RANK DISTANCE
+vs TIME (`sfZ`, `sfPValue`) with the axis-205 COX-
+STUART 1955 SIGN-PAIRS lag-c paired sign test
+(`csZ`, `csPValue`) on a per-source basis.
+
+**Structural claim.** Both probes test for MONOTONE
+TREND in the gap-filled daily token series, but at
+STRUCTURALLY ORTHOGONAL SCALES via DIFFERENT
+REDUCTIONS:
+
+  - SPEARMAN FOOTRULE (axis-208) uses the FULL RANK
+    PERMUTATION of the n values and reduces it to the
+    L1 DISTANCE from the time-identity rank vector --
+    a GLOBAL measure that integrates EVERY rank
+    displacement. SIGN: sfZ << 0 = up-trend; sfZ >> 0
+    = down-trend.
+  - COX-STUART SIGN-PAIRS (axis-205) uses ONLY the
+    SIGNS of the n/2 paired differences
+    `v[i + ceil(n/2)] - v[i]` -- a HALF-PERIOD-OFFSET
+    pairing that loses all magnitude AND all rank
+    information except the binary up/down across the
+    half-series offset. SIGN: csZ >> 0 = up-trend;
+    csZ << 0 = down-trend.
+
+The two probes can:
+
+  - AGREE strongly in the "coherent-monotone" case --
+    a smoothly trending series gives BOTH sfZ and csZ
+    decisive in matching directions.
+  - AGREE in DIRECTION but only ONE is decisive --
+    e.g. weak consistent drift triggers footrule
+    (every small displacement counts) but not
+    Cox-Stuart (paired-sign threshold not crossed).
+  - DISAGREE INFORMATIVELY -- both decisive but
+    DIFFERENT directions, which is the signature of
+    a NON-MONOTONIC SHAPE (U, N, regime shift). The
+    `direction-conflict` bucket is the diagnostic
+    payload for series that fool simple monotone
+    trend tests.
+
+**7 buckets** (alpha default 0.05):
+
+  - `coherent-up-trend` -- sf decisive up + cs decisive up
+  - `coherent-down-trend` -- sf decisive down + cs decisive down
+  - `direction-conflict` -- both decisive, OPPOSITE directions
+  - `global-only-up` / `global-only-down` -- only sf
+    decisive (in the indicated direction)
+  - `half-pair-only` -- only cs decisive
+  - `no-evidence` -- neither decisive
+
+**4-cell joint-sign cross-tab** (when both decisive):
+
+  - `bothUp`, `bothDown`, `sfUpCsDown`, `sfDownCsUp`
+
+The latter two coincide with the `direction-conflict`
+bucket and split it by which axis points up.
+
+Pure deterministic function: throws on duplicate
+sources, non-finite inputs, p-values outside (0, 1],
+or alpha outside (0, 0.5].
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Joined the v0.6.516 axis-208 (`pew-insights daily-
+token-spearman-footrule-time --json`) with the v0.6.509
+axis-205 (`pew-insights daily-token-cox-stuart-sign-
+pairs --json`) outputs through the new compound
+classifier. Verbatim:
+
+```
+SUMMARY: axis-208xaxis-205 alpha=0.05 n=2 both=1/2 qd[bU/bD/sUcD/sDcU]=1/0/0/0 buckets[cuT/cdT/dc/goU/goD/hpo/ne]=1/0/0/0/0/1/0
+---
+  claude-code     sfZ= -4.2678 sfP=1.976e-5 csZ=  2.7854 csP=5.346e-3 bucket=coherent-up-trend      quad=bothUp
+  vscode-copilot  sfZ= -0.3753 sfP=7.074e-1 csZ= -2.1766 csP=2.951e-2 bucket=half-pair-only         quad=null
+---
+bothDecisive=1 atLeastOneDecisive=2
+bucketCounts={"coherent-up-trend":1,"coherent-down-trend":0,"direction-conflict":0,"global-only-up":0,"global-only-down":0,"half-pair-only":1,"no-evidence":0}
+byJointSignQuadrant={"bothUp":1,"bothDown":0,"sfUpCsDown":0,"sfDownCsUp":0,"anyMissingDecisive":1}
+sourcesOnlyInSpearmanFootrule=["hermes","openclaw","opencode"]
+sourcesOnlyInCoxStuart=[]
+```
+
+Reading. Two sources survive BOTH the axis-208
+`min-tenure-days >= 12` filter AND the axis-205
+filter, both pass the join. **claude-code** is the
+unambiguous coherent-up-trend signature (`bothUp` joint
+quadrant) -- the global rank-vs-time L1 distance
+(`sfZ = -4.27`, `sfP = 1.98e-5`) AND the half-pair
+sign test (`csZ = +2.79`, `csP = 5.35e-3`) BOTH
+decisively reject the no-trend H0 IN THE SAME DIRECTION
+(increasing). **vscode-copilot** falls in
+`half-pair-only`: the Cox-Stuart half-pair sign test
+detects a decreasing trend (`csZ = -2.18`, `csP = 0.030`,
+significant at alpha=0.05) but the Spearman footrule
+finds no decisive global rank-displacement (`sfZ = -0.38`,
+`sfP = 0.71`). The interpretation is that for this
+source the second-half-vs-first-half sign comparison
+has accumulated enough negative-direction signal to
+clear the Cox-Stuart threshold, but the within-half
+rank ordering is otherwise close to random -- the
+classic "step-shift between halves" signature that
+Cox-Stuart catches but global rank-vs-time L1 does
+not. Three sources (hermes, openclaw, opencode) appear
+in axis-208 only -- they failed the axis-205 minimum
+tenure or zero-variance filters. The compound classifier
+correctly surfaces this asymmetry without inflating
+the joined population.
+
+### Files
+
+  - `src/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.ts`
+    -- exports
+    `classifyAxis208Axis205SpearmanFootruleCoxStuartGlobalVsHalfPairTrendCompound`
+    and the matching one-line
+    `summarizeAxis208Axis205SpearmanFootruleCoxStuartReport`.
+  - `test/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.test.ts`
+    -- +28 tests covering all 7 buckets, all 4 joint
+    quadrants, validation (empty source, non-finite,
+    out-of-range alpha/p, duplicates), only-in-X
+    asymmetry, sort stability, alpha sensitivity,
+    sum-to-rows invariants, determinism, and the
+    summarizer (alpha stamp, single-line invariant,
+    quadrant/bucket cell rendering).
+
+### Test count
+
+  - Before: 14,887
+  - After:  14,915 (+28)
+
 ## 0.6.516 — 2026-05-05
 
 ### Added — `daily-token-spearman-footrule-time` (axis-208)
