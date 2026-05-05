@@ -2,6 +2,130 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.503 — 2026-05-05
+
+### Added — `daily-token-noether-cyclical-trend` (axis-202 NOETHER 1956 cyclical-trend test at lag-m=2 monotonic spaced triplets)
+
+TWO-HUNDRED-AND-SECOND cross-source axis. Per-source
+**NOETHER 1956 CYCLICAL-TREND TEST** on the gap-filled
+daily total_tokens series at LAG-m=2 monotonic spaced
+triplets.
+
+**Mechanism.** For each i = 0..n-2m-1 with default
+lag m = 2 form the spaced triplet
+(v[i], v[i+m], v[i+2m]) and let
+
+    I_i = 1 if (v[i] < v[i+m] < v[i+2m])
+              OR (v[i] > v[i+m] > v[i+2m])     (strict)
+        else 0
+
+The Noether statistic is
+
+    noetherM = sum_{i=0}^{n-2m-1} I_i
+
+and under H0 of i.i.d. continuous data the per-triplet
+success probability is exactly 1/3 (2 of 6 equally
+likely orderings are monotonic), giving
+E[noetherM] = (n - 2m) / 3. Variance is studentised by
+DETERMINISTIC FIXED-SEED PERMUTATION: 8000 random
+permutations of the input series are drawn (FNV-1a-
+seeded SplitMix32 PRNG seeded by the input bytes so
+the estimator is reproducible) and the empirical
+permutation variance of noetherM is the standardising
+denominator;
+
+    noetherZ = (noetherM - E[noetherM]) / sqrt(noetherVar)
+             ~~ N(0, 1) under H0.
+
+**Sign convention.** `noetherZ > 0` <=> MORE monotonic
+spaced triplets than chance (= lag-m persistence /
+trend); `noetherZ < 0` <=> FEWER monotonic spaced
+triplets (= lag-m cyclic / mean-reversion).
+
+**Structural orthogonality.**
+
+  - vs `source-row-token-turning-point-count` (Wallis-
+    Moore 1941 lag-1 turning-point count). The complement
+    of Wallis-Moore at LAG 1 is exactly Noether's M at
+    LAG 1 — they are AFFINE-EQUIVALENT at lag 1. This
+    axis defaults to **LAG 2** so it is ORTHOGONAL by
+    construction: a series can have many lag-1 turning
+    points (zig-zags daily) yet few lag-2 monotonic
+    triplets (every other day still trends), and
+    vice versa.
+  - vs `daily-token-mann-kendall-tau` (global all-pairs
+    S statistic). Mann-Kendall is dominated by long-
+    range comparisons; Noether is dominated by local
+    short-range structure at the chosen lag. A
+    triangle-shaped series (8d up, 8d down) has near-
+    zero Mann-Kendall but high Noether at lag 2.
+  - vs `daily-token-bartels-rank-von-neumann` (rank-
+    magnitude lag-1 successive differences). Bartels
+    is magnitude-sensitive; Noether is sign-pattern-
+    only and lag-tunable.
+  - vs `daily-token-autocorrelation-lag1` / `-lag7`
+    (parametric linear). Noether is non-parametric,
+    monotone-invariant within each triplet, and lag-
+    tunable.
+  - vs `daily-token-runs-test` (median-dichotomised
+    runs). A series whose values cross the median
+    often but trend monotonically inside each above /
+    below run will have many runs transitions but
+    high Noether M.
+  - vs ALL "halves" axes (Mann-Whitney, Cliff's delta,
+    Wald-Wolfowitz, Westenberg, Capon, Klotz, Mood,
+    Mielke, Kamat, Conover, Ansari-Bradley, ...). Those
+    are TWO-SAMPLE first-half vs second-half tests;
+    Noether is a SINGLE-SAMPLE within-series structure
+    test.
+
+**Pre-processing.** NONE. Within-triplet ordering is
+strictly-monotone-invariant, so median-alignment /
+standardisation would change nothing.
+
+**Hard floor.** `min-tenure-days` floor is `2*lag + 6`
+(default 14 at lag 2) so we get at least 10 spaced
+triplets — the validity band for the permutation normal
+reference (Noether 1956 sec. 4 simulation: actual size
+0.045-0.055 across n in [14, 60] for m in {2, 3}).
+
+**Reference.** Noether, G. E., "Two sequential tests
+against trend", *Annals of Mathematical Statistics*
+27(2) (1956), pp. 441-450. Wallis, W. A. & Moore, G. H.,
+"A significance test for time series analyses", *J.
+Amer. Statist. Assoc.* 36(215) (1941), pp. 401-409.
+Hettmansperger, T. P., *Statistical Inference Based on
+Ranks* (Wiley 1984), sec. 4.5.
+
+**Live smoke against `~/.config/pew/queue.jsonl`** (`pew-insights daily-token-noether-cyclical-trend --top 8`):
+
+```
+sources: 6 (shown 5)    tokens: 13,225,003,977    noether-lag: 2    permutations: 8,000
+
+source          tenure  triplets  noetherM  expM   ties  noetherZ  noetherPValue
+vscode-copilot  265     261       24        87.00  176   -20.7099  3.0571e-95
+claude-code     72      68        14        22.67  31     -3.7001  2.1558e-04
+hermes          19      15         9         5.00   0      2.4375  1.4789e-02
+opencode        16      12         2         4.00   0     -1.3339  1.8223e-01
+openclaw        19      15         6         5.00   0      0.6037  5.4607e-01
+```
+
+Reading: the editor source's lag-2 series is OVERWHELM-
+INGLY non-monotone (noetherZ = -20.71, p ~ 3e-95)
+because its 265-day window is dominated by 176 tied
+spaced triplets (gap-filled zero-zero-zero stretches),
+which the strict-inequality rule excludes from M. The
+heavy interactive-agent source (claude-code) is
+similarly non-monotone at lag 2 (z = -3.7) — its
+short bursty rhythm creates many ties and few
+monotonic triplets. The newer continuously-active
+sources (hermes, opencode, openclaw) all have ZERO
+ties because their daily totals are continuous-valued
+and unique. Of those, the local bridge (hermes) shows
+significant lag-2 PERSISTENCE (z = +2.44, p = 0.015)
+— consistent with multi-day up-down macro waves; the
+remaining two are inside the noise band at this lag.
+
 ## 0.6.502 — 2026-05-05
 
 ### Added — `classifyKamatMielkeValueExtremeVsRankExtremeCompound` (axis-201 ↔ axis-200 value-extreme-vs-rank-extreme dispersion-localisation diagnostic)
