@@ -210,6 +210,7 @@ import {
   renderDailyTokenNoetherCyclicalTrend,
   renderDailyTokenDavidBartonRunsUpDown,
   renderDailyTokenHoggAdaptiveHalves,
+  renderDailyTokenCoxStuartSignPairs,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -706,6 +707,10 @@ import {
   buildDailyTokenHoggAdaptiveHalves,
   type DailyTokenHoggAdaptiveHalvesSort,
 } from './dailytokenhoggadaptivehalves.js';
+import {
+  buildDailyTokenCoxStuartSignPairs,
+  type DailyTokenCoxStuartSignPairsSort,
+} from './dailytokencoxstuartsignpairs.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -46966,6 +46971,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenHoggAdaptiveHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-cox-stuart-sign-pairs')
+  .description(
+    "Per-source COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES TREND TEST on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-FIFTH cross-source axis). Pair each early observation v[i] with v[i+c] where c=ceil(n/2). Count csPlus = #{i : v[i+c]>v[i]}, csMinus = #{i : v[i+c]<v[i]}, csTies = #{i : v[i+c]=v[i]}. Drop ties (Hodges-Lehmann 1956 / Daniel 1990 sec.2.2 convention). Under H0 of NO MONOTONIC TREND csPlus ~ Bin(csNonTies, 1/2); csZ = (csPlus - csNonTies/2)/sqrt(csNonTies/4) ~~ N(0,1) for csNonTies>=10 (Cox-Stuart 1955 Table 1; Hollander-Wolfe-Chicken 2014 sec.3.1). SIGN: csZ > 0 = LATE half SYSTEMATICALLY ABOVE early half = MONOTONIC INCREASING TREND; csZ < 0 = MONOTONIC DECREASING TREND. STRUCTURALLY DISTINCT from axis-203 David-Barton (lag-1 sign-RUN counts vs lag-c=ceil(n/2) FAR-PAIRED sign counts); from axis-202 Noether-cyclical (lag-2 spaced TRIPLETS vs lag-c far-paired PAIRS); from Wallis-Moore turning-points (LOCAL extrema vs GLOBAL trend); from ALL halves-comparison axes (paired-design vs two-independent-sample). Pre-processing: NONE (paired-difference sign is shift-invariant and positive-scale-invariant). Distribution-free under H0; deterministic. Refs: Cox & Stuart 1955 JRSS-B 17:222-228; Daniel 1990 sec.2.2; Hollander-Wolfe-Chicken 2014 sec.3.1.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 20 (floor(n/2)>=10 pairs, Cox-Stuart 1955 Table 1 normal-approximation validity band). Default 20.',
+    '20',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: csZAbsDesc (default) | csZ | csPValue | csPValueDesc | csPlus | csPlusDesc | tokens | tenure | source.',
+    'csZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 20) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 20 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'csZ',
+          'csZAbsDesc',
+          'csPValue',
+          'csPValueDesc',
+          'csPlus',
+          'csPlusDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenCoxStuartSignPairs(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenCoxStuartSignPairsSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenCoxStuartSignPairs(report) + '\n',
           );
         }
       } catch (e) {

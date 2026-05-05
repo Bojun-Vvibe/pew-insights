@@ -20635,6 +20635,7 @@ import type { DailyTokenKamatRangeRatioHalvesReport } from './dailytokenkamatran
 import type { DailyTokenNoetherCyclicalTrendReport } from './dailytokennoethercyclicaltrend.js';
 import type { DailyTokenDavidBartonRunsUpDownReport } from './dailytokendavidbartonrunsupdown.js';
 import type { DailyTokenHoggAdaptiveHalvesReport } from './dailytokenhoggadaptivehalves.js';
+import type { DailyTokenCoxStuartSignPairsReport } from './dailytokencoxstuartsignpairs.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29340,6 +29341,89 @@ export function renderDailyTokenHoggAdaptiveHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: hoggPValue < 0.05 = REJECT location-equality H0 at alpha=0.05 (two-sided normal reference, dispatched test's asymptotic null). hoggZ > 0 = SECOND half located ABOVE first half (median / mean / centred-rank-sum) — sign-aligned with axis-110 mannwhitneyZ, axis-181 vanDerWaerdenZ, axis-189 wilcoxonSignedRankZ. The DISPATCH LABEL exposes the data-driven test-selection: dispatch shifts at Q-thresholds 0.5 / 0.8 / 1.25 / 2.0 (HFR 1975 Table 1). UNLIKE every prior single-score location axis, hoggZ adapts to the POOLED tail weight before computing.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenCoxStuartSignPairs(
+  r: DailyTokenCoxStuartSignPairsReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-cox-stuart-sign-pairs'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit/too-few-pairs, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES TREND TEST. Pair v[i] with v[i+c] where c=ceil(n/2); count signs of late-minus-early differences. Under H0 of no monotonic trend csPlus ~ Bin(csNonTies, 1/2); csZ = (csPlus - csNonTies/2)/sqrt(csNonTies/4) ~~ N(0,1) for csNonTies>=10. SIGN: csZ > 0 = MONOTONIC INCREASING TREND (late half above early); csZ < 0 = MONOTONIC DECREASING TREND. TWO-HUNDRED-AND-FIFTH cross-source axis. Pre-processing: NONE (paired-difference sign is shift-invariant and positive-scale-invariant). Distribution-free under H0; deterministic. Refs: Cox & Stuart 1955 JRSS-B 17:222-228; Daniel 1990 sec.2.2; Hollander-Wolfe-Chicken 2014 sec.3.1.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source COX-STUART sign-of-paired-differences trend test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'csC',
+    'pairs',
+    'csPlus',
+    'csMinus',
+    'csTies',
+    'csZ',
+    'csPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.csC),
+    formatNumber(s.csPairs),
+    formatNumber(s.csPlus),
+    formatNumber(s.csMinus),
+    formatNumber(s.csTies),
+    s.csZ.toFixed(4),
+    s.csPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: csPValue < 0.05 = REJECT no-monotonic-trend H0 at alpha=0.05 (two-sided normal reference, sign-test asymptotic null). csZ > 0 = MONOTONIC INCREASING (late half systematically above early); csZ < 0 = MONOTONIC DECREASING. UNLIKE axis-203 David-Barton (lag-1 sign-RUN counts) Cox-Stuart pairs at lag c=ceil(n/2) -- maximally distant pairing -- and is a paired-design GLOBAL trend probe; UNLIKE axis-202 Noether (lag-2 spaced TRIPLETS) Cox-Stuart uses far-paired PAIRS; UNLIKE all halves-comparison axes (Mann-Whitney etc.) Cox-Stuart preserves the pairing structure rather than pooling halves into two independent samples.)`,
     ),
   );
 
