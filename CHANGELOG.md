@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.512 — 2026-05-05
+
+### Added — `classifyJonckheereTerpstraCoxStuartBlockVsPairTrendCompound` (axis-206 ↔ axis-205)
+
+Cross-axis 5-bucket compound classifier joining the new
+axis-206 JONCKHEERE 1954 / TERPSTRA 1952 ORDERED-
+ALTERNATIVE RANK TEST (`jtZ`, `jtPValue`) with the
+axis-205 COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES
+TREND TEST (`csZ`, `csPValue`) on a per-source basis.
+
+**Structural claim.** Both probes test the SAME GLOBAL
+trend null but at DIFFERENT AGGREGATION SCALES:
+
+  - JT (axis-206) partitions into k=4 chronological
+    blocks and aggregates pairwise Mann-Whitney U over
+    all 6 ordered block pairs -- a RANK U-AGGREGATE
+    that is robust to within-block heterogeneity.
+  - Cox-Stuart (axis-205) pairs v[i] with v[i+c] at
+    lag c=ceil(n/2) -- a SINGLE FAR-PAIR-OFFSET probe
+    that uses only floor(n/2) sign comparisons.
+
+Both signals are recoded on the trend-positive axis
+(jtTrendSignal = +jtZ, csTrendSignal = +csZ). They can
+AGREE (steady global up-drift -> jtZ >> 0 AND csZ >> 0)
+or DISAGREE in informative ways: a series with a single
+late-block burst yields jtZ >> 0 but csZ ~ 0 (the
+"late-burst signature"); a series with up-drift over
+Q1-Q3 and a Q4 reversion yields csZ ~ 0 but moderate
+jtZ > 0 (the "rise-and-revert signature"); a noisy
+drifting series yields jtZ >> 0 with marginal csZ (the
+"noise-robust block detection" advantage of JT).
+
+**Buckets** (alpha default 0.05):
+`coherent-global-trend` (with `coherentTrend
+Direction` = 'up' or 'down'), `block-aggregate-only`,
+`paired-sign-only`, `sign-conflict-decisive-both`,
+and `no-evidence`.
+
+The `byCoherentDirection` cross-tab (#up-trend
+coherent vs #down-trend coherent) is the headline
+scalar payload and answers "of the sources that look
+trending at BOTH the block-aggregate and paired-sign
+scales, how many are going up vs down".
+
+### Files
+
+  - `src/classifyjonckheereterpstracoxstuartblockvspairtrendcompound.ts`
+    -- pure cross-axis classifier with strict input
+    validation, alpha-configurable bucket assignment,
+    coherent-direction tracking, sign-conflict tracking,
+    and asymmetric-membership tracking.
+  - `test/classifyjonckheereterpstracoxstuartblockvspairtrendcompound.test.ts`
+    -- 19 unit tests covering validation, all 5 buckets,
+    alpha sensitivity, byCoherentDirection cross-tab,
+    asymmetric membership, source-asc row ordering,
+    bucketCounts-sum-to-rows invariant, and the both-
+    decisive / at-least-one-decisive counters.
+
+### Test count
+
+  - Before: 14,732
+  - After:  14,751 (+19)
+
 ## 0.6.511 — 2026-05-05
 
 ### Added — `daily-token-jonckheere-terpstra-quartile-blocks` (axis-206 JONCKHEERE 1954 / TERPSTRA 1952 ORDERED-ALTERNATIVE RANK TEST)
