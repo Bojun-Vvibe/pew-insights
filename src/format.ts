@@ -20649,6 +20649,7 @@ import type { DailyTokenCoxStuartThirdsTrendReport } from './dailytokencoxstuart
 import type { DailyTokenBuysBallotPeriod7AnovaReport } from './dailytokenbuysballotperiod7anova.js';
 import type { DailyTokenLaplaceCentroidTrendReport } from './dailytokenlaplacecentroidtrend.js';
 import type { DailyTokenHirschSlackSeasonalKendallReport } from './dailytokenhirschslackseasonalkendall.js';
+import type { DailyTokenSenAdichieAlignedRankTrendReport } from './dailytokensenadichiealignedranktrend.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30464,6 +30465,85 @@ export function renderDailyTokenHirschSlackSeasonalKendall(
   lines.push(
     chalk.dim(
       `(reference anchor: |hsZ| > 1.96 = STATISTICALLY SIGNIFICANT seasonal monotone trend at alpha = 0.05 after stratifying on weekday cohort; hsPValue >= 0.05 = no detectable seasonal trend. Test is INVARIANT under any per-cohort additive shift -- precisely what makes it orthogonal to Buys-Ballot axis-216. Reversing the series along time NEGATES hsS and hsZ but preserves hsVar and hsPValue. Compare against axis-110 plain Mann-Kendall for the unstratified analogue, against axis-216 Buys-Ballot for the orthogonal weekday-mean test, against axis-217 Laplace centroid for the orthogonal L-1 first-moment magnitude test.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenSenAdichieAlignedRankTrend(
+  r: DailyTokenSenAdichieAlignedRankTrendReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-sen-adichie-aligned-rank-trend'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source SEN-ADICHIE 1967 ALIGNED RANK TREND TEST across weekday cohorts (period s=7) on the gap-filled tenure series. Within each cohort g compute midranks R^{(g)} of x^{(g)} and the linear-rank inner product L_g = sum_j (j - meanT_g) * (R_j - (n_g+1)/2). Pool L^{SA} = sum_g L_g and Var(L^{SA}) = sum_g (STT_g * SRR_g / (n_g - 1)) under cross-cohort independence (the same working assumption as Hirsch-Slack 1984 axis-218). saZ = L^{SA} / sqrt(Var(L^{SA})) ~ N(0,1) two-sided; saPValue via Abramowitz-Stegun 7.1.26 erf approximation; saRho = L^{SA} / sqrt(STT * SRR) in [-1,+1]; saConcordantSeasons in {0,..,7}. SIGN: saZ > 0 = weekday cohorts collectively trend UP across weeks; saZ < 0 = trend DOWN. TWO-HUNDRED-AND-NINETEENTH cross-source axis. STRUCTURALLY DISTINCT from axis-218 Hirsch-Slack (sums KENDALL S = sign-counts per cohort; Sen-Adichie sums RANK INNER PRODUCTS per cohort -- L_1 vs L_2 rank influence on the same monotone alternative; seasonal-stratified analogue of Mann-Kendall vs Spearman), axis-216 Buys-Ballot (tests between-cohort MEAN structure; INVARIANT under within-column detrending; complementary), axis-217 Laplace centroid (L-1 magnitude functional; aggregated, not season-stratified), axis-214 Theil-Sen (whole-series slope estimator, conflates period-7 mean structure with trend), and the unstratified Spearman-family axes (which the alignment step removes the cross-cohort mean shift from by construction). Test is INVARIANT under any per-cohort additive shift (rank-based + alignment). Refs: Sen & Adichie 1967 *Annals of Mathematical Statistics* 38(4); Hettmansperger & McKean 1998 sec. 6.5; Kendall 1975 sec. 3.1; Abramowitz-Stegun 7.1.26.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Sen-Adichie aligned rank Z (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'saL',
+    'saVar',
+    'saZ',
+    'saRho',
+    'concSeasons',
+    'saPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.saL.toFixed(2),
+    s.saVar.toFixed(1),
+    s.saZ.toFixed(4),
+    s.saRho.toFixed(4),
+    `${s.saConcordantSeasons}/${s.saActiveSeasons}`,
+    s.saPValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: |saZ| > 1.96 = STATISTICALLY SIGNIFICANT seasonal aligned-rank trend at alpha = 0.05 after stratifying on weekday cohort and aligning midranks within cohort; saPValue >= 0.05 = no detectable seasonal aligned-rank trend. Test is INVARIANT under any per-cohort additive shift -- complementary to axis-216 Buys-Ballot (which tests weekday MEAN structure). Reversing the series along time NEGATES saL and saZ but preserves saVar and saPValue. Compare against axis-218 Hirsch-Slack for the L_1 sign-count seasonal Mann-Kendall analogue; against axis-216 Buys-Ballot for the orthogonal weekday-mean test; against axis-217 Laplace centroid for the aggregated L-1 first-moment magnitude test.)`,
     ),
   );
 

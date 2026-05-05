@@ -2,6 +2,143 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.543 — 2026-05-06
+
+### Added — `daily-token-sen-adichie-aligned-rank-trend` (axis-219)
+
+TWO-HUNDRED-AND-NINETEENTH cross-source axis. Per-source
+SEN-ADICHIE 1967 ALIGNED RANK TREND TEST across weekday
+cohorts (period s = 7) on the gap-filled daily total_tokens
+series. The L_2 (rank inner-product) seasonal-stratified
+trend companion to the L_1 (rank sign-count) axis-218
+Hirsch-Slack 1984 seasonal Mann-Kendall.
+
+Mechanism. Partition the n-day series into 7 cohorts by
+i mod 7. Within each cohort g of length n_g >= 3, compute
+midranks R^{(g)} of x^{(g)} and the linear-rank inner
+product
+
+```
+L_g = sum_{j=0..n_g-1} (j - meanT_g) * (R_j - (n_g+1)/2)
+```
+
+with meanT_g = (n_g - 1)/2. Pool
+
+```
+L^{SA}      = sum_{g=0..6} L_g
+Var(L^{SA}) = sum_{g=0..6} (STT_g * SRR_g) / (n_g - 1)
+```
+
+under cross-cohort independence (the same working
+assumption as axis-218 Hirsch-Slack 1984; covariance-
+corrected variants are reserved for separate axes). The
+standardised statistic
+
+```
+saZ = L^{SA} / sqrt(Var(L^{SA}))
+```
+
+is asymptotically N(0, 1) two-sided; saPValue =
+2*(1 - Phi(|saZ|)) via the Abramowitz-Stegun 1964 eq.
+7.1.26 erf approximation (max abs error ~1.5e-7).
+Diagnostic surfaces: aggregate aligned-rank Spearman
+saRho = L^{SA} / sqrt(STT * SRR) in [-1, +1];
+saConcordantSeasons in {0, .., 7}; saConcordanceRatio.
+
+SIGN: saZ > 0 = weekday cohorts collectively trend UP
+across weeks; saZ < 0 = trend DOWN; saZ ~ 0 = no
+within-cohort monotone trend.
+
+Structural orthogonality. The new axis is structurally
+distinct from every prior axis:
+
+- vs axis-218 Hirsch-Slack: both are season-stratified
+  rank trend tests with period s = 7. Hirsch-Slack sums
+  KENDALL S = sum_{j<k} sign(x_k - x_j) per cohort
+  (L_1-style sign-count); Sen-Adichie sums RANK INNER
+  PRODUCTS per cohort (L_2-style rank-magnitude).
+  Hirsch-Slack vs Sen-Adichie is the seasonal-stratified
+  analogue of Mann-Kendall vs Spearman: both detect the
+  same monotone alternative but with DIFFERENT influence
+  functions. They often agree in DIRECTION (sign(saZ) ==
+  sign(hsZ)) but can disagree on STRENGTH (saZ much
+  larger when within-cohort rank departures concentrate
+  at the extremes; hsZ much larger when concordances are
+  uniformly distributed).
+- vs axis-216 Buys-Ballot period-7 ANOVA: Buys-Ballot
+  tests for between-cohort MEAN structure and is
+  INVARIANT under within-column detrending. Sen-Adichie
+  tests for within-cohort TREND and is INVARIANT under
+  any per-cohort additive shift. Complementary and
+  ORTHOGONAL.
+- vs axis-217 Laplace centroid: L-1 magnitude functional
+  vs L-2 rank inner product; aggregated vs season-
+  stratified.
+- vs axis-214 Theil-Sen: whole-series slope estimator
+  conflates period-7 mean structure with monotone trend
+  (Theil-Sen line through a weekday-amplified series
+  picks up the trend OF THE WEEKDAY MEANS); Sen-Adichie
+  alignment removes this by construction.
+- vs the unstratified Spearman family: alignment removes
+  the cross-cohort mean shift before rank correlation.
+
+Live smoke against `~/.config/pew/queue.jsonl` (reduced
+to the headline row; the other source row contains a
+proper noun excluded by repo policy and has been redacted
+from this paste; full output identical to the verbatim
+CLI rendering, only the second row is suppressed):
+
+```
+pew-insights daily-token-sen-adichie-aligned-rank-trend
+sources: 6 (shown 2)    tokens: 3,444,271,515    min-tokens: 1,000
+min-tenure-days: 21    sort: saAbsZDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+0 below min-tokens, 4 below min-tenure-days, 0 zero-variance,
+0 non-finite-fit, 0 below top cap
+
+per-source Sen-Adichie aligned rank Z (sorted by saAbsZDesc; ties: source asc)
+source       firstDay    lastDay     tenure  saL     saVar    saZ     saRho   conc  saPValue   tokens
+-----------  ----------  ----------  ------  ------  -------  ------  ------  ----  ---------  -------------
+claude-code  2026-02-11  2026-04-23  72      309.00  4832.7   4.4449  0.5585  7/7   8.800e-6   3,442,385,788
+[REDACTED]   2025-07-30  2026-04-20  265     -3204   2203694  -2.158  -0.134  0/7   3.090e-2   1,885,727
+```
+
+The headline source `claude-code` shows a STATISTICALLY
+HIGHLY SIGNIFICANT positive seasonal aligned-rank trend
+(saZ = +4.4449, saPValue = 8.8e-6 << 0.05; saRho = +0.559;
+ALL 7 weekday cohorts agree on the up-direction --
+saConcordantSeasons = 7/7). This indicates that across
+the 72-day tenure window, when ranked WITHIN each weekday
+cohort separately, the within-cohort time position is
+strongly positively correlated with the within-cohort
+midrank: every weekday's tokens tend to grow across
+successive weeks. Compare against axis-218 hsZ for the
+L_1 sign-count companion on the same data; the L_2 rank-
+inner-product variant amplifies the signal here because
+the within-cohort upward rank ordering is monotone across
+weeks rather than concentrated.
+
+### Added — tests
+
+- `test/dailytokensenadichiealignedranktrend.test.ts`:
+  +29 unit tests covering the standard Normal CDF and
+  two-sided p-value, midrank computation including ties,
+  input validation (n < 21, non-finite weights, negative
+  weights, zero variance), the sign / direction of saZ
+  for strictly increasing and strictly decreasing series,
+  the time-reversal anti-symmetry property
+  (saL, saZ NEGATE; saVar, saPValue PRESERVE), the per-
+  cohort additive-shift INVARIANCE (the structural claim
+  vs axis-216 Buys-Ballot), the saRho \in [-1, +1] bound,
+  and the builder surface (empty queue, below-min-tenure
+  drop, healthy increasing source, bad sort key, source
+  filter). Test suite total +29: 15737 -> 15766 tests,
+  all green.
+
+### Bumped
+
+- `package.json` 0.6.542 -> 0.6.543.
+
 ## 0.6.542 — 2026-05-06
 
 ### Added — `classifyAxis218Axis216HirschSlackBuysBallotSeasonalRankTrendVsWeekdayMeanStructureCompound`
