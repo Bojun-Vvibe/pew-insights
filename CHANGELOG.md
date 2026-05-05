@@ -2,6 +2,155 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.474 — 2026-05-05
+
+### Added — `daily-token-permutation-tstat-halves` axis-188
+
+Per-source MONTE-CARLO PERMUTATION WELCH-T two-sample
+test on the half-split daily total_tokens series.
+Welch-t observed statistic against B = 10000 random
+label permutations of the pooled sample, with
+Phipson-Smyth 2010 add-one correction:
+
+  pTwoSided = (1 + #{|t_perm| >= |t_obs|}) / (B + 1)
+  pmin      = 1 / (B + 1)
+
+Sign convention: positive t = SECOND-half mean larger
+(preserves SECOND-half-positive cross-axis convention).
+5-level decision bucket: highly-significant (<=.001),
+very-significant (<=.01), significant (<=.05),
+marginal (<=.10), ns. Deterministic xorshift32 PRNG
+seeded by FNV-1a hash of the input values, so re-runs
+are bit-identical.
+
+ONE-HUNDRED-AND-EIGHTY-EIGHTH cross-source axis.
+STRUCTURALLY ORTHOGONAL to every prior axis:
+
+  - vs axis-183 YUEN-WELCH (asymptotic-t p-value with
+    Welch-Satterthwaite df). YW assumes the trimmed-
+    Welch t-stat is approximately t-distributed under
+    H0. axis-188 makes ZERO distributional assumption:
+    the p-value comes from the EXACT exchangeable null
+    over label permutations, valid under heavy-tail /
+    skewed / bimodal data where YW's t-approximation
+    can break.
+  - vs axis-186 HL (point estimator + Lehmann CI from
+    pairwise-difference quantiles). HL gives a SIGNED
+    location SHIFT in tokens with a normal-approx
+    Walsh-average CI. axis-188 is a SIGNIFICANCE-
+    DECISION test, not an estimator -- they are
+    maximally complementary: HL tells you HOW MUCH,
+    axis-188 tells you WHETHER ANY shift is detectable
+    under the strongest distribution-free null.
+  - vs axis-187 A12 (rank-based effect-size). A12
+    builds from POOLED RANKS; axis-188 operates on
+    RAW values via the Welch-t numerator/denominator
+    and inherits t-stat efficiency under approx-
+    normality while retaining EXACT type-I control
+    under any exchangeable null. The two answer
+    different questions: A12 = effect SIZE in [0, 1],
+    axis-188 = significance DECISION on the location
+    alternative.
+  - vs axis-115 MW / axis-182 FP. Both yield
+    ASYMPTOTIC normal Z; axis-188 yields an EXACT
+    Monte-Carlo p with no asymptotic approximation.
+  - vs axis-185 BWS / axis-178 BWS variants and other
+    omnibus tests that reject under any departure;
+    axis-188 targets the LOCATION alternative
+    specifically, not omnibus.
+
+THE STATISTIC. Welch-t = (mean(B) - mean(A)) /
+sqrt(var(A)/n1 + var(B)/n2) with sample variances
+using the (n-1) denominator, n1 = floor(n/2),
+n2 = n - n1. Permutation p-values from B Fisher-
+Yates shuffles of the pooled sample, comparing
+observed and shuffled t-statistics.
+
+27 new unit tests cover decision-bucket boundaries,
+out-of-range rejection, Welch-t sign agreement,
+zero-pooled-SE rejection, n<16 rejection, non-finite
+rejection, zero-variance rejection, permutations<100
+rejection, large-positive-shift / large-negative-
+shift / null-shift detection on hand-crafted series,
+deterministic-given-identical-input regression,
+add-one floor / ceiling, sparse / short / zero-
+variance source dropping, sort tie-break by source-
+asc, top cap dropping, invalid-sort and invalid-
+permutations and invalid-min-tenure rejection,
+droppedNonPositiveTokens / droppedInvalidHourStart
+counters.
+
+Refs:
+  - Pitman, E. J. G. (1937). Significance tests which
+    may be applied to samples from any populations.
+    *Suppl. J. Royal Stat. Soc.* 4(1):119-130.
+  - Phipson, B. & Smyth, G. K. (2010). Permutation
+    P-values should never be zero: calculating exact
+    P-values when permutations are randomly drawn.
+    *Stat. Appl. Genet. Mol. Biol.* 9(1):Article 39.
+  - Welch, B. L. (1947). The generalization of
+    Student's problem when several different
+    population variances are involved. *Biometrika*
+    34(1/2):28-35.
+
+#### Live-smoke — `~/.config/pew/queue.jsonl` corpus
+
+```
+$ node dist/cli.js daily-token-permutation-tstat-halves --json
+B = 10000 permutations, deterministic seeded.
+
+source           n1   n2    mean A          mean B          t        p (2sd)   decision
+---------------  ---  ---   --------------  --------------  -------  --------  -----------------
+openclaw          9   10    189,737,562     67,337,823      -3.4520  1.90e-3   very-significant
+claude-code      36   36      3,440,847     92,180,980      +2.5199  1.00e-4   highly-significant
+opencode          8    8    488,018,196    370,633,732      -1.2505  2.46e-1   ns
+hermes            9   10     15,813,430     19,034,694      +0.6914  4.89e-1   ns
+vscode-copilot  132  133          7,252          6,981      -0.0817  9.38e-1   ns
+```
+
+Reading:
+
+  - **claude-code** is the headliner: t = +2.52, p =
+    1.00e-4 (= 1/(10000+1), the ADD-ONE FLOOR --
+    ZERO of 10000 permutations produced a t as
+    extreme as +2.52). That is the smallest reportable
+    p under B = 10000. SIGNED + means the SECOND-half
+    mean (92.2M tokens/day) is decisively LARGER than
+    the FIRST-half mean (3.4M tokens/day) -- a 27x
+    second-half-positive surge that DESERVES a
+    distribution-free decisive-detection label, which
+    the Welch-t alone (asymptotic-normal under H0)
+    would over-state because the data are extremely
+    heavy-tailed. The permutation p-value is the
+    GOLD STANDARD here.
+  - **openclaw** is the SECOND-half-NEGATIVE
+    decisive: t = -3.45, p = 1.90e-3 (very-
+    significant). First-half mean 189.7M tokens/day
+    collapses to 67.3M tokens/day in the second half.
+    Cross-axis confirmation with axis-187 A12 = 0.0989
+    (CI excludes 0.5) and axis-186 HL = -119.3M
+    tokens (Lehmann CI excludes 0): all three
+    independently-derived axes converge on the same
+    decisive openclaw second-half collapse, which is
+    the strongest possible TRIANGULATION on the
+    location-shift alternative.
+  - **opencode** is borderline (t = -1.25, p = 0.246):
+    axis-187 A12 = 0.234 with vdCiExcludesHalf = true
+    flags this as a decisive A12 reading, but axis-188
+    refuses to call significance under the
+    distribution-free null. This is the
+    ARCHETYPAL ASYMMETRY between rank-CI normality
+    (axis-187 SE) and exchangeability (axis-188): the
+    placement-rank SE on opencode is tight enough to
+    exclude 0.5 but the pooled-permutation null on the
+    raw t is wide enough to absorb the observed
+    shift. axis-188 is the more conservative test
+    here, and on n = 16 with skewed data the
+    conservative call is the right call.
+  - **hermes** and **vscode-copilot** are
+    cross-axis-consistent NULLs: axis-187 A12 in the
+    no-decisive zone, axis-188 p > 0.10.
+
 ## 0.6.473 — 2026-05-05
 
 ### Refactor — `classifyA12HlSignificanceMagnitudeCompound` cross-axis joiner (axes 187 + 186)
