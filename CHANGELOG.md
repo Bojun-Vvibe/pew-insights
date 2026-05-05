@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.544 — 2026-05-06
+
+### Added — `classifyAxis219Axis218SenAdichieHirschSlackL2VsL1SeasonalRankTrendCompound`
+
+Refinement compound classifier joining axis-219 (Sen-
+Adichie 1967 aligned rank trend test, L_2 rank inner
+product) with axis-218 (Hirsch-Slack 1984 seasonal Mann-
+Kendall, L_1 rank sign-count) on a per-source basis.
+
+Both axes are SEASON-STRATIFIED rank trend tests with
+period s = 7 and the SAME working null (no within-cohort
+monotone trend; cross-cohort independence). They differ
+only in the RANK-INFLUENCE FUNCTION applied per cohort:
+Hirsch-Slack uses the L_1 sign-count S = sum_{j<k}
+sign(x_k - x_j), Sen-Adichie uses the L_2 rank inner
+product L_g = sum_j (j - meanT_g) * (R_j - (n_g+1)/2).
+Hirsch-Slack vs Sen-Adichie is the SEASONAL-STRATIFIED
+analogue of MANN-KENDALL vs SPEARMAN, with KNOWN ARE
+9/pi^2 ~ 0.912 for Mann-Kendall relative to Spearman
+under Gaussian alternatives (Stuart 1954 *Biometrika*
+41(1/2):275).
+
+Because both axes are SIGNED, this compound uses the
+classic 4-quadrant direction-conflict scheme (axis-217 x
+axis-214, axis-213 x axis-212, axis-209 x axis-208, etc.)
+expanded to 9 buckets:
+
+```
+'agree-up'         saDecisive AND hsDecisive AND saZ > 0 AND hsZ > 0
+'agree-down'       saDecisive AND hsDecisive AND saZ < 0 AND hsZ < 0
+'conflict-sa-up'   saDecisive AND hsDecisive AND saZ > 0 AND hsZ < 0
+'conflict-sa-down' saDecisive AND hsDecisive AND saZ < 0 AND hsZ > 0
+'sa-only-up'       saDecisive AND NOT hsDecisive AND saZ > 0
+'sa-only-down'     saDecisive AND NOT hsDecisive AND saZ < 0
+'hs-only-up'       hsDecisive AND NOT saDecisive AND hsZ > 0
+'hs-only-down'     hsDecisive AND NOT saDecisive AND hsZ < 0
+'no-evidence'      neither decisive
+```
+
+Sign AGREEMENT is the EXPECTED outcome under any genuine
+within-cohort monotone trend (both tests detect the same
+alternative). Sign CONFLICT is a STRUCTURAL ANOMALY: a
+small number of extreme rank departures dominate the L_2
+inner product in one direction while the L_1 sign count
+tilts the other way (e.g. one or two within-cohort
+outlier weeks with extreme ranks reverse Sen-Adichie
+while the majority of pairwise concordances under
+Hirsch-Slack still point opposite). The axis-219 vs
+axis-218 conflict buckets surface these influence-
+function disagreements, which the underlying L_1/L_2
+asymptotic equivalence cannot.
+
+### Added — tests
+
+- `test/classifyaxis219axis218senadichiehirschslackl2vsl1seasonalranktrendcompound.test.ts`:
+  +16 unit tests covering input validation (alpha range,
+  array typing, malformed rows, duplicate sources), the
+  9-bucket classification logic on synthetic per-source
+  rows for all four agree/conflict quadrants and all four
+  one-axis-only buckets, the alpha-threshold respect
+  property, sources-only-in-one-side tracking, stable
+  lexicographic source ordering, and the summarize one-
+  liner format. Test suite total +16: 15766 -> 15782
+  tests, all green.
+
+### Bumped
+
+- `package.json` 0.6.543 -> 0.6.544.
+
 ## 0.6.543 — 2026-05-06
 
 ### Added — `daily-token-sen-adichie-aligned-rank-trend` (axis-219)
