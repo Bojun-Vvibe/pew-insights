@@ -396,3 +396,35 @@ test('classifyCaponKlotzAgreement: rejects non-finite', () => {
     /finite/,
   );
 });
+
+// ---------- additional structural identity: Capon score monotonicity ----------
+
+test('dailyTokenCaponHalves: Capon scores are monotone non-decreasing in |R - (n+1)/2|', () => {
+  // The squared-normal-quantile score a(R) =
+  // (Phi^{-1}((R - 0.5)/n))^2 is symmetric around the
+  // pooled-rank centre (n+1)/2 and STRICTLY INCREASING in
+  // distance from the centre. Verify on n = 20.
+  const n = 20;
+  const scores: number[] = [];
+  for (let R = 1; R <= n; R += 1) {
+    const u = (R - 0.5) / n;
+    const z = inverseStandardNormalCdfCapon(u);
+    scores.push(z * z);
+  }
+  // Symmetric: score(R) === score(n + 1 - R) within
+  // float tolerance.
+  for (let R = 1; R <= n / 2; R += 1) {
+    const partner = n + 1 - R;
+    assert.ok(
+      Math.abs(scores[R - 1]! - scores[partner - 1]!) < 1e-12,
+      `Capon score should be symmetric around (n+1)/2: R=${R} score=${scores[R - 1]} vs partner R=${partner} score=${scores[partner - 1]}`,
+    );
+  }
+  // Strictly decreasing toward the centre on R = 1..n/2:
+  for (let R = 1; R < n / 2; R += 1) {
+    assert.ok(
+      scores[R - 1]! > scores[R]!,
+      `Capon score should strictly decrease toward centre on the left half: R=${R} score=${scores[R - 1]} not > R=${R + 1} score=${scores[R]}`,
+    );
+  }
+});
