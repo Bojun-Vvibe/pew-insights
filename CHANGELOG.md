@@ -2,6 +2,109 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.494 — 2026-05-05
+
+### Refined — `classifyFosterStuartUpperRecordsBilateralVsUnilateralCompound` (axis-197 + axis-109 joiner)
+
+Cross-axis joiner reconciling axis-197 FOSTER-STUART
+S-STATISTIC (`fsSZ`; bilateral upper + lower record
+count, index 0 EXCLUDED, Foster-Stuart 1954 convention)
+with axis-109 DAILY-TOKEN-UPPER-RECORDS-COUNT
+(`recordZ`; unilateral upper-only Renyi count, index 0
+INCLUDED as trivial record) on a per-source join,
+producing five mutually-exclusive bivariate buckets
+that decompose the extremum-event signal into a
+BILATERAL-DISPERSION-INSTABILITY channel and a
+UNILATERAL-UPPER-TAIL channel.
+
+Mechanistic orthogonality. Both axes are functionals
+of prefix-extremum events on the SAME gap-filled daily
+series, but they are not redundant. Three structural
+differences make the join informative:
+
+  1. **Unilateral vs bilateral**: axis-109 only sees
+     `u_i = 1[x[i] > max(x[0..i-1])]` and is BLIND to a
+     collapsing lower tail. Axis-197 sums `u_i + l_i`,
+     so a series with stable upper tail but accumulating
+     lower-tail extremes will fire `fsSZ > 0` while
+     leaving `recordZ ~ 0`. Mechanically real: any
+     series of the form `x[i] = max(x[0..i-1]) - delta_i`
+     with monotone-decreasing positive `delta_i` has
+     `U = 0` and `L` growing without bound.
+  2. **Index-0 convention differs**: axis-109 counts the
+     first observation as a trivial upper record (Renyi
+     `Pr(record at i) = 1/(i+1)` equals 1 at `i = 0`);
+     axis-197 EXCLUDES `i = 0` per Foster-Stuart 1954
+     sec. 2. On short tenures (`n` ~ 10) the constant +1
+     offset shifts axis-109 `recordZ` upward by
+     `1 / sqrt(H_n - 1)` (~0.4 at `n = 10`); axis-197
+     has no such offset, so the two will routinely
+     disagree on sign at small `n` even under iid
+     dynamics.
+  3. **Variance normalisation differs**: axis-109 uses
+     `Var[U_full] = H_n - H_n^(2)` (single Bernoulli
+     pass); axis-197 uses `Var[S] ~ 2 * (H_n -
+     H_n^(2))` (two independent Bernoulli passes,
+     asymptotic-leading-order). The `(recordZ, fsSZ)`
+     plane has a natural diagonal: under iid continuous
+     innovations and after adjusting for the index-0
+     offset, `fsSZ - recordZ / sqrt(2)` has variance
+     `~ 1/2`, so off-diagonal deviations greater than
+     ~1 SD are mechanically diagnostic of asymmetric
+     tail behaviour.
+
+Bucket map. Let `urReject = |recordZ| >= 1.96` and
+`fsReject = |fsSZ| >= 1.96` (alpha = 0.05 two-sided
+normal):
+
+  - `bilateral-and-upper-coherent`: both REJECT and
+    `sign(fsSZ) == sign(recordZ)` → canonical "growth-
+    plus-volatility" record signature: new highs
+    accumulate AND total record arrivals exceed the iid
+    clock. Most common signature for a maturing source
+    whose usage is climbing AND spreading.
+  - `bilateral-only-lower-tail-driven`: `fsSZ` REJECTS
+    but `recordZ` does NOT → canonical LOWER-TAIL-
+    DOMINATED signature: bilateral dispersion-
+    instability is real but the upper tail is
+    well-behaved, so the lower-record stream `L` must
+    be carrying the signal. Hand off to a lower-tail
+    review (axis-185 Hampel outlier review on the
+    deflated half).
+  - `upper-only-not-bilateral`: `recordZ` REJECTS but
+    `fsSZ` does NOT → diagnostic: the upper tail fires
+    but the lower tail is so well-behaved that
+    `S = U + L ~ U` is DILUTED below the bilateral
+    null. Common when gap-fill zero-padding suppresses
+    lower records to a degenerate `L = 0`.
+  - `coherent-but-conflict-direction`: both REJECT but
+    SIGNS DISAGREE → watch-list: e.g. `recordZ`
+    strongly positive (lots of new highs) yet `fsSZ`
+    strongly negative (TOTAL records FEWER than the
+    bilateral null expects, meaning lower-record stream
+    is REPRESSED far below its share). Signature of a
+    one-sided drift that pins the running minimum and
+    prevents lower records.
+  - `both-ns`: neither rejects.
+
+Headline counts: `bilateralAndUpperCoherent`,
+`bilateralOnlyLowerTailDriven`,
+`upperOnlyNotBilateral`,
+`coherentButConflictDirection`. Plus
+`sourcesOnlyInFs` / `sourcesOnlyInUr` for join hygiene.
+
+The Foster-Stuart rejection threshold is `|fsSZ| >=
+1.959963984540054` (alpha = 0.05 two-sided normal); the
+upper-records rejection threshold uses the same critical
+value (axis-109 reports `recordZ` already standardised
+under the Renyi null).
+
+Refs: Foster & Stuart 1954 *J. R. Statist. Soc. B*
+16(1):1-22; Renyi 1962 *Theory of probability and its
+applications* 7:401-413; Glick 1978 *Amer. Math.
+Monthly* 85:2-26 sec. 4 (asymptotic-independence of
+record indicators).
+
 ## 0.6.493 — 2026-05-05
 
 ### Added — `daily-token-foster-stuart-s` (one-hundred-and-ninety-seventh axis)
