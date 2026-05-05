@@ -90,8 +90,43 @@ inputs.
 
 ### Live smoke
 
-(verbatim output to be appended in a follow-up commit
-after running against the real local queue.)
+Run against the real local `~/.config/pew/queue.jsonl`
+on 2026-05-05 (one source name scrubbed: `vscode-c*` ->
+`vsc-redacted`, in keeping with the project's
+identifier-redaction policy):
+
+```
+pew-insights daily-token-olmstead-tukey-corner-test
+as of: 2026-05-05T16:55:53.243Z    sources: 6 (shown 5)    tokens: 13,356,607,576    min-tokens: 1,000    min-tenure-days: 12    top: —    sort: otZAbsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter, 0 below min-tokens, 1 below min-tenure-days, 0 zero-variance, 0 non-finite-fit, 0 below top cap
+
+per-source OLMSTEAD-TUKEY corner test (sorted by otZAbsDesc; ties: source asc)
+source          firstDay    lastDay     tenure  median        NE/NW/SE/SW  otQ  otZ      otPValue   tokens
+--------------  ----------  ----------  ------  ------------  -----------  ---  -------  ---------  -------------
+claude-code     2026-02-11  2026-04-23  72      0.00          1/2/0/0      -1   -0.3536  7.2367e-1  3,442,385,788
+hermes          2026-04-17  2026-05-05  19      21333523.00   0/0/1/2      1    0.3536   7.2367e-1  347,885,828
+openclaw        2026-04-17  2026-05-05  19      83004949.00   0/0/1/1      0    0.0000   1.0000e+0  2,422,926,275
+opencode        2026-04-20  2026-05-05  16      427757160.50  0/0/1/1      0    0.0000   1.0000e+0  7,141,523,958
+vsc-redacted    2025-07-30  2026-04-20  265     0.00          1/1/0/0      0    0.0000   1.0000e+0  1,885,727
+```
+
+Reading: every observed source has |otQ| <= 1, far
+below the Olmstead-Tukey alpha 0.05 critical |Q| >= 9.
+The corner test sees NO evidence of monotone trend at
+the 4 extremal edges of any source's daily-token
+series. This is consistent with axis-211 Brown-Mood
+(which also surfaced no large bmZ on the same corpus
+in the previous run) but the two axes are NOT
+redundant: the corner test would have detected an
+edge-only trend even if the whole-half median split
+had cancelled.
+
+Note that `claude-code` and `vsc-redacted` have
+median = 0 because more than half their tenure days
+have zero gap-filled token activity; ties at the
+median therefore dominate and shorten every corner
+run, which is the correct conservative behaviour for
+a sparse low-activity series.
 
 ## 0.6.525 — 2026-05-06
 
