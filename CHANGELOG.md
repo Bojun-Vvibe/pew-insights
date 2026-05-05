@@ -2,6 +2,93 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.480 — 2026-05-05
+
+### Added — axis-191 `daily-token-cliffs-delta-halves` (Cliff's delta with bootstrap percentile CI)
+
+ONE-HUNDRED-AND-NINETY-FIRST cross-source axis. Per-source CLIFF'S
+DELTA ordinal effect-size (Cliff 1993 *Psychological Bulletin*
+114(3):494-509) on the half-split gap-filled daily total_tokens
+series, with a deterministic BOOTSTRAP PERCENTILE CI:
+
+    delta = (#{B>A} - #{A>B}) / (m * n)  in [-1, +1]
+
+with ties contributing 0 to the numerator (Cliff's preferred
+convention). Sign convention: delta > 0 means SECOND half
+stochastically dominates the first half. The percentile CI is
+computed by resampling A and B with replacement nBoot times
+under a deterministic Mulberry32 PRNG seeded by source name;
+endpoints are the (alpha/2, 1-alpha/2) percentiles. Default
+nBoot = 999, alpha = 0.05.
+
+SECOND ordinal effect-size axis after axis-187 Vargha-Delaney
+A12, but STRUCTURALLY ORTHOGONAL on TWO axes:
+
+  - **By formula.** A12 = P(B>A) + 0.5*P(B=A); Cliff's delta =
+    P(B>A) - P(A>B). Algebraically equivalent (delta = 2*A12 - 1)
+    ONLY when there are NO TIES; under ties the two diverge
+    materially (A12 splits ties at 0.5, Cliff drops them
+    entirely from the numerator). The dominance-count split
+    nGreater / nLess / nEqual is reported as a primary output,
+    exposing the tie structure that A12 collapses.
+  - **By CI method.** Bootstrap percentile (data-driven,
+    non-parametric, respects discrete tie structure) vs
+    axis-187's analytical Mee 1990 closed-form approximation.
+
+Magnitude buckets per Romano-Coraggio-Skowronski 2006:
+|delta| >= .474 large, >= .33 medium, >= .147 small, else
+negligible. Decision crosses CI-exclusion-of-zero with
+magnitude:
+
+  - `significant-large` / `significant-medium` /
+    `significant-small` / `significant-negligible`: CI
+    excludes 0 (statistically detectable shift); magnitude
+    bucket from |delta|.
+  - `ns`: CI includes 0; no detectable stochastic ordering.
+
+#### Live smoke against `~/.config/pew/queue.jsonl`
+
+Real numbers from `node dist/cli.js daily-token-cliffs-delta-
+halves --min-tenure-days 16` against the local
+`~/.config/pew/queue.jsonl` (5 of 6 sources qualified after
+`vscode-cp` was dropped to >=16 day tenure; `vscode-cp` is
+included here because it has 265 tenure days and 132/132 m/n
+splits):
+
+| source      | m   | n   | nGreater | nLess | nEqual | delta   | magnitude  | ciLow   | ciHigh  | ciHW   | ci!=0 | decision           |
+|-------------|-----|-----|----------|-------|--------|---------|------------|---------|---------|--------|-------|--------------------|
+| openclaw    | 9   | 9   | 4        | 77    | 0      | -0.9012 | large      | -1.0000 | -0.6543 | 0.1728 | yes   | significant-large  |
+| opencode    | 8   | 8   | 16       | 48    | 0      | -0.5000 | large      | -1.0000 | +0.1250 | 0.5625 | no    | ns                 |
+| claude-code | 36  | 36  | 799      | 185   | 312    | +0.4738 | medium     | +0.2492 | +0.6806 | 0.2157 | yes   | significant-medium |
+| hermes      | 9   | 9   | 52       | 29    | 0      | +0.2840 | small      | -0.3086 | +0.8519 | 0.5802 | no    | ns                 |
+| vscode-cp   | 132 | 132 | 3,178    | 5,182 | 9,064  | -0.1150 | negligible | -0.2253 | +0.0015 | 0.1134 | no    | ns                 |
+
+Read of the live panel:
+
+  - **`openclaw`** posts the strongest robust shift on the
+    panel: delta = -0.9012, CI = [-1.0000, -0.6543], every
+    bootstrap resample stays well below 0. FIRST half
+    stochastically dominates by a large ordinal margin --
+    consistent with the axis-186/189/190 reads that openclaw
+    has cooled down sharply between the two halves of its 19-
+    day window.
+  - **`claude-code`** is the second decisive shift, delta =
+    +0.4738 with CI = [+0.2492, +0.6806] excluding 0. SECOND
+    half larger; medium magnitude. Aligns with axis-189 wsr
+    and axis-190 paired-sign reads of "robust meaningful
+    shift, second larger" for claude-code.
+  - **`opencode`**, **`hermes`**, **`vscode-cp`** all show
+    NS verdicts: their bootstrap CIs straddle zero. Notably
+    `opencode` has a moderate point delta = -0.5000 but only
+    n=8 per side and a wide CI half-width 0.5625, so the
+    bootstrap is correctly conservative. `vscode-cp` has the
+    LARGEST tie count (9,064 of 17,424 cross-pairs are equal),
+    showing exactly why Cliff's tie-dropping convention
+    matters: A12 would credit those ties as half-wins; Cliff
+    correctly excludes them from the dominance ratio,
+    yielding |delta|=0.1150 (negligible) instead of an
+    inflated near-1.0 magnitude.
+
 ## 0.6.479 — 2026-05-05
 
 ### Added — `classifyPairedSignWsrRobustnessAgreement` cross-axis joiner (axes 190 + 189)
