@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.506 — 2026-05-05
+
+### Added — `classifyDavidBartonNoetherSignRunVsSpacedTripletStructureCompound` (axis-203 ↔ axis-202)
+
+Cross-axis 7-bucket compound classifier joining the
+new axis-203 DAVID & BARTON 1958 RUNS-UP-AND-DOWN
+TEST (`dbZ`, `dbPValue`, lag-1 maximal sign-run count
+on first differences) with axis-202 NOETHER 1956
+cyclical-trend test at lag m=2 (`noetherZ`,
+`noetherPValue`, monotonic spaced triplets) on a
+per-source basis.
+
+**Structural claim.** Both axes target persistence-vs-
+mean-reversion alternatives in the daily-token series
+but use STRUCTURALLY DIFFERENT primitives at DIFFERENT
+TIME SCALES:
+
+  - David-Barton: maximal RUN COUNT of identically-
+    signed FIRST DIFFERENCES (sign-flip rate at lag 1).
+  - Noether: count of MONOTONIC SPACED TRIPLETS
+    (v[i], v[i+2], v[i+4]) (monotonicity probe at
+    lag 2 on raw values).
+
+The two probes are not affine-related and operate at
+different scales, so they can AGREE (a steady up-trend
+yields one long sign-run AND many monotonic spaced
+triplets) or DIVERGE in informative ways. The compound
+exploits this gap.
+
+**Sign-axis recoding.** Each z-statistic is mapped to
+a "trend signal at that scale":
+
+    dbTrendSignal      = - dbZ        ( + = lag-1
+                                          first-diff-
+                                          sign trend
+                                         - = lag-1
+                                          oscillation )
+    noetherTrendSignal = + noetherZ   ( + = lag-2
+                                          spaced-triplet
+                                          trend
+                                         - = lag-2
+                                          cyclic )
+
+**Buckets** (alpha default 0.05): `coherent-trend`,
+`coherent-cyclic`, `cross-scale-flip-spaced-triplet-
+only`, `cross-scale-flip-sign-run-only`,
+`sign-run-only`, `spaced-triplet-only`, `no-evidence`.
+
+### Files
+
+  - `src/classifydavidbartonnoethersignrunvsspacedtripletstructurecompound.ts`
+    — pure cross-axis classifier with strict input
+    validation, alpha-configurable bucket assignment,
+    and per-source-asymmetric membership tracking.
+  - `test/classifydavidbartonnoethersignrunvsspacedtripletstructurecompound.test.ts`
+    — 24 unit tests covering empty inputs, validation,
+    asymmetric membership, all 7 buckets, alpha
+    sensitivity, signal recoding, and aggregate
+    invariants.
+
+### Test count
+
+  - Before: 14,554
+  - After:  14,578 (+24)
+
 ## 0.6.505 — 2026-05-05
 
 ### Added — `daily-token-david-barton-runs-up-down` (axis-203)
