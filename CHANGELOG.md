@@ -2,6 +2,255 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.483 — 2026-05-05
+
+### Added — `classifyKuiperKsCrossingDiagnostic` cross-axis joiner (axes 192 + 118)
+
+FIRST cross-axis joiner that exploits the structural
+bracketing relation
+
+    ksD <= kpV <= 2 * ksD
+
+between axis-118 KOLMOGOROV-SMIRNOV (KS) supremum and
+axis-192 KUIPER (KP) supremum-sum. The shape ratio
+
+    shapeRatio = kpV / ksD  in  [1, 2]
+
+is a SHAPE STATISTIC of the per-source ECDF gap:
+1.0 means a clean ONE-SIDED ECDF crossing (location /
+stochastic shift); 2.0 means a perfectly BALANCED
+TWO-SIDED ECDF crossing (pure scale shift, multimodality
+emergence, bimodality flip with no median displacement);
+intermediate values mean a partial two-sided gap. We bin
+at 1.25 / 1.75 to surface three SHAPE classes
+(`one-sided`, `mixed-crossing`, `balanced-crossing`) and
+cross with the joint significance pattern (both / either
+/ neither rejecting at .05) to produce SEVEN mutually-
+exclusive buckets.
+
+#### Buckets
+
+  - `both-reject-balanced-crossing`: ALL-EFFECT-BUT-NO-
+    MEDIAN-SHIFT archetype. Both axes reject AND the
+    ECDF gap is two-sided-balanced. The exact
+    alternative against which Kuiper's two-sided D+ + D-
+    functional gives strictly more power than KS's
+    max(D+, D-).
+  - `both-reject-mixed-crossing`: JOINT location-and-
+    scale shift. Both axes reject; the ECDF gap has
+    substantial weight in BOTH directions but with one
+    lobe dominating.
+  - `both-reject-one-sided`: CLEAN STOCHASTIC SHIFT.
+    Both axes reject AND the ECDF gap is essentially
+    one-sided (location move or dominance shift with
+    little scale change).
+  - `kuiper-only`: SUSPICIOUS PATTERN. Kuiper rejects
+    but KS does NOT. Almost always pairs with
+    balanced-crossing shape; the
+    Kuiper-recovers-power-vs-KS archetype.
+  - `ks-only`: RARE counter-intuitive pattern. KS
+    rejects but Kuiper does NOT. Caused by Kuiper's
+    slightly larger inflation factor (sqrt(en) + 0.155
+    + 0.24/sqrt(en)) being more conservative for
+    borderline-significant KS rejections on one-sided
+    shape.
+  - `neither-reject`: no detectable ECDF gap.
+  - `degenerate`: kpV = ksD = 0; ratio undefined; both
+    p-values are 1.
+
+#### Headline counts
+
+  - `bothReject`: number of sources where both axes
+    agree on a detectable ECDF gap.
+  - `kuiperOnly`: count of sources where Kuiper
+    recovers power versus KS (signature: balanced
+    two-sided crossing the maximum-functional misses).
+  - `ksOnly`: count of the rare reverse pattern.
+  - `balancedCrossings`: total number of sources whose
+    ECDF gap is two-sided-balanced (regardless of
+    significance), surfacing the prevalence of pure
+    scale / shape shifts on the panel.
+
+#### Live cross-axis read on the five real sources
+
+Joining the live axis-192 and axis-118 panels from
+v0.6.483 + v0.6.480-era against `~/.config/pew/queue.jsonl`
+(real numbers from `daily-token-kuiper-two-sample-halves`
+and `daily-token-ks-two-sample-halves` respectively;
+default `--min-tenure-days 14` so 5 of 6 sources qualify):
+
+| source      | kpV    | kpP     | ksD    | ksP     | ratio | shape      | bucket                |
+|-------------|--------|---------|--------|---------|-------|------------|-----------------------|
+| claude-code | 0.5278 | 6.69e-4 | 0.5278 | 8.83e-5 | 1.00  | one-sided  | both-reject-one-sided |
+| hermes      | 0.6889 | 7.20e-2 | 0.4667 | 2.54e-1 | 1.476 | mixed      | neither-reject        |
+| openclaw    | 0.7000 | 6.20e-2 | 0.7000 | 1.93e-2 | 1.00  | one-sided  | ks-only               |
+| opencode    | 0.7500 | 6.30e-2 | 0.6250 | 8.79e-2 | 1.20  | one-sided  | neither-reject        |
+| vscode-cp   | 0.1303 | 7.07e-1 | 0.1153 | 3.42e-1 | 1.130 | one-sided  | neither-reject        |
+
+Resulting headline counts on the live panel:
+
+  - `bothReject` = 1 (claude-code only). The live
+    half-shift on claude-code is robust under both
+    omnibus ECDF-equality functionals at p < 0.001.
+  - `kuiperOnly` = 0. The panel does NOT contain a
+    balanced-two-sided alternative that fools KS;
+    nothing for Kuiper to recover power on.
+  - `ksOnly` = 1 (openclaw). KS's tighter inflation
+    factor makes ksP = 0.019 reject at .05 while
+    Kuiper's slightly more conservative null leaves
+    kpP = 0.062 just above the threshold. ratio = 1.00
+    confirms a CLEAN ONE-SIDED ECDF crossing -- exactly
+    the shape KS is most efficient against and Kuiper
+    has no advantage over.
+  - `balancedCrossings` = 0. Every source on the panel
+    sits in `one-sided` or `mixed-crossing`; no source
+    exhibits a pure scale-shift / multimodality-flip
+    signature. Consistent with the half-split tracking
+    primarily LOCATION/STOCHASTIC shifts on this corpus.
+  - `hermes` is the most interesting `mixed-crossing`
+    row (ratio = 1.48): both lobes substantial (0.467
+    and 0.222) but with first-half dominance. Neither
+    axis rejects at .05 individually -- the SHAPE
+    diagnostic is the value-add even when both
+    significance calls are ns.
+
+#### Why this compound is the right join
+
+axis-118 and axis-192 are mathematically bracketed:
+ksD <= kpV <= 2*ksD with EQUALITY on the LEFT iff one
+of the two one-sided suprema is zero, and EQUALITY on
+the RIGHT iff the two suprema are exactly equal. The
+ratio kpV/ksD is computable from either underlying
+panel, but its INTERPRETATION as a TWO-SIDED-CROSSING
+DIAGNOSTIC requires the bracketing relation as a
+mathematical fact -- this compound surfaces that
+diagnostic as a first-class output and turns Kuiper-
+vs-KS disagreement (the `kuiper-only` and `ks-only`
+buckets) into actionable shape calls instead of noise.
+
+Refs: Kuiper 1960 *Proc. Koninklijke Nederlandse
+Akademie van Wetenschappen Series A* 63:38-47;
+Stephens 1965 *Biometrika* 52(3-4):309-321; Massey 1951
+*J. American Statistical Association* 46(253):68-78;
+Press et al. 2007 *Numerical Recipes* 3rd ed. sec. 14.3.
+
+## 0.6.482 — 2026-05-05
+
+### Added — axis-192 `daily-token-kuiper-two-sample-halves` (Kuiper two-sample test, two-sided ECDF crossing sensitivity)
+
+ONE-HUNDRED-AND-NINETY-SECOND cross-source axis. Per-source
+KUIPER TWO-SAMPLE TEST (Kuiper 1960 *Proc. Koninklijke
+Nederlandse Akademie van Wetenschappen, Series A*
+63:38-47) on the half-split gap-filled daily total_tokens
+series:
+
+    kpDPlus  = sup_t  ( F_A(t) - F_B(t) )   in [0, 1]
+    kpDMinus = sup_t  ( F_B(t) - F_A(t) )   in [0, 1]
+    kpV      = kpDPlus + kpDMinus           in [0, 2]
+
+Asymptotic null via the Stephens 1965 inflated-lambda
+series (Stephens 1965 *Biometrika* 52(3-4):309-321 eq.
+4.3; NR 3rd ed. eqs. 14.3.20-21):
+
+    kpLambda = ( sqrt(en) + 0.155 + 0.24/sqrt(en) ) * kpV
+             with en = n1*n2/(n1+n2)
+    kpP      = 2 sum_{k>=1} (4 k^2 kpLambda^2 - 1)
+                            * exp(-2 k^2 kpLambda^2)
+    kpVCrit_{0.05} ~= 1.747 / inflate.
+
+A normal-standardised z-equivalent kpZ is reported with
+sign carried by the dominant lobe (`kpVDirection` in
+{`first-larger`, `second-larger`, `balanced`}; the
+underlying TEST is two-sided and direction-agnostic --
+the sign is a presentation aid).
+
+#### Structural orthogonality vs prior axes
+
+Mathematically bracketed against axis-118 KS:
+
+    ksD <= kpV <= 2 * ksD
+
+with EQUALITY on the LEFT iff one of the one-sided suprema
+is zero (clean ONE-SIDED ECDF crossing -- a monotone
+location/stochastic shift), and EQUALITY on the RIGHT iff
+the two suprema are exactly equal (perfectly BALANCED
+TWO-SIDED ECDF crossing -- pure scale shift with equal
+medians, or multimodality emergence). ROTATION-INVARIANT
+on the unit circle (its original purpose: testing
+uniformity of directional data); on the real line this
+manifests as DIFFERENT SENSITIVITY PROFILES against shape
+alternatives. A pure mean-shift gives ksD ~= kpV (one
+lobe dominates); a pure scale-shift with equal medians
+gives ksD ~= kpV/2 (two equal lobes; KS sees half the
+signal Kuiper sees). Distinct from axis-115 Mann-Whitney
+(LOCATION only via int F_A dF_B), axes 116/117 Brown-
+Forsythe / Siegel-Tukey (SCALE only), axis-119 AD (tail-
+weighted L2 vs uniform-weighted supremum sum), axis-187
+A12 / axis-191 Cliff's delta (ordinal effect-size
+SCALARS that sit at 0.5 / 0 under pure scale shift while
+Kuiper detects it).
+
+#### Live smoke against `~/.config/pew/queue.jsonl`
+
+Real numbers from `node dist/cli.js daily-token-kuiper-
+two-sample-halves` against the local
+`~/.config/pew/queue.jsonl` (default `--min-tenure-days
+14` so 5 of 6 sources qualify; `vscode-cp` qualifies
+through its 265-day tenure):
+
+| source      | n1  | n2  | kpDPlus | kpDMinus | kpV    | direction      | kpVCrit05 | kpLambda | kpP     | kpZ    |
+|-------------|-----|-----|---------|----------|--------|----------------|-----------|----------|---------|--------|
+| opencode    | 8   | 8   | 0.1250  | 0.6250   | 0.7500 | first-larger   | 0.7679    | 1.7062   | 6.30e-2 | -1.859 |
+| openclaw    | 9   | 10  | 0.0000  | 0.7000   | 0.7000 | first-larger   | 0.7155    | 1.7092   | 6.20e-2 | -1.866 |
+| hermes      | 9   | 10  | 0.4667  | 0.2222   | 0.6889 | second-larger  | 0.7155    | 1.6821   | 7.20e-2 | +1.799 |
+| claude-code | 36  | 36  | 0.5278  | 0.0000   | 0.5278 | second-larger  | 0.3922    | 2.3508   | 6.69e-4 | +3.402 |
+| vscode-cp   | 132 | 133 | 0.0150  | 0.1153   | 0.1303 | first-larger   | 0.2099    | 1.0848   | 7.07e-1 | -0.375 |
+
+Read of the live panel:
+
+  - **`claude-code`** is the strongest Kuiper signal on
+    the panel: kpV = 0.5278, kpVCrit05 = 0.3922, kpP =
+    6.69e-4. Direction `second-larger` (kpDPlus = 0.5278,
+    kpDMinus = 0). Note the shape: kpDMinus = 0 means a
+    CLEAN ONE-SIDED ECDF crossing (axis-192 / axis-118
+    ratio = 1.00 -- one-sided shape). Consistent with
+    the axis-186/189/190/191 chorus that `claude-code`
+    has ramped up across the two halves with a clean
+    upward stochastic shift.
+  - **`openclaw`** has kpV = 0.7000 with kpDPlus = 0
+    and kpDMinus = 0.7000 -- another CLEAN ONE-SIDED
+    crossing (this time first-larger), aligning with
+    the axis-186/189/190/191 reads of "openclaw cooled
+    down sharply between the two halves". Sits just
+    BELOW the Kuiper alpha=.05 critical (kpV = 0.700
+    vs crit = 0.7155, kpP = 0.062). The KS-vs-Kuiper
+    diagnostic is informative here: KS rejects this
+    same shape at p = 0.019 -- the Kuiper inflation
+    factor is slightly more conservative on one-sided
+    shapes (this is the canonical `ks-only` bucket for
+    the v0.6.483 joiner).
+  - **`opencode`** is the largest kpV on the panel
+    (0.7500) but with two non-trivial lobes (kpDPlus =
+    0.125, kpDMinus = 0.625; ratio = 1.20 still in the
+    one-sided shape class). Just below crit at kpP =
+    0.063. With only 8 days per side the asymptotic
+    null is barely in its calibrated regime -- correct
+    conservative behaviour.
+  - **`hermes`** is the most interesting two-lobe row:
+    kpDPlus = 0.467, kpDMinus = 0.222, kpV = 0.689
+    (ratio = 1.48 -- `mixed-crossing` shape). Neither
+    KS (sees only the larger lobe = 0.467) nor Kuiper
+    (sees both = 0.689) rejects at .05 with n1 = 9,
+    n2 = 10. The two-lobe shape suggests a JOINT
+    location-and-scale shift -- a different qualitative
+    pattern from the other sources' clean one-sided
+    crossings.
+  - **`vscode-cp`** kpV = 0.1303 (ratio = 1.13) sits
+    well below its crit 0.2099 (132/133 sample sizes).
+    No detectable distribution shift; the second-half
+    cooling that the smaller sources show is statistically
+    invisible at this corpus scale.
+
 ## 0.6.481 — 2026-05-05
 
 ### Added — axis-191 refinement: 7 additional invariant + edge-case tests
