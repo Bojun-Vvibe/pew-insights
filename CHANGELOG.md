@@ -2,6 +2,139 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.509 — 2026-05-05
+
+### Added — `daily-token-cox-stuart-sign-pairs` (axis-205 COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES TREND TEST)
+
+Per-source COX & STUART 1955 SIGN-OF-PAIRED-DIFFERENCES
+TREND TEST on the gap-filled daily total_tokens series.
+
+TWO-HUNDRED-AND-FIFTH cross-source axis.
+
+**Mechanism.** Cox & Stuart (1955 *JRSS-B* 17(1):
+222-228, "Some quick sign tests for trend in location
+and dispersion") propose a "quick" trend test: pair
+each early observation v[i] with v[i+c] where the
+spacing is
+
+    c = ceil(n / 2)
+
+so for n=12 we get pairs (v[0],v[6]), (v[1],v[7]), ...,
+(v[5],v[11]). When n is odd the middle observation is
+silently dropped (Cox-Stuart 1955 sec. 2 convention),
+giving exactly floor(n/2) pairs in all cases.
+
+For each pair compute the SIGN of the late-minus-early
+difference
+
+    s_i = sign( v[i + c] - v[i] )   in {-1, 0, +1}
+
+Let `csPlus` = #{i : s_i = +1}, `csMinus` = #{i : s_i =
+-1}, `csTies` = #{i : s_i = 0}, and `csNonTies` =
+csPlus + csMinus.
+
+Under H0 of NO MONOTONIC TREND the late-minus-early
+sign on the non-tied pairs is symmetric Bernoulli(1/2)
+(Cox-Stuart 1955 sec. 2; also Daniel 1990 *Applied
+Nonparametric Statistics* 2nd ed. sec. 2.2; Hollander,
+Wolfe & Chicken 2014 *Nonparametric Statistical
+Methods* 3rd ed. sec. 3.1). So `csPlus` ~
+Binomial(csNonTies, 1/2), and the standardised
+statistic
+
+    csZ = ( csPlus - csNonTies / 2 ) /
+          sqrt( csNonTies / 4 )
+        ~~ N(0, 1)
+
+is asymptotically standard normal once csNonTies >= 10.
+
+**Sign convention.**
+
+  - csZ >> +1.96 = significantly MORE positive pair-
+    differences than 50/50 = LATE half SYSTEMATICALLY
+    ABOVE early half = MONOTONIC INCREASING TREND.
+  - csZ << -1.96 = MONOTONIC DECREASING TREND.
+  - csZ ~ 0 = no detectable monotonic trend.
+
+Two-sided p-value `csPValue = 2 (1 - Phi(|csZ|))`.
+
+**Tie convention.** Zero pair-differences are COUNTED
+as `csTies` and EXCLUDED from the standardisation
+denominator (Cox-Stuart 1955 sec. 3 "treatment of
+ties"; Daniel 1990 sec. 2.2 -- equivalent to the
+"drop ties" sign-test convention of Hodges-Lehmann
+1956). This is more conservative than "split ties
+50/50" because it reduces the effective sample size.
+
+**Structural orthogonality.** Distinct from axis-203
+David-Barton (lag-1 sign-RUN counts on first
+differences; Cox-Stuart pairs at lag c=ceil(n/2),
+maximally distant); from axis-202 Noether (lag-2
+monotonic spaced TRIPLETS; Cox-Stuart uses far-paired
+PAIRS at maximal lag); from Wallis-Moore turning-points
+(LOCAL extrema vs GLOBAL trend); from ALL halves-
+comparison axes (Mann-Whitney, Cliff, Hogg-Adaptive,
+etc.) which pool the early and late halves into TWO
+INDEPENDENT SAMPLES -- Cox-Stuart preserves the
+PAIRING STRUCTURE rather than discarding it.
+
+**Pre-processing.** NONE. The paired-difference sign is
+shift-invariant, positive-scale-invariant, and
+preserved under any strictly-monotone transform
+applied uniformly. Distribution-free under H0;
+deterministic given the same input.
+
+### Files
+
+  - `src/dailytokencoxstuartsignpairs.ts` -- pure
+    Cox-Stuart implementation: `countCoxStuartPairs`,
+    `dailyTokenCoxStuartSignPairs`,
+    `buildDailyTokenCoxStuartSignPairs`,
+    `aggregateCoxStuartSignPairs` (Stouffer combiner),
+    inline A&S 26.2.17 normal upper-tail.
+  - `src/cli.ts` -- new `daily-token-cox-stuart-sign-
+    pairs` subcommand with full option surface
+    (since/until/source/min-tokens/min-tenure-days/
+    top/sort/json).
+  - `src/format.ts` -- `renderDailyTokenCoxStuartSign
+    Pairs` pretty renderer with paired-design header.
+  - `test/dailytokencoxstuartsignpairs.test.ts` -- 32
+    unit tests covering count construction, normal
+    tail approximation, exact identities (shift-
+    invariance, positive-scale invariance, exact sign-
+    flip on negation), monotone direction, validation,
+    source filter, top cap, and aggregator behaviour.
+
+### Live smoke
+
+Ran against `~/.config/pew/queue.jsonl` (2,822 lines):
+
+```
+$ pew-insights daily-token-cox-stuart-sign-pairs --top 8
+sources: 6 (shown 2)    tokens: 3,444,271,515
+dropped: 4 below min-tenure-days
+
+source-A    tenure=72   csC=36   pairs=36   csPlus=22  csMinus=7   csTies=7
+            csZ = +2.7854    csPValue = 5.3458e-3
+source-B    tenure=265  csC=133  pairs=132  csPlus=22  csMinus=39  csTies=71
+            csZ = -2.1766    csPValue = 2.9508e-2
+```
+
+(source identifiers redacted in changelog; numbers
+verbatim from a real run on the local pew queue.)
+
+Both sources REJECT the no-monotonic-trend H0 at
+alpha=0.05. source-A trends UP (csZ > 0) while
+source-B trends DOWN (csZ < 0) over their respective
+tenure windows -- a clean direction-dissociation
+between the two heaviest sources, and a useful new
+per-source feature not exposed by any prior axis.
+
+### Test count
+
+  - Before: 14,643
+  - After:  14,675 (+32)
+
 ## 0.6.508 — 2026-05-05
 
 ### Added — `classifyHoggAdaptiveMannWhitneyDispatchAgreementCompound` (axis-204 ↔ axis-110)
