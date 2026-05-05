@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.502 — 2026-05-05
+
+### Added — `classifyKamatMielkeValueExtremeVsRankExtremeCompound` (axis-201 ↔ axis-200 value-extreme-vs-rank-extreme dispersion-localisation diagnostic)
+
+Cross-axis compound classifier joining axis-201 KAMAT
+1956 sample-range-ratio scale test with axis-200 MIELKE
+1972 quartic-centered-ranks scale test on a per-source
+basis.
+
+**Structural claim.** Both tests are PURE SCALE TESTS
+targeting dispersion shifts concentrated in the
+extremes — but they reduce data to extremes via TWO
+FUNDAMENTALLY DIFFERENT PROJECTIONS:
+
+  - Mielke quartic uses POOLED-RANK extremes: the score
+    a(R) = (R - (n+1)/2)^4 places ~99.5% of variance on
+    the 5 most extreme RANKS at n=30. Equal-magnitude
+    swap: two halves with the same set of extreme ranks
+    give the same |Mielke|.
+  - Kamat range uses RAW VALUE extremes: the statistic
+    log(R_B / R_A) is driven by the ACTUAL DATA VALUE
+    spread per half. Equal-rank swap: two halves with
+    identical ranks can have radically different value
+    ranges.
+
+The two tests answer subtly different questions about
+H1: dispersion(B) != dispersion(A): Mielke asks "do the
+EXTREME-RANK POSITIONS sit disproportionately in one
+half?", Kamat asks "is the RAW VALUE SPREAD bigger in
+one half?".
+
+**Bucket map** at configurable alpha (default 0.05) and
+tolerance (default 1e-9):
+
+  - `value-spike-second` / `value-spike-first`: both Z
+    share sign AND `|kamatZ| > |mielkeZ|` by strict
+    margin AND any decisive. Dispersion shift is driven
+    by ISOLATED VALUE SPIKES — Kamat sees an exploded
+    R_B from one or two outlier-magnitude days, while
+    Mielke under-weights them because they only
+    contribute one or two extreme-rank positions.
+    CANONICAL token-spike-driven bucket.
+  - `rank-config-second` / `rank-config-first`: both Z
+    share sign AND `|mielkeZ| > |kamatZ|` by strict
+    margin AND any decisive. Dispersion shift is driven
+    by RANK-CONFIGURATION — many extreme-rank positions
+    sit in one half but raw value spread is comparable.
+    Diagnoses GRADUAL scale drift where the entire
+    extreme-rank tail mass migrates without producing a
+    single oversized day.
+  - `coherent`: signs agree AND `||kamatZ|-|mielkeZ|| <=
+    tolerance` AND any decisive. Strongest cross-axis
+    evidence of a coherent scale alternative.
+  - `sign-conflict`: signs disagree AND any decisive.
+    Pathological — value-spread and rank-configuration
+    signals disagree on which half is more dispersed.
+    Surfaces under ASYMMETRIC TAIL CONFIGURATIONS where
+    one half has a single large positive deviation
+    while the other has a single large negative
+    deviation. Watch-list.
+  - `no-evidence`: neither decisive.
+
+Returns the joined-row table plus aggregate counts
+(`bothDecisive`, `atLeastOneDecisive`, `signConflicts`,
+`unanimousAgreement`) and the asymmetric source-
+membership lists `sourcesOnlyInKamat` /
+`sourcesOnlyInMielke`.
+
+Pure function: deterministic source-asc ordering, strict
+input validation (rejects duplicates, non-finite Z,
+p-values outside (0,1], invalid alpha or tolerance,
+empty source strings).
+
+**Reference.** Kamat, A. R., "A two-sample distribution-
+free test", *Biometrika* 43(1/2) (1956), pp. 131-135.
+Mielke, P. W., "Asymptotic behavior of two-sample tests
+based on powers of ranks for detecting scale and
+location alternatives", *J. Amer. Statist. Assoc.*
+67(340) (1972), pp. 850-854.
+
 ## 0.6.501 — 2026-05-05
 
 ### Added — `daily-token-kamat-range-ratio-halves` (axis-201 KAMAT 1956 sample-range-ratio scale test for halves)
