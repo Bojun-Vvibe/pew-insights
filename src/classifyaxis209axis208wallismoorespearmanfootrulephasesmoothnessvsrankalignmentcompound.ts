@@ -413,3 +413,63 @@ export function summarizeAxis209Axis208WallisMooreSpearmanFootruleReport(
     `buckets[smU/smD/zwT/sos/soz/fo/ne]=${b['smooth-up-trend']}/${b['smooth-down-trend']}/${b['zigzag-with-trend']}/${b['smoothness-only-smooth']}/${b['smoothness-only-zigzag']}/${b['footrule-only']}/${b['no-evidence']}`
   );
 }
+
+/**
+ * Compute the SMOOTHNESS-COHERENT TREND DIRECTION
+ * VERDICT over an
+ * Axis209Axis208WallisMooreSpearmanFootruleReport.
+ * Returns the dominant direction across the
+ * `smooth-up-trend` and `smooth-down-trend` buckets:
+ *
+ *   - 'up'        if smooth-up-trend > smooth-down-trend
+ *   - 'down'      if smooth-down-trend > smooth-up-trend
+ *   - 'tied'      if equal AND non-zero
+ *   - 'no-smooth-coherent-evidence' if both are zero
+ *
+ * The `zigzag-with-trend` bucket is INTENTIONALLY
+ * EXCLUDED -- those rows have a clear rank-vs-time
+ * alignment but ANTI-CORRELATED phase dynamics, which
+ * is a sawtooth-with-drift signature, not a clean
+ * smooth-trend verdict. Likewise the smoothness-only
+ * and footrule-only buckets do not contribute (they
+ * lack a both-axis-confirmed direction).
+ *
+ * Pure deterministic.
+ */
+export function smoothCoherentTrendDirectionVerdict(
+  report: Axis209Axis208WallisMooreSpearmanFootruleReport,
+): {
+  direction: 'up' | 'down' | 'tied' | 'no-smooth-coherent-evidence';
+  upCount: number;
+  downCount: number;
+  contributingRows: number;
+} {
+  const upCount = report.bucketCounts['smooth-up-trend'];
+  const downCount = report.bucketCounts['smooth-down-trend'];
+  const contributingRows = upCount + downCount;
+  let direction: 'up' | 'down' | 'tied' | 'no-smooth-coherent-evidence';
+  if (contributingRows === 0)
+    direction = 'no-smooth-coherent-evidence';
+  else if (upCount > downCount) direction = 'up';
+  else if (downCount > upCount) direction = 'down';
+  else direction = 'tied';
+  return { direction, upCount, downCount, contributingRows };
+}
+
+/**
+ * Render the smoothCoherentTrendDirectionVerdict result
+ * as a single-line, log-friendly headline:
+ *
+ *   axis-209xaxis-208-verdict dir=<direction> up=<u> down=<d> contributing=<c>
+ *
+ * Pure deterministic; no I/O.
+ */
+export function summarizeSmoothCoherentTrendDirectionVerdict(
+  verdict: ReturnType<typeof smoothCoherentTrendDirectionVerdict>,
+): string {
+  return (
+    `axis-209xaxis-208-verdict dir=${verdict.direction} ` +
+    `up=${verdict.upCount} down=${verdict.downCount} ` +
+    `contributing=${verdict.contributingRows}`
+  );
+}

@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.522 — 2026-05-05
+
+### Added — `smoothCoherentTrendDirectionVerdict` + `summarizeSmoothCoherentTrendDirectionVerdict`
+
+Pure helpers that condense an
+`Axis209Axis208WallisMooreSpearmanFootruleReport` into
+a single SMOOTHNESS-COHERENT directional verdict over
+the smooth-up-trend and smooth-down-trend buckets:
+
+```
+{
+  direction: 'up' | 'down' | 'tied' | 'no-smooth-coherent-evidence',
+  upCount, downCount, contributingRows
+}
+```
+
+The `zigzag-with-trend` bucket is INTENTIONALLY
+EXCLUDED -- those rows have a clear rank-vs-time
+alignment but ANTI-CORRELATED phase dynamics
+(sawtooth-with-drift), which is NOT a clean
+smooth-trend verdict. Likewise the smoothness-only
+and footrule-only buckets do not contribute. This
+mirrors the v0.6.518 `coherentTrendDirectionConsensus`
+helper for axis-208 ↔ axis-205 but applied at the
+phase-smoothness ↔ rank-alignment cross-tab.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Composing the v0.6.521 axis-209 ↔ axis-208 cross-tab
+output with the new verdict helper on the same live
+queue snapshot yields:
+
+```
+axis-209xaxis-208 alpha=0.05 n=5 both=1/5 qd[smU/smD/zgU/zgD]=1/0/0/0 buckets[smU/smD/zwT/sos/soz/fo/ne]=1/0/0/1/0/1/2
+axis-209xaxis-208-verdict dir=up up=1 down=0 contributing=1
+```
+
+Two-line dashboard header: full diagnostic on line 1,
+smoothness-coherent directional verdict on line 2.
+The verdict (`dir=up up=1 down=0 contributing=1`)
+confirms the single smooth-up-trend row (claude-code)
+reading from v0.6.521 -- the corpus-level
+SMOOTH-coherent directional verdict on this snapshot
+is unambiguously **up**, with zero conflicting
+zigzag-with-trend rows.
+
+### Files
+
+  - `src/classifyaxis209axis208wallismoorespearmanfootrulephasesmoothnessvsrankalignmentcompound.ts`
+    -- adds `smoothCoherentTrendDirectionVerdict` and
+    `summarizeSmoothCoherentTrendDirectionVerdict`
+    alongside the classifier and bucket-summarizer.
+  - `test/classifyaxis209axis208wallismoorespearmanfootrulephasesmoothnessvsrankalignmentcompound.test.ts`
+    -- +7 tests: empty rendering, pure-up,
+    pure-down, tied, zigzag-excluded, summarizer
+    formatting, no-evidence formatting.
+
+### Test count
+
+  - Before: 15,004
+  - After:  15,011 (+7)
+
 ## 0.6.521 — 2026-05-05
 
 ### Added — `classifyAxis209Axis208WallisMooreSpearmanFootrulePhaseSmoothnessVsRankAlignmentCompound`

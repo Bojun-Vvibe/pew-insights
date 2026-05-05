@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   classifyAxis209Axis208WallisMooreSpearmanFootrulePhaseSmoothnessVsRankAlignmentCompound,
   summarizeAxis209Axis208WallisMooreSpearmanFootruleReport,
+  smoothCoherentTrendDirectionVerdict,
+  summarizeSmoothCoherentTrendDirectionVerdict,
 } from '../src/classifyaxis209axis208wallismoorespearmanfootrulephasesmoothnessvsrankalignmentcompound.ts';
 
 const classify =
@@ -256,4 +258,97 @@ test('axis-209xaxis-208: summary on empty report', () => {
   const r = classify([], []);
   const s = summarizeAxis209Axis208WallisMooreSpearmanFootruleReport(r);
   assert.match(s, /^axis-209xaxis-208 alpha=0\.05 n=0 both=0\/0/);
+});
+
+// ----- smoothCoherentTrendDirectionVerdict -----
+
+test('smoothCoherentTrendDirectionVerdict: empty -> no-smooth-coherent-evidence', () => {
+  const r = classify([], []);
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  assert.equal(v.direction, 'no-smooth-coherent-evidence');
+  assert.equal(v.contributingRows, 0);
+});
+
+test('smoothCoherentTrendDirectionVerdict: pure up', () => {
+  const r = classify(
+    [
+      { source: 'a', wmZ: -3, wmPValue: 0.001 },
+      { source: 'b', wmZ: -2.5, wmPValue: 0.01 },
+    ],
+    [
+      { source: 'a', sfZ: -3, sfPValue: 0.001 },
+      { source: 'b', sfZ: -2.5, sfPValue: 0.01 },
+    ],
+  );
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  assert.equal(v.direction, 'up');
+  assert.equal(v.upCount, 2);
+  assert.equal(v.downCount, 0);
+  assert.equal(v.contributingRows, 2);
+});
+
+test('smoothCoherentTrendDirectionVerdict: pure down', () => {
+  const r = classify(
+    [{ source: 'a', wmZ: -3, wmPValue: 0.001 }],
+    [{ source: 'a', sfZ: 3, sfPValue: 0.001 }],
+  );
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  assert.equal(v.direction, 'down');
+});
+
+test('smoothCoherentTrendDirectionVerdict: tied', () => {
+  const r = classify(
+    [
+      { source: 'a', wmZ: -3, wmPValue: 0.001 },
+      { source: 'b', wmZ: -3, wmPValue: 0.001 },
+    ],
+    [
+      { source: 'a', sfZ: -3, sfPValue: 0.001 },
+      { source: 'b', sfZ: 3, sfPValue: 0.001 },
+    ],
+  );
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  assert.equal(v.direction, 'tied');
+  assert.equal(v.upCount, 1);
+  assert.equal(v.downCount, 1);
+});
+
+test('smoothCoherentTrendDirectionVerdict: zigzag rows excluded', () => {
+  const r = classify(
+    [
+      { source: 'a', wmZ: 3, wmPValue: 0.001 },
+      { source: 'b', wmZ: 3, wmPValue: 0.001 },
+    ],
+    [
+      { source: 'a', sfZ: -3, sfPValue: 0.001 },
+      { source: 'b', sfZ: 3, sfPValue: 0.001 },
+    ],
+  );
+  // Both rows are zigzag-with-trend, not smooth-* -- excluded.
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  assert.equal(v.direction, 'no-smooth-coherent-evidence');
+  assert.equal(v.contributingRows, 0);
+});
+
+test('summarizeSmoothCoherentTrendDirectionVerdict: format', () => {
+  const r = classify(
+    [{ source: 'a', wmZ: -3, wmPValue: 0.001 }],
+    [{ source: 'a', sfZ: -3, sfPValue: 0.001 }],
+  );
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  const s = summarizeSmoothCoherentTrendDirectionVerdict(v);
+  assert.equal(
+    s,
+    'axis-209xaxis-208-verdict dir=up up=1 down=0 contributing=1',
+  );
+});
+
+test('summarizeSmoothCoherentTrendDirectionVerdict: no-evidence format', () => {
+  const r = classify([], []);
+  const v = smoothCoherentTrendDirectionVerdict(r);
+  const s = summarizeSmoothCoherentTrendDirectionVerdict(v);
+  assert.equal(
+    s,
+    'axis-209xaxis-208-verdict dir=no-smooth-coherent-evidence up=0 down=0 contributing=0',
+  );
 });
