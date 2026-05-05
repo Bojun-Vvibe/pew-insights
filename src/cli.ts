@@ -222,6 +222,7 @@ import {
   renderDailyTokenMoodsMedianHalves,
   renderDailyTokenTukeyQuickHalves,
   renderDailyTokenWaldWolfowitzRunsHalves,
+  renderDailyTokenRosenbaumAdjacencyHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -735,6 +736,7 @@ import {
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
 import { buildDailyTokenTukeyQuickHalves } from './dailytokentukeyquickhalves.js';
 import { buildDailyTokenWaldWolfowitzRunsHalves } from './dailytokenwaldwolfowitzrunshalves.js';
+import { buildDailyTokenRosenbaumAdjacencyHalves } from './dailytokenrosenbaumadjacencyhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -38174,6 +38176,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWaldWolfowitzRunsHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-rosenbaum-adjacency-halves')
+  .description(
+    "Per-source ROSENBAUM TWO-SAMPLE ADJACENCY TEST comparing the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the gap-filled daily total_tokens series via the count of EXTREME observations: rsTUpper = #{ b in B : b > max(A) }, rsTLower = #{ a in A : a < min(B) }, rsT = rsTUpper + rsTLower. ONE-HUNDRED-AND-NINETY-FIFTH cross-source axis. Rosenbaum 1954 Annals of Mathematical Statistics 25(1):146-150 'Tables for a nonparametric test of location'; asymptotic moments E[rsT] = n/(n1+1) + n/(n2+1), Var[rsT] = 2*n*(n1-1)*(n2-1) / ((n1+2)*(n2+2)) (Hettmansperger 1984 Statistical Inference Based on Ranks; Sprent & Smeeton 2001 Applied Nonparametric Statistical Methods 3rd ed., section 6.3.1). rsZ = continuity-corrected (rsT +/- 0.5 - E[rsT])/sqrt(Var); two-sided p via the standard normal. rsSignedDirection = sign(rsTUpper - rsTLower) decomposes the rejection into upper-tail vs lower-tail stretching. ORTHOGONAL to axis-115 Mann-Whitney, axis-187 A12, axis-191 Cliff's delta (those use ALL pairwise comparisons; rsT uses only EXTREME-vs-EXTREME pairs -- two configurations with the same rank sum can have rsT = 0 or rsT = n), to axis-186 KS halves and axis-192 Kuiper (those are full-support ECDF-supremum functionals; rsT is purely an extreme-support functional), to axis-194 Wald-Wolfowitz runs (interior label-alternation pattern; rsT is boundary exclusion -- the two are structurally orthogonal: perfect alternation has wwR maximal and rsT = 0, perfect separation has wwR = 2 and rsT maximal), and CALIBRATION-ORTHOGONAL to axis-193 Tukey's quick test which uses fixed cut-points valid only for nearly-equal sample sizes; rsT yields a graduated z-score for arbitrary n1, n2.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for the Rosenbaum normal approximation validity band; Hettmansperger 1984). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: rsZAbsDesc (default) | rsT | rsTDesc | rsZ | rsZDesc | rsZAbs | rsP | rsPDesc | tokens | tenure | source.',
+    'rsZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'rsT',
+          'rsTDesc',
+          'rsZ',
+          'rsZDesc',
+          'rsZAbs',
+          'rsZAbsDesc',
+          'rsP',
+          'rsPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenRosenbaumAdjacencyHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'rsT'
+            | 'rsTDesc'
+            | 'rsZ'
+            | 'rsZDesc'
+            | 'rsZAbs'
+            | 'rsZAbsDesc'
+            | 'rsP'
+            | 'rsPDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenRosenbaumAdjacencyHalves(report) + '\n',
           );
         }
       } catch (e) {

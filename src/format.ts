@@ -20597,6 +20597,7 @@ import type { DailyTokenAnsariBradleyHalvesReport } from './dailytokenansaribrad
 import type { DailyTokenMoodsMedianHalvesReport } from './dailytokenmoodsmedianhalves.js';
 import type { DailyTokenTukeyQuickHalvesReport } from './dailytokentukeyquickhalves.js';
 import type { DailyTokenWaldWolfowitzRunsHalvesReport } from './dailytokenwaldwolfowitzrunshalves.js';
+import type { DailyTokenRosenbaumAdjacencyHalvesReport } from './dailytokenrosenbaumadjacencyhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -28485,6 +28486,99 @@ export function renderDailyTokenWaldWolfowitzRunsHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: wwR = E[R] = no evidence against H0; wwR much LESS than E[R] (negative wwZ) = clustering of labels in the pooled sort = distributional difference signal; wwR much GREATER than E[R] (positive wwZ) = anti-clustering / over-mixing (rare). |wwZ| >= 1.96 = significant at alpha = 0.05 two-sided. The Wald-Wolfowitz test is INVARIANT under any strictly monotone transform of the data (depends only on POOLED SORT ORDER + LABELS). Cross-check vs axis-186 KS halves: when KS rejects but ww does not, the largest cumulative ECDF gap is large but the labels are still well-mixed in the sort (rare); when ww rejects but KS does not, labels are clustered without a single dominating ECDF gap (multimodal alternative).)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenRosenbaumAdjacencyHalves(
+  r: DailyTokenRosenbaumAdjacencyHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-rosenbaum-adjacency-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ROSENBAUM TWO-SAMPLE ADJACENCY TEST counting EXTREME observations on the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-FIFTH cross-source axis. Rosenbaum 1954 Annals of Mathematical Statistics 25(1):146-150; Hettmansperger 1984 Statistical Inference Based on Ranks; Sprent & Smeeton 2001 Applied Nonparametric Statistical Methods 3rd ed., section 6.3.1. rsTUpper = #{ b in B : b > max(A) }, rsTLower = #{ a in A : a < min(B) }, rsT = rsTUpper + rsTLower. Asymptotic moments E[rsT] = n/(n1+1) + n/(n2+1), Var[rsT] = 2*n*(n1-1)*(n2-1)/((n1+2)*(n2+2)). rsZ continuity-corrected. rsSignedDirection decomposes upper-tail vs lower-tail stretching. ORTHOGONAL to all rank-sum tests (axis-115/187/191 use ALL pairwise comparisons; rsT uses only EXTREME-vs-EXTREME pairs), to ECDF-supremum tests (axis-186 KS, axis-192 Kuiper -- those are full-support functionals; rsT is purely extreme-support), to label-runs (axis-194 wwR -- interior alternation pattern; rsT is boundary exclusion), and calibration-orthogonal to Tukey's quick test (axis-193) which uses fixed cut-points; rsT yields a graduated z-score for arbitrary n1, n2.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source ROSENBAUM rsT (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'maxA',
+    'minB',
+    'rsTu',
+    'rsTl',
+    'rsT',
+    'E[T]',
+    'sd[T]',
+    'rsZ',
+    'p',
+    'dir',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.rsN1),
+    formatNumber(s.rsN2),
+    formatNumber(s.rsMaxA),
+    formatNumber(s.rsMinB),
+    formatNumber(s.rsTUpper),
+    formatNumber(s.rsTLower),
+    formatNumber(s.rsT),
+    s.rsExpT.toFixed(3),
+    Math.sqrt(s.rsVarT).toFixed(3),
+    s.rsZ.toFixed(3),
+    s.rsTwoSidedP.toExponential(3),
+    s.rsSignedDirection > 0 ? '+' : s.rsSignedDirection < 0 ? '-' : '0',
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: rsT = E[rsT] = no evidence against H0; rsT >> E[rsT] (positive rsZ) = TAIL-STRETCHING (one half has values strictly outside the support of the other); rsT << E[rsT] is rare (envelope compression). |rsZ| >= 1.96 = significant at alpha = 0.05 two-sided. Rosenbaum's test is INVARIANT under any strictly monotone transform (depends only on POOLED ORDER STATISTICS). dir = +1 means second half stretches UPPER tail (rsTUpper > rsTLower); -1 means LOWER tail; 0 balanced. Cross-check vs axis-194 wwR: rsT and wwR are STRUCTURALLY ORTHOGONAL -- a perfectly alternating pool (wwR maximal, rsT = 0) shows no extremes; a perfectly separated pool (wwR = 2, rsT maximal) shows total tail dominance; the two together discriminate boundary vs interior structure of any distributional shift.)`,
     ),
   );
 
