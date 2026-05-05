@@ -243,3 +243,101 @@ test('summarize: deterministic across repeated calls', () => {
   const r = classify([sf('a', -3.0, 0.001)], [cs('a', 2.5, 0.01)]);
   assert.equal(summarize(r), summarize(r));
 });
+
+// ---------- coherentTrendDirectionConsensus ----------
+
+import { coherentTrendDirectionConsensus } from '../src/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.js';
+
+test('consensus: empty report -> no-coherent-evidence', () => {
+  const r = classify([], []);
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(c.direction, 'no-coherent-evidence');
+  assert.equal(c.contributingRows, 0);
+});
+
+test('consensus: pure up -> up', () => {
+  const r = classify(
+    [sf('a', -3.0, 0.001), sf('b', -2.5, 0.005)],
+    [cs('a', 2.5, 0.01), cs('b', 2.0, 0.04)],
+  );
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(c.direction, 'up');
+  assert.equal(c.upCount, 2);
+  assert.equal(c.downCount, 0);
+  assert.equal(c.contributingRows, 2);
+});
+
+test('consensus: pure down -> down', () => {
+  const r = classify(
+    [sf('a', 3.0, 0.001)],
+    [cs('a', -2.5, 0.01)],
+  );
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(c.direction, 'down');
+  assert.equal(c.downCount, 1);
+});
+
+test('consensus: tied counts -> tied', () => {
+  const r = classify(
+    [sf('a', -3.0, 0.001), sf('b', 3.0, 0.001)],
+    [cs('a', 2.5, 0.01), cs('b', -2.5, 0.01)],
+  );
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(c.direction, 'tied');
+  assert.equal(c.upCount, 1);
+  assert.equal(c.downCount, 1);
+});
+
+test('consensus: ignores direction-conflict rows', () => {
+  // a, b in direction-conflict; c in coherent-up; d in
+  // coherent-down. consensus should be tied (1 vs 1)
+  // since direction-conflict is excluded.
+  const r = classify(
+    [
+      sf('a', -3.0, 0.001),
+      sf('b', 3.0, 0.001),
+      sf('c', -3.0, 0.001),
+      sf('d', 3.0, 0.001),
+    ],
+    [
+      cs('a', -2.5, 0.01),
+      cs('b', 2.5, 0.01),
+      cs('c', 2.5, 0.01),
+      cs('d', -2.5, 0.01),
+    ],
+  );
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(c.contributingRows, 2);
+  assert.equal(c.direction, 'tied');
+});
+
+test('consensus: ignores no-evidence and global-only buckets', () => {
+  const r = classify(
+    [
+      sf('a', -3.0, 0.001), // coherent-up
+      sf('b', -3.0, 0.001), // global-only-up
+      sf('c', 0.1, 0.9),    // no-evidence
+    ],
+    [
+      cs('a', 2.5, 0.01),
+      cs('b', 0.2, 0.8),
+      cs('c', 0.2, 0.8),
+    ],
+  );
+  const c = coherentTrendDirectionConsensus(r);
+  assert.equal(c.direction, 'up');
+  assert.equal(c.upCount, 1);
+  assert.equal(c.downCount, 0);
+  assert.equal(c.contributingRows, 1);
+});
+
+test('consensus: deterministic', () => {
+  const r = classify(
+    [sf('a', -3.0, 0.001)],
+    [cs('a', 2.5, 0.01)],
+  );
+  assert.deepEqual(
+    coherentTrendDirectionConsensus(r),
+    coherentTrendDirectionConsensus(r),
+  );
+});

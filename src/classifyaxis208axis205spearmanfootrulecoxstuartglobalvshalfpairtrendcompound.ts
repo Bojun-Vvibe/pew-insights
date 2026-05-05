@@ -423,3 +423,50 @@ export function summarizeAxis208Axis205SpearmanFootruleCoxStuartReport(
     `buckets[cuT/cdT/dc/goU/goD/hpo/ne]=${b['coherent-up-trend']}/${b['coherent-down-trend']}/${b['direction-conflict']}/${b['global-only-up']}/${b['global-only-down']}/${b['half-pair-only']}/${b['no-evidence']}`
   );
 }
+
+/**
+ * Compute the COHERENT TREND DIRECTION CONSENSUS over
+ * an Axis208Axis205SpearmanFootruleCoxStuartReport.
+ * Returns the dominant direction across the
+ * coherent-up-trend and coherent-down-trend buckets,
+ * weighted by row counts:
+ *
+ *   - 'up'        if coherent-up-trend > coherent-down-trend
+ *   - 'down'      if coherent-down-trend > coherent-up-trend
+ *   - 'tied'      if equal AND non-zero
+ *   - 'no-coherent-evidence' if both are zero
+ *
+ * Useful for headline release-note one-liners:
+ * "the corpus shows a coherent UP trend across N
+ * sources" -- pulls the directional verdict out of the
+ * 7-bucket diagnostic without forcing the caller to
+ * inspect the bucketCounts map.
+ *
+ * The 'direction-conflict' bucket is INTENTIONALLY
+ * EXCLUDED from this consensus -- those rows have
+ * BOTH axes decisive but in OPPOSITE directions, which
+ * is a non-monotonic-shape signature, not a directional
+ * verdict.
+ *
+ * Also returns the count of contributing rows so the
+ * caller can render "up across 3 sources" or
+ * "down across 1 source". Pure deterministic.
+ */
+export function coherentTrendDirectionConsensus(
+  report: Axis208Axis205SpearmanFootruleCoxStuartReport,
+): {
+  direction: 'up' | 'down' | 'tied' | 'no-coherent-evidence';
+  upCount: number;
+  downCount: number;
+  contributingRows: number;
+} {
+  const upCount = report.bucketCounts['coherent-up-trend'];
+  const downCount = report.bucketCounts['coherent-down-trend'];
+  const contributingRows = upCount + downCount;
+  let direction: 'up' | 'down' | 'tied' | 'no-coherent-evidence';
+  if (contributingRows === 0) direction = 'no-coherent-evidence';
+  else if (upCount > downCount) direction = 'up';
+  else if (downCount > upCount) direction = 'down';
+  else direction = 'tied';
+  return { direction, upCount, downCount, contributingRows };
+}

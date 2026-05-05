@@ -2,6 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.518 — 2026-05-05
+
+### Added — `coherentTrendDirectionConsensus`
+
+Pure helper that condenses an
+`Axis208Axis205SpearmanFootruleCoxStuartReport` into a
+single directional verdict over the COHERENT-TREND
+buckets:
+
+```
+{
+  direction: 'up' | 'down' | 'tied' | 'no-coherent-evidence',
+  upCount, downCount, contributingRows
+}
+```
+
+- `up`        if `coherent-up-trend > coherent-down-trend`
+- `down`      if `coherent-down-trend > coherent-up-trend`
+- `tied`      if equal AND non-zero
+- `no-coherent-evidence` if both buckets are zero
+
+The `direction-conflict` bucket is INTENTIONALLY
+EXCLUDED from the consensus -- those rows have BOTH
+axes decisive but in OPPOSITE directions, which is a
+non-monotonic-shape signature, not a directional
+verdict. Likewise the `global-only-*`, `half-pair-only`,
+and `no-evidence` buckets do not contribute (they lack
+a both-axis-confirmed direction).
+
+Useful for one-line release-note headlines like
+"the corpus shows a coherent UP trend across 1
+source" -- pulls the directional verdict out of the
+7-bucket diagnostic without forcing the caller to
+inspect `bucketCounts` directly.
+
+### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Re-running the v0.6.517 axis-208 ↔ axis-205 compound
+join (verbatim from CHANGELOG entry for v0.6.517) and
+piping its report through the new consensus helper
+gives:
+
+```
+direction=up upCount=1 downCount=0 contributingRows=1
+```
+
+Matching the expected reading: only **claude-code**
+falls in the `coherent-up-trend` bucket on this corpus
+snapshot, vscode-copilot is `half-pair-only` (excluded
+from the consensus because only one axis is decisive).
+The headline directional verdict is therefore
+unambiguously **up**, contributed by 1 source.
+
+### Files
+
+  - `src/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.ts`
+    -- adds `coherentTrendDirectionConsensus(report)`
+    alongside the existing classifier and summarizer.
+  - `test/classifyaxis208axis205spearmanfootrulecoxstuartglobalvshalfpairtrendcompound.test.ts`
+    -- +7 tests: empty -> no-coherent-evidence, pure
+    up, pure down, tied, ignores direction-conflict,
+    ignores no-evidence/global-only/half-pair-only,
+    deterministic.
+
+### Test count
+
+  - Before: 14,915
+  - After:  14,922 (+7)
+
 ## 0.6.517 — 2026-05-05
 
 ### Added — `classifyAxis208Axis205SpearmanFootruleCoxStuartGlobalVsHalfPairTrendCompound` (axis-208 ↔ axis-205)
