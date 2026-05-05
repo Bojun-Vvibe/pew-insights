@@ -2,6 +2,151 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.486 — 2026-05-05
+
+### Added — `classifyTukeyCliffTailVsBulkCompound` cross-axis joiner (axes 193 + 191)
+
+FIRST axis-193 cross-axis joiner. Reconciles axis-193
+TUKEY'S QUICK TEST end-count exceedance (tqW;
+tqSignedW; tqIndeterminate; tqTwoSidedP) with axis-191
+CLIFF'S DELTA bootstrap-percentile-CI (deltaHat =
+P(B > A) - P(A > B); cdCiExcludesZero) on a per-source
+join, into seven mutually-exclusive bivariate TAIL-vs-
+BULK buckets.
+
+#### Why this join is structurally orthogonal
+
+Cliff's delta is supported on the FULL CROSS-PAIR
+INDICATOR (n1*n2 cross-pairs); Tukey's W is supported
+ONLY on the END-EXCEEDANCE PAIRS (a strict subset). The
+two functionals are MAXIMALLY DECOUPLED on:
+
+  - BULK-CENTRAL SHIFTS: every cross-pair favours one
+    side by a small margin -> Cliff rejects, Tukey
+    W = 0 (extremes still overlap).
+  - SINGLE-OUTLIER TAIL SHIFTS: one or two values
+    escape the other half's support, dominating Tukey
+    but negligible over n1*n2 cross-pairs -> Tukey
+    rejects, Cliff CI may straddle zero.
+
+They are TIGHTLY COUPLED on clean end-to-end stochastic
+shifts where both should agree.
+
+#### Buckets
+
+  - `tail-only-no-bulk-dominance`: Tukey REJECTS
+    (tqW >= 7) but Cliff CI INCLUDES ZERO. Pure-tail-
+    shift signature.
+  - `tail-and-bulk-coherent`: both REJECT and SAME
+    direction. Cleanest joint signal.
+  - `bulk-dominance-only-no-tail-shift`: Cliff CI
+    excludes zero but Tukey W < 7. Uniform central
+    shift (extremes still overlap).
+  - `tail-and-bulk-direction-conflict`: both REJECT
+    but DISAGREE on direction. Multimodal-flip watch-
+    list.
+  - `indeterminate-bulk-direction-ok`: Tukey
+    INDETERMINATE (range envelope) but Cliff resolves
+    direction. Defer to Cliff.
+  - `indeterminate-bulk-ns`: Tukey INDETERMINATE AND
+    Cliff CI includes zero. Scale-only alternative;
+    hand off to scale-test axes (Brown-Forsythe,
+    Siegel-Tukey, Ansari-Bradley).
+  - `both-ns`: neither rejects.
+
+#### Headline counts
+
+  - `tailOnlyNoBulkDominance`: pure-tail-shift count.
+  - `tailAndBulkCoherent`: coherent-joint-signal count.
+  - `bulkDominanceOnlyNoTailShift`: reverse
+    disagreement count.
+  - `directionConflict`: multimodal-flip count.
+
+#### Live cross-axis read on the five real sources
+
+Joining the live axis-193 panel (`daily-token-tukey-
+quick-halves` v0.6.485) and axis-191 panel (`daily-
+token-cliffs-delta-halves` v0.6.481) against
+`~/.config/pew/queue.jsonl`, default `--min-tenure-days
+14`:
+
+| source      | tqW | tqSignedW | tqP       | indet | cdDelta | cdCi              | excl0 | bucket                              |
+|-------------|-----|-----------|-----------|-------|---------|-------------------|-------|-------------------------------------|
+| claude-code | 7   | +7        | 1.5625e-2 | false | +0.4738 | [+0.249, +0.681]  | true  | tail-and-bulk-coherent              |
+| hermes      | 3   | -3        | 2.52e-1   | false | +0.2840 | [-0.309, +0.852]  | false | both-ns                             |
+| openclaw    | 12  | -12       | 5.79e-4   | false | -0.9012 | [-1.000, -0.654]  | true  | tail-and-bulk-coherent              |
+| opencode    | 0   | 0         | 1.00e+0   | true  | -0.5000 | [-1.000, +0.125]  | false | indeterminate-bulk-ns               |
+| vscode-cp   | 2   | +2        | 5.00e-1   | false | -0.1150 | [-0.225, +0.001]  | false | both-ns                             |
+
+Headline counts on the live panel:
+
+  - `tailAndBulkCoherent` = 2 (`claude-code`,
+    `openclaw`). Both axes agree these two halves
+    differ. `claude-code` second-larger (cdDelta =
+    +0.4738, tqSignedW = +7), `openclaw` first-larger
+    (cdDelta = -0.9012, tqSignedW = -12). The two
+    sources where the half-shift signal is BOTH
+    end-to-end tail-separated AND uniformly bulk-
+    dominated.
+  - `tailOnlyNoBulkDominance` = 0. No source on this
+    panel exhibits a pure single-outlier tail shift
+    (the alternative would require tqW >= 7 with Cliff
+    CI straddling zero).
+  - `bulkDominanceOnlyNoTailShift` = 0. No source
+    exhibits a uniform central shift without tail
+    separation.
+  - `directionConflict` = 0. No multimodal-flip signal
+    on this corpus half-split.
+  - `indeterminate-bulk-ns` = 1 (`opencode`).
+    First-half range [17.1M, 724.3M] envelopes second-
+    half range [78.2M, 484.6M], and Cliff CI straddles
+    zero (cdCi = [-1.000, +0.125]). Scale-only
+    alternative -- recommend hand-off to axis-117
+    Siegel-Tukey or axis-116 Brown-Forsythe.
+  - `both-ns` = 2 (`hermes`, `vscode-cp`). Neither
+    axis rejects. `hermes` shows a directional
+    discrepancy (Tukey -3 / Cliff +0.28) but both p-
+    values are above .05, so the disagreement is
+    inferentially inconclusive at the corpus scale.
+    `vscode-cp` shows tiny effects in both axes
+    (consistent with the steady-state read from axes
+    186/189/190/191/192).
+
+#### Why this compound is the right join
+
+Axis-191 and axis-193 are MAXIMALLY DECOUPLED on
+SINGLE-OUTLIER TAIL alternatives -- the exact regime
+against which Tukey was designed to recover power vs
+rank-sum tests like MW/Cliff. Their disagreement
+patterns are therefore PRIMARY DIAGNOSTIC SIGNAL, not
+noise. The compound surfaces these patterns as named
+buckets that map directly to follow-up actions
+(rank-based sequential tests for `bulk-dominance-only-
+no-tail-shift`; outlier-detection axes for `tail-only-
+no-bulk-dominance`; scale tests for `indeterminate-
+bulk-ns`). Reuses the Romano-Coraggio-Skowronski 2006
+magnitude bins (0.147 / 0.33 / 0.474) from axis-191
+verbatim so the carve-outs stay calibration-consistent
+with the underlying axis. Tukey's rejection threshold
+(tqW >= 7 = alpha .05) is the Tukey 1959 Table 1 value
+nearly distribution-free for 5 <= n1, n2 <= 30.
+
+#### Test coverage
+
+Adds 14 unit tests in
+`test/classifytukeyclifftailvsbulkcompound.test.ts`:
+seven bucket-classification cases (one per bucket),
+magnitude-bin assignment, missing-partner-source
+handling, validation rejections (duplicate sources,
+bad tqW, malformed CI ordering, indeterminate-with-
+nonzero-tqW invariant), and a full-headline-counts
+end-to-end case.
+
+Refs: Tukey 1959 *Technometrics* 1(1):31-48; Neave
+1966 *Technometrics* 8(2):241-249; Cliff 1993
+*Psychological Bulletin* 114(3):494-509;
+Romano-Coraggio-Skowronski 2006 calibration bins.
+
 ## 0.6.485 — 2026-05-05
 
 ### Added — `daily-token-tukey-quick-halves` axis-193
