@@ -215,6 +215,7 @@ import {
   renderDailyTokenPitmanPermutationMssdRandomness,
   renderDailyTokenSpearmanFootruleTime,
   renderDailyTokenWallisMoorePhaseFrequency,
+  renderDailyTokenDanielsRankCorrelationTime,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -731,6 +732,10 @@ import {
   buildDailyTokenWallisMoorePhaseFrequency,
   type DailyTokenWallisMoorePhaseFrequencySort,
 } from './dailytokenwallismoorephasefrequency.js';
+import {
+  buildDailyTokenDanielsRankCorrelationTime,
+  type DailyTokenDanielsRankCorrelationTimeSort,
+} from './dailytokendanielsrankcorrelationtime.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47524,6 +47529,110 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenWallisMoorePhaseFrequency(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-daniels-rank-correlation-time')
+  .description(
+    "Per-source DANIELS 1944 RANK CORRELATION (Spearman rho) of value-ranks vs the time-identity sequence (1, 2, ..., n) on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TENTH cross-source axis). Var[rho] = 1/(n-1) (Daniels 1944 Biometrika 33:129-135 / Kendall 1970 chap. 4); drZ = rho * sqrt(n-1); two-sided normal-tail p-value 2 * (1 - Phi(|drZ|)). SIGN: drZ >> 0 = ranks rise with time = MONOTONE UP-TREND; drZ << 0 = ranks fall with time = MONOTONE DOWN-TREND; drZ ~ 0 = no monotone trend. STRUCTURALLY DISTINCT from axis-208 Spearman footrule (L1 absolute-rank-deviation vs L2 squared-rank-deviation -- different power profile, different null variance), from daily-token-mann-kendall-tau (concordant-pair-count vs explicit-rank values -- different null variance), from daily-token-spearman-autocorrelation-lag1 (serial vs global rank correlation), from axis-209 Wallis-Moore (LOCAL phase-shape vs GLOBAL rank-vs-time alignment), from axis-205 Cox-Stuart (paired-sign first-vs-second-half), from axis-206 JT (k=4 block ordered alternative), from axis-207 Pitman MSSD (squared first-difference L2 magnitude). Pre-processing: NONE. Tied values handled via standard MIDRANK convention (Pearson correlation form). Refs: Daniels 1944 Biometrika 33:129-135; Spearman 1904; Kendall 1970 chap. 4; Gibbons-Chakraborti 2003 sec. 11.3; Diaconis-Graham 1977 (footrule comparison).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (matches axis-205/206/207/208/209 trend trilogy and gives reasonable Daniels rho normal approximation accuracy). Default 12.',
+    '12',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: drZAbsDesc (default) | drZ | drPValue | drPValueDesc | drRho | drRhoDesc | tokens | tenure | source.',
+    'drZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'drZ',
+          'drZAbsDesc',
+          'drPValue',
+          'drPValueDesc',
+          'drRho',
+          'drRhoDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenDanielsRankCorrelationTime(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenDanielsRankCorrelationTimeSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenDanielsRankCorrelationTime(report) + '\n',
           );
         }
       } catch (e) {

@@ -20640,6 +20640,7 @@ import type { DailyTokenJonckheereTerpstraQuartileBlocksReport } from './dailyto
 import type { DailyTokenPitmanPermutationMssdRandomnessReport } from './dailytokenpitmanpermutationmssdrandomness.js';
 import type { DailyTokenSpearmanFootruleTimeReport } from './dailytokenspearmanfootruletime.js';
 import type { DailyTokenWallisMoorePhaseFrequencyReport } from './dailytokenwallismoorephasefrequency.js';
+import type { DailyTokenDanielsRankCorrelationTimeReport } from './dailytokendanielsrankcorrelationtime.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29744,6 +29745,83 @@ export function renderDailyTokenWallisMoorePhaseFrequency(
   lines.push(
     chalk.dim(
       `(reference anchor: wmPValue < 0.05 = REJECT random-permutation H0 at alpha=0.05 (two-sided normal-tail). wmZ << 0 = TOO FEW PHASES = monotone trend or positive serial correlation; wmZ >> 0 = TOO MANY PHASES = high-frequency zigzag / anti-correlated dynamics. The Wallis-Moore variance happens to coincide with the David-Barton/Noether turning-points variance (16n - 29)/90 -- but the means differ (E[h] = (2n - 7)/3 vs E[TP] = 2(n-2)/3 = (2n - 4)/3) so the standardised statistics are NOT identical. The phase-count mechanism is sensitive to the SHAPE of the local oscillation pattern -- complementary to footrule (axis-208) which is sensitive to the GLOBAL rank-vs-time alignment.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenDanielsRankCorrelationTime(
+  r: DailyTokenDanielsRankCorrelationTimeReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-daniels-rank-correlation-time'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source DANIELS 1944 RANK CORRELATION (Spearman rho) of value-ranks vs time-identity (1..n) on the gap-filled daily total_tokens series. Var[rho] = 1/(n-1); drZ = rho * sqrt(n-1); two-sided normal-tail p-value 2*(1-Phi(|drZ|)). SIGN: drZ >> 0 = monotone UP-trend, drZ << 0 = monotone DOWN-trend, drZ ~ 0 = no monotone trend. TWO-HUNDRED-AND-TENTH cross-source axis. STRUCTURALLY DISTINCT from axis-208 Spearman footrule (L1 vs L2 rank-distance, different null variance), from Mann-Kendall tau (concordant-pair count vs explicit rank values, different null variance), from spearman-autocorrelation-lag1 (serial vs global rank correlation), from axis-209 Wallis-Moore (LOCAL phase-shape vs GLOBAL rank-vs-time alignment), from axis-205/206/207 (paired-sign / blocked / squared-diff). Pre-processing: NONE. Refs: Daniels 1944 Biometrika 33:129-135; Kendall 1970 chap. 4; Gibbons-Chakraborti 2003 sec. 11.3.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source DANIELS rank-correlation-with-time trend test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'tiedGroups',
+    'drRho',
+    'drZ',
+    'drPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.nTiedGroups),
+    s.drRho.toFixed(4),
+    s.drZ.toFixed(4),
+    s.drPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: drPValue < 0.05 = REJECT random-permutation H0 at alpha=0.05 (two-sided normal-tail). drZ >> 0 = ranks RISE WITH TIME (monotone up-trend); drZ << 0 = ranks FALL WITH TIME (monotone down-trend). The Daniels rho is the L2 squared-rank-deviation analog of the axis-208 Spearman footrule L1 absolute-rank-deviation; both detect monotone trend but Daniels is more sensitive to outlier rank dislocations. Complementary to axis-209 Wallis-Moore which captures LOCAL phase-shape rather than GLOBAL rank alignment.)`,
     ),
   );
 
