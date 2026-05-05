@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.492 — 2026-05-05
+
+### Refined — `classifyFlignerKilleenCliffScaleVsDominanceCompound` (axis-196 + axis-191 joiner)
+
+Cross-axis joiner reconciling axis-196 FLIGNER-KILLEEN
+median-centred SCALE TEST (`fkX2`, `fkZ`, `fkPValue`)
+with axis-191 CLIFF'S DELTA bootstrap-percentile-CI
+(`cdDelta`, `cdCiExcludesZero`) on a per-source join,
+producing five mutually-exclusive bivariate buckets
+that decompose distributional change into a SCALE
+channel and a DOMINANCE channel.
+
+Mechanistic orthogonality. Cliff's delta is a functional
+of the FULL CROSS-PAIR INDICATOR — intrinsically
+DIRECTIONAL. Fligner-Killeen `fkZ` is supported on the
+WITHIN-HALF-MEDIAN-CENTRED `|z|`-rank distribution and
+is intrinsically a dispersion functional ABOUT EACH
+HALF'S OWN MEDIAN — it CANCELS any uniform location
+shift before computing the statistic. The two
+functionals are MAXIMALLY DECOUPLED on:
+
+  - **Pure scale alternatives with equal medians**: FK
+    rejects strongly, Cliff CI straddles zero (cross-pair
+    counts cancel because the wider half's mass is
+    symmetric around the common median).
+  - **Pure location shifts that preserve dispersion**:
+    Cliff CI excludes zero, FK `fkZ` ~ 0 (within-half
+    median-centring removes the shift before
+    `|z|`-ranking).
+
+Bucket map:
+
+  - `scale-and-dominance-coherent`: FK rejects AND Cliff
+    CI excludes zero AND directions agree → the canonical
+    "growth-plus-volatility" signature: the second half
+    is BOTH larger AND more dispersed (or BOTH smaller
+    AND tighter).
+  - `scale-only-no-dominance`: FK rejects but Cliff CI
+    includes zero → pure scale reorganisation about a
+    stable median (the signature Cliff cannot see).
+  - `dominance-only-no-scale`: Cliff CI excludes zero
+    but FK does not reject → pure location shift (the
+    signature FK cannot see by construction; hand off to
+    axis-176 Brunner-Munzel / axis-189 Hodges-Lehmann
+    for shift magnitude).
+  - `scale-and-dominance-conflict`: both reject but
+    directions disagree → tail-asymmetry watch-list
+    (more dispersed YET stochastically smaller, or
+    inverse). Defers to Cliff for direction.
+  - `both-ns`: neither rejects.
+
+Headline counts: `scaleAndDominanceCoherent`,
+`scaleOnlyNoDominance`, `dominanceOnlyNoScale`,
+`scaleAndDominanceConflict`. Outer-join surfaces
+`sourcesOnlyInFk` / `sourcesOnlyInCd` for downstream
+audit.
+
+#### Files
+
+- `src/classifyflignerkilleencliffscalevsdominancecompound.ts` —
+  new compound classifier (~340 LOC including the
+  doctrine docstring, bucket types, validation, magnitude
+  bins, and join logic)
+- `test/classifyflignerkilleencliffscalevsdominancecompound.test.ts` —
+  19 unit tests covering: empty inputs, all five buckets
+  (coherent up, coherent down, scale-only, dominance-only,
+  conflict, both-ns), Cliff magnitude bins (negligible /
+  small / medium / large), input validation (duplicate
+  sources on either side, bad `fkX2` / `fkPValue` /
+  `cdDelta` / inverted CI), outer-join surfacing of
+  `sourcesOnlyInFk` / `sourcesOnlyInCd`, deterministic
+  source-asc row sort, headline-count consistency with
+  `bucketCounts`, and `fkAbsZ` / `cdAbsDelta`
+  carry-through.
+
+Test count: 14169 → 14188 (+19).
+
 ## 0.6.491 — 2026-05-05
 
 ### Added — `daily-token-fligner-killeen-halves` (axis-196)
