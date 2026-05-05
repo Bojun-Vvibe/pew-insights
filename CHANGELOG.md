@@ -2,6 +2,149 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.487 — 2026-05-05
+
+### Added — `daily-token-wald-wolfowitz-runs-halves` (axis-194)
+
+ONE-HUNDRED-AND-NINETY-FOURTH cross-source axis. Per-
+source WALD-WOLFOWITZ TWO-SAMPLE RUNS TEST (Wald &
+Wolfowitz 1940 *Annals of Mathematical Statistics*
+11(2):147-162; Granger 1963 *JRSS B* 25(1):220-225)
+comparing the FIRST HALF (n1 = floor(n/2)) vs SECOND
+HALF (n2 = n - n1) of the gap-filled daily total_tokens
+series via the LABEL-RUN COUNT in the POOLED-SORTED
+ORDER.
+
+#### Mechanism
+
+Pool all n values, sort ascending, replace each by its
+source-of-origin label (A = first half, B = second
+half). Count
+
+    wwR = #{ maximal contiguous blocks of identical
+            labels in the sorted pooled label sequence }
+
+with 2 <= wwR <= n. Under H0 of identical distributions,
+
+    E[R]   = 2 * n1 * n2 / n  +  1
+    Var[R] = 2 * n1 * n2 * (2 * n1 * n2 - n)
+             / (n * n * (n - 1))
+
+We adopt the continuity-corrected z
+
+    wwZ = (R + 0.5 - E[R]) / sqrt(Var[R])    if R < E[R]
+        = (R - 0.5 - E[R]) / sqrt(Var[R])    if R > E[R]
+        = 0                                   if R == E[R]
+
+and the standard-normal two-sided p-value
+`wwTwoSidedP = 2 * Phi(-|wwZ|)`.
+
+`wwSignedDirection = sign(median(B) - median(A))` is
+reported as a navigational aid; the runs test rejects on
+`|wwZ|` alone.
+
+#### Why this axis is structurally orthogonal
+
+`wwR` is a functional of the LABEL-SEQUENCE ALTERNATION
+PATTERN in the pooled sort. Two configurations with the
+SAME RANK SUM (Mann-Whitney axis-115, Cliff's delta
+axis-191, Vargha-Delaney A12 axis-187) can have wwR = 2
+(perfect separation) or wwR = n (perfect alternation)
+depending entirely on the order of same-label clusters.
+Therefore wwR is NOT reducible to any rank-sum
+statistic.
+
+It is also distinct from:
+
+  - axis-186 KS halves (sup ECDF gap = magnitude of
+    cumulative difference; wwR = count of label
+    transitions, insensitive to gap magnitude)
+  - axis-188 perm-Welch-t (mean-shift sensitive; wwR
+    detects ANY distributional alternative including
+    pure scale or shape shifts)
+  - axis-189 Wilcoxon signed-rank halves and axis-190
+    paired sign test (PAIRED on time-aligned i-th obs;
+    wwR is UNPAIRED on the pooled sort)
+  - axis-192 Kuiper (sum of two ECDF suprema; wwR has
+    no ECDF connection)
+  - axis-193 Tukey's quick test (END-EXCEEDANCE PAIRS
+    only; wwR uses the FULL pooled-sort adjacency
+    pattern)
+  - axis-117 Siegel-Tukey (folded-rank rank sum on a
+    permuted scale; wwR is not a rank sum on any scale)
+  - axis-126 single-sample runs-test-z (within-sample
+    sign runs in TIME order; wwR is group-of-origin
+    label runs in POOLED-SORT order)
+
+It is an OMNIBUS distribution-equality test: positive
+power against ANY alternative (location, scale, shape,
+multimodality), generally less powerful than focused
+tests for any single alternative class -- its strength
+is mechanism-independence.
+
+#### Tie handling
+
+Tied-value blocks containing both labels collapse to a
+single label adjacency in the run count (conservative
+lower bound on R; Sprent & Smeeton 2001 *Applied
+Nonparametric Statistical Methods* 3rd ed., section
+6.4.2).
+
+#### Live-smoke against `~/.config/pew/queue.jsonl`
+
+Run `pew-insights daily-token-wald-wolfowitz-runs-halves
+--json --min-tenure-days 14`, sorted by `wwZAbsDesc`:
+
+| source      | n1  | n2  | wwR | E[R]    | sd[R]  | wwZ      | wwTwoSidedP | dir |
+|-------------|-----|-----|-----|---------|--------|----------|-------------|-----|
+| vscode-cp   | 132 | 133 |  36 | 133.498 |  8.124 | -11.940  | 0.000e+00   |  0  |
+| claude-code |  36 |  36 |   8 |  37.000 |  4.213 |  -6.765  | 1.338e-11   |  +  |
+| hermes      |   9 |  10 |   8 |  10.474 |  2.112 |  -0.935  | 3.500e-01   |  +  |
+| openclaw    |   9 |  10 |   8 |  10.474 |  2.112 |  -0.935  | 3.500e-01   |  -  |
+| opencode    |   8 |   8 |   7 |   9.000 |  1.932 |  -0.776  | 4.376e-01   |  -  |
+
+Reading.
+
+  - `vscode-cp` rejects H0 with overwhelming force
+    (wwR = 36 vs E[R] = 133.5; wwZ = -11.94, p ~ 0):
+    the gap-filled tenure has so many zero-token days
+    that pooled-sort labels cluster heavily by half --
+    the longest-tenure, sparsest source naturally
+    triggers the runs test on its sparsity-pattern
+    asymmetry alone.
+  - `claude-code` rejects strongly (wwR = 8 vs
+    E[R] = 37; wwZ = -6.77, p ~ 1.3e-11) with
+    `wwSignedDirection = +` -- second half is
+    stochastically larger; rapid-onset adoption signal
+    visible in the pooled-sort label clustering.
+  - `hermes`, `openclaw`, `opencode` all have small n
+    (n1 ~ n2 ~ 8-10) and short tenures (16-19 days);
+    wwZ in the [-1, 0] band, p in [0.35, 0.44] -- no
+    significant distributional shift detected at this
+    sample size, consistent with the OMNIBUS test's
+    well-known low power for small n.
+  - Direction split: `claude-code` and `hermes` rose,
+    `openclaw` and `opencode` dropped across the
+    tenure midpoint. `vscode-cp` median is 0 on both
+    halves (sparse zero-day-dominated series); the
+    direction flag is correctly 0.
+
+(Note: the raw queue source name has been rewritten to
+`vscode-cp` throughout this CHANGELOG entry per the
+project source-name convention.)
+
+#### Tests
+
+Added `test/dailytokenwaldwolfowitzrunshalves.test.ts`
+covering: argument validation, perfect separation
+(wwR = 2), perfect alternation (wwR = n), R == E[R]
+(p = 1), shift / scale / monotone-increasing transform
+invariance, exact E[R] / Var[R] formula identities, odd-
+n splits, conservative tie-handling, median-direction
+sign convention, R bounds, builder filters (zero-var,
+min-tenure, source-filter, top, sort by wwZAbsDesc).
+Test count: 14071 -> 14095 (+24).
+
 ## 0.6.486 — 2026-05-05
 
 ### Added — `classifyTukeyCliffTailVsBulkCompound` cross-axis joiner (axes 193 + 191)
