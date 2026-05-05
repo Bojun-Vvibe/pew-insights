@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.475 — 2026-05-05
+
+### Refactor — `classifyPermTstatA12SignificanceMagnitudeCompound` cross-axis joiner (axes 188 + 187)
+
+Adds a pure-function reporter that joins per-source rows
+from axis-188 PERMUTATION WELCH-T SIGNIFICANCE
+(`permTStat`, `permPTwoSided`, `permSign`) with axis-187
+VARGHA-DELANEY A12 EFFECT-SIZE (`a12`, `vdMagnitude`,
+`vdCiExcludesHalf`) on `source` and assigns each joined
+row to one of eight mutually-exclusive bivariate
+SIGNIFICANCE x MAGNITUDE x DIRECTION buckets.
+
+THE CORE CONTRIBUTION: this is the FIRST cross-axis
+joiner that crosses a DISTRIBUTION-FREE EXACT-MC
+SIGNIFICANCE DECISION (axis-188 with Phipson-Smyth
+add-one corrected p) with an UNSIGNED-MAGNITUDE +
+SIGNED-DIRECTION SCALE-FREE EFFECT SIZE (axis-187 with
+VD-2000 magnitude bucket and Brunner-Munzel placement
+CI). Unlike `classifyA12HlSignificanceMagnitudeCompound`
+(axes 187 + 186) which crosses A12 with HL's RAW-UNIT
+POINT ESTIMATE, this joiner crosses A12 with a
+SIGNIFICANCE-DECISION DISTRIBUTION-FREE p-value, which
+directly answers "is the location shift on this source
+BOTH decisively detectable under the strongest possible
+distribution-free null AND meaningful in scale-free
+Vargha-Delaney terms":
+
+  - `agree-second-larger-meaningful`: both decisive,
+    signs agree on second-larger, A12 magnitude is
+    medium or large
+  - `agree-second-larger-trivial`: both decisive,
+    signs agree on second-larger, A12 magnitude is
+    negligible or small
+  - `agree-first-larger-meaningful` / `-trivial`:
+    mirrors of the above for first-half-larger
+  - `perm-only-decisive`: axis-188 p<=.05 but A12 CI
+    straddles 0.5 (rank placement variance is wider
+    than the pooled-permutation null; typical under
+    heavy ties)
+  - `a12-only-decisive`: A12 CI excludes 0.5 but
+    axis-188 p>.05 (the pooled-permutation null
+    absorbs the t even though rank placement
+    excludes 0.5; typical under heavy-tail data
+    where one or two extreme values dominate the
+    t-stat denominator -- axis-188 is the more
+    conservative test in this regime)
+  - `sign-conflict`: both decisive AND signs strictly
+    disagree on which half is stochastically larger
+  - `no-decisive-shift`: neither decisive
+
+The reporter also surfaces `bothDecisive`,
+`atLeastOneDecisive`, `signConflicts`,
+`permDecisiveAndLargeA12` (the headline actionable
+count: axis-188 decisive AND A12 magnitude is `large`)
+and `permDecisiveButNegligibleA12` (the
+"distribution-free-significant-but-meaningless" count
+surfaced for transparency). Source-set asymmetry is
+returned as `sourcesOnlyInPerm` / `sourcesOnlyInA12`.
+
+WHY THIS IS THE RIGHT JOIN. axis-188 (perm-t p) and
+axis-187 (A12 + VD magnitude) measure the SAME
+location alternative through TWO MAXIMALLY-INDEPENDENT
+INFERENTIAL BASES:
+
+  - axis-188 uses RAW values + parametric Welch-t
+    numerator/denominator BUT references it to a
+    DISTRIBUTION-FREE permutation null. Inherits
+    t-stat efficiency under approx-normality; retains
+    EXACT type-I control under any exchangeable null.
+  - axis-187 uses POOLED RANKS + a SCALE-FREE
+    EFFECT-SIZE [0, 1] with Brunner-Munzel-2000
+    asymptotic placement CI. Probabilistic
+    interpretation that is DIRECTLY COMPARABLE
+    across sources of very different token volumes.
+
+The cross-product directly recovers the four
+quadrants of the Wilkinson 1999 / APA Task Force
+"significance x effect size" reporting framework
+on TWO INFERENTIAL BASES THAT SHARE NO COMMON
+APPROXIMATION (one is exact-MC, one is asymptotic;
+one is on raw values, one is on pooled ranks).
+
+18 new unit tests cover empty-input handling, all
+eight bucket transitions, sign-conflict routing,
+source-set asymmetry surfacing, deterministic source-
+asc ordering, bucket-count integrity (sum equals row
+count), out-of-range a12 / pTwoSided / permTStat /
+permSign rejection, duplicate-source rejection on
+both sides, and a four-source live-shape regression
+test that mirrors the v0.6.474 axis-188 + v0.6.473
+axis-187 reads on the corpus (claude-code and openclaw
+both bucket to `*-meaningful`, opencode buckets to
+`a12-only-decisive`, hermes buckets to
+`no-decisive-shift`, `permDecisiveAndLargeA12 = 2`).
+
 ## 0.6.474 — 2026-05-05
 
 ### Added — `daily-token-permutation-tstat-halves` axis-188
