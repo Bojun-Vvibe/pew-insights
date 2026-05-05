@@ -2,6 +2,104 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.546 — 2026-05-06
+
+### Added — `daily-token-hamed-rao-mann-kendall-corrected` (axis-220)
+
+TWO-HUNDRED-AND-TWENTIETH cross-source axis. Per-source
+HAMED-RAO 1998 EFFECTIVE-SAMPLE-SIZE VARIANCE CORRECTION
+to the Mann-Kendall S statistic on the gap-filled daily
+total_tokens series. The first axis on the daily token
+series to fold the OBSERVED rank-autocorrelation function
+into the Mann-Kendall null variance.
+
+Mechanism. Compute the standard Mann-Kendall S =
+sum_{j<k} sign(x[k]-x[j]) and the no-autocorrelation
+tie-corrected Var0(S) = (n*(n-1)*(2n+5) - sum_t
+t*(t-1)*(2t+5))/18 (Hirsch-Slack-Smith 1982 eq. 3). Then
+inflate the variance by the Hamed-Rao 1998 factor
+
+```
+eta = 1 + (2 / (n*(n-1)*(n-2))) *
+        sum_{k=1..n-3} (n-k)*(n-k-1)*(n-k-2) * rho_k
+```
+
+where rho_k is the lag-k sample autocorrelation of the
+midranks of the Theil-Sen detrended series. Following
+Hamed-Rao's original recommendation only "significant"
+lags (|sqrt(n-k-2) * rho_k| > 1.96) are retained --
+hrNSigLags surfaces the count. eta is FLOORED at 1.
+
+```
+VarHR(S) = eta * Var0(S)
+hrZ      = (S - sign(S)) / sqrt(VarHR(S)) ~ N(0, 1)
+hrPValue = 2 * (1 - Phi(|hrZ|))     [Abramowitz-Stegun 7.1.26]
+```
+
+SIGN: hrZ > 0 = monotone UP; hrZ < 0 = DOWN. Diagnostic
+surfaces: hrEta in [1, +inf), hrEffectiveN = n / hrEta,
+hrTau (standard Kendall tau-b), and hrNaiveZ /
+hrNaivePValue (the pre-correction Mann-Kendall, surfaced
+to expose how much serial dependence inflated the
+uncorrected significance).
+
+Structural orthogonality. Mann-Kendall (uncorrected)
+shares the SAME S; Hamed-Rao differs in the NULL
+VARIANCE -- a VARIANCE-FAMILY orthogonality, not a
+statistic-family orthogonality. Axis-219 Sen-Adichie and
+axis-218 Hirsch-Slack season-stratify (period s=7) and
+implicitly handle ONLY the period-7 component of serial
+dependence; Hamed-Rao captures ALL lag autocorrelation
+(period-7, AR(1), longer memory). Axis-217 Laplace is an
+L_1 magnitude functional. Axis-214 Theil-Sen is a point
+estimator with no inferential variance. The lag-1 / lag-7
+autocorrelation magnitude axes are univariate
+functionals of the autocorrelation function rather than
+trend-variance corrections.
+
+Live-smoke (verbatim, redacted source labels):
+
+```
+$ pew-insights daily-token-hamed-rao-mann-kendall-corrected
+sources: 6 (shown 2)    tokens: 3,444,271,515
+dropped: 4 below min-tenure-days
+
+source        firstDay    lastDay     tenure  hrS    hrTau    hrEta  effN  sigLags  hrZ      hrPValue  naiveZ   naiveP
+claude-code   2026-02-11  2026-04-23  72        826  0.3758   1.029  70.0  3        4.2594   2.051e-5  4.3200   1.561e-5
+vsc-redacted  2025-07-30  2026-04-20  265     -2502 -0.1037   2.921  90.7  9       -1.2899   1.971e-1 -2.2047   2.747e-2
+```
+
+Verdict. claude-code: significant UP-trend persists after
+the autocorrelation correction (hrEta = 1.029, only ~3%
+inflation from 3 sig-lags out of 69 candidate lags, and
+the corrected p stays at ~2e-5). vsc-redacted (vscode-
+based second source): the naive Mann-Kendall flagged a
+SIGNIFICANT DOWN-trend at p = 2.7e-2, but Hamed-Rao
+inflates the variance by 2.9x (9 significant lag
+autocorrelations, effective n drops from 265 to 90.7) and
+the corrected p climbs to 1.97e-1 -- NOT SIGNIFICANT.
+This is the canonical Hamed-Rao failure mode of
+unmodified Mann-Kendall: a moderately-sized signed-rank
+sum looks significant under the iid null but is largely a
+SERIAL-DEPENDENCE ARTIFACT once the long-memory rank
+autocorrelation is folded in.
+
+### Added — tests
+
+- `test/dailytokenhamedraomannkendallcorrected.test.ts`:
+  +39 unit tests covering Phi/two-sided p, midranks,
+  mannKendallS, varZeroMannKendall, theilSenSlope,
+  sampleAutocorr, hamedRaoEta on iid and AR(1) series,
+  builder validation, monotone increasing/decreasing
+  smoke, hrEta floor at 1, hrEta == 1 => hrZ == hrNaiveZ
+  identity, time-reversal sign-negation invariance,
+  hrTau in [-1, +1], builder source-filter, lex source
+  ordering on ties. All green.
+
+### Bumped
+
+- `package.json` 0.6.544 -> 0.6.546.
+
 ## 0.6.544 — 2026-05-06
 
 ### Added — `classifyAxis219Axis218SenAdichieHirschSlackL2VsL1SeasonalRankTrendCompound`

@@ -1667,6 +1667,92 @@ function fmtRatio(r: number): string {
   return r < 1 ? r.toFixed(2) : r.toFixed(2);
 }
 
+export function renderDailyTokenHamedRaoMannKendallCorrected(
+  r: DailyTokenHamedRaoMannKendallCorrectedReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-hamed-rao-mann-kendall-corrected'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source HAMED-RAO 1998 EFFECTIVE-SAMPLE-SIZE VARIANCE CORRECTION to the Mann-Kendall S statistic on the gap-filled tenure series. S = sum_{j<k} sign(x[k]-x[j]); Var0(S) = (n*(n-1)*(2n+5) - tieAdj)/18; eta = 1 + (2/(n*(n-1)*(n-2))) * sum_{k=1..n-3} (n-k)*(n-k-1)*(n-k-2)*rho_k where rho_k is the lag-k Spearman autocorrelation of the Theil-Sen detrended midranks (only |sqrt(n-k-2)*rho_k| > 1.96 lags retained); VarHR(S) = eta * Var0(S); hrZ = (S - sign(S))/sqrt(VarHR(S)) ~ N(0,1); hrPValue via Abramowitz-Stegun 7.1.26. SIGN: hrZ > 0 = monotone UP-trend; hrZ < 0 = DOWN. TWO-HUNDRED-AND-TWENTIETH cross-source axis. STRUCTURALLY DISTINCT from axis-baseline Mann-Kendall (SAME S, DIFFERENT VARIANCE -- variance-family orthogonality), axis-219 Sen-Adichie (season-stratified rank inner product; implicitly handles only period-7 dependence), axis-218 Hirsch-Slack (season-stratified sign count), axis-217 Laplace centroid (L-1 magnitude), axis-214 Theil-Sen (point estimator only, no variance), and the lag-1/lag-7 autocorrelation magnitude axes (which are univariate functionals of the autocorrelation function rather than trend-variance-corrections). hrEta in [1, +inf) is FLOORED at 1; hrEta == 1 iff no significant rank-autocorrelation lag at alpha=0.05. hrNaiveZ/hrNaivePValue surfaced for direct comparison to the uncorrected Mann-Kendall: orders-of-magnitude p-value shifts indicate trend signal driven primarily by serial dependence rather than monotone change. Refs: Hamed & Rao 1998 *J. Hydrology* 204(1-4); Mann 1945 *Econometrica* 13(3); Kendall 1975 sec. 3.1; Hirsch-Slack-Smith 1982 *WRR* 18(1); Abramowitz-Stegun 7.1.26.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Hamed-Rao corrected Mann-Kendall Z (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'hrS',
+    'hrTau',
+    'hrEta',
+    'effN',
+    'sigLags',
+    'hrZ',
+    'hrPValue',
+    'naiveZ',
+    'naiveP',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.hrS.toFixed(0),
+    s.hrTau.toFixed(4),
+    s.hrEta.toFixed(3),
+    s.hrEffectiveN.toFixed(1),
+    `${s.hrNSigLags}`,
+    s.hrZ.toFixed(4),
+    s.hrPValue.toExponential(3),
+    s.hrNaiveZ.toFixed(4),
+    s.hrNaivePValue.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: |hrZ| > 1.96 = STATISTICALLY SIGNIFICANT monotone trend at alpha = 0.05 AFTER correcting for serial rank-autocorrelation; hrPValue >= 0.05 = no detectable autocorrelation-corrected trend. Compare hrPValue to hrNaivePValue: large divergence (hrPValue >> hrNaivePValue) indicates the naive Mann-Kendall trend signal is largely a STATISTICAL ARTIFACT of positive serial dependence. hrEta is the variance-inflation factor; hrEffectiveN = n / hrEta is the effective sample size for trend inference. hrTau is the standard Kendall tau-b point estimate (DIAGNOSTIC ONLY -- variance is autocorrelation-corrected). Reversing the series along time NEGATES hrS, hrZ, hrTau but preserves hrEta, hrPValue. Compare against axis-219 Sen-Adichie for season-stratified L_2 rank trend; against axis-218 Hirsch-Slack for season-stratified L_1 sign count; against axis-217 Laplace centroid for the L-1 magnitude trend.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+
 export function renderDailyTokenSginiIndex(
   r: DailyTokenSginiReport,
 ): string {
@@ -20650,6 +20736,7 @@ import type { DailyTokenBuysBallotPeriod7AnovaReport } from './dailytokenbuysbal
 import type { DailyTokenLaplaceCentroidTrendReport } from './dailytokenlaplacecentroidtrend.js';
 import type { DailyTokenHirschSlackSeasonalKendallReport } from './dailytokenhirschslackseasonalkendall.js';
 import type { DailyTokenSenAdichieAlignedRankTrendReport } from './dailytokensenadichiealignedranktrend.js';
+import type { DailyTokenHamedRaoMannKendallCorrectedReport } from './dailytokenhamedraomannkendallcorrected.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';

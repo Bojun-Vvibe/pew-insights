@@ -225,6 +225,7 @@ import {
   renderDailyTokenLaplaceCentroidTrend,
   renderDailyTokenHirschSlackSeasonalKendall,
   renderDailyTokenSenAdichieAlignedRankTrend,
+  renderDailyTokenHamedRaoMannKendallCorrected,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -781,6 +782,10 @@ import {
   buildDailyTokenSenAdichieAlignedRankTrend,
   type DailyTokenSenAdichieAlignedRankTrendSort,
 } from './dailytokensenadichiealignedranktrend.js';
+import {
+  buildDailyTokenHamedRaoMannKendallCorrected,
+  type DailyTokenHamedRaoMannKendallCorrectedSort,
+} from './dailytokenhamedraomannkendallcorrected.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48634,6 +48639,113 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenSenAdichieAlignedRankTrend(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-hamed-rao-mann-kendall-corrected')
+  .description(
+    "Per-source HAMED-RAO 1998 EFFECTIVE-SAMPLE-SIZE VARIANCE CORRECTION to the Mann-Kendall S statistic on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTIETH cross-source axis). S = sum_{j<k} sign(x[k]-x[j]); Var0(S) = (n*(n-1)*(2n+5) - sum_t t*(t-1)*(2t+5))/18 with the Hirsch-Slack-Smith 1982 tie correction; eta = 1 + (2/(n*(n-1)*(n-2))) * sum_{k=1..n-3} (n-k)*(n-k-1)*(n-k-2)*rho_k where rho_k is the lag-k sample autocorrelation of the Theil-Sen detrended midranks (only |sqrt(n-k-2)*rho_k| > 1.96 lags retained per Hamed-Rao's recommendation); VarHR(S) = eta * Var0(S); hrZ = (S - sign(S))/sqrt(VarHR(S)) ~ N(0,1) with continuity correction; hrPValue via Abramowitz-Stegun 7.1.26 erf approximation; hrEta in [1, +inf) FLOORED at 1; hrEffectiveN = n / hrEta; hrTau is the standard Kendall tau-b. SIGN: hrZ > 0 = monotone UP-trend; hrZ < 0 = DOWN. STRUCTURALLY DISTINCT from baseline Mann-Kendall (SAME S, DIFFERENT NULL VARIANCE -- variance-family orthogonality), axis-219 Sen-Adichie / axis-218 Hirsch-Slack (season-stratified handle period-7 only; Hamed-Rao captures ALL lag autocorrelation), axis-217 Laplace (L-1 magnitude), axis-214 Theil-Sen (point estimator, no inferential variance), and the autocorrelation-magnitude axes (univariate functionals of the autocorrelation function rather than trend-variance corrections). hrNaiveZ/hrNaivePValue surfaced for direct comparison. Refs: Hamed & Rao 1998 *J. Hydrology* 204(1-4):182-196; Mann 1945 *Econometrica* 13(3); Kendall 1975 sec. 3.1; Hirsch-Slack-Smith 1982 *WRR* 18(1); Abramowitz-Stegun 7.1.26.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: hrAbsZDesc (default) | hrZ | hrZDesc | hrPValue | hrPValueDesc | hrTau | hrTauDesc | hrEtaDesc | hrNSigLagsDesc | tokens | tenure | source.',
+    'hrAbsZDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'hrZ',
+          'hrZDesc',
+          'hrAbsZDesc',
+          'hrPValue',
+          'hrPValueDesc',
+          'hrTau',
+          'hrTauDesc',
+          'hrEtaDesc',
+          'hrNSigLagsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenHamedRaoMannKendallCorrected(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenHamedRaoMannKendallCorrectedSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenHamedRaoMannKendallCorrected(report) + '\n',
           );
         }
       } catch (e) {
