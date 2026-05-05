@@ -501,3 +501,56 @@ test('buildDailyTokenTheilSenSlope: report shape includes confidenceLevel and Se
   assert.ok(row.mLo >= 1 && row.mLo <= row.nPairs);
   assert.ok(row.mHi >= 1 && row.mHi <= row.nPairs);
 });
+
+// ---------- refinement: edge-case CI degeneracy + intercept algebra ----------
+
+test('dailyTokenTheilSenSlope: extreme confidenceLevel near 1 saturates CI to full pair range', () => {
+  // With cl very close to 1, C_alpha grows; M_lo clamps to
+  // 1 and M_hi clamps to nPairs. CI must equal the min and
+  // max pairwise slopes (post-sort).
+  const data = [1, 5, 2, 9, 3, 11, 4, 13];
+  const r = dailyTokenTheilSenSlope(data, 0.999_999);
+  assert.equal(r.mLo, 1);
+  assert.equal(r.mHi, r.nPairs);
+  // CI low must be the smallest pairwise slope.
+  // CI high must be the largest pairwise slope.
+  // Both must exist as actual pairwise slopes.
+  const slopes: number[] = [];
+  for (let i = 0; i < data.length - 1; i += 1) {
+    for (let j = i + 1; j < data.length; j += 1) {
+      slopes.push((data[j]! - data[i]!) / (j - i));
+    }
+  }
+  slopes.sort((a, b) => a - b);
+  assert.equal(r.theilSenSlopeCiLow, slopes[0]);
+  assert.equal(r.theilSenSlopeCiHigh, slopes[slopes.length - 1]);
+});
+
+test('dailyTokenTheilSenSlope: intercept algebra -- y = a + b*t recovers (a, b) exactly', () => {
+  // Linear y = 7 + 3*t, t = 0..9.
+  const data = Array.from({ length: 10 }, (_, i) => 7 + 3 * i);
+  const r = dailyTokenTheilSenSlope(data);
+  assert.equal(r.theilSenSlope, 3);
+  assert.equal(r.theilSenIntercept, 7);
+});
+
+test('dailyTokenTheilSenSlope: scale-invariance of pair-partition under positive multiplicative shift', () => {
+  // Multiplying all values by a positive constant must
+  // scale the slope by that constant but leave the
+  // pair partition (pos/neg/zero) unchanged.
+  const a = dailyTokenTheilSenSlope([1, 3, 2, 5, 4, 7]);
+  const b = dailyTokenTheilSenSlope([100, 300, 200, 500, 400, 700]);
+  assert.equal(a.pairsPositive, b.pairsPositive);
+  assert.equal(a.pairsNegative, b.pairsNegative);
+  assert.equal(a.pairsZero, b.pairsZero);
+  assert.ok(Math.abs(b.theilSenSlope - 100 * a.theilSenSlope) < 1e-9);
+});
+
+test('dailyTokenTheilSenSlope: degenerate CI clamp -- tiny n with cl close to 1', () => {
+  // n=4, cl=0.999_999 forces both mLo and mHi to clamp.
+  const r = dailyTokenTheilSenSlope([1, 2, 3, 5], 0.999_999);
+  // Both clamps should be hit; CI should equal min/max
+  // pairwise slope.
+  assert.equal(r.mLo, 1);
+  assert.equal(r.mHi, r.nPairs);
+});

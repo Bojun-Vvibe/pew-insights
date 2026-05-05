@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.532 — 2026-05-06
+
+### Refined — `daily-token-theil-sen-slope` (axis-214) edge-case CI clamp + intercept algebra tests
+
+Refinement on top of v0.6.531: 4 additional unit tests
+covering the Sen 1968 CI degeneracy regime and intercept
+algebra:
+
+  - `extreme confidenceLevel near 1 saturates CI to full
+    pair range` -- with cl = 0.999_999 the C_alpha term
+    grows large enough that M_lo clamps to 1 and M_hi
+    clamps to nPairs; CI must equal the smallest /
+    largest pairwise slopes verbatim. Also explicitly
+    verifies the slopes returned at the clamps are
+    actual pairwise slopes from the input.
+  - `intercept algebra -- y = a + b*t recovers (a, b)
+    exactly` -- on a noiseless linear ramp y = 7 + 3*t,
+    the Theil-Sen slope and intercept must equal (3, 7)
+    exactly (no numerical drift).
+  - `scale-invariance of pair-partition under positive
+    multiplicative shift` -- multiplying every value by
+    a positive constant scales the slope by that
+    constant but leaves pairsPositive / pairsNegative /
+    pairsZero unchanged (sign of each pairwise
+    difference is invariant).
+  - `degenerate CI clamp -- tiny n with cl close to 1` --
+    same clamp behaviour at the smallest legal n=4 (the
+    minimum we accept for a stable median over C(4,2)=6
+    pairs).
+
+Also a docstring polish in
+`src/dailytokentheilsenslope.ts`: the asymptotic
+breakdown ~29.3% citation is corrected from "Sen 1968
+sec. 5" to "Wilcox 2017 ch. 10" (the original Sen 1968
+paper does not state the breakdown bound explicitly; the
+0.293 n figure follows from the median-of-pairs argument
+in Wilcox 2017 and was first stated in this form by
+Rousseeuw & Leroy 1987).
+
+Test count delta for axis-214: 37 -> 41 (+4).
+No production-code behaviour change; CI clamp paths
+were already exercised by the v0.6.531 test
+`buildDailyTokenTheilSenSlope: report shape includes
+confidenceLevel and Sen CI ranks` but were not
+dedicated tests.
+
 ## 0.6.531 — 2026-05-06
 
 ### Added — `daily-token-theil-sen-slope` (axis-214)

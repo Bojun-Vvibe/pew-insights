@@ -81,12 +81,16 @@
  * AXIS:
  *
  *   - Class. ROBUST POINT-ESTIMATOR OF SLOPE MAGNITUDE.
- *     Asymptotic breakdown ~29.3 percent (Sen 1968 sec. 5):
- *     up to ~3-in-10 outlier days can be moved arbitrarily
- *     without dragging the slope median past a finite limit.
- *     This is the FIRST daily-token axis that yields a
- *     directly INTERPRETABLE TOKENS-PER-DAY MAGNITUDE for
- *     the trend; every prior trend axis (110, 205, 207, 208,
+ *     Asymptotic breakdown ~29.3 percent (Wilcox 2017
+ *     ch. 10; the median of the C(n, 2) pairwise slopes
+ *     can absorb up to floor(n*(1 - 1/sqrt(2))/1) ~ 0.293 n
+ *     contaminated observations before the median itself
+ *     drifts past a finite limit): up to ~3-in-10 outlier
+ *     days can be moved arbitrarily without dragging the
+ *     slope median past a finite limit. This is the FIRST
+ *     daily-token axis that yields a directly
+ *     INTERPRETABLE TOKENS-PER-DAY MAGNITUDE for the
+ *     trend; every prior trend axis (110, 205, 207, 208,
  *     209, 210, 211, 212, 213) returns a unitless rank /
  *     normal / chi-square test statistic.
  *
