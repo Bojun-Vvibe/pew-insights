@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.508 — 2026-05-05
+
+### Added — `classifyHoggAdaptiveMannWhitneyDispatchAgreementCompound` (axis-204 ↔ axis-110)
+
+Cross-axis 7-bucket compound classifier joining the new
+axis-204 HOGG-FISHER-RANDLES 1975 ADAPTIVE TWO-SAMPLE
+LOCATION TEST (`hoggZ`, `hoggPValue`, `hoggDispatch`)
+with the fixed-score axis-110 MANN-WHITNEY two-sample
+location test (`mwZ`, `mwPValue`) on the SAME first-half-
+vs-second-half partition of the gap-filled daily
+total_tokens series, on a per-source basis.
+
+**Structural claim.** Both probes target two-sample
+LOCATION shifts on the SAME partition, but they are
+STRUCTURALLY DIFFERENT in the score function used:
+
+  - Mann-Whitney always uses the FIXED Wilcoxon rank-sum
+    score (linear in pooled mid-ranks).
+  - Hogg-Adaptive routes through the pooled tail-weight
+    selector Q to ONE OF THREE different score functions:
+    median (HFR1), Wilcoxon (HFR2), or normal-scores
+    (HFR3).
+
+When `hoggDispatch === 'HFR2-wilcoxon'`, the two probes
+use IDENTICAL score functions and SHOULD agree exactly
+up to the affine difference between Mann-Whitney's
+U-form and Wilcoxon rank-sum's W-form standardisation.
+When `hoggDispatch === 'HFR1-mood-median'` or
+`'HFR3-vanderwaerden'`, the two probes apply DIFFERENT
+WEIGHT FUNCTIONS to the same data and can legitimately
+DIVERGE: the adaptive selector says "the pooled tail
+shape makes Wilcoxon SUB-OPTIMAL here, use a different
+score". The compound exposes this divergence as a
+primary diagnostic channel.
+
+**Buckets** (alpha default 0.05):
+`coherent-location-wilcoxon-dispatch`,
+`coherent-location-non-wilcoxon-dispatch`,
+`adaptive-only`, `wilcoxon-only`,
+`direction-conflict`, `dispatch-veto`, `no-evidence`.
+The `byDispatch` cross-tab (per-dispatch bucket counts)
+is the headline output: the joint
+(dispatch x agreement) table directly answers "did the
+adaptive selector vetoing Wilcoxon cause us to MISS or
+FIND a location shift that the fixed Mann-Whitney
+test would have called the other way".
+
+### Files
+
+  - `src/classifyhoggadaptivemannwhitneydispatchagreementcompound.ts`
+    — pure cross-axis classifier with strict input
+    validation, alpha-configurable bucket assignment,
+    per-dispatch x per-bucket cross-tabulation, and
+    asymmetric-membership tracking.
+  - `test/classifyhoggadaptivemannwhitneydispatchagreementcompound.test.ts`
+    — 20 unit tests covering validation, all 7 buckets,
+    alpha sensitivity, byDispatch cross-tab, batch
+    skipping behaviour, and aggregate invariants.
+
+### Test count
+
+  - Before: 14,623
+  - After:  14,643 (+20)
+
 ## 0.6.507 — 2026-05-05
 
 ### Added — `daily-token-hogg-adaptive-halves` (axis-204 HOGG-FISHER-RANDLES 1975 ADAPTIVE TWO-SAMPLE LOCATION TEST)
