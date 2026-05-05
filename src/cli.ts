@@ -220,6 +220,7 @@ import {
   renderDailyTokenCliffsDeltaHalves,
   renderDailyTokenKuiperTwoSampleHalves,
   renderDailyTokenMoodsMedianHalves,
+  renderDailyTokenTukeyQuickHalves,
   renderDailyTokenKsTwoSampleHalves,
   renderDailyTokenAndersonDarlingHalves,
   renderDailyTokenCramerVonMisesHalves,
@@ -731,6 +732,7 @@ import {
   type DailyTokenKuiperTwoSampleHalvesSort,
 } from './dailytokenkuipertwosamplehalves.js';
 import { buildDailyTokenMoodsMedianHalves } from './dailytokenmoodsmedianhalves.js';
+import { buildDailyTokenTukeyQuickHalves } from './dailytokentukeyquickhalves.js';
 import { buildDailyTokenKsTwoSampleHalves } from './dailytokenkstwosamplehalves.js';
 import { buildDailyTokenAndersonDarlingHalves } from './dailytokenandersondarlinghalves.js';
 import { buildDailyTokenCramerVonMisesHalves } from './dailytokencramervonmiseshalves.js';
@@ -37934,6 +37936,124 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMoodsMedianHalves(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+
+program
+  .command('daily-token-tukey-quick-halves')
+  .description(
+    "Per-source TUKEY'S QUICK TEST (end-count exceedance, a.k.a. Tukey's compact test) comparing the first half (n1 = floor(n/2) days) vs second half (n2 = n - n1 days) of the gap-filled daily total_tokens series via the SUM-OF-END-EXCEEDANCES STATISTIC (ONE-HUNDRED-AND-NINETY-THIRD cross-source axis). Class-TWO-SAMPLE-LOCATION-EXTREME-COUNT-TEST (Tukey 1959 Technometrics 1(1):31-48 'A Quick, Compact, Two-Sample Test to Duckworth's Specifications'; Neave 1966 Technometrics 8(2):241-249): label the half with the larger max as 'high' and the half with the smaller min as 'low' (indeterminate if same half); tqW = #{values in 'high' sample STRICTLY ABOVE max(other)} + #{values in 'low' sample STRICTLY BELOW min(other)}. Critical values nearly distribution-free AND sample-size-free for 5 <= n1, n2 <= 30: tqW >= 7 alpha=.05, >= 10 alpha=.01, >= 13 alpha=.001. Two-sided p-value via Neave 1966 closed form: tqTwoSidedP = (n1/n)^tqW + (n2/n)^tqW. Sign convention: positive tqSignedW = SECOND HALF is 'high' (location ROSE); negative = FIRST HALF is 'high' (location DROPPED). ORTHOGONAL to axis-115 Mann-Whitney halves (uses ALL n*(n-1)/2 cross-pair ranks, sensitive to STOCHASTIC DOMINANCE OVER ENTIRE DISTRIBUTION; Tukey lives on a DISJOINT SUPPORT consisting only of END-EXCEEDANCE PAIRS), axis-186 Hodges-Lehmann (POINT ESTIMATE on cross-pair differences; Tukey is a TEST STATISTIC on sort-order overlap), axis-187 Vargha-Delaney A12 (monotone function of full rank sum; Tukey W is NOT a function of the rank sum -- different sort-order partitions with the same rank sum give different W), axis-188 perm-Welch-t (mean-shift sensitive even with full overlap; Tukey W = 0 with full support overlap regardless of mean), axis-191 Cliff's delta (signed kernel over ALL cross-pairs; Tukey lives on END pairs only), axis-192 Kuiper (sup ECDF gap at INTERIOR argmax; Tukey end-count at BOUNDARY of pooled support -- continuous vs discrete in the data), axis-117 Siegel-Tukey (folded-rank SCALE on median-centred values; Tukey-quick is LOCATION on tail-mass migration -- shared surname only). INVARIANT under any strictly monotone transform of the data; reports tqIndeterminate=true when one half's range envelopes the other rather than emitting a spurious zero.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 8 (n1, n2 >= 4 for Tukey/Neave critical-value calibration band). Default 14.',
+    '14',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: tqWAbsDesc (default) | tqW | tqWDesc | tqWAbs | tqSignedW | tqSignedWDesc | tqP | tqPDesc | tokens | tenure | source.',
+    'tqWAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 8) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 8 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'tqW',
+          'tqWDesc',
+          'tqWAbs',
+          'tqWAbsDesc',
+          'tqSignedW',
+          'tqSignedWDesc',
+          'tqP',
+          'tqPDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenTukeyQuickHalves(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as
+            | 'tqW'
+            | 'tqWDesc'
+            | 'tqWAbs'
+            | 'tqWAbsDesc'
+            | 'tqSignedW'
+            | 'tqSignedWDesc'
+            | 'tqP'
+            | 'tqPDesc'
+            | 'tokens'
+            | 'tenure'
+            | 'source',
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenTukeyQuickHalves(report) + '\n',
           );
         }
       } catch (e) {

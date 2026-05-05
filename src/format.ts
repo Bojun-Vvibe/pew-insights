@@ -20595,6 +20595,7 @@ import type { DailyTokenBrownForsythHalvesReport } from './dailytokenbrownforsyt
 import type { DailyTokenSiegelTukeyHalvesReport } from './dailytokensiegeltukeyhalves.js';
 import type { DailyTokenAnsariBradleyHalvesReport } from './dailytokenansaribradleyhalves.js';
 import type { DailyTokenMoodsMedianHalvesReport } from './dailytokenmoodsmedianhalves.js';
+import type { DailyTokenTukeyQuickHalvesReport } from './dailytokentukeyquickhalves.js';
 import type { DailyTokenKsTwoSampleHalvesReport } from './dailytokenkstwosamplehalves.js';
 import type { DailyTokenAndersonDarlingHalvesReport } from './dailytokenandersondarlinghalves.js';
 import type { DailyTokenCramerVonMisesHalvesReport } from './dailytokencramervonmiseshalves.js';
@@ -28301,6 +28302,99 @@ export function renderDailyTokenKuiperTwoSampleHalves(
   lines.push(
     chalk.dim(
       `(reference: kpVCrit_{0.05} ~= 1.747/(sqrt(en) + 0.155 + 0.24/sqrt(en)). kpV > kpVCrit05 rejects equal-distribution at .05. The 'direction' field is INFORMATIONAL: Kuiper is two-sided and direction-agnostic. The kpZ sign reflects the dominant lobe; magnitude reflects |Phi^{-1}(kpP/2)|. Kuiper is the rotation-invariant complement to KS axis-118: KS uses max(D+, D-), Kuiper uses D+ + D-. The two are bracketed (ksD <= kpV <= 2*ksD) but capture opposite features of ECDF-difference shape.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenTukeyQuickHalves(
+  r: DailyTokenTukeyQuickHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-tukey-quick-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source TUKEY'S QUICK TEST (end-count exceedance) comparing the first half (n1 = floor(n/2)) vs second half (n2 = n - n1) of the gap-filled daily total_tokens series. ONE-HUNDRED-AND-NINETY-THIRD cross-source axis. Class-TWO-SAMPLE-LOCATION-EXTREME-COUNT-TEST (Tukey 1959 Technometrics 1(1):31-48; Neave 1966 Technometrics 8(2):241-249). tqW = #{values of "high" sample > max(other)} + #{values of "low" sample < min(other)}; tqSignedW = +tqW if SECOND HALF is high (location ROSE), -tqW if FIRST HALF is high (location DROPPED), 0 if indeterminate (one half's range envelopes the other). tqTwoSidedP = (n1/n)^tqW + (n2/n)^tqW (Neave 1966 closed form). Critical values nearly distribution-free AND sample-size-free for 5 <= n1, n2 <= 30: tqW >= 7 (alpha=.05), >= 10 (.01), >= 13 (.001). ORTHOGONAL to axis-115 Mann-Whitney halves (uses ALL cross-pair ranks, sensitive to entire distribution; Tukey uses ONLY end exceedances -- DISJOINT functional support); axis-186 Hodges-Lehmann halves (median of cross-pair differences as POINT ESTIMATE; Tukey is a TEST STATISTIC on sorted overlap structure); axis-187 Vargha-Delaney A12 (function of full rank sum; Tukey W is NOT determined by rank sum); axis-188 perm-Welch-t (sensitive to mean shifts even with full overlap; Tukey W = 0 with full overlap); axis-191 Cliff's delta (signed cross-pair indicator over ALL pairs; Tukey lives on END pairs only); axis-192 Kuiper (sup ECDF gap at INTERIOR; Tukey end-count at BOUNDARY -- continuous vs discrete); axis-117 Siegel-Tukey (folded-rank SCALE; Tukey-quick is LOCATION on tail-mass migration).)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source TUKEY'S QUICK end-count W (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'maxA',
+    'maxB',
+    'minA',
+    'minB',
+    'hi',
+    'lo',
+    'tqW',
+    'tqSignedW',
+    'indet',
+    'p',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.tqN1),
+    formatNumber(s.tqN2),
+    formatNumber(s.tqMaxA),
+    formatNumber(s.tqMaxB),
+    formatNumber(s.tqMinA),
+    formatNumber(s.tqMinB),
+    formatNumber(s.tqHi),
+    formatNumber(s.tqLo),
+    formatNumber(s.tqW),
+    String(s.tqSignedW),
+    s.tqIndeterminate ? 'yes' : 'no',
+    s.tqTwoSidedP.toExponential(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: tqW = 0 = full sort-order overlap of the two halves (no end-exceedance); tqW >= 7 = significant location/tail-shift at alpha = 0.05; tqW >= 10 = alpha = 0.01; tqW >= 13 = alpha = 0.001 (Tukey 1959 Table 1, validated 5 <= n1, n2 <= 30, mildly conservative outside). Sign convention: positive tqSignedW = SECOND HALF is "high" sample (location ROSE across the tenure); negative tqSignedW = FIRST HALF is "high" (location DROPPED). Indeterminate (indet=yes) = one half's RANGE envelopes the other -- correctly reported as no-test rather than spurious zero. Tukey's W is INVARIANT under any strictly monotone transform of the data (uses only sort order at the extremes). Cross-check vs axis-115 Mann-Whitney halves: when MW rejects but Tukey does not, the shift is IN THE CENTRAL MASS (extremes overlap); when Tukey rejects but MW does not, a SINGLE TAIL of one half has separated from the other (rare-event signal that rank-sum tests dilute).)`,
     ),
   );
 
