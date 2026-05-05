@@ -20633,6 +20633,7 @@ import type { DailyTokenSavageHalvesReport } from './dailytokensavagehalves.js';
 import type { DailyTokenBwsHalvesReport } from './dailytokenbaumgartnerweisschindlerhalves.js';
 import type { DailyTokenHlShiftHalvesReport } from './dailytokenhodgeslehmannshifthalves.js';
 import type { DailyTokenVarghaDelaneyHalvesReport } from './dailytokenvarghadelaneyhalves.js';
+import type { DailyTokenPermutationTstatHalvesReport } from './dailytokenpermutationtstathalves.js';
 
 export function renderDailyTokenPearsonSecondSkewness(
   r: DailyTokenPearsonSecondSkewnessReport,
@@ -27829,6 +27830,95 @@ export function renderDailyTokenVarghaDelaneyHalves(
   lines.push(
     chalk.dim(
       `(reference anchor: A12 = 0.5 is the no-effect anchor (stochastic equality). vdCiExcludesHalf === true is the asymptotic Brunner-Munzel 2000 analogue of rejecting H0: P(Y>X)+0.5P(Y==X) = 0.5 at alpha=0.05. magnitude bucket gives Cohen-style verbal effect-size: a 'large' A12 with vdCiExcludesHalf === true is a both-meaningful-and-statistically-significant SECOND-half-larger reading. Cross-axis vs axis-115 MW: deterministic A12 = U2/(n1*n2), so the BINARY rejection decision agrees but the EFFECT-SIZE interpretation is unique to A12. vs axis-186 HL: HL gives shift in tokens, A12 gives probability-of-superiority; together they characterise BOTH the size AND the direction of the location effect on independent scales.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPermutationTstatHalves(
+  r: DailyTokenPermutationTstatHalvesReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan('pew-insights daily-token-permutation-tstat-halves'),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    top: ${r.top === 0 ? '\u2014' : r.top}    B: ${formatNumber(r.permutations)}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MONTE-CARLO PERMUTATION WELCH-T two-sample test on the half-split daily series. t = (mean(B) - mean(A)) / sqrt(var(A)/n1 + var(B)/n2); positive t = SECOND half larger. p-values from B random label permutations of the pooled sample with Phipson-Smyth 2010 add-one correction. ONE-HUNDRED-AND-EIGHTY-EIGHTH cross-source axis. STRUCTURALLY ORTHOGONAL: vs axis-183 YW (asymptotic-t p-value); axis-188 makes ZERO distributional assumption. vs axis-186 HL (point estimator + Lehmann CI); axis-188 is a SIGNIFICANCE-DECISION test, not an estimator. vs axis-187 A12 (rank-based effect size); axis-188 operates on RAW values and references them to the EXACT exchangeable null. Refs: Pitman 1937; Phipson-Smyth 2010; Welch 1947.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source permutation Welch-t two-sample test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'n1',
+    'n2',
+    'mean A',
+    'mean B',
+    't',
+    'p (2sd)',
+    'p upper',
+    'p lower',
+    'sign',
+    'decision',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    formatNumber(s.permN1),
+    formatNumber(s.permN2),
+    formatNumber(Math.round(s.permMeanA)),
+    formatNumber(Math.round(s.permMeanB)),
+    (s.permTStat >= 0 ? '+' : '') + s.permTStat.toFixed(4),
+    s.permPTwoSided.toExponential(2),
+    s.permPUpper.toExponential(2),
+    s.permPLower.toExponential(2),
+    s.permSign === 1 ? '+' : s.permSign === -1 ? '-' : '0',
+    s.permDecision,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: t = 0 is the no-shift anchor. permPTwoSided is the EXACT add-one-corrected Monte-Carlo permutation p-value; the smallest reportable value is 1/(B+1). Decision buckets: highly-significant <=.001, very-significant <=.01, significant <=.05, marginal <=.10, ns. Cross-axis vs axis-183 YW: axis-183's p-value rests on the Welch-Satterthwaite t-distribution under H0 of approx-normal trimmed means; axis-188's p-value rests ONLY on exchangeability of the pooled sample and is therefore VALID under heavy-tail / skewed / bimodal data. vs axis-187 A12: A12 measures EFFECT SIZE, axis-188 measures SIGNIFICANCE; together they characterise BOTH the size AND the detectability of the location effect on independent inferential bases.)`,
     ),
   );
 
