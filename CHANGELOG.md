@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.528 — 2026-05-06
+
+### Added — `daily-token-olmstead-tukey-corner-test` (axis-212)
+
+New TWO-HUNDRED-AND-TWELFTH cross-source axis: per-source
+OLMSTEAD-TUKEY CORNER TEST FOR ASSOCIATION on the gap-
+filled daily total_tokens series (Olmstead & Tukey 1947,
+*Ann. Math. Statist.* 18(4): 495-513).
+
+Computes 4 corner run-lengths (nNE/nNW/nSE/nSW) of
+consecutive observations from each x-edge that lie
+strictly above/below the GLOBAL SAMPLE MEDIAN. Signed
+Q-statistic
+
+```
+otQ = (nNE + nSW) - (nSE + nNW)
+```
+
+with moment-matched standardization
+
+```
+otZ      = otQ / sqrt(8)
+otPValue = 2 * (1 - Phi(|otZ|))
+```
+
+(Var(otQ) = 8 because each corner-count is approximately
+Geometric(1/2) with Var = 2 under H0; cross-corner
+correlation cancels to leading order.) Cross-checked
+against the Olmstead-Tukey 1947 exact tables (|Q| >= 9
+~ alpha 0.05, |Q| >= 11 ~ alpha 0.01, |Q| >= 13 ~ alpha
+0.005).
+
+**Sign convention.** `otQ >> 0` = HIGH values cluster at
+HIGH x AND LOW values cluster at LOW x = MONOTONE UP-
+TREND. `otQ << 0` = MONOTONE DOWN-TREND. `otQ ~ 0` = no
+extremal corner agreement.
+
+**Tie handling.** y-values equal to the median BREAK the
+run at that corner (the corner contributes 0 there).
+`nAtMedian` surfaced for transparency.
+
+**Structural orthogonality.** Maximally-EXTREMAL trend
+test:
+
+  - vs axis-211 Brown-Mood: BM uses a whole-half 2x2
+    contingency on EVERY observation; OT uses only the
+    edge run-lengths and ignores the interior. A series
+    with strong middle-of-window structure and quiet
+    edges gives bmZ != 0 but otQ ~ 0; a series with
+    quiet middle and strong corner agreement gives the
+    opposite.
+  - vs axis-210 Daniels: continuous full-rank vs time
+    correlation on n distinct ranks; OT collapses to 4
+    O(1) edge run-counts.
+  - vs axis-209 Wallis-Moore: LOCAL contiguous-phase
+    statistic on first-difference signs; OT is an
+    EXTREMAL corner statistic on raw values.
+  - vs axis-205 Cox-Stuart: half-lag PAIRED-SIGN; OT
+    does no pairing, no differencing.
+  - vs axis-206 JT: k=4 ordered alternative on FULL
+    within-block distribution via O(n^2) pairwise U;
+    OT uses 4 O(log n) corner run-lengths.
+  - vs axis-207 Pitman MSSD: L2 squared-difference
+    magnitude; OT uses no magnitudes.
+  - vs Mann-Kendall S: n*(n-1)/2 pairwise sign
+    comparisons; OT uses only edge runs.
+
+CLI:
+
+```
+pew-insights daily-token-olmstead-tukey-corner-test \
+    [--since ISO] [--until ISO] [--source NAME] \
+    [--min-tokens N] [--min-tenure-days N] [--top N] \
+    [--sort otZAbsDesc|otZ|otQ|otQAbsDesc|otPValue|...] \
+    [--json]
+```
+
+Implementation lives in
+`src/dailytokenolmsteadtukeycornertest.ts`; renderer in
+`src/format.ts::renderDailyTokenOlmsteadTukeyCornerTest`;
+46 new tests cover median selection, corner counts on
+clean up/down/zigzag series, tie-at-edge handling,
+otZ = otQ/sqrt(8) identity, Stouffer aggregator,
+build() filters/sorts/dropped counters, and degenerate
+inputs.
+
+### Live smoke
+
+(verbatim output to be appended in a follow-up commit
+after running against the real local queue.)
+
 ## 0.6.525 — 2026-05-06
 
 ### Added — `daily-token-brown-mood-median-trend` (axis-211)
