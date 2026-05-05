@@ -212,6 +212,7 @@ import {
   renderDailyTokenHoggAdaptiveHalves,
   renderDailyTokenCoxStuartSignPairs,
   renderDailyTokenJonckheereTerpstraQuartileBlocks,
+  renderDailyTokenPitmanPermutationMssdRandomness,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -716,6 +717,10 @@ import {
   buildDailyTokenJonckheereTerpstraQuartileBlocks,
   type DailyTokenJonckheereTerpstraQuartileBlocksSort,
 } from './dailytokenjonckheereterpstraquartileblocks.js';
+import {
+  buildDailyTokenPitmanPermutationMssdRandomness,
+  type DailyTokenPitmanPermutationMssdRandomnessSort,
+} from './dailytokenpitmanpermutationmssdrandomness.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -47184,6 +47189,123 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenJonckheereTerpstraQuartileBlocks(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-pitman-permutation-mssd-randomness')
+  .description(
+    "Per-source PITMAN 1937 PERMUTATION TEST FOR RANDOMNESS via the MEAN-OF-SQUARED-SUCCESSIVE-DIFFERENCES (MSSD) statistic on the gap-filled daily total_tokens series, against a FIXED-SEED MONTE-CARLO PERMUTATION REFERENCE on the RAW VALUES (TWO-HUNDRED-AND-SEVENTH cross-source axis). E[mssd] = 2*ssBar (closed form). Var[mssd] estimated empirically from B permutations. ppZ = (mssd - E[mssd]) / sqrt(Var_MC[mssd]). Two-sided +1/(B+1) Monte-Carlo p-value (Davison-Hinkley 1997 eq. 4.10). SIGN: ppZ << 0 = SMOOTHNESS / POSITIVE LAG-1 SERIAL DEPENDENCE (adjacent days atypically similar); ppZ >> 0 = OSCILLATION / NEGATIVE LAG-1 SERIAL DEPENDENCE. STRUCTURALLY DISTINCT from rank-asymptotic Bartels (raw values + Monte-Carlo permutation reference vs ranks + asymptotic normal); from axis-206 JT (lag-1 exchangeability vs k=4 block monotonic-ordering); from axis-203 David-Barton (squared-magnitude vs sign-only of lag-1 differences). Pre-processing: NONE. PRNG: deterministic SplitMix64 seeded from (n, x[0], x[n-1]) -- same input series gives same p-value across runs and machines. Refs: Pitman 1937 Biometrika 29:322-335; von Neumann 1941 Ann. Math. Stat. 12:367-395; Davison-Hinkley 1997 sec. 4.2; Steele-Lea-Flood 2014 J. Stat. Comp. Sim. 84:1267-1283.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 12 (gives 12! ~ 4.8e8 permutations vs B=999 default Monte-Carlo budget). Default 12.',
+    '12',
+  )
+  .option(
+    '--permutations <B>',
+    'number of Monte-Carlo permutations B (>= 99; default 999, gives 1/1000 p-value granularity).',
+    '999',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: ppZAbsDesc (default) | ppZ | ppPValue | ppPValueDesc | ppMssd | ppMssdDesc | tokens | tenure | source.',
+    'ppZAbsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        permutations: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 12) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 12 (got ${opts.minTenureDays})`,
+          );
+        }
+        const permutations = Number.parseInt(opts.permutations, 10);
+        if (!Number.isInteger(permutations) || permutations < 99) {
+          throw new Error(
+            `--permutations must be an integer >= 99 (got ${opts.permutations})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'ppZ',
+          'ppZAbsDesc',
+          'ppPValue',
+          'ppPValueDesc',
+          'ppMssd',
+          'ppMssdDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPitmanPermutationMssdRandomness(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          permutations,
+          top,
+          sort: opts.sort as DailyTokenPitmanPermutationMssdRandomnessSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPitmanPermutationMssdRandomness(report) + '\n',
           );
         }
       } catch (e) {

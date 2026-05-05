@@ -20637,6 +20637,7 @@ import type { DailyTokenDavidBartonRunsUpDownReport } from './dailytokendavidbar
 import type { DailyTokenHoggAdaptiveHalvesReport } from './dailytokenhoggadaptivehalves.js';
 import type { DailyTokenCoxStuartSignPairsReport } from './dailytokencoxstuartsignpairs.js';
 import type { DailyTokenJonckheereTerpstraQuartileBlocksReport } from './dailytokenjonckheereterpstraquartileblocks.js';
+import type { DailyTokenPitmanPermutationMssdRandomnessReport } from './dailytokenpitmanpermutationmssdrandomness.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -29506,6 +29507,85 @@ export function renderDailyTokenJonckheereTerpstraQuartileBlocks(
   lines.push(
     chalk.dim(
       `(reference anchor: jtPValue < 0.05 = REJECT no-ordered-alternative H0 at alpha=0.05 (two-sided normal reference, JT asymptotic null). jtZ > 0 = MONOTONIC INCREASING across the four chronological blocks; jtZ < 0 = MONOTONIC DECREASING. UNLIKE axis-205 Cox-Stuart (paired-sign at lag c=ceil(n/2)) JT pools all observations into k=4 ORDERED GROUPS and aggregates pairwise U-comparisons (rank-based block-level ordering); UNLIKE axis-203 David-Barton (lag-1 sign-RUN counts) JT measures GLOBAL block-level rank ordering; UNLIKE all halves-comparison axes (Mann-Whitney etc.) JT splits into k=4 chronological groups and tests for an ORDERED ALTERNATIVE -- robust to within-block heterogeneity that would noise-up pair-by-pair tests.)`,
+    ),
+  );
+
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+export function renderDailyTokenPitmanPermutationMssdRandomness(
+  r: DailyTokenPitmanPermutationMssdRandomnessReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan(
+      'pew-insights daily-token-pitman-permutation-mssd-randomness',
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    permutations: ${formatNumber(r.permutations)}    top: ${r.top === 0 ? '\u2014' : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? '-inf'} -> ${r.windowEnd ?? '+inf'}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PITMAN 1937 PERMUTATION TEST FOR RANDOMNESS via the MEAN-OF-SQUARED-SUCCESSIVE-DIFFERENCES (MSSD) statistic on the gap-filled daily total_tokens series, against a FIXED-SEED MONTE-CARLO PERMUTATION REFERENCE DISTRIBUTION on the RAW VALUES (B=permutations). E[mssd] = 2*ssBar (closed form). Var[mssd] estimated empirically from the B permutations. ppZ = (mssd - E[mssd]) / sqrt(Var_MC[mssd]). Two-sided +1/(B+1) Monte-Carlo p-value (Davison-Hinkley 1997 eq. 4.10). SIGN: ppZ << 0 = SMOOTHNESS / POSITIVE LAG-1 SERIAL DEPENDENCE (adjacent values atypically similar); ppZ >> 0 = OSCILLATION / NEGATIVE LAG-1 SERIAL DEPENDENCE. TWO-HUNDRED-AND-SEVENTH cross-source axis. Pre-processing: NONE. Statistic uses RAW VALUES (sensitive to magnitudes), reference is the EXACT PERMUTATION DISTRIBUTION (no asymptotic approximation). Distinct from rank-based asymptotic Bartels (rank statistic + normal-tail) by both summary (raw squared diff vs ranked successive ratio) and reference (Monte-Carlo permutation vs asymptotic normal). PRNG: deterministic SplitMix64 seeded from (n, x[0], x[n-1]). Refs: Pitman 1937 Biometrika 29:322-335; von Neumann 1941 Ann. Math. Stat. 12:367-395; Davison-Hinkley 1997 sec. 4.2; Steele-Lea-Flood 2014 J. Stat. Comp. Sim. 84:1267-1283.)`,
+    ),
+  );
+  lines.push('');
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow('  no source rows after filters. nothing to chart.'));
+    return lines.join('\n');
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source PITMAN MSSD permutation randomness test (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    'source',
+    'firstDay',
+    'lastDay',
+    'tenure',
+    'active',
+    'mssd',
+    'mssdExp',
+    'ppZ',
+    'ppPValue',
+    'tokens',
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    formatNumber(s.nActiveDays),
+    s.ppMssd.toExponential(3),
+    s.ppMssdExpected.toExponential(3),
+    s.ppZ.toFixed(4),
+    s.ppPValue.toExponential(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push('');
+  lines.push(
+    chalk.dim(
+      `(reference anchor: ppPValue < 0.05 = REJECT exchangeable-ordering H0 at alpha=0.05 (two-sided Monte-Carlo permutation p-value). ppZ << 0 = SMOOTHNESS / positive lag-1 serial dependence (adjacent days atypically similar); ppZ >> 0 = OSCILLATION / negative lag-1 serial dependence. UNLIKE rank-asymptotic Bartels test (rank successive-difference ratio + asymptotic normal) PITMAN MSSD uses RAW values (sensitive to magnitudes -- a few large outliers can dominate) AND a PERMUTATION reference (exact size at alpha=(k+1)/(B+1)). UNLIKE axis-206 JT (block-ordering trend test) PITMAN tests lag-1 exchangeability across the entire series. UNLIKE axis-203 David-Barton (sign-only summary of lag-1 differences) PITMAN uses the SQUARED MAGNITUDE of lag-1 differences. PRNG seed is deterministic across runs and machines via SplitMix64.)`,
     ),
   );
 
