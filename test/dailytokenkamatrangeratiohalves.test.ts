@@ -165,6 +165,56 @@ test('dailyTokenKamatRangeRatioHalves: throws on permutations < 200', () => {
   );
 });
 
+test('dailyTokenKamatRangeRatioHalves: kamatStat invariant under permutation count (only variance changes)', () => {
+  // The point estimate kamatStat = log(R_B/R_A) does
+  // NOT depend on the permutation count; only the
+  // variance estimator does. Two runs with different
+  // permutations should produce identical kamatStat,
+  // identical kamatRangeA / kamatRangeB, but DIFFERENT
+  // kamatVar / kamatZ.
+  const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+  const r1 = dailyTokenKamatRangeRatioHalves(x, 500);
+  const r2 = dailyTokenKamatRangeRatioHalves(x, 1500);
+  assert.equal(r1.kamatStat, r2.kamatStat);
+  assert.equal(r1.kamatRangeA, r2.kamatRangeA);
+  assert.equal(r1.kamatRangeB, r2.kamatRangeB);
+  assert.equal(r1.kamatPermutations, 500);
+  assert.equal(r2.kamatPermutations, 1500);
+});
+
+test('dailyTokenKamatRangeRatioHalves: kamatN1 = floor(n/2) for both even and odd n', () => {
+  const xs = [16, 17, 18, 19, 20, 21];
+  for (const n of xs) {
+    const data = new Array(n).fill(0).map((_, i) => i + 1);
+    const r = dailyTokenKamatRangeRatioHalves(data, 500);
+    assert.equal(r.kamatN1, Math.floor(n / 2));
+    assert.equal(r.kamatN2, n - Math.floor(n / 2));
+    assert.equal(r.kamatN1 + r.kamatN2, n);
+  }
+});
+
+test('dailyTokenKamatRangeRatioHalves: identical halves give kamatStat = 0', () => {
+  // Two halves with identical post-alignment values
+  // produce identical ranges, hence kamatStat = log(1)
+  // = 0 exactly.
+  const half = [1, 3, 2, 5, 4, 6, 7, 8];
+  const r = dailyTokenKamatRangeRatioHalves([...half, ...half], 500);
+  assert.equal(r.kamatRangeA, r.kamatRangeB);
+  assert.equal(r.kamatStat, 0);
+});
+
+test('aggregateKamatRangeRatioHalves: opposite-sign Z cancel in Stouffer aggregator', () => {
+  // Two rows with kamatZ = +2 and -2 should give
+  // Stouffer Z = 0 (signed combination), high p ~= 1.
+  const a = aggregateKamatRangeRatioHalves([
+    { kamatZ: 2.0, kamatPValue: 0.046, kamatVar: 0.5, nTenureDays: 30 },
+    { kamatZ: -2.0, kamatPValue: 0.046, kamatVar: 0.5, nTenureDays: 30 },
+  ]);
+  assert.ok(Math.abs(a.stoufferZ) < 1e-12);
+  assert.ok(a.stoufferTwoSidedPValue > 0.99);
+  assert.equal(a.rowsUsed, 2);
+});
+
 test('dailyTokenKamatRangeRatioHalves: shift-invariant (kamatZ unchanged by +c)', () => {
   const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
   const y = x.map((v) => v + 1000);
