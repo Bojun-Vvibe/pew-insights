@@ -20829,6 +20829,7 @@ import type { DailyTokenInclanTiaoIcssVarianceChangepointReport } from './dailyt
 import type { DailyTokenKillickPeltVarianceSegmentationReport } from './dailytokenkillickpeltvariancesegmentation.js';
 import type { DailyTokenFryzlewiczWbsMeanSegmentationReport } from './dailytokenfryzlewiczwbsmeansegmentation.js';
 import type { DailyTokenMattesonJamesEDivisiveDistributionalSegmentationReport } from './dailytokenmattesonjamesedivisivedistributionalsegmentation.js';
+import type { DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthReport } from './dailytokenadamsmackaybocpdbayesianonlinerunlength.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -31135,6 +31136,85 @@ export function renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation
   lines.push(
     chalk.dim(
       `(reference anchor: m = 0 = no ECP-significant DISTRIBUTIONAL changepoints (single distributional regime); m >= 1 = m accepted CPs under the c_zeta*sigma*log n threshold. tauStarDays are the ESTIMATED distributional shift days. maxQStar > threshold indicates strength of the strongest accepted shift. sdRangeRatio = max(sdSeg)/min(sdSeg) across segments of length >= 3; large = strongly heterogeneous variance regimes. distHomog in (0, 1]: 1 = single distributional regime, near 0 = strong distributional heterogeneity. Compare with axis-225 WBS (mean shifts) and axis-224 PELT (variance shifts): ECP fires on ANY distributional change including shape / tail / multimodality changes that WBS and PELT miss.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength(
+  r: DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-adams-mackay-bocpd-bayesian-online-runlength"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    hazardLambda: ${r.hazardLambda}    upmKappa: ${r.upmKappa}    upmAlpha: ${r.upmAlpha}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source ADAMS-MACKAY 2007 BAYESIAN ONLINE CHANGEPOINT DETECTION (BOCPD) on the gap-filled daily token series. Maintains a recursive posterior p(r_t | x[1..t]) over the latent run-length r_t with constant-hazard prior H = 1/lambda and a Normal-inverse-Gamma UPM (Student-t posterior predictive). Surfaces MAP-detected CPs (rMap = 0), peak p(r_t = 0), mean MAP run length, max MAP run length, and posterior entropy. TWO-HUNDRED-AND-TWENTY-SEVENTH cross-source axis. ORTHOGONAL to all prior changepoint axes (221-226) by (1) PARADIGM (Bayesian posterior with proper geometric prior on segment count vs frequentist test / point estimator), (2) MODE (online streaming forward recursion vs batch CUSUM / DP / wild-interval / energy-distance scan), (3) UNCERTAINTY SURFACE (calibrated posterior entropy and probability mass on r_t = 0 vs frequentist test statistic / p-value). Refs: Adams-MacKay 2007 arXiv:0710.3742; Murphy 2007 conjugate Bayesian Gaussian; Fearnhead-Liu 2007 *JRSS B* 69(4):589-605.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source BOCPD bayesian online run-length (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "m",
+    "tauStarDays",
+    "cpProb",
+    "meanRunMap",
+    "maxRunMap",
+    "postEntropy",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.mChangepoints}`,
+    s.tauStarDays.length === 0 ? "-" : s.tauStarDays.join(","),
+    s.cpProbability.toFixed(4),
+    s.meanRunLengthMap.toFixed(2),
+    `${s.maxRunLengthMap}`,
+    s.posteriorEntropy.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: m = 0 = no MAP-detected BAYESIAN changepoints (the posterior MAP run-length never collapses to 0 after t > 0). m >= 1 = m time steps where rMap = 0. cpProb in [0,1] = strongest single-step posterior mass on r_t = 0; > 0.5 indicates a probable CP. meanRunMap = average MAP run length (high = stable / few CPs); maxRunMap = longest stable stretch under the MAP trajectory. postEntropy in nats = average Shannon entropy of the run-length posterior (low = decisive segmentation, high = diffuse / uncertain). Compare with axis-226 ECP (batch energy-distance) and axis-225 WBS (batch random-CUSUM): BOCPD is the only ONLINE BAYESIAN segmenter with calibrated probability output.)`,
     ),
   );
 

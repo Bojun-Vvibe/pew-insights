@@ -232,6 +232,7 @@ import {
   renderDailyTokenKillickPeltVarianceSegmentation,
   renderDailyTokenFryzlewiczWbsMeanSegmentation,
   renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation,
+  renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -816,6 +817,10 @@ import {
   buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation,
   type DailyTokenMattesonJamesEDivisiveDistributionalSegmentationSort,
 } from './dailytokenmattesonjamesedivisivedistributionalsegmentation.js';
+import {
+  buildDailyTokenAdamsMackayBocpdBayesianOnlineRunLength,
+  type DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthSort,
+} from './dailytokenadamsmackaybocpdbayesianonlinerunlength.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49507,6 +49512,152 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-adams-mackay-bocpd-bayesian-online-runlength')
+  .description(
+    "Per-source ADAMS-MACKAY 2007 BAYESIAN ONLINE CHANGEPOINT DETECTION (BOCPD) on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-SEVENTH cross-source axis). Maintains a recursive posterior p(r_t | x[1..t]) over the latent run-length r_t with constant-hazard prior H = 1/lambda and a Normal-inverse-Gamma UPM (Student-t posterior predictive). Surfaces MAP-detected CPs, peak p(r_t = 0), mean MAP run length, max MAP run length, posterior entropy. ORTHOGONAL to all prior changepoint axes (221-226) by (1) PARADIGM (Bayesian posterior with proper geometric prior on segment count vs frequentist test / point estimator), (2) MODE (online streaming forward recursion vs batch CUSUM / DP / wild-interval / energy-distance scan), (3) UNCERTAINTY SURFACE (calibrated posterior entropy and probability mass on r_t = 0 vs frequentist p-value). Refs: Adams-MacKay 2007 arXiv:0710.3742; Murphy 2007 conjugate Bayesian Gaussian; Fearnhead-Liu 2007 *JRSS B* 69(4):589-605.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--hazard-lambda <l>',
+    'geometric-prior expected segment length lambda (>= 2); H = 1/lambda. Default 100.',
+    '100',
+  )
+  .option(
+    '--upm-kappa <k>',
+    'Normal-inverse-Gamma UPM prior strength on the mean kappa0 (> 0); default 1.0',
+    '1.0',
+  )
+  .option(
+    '--upm-alpha <a>',
+    'Normal-inverse-Gamma UPM prior d.o.f. on the variance alpha0 (> 0); default 1.0',
+    '1.0',
+  )
+  .option(
+    '--only-with-cps',
+    'hide source rows with mChangepoints = 0; default false',
+    false,
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mChangepointsDesc (default) | mChangepoints | cpProbability | cpProbabilityDesc | meanRunLengthMap | meanRunLengthMapDesc | posteriorEntropy | posteriorEntropyDesc | tokens | tenure | source.',
+    'mChangepointsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        hazardLambda: string;
+        upmKappa: string;
+        upmAlpha: string;
+        onlyWithCps?: boolean;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const hazardLambda = Number.parseFloat(opts.hazardLambda);
+        if (!Number.isFinite(hazardLambda) || hazardLambda < 2) {
+          throw new Error(`--hazard-lambda must be >= 2 (got ${opts.hazardLambda})`);
+        }
+        const upmKappa = Number.parseFloat(opts.upmKappa);
+        if (!Number.isFinite(upmKappa) || !(upmKappa > 0)) {
+          throw new Error(`--upm-kappa must be > 0 (got ${opts.upmKappa})`);
+        }
+        const upmAlpha = Number.parseFloat(opts.upmAlpha);
+        if (!Number.isFinite(upmAlpha) || !(upmAlpha > 0)) {
+          throw new Error(`--upm-alpha must be > 0 (got ${opts.upmAlpha})`);
+        }
+        const validSorts = [
+          'mChangepoints',
+          'mChangepointsDesc',
+          'cpProbability',
+          'cpProbabilityDesc',
+          'meanRunLengthMap',
+          'meanRunLengthMapDesc',
+          'posteriorEntropy',
+          'posteriorEntropyDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenAdamsMackayBocpdBayesianOnlineRunLength(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          hazardLambda,
+          upmKappa,
+          upmAlpha,
+          onlyWithCps: opts.onlyWithCps === true,
+          sort: opts.sort as DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength(report) + '\n',
           );
         }
       } catch (e) {
