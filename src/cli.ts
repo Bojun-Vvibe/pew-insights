@@ -230,6 +230,7 @@ import {
   renderDailyTokenLombardSmoothChangepoint,
   renderDailyTokenInclanTiaoIcssVarianceChangepoint,
   renderDailyTokenKillickPeltVarianceSegmentation,
+  renderDailyTokenFryzlewiczWbsMeanSegmentation,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -806,6 +807,10 @@ import {
   buildDailyTokenKillickPeltVarianceSegmentation,
   type DailyTokenKillickPeltVarianceSegmentationSort,
 } from './dailytokenkillickpeltvariancesegmentation.js';
+import {
+  buildDailyTokenFryzlewiczWbsMeanSegmentation,
+  type DailyTokenFryzlewiczWbsMeanSegmentationSort,
+} from './dailytokenfryzlewiczwbsmeansegmentation.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49234,6 +49239,145 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenKillickPeltVarianceSegmentation(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-fryzlewicz-wbs-mean-segmentation')
+  .description(
+    "Per-source FRYZLEWICZ 2014 WILD BINARY SEGMENTATION (WBS) MULTIPLE-CHANGEPOINT estimator for the MEAN on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-FIFTH cross-source axis). Random sub-intervals {[s_m, e_m)} drawn deterministically (mulberry32 seed); on each, |CUSUM| X[s,e](b) = sqrt(n2/(L*n1))*sum_{i<b} - sqrt(n1/(L*n2))*sum_{i>=b} is maximised; the largest |CUSUM| over wild intervals SUBSET of the current segment is accepted iff > zeta_n = c_zeta*sqrt(2*sigma^2*log n) with sigma estimated by MAD-of-first-differences / sqrt(2). Recurse on the two sub-segments. ORTHOGONAL to axis-223 ICSS / axis-224 PELT by (1) MOMENT (mean vs variance), (2) CARDINALITY for ICSS (multiple vs single), (3) ALGORITHM (randomised wild-interval CUSUM aggregation vs deterministic argmax / DP). Refs: Fryzlewicz 2014 *AnnStat* 42:2243-2281; Vostrikova 1981; Yao 1988; Cho-Fryzlewicz 2015 *JRSS-B* 77:475-507.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--c-zeta <c>',
+    'WBS threshold scale c_zeta in zeta_n = c_zeta*sqrt(2*sigma^2*log n); default 1.0.',
+    '1.0',
+  )
+  .option(
+    '--m <n>',
+    'number of wild sub-intervals to draw; default 200.',
+    '200',
+  )
+  .option(
+    '--seed <n>',
+    'mulberry32 PRNG seed for wild interval draws (deterministic); default 12648430 (0xC0FFEE).',
+    '12648430',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mChangepointsDesc (default) | mChangepoints | maxAbsCusum | maxAbsCusumDesc | meanRangeRatio | meanRangeRatioDesc | meanHomogeneity | meanHomogeneityDesc | tokens | tenure | source.',
+    'mChangepointsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        cZeta: string;
+        m: string;
+        seed: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const cZeta = Number.parseFloat(opts.cZeta);
+        if (!Number.isFinite(cZeta) || cZeta <= 0) {
+          throw new Error(`--c-zeta must be > 0 (got ${opts.cZeta})`);
+        }
+        const M = Number.parseInt(opts.m, 10);
+        if (!Number.isInteger(M) || M <= 0) {
+          throw new Error(`--m must be a positive integer (got ${opts.m})`);
+        }
+        const seed = Number.parseInt(opts.seed, 10);
+        if (!Number.isInteger(seed)) {
+          throw new Error(`--seed must be an integer (got ${opts.seed})`);
+        }
+        const validSorts = [
+          'mChangepoints',
+          'mChangepointsDesc',
+          'maxAbsCusum',
+          'maxAbsCusumDesc',
+          'meanRangeRatio',
+          'meanRangeRatioDesc',
+          'meanHomogeneity',
+          'meanHomogeneityDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenFryzlewiczWbsMeanSegmentation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          cZeta,
+          M,
+          seed,
+          sort: opts.sort as DailyTokenFryzlewiczWbsMeanSegmentationSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenFryzlewiczWbsMeanSegmentation(report) + '\n',
           );
         }
       } catch (e) {

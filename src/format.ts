@@ -20827,6 +20827,7 @@ import type { DailyTokenAlexanderssonSnhtReport } from './dailytokenalexandersso
 import type { DailyTokenLombardSmoothChangepointReport } from './dailytokenlombardsmoothchangepoint.js';
 import type { DailyTokenInclanTiaoIcssVarianceChangepointReport } from './dailytokeninclantiaoicssvariancechangepoint.js';
 import type { DailyTokenKillickPeltVarianceSegmentationReport } from './dailytokenkillickpeltvariancesegmentation.js';
+import type { DailyTokenFryzlewiczWbsMeanSegmentationReport } from './dailytokenfryzlewiczwbsmeansegmentation.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30975,6 +30976,85 @@ export function renderDailyTokenKillickPeltVarianceSegmentation(
   lines.push(
     chalk.dim(
       `(reference anchor: m = 0 = NO BIC-significant variance changepoints (single regime); m >= 1 = m optimal changepoints under Schwarz BIC. tauStarDays are the ESTIMATED variance-regime switch days. varRangeRatio = max(varSeg)/min(varSeg) across segments of length >= 3; large = strongly heterogeneous variance regimes. varHomogeneity in (0, 1]: 1 = single variance regime, near 0 = strong heterogeneity. costReduction = baselineCost - F(n) >= 0; large = BIC strongly prefers segmentation. Compare with axis-223 ICSS (single best variance changepoint, Kolmogorov asymptotic): if axis-223 finds significant single CP and PELT finds m=1 at the same day = STRONG SINGLE variance shift; if PELT finds m>=2 = MULTIPLE variance regimes that ICSS cannot resolve.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenFryzlewiczWbsMeanSegmentation(
+  r: DailyTokenFryzlewiczWbsMeanSegmentationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-fryzlewicz-wbs-mean-segmentation"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    cZeta: ${r.cZeta}    M: ${r.M}    seed: ${r.seed}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source FRYZLEWICZ 2014 WILD BINARY SEGMENTATION (WBS) MULTIPLE-CHANGEPOINT estimator for the MEAN on the gap-filled daily token series. Random sub-intervals {[s_m, e_m)} drawn deterministically (mulberry32 seed); on each, |CUSUM| X[s,e](b) = sqrt(n2/(L*n1))*sum_left - sqrt(n1/(L*n2))*sum_right is maximised; the largest |CUSUM| over wild intervals contained in the current segment is accepted iff > zeta_n = c_zeta*sqrt(2*sigma^2*log n) with sigma estimated by MAD-of-first-differences / sqrt(2). Recurse on the two sub-segments. TWO-HUNDRED-AND-TWENTY-FIFTH cross-source axis. ORTHOGONAL to axis-223 ICSS / axis-224 PELT by (1) MOMENT (mean vs variance), (2) CARDINALITY for ICSS (multiple vs single), (3) ALGORITHM (randomised wild-interval CUSUM aggregation vs deterministic argmax / DP). Refs: Fryzlewicz 2014 *AnnStat* 42:2243-2281; Vostrikova 1981; Yao 1988; Cho-Fryzlewicz 2015 *JRSS-B* 77:475-507.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source WBS mean-shift segmentation (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "m",
+    "tauStarDays",
+    "maxAbsCusum",
+    "threshold",
+    "meanRangeRatio",
+    "meanHomogeneity",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.mChangepoints}`,
+    s.tauStarDays.length === 0 ? "-" : s.tauStarDays.join(","),
+    s.maxAbsCusum.toFixed(2),
+    s.threshold.toFixed(2),
+    Number.isFinite(s.meanRangeRatio) ? s.meanRangeRatio.toFixed(3) : `${s.meanRangeRatio}`,
+    s.meanHomogeneity.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: m = 0 = no WBS-significant MEAN changepoints (single mean regime); m >= 1 = m accepted changepoints under the c_zeta*sqrt(2*sigma^2*log n) threshold. tauStarDays are the ESTIMATED mean-shift days. maxAbsCusum > threshold indicates strength of the strongest accepted shift. meanRangeRatio = max(meanSeg)/min(meanSeg) across segments of length >= 3; large = strongly heterogeneous mean regimes. meanHomogeneity in (0, 1]: 1 = single mean regime, near 0 = strong heterogeneity. Compare with axis-224 PELT (multiple variance regimes): if both fire = compound MEAN+VARIANCE regime change; if only WBS fires = pure mean shift; if only PELT fires = variance-only shift.)`,
     ),
   );
 

@@ -2,6 +2,100 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.567 — 2026-05-06
+
+### Added — axis-225 FRYZLEWICZ 2014 WILD BINARY SEGMENTATION (WBS) MEAN-CHANGEPOINT ESTIMATOR
+
+Pure-library and CLI per-source FRYZLEWICZ 2014 WILD BINARY
+SEGMENTATION (WBS) MULTIPLE-CHANGEPOINT estimator for the MEAN of
+the gap-filled daily total_tokens series (`mChangepoints`,
+`tauStar`, `tauStarDays`, `maxAbsCusum`, `meanRangeRatio`,
+`meanShiftSpread`, `meanHomogeneity`, `sigmaHat`, `threshold`).
+
+TWO-HUNDRED-AND-TWENTY-FIFTH cross-source axis.
+
+Mechanism. Random sub-intervals {[s_m, e_m)} drawn deterministically
+from a built-in mulberry32 PRNG (default seed 0xC0FFEE, default M =
+200). On each, the CUSUM statistic
+
+    X[s,e](b) = sqrt(n2/(L*n1))*sum_{i=s..b-1} x[i]
+              - sqrt(n1/(L*n2))*sum_{i=b..e-1} x[i]
+
+is maximised over interior splits b. The largest |CUSUM| over wild
+intervals SUBSET of the current segment is accepted iff > zeta_n =
+c_zeta * sqrt(2 * sigma^2 * log n), with sigma estimated by MAD-of-
+first-differences / sqrt(2). Recurse on the two sub-segments. The
+full interval [0, n) is always included so WBS strictly dominates
+standard binary segmentation.
+
+Structural orthogonality. Of the prior 224 axes, NONE is a multiple-
+changepoint estimator for the mean via random-interval CUSUM
+aggregation:
+
+  1. MOMENT TARGETED. WBS targets the FIRST MOMENT (mean), distinct
+     from axis-223 ICSS (single-CP variance) and axis-224 PELT
+     (multiple-CP variance).
+  2. CARDINALITY (vs single-CP neighbours 221-223). WBS is multiple-
+     CP; axis-221 ALEXANDERSSON-PETTITT and axis-222 LOMBARD are
+     single-CP estimators.
+  3. ALGORITHMIC FAMILY. WBS is RANDOMISED RECURSIVE CUSUM
+     AGGREGATION over wild sub-intervals -- distinct from PELT
+     (deterministic DP), ICSS (closed-form argmax), Pettitt /
+     Alexandersson (deterministic full-window argmax) and Lombard
+     (rank-CUSUM with smoothing kernel). Determinism is preserved
+     via seedable mulberry32.
+
+Live-smoke against real `~/.config/pew/queue.jsonl` (2916 rows,
+6 sources, 4 dropped below 21-day tenure floor). Source names other
+than `claude-code` redacted to `<source-1>` for policy compliance:
+
+```
+$ pew-insights daily-token-fryzlewicz-wbs-mean-segmentation
+pew-insights daily-token-fryzlewicz-wbs-mean-segmentation
+as of: 2026-05-06   sources: 6 (shown 2)   tokens: 3,444,271,515
+min-tokens: 1,000   min-tenure-days: 21   cZeta: 1   M: 200
+seed: 12648430   top: -   sort: mChangepointsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+0 below min-tokens, 4 below min-tenure-days, 0 zero-variance,
+0 non-finite-fit, 0 below top cap
+
+per-source WBS mean-shift segmentation (sorted by mChangepointsDesc;
+ties: source asc)
+
+source       firstDay    lastDay     tenure  m   maxAbsCusum     threshold     meanRangeRatio  meanHomogeneity  tokens
+-----------  ----------  ----------  ------  --  --------------  ------------  --------------  ---------------  -------------
+claude-code  2026-02-11  2026-04-23  72      11  1085414406.10   9374975.41    991.665         0.0052           3,442,385,788
+<source-1>   2025-07-30  2026-04-20  265     5   176223.01       83641.76      31.955          0.2109           1,885,727
+
+claude-code tauStarDays:
+  2026-03-04, 2026-03-17, 2026-03-19, 2026-03-23, 2026-03-27,
+  2026-04-01, 2026-04-04, 2026-04-09, 2026-04-15, 2026-04-18,
+  2026-04-21
+<source-1> tauStarDays:
+  2025-10-13, 2025-10-17, 2026-03-05, 2026-03-19, 2026-04-16
+```
+
+Two surviving sources, both clearly non-stationary in mean.
+`claude-code` (72-day tenure, 3.44 B tokens) yields m = 11 mean
+shifts with maxAbsCusum = 1.085e9 vastly exceeding threshold
+9.37e6 (>100x). Mean-range ratio 991.665 -- nearly three orders of
+magnitude between the smallest and largest segment means -- and
+meanHomogeneity = 0.0052 confirm strongly heterogeneous mean
+regimes. `<source-1>` (265-day tenure, 1.89 M tokens) yields a
+quieter m = 5 with maxAbsCusum = 1.76e5 vs threshold 8.36e4 (~2x),
+mean-range ratio 31.955, meanHomogeneity = 0.2109 -- moderate
+heterogeneity. WBS detects multiple distinct mean regimes that
+neither single-CP axes 221-223 nor variance-only PELT (axis-224)
+can resolve.
+
+Tests: 16135 -> 16165 (+30). v0.6.566 -> v0.6.567.
+
+Refs: Fryzlewicz 2014 *Annals of Statistics* 42(6):2243-2281;
+Vostrikova 1981 *Doklady Mathematics* 24:55-59 (binary segmentation
+ancestor); Yao 1988 *Statistics & Probability Letters* 6:181-189;
+Cho-Fryzlewicz 2015 *JRSS-B* 77:475-507 (sBIC-style penalty
+calibration).
+
 ## 0.6.566 — 2026-05-06
 
 ### Refined — axis-224 x axis-223 compound invariant coverage
