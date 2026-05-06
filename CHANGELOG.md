@@ -3,6 +3,130 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.580 — 2026-05-06
+
+### Added — axis-234 Liu-Yamada-Sugiyama RuLSIF relative density-ratio changepoint
+
+`buildDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint`:
+per-source LIU-YAMADA-COLLIER-SUGIYAMA 2013 RuLSIF
+(Relative unconstrained Least-Squares Importance Fitting)
+relative density-ratio changepoint detector applied
+retrospectively to the gap-filled daily total_tokens series.
+
+Mechanism (Liu, Yamada, Collier & Sugiyama 2013
+*Neural Networks* 43:72-83; Yamada, Suzuki, Kanamori,
+Hachiya & Sugiyama 2013 *Neural Computation* 25:1324-1370).
+
+For each split `t in [w, N-w]` form two equal-length
+adjacent windows of size `w`. Pick `B` Gaussian kernel
+centres at equally-spaced quantiles of the post-window;
+choose bandwidth `sigmaKernel` via the median pairwise
+distance heuristic (Garreau-Jitkrittum-Kanagawa 2018).
+Build basis matrices `Phi_pre`, `Phi_post` of shape `w x B`
+with `K(x,c) = exp(-(x-c)^2 / (2 sigmaKernel^2))`, then solve
+
+```
+H = (alpha/w) Phi_post^T Phi_post +
+    ((1-alpha)/w) Phi_pre^T Phi_pre + lambda I_B
+h = (1/w) Phi_post^T 1
+theta = H^{-1} h          (closed-form Cholesky)
+peStar = -0.5 theta^T (H - lambda I) theta + theta^T h - 0.5
+```
+
+The symmetric statistic
+
+```
+S(t) = 0.5 * ( peStar(post||pre) + peStar(pre||post) )
+```
+
+is the change-point score at `t`. Argmax over `t` is
+tauStar; local maxima of `S` above `thresholdScale * median(S)`
+and at least `w` apart are emitted as multiple changepoints
+(greedy descending-magnitude pick).
+
+Defaults: `windowFrac=0.18`, `alpha=0.10`, `basisCount=8`,
+`lambdaRidge=0.01`, `thresholdScale=3.0`. The verdict
+ladder is `peakRatio<1.5=no-shift`, `<3.0=borderline`,
+`<6.0=shift`, otherwise `strong-shift`.
+
+CLI subcommand:
+
+```
+pew-insights daily-token-liu-yamada-sugiyama-rulsif-density-ratio-changepoint
+```
+
+### Live-smoke output (against `~/.config/pew/queue.jsonl`, 2,961 rows)
+
+```
+pew-insights daily-token-liu-yamada-sugiyama-rulsif-density-ratio-changepoint
+as of: 2026-05-06T10:37:45.084Z    sources: 6 (shown 2)    tokens: 3,444,271,515
+  min-tokens: 1,000    min-tenure-days: 21    windowFrac: 0.18    alpha: 0.1
+  basisCount: 8    lambdaRidge: 0.01    thresholdScale: 3    top: —    sort: peakRatioDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+  0 below min-tokens, 4 below min-tenure-days, 0 zero-variance,
+  0 non-finite-fit, 0 below top cap
+
+per-source RuLSIF symmetric Pearson alpha-divergence scan
+(sorted by peakRatioDesc; ties: source asc)
+
+source          firstDay    lastDay     tenure  w   argmaxDay   peStarMax  peStarMedian  peakRatio  mCPs  tauStarDays            verdict       tokens
+vscode-copilot  2025-07-30  2026-04-20  265     47  2025-10-21  0.37567    0.01527       24.598     2     2025-10-21,2026-02-07  strong-shift  1,885,727
+claude-code     2026-02-11  2026-04-23  72      12  2026-03-23  2.35489    0.44081       5.342      1     2026-03-23             shift         3,442,385,788
+```
+
+Two of six sources surfaced rows (other four dropped under
+the 21-day tenure floor). The dominant real-data finding:
+**vscode-copilot** registers `peakRatio ~ 24.6` (`strong-shift`)
+with two well-separated CPs at `2025-10-21` and
+`2026-02-07`, both surviving the `w=47`-day spacing rule.
+**claude-code** sits at `peakRatio ~ 5.34` (`shift`) with a
+single CP at `2026-03-23`. Cross-axis comparison vs
+axis-233 MOSUM (which placed claude-code's `argmaxDay` at
+`2026-04-14`) and axis-232 Page-Hinkley confirms that RuLSIF
+detects an EARLIER and DISTINCT changepoint at `2026-03-23`
+— this is structurally expected because RuLSIF responds to
+density-ratio shifts (FULL distribution change) whereas
+MOSUM/PH respond to mean shifts (FIRST MOMENT only). The
+density-ratio detector is sensitive to changes in
+variance, skewness, and tail mass that mean-based detectors
+cannot see; the earlier `2026-03-23` CP corresponds to a
+distributional broadening that did not yet manifest as a
+mean shift large enough to trigger MOSUM Algorithm A.
+
+### Structural orthogonality
+
+Five-dimensional orthogonality vs prior axes 153, 221-233:
+
+1. **ESTIMATED FUNCTIONAL OBJECT** is a density RATIO
+   `p_post / p_pre` (alpha-relativised). All prior axes
+   estimate either moments (153, 221, 222, 223, 224, 232, 233),
+   CDFs (153 Brownian-bridge, 221 SNHT, 222 Lombard,
+   231 Inoue empirical-copula), posteriors (227 BOCPD),
+   spectra (229 Picard-Aue), subspaces (228 SSA),
+   kernel mean-embeddings (230 NEWMA), pairwise energies
+   (226 Matteson-James ECP), or DP costs (224 PELT, 225 WBS).
+2. **ALPHA-RELATIVISATION** bounds `r_alpha` by `1/alpha`,
+   giving finite second moments under heavy tails. No
+   prior axis applies any such relativisation.
+3. **KERNEL BASIS WITH ANALYTICAL CHOLESKY SOLVE.** The
+   only axis that solves a `B x B` SPD linear system in
+   a kernel basis. Axis-230 NEWMA uses a streaming EWMA
+   in RKHS; axis-226 ECP uses pairwise energies; neither
+   solves a system.
+4. **SYMMETRISED PEARSON ALPHA-DIVERGENCE** (eq. 5):
+   `0.5 * (PE_alpha(p||q) + PE_alpha(q||p))`. No prior
+   axis averages two directional divergences; axis-226
+   ECP uses an inherently symmetric energy distance, not
+   a symmetrised pair.
+5. **ROBUST MEDIAN-NORMALISED PEAKRATIO** calibrated
+   INTERNALLY over the scan itself. Axes 232/233 use
+   robust scales but those are EXTERNAL (MAD on first
+   differences); RuLSIF's median is taken OVER the score
+   trace, giving an adaptive null floor that automatically
+   tracks the chosen window/kernel/lambda.
+
+Tests: 57 new (16,575 → 16,632).
+
 ## 0.6.579 — 2026-05-06
 
 ### Added — axis-233 Eichinger-Kirch MOSUM symmetric two-sample mean-shift changepoint
