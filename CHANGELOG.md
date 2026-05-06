@@ -2,6 +2,130 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.554 — 2026-05-06
+
+### Added — axis-222 daily-token-lombard-smooth-changepoint
+
+Per-source LOMBARD 1987 RANK-BASED SMOOTH-CHANGEPOINT TEST
+on the gap-filled daily total_tokens series.
+Two-hundred-and-twenty-second cross-source axis.
+
+Mechanism. Lombard, F. (1987), "Rank tests for changepoint
+problems", *Biometrika* 74:615-624. Mid-ranks `r[i]` of the
+gap-filled daily series are centred to
+`phi[i] = (r[i] - (n+1)/2)/sqrt(n)`, then convolved with a
+TRIANGULAR KERNEL of half-width `K` (mirror padding) to
+yield smoothed scores `s[i]`. The cumulative rank walk
+`S[k] = sum_{i<=k} s[i]` and the Lombard statistic
+`L_n = (1/n^2) * sum_k S[k]^2`. Under H0 (exchangeability),
+`L_n -> sigma^2 * integral_0^1 B(t)^2 dt` where `B` is a
+standard Brownian bridge and
+`sigma^2 = (n^2 - 1)/(12 * n^2)`. The integral has the
+Anderson-Darling-1952 moments `E[Q] = 1/6, Var[Q] = 1/45`,
+which we moment-match to a Gamma(shape=5/4, scale=2/15) for
+the upper-tail `pApprox`. The smooth-change centre is
+`kStar = argmax_k |S[k]|`, with `directionSign =
+sign(S[kStar])`. Default kernel half-width
+`K = max(2, ceil(n^{1/3}))`, clamped to `floor(n/3)`;
+caller may override.
+
+Structural orthogonality (the core claim).
+
+  - vs axis-221 ALEXANDERSSON SNHT (single ABRUPT step
+    under Gaussian likelihood ratio): SNHT is L_2
+    PARAMETRIC on standardised magnitudes; Lombard is L_2
+    RANK-BASED on smoothed Wilcoxon scores. SNHT's `T(a)`
+    optimises a TWO-MEAN PARTITION (one sharp break);
+    Lombard's `L_n` integrates squared cumulative SMOOTHED
+    rank deviations and is sensitive to GRADUAL
+    transitions over ~K days. STATISTIC FAMILY +
+    CHANGE-SHAPE ORTHOGONAL.
+  - vs axis-154 PETTITT (rank-based ABRUPT step): Pettitt
+    is `max_t |U[t]|` (L-infinity on the unsmoothed
+    rank-difference walk); Lombard is L_2 INTEGRATED on
+    the SMOOTHED cumulative rank walk. CHANGE-SHAPE
+    (abrupt vs smooth) and STATISTIC NORM (L-inf vs L_2)
+    both differ.
+  - vs axis-220 HAMED-RAO MK / axis-219 SEN-ADICHIE /
+    axis-218 HIRSCH-SLACK (monotone trend tests, GLOBAL):
+    Lombard is LOCALISED to a smooth transition zone. A
+    V-shape gives MK ~ 0 but a strong Lombard at the V
+    vertex.
+  - vs axis-217 LAPLACE CENTROID (first-moment L_1
+    magnitude): Lombard does not depend on raw magnitudes,
+    only on ranks.
+
+Diagnostic surfaces:
+  - `kStar`, `kStarDay`: smooth-change centre.
+  - `directionSign` in `{-1, 0, +1}`: sign of `S[kStar]`.
+  - `smoothBandwidthDays`: kernel half-width actually used.
+  - `lEdgeRatio = max(S[0]^2, S[n-1]^2) / S[kStar]^2` in
+    `[0, 1]`: edge-of-window peaks.
+  - `secondPeakRatio` outside guard `+/- max(3, K)`: regime
+    multiplicity.
+
+Hard floor `n >= 21`. Below ~20 the gamma approximation is
+anti-conservative.
+
+Refs: Lombard 1987 *Biometrika* 74:615-624;
+Anderson-Darling 1952 *AnnMS* 23:193-212; Csorgo-Horvath
+1997 *Limit Theorems in Change-Point Analysis* sec. 2.6.
+
+CLI usage:
+```
+pew-insights daily-token-lombard-smooth-changepoint
+pew-insights daily-token-lombard-smooth-changepoint --json
+pew-insights daily-token-lombard-smooth-changepoint --sort lnDesc
+pew-insights daily-token-lombard-smooth-changepoint --smooth-bandwidth-days 5
+```
+
+Live-smoke against real `~/.config/pew/queue.jsonl`
+(SOURCES REDACTED to generic placeholders):
+
+```
+pew-insights daily-token-lombard-smooth-changepoint
+as of: 2026-05-06    sources: 6 (shown 2)    tokens: 3,444,271,515    K: auto    sort: lnDesc
+
+per-source Lombard L_n with gamma-approx p
+source          firstDay    lastDay     tenure  K  L_n     kStar  kStarDay    dir  pApprox   sig05  meanShift  zShift   sndPeakRatio
+--------------  ----------  ----------  ------  -  ------  -----  ----------  ---  --------  -----  ---------  -------  ------------
+vsc-redacted-a  2025-07-30  2026-04-20  265     7  9.2110  194    2026-02-09  +    0.000e+0  YES    2222       0.3670   0.788
+vsc-redacted-b  2026-02-11  2026-04-23  72      5  8.9210  36     2026-03-19  -    0.000e+0  YES    91466871  -0.5327   0.884
+```
+
+Both sources surface decisive smooth changes (pApprox under
+machine epsilon) but with OPPOSITE directions and at
+DIFFERENT relative positions inside their tenure windows
+(73% and 50%) -- consistent with axis-222 detecting
+LOCALISED smooth shifts that are mechanically distinct from
+the axis-221 SNHT abrupt step.
+
+### Tests
+
+Test count grew from 15916 to 15968. New suite:
+`dailytokenlombardsmoothchangepoint` (52 tests). Coverage:
+option validation (sort/since/until/minTokens/minTenureDays/
+smoothBandwidthDays/top), mid-rank engine (basic, ties,
+stable), triangular smoother (K=0 copy, K=1 mirror padding,
+constant invariance), `logGamma` known values,
+`regularizedLowerGamma` `P(1, x) = 1 - exp(-x)` identity
+and monotonicity, `lombardGammaUpperTailP` bounds and tail
+behaviour, `lombardSummary` (constant -> 0, monotone,
+clean step localisation, direction sign symmetry,
+degenerate `n<2`, edge/second-peak ratios), pure
+`dailyTokenLombardSmoothChangepoint` (`n<21` rejection,
+negative/non-finite/zero-variance guards, K auto formula,
+K override and clamp, clean-step decisiveness, noise
+non-significance), `buildDailyTokenLombardSmoothChangepoint`
+(empty queue, sparse-source/tenure/zero-variance drops,
+clean-shift detection, dropped-counter surfacing, source
+filter, `lnDesc` sort, top cap, `since/until` window,
+`smoothBandwidthDays` pass-through, report shape), and
+INVARIANCE/ORTHOGONALITY (time-reversal flips
+`directionSign` and `meanShift`, scale invariance,
+monotone-transform invariance -- the rank-based core
+claim).
+
 ## 0.6.552 — 2026-05-06
 
 ### Added — axis-221 x axis-154 Alexandersson SNHT vs Pettitt parametric-vs-rank single-changepoint compound

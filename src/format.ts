@@ -20824,6 +20824,7 @@ import type { DailyTokenHirschSlackSeasonalKendallReport } from './dailytokenhir
 import type { DailyTokenSenAdichieAlignedRankTrendReport } from './dailytokensenadichiealignedranktrend.js';
 import type { DailyTokenHamedRaoMannKendallCorrectedReport } from './dailytokenhamedraomannkendallcorrected.js';
 import type { DailyTokenAlexanderssonSnhtReport } from './dailytokenalexanderssonsnht.js';
+import type { DailyTokenLombardSmoothChangepointReport } from './dailytokenlombardsmoothchangepoint.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30722,4 +30723,92 @@ export function renderDailyTokenSenAdichieAlignedRankTrend(
   );
 
   return lines.join('\n').replace(/\n+$/, '');
+}
+
+
+export function renderDailyTokenLombardSmoothChangepoint(
+  r: DailyTokenLombardSmoothChangepointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-lombard-smooth-changepoint"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    K: ${r.smoothBandwidthDays === null ? "auto" : r.smoothBandwidthDays}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LOMBARD 1987 RANK-BASED SMOOTH-CHANGEPOINT TEST on the gap-filled daily token series. Mid-ranks r[i] -> centred phi[i] = (r[i] - (n+1)/2)/sqrt(n); triangular-kernel smoothed scores s[i] of half-width K with mirror-padding; cumulative S[k] = sum_{i<=k} s[i]; statistic L_n = (1/n^2) * sum S[k]^2. Under H0, L_n -> sigma^2 * integral B(t)^2 dt (squared Brownian-bridge integral, Anderson-Darling-like null) with sigma^2 = (n^2-1)/(12*n^2). pApprox via moment-matched gamma upper tail: shape k_g = 5/4, scale theta_g = 2/15. kStar = argmax |S[k]| (smooth-change centre); directionSign = sign(S[kStar]). TWO-HUNDRED-AND-TWENTY-SECOND cross-source axis. STRUCTURALLY DISTINCT from axis-221 Alexandersson SNHT (PARAMETRIC L-2 likelihood ratio for an ABRUPT step under Gaussian noise -- Lombard is RANK-BASED L-2 INTEGRATED for a SMOOTH change), axis-154 Pettitt (L-INFINITY rank-walk for an abrupt step -- Lombard is L-2 INTEGRATED on the SMOOTHED rank-walk), axis-220 Hamed-Rao MK / axis-219 Sen-Adichie / axis-218 Hirsch-Slack (monotone trend tests, GLOBAL not localised), axis-217 Laplace centroid (first-moment L-1 magnitude). Detects a SINGLE smooth change; pair secondPeakRatio close to 1 with re-run on each segment. Refs: Lombard 1987 *Biometrika* 74:615-624; Anderson-Darling 1952 *AnnMS* 23:193-212; Csorgo-Horvath 1997 *Limit Theorems in Change-Point Analysis* sec. 2.6.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Lombard L_n with gamma-approx p (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "K",
+    "L_n",
+    "kStar",
+    "kStarDay",
+    "dir",
+    "pApprox",
+    "sig05",
+    "meanShift",
+    "zShift",
+    "sndPeakRatio",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.smoothBandwidthDays}`,
+    s.ln.toFixed(4),
+    `${s.kStar}`,
+    s.kStarDay ?? "-",
+    s.directionSign > 0 ? "+" : s.directionSign < 0 ? "-" : "0",
+    s.pApprox.toExponential(3),
+    s.significant05 ? "YES" : "no",
+    s.meanShift.toFixed(0),
+    s.zShift.toFixed(4),
+    s.secondPeakRatio.toFixed(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: pApprox < 0.05 = STATISTICALLY SIGNIFICANT smooth (non-abrupt) change in location at alpha = 0.05; the smooth-change CENTRE is on day kStarDay (where the cumulative smoothed-rank deviation peaks). directionSign = sign(S[kStar]): + = upward smooth shift after kStarDay, - = downward. K is the triangular-kernel half-width actually used (auto = max(2, ceil(n^{1/3}))). zShift = S[kStar]/n is on the rank scale (mean smoothed deviation up to kStar, comparable across sources). lEdgeRatio close to 1 = peak near the series edge (caveat); secondPeakRatio close to 1 = a SECOND nearly-equal smooth-change candidate (regime multiplicity, peel off iteratively). Compare against axis-221 Alexandersson SNHT for the parametric ABRUPT-step dual; against axis-154 Pettitt for the rank-based abrupt-step dual; against axis-220 Hamed-Rao MK for monotone trend.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
 }

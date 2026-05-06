@@ -227,6 +227,7 @@ import {
   renderDailyTokenSenAdichieAlignedRankTrend,
   renderDailyTokenHamedRaoMannKendallCorrected,
   renderDailyTokenAlexanderssonSnht,
+  renderDailyTokenLombardSmoothChangepoint,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -791,6 +792,10 @@ import {
   buildDailyTokenAlexanderssonSnht,
   type DailyTokenAlexanderssonSnhtSort,
 } from './dailytokenalexanderssonsnht.js';
+import {
+  buildDailyTokenLombardSmoothChangepoint,
+  type DailyTokenLombardSmoothChangepointSort,
+} from './dailytokenlombardsmoothchangepoint.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48859,6 +48864,130 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenAlexanderssonSnht(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-lombard-smooth-changepoint')
+  .description(
+    "Per-source LOMBARD 1987 RANK-BASED SMOOTH-CHANGEPOINT TEST on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-SECOND cross-source axis). Mid-ranks r[i] -> centred phi[i] = (r[i] - (n+1)/2)/sqrt(n); triangular-kernel smoothed scores s[i] of half-width K with mirror padding; cumulative S[k] = sum_{i<=k} s[i]; statistic L_n = (1/n^2) * sum S[k]^2. Under H0, L_n -> sigma^2 * integral B(t)^2 dt (squared Brownian-bridge integral) with sigma^2 = (n^2-1)/(12*n^2). pApprox via moment-matched gamma upper tail (Anderson-Darling 1952 moments E[Q]=1/6, Var[Q]=1/45 -> shape 5/4, scale 2/15). kStar = argmax |S[k]| smooth-change centre. STRUCTURALLY DISTINCT from axis-221 Alexandersson SNHT (parametric L_2 likelihood-ratio for an ABRUPT step, Lombard is RANK-based L_2 INTEGRATED for a SMOOTH change), axis-154 Pettitt (L-infinity rank-walk for an abrupt step -- Lombard is L_2 integrated on the SMOOTHED rank-walk), axis-220 Hamed-Rao MK / axis-219 Sen-Adichie / axis-218 Hirsch-Slack (monotone trend tests, GLOBAL not localised). Refs: Lombard 1987 *Biometrika* 74:615-624; Anderson-Darling 1952 *AnnMS* 23:193-212; Csorgo-Horvath 1997 sec. 2.6.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--smooth-bandwidth-days <K>',
+    'triangular-kernel half-width K (integer >= 1, clamped to floor(n/3)). Default = max(2, ceil(n^{1/3})).',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: lnDesc (default) | ln | pApprox | pApproxDesc | absShift | absShiftDesc | kStar | kStarDesc | secondPeakRatio | secondPeakRatioDesc | tokens | tenure | source.',
+    'lnDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        smoothBandwidthDays?: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        let smoothBandwidthDays: number | null = null;
+        if (opts.smoothBandwidthDays !== undefined) {
+          const k = Number.parseInt(opts.smoothBandwidthDays, 10);
+          if (!Number.isInteger(k) || k < 1) {
+            throw new Error(
+              `--smooth-bandwidth-days must be an integer >= 1 (got ${opts.smoothBandwidthDays})`,
+            );
+          }
+          smoothBandwidthDays = k;
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'ln',
+          'lnDesc',
+          'pApprox',
+          'pApproxDesc',
+          'kStar',
+          'kStarDesc',
+          'absShift',
+          'absShiftDesc',
+          'secondPeakRatio',
+          'secondPeakRatioDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLombardSmoothChangepoint(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          smoothBandwidthDays,
+          top,
+          sort: opts.sort as DailyTokenLombardSmoothChangepointSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLombardSmoothChangepoint(report) + '\n',
           );
         }
       } catch (e) {
