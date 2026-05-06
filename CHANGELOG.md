@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.566 — 2026-05-06
+
+### Refined — axis-224 x axis-223 compound invariant coverage
+
+Additional invariant test coverage for the axis-224 x axis-223
+PELT-vs-ICSS compound classifier: bothDecisiveMultiRegime +
+bothDecisiveSingleRegime = bothDecisive partition; jointAlignment
+is null iff at least one axis is non-decisive; aligned + misaligned
++ anyMissingDecisive = rows.length; argmaxDistance <= proximityGuard
+for every agree-aligned row and > proximityGuard for every agree-
+misaligned row; proximityGuard = 0 forces exact-match alignment.
+
+Tests: 16130 -> 16135 (+5). v0.6.565 -> v0.6.566.
+
 ## 0.6.565 — 2026-05-06
 
 ### Refined — axis-224 PELT invariant coverage

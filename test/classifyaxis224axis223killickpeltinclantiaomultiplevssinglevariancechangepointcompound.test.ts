@@ -236,3 +236,82 @@ test('axis224x223: summarize produces deterministic non-empty string', () => {
   assert.ok(s.includes('axis-224xaxis-223'));
   assert.ok(s.includes('buckets'));
 });
+
+// ---- additional invariants ---------------------------------------------
+
+test('axis224x223: bothDecisiveMultiRegime + bothDecisiveSingleRegime = bothDecisive', () => {
+  const icss = [
+    ic('a', 2, 0.001, 5),
+    ic('b', 2, 0.001, 5),
+    ic('c', 0.5, 0.9, 5),
+    ic('d', 2, 0.001, 5),
+  ];
+  const pelt = [
+    pe('a', 2, [5, 20]), // both decisive, multi
+    pe('b', 1, [5]), // both decisive, single
+    pe('c', 1, [5]), // pelt-only
+    pe('d', 0, []), // icss-only
+  ];
+  const r = classify(icss, pelt);
+  assert.equal(
+    r.bothDecisiveMultiRegime + r.bothDecisiveSingleRegime,
+    r.bothDecisive,
+  );
+});
+
+test('axis224x223: jointAlignment is null iff at least one axis is non-decisive', () => {
+  const icss = [
+    ic('a', 0.5, 0.9, 5), // ne
+    ic('b', 2, 0.001, 5), // pelt-only test (pelt=0): icss-only
+    ic('c', 0.5, 0.9, 5), // pelt-only
+    ic('d', 2, 0.001, 5), // both
+  ];
+  const pelt = [
+    pe('a', 0, []),
+    pe('b', 0, []),
+    pe('c', 1, [5]),
+    pe('d', 1, [6]),
+  ];
+  const r = classify(icss, pelt);
+  for (const row of r.rows) {
+    const bothDecisive = row.icssDecisive && row.peltDecisive;
+    if (bothDecisive) assert.notEqual(row.jointAlignment, null);
+    else assert.equal(row.jointAlignment, null);
+  }
+});
+
+test('axis224x223: aligned + misaligned + anyMissingDecisive = rows.length', () => {
+  const icss = [
+    ic('a', 2, 0.001, 5),
+    ic('b', 0.5, 0.9, 5),
+    ic('c', 2, 0.001, 5),
+  ];
+  const pelt = [pe('a', 1, [5]), pe('b', 1, [5]), pe('c', 0, [])];
+  const r = classify(icss, pelt);
+  const j = r.byJointAlignment;
+  assert.equal(j.aligned + j.misaligned + j.anyMissingDecisive, r.rows.length);
+});
+
+test('axis224x223: argmaxDistance always <= proximityGuard for agree-aligned bucket', () => {
+  const icss = [
+    ic('a', 2, 0.001, 10),
+    ic('b', 2, 0.001, 100),
+  ];
+  const pelt = [pe('a', 1, [13]), pe('b', 1, [50])];
+  const r = classify(icss, pelt, 0.05, 5);
+  for (const row of r.rows) {
+    if (row.bucket === 'agree-aligned') {
+      assert.ok(row.argmaxDistance <= 5);
+    }
+    if (row.bucket === 'agree-misaligned') {
+      assert.ok(row.argmaxDistance > 5);
+    }
+  }
+});
+
+test('axis224x223: proximityGuard=0 forces exact-match alignment', () => {
+  const r = classify([ic('a', 2, 0.001, 10)], [pe('a', 1, [10])], 0.05, 0);
+  assert.equal(r.rows[0]!.bucket, 'agree-aligned');
+  const r2 = classify([ic('b', 2, 0.001, 10)], [pe('b', 1, [11])], 0.05, 0);
+  assert.equal(r2.rows[0]!.bucket, 'agree-misaligned');
+});
