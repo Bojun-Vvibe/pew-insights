@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.573 — 2026-05-06
+
+### Added — axis-228 Moskvina-Zhigljavsky SSA subspace changepoint
+
+Per-source SINGULAR SPECTRUM ANALYSIS (SSA) subspace
+changepoint detector on the gap-filled daily total_tokens
+series. TWO-HUNDRED-AND-TWENTY-EIGHTH cross-source axis.
+SUBSPACE / TRAJECTORY-MATRIX / FROBENIUS.
+
+Mechanism. For each candidate split t, embed a base
+window x[t-N+1..t] and a test window x[t+1..t+M] into
+L x K Hankel trajectory matrices X_base, X_test. Take
+the Jacobi eigendecomposition of the L x L Gram matrix
+G = X_base X_base^T to extract the top-r left singular
+vectors U_r of X_base (the rank-r SIGNAL SUBSPACE). The
+SSA changepoint statistic at t is the Frobenius
+SUBSPACE DISTANCE
+
+  D(t) = || (I - U_r U_r^T) X_test ||_F^2 /
+         || X_test ||_F^2
+
+in [0, 1]: the fraction of test-window trajectory-matrix
+energy ORTHOGONAL to the base subspace. Multiple CPs
+extracted by thresholding (default dThreshold = 0.20)
+plus non-maximum suppression on a +/- L window.
+
+Surfaces per source: m, tauStar/tauStarDays, dMax (max
+single-CP evidence in [0,1]), dMean, dArea (trapezoidal
+integral of D(t)), tauStarBest/tauStarBestDay, windowL,
+baseN, testM, rank.
+
+#### Orthogonality justification (vs prior changepoint axes 221-227)
+
+Of the prior 227 axes NONE is an SSA subspace-projection
+detector on Hankel trajectory matrices. SSA is
+orthogonal along THREE INDEPENDENT dimensions inside
+the changepoint family:
+
+  1. STATE-SPACE GEOMETRY. SSA operates on a DELAY-
+     EMBEDDED Hankel matrix and the test statistic is a
+     SUBSPACE DISTANCE in R^L (Grassmannian geometry).
+     Axes 221-227 operate on raw scalar observations
+     (mean / variance / rank / empirical distribution /
+     NIG predictive).
+  2. DECOMPOSITION FAMILY. SSA uses an SVD (here via
+     Jacobi eigendecomposition of the Gram matrix) to
+     extract a low-rank signal subspace. Axes 221-227
+     use no spectral / matrix decomposition; they are
+     scalar test statistics or conjugate Bayesian
+     recursions.
+  3. WHAT IS DETECTED. SSA fires on any change in the
+     L-LAG DYNAMICS (trend slope, seasonality phase,
+     autoregressive structure, low-rank dimension)
+     since these all alter the column span of the
+     Hankel matrix. Axes 221-227 fire on shifts in
+     first/second moment or full distribution but NOT
+     on subspace-rank changes that preserve moments
+     (e.g. a phase flip of a sinusoid).
+
+Refs: Moskvina & Zhigljavsky 2003 *Comm. Statist.
+Simul. Comput.* 32(2):319-352; Golyandina, Nekrutkin
+& Zhigljavsky 2001 *Analysis of Time Series Structure:
+SSA and Related Techniques*; Hassani 2007 *J. Data
+Sci.* 5(2):239-257.
+
+Library-only (no CLI/format wiring) following the
+recent multiple-changepoint axis convention (axis-224
+through axis-227).
+
+#### Live smoke against `~/.config/pew/queue.jsonl`
+
+```
+totalSources: 6
+keptSources: 2
+droppedBelowMinTenure: 4
+droppedSparseSources: 0
+droppedZeroVariance: 0
+  src=vscode-vsc-redacted  n=265  L=20  m=2  dMax=0.9151  dMean=0.8172  dArea=54.76  best=2026-02-13
+  src=claude-code          n=72   L=20  m=0  dMax=0.0000  dMean=0.0000  dArea=0.00   best=2026-03-18
+```
+
+Tests: 16321 -> 16358 (+37).
+
 ## 0.6.572 — 2026-05-06
 
 ### Added — axis-227 x axis-226 BOCPD-vs-ECP cross-axis compound
