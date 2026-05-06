@@ -2,6 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.578 — 2026-05-06
+
+### Added — axis-232 Page-Hinkley sequential mean-shift CUSUM
+
+`buildDailyTokenPageHinkleyMeanShiftChangepoint`:
+per-source PAGE-HINKLEY 1954 / HINKLEY 1971 SEQUENTIAL
+ONE-SIDED CUSUM mean-shift detector applied retrospectively
+to the gap-filled daily total_tokens series.
+
+Mechanism (Page 1954 *Biometrika* 41:100-115;
+Hinkley 1971 *Biometrika* 58:509-523).
+
+For each direction `dir in {up, down}` and stream {x_t}_{t>=1}
+with running mean `mHat_t = (1/t) sum_{s<=t} x_s`:
+
+```
+e_t  = (x_t - mHat_t - delta)        if dir == 'up'
+       (mHat_t - x_t - delta)        if dir == 'down'
+U_t  = sum_{s<=t} e_s                 (CUSUM)
+m_t  = min_{s<=t} U_s                 (running min)
+PH_t = U_t - m_t                      (Page-Hinkley statistic)
+```
+
+Two-arm batch surface:
+
+```
+phMaxUp   = max_t PH_t (up)
+phMaxDown = max_t PH_t (down)
+phMax     = max(phMaxUp, phMaxDown)
+direction = 'up' if phMaxUp >= phMaxDown else 'down'
+tauStar   = LAST argmin_{s in [0..argmax PH]} U_s
+            (Hinkley 1971 §3 "last reset" rule)
+```
+
+Tolerance and threshold scaled by IQR for scale invariance:
+
+```
+delta  = deltaScale  * IQR(x)         (default 0.005)
+lambda = lambdaScale * IQR(x) * sqrt(N)   (default 1.0)
+peakRatio = phMax / lambda
+```
+
+Verdict ladder on peakRatio (cutoffs surfaced verbatim):
+no-shift <0.5, borderline <1.0, shift <2.0,
+strong-shift otherwise.
+
+### Orthogonality vs axes 181-231
+
+Of the prior 231 cross-source axes NONE is a SEQUENTIAL,
+ARM-SEPARATED, RUNNING-MEAN-DEVIATION CUSUM with a
+self-resetting MIN reference. axis-232 is structurally
+orthogonal along five independent dimensions:
+
+1. **Resetting-min reference.** PH re-zeros at every new
+   minimum of U_t — it tracks the LAST reset of the running
+   mean. Axis-153 CUSUM uses fixed-mean reference; axis-223
+   ICSS is a fixed-window batch test; axes 224-225 PELT/WBS
+   are dynamic-programming segmenters; axis-227 BOCPD is a
+   Bayesian posterior; axis-228 SSA is subspace; axis-229
+   Picard-Aue is frequency-domain; axis-230 Keriven is
+   kernel-mean-embedding; axis-231 Inoue is empirical-copula
+   sup-deviation. None carry a RESETTING reference.
+2. **Arm-separated one-sided test.** PH separately tracks
+   UP and DOWN arms with the dominant arm reported. Axis-153
+   CUSUM-max-deviation reports max(|U_t|); axis-225 WBS
+   reports magnitude only; axis-227 BOCPD reports posterior
+   with no sign. PH is the only signed-arm-decomposed test.
+3. **Running-mean reference.** PH subtracts the RUNNING mean
+   mHat_s — itself a stochastic process — so the new regime
+   smoothly absorbs into the reference. Axis-153 and axis-223
+   subtract the FIXED full-sample mean. Different bias profile
+   under multiple shifts ("detection-deafness" property).
+4. **Tolerance-delta deadband.** PH demands deviation > delta
+   per step. Axes 153, 221-231 detect ANY deviation. PH is
+   robust to slow random-walk drift while remaining sharp to
+   abrupt level shifts.
+5. **Brownian-crossing decision geometry.** PH's decision is
+   a Gauss-Markov / Brownian-motion crossing of a sqrt(N)
+   threshold — distinct from chi-square (Inclan-Tiao),
+   F-ratio (SSA), Schwarz-penalty (PELT), Bayes factor (BOCPD),
+   Kolmogorov (Inoue), Hilbert-Schmidt (Keriven), or
+   sup-deviation (axis-153) geometries.
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 2026-05-06)
+
+Two sources cleared `minTenureDays >= 21`; both flagged
+`strong-shift` with the dominant arm `up` and a clear
+mean-gap signature. Source names redacted to `src-A` /
+`src-B` per repo convention.
+
+```
+sources surveyed:                6
+sources after filters:           2
+totalTokens (kept):              3,444,271,515
+deltaScale: 0.005   lambdaScale: 1.0
+
+src-A (vsc/ide-class):
+  firstDay=2025-07-30 lastDay=2026-04-20 tenure=265
+  direction=up tauStarDay=2025-09-07
+  phMaxUp=629800.11  phMaxDown=587950.33  lambda=19795.05
+  peakRatio=31.8160  meanGap=7287.38  verdict=strong-shift
+  totalTokens=1,885,727
+
+src-B (claude-code):
+  firstDay=2026-02-11 lastDay=2026-04-23 tenure=72
+  direction=up tauStarDay=2026-02-24
+  phMaxUp=2937894924.19  phMaxDown=86177265.49
+  lambda=194121494.31
+  peakRatio=15.1343  meanGap=57611711.44  verdict=strong-shift
+  totalTokens=3,442,385,788
+```
+
+For src-A the change point lands at the start of week 6 of
+the tenure, consistent with a sustained ramp from light /
+intermittent usage to a stable elevated regime. For src-B
+tauStar lands two weeks into a fresh source's tenure,
+indicating the post-onboarding ramp dominates the running
+mean reference.
+
+Cross-axis check vs axis-231 (Inoue empirical-copula
+strong-shift on the same two sources at tauHatDay
+2026-03-17 and 2026-02-12 respectively): axis-232 places
+the src-B onset earlier (2026-02-24 vs 2026-02-12 from
+Inoue) — consistent with PH's resetting-min preferring the
+last-reset of the running mean while Inoue's joint-CDF
+sup-deviation localises the largest copula-mass break.
+The two axes therefore report DIFFERENT changepoint times
+on the same series, demonstrating non-redundancy.
+
 ## 0.6.577 — 2026-05-06
 
 ### Added — axis-231 Inoue empirical-copula sup-deviation changepoint
