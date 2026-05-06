@@ -233,6 +233,7 @@ import {
   renderDailyTokenFryzlewiczWbsMeanSegmentation,
   renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation,
   renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength,
+  renderDailyTokenPageHinkleyMeanShiftChangepoint,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -821,6 +822,10 @@ import {
   buildDailyTokenAdamsMackayBocpdBayesianOnlineRunLength,
   type DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthSort,
 } from './dailytokenadamsmackaybocpdbayesianonlinerunlength.js';
+import {
+  buildDailyTokenPageHinkleyMeanShiftChangepoint,
+  type DailyTokenPageHinkleyMeanShiftChangepointSort,
+} from './dailytokenpagehinkleymeanshiftchangepoint.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49658,6 +49663,138 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-page-hinkley-mean-shift-changepoint')
+  .description(
+    "Per-source PAGE-HINKLEY 1954/1971 sequential one-sided CUSUM mean-shift detector applied retrospectively to the gap-filled daily total_tokens series (TWO-HUNDRED-AND-THIRTY-SECOND cross-source axis). Tracks both UP and DOWN arms with a RUNNING-MEAN running reference, tolerance delta = deltaScale * IQR(x), decision threshold lambda = lambdaScale * IQR(x) * sqrt(N). Surfaces phMaxUp/phMaxDown, dominant direction, tauStar argmin (last-reset) shift onset, mean shift gap, and peakRatio = phMax / lambda. ORTHOGONAL to all prior changepoint axes (221-231) by FIVE structural dimensions: (1) RESETTING-MIN reference (PH re-zeros at every new minimum of U_t - tracks the LAST reset; absent in fixed-window ICSS, DP segmenters PELT/WBS, Bayesian BOCPD, subspace SSA, frequency-domain Picard-Aue, kernel Keriven, copula Inoue), (2) ARM-SEPARATED one-sided test (none of axes 153/225/227 expose a SIGNED arm comparison), (3) RUNNING-MEAN reference (axis-153 CUSUM and axis-223 ICSS use FIXED full-sample mean), (4) TOLERANCE-DELTA deadband (PH demands deviation > delta per step; absent in axes 153, 221-231 which detect ANY deviation), (5) BROWNIAN-CROSSING decision geometry vs chi-square/F/Schwarz/Bayes-factor/Kolmogorov/Hilbert-Schmidt/sup-deviation in axes 221-231. Refs: Page 1954 Biometrika 41:100-115; Hinkley 1971 Biometrika 58:509-523; Mouss et al. 2004 ACC 815-818; Gama-Castillo 2007.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--delta-scale <d>',
+    'tolerance delta as a multiple of IQR(x); default 0.005. Must be >= 0.',
+    '0.005',
+  )
+  .option(
+    '--lambda-scale <l>',
+    'decision threshold lambda as a multiple of IQR(x) * sqrt(N); default 1.0. Must be > 0.',
+    '1.0',
+  )
+  .option(
+    '--only-shifts',
+    "hide source rows with verdict == 'no-shift'; default false",
+    false,
+  )
+  .option(
+    '--sort <key>',
+    'sort key: peakRatioDesc (default) | peakRatio | phMaxDesc | phMax | tauStar | tokens | tenure | source.',
+    'peakRatioDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        deltaScale: string;
+        lambdaScale: string;
+        onlyShifts?: boolean;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const deltaScale = Number.parseFloat(opts.deltaScale);
+        if (!Number.isFinite(deltaScale) || deltaScale < 0) {
+          throw new Error(`--delta-scale must be >= 0 (got ${opts.deltaScale})`);
+        }
+        const lambdaScale = Number.parseFloat(opts.lambdaScale);
+        if (!Number.isFinite(lambdaScale) || !(lambdaScale > 0)) {
+          throw new Error(`--lambda-scale must be > 0 (got ${opts.lambdaScale})`);
+        }
+        const validSorts = [
+          'phMax',
+          'phMaxDesc',
+          'peakRatio',
+          'peakRatioDesc',
+          'tauStar',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenPageHinkleyMeanShiftChangepoint(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          deltaScale,
+          lambdaScale,
+          onlyShifts: opts.onlyShifts === true,
+          sort: opts.sort as DailyTokenPageHinkleyMeanShiftChangepointSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenPageHinkleyMeanShiftChangepoint(report) + '\n',
           );
         }
       } catch (e) {

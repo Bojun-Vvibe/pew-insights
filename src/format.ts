@@ -20830,6 +20830,7 @@ import type { DailyTokenKillickPeltVarianceSegmentationReport } from './dailytok
 import type { DailyTokenFryzlewiczWbsMeanSegmentationReport } from './dailytokenfryzlewiczwbsmeansegmentation.js';
 import type { DailyTokenMattesonJamesEDivisiveDistributionalSegmentationReport } from './dailytokenmattesonjamesedivisivedistributionalsegmentation.js';
 import type { DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthReport } from './dailytokenadamsmackaybocpdbayesianonlinerunlength.js';
+import type { DailyTokenPageHinkleyMeanShiftChangepointReport } from './dailytokenpagehinkleymeanshiftchangepoint.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -31215,6 +31216,89 @@ export function renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength(
   lines.push(
     chalk.dim(
       `(reference anchor: m = 0 = no MAP-detected BAYESIAN changepoints (the posterior MAP run-length never collapses to 0 after t > 0). m >= 1 = m time steps where rMap = 0. cpProb in [0,1] = strongest single-step posterior mass on r_t = 0; > 0.5 indicates a probable CP. meanRunMap = average MAP run length (high = stable / few CPs); maxRunMap = longest stable stretch under the MAP trajectory. postEntropy in nats = average Shannon entropy of the run-length posterior (low = decisive segmentation, high = diffuse / uncertain). Compare with axis-226 ECP (batch energy-distance) and axis-225 WBS (batch random-CUSUM): BOCPD is the only ONLINE BAYESIAN segmenter with calibrated probability output.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenPageHinkleyMeanShiftChangepoint(
+  r: DailyTokenPageHinkleyMeanShiftChangepointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-page-hinkley-mean-shift-changepoint"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    deltaScale: ${r.deltaScale}    lambdaScale: ${r.lambdaScale}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source PAGE-HINKLEY 1954/1971 sequential one-sided CUSUM mean-shift detector applied retrospectively to the gap-filled daily token series. Tracks both UP and DOWN arms with running-mean reference and tolerance delta = deltaScale * IQR(x); decision threshold lambda = lambdaScale * IQR(x) * sqrt(N). Surfaces phMaxUp/Down, dominant direction, tauStar argmin (last-reset) shift onset, mean shift gap, and peakRatio = phMax / lambda. TWO-HUNDRED-AND-THIRTY-SECOND cross-source axis. ORTHOGONAL to all prior changepoint axes (221-231) by RESETTING-MIN reference, ARM-SEPARATED one-sided test, RUNNING-MEAN running reference, TOLERANCE-DELTA deadband, and BROWNIAN-CROSSING decision geometry. Refs: Page 1954 Biometrika 41:100-115; Hinkley 1971 Biometrika 58:509-523; Mouss et al. 2004 ACC; Gama-Castillo 2007.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Page-Hinkley mean-shift CUSUM (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "dir",
+    "tauStarDay",
+    "phMaxUp",
+    "phMaxDown",
+    "lambda",
+    "peakRatio",
+    "meanGap",
+    "verdict",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.direction,
+    s.tauStarDay,
+    s.phMaxUp.toFixed(2),
+    s.phMaxDown.toFixed(2),
+    s.lambdaUsed.toFixed(2),
+    s.peakRatio.toFixed(4),
+    Number.isFinite(s.meanGap) ? s.meanGap.toFixed(2) : "-",
+    s.verdict,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: PEAK = lambdaScale * IQR(x) * sqrt(N) is unity in peakRatio units. Verdict ladder: peakRatio<0.5=no-shift, <1.0=borderline, <2.0=shift, otherwise=strong-shift. dir is the dominant arm: 'up'=mean increased, 'down'=mean decreased, 'flat'=both arms zero (degenerate). meanGap = meanRight(after tauStar) - meanLeft(before tauStar) in raw token units; sign should match direction. Compare with axis-227 BOCPD (Bayesian online posterior on r_t) and axis-231 Inoue empirical-copula (joint-CDF sup deviation): Page-Hinkley is the only RESETTING-MIN, ARM-SEPARATED, RUNNING-MEAN sequential test shipped.)`,
     ),
   );
 
