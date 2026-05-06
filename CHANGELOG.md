@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.577 — 2026-05-06
+
+### Added — axis-231 Inoue empirical-copula sup-deviation changepoint
+
+`buildDailyTokenInoueCopulaDfSupEmpiricalCopulaChangepoint`:
+per-source EMPIRICAL-COPULA / JOINT-RANK-CDF SUP-DEVIATION
+changepoint detector on a (lag-0, lag-1) bivariate
+embedding of the gap-filled daily total_tokens series.
+
+Mechanism (Inoue 2001 *Econometric Theory* 17(1):156-187):
+
+```
+v_t = (x_t, x_{t-1})         (lag-1 bivariate embedding)
+U_t,j = R_t,j / (N+1)        (rank pseudo-observations, j=1,2)
+C_k(u,v) = (1/k) sum_{t<=k} 1{U_t,1<=u, U_t,2<=v}        (prefix copula)
+C_{N-k}(u,v) = (1/(N-k)) sum_{t>k} 1{U_t,1<=u, U_t,2<=v} (suffix copula)
+D_k    = sqrt(k(N-k)/N) * sup_{(u,v)} |C_k(u,v) - C_{N-k}(u,v)|
+D_max  = max_{k in [k_min, N-k_min]} D_k
+tauHat = argmax_k D_k
+```
+
+The sup is attained on the finite grid of pseudo-observations.
+Verdict ladder calibrated to Kolmogorov-bridge constants:
+no-shift <1.224, borderline <1.358 (~95%), shift <1.628 (~99%),
+strong-shift otherwise.
+
+### Orthogonality vs axes 181-230
+
+Of the prior 230 cross-source axes NONE is a RANK-INVARIANT
+EMPIRICAL-COPULA SUP-DEVIATION test on a BIVARIATE LAG
+EMBEDDING. axis-231 is structurally orthogonal along five
+independent dimensions:
+
+1. **Joint-distribution, not univariate.** Axes 153, 154, 155,
+   221-230 all act on the univariate x_t series. Inoue tests the
+   joint distribution of (x_t, x_{t-1}) — a different mathematical
+   object whose change can occur even when the marginals are
+   constant.
+2. **Copula-invariance.** Pseudo-observations U = R/(N+1) make
+   the test invariant to any strictly monotone marginal transform.
+   None of axes 181-230 enjoy this invariance: they are tied to a
+   specific scaling (MAD, sigma, raw tokens, log).
+3. **L_inf-on-2-D-CDF statistic.** sup_{(u,v)} |C_k - C_{N-k}|
+   is a Kolmogorov-style L_inf functional on a 2-D probability
+   surface. Axes 226 (ECP) and 230 (NEWMA) are L_2 / energy /
+   L_2-EWMA statistics; axis-227 (BOCPD) is a posterior probability;
+   axis-228 (SSA) is a subspace angle; axis-229 (spectral CUSUM)
+   is a frequency-domain partial sum. The L_inf-on-2-D-CDF
+   dimension is new.
+4. **Bivariate rank-CUSUM lineage.** Axis-154 (Pettitt) is a
+   univariate rank CUSUM; axis-231 generalises rank-CUSUM to
+   the joint-CDF surface — a strict structural superset that
+   reduces to neither Pettitt (different statistic) nor Kuiper
+   (no V-shape pairing).
+5. **Alarm rule.** Cutoffs from the Kolmogorov-bridge limit on
+   the 2-D copula surface, not from EWMA steady-state SD
+   (axis-230), posterior argmax (axis-227), Schwarz penalty
+   (axes 224-225), pairwise energy (axis-226), F-ratio of
+   singular values (axis-228), or periodogram threshold
+   (axis-229).
+
+### Live-smoke (real `~/.config/pew/queue.jsonl`, 2026-05-06)
+
+Two sources cleared `minTenureDays >= 21`:
+
+```
+source=claude-code
+  nTenureDays=72 nEmbedded=71 kMin=8
+  dMax=2.720327 tauHat=34 tauHatDay=2026-03-17
+  verdict=strong-shift dPrefix=0.7291 dSuffix=0.3045
+  totalTokens=3442385788
+
+source=vscode-vsc-redacted
+  nTenureDays=265 nEmbedded=264 kMin=27
+  dMax=2.390326 tauHat=197 tauHatDay=2026-02-12
+  verdict=strong-shift dPrefix=0.5669 dSuffix=0.8518
+  totalTokens=1885727
+```
+
+Both sources flagged `strong-shift` (D_max above the ~99%
+Kolmogorov cutoff of 1.628). claude-code's argmax falls on
+2026-03-17 — the joint (x_t, x_{t-1}) usage pattern shifts
+roughly mid-tenure. vscode-vsc-redacted's argmax falls on
+2026-02-12 with prefix/suffix copula-mass ratio inverting
+(0.57 → 0.85), consistent with a regime change in
+day-to-day persistence late in tenure.
+
+Dropped: 4 sources below `minTenureDays=21`
+(codex tenure=9, openclaw=20, hermes=20, opencode=17).
+
+### Tests
+
+Test count grew from 16448 → 16479 (+31 across option-validation,
+sparse/zero-variance handling, source-filter, regime-change vs
+stationarity, rank-invariance under monotone marginal transform,
+deterministic-replay, top truncation, sort orderings, and unit
+tests on `averageRanks` (incl. ties), `inoueCopulaScan` boundary
+guards, and the `inoueVerdict` ladder).
+
 ## 0.6.576 — 2026-05-06
 
 ### Added — axis-230 Keriven-Garreau-Poli NEWMA kernel online changepoint
