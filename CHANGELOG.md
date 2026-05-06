@@ -80,7 +80,10 @@ MAX_SAFE_INTEGER if either tau set is empty), `multiRegimeEither`
 anyMissingDecisive), `bothDecisiveMultiRegime`,
 `bothDecisiveSingleRegime`, `sourcesOnlyInWbs`, `sourcesOnlyInPelt`.
 
-Tests: 16165 -> 16184 (+19). v0.6.567 -> v0.6.568.
+Tests: 16165 -> 16188 (+23: 19 case-by-case + 4 property-style
+invariants covering partition correctness on a 200-source batch,
+monotonicity of `aligned` in `proximityGuard`, axis-swap symmetry,
+and deep-copy isolation of returned tau arrays). v0.6.567 -> v0.6.568.
 
 Refs: Fryzlewicz 2014 *Annals of Statistics* 42(6):2243-2281;
 Killick-Fearnhead-Eckley 2012 *JASA* 107:1590-1598.
