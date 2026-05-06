@@ -2,6 +2,156 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.556 — 2026-05-06
+
+### Added — axis-222 x axis-221 Lombard vs Alexandersson SNHT smooth-vs-abrupt single-changepoint compound
+
+Pure-library cross-axis 5-bucket diagnostic joining the
+v0.6.554 axis-222 LOMBARD 1987 RANK-BASED SMOOTH-CHANGEPOINT
+TEST (`ln`, `pApprox`, `kStar`, `directionSign`,
+`meanShift`) with the v0.6.550 axis-221 ALEXANDERSSON 1986
+SNHT PARAMETRIC ABRUPT-STEP TEST (`t0`, `pApprox`, `aStar`,
+`tCrit05`, `meanShift`) on a per-source basis.
+
+Structural claim. Both axes test for a CHANGE IN LOCATION
+at a single most-likely changepoint, but they differ on
+TWO orthogonal axes simultaneously:
+
+  1. STATISTIC FAMILY: SNHT is PARAMETRIC L_2 on
+     standardised magnitudes (Gaussian likelihood ratio);
+     Lombard is RANK-BASED L_2 on smoothed Wilcoxon scores
+     (distribution-free, magnitude-blind).
+  2. CHANGE SHAPE: SNHT optimises a TWO-MEAN PARTITION
+     (one ABRUPT step at `aStar`); Lombard integrates the
+     squared cumulative SMOOTHED rank deviation and is
+     sensitive to a SMOOTH (gradual) transition over ~K
+     days centred at `kStar`.
+
+Lombard vs SNHT is therefore the
+STATISTIC-FAMILY x CHANGE-SHAPE DOUBLE DUAL on the
+single-changepoint surface, complementing the single-axis
+duals shipped in v0.6.552 (axis-221 SNHT vs axis-154
+Pettitt: STATISTIC-FAMILY only, both abrupt) and
+distinguishing it from monotone-trend axes
+(axis-218/219/220) which are GLOBAL not LOCALISED.
+
+Buckets (5): `agree-aligned`, `agree-misaligned`,
+`lombard-only`, `snht-only`, `no-evidence`. Decisiveness:
+Lombard decisive iff `lombardPApprox < alpha`; SNHT
+decisive iff `snhtPApprox < alpha` OR `snhtT0 >= snhtTCrit05`
+(defensive OR -- pApprox is the conservative Bonferroni
+bound, tCrit05 the tighter Khaliq-Ouarda 2007 fit).
+Alignment (when both decisive): `|lombardKStar -
+snhtAStarZeroBased| <= proximityGuard` (default 5 days).
+Argmax indices are NORMALISED (axis-221 1-based aStar ->
+0-based "last index of left segment"; axis-222 kStar
+already 0-based) before computing the distance.
+
+Diagnostic semantics:
+
+  - agree-aligned: changepoint robust to BOTH parametric
+    abrupt-step model AND rank-based smooth alternative
+    (strongest possible single-axis evidence).
+  - agree-misaligned: both decisive but kStar and aStar
+    differ by more than the guard -- SMOOTH RAMP that
+    ENDS in an abrupt jump, or two distinct regime shifts
+    weighted differently by parametric vs rank smoothing.
+  - lombard-only: GRADUAL change over multiple days; SNHT
+    two-mean partition is "smeared" across many candidate
+    splits and no single `aStar` dominates. Common with
+    logistic / linear ramps.
+  - snht-only: ABRUPT change dominated by one or two
+    extreme magnitudes that the rank-smoothing washes out.
+    Common in heavy-tailed sources with a single regime
+    jump (e.g. account quota change).
+  - no-evidence: neither axis decisive.
+
+Diagnostic surfaces in the joined row:
+  - `argmaxDistance`: `|lombardKStar - snhtAStarZeroBased|`
+    in days.
+  - `signAgreement`: `lombardDirectionSign` vs
+    `sign(snhtMeanShift)` (both nonzero).
+  - `jointAlignment` in {`aligned`, `misaligned`, null}:
+    null when at least one axis is not decisive.
+
+Pure transform. Determinism: full. Caller supplies pre-
+computed Lombard and SNHT row arrays; the classifier
+performs an inner-join on `source`, tracks asymmetric
+membership via `sourcesOnlyInLombard` / `sourcesOnlyInSnht`,
+and returns aggregate counts (`bucketCounts`,
+`bothDecisive`, `atLeastOneDecisive`, `byJointAlignment`,
+`bothDecisiveSignAgree`, `bothDecisiveSignDisagree`).
+
+Also exposes `summarizeAxis222Axis221LombardSnhtReport`
+for compact one-line operational logs.
+
+Tests: 15968 -> 15996 (+28). Coverage: input validation
+(alpha range, proximityGuard non-negative integer, array
+inputs, source string non-empty, Lombard `ln >= 0`, p in
+[0, 1], `kStar` non-negative integer, `directionSign` in
+{-1, 0, +1}, SNHT `t0 >= 0`, `tCrit05 > 0`, `aStar` 1-
+based positive integer, finite `meanShift`); all 5 bucket
+cases including the OR-decisiveness path
+(`snhtPApprox >= alpha` but `snhtT0 >= snhtTCrit05`);
+argmax 1-based -> 0-based normalisation; proximityGuard
+parameterisation including 0 (exact match required); alpha
+threshold sensitivity at the boundary; sign-agreement
+handling for zero direction-sign and zero mean-shift;
+source-set asymmetry tracking (Lombard-only and SNHT-only
+sources, both directions); deterministic lex source
+ordering across `rows`; bucketCount-vs-rows invariants;
+`jointAlignment` null when either axis non-decisive;
+empty-input edge case; single-row pass-through.
+
+Live-smoke against the same real `~/.config/pew/queue.jsonl`
+used in the v0.6.554 axis-222 entry (SOURCES REDACTED to
+generic placeholders, `claude-code` source had no SNHT row
+under default min-tenure so the join is on the two
+`vsc-redacted` sources):
+
+```
+classifyAxis222Axis221LombardAlexanderssonSmoothVsAbruptChangepointCompound
+alpha=0.05    proximityGuard=5    sources joined: 2
+
+axis-222xaxis-221 alpha=0.05 guard=5 n=2 both=2/2 signAgree=2/2 align[a/m]=0/2 buckets[aa/am/lo/so/ne]=0/2/0/0/0
+
+source          L_n     lP        kStar  lDir  T0     sP        sTcrit05  aStar0  dist  lDec  sDec  signAgr  bucket             joint
+--------------  ------  --------  -----  ----  -----  --------  --------  ------  ----  ----  ----  -------  -----------------  -----------
+vsc-redacted-a  9.2110  0.00e+0   194    +     17.17  4.94e-2   10.19     260     66    Y     Y     Y        agree-misaligned   misaligned
+vsc-redacted-b  8.9210  0.00e+0   36     -     29.34  3.02e-5   7.80      65      29    Y     Y     Y        agree-misaligned   misaligned
+```
+
+Both sources land in `agree-misaligned`: every joined
+source is decisively flagged by BOTH the rank-based smooth
+detector AND the parametric abrupt detector, AND the
+direction signs agree, BUT the argmax indices disagree by
+66 and 29 days respectively (well outside the 5-day
+proximityGuard). This is the textbook signature predicted
+by the orthogonality claim: a SMOOTH RAMP whose centre
+`kStar` sits in the middle of the transition zone, ending
+in an ABRUPT jump that SNHT locks onto at `aStar`. The
+sign-agreement (both `+` for vsc-redacted-a, both `-` for
+vsc-redacted-b) confirms that the same regime shift drives
+both detections, just with different localisation
+mechanics. No source falls into `lombard-only` or
+`snht-only`, and there is no `no-evidence` case --
+consistent with the v0.6.554 axis-222 finding that both
+sources have decisive Lombard and the v0.6.550 axis-221
+finding that both have decisive SNHT.
+
+Refs: Lombard 1987 *Biometrika* 74:615-624; Alexandersson
+1986 *J. Climatology* 6:661-675; Khaliq-Ouarda 2007 *J.
+Hydrology* 332:167-177; Csorgo-Horvath 1997 *Limit
+Theorems in Change-Point Analysis* sec. 2.6.
+
+Files added/modified:
+- `src/classifyaxis222axis221lombardalexanderssonsmoothvsabruptchangepointcompound.ts`
+  (new): pure-library classifier and summarizer.
+- `test/classifyaxis222axis221lombardalexanderssonsmoothvsabruptchangepointcompound.test.ts`
+  (new): +28 unit tests.
+- `package.json`: 0.6.554 -> 0.6.556.
+- `CHANGELOG.md`: this entry.
+
 ## 0.6.554 — 2026-05-06
 
 ### Added — axis-222 daily-token-lombard-smooth-changepoint
