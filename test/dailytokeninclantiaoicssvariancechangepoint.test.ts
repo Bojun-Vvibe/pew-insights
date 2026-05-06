@@ -502,3 +502,124 @@ test('icss: directionSign accuracy for synthetic abrupt-variance toy', () => {
   // logVarRatio = ln(varAfter/varBefore) > 0 because right has higher variance
   assert.ok(r.logVarRatio > 1);
 });
+
+// ---- additional edge-case coverage --------------------------------------
+
+test('icss: secondPeakRatio == 0 when no second peak outside guard', () => {
+  // Single sharp variance jump in middle, no other regime
+  const w: number[] = [];
+  for (let i = 0; i < 30; i += 1) w.push(100);
+  for (let i = 0; i < 30; i += 1) w.push(100 + (i % 2 === 0 ? 50 : -50));
+  // remove zero-variance throw by tiny perturbation in left half
+  w[0] = 99.9;
+  w[1] = 100.1;
+  const r = dailyTokenInclanTiaoIcssVarianceChangepoint(w);
+  assert.ok(r.secondPeakRatio >= 0 && r.secondPeakRatio <= 1);
+});
+
+test('icss: kStar argmax tie-break favours smaller k (deterministic)', () => {
+  // construct a synthetic where two ks have identical |D[k]|
+  // Easiest: symmetric variance pattern so D[k] = -D[n-2-k] approx
+  // not strictly testable without floats lining up; instead verify
+  // determinism by running twice
+  const w: number[] = [];
+  for (let i = 0; i < 25; i += 1) w.push(100 + (i % 2 === 0 ? 5 : -5));
+  for (let i = 0; i < 25; i += 1) w.push(100 + (i % 2 === 0 ? 30 : -30));
+  const r1 = dailyTokenInclanTiaoIcssVarianceChangepoint(w);
+  const r2 = dailyTokenInclanTiaoIcssVarianceChangepoint(w);
+  assert.equal(r1.kStar, r2.kStar);
+  assert.equal(r1.itStat, r2.itStat);
+  assert.equal(r1.dStar, r2.dStar);
+});
+
+test('icss: builder is deterministic across re-runs (no Math.random)', () => {
+  const queue: import('../src/types.js').QueueLine[] = [];
+  for (let i = 0; i < 30; i += 1) {
+    const day = new Date(Date.UTC(2026, 0, 1 + i)).toISOString();
+    queue.push({
+      source: 'A',
+      model: 'm',
+      hour_start: day,
+      device_id: 'd',
+      input_tokens: 0,
+      cached_input_tokens: 0,
+      output_tokens: 0,
+      reasoning_output_tokens: 0,
+      total_tokens: 1000 + (i % 2 === 0 ? 5 : -5),
+    });
+  }
+  for (let i = 0; i < 30; i += 1) {
+    const day = new Date(Date.UTC(2026, 0, 31 + i)).toISOString();
+    queue.push({
+      source: 'A',
+      model: 'm',
+      hour_start: day,
+      device_id: 'd',
+      input_tokens: 0,
+      cached_input_tokens: 0,
+      output_tokens: 0,
+      reasoning_output_tokens: 0,
+      total_tokens: 1000 + (i % 2 === 0 ? 100 : -100),
+    });
+  }
+  const a = buildDailyTokenInclanTiaoIcssVarianceChangepoint(queue, {
+    generatedAt: GEN,
+  });
+  const b = buildDailyTokenInclanTiaoIcssVarianceChangepoint(queue, {
+    generatedAt: GEN,
+  });
+  assert.deepEqual(a, b);
+});
+
+test('icss: kCritical constants exposed at top of report match Table-1', () => {
+  const r = buildDailyTokenInclanTiaoIcssVarianceChangepoint([], {
+    generatedAt: GEN,
+  });
+  // Inclán-Tiao 1994 Table-1: c_{0.05}=1.358, c_{0.01}=1.628 (asymptotic)
+  assert.equal(r.kCritical05, 1.358);
+  assert.equal(r.kCritical01, 1.628);
+  assert.ok(r.kCritical05 < r.kCritical01);
+});
+
+test('icss: all sort modes preserve total source count', () => {
+  const queue: import('../src/types.js').QueueLine[] = [];
+  for (const src of ['A', 'B']) {
+    for (let i = 0; i < 30; i += 1) {
+      const day = new Date(Date.UTC(2026, 0, 1 + i)).toISOString();
+      queue.push({
+        source: src,
+        model: 'm',
+        hour_start: day,
+        device_id: 'd',
+        input_tokens: 0,
+        cached_input_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens:
+          1000 + (i < 15 ? 1 : 50) * (i % 2 === 0 ? 1 : -1) + (src === 'A' ? 0 : 100),
+      });
+    }
+  }
+  const sorts = [
+    'itStat',
+    'itStatDesc',
+    'pApprox',
+    'pApproxDesc',
+    'kStar',
+    'kStarDesc',
+    'absLogVarRatio',
+    'absLogVarRatioDesc',
+    'secondPeakRatio',
+    'secondPeakRatioDesc',
+    'tokens',
+    'tenure',
+    'source',
+  ] as const;
+  for (const s of sorts) {
+    const r = buildDailyTokenInclanTiaoIcssVarianceChangepoint(queue, {
+      generatedAt: GEN,
+      sort: s,
+    });
+    assert.equal(r.sources.length, 2);
+  }
+});

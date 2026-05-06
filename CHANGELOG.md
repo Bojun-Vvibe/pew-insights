@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.561 — 2026-05-06
+
+### Refined — axis-223 ICSS edge-case + determinism coverage
+
+Additional test coverage for axis-223 Inclán-Tiao ICSS variance-
+changepoint: secondPeakRatio bounds, deterministic argmax tie-break
+(repeated runs return identical kStar / itStat / dStar), full builder
+determinism (no Math.random; equal queues -> equal reports), Table-1
+critical-value invariants (1.358 < 1.628), and all 13 sort modes
+preserve total source count.
+
+Tests: 16065 -> 16070 (+5). v0.6.560 -> v0.6.561.
+
 ## 0.6.560 — 2026-05-06
 
 ### Added — axis-223 x axis-222 Inclán-Tiao vs Lombard variance-vs-location compound
