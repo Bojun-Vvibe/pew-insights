@@ -20832,6 +20832,7 @@ import type { DailyTokenMattesonJamesEDivisiveDistributionalSegmentationReport }
 import type { DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthReport } from './dailytokenadamsmackaybocpdbayesianonlinerunlength.js';
 import type { DailyTokenPageHinkleyMeanShiftChangepointReport } from './dailytokenpagehinkleymeanshiftchangepoint.js';
 import type { DailyTokenEichingerKirchMosumMeanChangepointReport } from './dailytokeneichingerkirchmosummeanchangepoint.js';
+import type { DailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepointReport } from './dailytokenliuyamadasugiyamarulsifdensityratiochangepoint.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -31383,6 +31384,89 @@ export function renderDailyTokenEichingerKirchMosumMeanChangepoint(
   lines.push(
     chalk.dim(
       `(reference anchor: PEAK = thresholdScale * sqrt(2 ln(N/G)) is unity in peakRatio units. Verdict ladder: peakRatio<0.5=no-shift, <1.0=borderline, <2.0=shift, otherwise=strong-shift. mCPs = number of local-max changepoints surviving threshold + G-spacing rule (Eichinger-Kirch Algorithm A). G is the symmetric half-window in days; segments shorter than G are smoothed away by construction. Compare with axis-232 Page-Hinkley (resetting-min sequential CUSUM) and axis-227 BOCPD (Bayesian online posterior): MOSUM is the only SYMMETRIC TWO-SAMPLE rolling-window scan with a guaranteed minimum-spacing between detected CPs.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint(
+  r: DailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-liu-yamada-sugiyama-rulsif-density-ratio-changepoint"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    windowFrac: ${r.windowFrac}    alpha: ${r.alpha}    basisCount: ${r.basisCount}    lambdaRidge: ${r.lambdaRidge}    thresholdScale: ${r.thresholdScale}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source LIU-YAMADA-COLLIER-SUGIYAMA 2013 RuLSIF (Relative unconstrained Least-Squares Importance Fitting) relative density-ratio changepoint detector. For each split t in [w, N-w] fits the alpha-relative density ratio r_alpha = p_post/(alpha*p_post+(1-alpha)*p_pre) on a Gaussian-kernel basis (B centres at quantiles of post-window, sigmaKernel via median-pairwise-distance heuristic) by L2-penalised least squares with closed-form Cholesky solve. Computes symmetrised Pearson alpha-divergence S(t) = 0.5*(PE_alpha(post||pre)+PE_alpha(pre||post)). peakRatio = max_t S(t) / median_t S(t). Local maxima of S above thresholdScale*median(S) and at least w apart are emitted as changepoints. TWO-HUNDRED-AND-THIRTY-FOURTH cross-source axis. ORTHOGONAL to all prior changepoint axes (153, 221-233) by ESTIMATED FUNCTIONAL OBJECT (density RATIO vs moment/CDF/posterior/spectrum/subspace/mean-embedding/energy/DP-cost), ALPHA-RELATIVISATION (bounded by 1/alpha), KERNEL BASIS WITH ANALYTICAL CHOLESKY SOLVE, SYMMETRISED PEARSON ALPHA-DIVERGENCE, and ROBUST MEDIAN-NORMALISED PEAKRATIO. Refs: Liu-Yamada-Collier-Sugiyama 2013 Neural Networks 43:72-83; Yamada-Suzuki-Kanamori-Hachiya-Sugiyama 2013 Neural Computation 25:1324-1370; Garreau-Jitkrittum-Kanagawa 2018 arXiv:1707.07269.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source RuLSIF symmetric Pearson alpha-divergence scan (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "w",
+    "argmaxDay",
+    "peStarMax",
+    "peStarMedian",
+    "peakRatio",
+    "mCPs",
+    "tauStarDays",
+    "verdict",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.windowW}`,
+    s.peStarArgmaxDay,
+    s.peStarMax.toFixed(5),
+    s.peStarMedian.toFixed(5),
+    s.peakRatio.toFixed(3),
+    `${s.mChangepoints}`,
+    s.tauStarDays.length === 0 ? "-" : s.tauStarDays.join(","),
+    s.verdict,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: peakRatio = peStarMax / peStarMedian. Verdict ladder: peakRatio<1.5=no-shift, <3.0=borderline, <6.0=shift, otherwise=strong-shift. mCPs = local maxima of S(t) above thresholdScale*median(S) with w-spacing rule. The estimated functional object is the alpha-relative density RATIO p_post/(alpha*p_post+(1-alpha)*p_pre); orthogonal to all prior changepoint axes which estimate moments, CDFs, posteriors, spectra, subspaces, mean-embeddings, pairwise energies, or DP costs.)`,
     ),
   );
 

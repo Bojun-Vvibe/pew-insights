@@ -235,6 +235,7 @@ import {
   renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength,
   renderDailyTokenPageHinkleyMeanShiftChangepoint,
   renderDailyTokenEichingerKirchMosumMeanChangepoint,
+  renderDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -831,6 +832,10 @@ import {
   buildDailyTokenEichingerKirchMosumMeanChangepoint,
   type DailyTokenEichingerKirchMosumMeanChangepointSort,
 } from './dailytokeneichingerkirchmosummeanchangepoint.js';
+import {
+  buildDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint,
+  type DailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepointSort,
+} from './dailytokenliuyamadasugiyamarulsifdensityratiochangepoint.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49941,6 +49946,166 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenEichingerKirchMosumMeanChangepoint(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-liu-yamada-sugiyama-rulsif-density-ratio-changepoint')
+  .description(
+    "Per-source LIU-YAMADA-COLLIER-SUGIYAMA 2013 RuLSIF (Relative unconstrained Least-Squares Importance Fitting) density-ratio changepoint detector applied retrospectively to the gap-filled daily total_tokens series (TWO-HUNDRED-AND-THIRTY-FOURTH cross-source axis). For each split t in [w, N-w] (w = max(8, floor(windowFrac*N))) fits the alpha-relative density ratio r_alpha = p_post/(alpha*p_post+(1-alpha)*p_pre) on a Gaussian kernel basis (B centres at quantiles of post-window, sigmaKernel via median-pairwise-distance heuristic) by L2-penalised least squares with closed-form Cholesky solve. Computes symmetrised Pearson alpha-divergence S(t) = 0.5*(PE_alpha(post||pre)+PE_alpha(pre||post)). peakRatio = max_t S(t)/median_t S(t); local maxima of S above thresholdScale*median(S) and at least w apart are emitted as changepoints. Surfaces peStarMax, peStarArgmax, peStarMedian, peakRatio, mChangepoints, tauStarDays, windowW, alphaUsed, sigmaKernelUsed. ORTHOGONAL to all prior changepoint axes (153, 221-233) by FIVE structural dimensions: (1) ESTIMATED FUNCTIONAL OBJECT is a density RATIO not a moment/CDF/posterior/spectrum/subspace/mean-embedding/energy/DP-cost, (2) ALPHA-RELATIVISATION bounds the ratio by 1/alpha, (3) KERNEL BASIS WITH ANALYTICAL CHOLESKY SOLVE (axis-230 NEWMA uses streaming EWMA in RKHS but no system solve), (4) SYMMETRISED PEARSON ALPHA-DIVERGENCE not a moment-CUSUM or rank-CUSUM, (5) ROBUST MEDIAN-NORMALISED PEAKRATIO calibrated INTERNALLY over the scan itself (vs external MAD on first-differences in axes 232/233). Refs: Liu-Yamada-Collier-Sugiyama 2013 Neural Networks 43:72-83; Yamada-Suzuki-Kanamori-Hachiya-Sugiyama 2013 Neural Computation 25:1324-1370; Garreau-Jitkrittum-Kanagawa 2018 arXiv:1707.07269.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--window-frac <b>',
+    'window half-length w = max(8, floor(b*N)). Must be in (0, 0.5). Default 0.18.',
+    '0.18',
+  )
+  .option(
+    '--alpha <a>',
+    'relative density-ratio mixing parameter alpha in [0, 1). Default 0.10.',
+    '0.10',
+  )
+  .option(
+    '--basis-count <b>',
+    'number of Gaussian basis centres B >= 2. Default 8.',
+    '8',
+  )
+  .option(
+    '--lambda-ridge <l>',
+    'L2 ridge regulariser lambda > 0. Default 0.01.',
+    '0.01',
+  )
+  .option(
+    '--threshold-scale <t>',
+    'decision threshold = thresholdScale * median(S); default 3.0. Must be > 0.',
+    '3.0',
+  )
+  .option(
+    '--only-shifts',
+    "hide source rows with verdict == 'no-shift'; default false",
+    false,
+  )
+  .option(
+    '--sort <key>',
+    'sort key: peakRatioDesc (default) | peakRatio | peStarMax | peStarMaxDesc | mChangepoints | mChangepointsDesc | tokens | tenure | source.',
+    'peakRatioDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        windowFrac: string;
+        alpha: string;
+        basisCount: string;
+        lambdaRidge: string;
+        thresholdScale: string;
+        onlyShifts?: boolean;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(`--min-tokens must be a non-negative number (got ${opts.minTokens})`);
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(`--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`);
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const windowFrac = Number.parseFloat(opts.windowFrac);
+        if (!Number.isFinite(windowFrac) || !(windowFrac > 0) || windowFrac >= 0.5) {
+          throw new Error(`--window-frac must be in (0, 0.5) (got ${opts.windowFrac})`);
+        }
+        const alpha = Number.parseFloat(opts.alpha);
+        if (!Number.isFinite(alpha) || alpha < 0 || alpha >= 1) {
+          throw new Error(`--alpha must be in [0, 1) (got ${opts.alpha})`);
+        }
+        const basisCount = Number.parseInt(opts.basisCount, 10);
+        if (!Number.isInteger(basisCount) || basisCount < 2) {
+          throw new Error(`--basis-count must be integer >= 2 (got ${opts.basisCount})`);
+        }
+        const lambdaRidge = Number.parseFloat(opts.lambdaRidge);
+        if (!Number.isFinite(lambdaRidge) || lambdaRidge <= 0) {
+          throw new Error(`--lambda-ridge must be > 0 (got ${opts.lambdaRidge})`);
+        }
+        const thresholdScale = Number.parseFloat(opts.thresholdScale);
+        if (!Number.isFinite(thresholdScale) || !(thresholdScale > 0)) {
+          throw new Error(`--threshold-scale must be > 0 (got ${opts.thresholdScale})`);
+        }
+        const validSorts = [
+          'peStarMax',
+          'peStarMaxDesc',
+          'peakRatio',
+          'peakRatioDesc',
+          'mChangepoints',
+          'mChangepointsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(`--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`);
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          windowFrac,
+          alpha,
+          basisCount,
+          lambdaRidge,
+          thresholdScale,
+          onlyShifts: opts.onlyShifts === true,
+          sort: opts.sort as DailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepointSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint(report) + '\n',
           );
         }
       } catch (e) {
