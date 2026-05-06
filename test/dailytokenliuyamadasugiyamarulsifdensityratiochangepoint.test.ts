@@ -540,3 +540,65 @@ test('builder: invalid since/until throws', () => {
     buildDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint([], { until: 'not-iso' }),
   );
 });
+
+// ---- refinement: additional invariants -----------------------------------
+
+test('rulsifScan: peStarMax >= peStarMedian (invariant)', () => {
+  const r = rng(909);
+  const x = [
+    ...Array.from({ length: 30 }, () => 100 + r() * 5),
+    ...Array.from({ length: 30 }, () => 800 + r() * 30),
+  ];
+  const res = rulsifScan(x);
+  assert.ok(res.peStarMax >= res.peStarMedian);
+});
+
+test('rulsifScan: changepoints respect w-spacing rule', () => {
+  const r = rng(1010);
+  // Three clear plateaus -> two CPs at least w apart.
+  const x = [
+    ...Array.from({ length: 30 }, () => 100 + r() * 5),
+    ...Array.from({ length: 30 }, () => 800 + r() * 30),
+    ...Array.from({ length: 30 }, () => 50 + r() * 3),
+  ];
+  const res = rulsifScan(x, { windowFrac: 0.18 });
+  for (let i = 1; i < res.changepoints.length; i += 1) {
+    const gap = res.changepoints[i]! - res.changepoints[i - 1]!;
+    assert.ok(gap >= res.windowW, `CP gap ${gap} < w=${res.windowW}`);
+  }
+});
+
+test('rulsifScan: thresholdUsed scales linearly with thresholdScale', () => {
+  const r = rng(1111);
+  const x = Array.from({ length: 60 }, () => 100 + r() * 50);
+  const a = rulsifScan(x, { thresholdScale: 2.0 });
+  const b = rulsifScan(x, { thresholdScale: 4.0 });
+  // peStarMedian is identical for the same data; threshold should double.
+  assert.ok(Math.abs(b.thresholdUsed / a.thresholdUsed - 2.0) < 1e-9);
+});
+
+test('builder: changepoints are within first..last day window', () => {
+  const r = rng(1212);
+  const vals = [
+    ...Array.from({ length: 25 }, () => 100 + r() * 5),
+    ...Array.from({ length: 25 }, () => 2000 + r() * 50),
+  ];
+  const q = synth('s', vals, '2026-03-01');
+  const rep = buildDailyTokenLiuYamadaSugiyamaRulsifDensityRatioChangepoint(q, {
+    generatedAt: GEN,
+  });
+  const row = rep.sources[0]!;
+  for (const day of row.tauStarDays) {
+    assert.ok(day >= row.firstActiveDay, `${day} < ${row.firstActiveDay}`);
+    assert.ok(day <= row.lastActiveDay, `${day} > ${row.lastActiveDay}`);
+  }
+});
+
+test('rulsifScoreSymmetric: score for identical samples is small', () => {
+  const r = rng(1313);
+  // Same generator -> approximately same distribution.
+  const a = Array.from({ length: 30 }, () => r() * 10 + 100);
+  const b = Array.from({ length: 30 }, () => r() * 10 + 100);
+  const s = rulsifScoreSymmetric(a, b);
+  assert.ok(s < 0.5, `symmetric score for similar samples should be small, got ${s}`);
+});
