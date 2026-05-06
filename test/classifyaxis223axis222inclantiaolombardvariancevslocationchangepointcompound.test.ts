@@ -472,3 +472,111 @@ test('axis-223 x axis-222: mixed bucket distribution', () => {
   assert.equal(r.bothDecisive, 1);
   assert.equal(r.atLeastOneDecisive, 3);
 });
+
+// ---- determinism + invariants -------------------------------------------
+
+test('axis-223 x axis-222: deterministic across re-runs', () => {
+  const icss = [
+    icssRow('A', 3, 1e-10, 30, -1, 1.5),
+    icssRow('B', 0.5, 0.95, 30, 0, 0),
+    icssRow('C', 1.5, 0.04, 12, 1, -0.8),
+  ];
+  const lombard = [
+    lombardRow('A', 0.5, 1e-6, 32, 1, 200),
+    lombardRow('B', 0.05, 0.5, 30, 0, 0),
+    lombardRow('C', 0.5, 1e-6, 12, -1, -150),
+  ];
+  const r1 =
+    classifyAxis223Axis222InclanTiaoLombardVarianceVsLocationChangepointCompound(
+      icss,
+      lombard,
+    );
+  const r2 =
+    classifyAxis223Axis222InclanTiaoLombardVarianceVsLocationChangepointCompound(
+      icss,
+      lombard,
+    );
+  assert.deepEqual(r1, r2);
+});
+
+test('axis-223 x axis-222: bucketCounts sum to row count', () => {
+  const icss = [
+    icssRow('A', 3, 1e-10, 30, -1, 1.5),
+    icssRow('B', 0.5, 0.95, 10, 0, 0),
+    icssRow('C', 3, 1e-10, 50, -1, 1.5),
+    icssRow('D', 0.5, 0.95, 10, 0, 0),
+  ];
+  const lombard = [
+    lombardRow('A', 0.5, 1e-6, 30, 1, 200),
+    lombardRow('B', 0.5, 1e-6, 10, 1, 200),
+    lombardRow('C', 0.05, 0.5, 50, 0, 0),
+    lombardRow('D', 0.05, 0.5, 10, 0, 0),
+  ];
+  const r =
+    classifyAxis223Axis222InclanTiaoLombardVarianceVsLocationChangepointCompound(
+      icss,
+      lombard,
+    );
+  const sumBuckets =
+    r.bucketCounts['agree-aligned'] +
+    r.bucketCounts['agree-misaligned'] +
+    r.bucketCounts['icss-only'] +
+    r.bucketCounts['lombard-only'] +
+    r.bucketCounts['no-evidence'];
+  assert.equal(sumBuckets, r.rows.length);
+});
+
+test('axis-223 x axis-222: bothDecisive + atLeastOneDecisive monotonicity', () => {
+  const icss = [icssRow('A', 3, 1e-10, 30, -1, 1.5)];
+  const lombard = [lombardRow('A', 0.5, 1e-6, 32, 1, 200)];
+  const r =
+    classifyAxis223Axis222InclanTiaoLombardVarianceVsLocationChangepointCompound(
+      icss,
+      lombard,
+    );
+  assert.ok(r.bothDecisive <= r.atLeastOneDecisive);
+  assert.ok(r.atLeastOneDecisive <= r.rows.length);
+});
+
+test('axis-223 x axis-222: bothDecisiveSignAgree + Disagree partition bothDecisive', () => {
+  const icss = [
+    icssRow('A', 3, 1e-10, 30, -1, 1.5),
+    icssRow('B', 3, 1e-10, 30, -1, -1.5),
+  ];
+  const lombard = [
+    lombardRow('A', 0.5, 1e-6, 32, 1, 200),
+    lombardRow('B', 0.5, 1e-6, 30, 1, 200),
+  ];
+  const r =
+    classifyAxis223Axis222InclanTiaoLombardVarianceVsLocationChangepointCompound(
+      icss,
+      lombard,
+    );
+  assert.equal(
+    r.bothDecisiveSignAgree + r.bothDecisiveSignDisagree,
+    r.bothDecisive,
+  );
+});
+
+test('axis-223 x axis-222: jointAlignment null iff at least one not decisive', () => {
+  const icss = [
+    icssRow('A', 3, 1e-10, 30, -1, 1.5),
+    icssRow('B', 0.5, 0.95, 30, 0, 0),
+  ];
+  const lombard = [
+    lombardRow('A', 0.5, 1e-6, 32, 1, 200),
+    lombardRow('B', 0.05, 0.5, 30, 0, 0),
+  ];
+  const r =
+    classifyAxis223Axis222InclanTiaoLombardVarianceVsLocationChangepointCompound(
+      icss,
+      lombard,
+    );
+  for (const row of r.rows) {
+    if (row.icssDecisive && row.lombardDecisive) {
+      assert.notEqual(row.jointAlignment, null);
+    } else {
+      assert.equal(row.jointAlignment, null);
+    }
+  }
+});

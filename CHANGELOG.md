@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.562 — 2026-05-06
+
+### Refined — axis-223 x axis-222 compound invariant coverage
+
+Additional invariant test coverage for the axis-223 x axis-222
+ICSS-vs-Lombard compound classifier: deterministic re-runs return
+identical reports, bucketCounts sum to row count, bothDecisive <=
+atLeastOneDecisive <= rows.length monotonicity, signAgree + Disagree
+partition bothDecisive, jointAlignment is null iff at least one axis
+is non-decisive.
+
+Tests: 16070 -> 16075 (+5). v0.6.561 -> v0.6.562.
+
 ## 0.6.561 — 2026-05-06
 
 ### Refined — axis-223 ICSS edge-case + determinism coverage
