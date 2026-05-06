@@ -20831,6 +20831,7 @@ import type { DailyTokenFryzlewiczWbsMeanSegmentationReport } from './dailytoken
 import type { DailyTokenMattesonJamesEDivisiveDistributionalSegmentationReport } from './dailytokenmattesonjamesedivisivedistributionalsegmentation.js';
 import type { DailyTokenAdamsMackayBocpdBayesianOnlineRunLengthReport } from './dailytokenadamsmackaybocpdbayesianonlinerunlength.js';
 import type { DailyTokenPageHinkleyMeanShiftChangepointReport } from './dailytokenpagehinkleymeanshiftchangepoint.js';
+import type { DailyTokenEichingerKirchMosumMeanChangepointReport } from './dailytokeneichingerkirchmosummeanchangepoint.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -31299,6 +31300,89 @@ export function renderDailyTokenPageHinkleyMeanShiftChangepoint(
   lines.push(
     chalk.dim(
       `(reference anchor: PEAK = lambdaScale * IQR(x) * sqrt(N) is unity in peakRatio units. Verdict ladder: peakRatio<0.5=no-shift, <1.0=borderline, <2.0=shift, otherwise=strong-shift. dir is the dominant arm: 'up'=mean increased, 'down'=mean decreased, 'flat'=both arms zero (degenerate). meanGap = meanRight(after tauStar) - meanLeft(before tauStar) in raw token units; sign should match direction. Compare with axis-227 BOCPD (Bayesian online posterior on r_t) and axis-231 Inoue empirical-copula (joint-CDF sup deviation): Page-Hinkley is the only RESETTING-MIN, ARM-SEPARATED, RUNNING-MEAN sequential test shipped.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenEichingerKirchMosumMeanChangepoint(
+  r: DailyTokenEichingerKirchMosumMeanChangepointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-eichinger-kirch-mosum-mean-changepoint"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    bandwidthFrac: ${r.bandwidthFrac}    thresholdScale: ${r.thresholdScale}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source EICHINGER-KIRCH 2018 MOSUM (MOving-SUM) symmetric two-sample mean-shift changepoint detector. For bandwidth G = max(7, floor(bandwidthFrac*N)), at every midpoint k computes T_k = sqrt(G/2) * (mean(x[k+1..k+G]) - mean(x[k-G+1..k])) / sigmaHat. sigmaHat = MAD-of-first-differences / sqrt(2). Local maxima of |T_k| above threshold = thresholdScale * sqrt(2 ln(N/G)) and at least G apart are emitted as changepoints (Algorithm A). TWO-HUNDRED-AND-THIRTY-THIRD cross-source axis. ORTHOGONAL to all prior changepoint axes (221-232) by SYMMETRIC TWO-SAMPLE rolling-window geometry, MULTIPLE LOCAL-MAX changepoints with G-spacing guarantee, ROBUST MAD scale, and ORNSTEIN-UHLENBECK supremum asymptotics. Refs: Bauer-Hackl 1978 Technometrics 20:431-436; Huskova-Slaby 2001 Kybernetika 37:605-622; Eichinger-Kirch 2018 Bernoulli 24:526-564.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source MOSUM mean-shift two-sample scan (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "G",
+    "argmaxDay",
+    "mosumMax",
+    "threshold",
+    "peakRatio",
+    "mCPs",
+    "tauStarDays",
+    "verdict",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.bandwidthG}`,
+    s.mosumArgmaxDay,
+    s.mosumMax.toFixed(3),
+    s.thresholdUsed.toFixed(3),
+    s.peakRatio.toFixed(4),
+    `${s.mChangepoints}`,
+    s.tauStarDays.length === 0 ? "-" : s.tauStarDays.join(","),
+    s.verdict,
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: PEAK = thresholdScale * sqrt(2 ln(N/G)) is unity in peakRatio units. Verdict ladder: peakRatio<0.5=no-shift, <1.0=borderline, <2.0=shift, otherwise=strong-shift. mCPs = number of local-max changepoints surviving threshold + G-spacing rule (Eichinger-Kirch Algorithm A). G is the symmetric half-window in days; segments shorter than G are smoothed away by construction. Compare with axis-232 Page-Hinkley (resetting-min sequential CUSUM) and axis-227 BOCPD (Bayesian online posterior): MOSUM is the only SYMMETRIC TWO-SAMPLE rolling-window scan with a guaranteed minimum-spacing between detected CPs.)`,
     ),
   );
 

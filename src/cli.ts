@@ -234,6 +234,7 @@ import {
   renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation,
   renderDailyTokenAdamsMackayBocpdBayesianOnlineRunLength,
   renderDailyTokenPageHinkleyMeanShiftChangepoint,
+  renderDailyTokenEichingerKirchMosumMeanChangepoint,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -826,6 +827,10 @@ import {
   buildDailyTokenPageHinkleyMeanShiftChangepoint,
   type DailyTokenPageHinkleyMeanShiftChangepointSort,
 } from './dailytokenpagehinkleymeanshiftchangepoint.js';
+import {
+  buildDailyTokenEichingerKirchMosumMeanChangepoint,
+  type DailyTokenEichingerKirchMosumMeanChangepointSort,
+} from './dailytokeneichingerkirchmosummeanchangepoint.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49795,6 +49800,147 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenPageHinkleyMeanShiftChangepoint(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-eichinger-kirch-mosum-mean-changepoint')
+  .description(
+    "Per-source EICHINGER-KIRCH 2018 MOSUM (MOving-SUM) symmetric two-sample mean-shift changepoint detector applied retrospectively to the gap-filled daily total_tokens series (TWO-HUNDRED-AND-THIRTY-THIRD cross-source axis). For bandwidth G = max(7, floor(bandwidthFrac*N)), at every midpoint k computes T_k(G) = sqrt(G/2) * (mean(x[k+1..k+G]) - mean(x[k-G+1..k])) / sigmaHat with sigmaHat = MAD(diff x) / sqrt(2). Local maxima of |T_k| above threshold = thresholdScale * sqrt(2 ln(N/G)) and at least G apart are emitted as changepoints (Eichinger-Kirch Algorithm A). Surfaces mosumMax, mosumArgmax, peakRatio = mosumMax / threshold, mChangepoints, tauStarDays, bandwidthG, sigmaHatUsed. ORTHOGONAL to all prior changepoint axes (221-232) by FIVE structural dimensions: (1) SYMMETRIC TWO-SAMPLE rolling-window mean-difference (vs ASYMMETRIC CUMULATIVE in CUSUM/PH/SNHT, vs RANDOM INTERVALS in WBS, vs DP cost in PELT), (2) MULTIPLE LOCAL-MAX changepoints with explicit G-spacing suppression (axes 232/231/230/229xaxis-228/153 emit at most ONE estimate; PELT/WBS emit multiples but via DP/random-interval, not deterministic local-max), (3) BANDWIDTH-G MIN-SEGMENT-LENGTH guarantee absent everywhere else, (4) MAD-of-first-differences ROBUST scale (vs IQR-of-raw in axes 230/232, sample variance in 222/223), (5) ORNSTEIN-UHLENBECK supremum asymptotics (vs Brownian-bridge/motion, Schwarz, Bayes-factor, RKHS, copula sup-deviation in 221-231). Refs: Bauer-Hackl 1978 Technometrics 20:431-436; Huskova 1990 JSPI 25:333-346; Huskova-Slaby 2001 Kybernetika 37:605-622; Eichinger-Kirch 2018 Bernoulli 24:526-564.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--bandwidth-frac <b>',
+    'symmetric half-window G as a fraction of N: G = max(7, floor(b*N)). Must be in (0, 0.5). Default 0.10.',
+    '0.10',
+  )
+  .option(
+    '--threshold-scale <t>',
+    'decision threshold = thresholdScale * sqrt(2 ln(N/G)); default 1.4. Must be > 0.',
+    '1.4',
+  )
+  .option(
+    '--only-shifts',
+    "hide source rows with verdict == 'no-shift'; default false",
+    false,
+  )
+  .option(
+    '--sort <key>',
+    'sort key: peakRatioDesc (default) | peakRatio | mosumMax | mosumMaxDesc | mChangepoints | mChangepointsDesc | tokens | tenure | source.',
+    'peakRatioDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        bandwidthFrac: string;
+        thresholdScale: string;
+        onlyShifts?: boolean;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const bandwidthFrac = Number.parseFloat(opts.bandwidthFrac);
+        if (
+          !Number.isFinite(bandwidthFrac) ||
+          !(bandwidthFrac > 0) ||
+          bandwidthFrac >= 0.5
+        ) {
+          throw new Error(
+            `--bandwidth-frac must be in (0, 0.5) (got ${opts.bandwidthFrac})`,
+          );
+        }
+        const thresholdScale = Number.parseFloat(opts.thresholdScale);
+        if (!Number.isFinite(thresholdScale) || !(thresholdScale > 0)) {
+          throw new Error(
+            `--threshold-scale must be > 0 (got ${opts.thresholdScale})`,
+          );
+        }
+        const validSorts = [
+          'mosumMax',
+          'mosumMaxDesc',
+          'peakRatio',
+          'peakRatioDesc',
+          'mChangepoints',
+          'mChangepointsDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenEichingerKirchMosumMeanChangepoint(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          bandwidthFrac,
+          thresholdScale,
+          onlyShifts: opts.onlyShifts === true,
+          sort: opts.sort as DailyTokenEichingerKirchMosumMeanChangepointSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenEichingerKirchMosumMeanChangepoint(report) + '\n',
           );
         }
       } catch (e) {
