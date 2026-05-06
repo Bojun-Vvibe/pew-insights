@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.571 — 2026-05-06
+
+### Added — axis-227 Adams-MacKay BOCPD bayesian online run-length
+
+Per-source ADAMS-MACKAY 2007 BAYESIAN ONLINE CHANGEPOINT
+DETECTION (BOCPD) on the gap-filled daily total_tokens
+series. TWO-HUNDRED-AND-TWENTY-SEVENTH cross-source
+axis. ONLINE / BAYESIAN / RECURSIVE.
+
+Maintains a recursive posterior p(r_t | x[1..t]) over
+the latent run-length r_t with constant-hazard prior
+H = 1/lambda (geometric prior over segment lengths) and
+a Normal-inverse-Gamma UPM (Student-t posterior
+predictive). At each step:
+
+  1. predictive log-likelihood pi[r] = log p(x_t | r)
+     under the run-length-r posterior NIG.
+  2. growth message    grow[r+1] = M[r] * pi[r] * (1-H).
+  3. changepoint msg   cp        = sum_r M[r]*pi[r]*H.
+  4. NIG update (mu, kappa, alpha, beta) per
+     Murphy 2007 Eq. 99 / Adams-MacKay 2007 sec. 3.2.
+  5. normalise -> p(r_t | x[1..t]).
+
+A CP at time t is recorded when MAP rMap[t] strictly
+DECREMENTS below MAP rMap[t-1] (segment restart on the
+MAP trajectory).
+
+Surfaces per source: m (MAP CPs), tauStar / tauStarDays,
+cpProbability (max over t of p(r_t = 0 | x[1..t])),
+meanRunLengthMap, maxRunLengthMap, posteriorEntropy
+(average Shannon entropy of the run-length posterior in
+nats), hazardLambda, sigmaHat, upmMu0, upmKappa,
+upmAlpha, upmBeta.
+
+#### Orthogonality justification (vs prior changepoint axes 221-226)
+
+Of the prior 226 axes NONE is an ONLINE BAYESIAN run-
+length recursion with conjugate Normal-inverse-Gamma UPM
+and constant-hazard prior. BOCPD is orthogonal along
+THREE INDEPENDENT dimensions inside the changepoint
+family:
+
+  1. INFERENCE PARADIGM. BOCPD is BAYESIAN with a proper
+     PRIOR on segment count (geometric over run-length)
+     and produces a FULL POSTERIOR over the latent
+     run-length. Axes 221-226 are FREQUENTIST hypothesis
+     tests (Pettitt, Lombard) or point estimators (ICSS,
+     PELT, WBS, ECP).
+  2. ONLINE RECURSION. BOCPD is a STREAMING forward-only
+     message-passing recursion: at time t it has only
+     seen x[0..t]. Axes 221-226 are BATCH algorithms
+     reading the entire sequence twice or more (CUSUM,
+     DP, randomised wild intervals, energy-distance
+     scans).
+  3. UNCERTAINTY SURFACE. BOCPD surfaces a posterior
+     ENTROPY (nats) and a calibrated cpProbability scalar
+     in [0, 1] interpretable as posterior mass on r_t = 0.
+     Axes 221-226 surface frequentist test statistics
+     (CUSUM, ICSS, scaled energy distance Q^*) without a
+     coherent posterior interpretation.
+
+Closest neighbours and the precise differentiator:
+
+  - axis-221 ALEXANDERSSON-PETTITT: SINGLE CP, parametric
+    or rank, BATCH. BOCPD: MULTIPLE, distribution-free
+    UPM (NIG -> Student-t), ONLINE.
+  - axis-222 LOMBARD smooth CP: SINGLE, smooth, rank-CUSUM,
+    BATCH. BOCPD: MULTIPLE, abrupt regime, ONLINE Bayesian.
+  - axis-223 INCLAN-TIAO ICSS: SINGLE, variance, parametric
+    Gaussian iterated cumulative sum, BATCH. BOCPD:
+    MULTIPLE, MEAN+VARIANCE jointly via NIG, ONLINE.
+  - axis-224 KILLICK PELT: MULTIPLE, variance, GAUSSIAN
+    cost + BIC, BATCH dynamic program. BOCPD: posterior
+    over RUN LENGTH not number of segments.
+  - axis-225 FRYZLEWICZ WBS: MULTIPLE, mean, RANDOMISED
+    wild-interval CUSUM aggregation, BATCH. BOCPD:
+    DETERMINISTIC ONLINE Bayesian recursion.
+  - axis-226 MATTESON-JAMES ECP: MULTIPLE, full
+    distribution, energy-distance, BATCH binary
+    segmentation. BOCPD: ONLINE Bayesian / posterior
+    output / calibrated probability surface.
+
+#### Live-smoke output (`~/.config/pew/queue.jsonl`, 2,929 rows)
+
+Verbatim head of the rendered table (source names redacted
+where needed; vsc-redacted = the editor source row):
+
+```
+source         tenure  m   maxRunMap  meanRunMap  cpProb  postEntropy
+vsc-redacted   265     13  100        26.70       0.0100  0.7621
+claude-code    72      2   35         15.21       0.0100  0.4783
+```
+
+`vsc-redacted` shows m = 13 BAYESIAN regime restarts
+spread across 9 months of editor-side activity (2025-09
+through 2026-04), with maxRunMap = 100 (the longest
+posterior MAP-stable stretch). `claude-code` shows m = 2
+restarts in a 72-day window with maxRunMap = 35 (a
+roughly month-long stable phase). The posterior entropy
+0.7621 nats vs 0.4783 nats indicates `vsc-redacted` is
+markedly less decisively segmented than `claude-code`,
+consistent with its much longer tenure and more diverse
+usage modes. cpProbability = 0.01 = 1/lambda corresponds
+to the prior hazard floor: no single timestep crosses
+0.5 posterior mass on r_t = 0, but the MAP trajectory
+still records the m incremental restart events above.
+4 sources dropped below the 21-day tenure floor.
+
+Total test-suite count 16264 -> 16302 (+38 BOCPD tests),
+all passing.
+
 ## 0.6.570 — 2026-05-06
 
 ### Refined — axis-226 ECP `--only-with-cps` filter + property tests
