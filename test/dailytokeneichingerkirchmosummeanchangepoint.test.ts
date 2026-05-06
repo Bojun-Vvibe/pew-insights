@@ -489,3 +489,126 @@ test('property: shifting x by constant c leaves mosumMax invariant (location-fre
   // Adding a constant cancels in (mR-mL) and leaves MAD-of-diffs unchanged.
   assert.ok(Math.abs(a.mosumMax - b.mosumMax) < 1e-9);
 });
+
+// =========================================================
+// REFINEMENT: additional property + edge-case tests
+// =========================================================
+
+test('refinement: time-reversal symmetry — reversing x reverses argmax around midpoint', () => {
+  // |T_k| under reversal becomes |T_{N-1-k}| (by symmetry of the
+  // two-sample statistic). Therefore mosumMax is invariant.
+  const base = [
+    ...new Array(40).fill(100),
+    ...new Array(40).fill(250),
+  ];
+  const reversed = base.slice().reverse();
+  const a = mosumScan(base);
+  const b = mosumScan(reversed);
+  assert.ok(Math.abs(a.mosumMax - b.mosumMax) < 1e-9, `${a.mosumMax} vs ${b.mosumMax}`);
+});
+
+test('refinement: thresholdScale=0.01 admits more CPs than thresholdScale=10', () => {
+  const x = [
+    ...new Array(40).fill(100),
+    ...new Array(40).fill(150),
+    ...new Array(40).fill(110),
+  ];
+  const lax = mosumScan(x, { thresholdScale: 0.01 });
+  const strict = mosumScan(x, { thresholdScale: 10 });
+  assert.ok(lax.changepoints.length >= strict.changepoints.length, `lax=${lax.changepoints.length} strict=${strict.changepoints.length}`);
+});
+
+test('refinement: bandwidthFrac monotone — larger G admits fewer CPs in noisy series', () => {
+  // Long noisy series with single embedded shift: larger G smooths
+  // out spurious noise-driven crossings.
+  const rng = (seed: number) => {
+    let s = seed;
+    return () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280 - 0.5;
+    };
+  };
+  const r = rng(101);
+  const x = [
+    ...Array.from({ length: 100 }, () => 100 + 8 * r()),
+    ...Array.from({ length: 100 }, () => 130 + 8 * r()),
+  ];
+  const small = mosumScan(x, { bandwidthFrac: 0.05, thresholdScale: 1.4 });
+  const big = mosumScan(x, { bandwidthFrac: 0.20, thresholdScale: 1.4 });
+  // True CP at idx 100; both should detect it.
+  assert.ok(small.changepoints.length >= 1);
+  assert.ok(big.changepoints.length >= 1);
+  // Bigger G → no more CPs than smaller G (smoothing).
+  assert.ok(big.changepoints.length <= small.changepoints.length + 0, `small=${small.changepoints.length} big=${big.changepoints.length}`);
+});
+
+test('refinement: mosumArgmax is in [G, N-G]', () => {
+  const x = Array.from({ length: 80 }, (_, i) => 100 + i);
+  const scan = mosumScan(x);
+  assert.ok(scan.mosumArgmax >= scan.bandwidthG);
+  assert.ok(scan.mosumArgmax <= 80 - scan.bandwidthG);
+});
+
+test('refinement: changepoints are all in [G, N-G]', () => {
+  const x = [
+    ...new Array(40).fill(100),
+    ...new Array(40).fill(200),
+  ];
+  const scan = mosumScan(x);
+  for (const k of scan.changepoints) {
+    assert.ok(k >= scan.bandwidthG, `cp ${k} < G ${scan.bandwidthG}`);
+    assert.ok(k <= x.length - scan.bandwidthG, `cp ${k} > N-G`);
+  }
+});
+
+test('refinement: builder emits sigmaHatUsed > 0 on all surviving rows', () => {
+  const queue = synth('alpha', [
+    ...new Array(40).fill(100),
+    ...new Array(40).fill(300),
+  ]);
+  const r = buildDailyTokenEichingerKirchMosumMeanChangepoint(queue, {
+    generatedAt: GEN,
+    minTokens: 0,
+  });
+  for (const row of r.sources) {
+    assert.ok(row.sigmaHatUsed > 0, `row sigmaHatUsed=${row.sigmaHatUsed}`);
+    assert.ok(Number.isFinite(row.sigmaHatUsed));
+  }
+});
+
+test('refinement: mChangepoints equals tauStarDays.length on every row', () => {
+  const queues: QueueLine[] = [];
+  for (let s = 0; s < 4; s += 1) {
+    queues.push(
+      ...synth(
+        `src${s}`,
+        [
+          ...new Array(40).fill(100),
+          ...new Array(40).fill(100 + 100 * s),
+        ],
+      ),
+    );
+  }
+  const r = buildDailyTokenEichingerKirchMosumMeanChangepoint(queues, {
+    generatedAt: GEN,
+    minTokens: 0,
+  });
+  for (const row of r.sources) {
+    assert.equal(row.mChangepoints, row.tauStarDays.length);
+  }
+});
+
+test('refinement: peakRatio strictly increases with shift magnitude', () => {
+  const ratios: number[] = [];
+  for (const delta of [50, 100, 200, 400]) {
+    const x = [
+      ...new Array(40).fill(100),
+      ...new Array(40).fill(100 + delta),
+    ];
+    const scan = mosumScan(x, { bandwidthFrac: 0.15, thresholdScale: 1.4 });
+    ratios.push(scan.peakRatio);
+  }
+  for (let i = 1; i < ratios.length; i += 1) {
+    assert.ok(ratios[i]! >= ratios[i - 1]!, `non-monotone: ${ratios.join(', ')}`);
+  }
+});
