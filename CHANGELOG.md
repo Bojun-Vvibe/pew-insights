@@ -2,6 +2,91 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.563 — 2026-05-06
+
+### Added — axis-224 Killick-Fearnhead-Eckley 2012 PELT variance segmentation
+
+Per-source KILLICK-FEARNHEAD-ECKLEY 2012 PELT (PRUNED EXACT LINEAR
+TIME) MULTIPLE-CHANGEPOINT segmentation for VARIANCE on the gap-
+filled daily total_tokens series. TWO-HUNDRED-AND-TWENTY-FOURTH
+cross-source axis. Mean-centred y[i] = x[i] - mean(x); optimal-
+partitioning DP F(s) = min_{0<=t<s} F(t) + C(y[t..s-1]) + beta with
+Gaussian-variance cost C(y_seg) = L*(ln(2*pi) + ln(sigma2_seg) + 1)
+and Schwarz BIC penalty beta = betaK*ln(n) (default betaK = 2). PELT
+pruning (Killick-Fearnhead-Eckley 2012 thm. 3.1) with K = 0 (sub-
+additive variance cost). Returns OPTIMAL m-changepoint partition for
+m in {0,...,n-1}.
+
+Structural orthogonality. Of the 42 preceding cross-source axes
+(181-223), exactly one (axis-223 ICSS) targets a change in the
+SECOND moment. PELT is orthogonal to ICSS along three independent
+dimensions: (1) CARDINALITY — ICSS is single-changepoint, PELT is
+multiple-changepoint exact; (2) CRITERION — ICSS uses sup-norm
+Brownian-bridge / Kolmogorov asymptotic, PELT uses BIC-penalised
+Gaussian likelihood under Schwarz finite-sample penalty; (3)
+ALGORITHM — ICSS is closed-form argmax of a cumulative-sum-of-
+squares functional, PELT is dynamic-programming with pruning.
+Mean-centring renders PELT invariant to first-moment shifts so it
+is also orthogonal to all 41 first-moment axes (181-222).
+
+CLI:
+
+```
+pew-insights daily-token-killick-pelt-variance-segmentation [--since ISO]
+  [--until ISO] [--source NAME] [--min-tokens N] [--min-tenure-days N]
+  [--top N] [--beta-k K] [--var-floor V] [--sort KEY] [--json]
+```
+
+Sort keys: mChangepointsDesc (default) | mChangepoints | costReduction
+| costReductionDesc | varRangeRatio | varRangeRatioDesc |
+varHomogeneity | varHomogeneityDesc | tokens | tenure | source.
+
+Live smoke against ~/.config/pew/queue.jsonl (verbatim):
+
+```
+pew-insights daily-token-killick-pelt-variance-segmentation
+as of: 2026-05-06T02:13:36.856Z    sources: 6 (shown 2)
+tokens: 3,444,271,515    min-tokens: 1,000    min-tenure-days: 21
+betaK: 2    varFloor: 1e-12    top: —    sort: mChangepointsDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+0 below min-tokens, 4 below min-tenure-days, 0 zero-variance,
+0 non-finite-fit, 0 below top cap
+
+source          firstDay    lastDay     tenure  m   tauStarDays
+vscode-copilot  2025-07-30  2026-04-20  265     11  2025-09-10,
+                                                    2025-09-20,
+                                                    2025-10-13,
+                                                    2025-10-18,
+                                                    2026-02-03,
+                                                    2026-02-06,
+                                                    2026-03-04,
+                                                    2026-03-06,
+                                                    2026-03-20,
+                                                    2026-03-22,
+                                                    2026-04-17
+                                                    varRangeRatio=314.231
+                                                    varHomogeneity=0.2394
+                                                    costReduction=462.09
+                                                    tokens=1,885,727
+claude-code     2026-02-11  2026-04-23  72      1   2026-04-15
+                                                    varRangeRatio=86.448
+                                                    varHomogeneity=0.2892
+                                                    costReduction=136.84
+                                                    tokens=3,442,385,788
+```
+
+Two sources surveyed: vscode-copilot exhibits 11 BIC-optimal
+variance changepoints (highly heterogeneous, varRangeRatio = 314.2);
+claude-code exhibits 1 BIC-optimal variance changepoint at
+2026-04-15 (single-shift regime, varRangeRatio = 86.4).
+
+Refs: Killick-Fearnhead-Eckley 2012 *JASA* 107:1590-1598;
+Jackson et al. 2005 *IEEE SPL* 12:105-108; Schwarz 1978
+*AnnStat* 6:461-464; Chen-Gupta 2012 *Parametric Statistical
+Change Point Analysis*.
+
+Tests: 16076 -> 16102 (+26). v0.6.562 -> v0.6.563.
+
 ## 0.6.562 — 2026-05-06
 
 ### Refined — axis-223 x axis-222 compound invariant coverage

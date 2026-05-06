@@ -229,6 +229,7 @@ import {
   renderDailyTokenAlexanderssonSnht,
   renderDailyTokenLombardSmoothChangepoint,
   renderDailyTokenInclanTiaoIcssVarianceChangepoint,
+  renderDailyTokenKillickPeltVarianceSegmentation,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -801,6 +802,10 @@ import {
   buildDailyTokenInclanTiaoIcssVarianceChangepoint,
   type DailyTokenInclanTiaoIcssVarianceChangepointSort,
 } from './dailytokeninclantiaoicssvariancechangepoint.js';
+import {
+  buildDailyTokenKillickPeltVarianceSegmentation,
+  type DailyTokenKillickPeltVarianceSegmentationSort,
+} from './dailytokenkillickpeltvariancesegmentation.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49101,6 +49106,134 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenInclanTiaoIcssVarianceChangepoint(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-killick-pelt-variance-segmentation')
+  .description(
+    "Per-source KILLICK-FEARNHEAD-ECKLEY 2012 PELT (PRUNED EXACT LINEAR TIME) MULTIPLE-CHANGEPOINT segmentation for VARIANCE on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-FOURTH cross-source axis). Mean-centred y[i] = x[i] - mean(x); optimal partitioning F(s) = min_{0<=t<s} F(t) + C(y[t..s-1]) + beta with Gaussian-variance cost C(y_seg) = L*(ln(2*pi) + ln(sigma2_seg) + 1) and BIC penalty beta = betaK*ln(n). PELT pruning (Killick-Fearnhead-Eckley 2012 thm. 3.1) with K=0 (sub-additive variance cost). Returns the OPTIMAL m-changepoint partition jointly with {tau_j} for m in {0,...,n-1}. STRUCTURALLY ORTHOGONAL to axis-223 ICSS along three independent dimensions: (1) ICSS is single-changepoint, PELT is multiple-changepoint; (2) ICSS uses sup-norm Brownian-bridge / Kolmogorov asymptotic, PELT uses BIC-penalised likelihood / Schwarz finite-sample penalty; (3) ICSS is closed-form argmax, PELT is dynamic-programming with pruning. Also orthogonal to all 41 first-moment axes (181-222) by mean-centring. Refs: Killick-Fearnhead-Eckley 2012 *JASA* 107:1590-1598; Jackson et al. 2005 *IEEE SPL* 12:105-108; Schwarz 1978 *AnnStat* 6:461-464; Chen-Gupta 2012 *Parametric Statistical Change Point Analysis*.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--beta-k <k>',
+    'BIC penalty multiplier; default 2 (two d.o.f. per added segment).',
+    '2',
+  )
+  .option(
+    '--var-floor <v>',
+    'small positive variance floor to prevent log(0). Default 1e-12.',
+    '1e-12',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mChangepointsDesc (default) | mChangepoints | costReduction | costReductionDesc | varRangeRatio | varRangeRatioDesc | varHomogeneity | varHomogeneityDesc | tokens | tenure | source.',
+    'mChangepointsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        betaK: string;
+        varFloor: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const betaK = Number.parseFloat(opts.betaK);
+        if (!Number.isFinite(betaK) || betaK < 0) {
+          throw new Error(`--beta-k must be a non-negative number (got ${opts.betaK})`);
+        }
+        const varFloor = Number.parseFloat(opts.varFloor);
+        if (!Number.isFinite(varFloor) || varFloor <= 0) {
+          throw new Error(`--var-floor must be > 0 (got ${opts.varFloor})`);
+        }
+        const validSorts = [
+          'mChangepoints',
+          'mChangepointsDesc',
+          'costReduction',
+          'costReductionDesc',
+          'varRangeRatio',
+          'varRangeRatioDesc',
+          'varHomogeneity',
+          'varHomogeneityDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenKillickPeltVarianceSegmentation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          betaK,
+          varFloor,
+          sort: opts.sort as DailyTokenKillickPeltVarianceSegmentationSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenKillickPeltVarianceSegmentation(report) + '\n',
           );
         }
       } catch (e) {

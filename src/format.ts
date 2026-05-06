@@ -20826,6 +20826,7 @@ import type { DailyTokenHamedRaoMannKendallCorrectedReport } from './dailytokenh
 import type { DailyTokenAlexanderssonSnhtReport } from './dailytokenalexanderssonsnht.js';
 import type { DailyTokenLombardSmoothChangepointReport } from './dailytokenlombardsmoothchangepoint.js';
 import type { DailyTokenInclanTiaoIcssVarianceChangepointReport } from './dailytokeninclantiaoicssvariancechangepoint.js';
+import type { DailyTokenKillickPeltVarianceSegmentationReport } from './dailytokenkillickpeltvariancesegmentation.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30897,6 +30898,83 @@ export function renderDailyTokenInclanTiaoIcssVarianceChangepoint(
   lines.push(
     chalk.dim(
       `(reference anchor: IT > ${r.kCritical05} = STATISTICALLY SIGNIFICANT change in unconditional VARIANCE at alpha = 0.05; IT > ${r.kCritical01} = significant at alpha = 0.01. The variance regime switch is at day kStarDay (where the cumulative-sum-of-squares deviation peaks). directionSign = sign(D[kStar]): + = LEFT segment x[0..kStar] has HIGHER VARIANCE (variance DECREASES after kStar); - = LEFT segment has LOWER VARIANCE (variance INCREASES after kStar). logVarRatio = ln(varAfter/varBefore) is the raw-scale log-ratio of segmental variances at the partition. lEdgeRatio close to 1 = peak near the edge (asymptotic less reliable); secondPeakRatio close to 1 = a SECOND nearly-equal candidate variance changepoint (regime multiplicity, iterate ICSS algorithm segment-by-segment). Compare against axis-222 Lombard / axis-221 SNHT / axis-154 Pettitt for LOCATION (first-moment) changepoints -- ICSS is the orthogonal SECOND-moment test under a complementary null.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenKillickPeltVarianceSegmentation(
+  r: DailyTokenKillickPeltVarianceSegmentationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-killick-pelt-variance-segmentation"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    betaK: ${r.betaK}    varFloor: ${r.varFloor}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source KILLICK-FEARNHEAD-ECKLEY 2012 PELT MULTIPLE-CHANGEPOINT segmentation for VARIANCE on the gap-filled daily token series. Mean-centred y[i] = x[i] - mean(x); optimal-partitioning DP recursion F(s) = min_{0<=t<s} F(t) + C(y[t..s-1]) + beta with Gaussian-variance cost C(y_seg) = L*(ln(2*pi) + ln(sigma2_seg) + 1) and BIC penalty beta = betaK*ln(n). PELT pruning (Killick-Fearnhead-Eckley 2012 thm. 3.1) with K=0 (sub-additive variance cost). Returns OPTIMAL m-changepoint partition for m in {0,...,n-1}. TWO-HUNDRED-AND-TWENTY-FOURTH cross-source axis. ORTHOGONAL to axis-223 ICSS by (1) cardinality (multiple vs single CP), (2) criterion (BIC likelihood vs sup-norm Brownian-bridge), (3) algorithm (DP+pruning vs closed-form argmax). Refs: Killick-Fearnhead-Eckley 2012 *JASA* 107:1590-1598; Jackson et al. 2005 *IEEE SPL* 12:105-108; Schwarz 1978; Chen-Gupta 2012.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source PELT BIC-optimal variance segmentation (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "m",
+    "tauStarDays",
+    "varRangeRatio",
+    "varHomogeneity",
+    "costReduction",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.mChangepoints}`,
+    s.tauStarDays.length === 0 ? "-" : s.tauStarDays.join(","),
+    Number.isFinite(s.varRangeRatio) ? s.varRangeRatio.toFixed(3) : `${s.varRangeRatio}`,
+    s.varHomogeneity.toFixed(4),
+    s.costReduction.toFixed(2),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: m = 0 = NO BIC-significant variance changepoints (single regime); m >= 1 = m optimal changepoints under Schwarz BIC. tauStarDays are the ESTIMATED variance-regime switch days. varRangeRatio = max(varSeg)/min(varSeg) across segments of length >= 3; large = strongly heterogeneous variance regimes. varHomogeneity in (0, 1]: 1 = single variance regime, near 0 = strong heterogeneity. costReduction = baselineCost - F(n) >= 0; large = BIC strongly prefers segmentation. Compare with axis-223 ICSS (single best variance changepoint, Kolmogorov asymptotic): if axis-223 finds significant single CP and PELT finds m=1 at the same day = STRONG SINGLE variance shift; if PELT finds m>=2 = MULTIPLE variance regimes that ICSS cannot resolve.)`,
     ),
   );
 
