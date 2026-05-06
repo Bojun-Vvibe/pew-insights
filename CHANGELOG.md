@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.569 — 2026-05-06
+
+### Added — axis-226 Matteson-James E-divisive (ECP) distributional changepoint
+
+Per-source MATTESON-JAMES 2014 E-DIVISIVE (ECP) MULTIPLE-CHANGEPOINT
+estimator for the FULL DISTRIBUTION of the gap-filled daily
+total_tokens series. TWO-HUNDRED-AND-TWENTY-SIXTH cross-source axis.
+
+Distribution-free / non-parametric. At each candidate split b in
+[s+2, e-2] of segment [s, e), compute the Szekely-Rizzo 2004
+EMPIRICAL ENERGY DISTANCE between the left and right halves,
+scaled by n1*n2/(n1+n2). Argmax over interior splits; accept iff
+Q^* > zeta_n = c_zeta * sigma * log(n) with sigma estimated by
+MAD-of-first-differences / sqrt(2). Recurse on the two sub-segments.
+
+Surfaces per source: m (number of accepted CPs), tauStar /
+tauStarDays, segments[] with meanSeg / sdSeg / meanShiftRel,
+maxQStar, sdRangeRatio, distributionalSpread,
+distributionalHomogeneity in (0, 1], sigmaHat, threshold.
+
+#### Orthogonality justification (vs axes 221-225)
+
+Of the prior 225 axes NONE is a NON-PARAMETRIC DISTRIBUTION-FREE
+multiple-changepoint estimator based on EMPIRICAL ENERGY-DISTANCE
+between the two halves of a candidate split. ECP is orthogonal
+along three INDEPENDENT dimensions inside the changepoint family:
+
+  1. MOMENT TARGETED. ECP fires on the FULL DISTRIBUTION (any
+     mean / variance / skewness / tail / multimodality
+     difference). axis-225 WBS targets only the FIRST MOMENT;
+     axes 223-224 (ICSS, PELT) target only the SECOND MOMENT;
+     axes 221-222 (Pettitt, Lombard) target only LOCATION via
+     CUSUM / rank-CUSUM.
+  2. PARAMETRIC ASSUMPTION. ECP is DISTRIBUTION-FREE: no
+     Gaussian likelihood, no rank under continuity. ICSS / PELT
+     are GAUSSIAN-likelihood / Gaussian-variance-cost; WBS is
+     Gaussian-noise-calibrated; Pettitt / Alexandersson are
+     parametric or rank-based under continuity.
+  3. ALGORITHMIC FAMILY. ECP is DETERMINISTIC FULL-SCAN
+     ENERGY-DISTANCE MAXIMISATION. WBS is RANDOMISED RECURSIVE
+     CUSUM AGGREGATION over wild sub-intervals (mulberry32
+     seeded). PELT is DETERMINISTIC DP with sub-additivity
+     pruning. ICSS is closed-form-argmax iteration. Pettitt /
+     Alexandersson are deterministic full-window argmax of
+     CUSUM-style statistics.
+
+The energy distance is also invariant under bijective
+distribution-preserving relabellings, so ECP is orthogonal to
+trend / location axes (181-218, 220, 222) which accumulate
+monotone drift rather than locating abrupt distributional
+shifts.
+
+#### Live-smoke output (real ~/.config/pew/queue.jsonl)
+
+Captured `node dist/cli.js daily-token-matteson-james-edivisive-
+distributional-segmentation` against 2,923 real queue lines
+spanning 6 sources (4 dropped below min-tenure-days):
+
+```
+source          firstDay    lastDay     tenure  m   maxQStar       threshold    sdRangeRatio  distHomog  tokens
+claude-code     2026-02-11  2026-04-23  72      14  1634158142.43  13709064.27  40.091        0.0036     3,442,385,788
+vscode-copilot  2025-07-30  2026-04-20  265     0   0.00           139705.90    1.000         1.0000     1,885,727
+```
+
+Interpretation. claude-code's 72-day series fires 14 ECP-
+significant distributional changepoints with maxQStar /
+threshold ratio ~119x and sdRangeRatio = 40.091 — the
+distribution is strongly heterogeneous (distHomog = 0.0036
+near zero). vscode-copilot's 265-day series with sigmaHat
+~25k tokens and threshold ~140k yields ZERO accepted CPs:
+the gap-filled token distribution is statistically a single
+regime over the whole tenure.
+
+Compare with axis-225 WBS and axis-224 PELT on the same
+queue: WBS targets only mean shifts and PELT targets only
+variance shifts; ECP captures ANY distributional change
+including shape / tail / multimodality changes that the
+moment-based axes provably miss (energy distance is zero iff
+the empirical distributions coincide).
+
+#### Tests
+
+Adds 64 new tests under
+`test/dailytokenmattesonjamesedivisivedistributionalsegmentation.test.ts`:
+option validation, pure helpers (median / mad / sigmaHatMadDiff),
+energy-distance properties (symmetry, monotonicity in mean shift,
+detection of pure variance shift at zero mean, scaling, identity
+collapse), ECP core (small-input throws, threshold respect,
+single-shift detection, deterministic, ascending tau, multi-CP),
+per-source builder (option echoes, gap-filling, ordering,
+translation invariance, segment coverage, sigmaHat positivity,
+mChangepoints / sdRangeRatio degeneracy guards), and one
+LIVE-SMOKE test against `~/.config/pew/queue.jsonl`. Total
+test suite count 16188 -> 16252 (+64), all passing.
+
 ## 0.6.568 — 2026-05-06
 
 ### Added — axis-225 x axis-224 WBS-vs-PELT mean-vs-variance multiple-changepoint compound
