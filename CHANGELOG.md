@@ -2,6 +2,125 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.576 — 2026-05-06
+
+### Added — axis-230 Keriven-Garreau-Poli NEWMA kernel online changepoint
+
+`daily-token-keriven-garreau-poli-newma-kernel-changepoint`:
+ONLINE TWO-TIMESCALE NEWMA changepoint detector on the
+gap-filled daily total_tokens series, in a finite-
+dimensional RANDOM-FOURIER-FEATURE (RFF) embedding of a
+Gaussian RBF kernel.
+
+Mechanism (Keriven, Garreau & Poli 2020 *IEEE Trans.
+Signal Process.* 68:3515-3528): track two parallel
+exponentially-weighted moving averages
+
+```
+M_1(t) = (1 - lambda_1) M_1(t-1) + lambda_1 Phi(z_t)
+M_2(t) = (1 - lambda_2) M_2(t-1) + lambda_2 Phi(z_t)
+```
+
+at forgetting factors lambda_1=0.05 < lambda_2=0.20 of
+a Phi(z_t) feature embedding of MAD-standardised daily
+tokens, then fire when
+
+```
+T(t) = || M_1(t) - M_2(t) ||_2 > thrMul * sqrt(v1+v2-2c12)
+```
+
+where v_k = lambda_k / (2 - lambda_k) and c_12 =
+lambda_1 lambda_2 / (lambda_1 + lambda_2 - lambda_1
+lambda_2) is the closed-form steady-state SD of the EWMA
+difference under iid bounded RFF features (default
+thrMul=0.7). Excursions are collapsed to one CP per
+maximal exceedance run (located at the argmax inside)
+and deduplicated by a delayCool (default 7 days) cooldown.
+
+Phi is a D=64 Rahimi-Recht 2008 RFF embedding of the
+Gaussian RBF kernel k(u,v) = exp(-(u-v)^2 / (2 sigma^2))
+with sigma chosen by the median pairwise-distance
+heuristic. Determinism is restored via a mulberry32 PRNG
+seeded by an FNV-1a32 hash of (salt | source | n | D),
+so every call returns the same RFF basis.
+
+Surfaces per source: mChangepoints, tauStar, tauStarDays,
+tMax, tMean, tArea, tauStarBest, tauStarBestDay, lambda1,
+lambda2, D, sigma, thrMul, thrSteady, delayCool, rffSeed.
+
+STRUCTURAL ORTHOGONALITY (the core claim).
+
+Of the prior 229 cross-source axes NONE is an ONLINE
+TWO-TIMESCALE EWMA detector in a KERNEL FEATURE SPACE.
+Axis-230 is orthogonal along four INDEPENDENT dimensions
+inside the changepoint family:
+
+  1. STREAMING vs OFFLINE. NEWMA is a SEQUENTIAL O(1)-
+     per-step OBSERVER: M_1, M_2 are recursively updated;
+     no global reweighting, no segmentation tree, no
+     backward pass. Axes 221-229 are all OFFLINE batch
+     detectors that re-scan the entire series (Pettitt
+     rank-CUSUM, Lombard quadratic CUSUM, Inclan-Tiao
+     cumulative variance, PELT cost dynamic program, WBS
+     recursive binary segmentation, ECP pairwise energy
+     distance, BOCPD posterior over run-length, spectral
+     CUSUM on Fourier coefficients, SSA Hankel SVD).
+  2. STATISTICAL FUNCTIONAL. NEWMA tests the difference
+     of two KERNEL MEAN EMBEDDINGS at different memory
+     scales — a function of the entire kernel-induced
+     distribution. ECP (axis-226) uses pairwise energy
+     distances but is BATCH and EXACT-PAIRWISE; NEWMA
+     uses RFF-APPROXIMATE embeddings, RECURSIVE EWMAs,
+     and a TWO-TIMESCALE DIFFERENTIAL.
+  3. RANDOMISED FEATURE BASIS. NEWMA operates in a
+     finite RFF projection of the kernel RKHS — a
+     randomised low-rank Bochner approximation. Axes
+     221-229 use no random embedding: they project onto
+     deterministic bases (raw observations, ranks,
+     Hankel columns, Fourier atoms). Determinism here
+     is restored by per-source seeding, but the BASIS
+     REPRESENTATION is categorically different.
+  4. ALARM RULE. NEWMA fires on a CLOSED-FORM EWMA
+     STEADY-STATE SD threshold (eq. above), not on a
+     sigma-of-statistic threshold (axes 228, 229) nor a
+     penalty-vs-cost optimisation (PELT, axis-224) nor a
+     posterior run-length argmax (BOCPD, axis-227).
+
+LIVE-SMOKE against `~/.config/pew/queue.jsonl` (2946
+queue rows, 6 distinct sources, 2 sources surviving
+minTokens=1000 + minTenureDays=21 floors at default
+thrMul=0.7):
+
+```
+queue rows: 2946
+totalSources: 6  kept: 2
+lambda1/lambda2/D/thrMul: 0.05 0.2 64 0.7
+top by mChangepoints:
+  vscode-copilot      m=17 tMax=0.443 tArea=48.31  bestDay=2025-08-12 thr=0.1618
+  claude-code         m= 4 tMax=0.509 tArea=20.50  bestDay=2026-02-19 thr=0.1618
+sources with >=1 CP: 2 / 2
+total CPs across all sources: 21
+```
+
+Test suite: 16414 -> 16442 (+28 new tests covering
+option validation, mulberry32 / fnv1a32 / RFF basis
+determinism, RFF norm bound, median / MAD / pairwise-
+distance helpers, steady-state-SD symmetry & D-
+independence, newmaRun shape validation, white-noise
+false-alarm bound, mean-shift detection, builder edge
+cases, top truncation, onlyWithCps filter, source
+filter).
+
+Library-only (no CLI/format wiring) following the
+recent compound-classifier convention (axes 221-229).
+
+Refs: Keriven, N., Garreau, D. and Poli, I. (2020),
+*IEEE Trans. Signal Process.* 68:3515-3528;
+Rahimi, A. and Recht, B. (2008), *NeurIPS* 20:1177-1184;
+Roberts, S. W. (1959), *Technometrics* 1(3):239-250;
+Gretton, A., Borgwardt, K. M., Rasch, M. J., Scholkopf,
+B. and Smola, A. (2012), *J. Mach. Learn. Res.* 13:723-773.
+
 ## 0.6.575 — 2026-05-06
 
 ### Added — axis-229 x axis-228 spectral-CUSUM x SSA-subspace compound
