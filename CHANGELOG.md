@@ -2,6 +2,118 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.574 — 2026-05-06
+
+### Added — axis-229 Picard-Aue-Horvath spectral CUSUM changepoint
+
+Per-source FREQUENCY-DOMAIN spectral CUSUM changepoint
+detector on the gap-filled daily total_tokens series.
+TWO-HUNDRED-AND-TWENTY-NINTH cross-source axis. PERIODOGRAM
+/ FOURIER / PICARD-CUSUM.
+
+Mechanism. Mean-centre x[0..n-1], compute the periodogram
+I(omega_j) = (a_j^2 + b_j^2) / n at the J = floor((n-1)/2)
+Fourier frequencies omega_j = 2 pi j / n. Restrict to a
+LOW-FREQUENCY sub-band B = {jLo .. jHi} (default jLo = 1,
+jHi = floor(J / 4)) and form the local BAND ENERGY
+E_B(t) = (1 / |B|) sum_{j in B} I_t(omega_j) from a sliding
+mean-centred rectangular window of length W (default
+min(28, floor(n/3))). The spectral-CUSUM statistic at
+candidate split t is the Picard partial-sum
+
+  C(t) = sqrt(t (n - t) / n) *
+         | mean(E_B[1..t]) - mean(E_B[t+1..n]) |
+
+(Picard 1985, eq. 2.4). Multiple CPs by recursive binary
+segmentation on E_B with stopping rule
+C_max(segment) >= cThreshold * sigma_E (default
+cThreshold = 2.5, sigma_E the empirical SD of the local
+band-energy series).
+
+Surfaces per source: m, tauStar / tauStarDays, cMax (peak
+spectral-CUSUM evidence), cMean, cArea (trapezoidal
+integral of C(t)), tauStarBest / tauStarBestDay, windowW,
+jLo / jHi / bandSize, sigmaE, cThreshold.
+
+#### Orthogonality justification (vs prior axes 181-228)
+
+Of the prior 228 cross-source axes NONE operates in the
+FOURIER FREQUENCY DOMAIN. Axis-229 is orthogonal along
+THREE INDEPENDENT dimensions inside the changepoint family:
+
+  1. REPRESENTATION DOMAIN. Axis-229 operates on the
+     PERIODOGRAM in a complex-exponential ORTHONORMAL
+     basis. Axes 221-227 operate on raw time-domain
+     observations. Axis-228 SSA operates on the TIME-
+     DOMAIN Hankel DELAY embedding. The Fourier basis
+     and the Hankel column space are independent
+     representations: a periodicity flip whose mean,
+     variance, and Hankel rank are preserved is invisible
+     to all 228 prior axes but visible to axis-229
+     because it shifts MASS BETWEEN FREQUENCY BANDS.
+  2. WHAT IS DETECTED. Axis-229 fires on changes in
+     SUB-BAND ENERGY (a function of the spectral density
+     restricted to B). Axes 221-227 fire on shifts in
+     first/second moment or full distribution. Axis-228
+     fires on shifts in the L-LAG SUBSPACE (column span
+     of the Hankel matrix). Spectrum and Hankel subspace
+     are related (Karhunen) but not equal: a sub-band
+     energy flip can occur with no rank change in the
+     Hankel matrix when the flip is between in-subspace
+     modes.
+  3. ALGORITHMIC FAMILY. Axis-229 combines an n-point
+     DFT (an ORTHOGONAL TRANSFORM) with a Picard-style
+     standardised partial-sum CUSUM. Axes 221-227 use no
+     orthogonal transform; axis-228 uses an SVD/Jacobi
+     eigendecomposition of a Gram matrix. The DFT is
+     shift-invariant in time; the SVD is rotation-
+     invariant in column space — disjoint invariances.
+
+Property invariants exposed as tests: cMax is invariant
+under additive constant shift (local mean-centring), and
+cMax scales as alpha^2 under x -> alpha * x (periodogram
+is quadratic in x).
+
+Refs: Picard, D. (1985), *Adv. in Appl. Probab.* 17(4):
+841-867; Aue, A., Hormann, S., Horvath, L. and Reimherr,
+M. (2009), *Ann. Statist.* 37(6B): 4046-4087; Huskova,
+M., Praskova, Z. and Steinebach, J. (2007), *J. Stat.
+Plan. Inference* 137(4): 1243-1259; Brillinger, D. R.
+(1981), *Time Series: Data Analysis and Theory* (rev.
+ed.), Holden-Day, ch. 5.
+
+Library-only (no CLI/format wiring) following the recent
+multiple-changepoint axis convention (axes 224-228).
+
+#### Live smoke against `~/.config/pew/queue.jsonl`
+
+```
+totalSources: 6
+keptSources: 2
+droppedBelowMinTenure: 4
+droppedSparseSources: 0
+droppedZeroVariance: 0
+droppedNonFiniteFit: 0
+
+source=vsc-redacted
+  m=2 totalTokens=1885727 tenureDays=265
+  windowW=28 jLo=1 jHi=3 bandSize=3
+  cMax=9.1554e+9  cMean=3.3274e+9  cArea=7.8754e+11
+  sigmaE=1.3170e+9  cThreshold=2.5
+  tauStarBest=91 tauStarBestDay=2025-10-29
+  tauStarDays=[2025-10-01, 2026-02-20]
+source=claude-code
+  m=1 totalTokens=3442385788 tenureDays=72
+  windowW=24 jLo=1 jHi=2 bandSize=2
+  cMax=2.7545e+17 cMean=1.1291e+17 cArea=5.3429e+18
+  sigmaE=4.0481e+16 cThreshold=2.5
+  tauStarBest=57 tauStarBestDay=2026-04-09
+  tauStarDays=[2026-04-09]
+```
+
+(Source `vscode-copilot` redacted to `vsc-redacted` per
+the cross-repo redaction rule.)
+
 ## 0.6.573 — 2026-05-06
 
 ### Added — axis-228 Moskvina-Zhigljavsky SSA subspace changepoint
