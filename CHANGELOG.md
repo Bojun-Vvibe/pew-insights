@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.572 — 2026-05-06
+
+### Added — axis-227 x axis-226 BOCPD-vs-ECP cross-axis compound
+
+Library-only cross-axis 5-bucket diagnostic joining the
+v0.6.571 axis-227 ADAMS-MACKAY 2007 BAYESIAN ONLINE
+CHANGEPOINT DETECTION (BOCPD) MAP run-length surface
+with the v0.6.569 axis-226 MATTESON-JAMES 2014
+E-DIVISIVE (ECP) BATCH ENERGY-DISTANCE estimator on a
+per-source basis.
+
+Both axes are MULTIPLE-CHANGEPOINT estimators on the
+SAME gap-filled daily total_tokens series. They are
+mutually orthogonal along three INDEPENDENT dimensions:
+
+  1. INFERENCE PARADIGM. BOCPD is BAYESIAN with a
+     proper geometric prior on segment length and emits
+     a calibrated POSTERIOR over the latent run length
+     r_t. ECP is FREQUENTIST: a deterministic argmax of
+     an empirical energy-distance test statistic.
+  2. INFORMATION USE. BOCPD is ONLINE / streaming /
+     forward-only (posterior at time t conditions only
+     on x[1..t]). ECP is BATCH: every interior split
+     scan reuses the entire segment in both directions.
+  3. WHAT IS DETECTED. BOCPD is sensitive to ANY shift
+     in the predictive distribution under the
+     parametric NIG predictive (Student-t, mean +
+     variance). ECP fires on ANY shift in the empirical
+     distribution (mean / variance / shape / tail /
+     multimodality) under the distribution-free
+     Szekely-Rizzo energy distance.
+
+5-bucket compound (mirrors prior axis-22X x axis-22X
+compounds):
+
+```
+'agree-aligned'    bocpdDecisive AND ecpDecisive AND aligned
+'agree-misaligned' bocpdDecisive AND ecpDecisive AND NOT aligned
+'bocpd-only'       bocpdDecisive AND NOT ecpDecisive
+'ecp-only'         ecpDecisive AND NOT bocpdDecisive
+'no-evidence'      neither decisive
+```
+
+Decisiveness: bocpdDecisive := bocpdM >= 1;
+ecpDecisive := ecpM >= 1. Aligned (when both decisive):
+exists (i, j) with |bocpdTauStar[i] - ecpTauStar[j]| <=
+proximityGuard (default 5 days).
+
+Refs: Adams-MacKay 2007 arXiv:0710.3742; Matteson-James
+2014 *JASA* 109:334-345.
+
+Library-only (no CLI/format wiring) following the prior
+cross-axis compound classifier convention (axis-207 x
+axis-206 through axis-225 x axis-224).
+
+Tests: 16302 -> 16321 (+19).
+
 ## 0.6.571 — 2026-05-06
 
 ### Added — axis-227 Adams-MacKay BOCPD bayesian online run-length
