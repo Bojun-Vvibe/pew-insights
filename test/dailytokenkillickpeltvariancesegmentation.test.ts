@@ -351,3 +351,70 @@ test('build: tauStar strictly ascending and within (0, n)', () => {
     }
   }
 });
+
+// ---- additional invariants ---------------------------------------------
+
+test('pelt: segments contiguous and cover full series', () => {
+  const q = buildSyntheticQueue();
+  const r = buildDailyTokenKillickPeltVarianceSegmentation(q, {
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    let prevEnd = 0;
+    for (const seg of s.segments) {
+      assert.equal(seg.tStart, prevEnd, `gap at ${seg.tStart}`);
+      assert.equal(seg.tEndExclusive - seg.tStart, seg.length);
+      prevEnd = seg.tEndExclusive;
+    }
+    assert.equal(prevEnd, s.nTenureDays);
+  }
+});
+
+test('pelt: tauStar entries match segment boundaries', () => {
+  const q = buildSyntheticQueue();
+  const r = buildDailyTokenKillickPeltVarianceSegmentation(q, {
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    const internalBoundaries = s.segments
+      .slice(0, -1)
+      .map((seg) => seg.tEndExclusive);
+    assert.deepEqual(internalBoundaries, s.tauStar);
+  }
+});
+
+test('pelt: varRangeRatio = 1 when m = 0', () => {
+  const q = buildSyntheticQueue();
+  const r = buildDailyTokenKillickPeltVarianceSegmentation(q, {
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    if (s.mChangepoints === 0) {
+      assert.equal(s.varRangeRatio, 1);
+    }
+  }
+});
+
+test('pelt: cost <= costNoSegmentation + beta (BIC optimality)', () => {
+  const q = buildSyntheticQueue();
+  const r = buildDailyTokenKillickPeltVarianceSegmentation(q, {
+    generatedAt: GEN,
+  });
+  for (const s of r.sources) {
+    // F(n) <= single-segment-with-one-beta cost
+    assert.ok(s.cost <= s.costNoSegmentation + 2 * Math.log(s.nTenureDays) + 1e-9);
+  }
+});
+
+test('pelt: huge betaK collapses to m=0', () => {
+  const q = buildSyntheticQueue();
+  const r = buildDailyTokenKillickPeltVarianceSegmentation(q, {
+    generatedAt: GEN,
+    betaK: 1e6,
+  });
+  for (const s of r.sources) {
+    assert.equal(s.mChangepoints, 0);
+    assert.equal(s.tauStar.length, 0);
+    assert.equal(s.varRangeRatio, 1);
+  }
+});

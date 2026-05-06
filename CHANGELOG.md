@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.565 — 2026-05-06
+
+### Refined — axis-224 PELT invariant coverage
+
+Additional invariant test coverage for axis-224 Killick-Fearnhead-
+Eckley PELT variance segmentation: segments are contiguous and
+cover the full series (sum of lengths = nTenureDays); tauStar
+entries match the internal segment boundaries (segments.slice(0,
+-1).map(tEndExclusive) === tauStar); varRangeRatio = 1 whenever
+m = 0; cost <= costNoSegmentation + beta (BIC optimality bound);
+huge betaK collapses every source to m = 0 with empty tauStar.
+
+Tests: 16125 -> 16130 (+5). v0.6.564 -> v0.6.565.
+
 ## 0.6.564 — 2026-05-06
 
 ### Added — axis-224 x axis-223 PELT vs ICSS multiple-vs-single variance changepoint compound
