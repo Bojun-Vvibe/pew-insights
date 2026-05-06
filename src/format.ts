@@ -20825,6 +20825,7 @@ import type { DailyTokenSenAdichieAlignedRankTrendReport } from './dailytokensen
 import type { DailyTokenHamedRaoMannKendallCorrectedReport } from './dailytokenhamedraomannkendallcorrected.js';
 import type { DailyTokenAlexanderssonSnhtReport } from './dailytokenalexanderssonsnht.js';
 import type { DailyTokenLombardSmoothChangepointReport } from './dailytokenlombardsmoothchangepoint.js';
+import type { DailyTokenInclanTiaoIcssVarianceChangepointReport } from './dailytokeninclantiaoicssvariancechangepoint.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -30807,6 +30808,95 @@ export function renderDailyTokenLombardSmoothChangepoint(
   lines.push(
     chalk.dim(
       `(reference anchor: pApprox < 0.05 = STATISTICALLY SIGNIFICANT smooth (non-abrupt) change in location at alpha = 0.05; the smooth-change CENTRE is on day kStarDay (where the cumulative smoothed-rank deviation peaks). directionSign = sign(S[kStar]): + = upward smooth shift after kStarDay, - = downward. K is the triangular-kernel half-width actually used (auto = max(2, ceil(n^{1/3}))). zShift = S[kStar]/n is on the rank scale (mean smoothed deviation up to kStar, comparable across sources). lEdgeRatio close to 1 = peak near the series edge (caveat); secondPeakRatio close to 1 = a SECOND nearly-equal smooth-change candidate (regime multiplicity, peel off iteratively). Compare against axis-221 Alexandersson SNHT for the parametric ABRUPT-step dual; against axis-154 Pettitt for the rank-based abrupt-step dual; against axis-220 Hamed-Rao MK for monotone trend.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenInclanTiaoIcssVarianceChangepoint(
+  r: DailyTokenInclanTiaoIcssVarianceChangepointReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-inclan-tiao-icss-variance-changepoint"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    crit05: ${r.kCritical05}    crit01: ${r.kCritical01}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source INCLAN-TIAO 1994 ICSS VARIANCE-CHANGEPOINT TEST on the gap-filled daily token series. Mean-centred y[i] = x[i] - mean(x); cumulative sum-of-squares C[k] = sum_{i<=k} y[i]^2; centred process D[k] = C[k]/C[n-1] - (k+1)/n; statistic IT = sqrt(n/2) * max_{0<=k<n-1} |D[k]|. Under H0 of CONSTANT (UNCONDITIONAL) VARIANCE, IT follows the two-sided KOLMOGOROV-SMIRNOV distribution: Pr(IT > c) = 2 * sum_{j>=1} (-1)^{j+1} * exp(-2 j^2 c^2). Critical values c_{0.05} = 1.358, c_{0.01} = 1.628 (Inclan-Tiao 1994 Table 1). kStar = argmax |D[k]| = most-likely VARIANCE-changepoint; directionSign = sign(D[kStar]): positive = LEFT segment x[0..kStar] has HIGHER VARIANCE; negative = RIGHT segment x[kStar+1..n-1] has higher variance. logVarRatio = ln(varAfter/varBefore). TWO-HUNDRED-AND-TWENTY-THIRD cross-source axis. STRUCTURALLY DISTINCT from all 41 prior axes (181-222) because they ALL test for changes in the FIRST MOMENT (mean / location / monotone trend), while ICSS tests for a change in the SECOND MOMENT (variance / scale) under the COMPLEMENTARY null. Mean-centring removes location effects, so ICSS is invariant to mean-shifts; conversely Lombard 222, SNHT 221, Pettitt 154, Hirsch-Slack 218, Sen-Adichie 219, Hamed-Rao MK 220, Buys-Ballot 215, Laplace centroid 217, Cox-Stuart thirds 213, Page-L 207, Theil-Sen 181 all assume constant variance. Refs: Inclan-Tiao 1994 *JASA* 89:913-923; Brown-Durbin-Evans 1975 *JRSSB* 37:149-192; Sanso-Arago-Carrion 2004 *RevEcoFin* 4:32-53.)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source Inclan-Tiao IT statistic with Kolmogorov-approx p (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "IT",
+    "kStar",
+    "kStarDay",
+    "dir",
+    "pApprox",
+    "sig05",
+    "sig01",
+    "logVarRatio",
+    "varBefore",
+    "varAfter",
+    "sndPeakRatio",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    s.itStat.toFixed(4),
+    `${s.kStar}`,
+    s.kStarDay ?? "-",
+    s.directionSign > 0 ? "+" : s.directionSign < 0 ? "-" : "0",
+    s.pApprox.toExponential(3),
+    s.significant05 ? "YES" : "no",
+    s.significant01 ? "YES" : "no",
+    s.logVarRatio.toFixed(4),
+    s.varBefore.toFixed(0),
+    s.varAfter.toFixed(0),
+    s.secondPeakRatio.toFixed(3),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: IT > ${r.kCritical05} = STATISTICALLY SIGNIFICANT change in unconditional VARIANCE at alpha = 0.05; IT > ${r.kCritical01} = significant at alpha = 0.01. The variance regime switch is at day kStarDay (where the cumulative-sum-of-squares deviation peaks). directionSign = sign(D[kStar]): + = LEFT segment x[0..kStar] has HIGHER VARIANCE (variance DECREASES after kStar); - = LEFT segment has LOWER VARIANCE (variance INCREASES after kStar). logVarRatio = ln(varAfter/varBefore) is the raw-scale log-ratio of segmental variances at the partition. lEdgeRatio close to 1 = peak near the edge (asymptotic less reliable); secondPeakRatio close to 1 = a SECOND nearly-equal candidate variance changepoint (regime multiplicity, iterate ICSS algorithm segment-by-segment). Compare against axis-222 Lombard / axis-221 SNHT / axis-154 Pettitt for LOCATION (first-moment) changepoints -- ICSS is the orthogonal SECOND-moment test under a complementary null.)`,
     ),
   );
 

@@ -228,6 +228,7 @@ import {
   renderDailyTokenHamedRaoMannKendallCorrected,
   renderDailyTokenAlexanderssonSnht,
   renderDailyTokenLombardSmoothChangepoint,
+  renderDailyTokenInclanTiaoIcssVarianceChangepoint,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -796,6 +797,10 @@ import {
   buildDailyTokenLombardSmoothChangepoint,
   type DailyTokenLombardSmoothChangepointSort,
 } from './dailytokenlombardsmoothchangepoint.js';
+import {
+  buildDailyTokenInclanTiaoIcssVarianceChangepoint,
+  type DailyTokenInclanTiaoIcssVarianceChangepointSort,
+} from './dailytokeninclantiaoicssvariancechangepoint.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -48988,6 +48993,114 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenLombardSmoothChangepoint(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-inclan-tiao-icss-variance-changepoint')
+  .description(
+    "Per-source INCLAN-TIAO 1994 ICSS VARIANCE-CHANGEPOINT TEST on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-THIRD cross-source axis). Mean-centred y[i] = x[i] - mean(x); cumulative sum-of-squares C[k] = sum_{i<=k} y[i]^2; centred process D[k] = C[k]/C[n-1] - (k+1)/n; statistic IT = sqrt(n/2) * max_{0<=k<n-1} |D[k]|. Under H0 of CONSTANT (UNCONDITIONAL) VARIANCE, IT follows the two-sided KOLMOGOROV-SMIRNOV distribution: Pr(IT > c) = 2 * sum_{j>=1} (-1)^{j+1} * exp(-2 j^2 c^2). Critical values c_{0.05} = 1.358, c_{0.01} = 1.628 (Inclan-Tiao 1994 Table 1). kStar = argmax |D[k]| variance-changepoint; directionSign = sign(D[kStar]): positive = LEFT segment higher variance; negative = RIGHT segment higher variance. STRUCTURALLY DISTINCT from all 41 prior axes (181-222) because they ALL test for changes in the FIRST MOMENT (mean / location / monotone trend); ICSS tests for a change in the SECOND MOMENT (variance / scale) under a COMPLEMENTARY null. Mean-centring renders ICSS invariant to mean-shifts. Refs: Inclan-Tiao 1994 *JASA* 89:913-923; Brown-Durbin-Evans 1975 *JRSSB* 37:149-192; Sanso-Arago-Carrion 2004 *RevEcoFin* 4:32-53.",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: itStatDesc (default) | itStat | pApprox | pApproxDesc | absLogVarRatio | absLogVarRatioDesc | kStar | kStarDesc | secondPeakRatio | secondPeakRatioDesc | tokens | tenure | source.',
+    'itStatDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const validSorts = [
+          'itStat',
+          'itStatDesc',
+          'pApprox',
+          'pApproxDesc',
+          'kStar',
+          'kStarDesc',
+          'absLogVarRatio',
+          'absLogVarRatioDesc',
+          'secondPeakRatio',
+          'secondPeakRatioDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenInclanTiaoIcssVarianceChangepoint(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          sort: opts.sort as DailyTokenInclanTiaoIcssVarianceChangepointSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenInclanTiaoIcssVarianceChangepoint(report) + '\n',
           );
         }
       } catch (e) {

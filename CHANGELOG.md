@@ -2,6 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.558 — 2026-05-06
+
+### Added — axis-223 Inclán-Tiao 1994 ICSS variance-changepoint test
+
+New per-source `daily-token-inclan-tiao-icss-variance-changepoint`
+subcommand: TWO-HUNDRED-AND-TWENTY-THIRD cross-source axis. Detects a
+single changepoint in the **unconditional VARIANCE** (second moment) of
+the gap-filled daily total_tokens series, orthogonal to all forty-one
+prior axes (181-222) which test only for changes in the FIRST MOMENT
+(mean / location / monotone trend).
+
+Mechanism. For per-source weights x[0..n-1] with n = nTenureDays >= 21,
+mean-centre y[i] = x[i] - mean(x). Form the cumulative sum-of-squares
+C[k] = sum_{i<=k} y[i]^2 and the centred process
+
+    D[k] = C[k] / C[n-1]  -  (k + 1) / n
+
+The Inclán-Tiao 1994 (*JASA* 89:913-923) statistic is
+
+    IT = sqrt(n / 2) * max_{0 <= k < n-1} |D[k]|
+
+Under H0 of constant unconditional variance, sqrt(n/2)*D[floor(n*t)]
+converges weakly to a standard Brownian bridge B_0(t) on D[0,1]. IT is
+therefore distributed as the two-sided KOLMOGOROV-SMIRNOV sup-norm
+statistic, with closed-form upper-tail probability
+
+    Pr(IT > c) = 2 * sum_{j=1..inf} (-1)^{j+1} * exp(-2 j^2 c^2)
+
+Critical values (Inclán-Tiao 1994 Table 1): c_{0.05} = 1.358,
+c_{0.01} = 1.628.
+
+The most-likely variance-changepoint kStar = argmax_k |D[k]|; the
+direction sign D[kStar] in {-1, 0, +1} encodes which segment carries
+the higher variance (positive = LEFT, negative = RIGHT). The raw-scale
+log-ratio logVarRatio = ln(varAfter/varBefore) summarises the
+magnitude of the variance shift at the partition.
+
+Structural orthogonality. The exhaustive list of prior axes 181-222
+includes Theil-Sen slope (181), Mann-Kendall variants (195-200), Cox-
+Stuart thirds (213), Page-L (207), Buys-Ballot ANOVA (215), Laplace
+centroid (217), Hirsch-Slack seasonal Kendall (218), Sen-Adichie
+aligned rank (219), Hamed-Rao MK corrected (220), Alexandersson SNHT
+(221), Lombard smooth-changepoint (222), and Pettitt (154 reused).
+Every one of these tests assumes CONSTANT VARIANCE and looks for a
+shift in mean (or a monotone trend in the first moment). ICSS is the
+strict complement: it removes the mean by centring, then asks under a
+COMPLEMENTARY NULL whether the second moment is constant.
+
+  - Different statistic family: cumulative sum-of-squares Brownian
+    bridge L-infinity (vs L-2 integrated Brownian bridge for Lombard,
+    L-2 likelihood ratio for SNHT, max-rank-walk for Pettitt, rank
+    correlations for the Mann-Kendall family).
+  - Different null hypothesis: H0 = constant variance, NOT constant
+    mean.
+  - Different invariances: ICSS is invariant under mean shifts; all
+    prior axes are NOT invariant under variance shifts. The two
+    families are mutually orthogonal in the same sense that mean and
+    variance are orthogonal under a Gaussian factorisation.
+  - Different asymptotic distribution: Kolmogorov-Smirnov sup, not
+    Anderson-Darling integral, not Khaliq-Ouarda Gaussian-MLE max,
+    not gamma moment-matched.
+
+Refs: Inclán-Tiao 1994 *JASA* 89:913-923; Brown-Durbin-Evans 1975
+*JRSSB* 37:149-192; Sansó-Aragó-Carrion 2004 *RevEcoFin* 4:32-53.
+
+Tests: 15996 -> 16036 (+40). Coverage: option validation (minTokens,
+minTenureDays, top, sort, since/until); pure helpers (Kolmogorov upper-
+tail bounded in [0, 1], monotone in c, critical-value alignment at
+1.358 and 1.628, large-c numerical zero); ICSS summary (zero-SS throw,
+constant-variance gives near-zero IT, variance increase gives
+directionSign = -1 with kStar near true changepoint, variance decrease
+gives directionSign = +1, lEdgeRatio and secondPeakRatio in [0, 1]);
+end-to-end builder (n<21 throw, negative/non-finite weights throw,
+zero-variance throw, real changepoint detection at correct day with
+correct direction and significant05/01 flags, pApprox in [0, 1],
+constant-unconditional-variance under sinusoid below 0.01 critical);
+queue integration (drops invalid hour_start, non-positive tokens,
+sparse sources, below-min-tenure, zero-variance, source-filter, top
+cap); kCritical05/01 surfaced in payload; gap-filling exposed; all
+13 sort modes produce stable output.
+
+Live smoke against `~/.config/pew/queue.jsonl` on 2026-05-06
+(redacted source identifiers per repo policy):
+
+    pew-insights daily-token-inclan-tiao-icss-variance-changepoint
+    as of: 2026-05-06T01:26:57.745Z    sources: 6 (shown 2)
+        tokens: 3,444,271,515    min-tokens: 1,000
+        min-tenure-days: 21    crit05: 1.358    crit01: 1.628
+        top: —    sort: itStatDesc
+    dropped: 0 bad hour_start, 0 non-positive tokens,
+        0 source-filter, 0 below min-tokens,
+        4 below min-tenure-days, 0 zero-variance,
+        0 non-finite-fit, 0 below top cap
+
+    per-source Inclan-Tiao IT statistic with Kolmogorov-approx p
+    (sorted by itStatDesc; ties: source asc)
+    source          firstDay    lastDay     tenure  IT      kStar
+    --------------  ----------  ----------  ------  ------  -----
+    vsc-redacted-a  2025-07-30  2026-04-20  265     4.8396  217
+    vsc-redacted-b  2026-02-11  2026-04-23  72      4.8211  65
+
+    source          kStarDay    dir  pApprox    sig05  sig01
+    --------------  ----------  ---  ---------  -----  -----
+    vsc-redacted-a  2026-03-04  -    9.061e-21  YES    YES
+    vsc-redacted-b  2026-04-17  -    1.296e-20  YES    YES
+
+    source          logVarRatio  varBefore         varAfter
+    --------------  -----------  ----------------  ------------------
+    vsc-redacted-a  1.9210       355462303         2427071313
+    vsc-redacted-b  4.2669       2045143022792117  145817112530586336
+
+    source          sndPeakRatio  tokens
+    --------------  ------------  -------------
+    vsc-redacted-a  0.674         1,885,727
+    vsc-redacted-b  0.812         3,442,385,788
+
+Both retained sources reject H0 with overwhelming significance
+(IT >> 1.628; pApprox below 1e-20). Both have directionSign -1, i.e.,
+the cumulative sum-of-squares accumulates SLOWER than the (k+1)/n null
+line in the LEFT segment, meaning the RIGHT segment carries the
+higher variance: logVarRatio is +1.92 and +4.27 respectively (RIGHT
+segment variance is e^1.92 ~ 6.8x and e^4.27 ~ 71.5x larger than the
+LEFT). secondPeakRatio of 0.67 and 0.81 indicates a second nearly-
+equal candidate variance changepoint in both series, suggesting at
+least two regime shifts -- a screening signal that the iterative ICSS
+algorithm (Inclán-Tiao 1994 sec. 3) would unwind segment-by-segment.
+
+Pure transform. Determinism: full apart from `opts.generatedAt`.
+Caller-supplied wall clock; no `Math.random`. Mean-centring is
+deterministic; argmax tie-break favours the smaller k. The Kolmogorov
+series sums to 1e-18 absolute precision in <=200 terms.
+
+Caveats. Hard floor n >= 21; below that the Kolmogorov asymptotic is
+anti-conservative. Detects a SINGLE variance changepoint -- multiple
+changepoints surface as secondPeakRatio close to 1 and require iteration.
+Sensitive to fourth-moment outliers (a single huge spike inflates
+C[k]); pair with axis-217 Laplace centroid for cross-validation.
+
 ## 0.6.556 — 2026-05-06
 
 ### Added — axis-222 x axis-221 Lombard vs Alexandersson SNHT smooth-vs-abrupt single-changepoint compound
