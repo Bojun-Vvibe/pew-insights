@@ -49423,6 +49423,11 @@ program
     '1.0',
   )
   .option(
+    '--only-with-cps',
+    'hide source rows with mChangepoints = 0 (single distributional regime); default false',
+    false,
+  )
+  .option(
     '--sort <key>',
     'sort key: mChangepointsDesc (default) | mChangepoints | maxQStar | maxQStarDesc | sdRangeRatio | sdRangeRatioDesc | distributionalHomogeneity | distributionalHomogeneityDesc | tokens | tenure | source.',
     'mChangepointsDesc',
@@ -49438,6 +49443,7 @@ program
         minTenureDays: string;
         top: string;
         cZeta: string;
+        onlyWithCps?: boolean;
         sort: string;
         json?: boolean;
       },
@@ -49493,6 +49499,7 @@ program
           minTenureDays,
           top,
           cZeta,
+          onlyWithCps: opts.onlyWithCps === true,
           sort: opts.sort as DailyTokenMattesonJamesEDivisiveDistributionalSegmentationSort,
         });
         if (opts.json || common.json) {

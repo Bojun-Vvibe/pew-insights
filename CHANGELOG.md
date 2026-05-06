@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.570 — 2026-05-06
+
+### Refined — axis-226 ECP `--only-with-cps` filter + property tests
+
+Two small follow-ups to v0.6.569 axis-226 ECP:
+
+1. New `--only-with-cps` CLI flag (and `onlyWithCps` builder
+   option) on `daily-token-matteson-james-edivisive-
+   distributional-segmentation`. When set, rows with
+   `mChangepoints = 0` (sources whose entire gap-filled
+   token series sits in a single distributional regime
+   under the c_zeta cutoff) are dropped from the output.
+   Useful for narrowing dashboards to the regime-changing
+   subset.
+
+2. Ten property-style invariant tests
+   (`test/dailytokenmattesonjamesedivisivedistributionalsegmentation.properties.test.ts`)
+   exercising scaledEnergyStat non-negativity, tau strict
+   ascending order, monotone reduction in accepted CPs as
+   threshold rises, exact segment partitioning,
+   translation invariance, zero-CP behaviour on
+   stationary noise, multi-regime CP recovery, monotone
+   decrease of distHomog in shift magnitude, maxQStar
+   consistency, and energy-distance equal-multiset
+   identity.
+
+Cross-axis live-smoke recap on `~/.config/pew/queue.jsonl`
+(unchanged numerics from v0.6.569; reproduced for clarity):
+
+```
+source         tenure  axis-226 m  axis-226 maxQStar  axis-226 threshold
+claude-code    72      14          1634158142.43      13709064.27
+vscode-copilot 265     0           0.00               139705.90
+```
+
+Total test suite count 16252 -> 16264 (+12: 10 properties
++ 2 onlyWithCps), all passing.
+
 ## 0.6.569 — 2026-05-06
 
 ### Added — axis-226 Matteson-James E-divisive (ECP) distributional changepoint

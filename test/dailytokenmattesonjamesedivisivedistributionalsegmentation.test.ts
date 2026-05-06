@@ -794,3 +794,30 @@ test('live-smoke: real queue.jsonl produces deterministic ECP report', async () 
     assert.equal(row.segments.length, row.mChangepoints + 1);
   }
 });
+
+test('builder: onlyWithCps drops m=0 rows', () => {
+  // one source with shift, one without
+  const withShift: number[] = [];
+  for (let i = 0; i < 60; i += 1) withShift.push(i < 30 ? 100 : 5000);
+  const constish: number[] = [];
+  for (let i = 0; i < 60; i += 1) constish.push(100 + (i % 5));
+  const lines = [
+    ...genSource('shift', '2026-01-01T00:00:00.000Z', withShift),
+    ...genSource('flat', '2026-01-01T00:00:00.000Z', constish),
+  ];
+  const r = buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(lines, {
+    onlyWithCps: true,
+    generatedAt: GEN,
+  });
+  for (const row of r.sources) {
+    assert.ok(row.mChangepoints > 0);
+  }
+  assert.equal(r.onlyWithCps, true);
+});
+
+test('builder: onlyWithCps default false echoes false', () => {
+  const r = buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation([], {
+    generatedAt: GEN,
+  });
+  assert.equal(r.onlyWithCps, false);
+});

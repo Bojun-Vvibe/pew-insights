@@ -389,6 +389,8 @@ export interface DailyTokenMattesonJamesEDivisiveDistributionalSegmentationOptio
   sort?: DailyTokenMattesonJamesEDivisiveDistributionalSegmentationSort;
   /** Threshold scale c_zeta in (4); default 1.0. */
   cZeta?: number;
+  /** If true, drop rows with mChangepoints == 0 (single regime). Default false. */
+  onlyWithCps?: boolean;
   generatedAt?: string;
 }
 
@@ -430,6 +432,7 @@ export interface DailyTokenMattesonJamesEDivisiveDistributionalSegmentationRepor
   top: number;
   sort: DailyTokenMattesonJamesEDivisiveDistributionalSegmentationSort;
   cZeta: number;
+  onlyWithCps: boolean;
   source: string | null;
   totalTokens: number;
   totalSources: number;
@@ -501,6 +504,10 @@ export function buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(
   const cZeta = opts.cZeta ?? 1.0;
   if (!Number.isFinite(cZeta) || cZeta <= 0) {
     throw new Error(`cZeta must be a positive finite number (got ${opts.cZeta})`);
+  }
+  const onlyWithCps = opts.onlyWithCps ?? false;
+  if (typeof onlyWithCps !== 'boolean') {
+    throw new Error(`onlyWithCps must be boolean (got ${opts.onlyWithCps})`);
   }
   const sourceFilter = opts.source ?? null;
   const sinceMs = opts.since != null ? Date.parse(opts.since) : null;
@@ -754,9 +761,12 @@ export function buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(
 
   let droppedTopSources = 0;
   let kept = rows;
-  if (top > 0 && rows.length > top) {
-    droppedTopSources = rows.length - top;
-    kept = rows.slice(0, top);
+  if (onlyWithCps) {
+    kept = kept.filter((r) => r.mChangepoints > 0);
+  }
+  if (top > 0 && kept.length > top) {
+    droppedTopSources = kept.length - top;
+    kept = kept.slice(0, top);
   }
 
   return {
@@ -768,6 +778,7 @@ export function buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(
     top,
     sort,
     cZeta,
+    onlyWithCps,
     source: sourceFilter,
     totalTokens: totalTokensSum,
     totalSources,
