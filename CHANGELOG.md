@@ -1,6 +1,108 @@
 # Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
+
+## 0.6.579 — 2026-05-06
+
+### Added — axis-233 Eichinger-Kirch MOSUM symmetric two-sample mean-shift changepoint
+
+`buildDailyTokenEichingerKirchMosumMeanChangepoint`:
+per-source EICHINGER-KIRCH 2018 *Bernoulli* MOSUM
+(MOving-SUM) symmetric two-sample mean-shift changepoint
+detector applied retrospectively to the gap-filled daily
+total_tokens series.
+
+Mechanism (Bauer-Hackl 1978; Hušková-Slabý 2001;
+Eichinger-Kirch 2018 *Bernoulli* 24:526-564).
+
+For bandwidth `G = max(7, floor(bandwidthFrac * N))`, at
+every midpoint `k in [G, N-G]`:
+
+```
+mL_k     = (1/G) * sum_{i=k-G+1..k}  x_i
+mR_k     = (1/G) * sum_{i=k+1..k+G}  x_i
+sigmaHat = MAD(diff x) / sqrt(2)        (robust scale)
+T_k(G)   = sqrt(G/2) * (mR_k - mL_k) / sigmaHat
+```
+
+Changepoints are **all local maxima** of `|T_k|` that
+satisfy both:
+
+```
+(a) |T_k| > threshold = thresholdScale * sqrt(2 ln(N/G))
+(b) k is local max over symmetric window [k-G, k+G]
+```
+
+Defaults: `bandwidthFrac=0.10`, `thresholdScale=1.4`
+(midway between Hušková-Slabý 5 % and 1 % asymptotic
+constants in standard-error units after the log-correction
+of (3) of the source comment block).
+
+Algorithm A (Eichinger-Kirch §3) additionally enforces a
+**strict G-spacing** rule via a greedy descending-magnitude
+pick — guaranteeing detected CPs are at least `G` days
+apart. This is a structural property the prior 232 axes
+cannot offer.
+
+CLI subcommand:
+
+```
+pew-insights daily-token-eichinger-kirch-mosum-mean-changepoint
+```
+
+### Live-smoke output (against `~/.config/pew/queue.jsonl`, 2,961 rows)
+
+```
+pew-insights daily-token-eichinger-kirch-mosum-mean-changepoint
+as of: 2026-05-06T10:11:23.682Z    sources: 6 (shown 2)
+  tokens: 3,444,271,515    min-tokens: 1,000    min-tenure-days: 21
+  bandwidthFrac: 0.1    thresholdScale: 1.4    top: —    sort: peakRatioDesc
+dropped: 0 bad hour_start, 0 non-positive tokens, 0 source-filter,
+  0 below min-tokens, 4 below min-tenure-days, 0 zero-variance,
+  0 non-finite-fit, 0 below top cap
+
+per-source MOSUM mean-shift two-sample scan
+(sorted by peakRatioDesc; ties: source asc)
+
+source          firstDay    lastDay     tenure  G   argmaxDay   mosumMax  threshold  peakRatio  mCPs  tauStarDays            verdict       tokens
+claude-code     2026-02-11  2026-04-23  72      7   2026-04-14  209.207   3.023      69.2125    2     2026-03-17,2026-04-14  strong-shift  3,442,385,788
+vscode-copilot  2025-07-30  2026-04-20  265     26  2025-10-17  2.961     3.017      0.9816     1     2026-03-26             borderline    1,885,727
+```
+
+Two of six sources surfaced a row (other four were
+dropped under the 21-day tenure floor). The dominant
+real-data finding: **claude-code** registers `peakRatio
+≈ 69.2` (`strong-shift`) with two well-separated CPs at
+`2026-03-17` and `2026-04-14`, both surviving the
+G=7-day spacing rule. **vscode-copilot** sits at
+`peakRatio ≈ 0.98` (borderline) with a single CP at
+`2026-03-26`. The G-spacing guarantee differentiates this
+from axis-232 Page-Hinkley (sequential resetting-min
+single tauStar) and axis-227 BOCPD (Bayesian online
+posterior) — only MOSUM enforces a deterministic minimum
+gap between adjacent detections.
+
+### Structural orthogonality
+
+Five-dimensional orthogonality vs prior axes 221-232:
+
+1. **SYMMETRIC TWO-SAMPLE** rolling-window mean-difference
+   (vs ASYMMETRIC CUMULATIVE in CUSUM/PH/SNHT, RANDOM
+   INTERVALS in WBS, DP cost in PELT).
+2. **MULTIPLE LOCAL-MAX changepoints** with explicit
+   G-spacing suppression (axes 232/231/230/229xaxis-228/153
+   emit at most ONE estimate; PELT/WBS emit multiples but
+   via DP/random-interval, not deterministic local-max).
+3. **BANDWIDTH-G MIN-SEGMENT-LENGTH guarantee** absent
+   everywhere else.
+4. **MAD-of-first-differences ROBUST scale** (vs IQR-of-raw
+   in axes 230/232, sample variance in 222/223).
+5. **ORNSTEIN-UHLENBECK supremum asymptotics** (vs
+   Brownian-bridge/motion, Schwarz, Bayes-factor, RKHS,
+   copula sup-deviation in 221-231).
+
+Tests: 34 new (16,533 → 16,567).
 
 ## 0.6.578 — 2026-05-06
 
