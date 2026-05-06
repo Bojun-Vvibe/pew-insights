@@ -469,3 +469,56 @@ test('ssa-cp: explicit windowL respected', () => {
   assert.ok(r.sources.every((row) => row.windowL === 4));
   assert.ok(r.sources.every((row) => row.rank === 2));
 });
+
+// ---- property-style invariants ------------------------------------------
+
+test('ssa-cp: D is monotone non-increasing in rank r (more basis = more capture)', () => {
+  // Pseudo-deterministic series.
+  const x: number[] = [];
+  for (let i = 0; i < 40; i += 1) {
+    x.push(50 + 10 * Math.sin(i / 3) + ((i * 31) % 11));
+  }
+  const base = x.slice(0, 20);
+  const test = x.slice(20, 40);
+  const L = 6;
+  let prev = 1.0;
+  for (let r = 1; r <= L; r += 1) {
+    const d = ssaSubspaceDistance(base, test, L, r);
+    assert.ok(
+      d <= prev + 1e-9,
+      `rank ${r}: D=${d} should be <= D(rank=${r - 1})=${prev}`,
+    );
+    prev = d;
+  }
+});
+
+test('ssa-cp: D is invariant under positive uniform scaling of test window', () => {
+  // Scaling test window by c > 0 multiplies both numerator and
+  // denominator by c^2 -> D invariant.
+  const base = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const test = [2, 1, 3, 2, 4, 3, 5, 4, 6, 5];
+  const L = 4;
+  const r = 2;
+  const d1 = ssaSubspaceDistance(base, test, L, r);
+  const dScaled = ssaSubspaceDistance(
+    base,
+    test.map((v) => v * 7.5),
+    L,
+    r,
+  );
+  assert.ok(Math.abs(d1 - dScaled) < 1e-8, `scale invariance: ${d1} vs ${dScaled}`);
+});
+
+test('ssa-cp: dArea bounded by (#splits - 1) since each D in [0, 1]', () => {
+  const x: number[] = [];
+  for (let i = 0; i < 80; i += 1) x.push(i < 40 ? 100 + (i % 5) : 500 + (i % 5));
+  const r = ssaChangepointRun(x, {
+    L: 6,
+    baseN: 20,
+    testM: 20,
+    rank: 2,
+    dThreshold: 0.2,
+  });
+  const upper = Math.max(0, r.dCurve.length - 1);
+  assert.ok(r.dArea <= upper + 1e-9, `dArea=${r.dArea} > upper=${upper}`);
+});
