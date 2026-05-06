@@ -564,3 +564,56 @@ test('PH builder: tenuredays gap-filled correctly even with missing days', () =>
     assert.equal(r.sources.length, 0);
   }
 });
+
+// ---- refinement: PH up/down symmetry property test ----------------------
+
+test('pageHinkleyArm: up/down symmetry under sign reflection', () => {
+  // Reflect x around its mean: y_t = 2*mean(x) - x_t.
+  // Then pageHinkleyArm(y, delta, 'up') should be IDENTICAL (numerically)
+  // to pageHinkleyArm(x, delta, 'down') because mHat(y) = 2*mean - mHat(x)
+  // and y_t - mHat(y) = -(x_t - mHat(x)).
+  const x = [
+    100, 110, 95, 105, 100, 102, 98, 99, 103,
+    250, 248, 252, 245, 251, 249, 253, 247, 250,
+    255, 252, 248, 256, 254, 251,
+  ];
+  const meanX = x.reduce((a, b) => a + b, 0) / x.length;
+  const y = x.map((v) => 2 * meanX - v);
+  const upY = pageHinkleyArm(y, 0, 'up');
+  const dnX = pageHinkleyArm(x, 0, 'down');
+  // Both PH curves should match within float tolerance.
+  for (let i = 0; i < x.length; i += 1) {
+    const a = upY.phCurve[i]!;
+    const b = dnX.phCurve[i]!;
+    assert.ok(
+      Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a) + Math.abs(b)),
+      `PH symmetry mismatch at i=${i}: up(y)=${a} vs dn(x)=${b}`,
+    );
+  }
+  assert.ok(Math.abs(upY.phMax - dnX.phMax) <= 1e-8 * Math.max(1, dnX.phMax));
+  assert.equal(upY.tauStar, dnX.tauStar);
+});
+
+test('pageHinkleyArm: PH_t = U_t - mMin_t identity holds at every t', () => {
+  const x = [
+    50, 51, 49, 52, 48, 50, 51, 49,
+    150, 152, 148, 151, 149, 150, 152,
+  ];
+  const r = pageHinkleyArm(x, 0, 'up');
+  // Reconstruct: U_t - cumulative-min(U) should equal phCurve[t] exactly.
+  // We can't access uCurve from outside, but we can recompute it manually.
+  let runSum = 0;
+  let u = 0;
+  let mMin = 0;
+  for (let t = 0; t < x.length; t += 1) {
+    runSum += x[t]!;
+    const mHat = runSum / (t + 1);
+    u += x[t]! - mHat - 0;
+    if (u < mMin) mMin = u;
+    const expectedPh = u - mMin;
+    assert.ok(
+      Math.abs(r.phCurve[t]! - expectedPh) < 1e-9,
+      `PH identity broken at t=${t}: got ${r.phCurve[t]} want ${expectedPh}`,
+    );
+  }
+});
