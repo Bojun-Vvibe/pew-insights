@@ -20828,6 +20828,7 @@ import type { DailyTokenLombardSmoothChangepointReport } from './dailytokenlomba
 import type { DailyTokenInclanTiaoIcssVarianceChangepointReport } from './dailytokeninclantiaoicssvariancechangepoint.js';
 import type { DailyTokenKillickPeltVarianceSegmentationReport } from './dailytokenkillickpeltvariancesegmentation.js';
 import type { DailyTokenFryzlewiczWbsMeanSegmentationReport } from './dailytokenfryzlewiczwbsmeansegmentation.js';
+import type { DailyTokenMattesonJamesEDivisiveDistributionalSegmentationReport } from './dailytokenmattesonjamesedivisivedistributionalsegmentation.js';
 import type { DailyTokenConoverSquaredRanksHalvesReport } from './dailytokenconoversquaredrankshalves.js';
 import type { DailyTokenMoodHalvesReport } from './dailytokenmoodhalves.js';
 import type { DailyTokenSukhatmeHalvesReport } from './dailytokensukhatmehalves.js';
@@ -31055,6 +31056,85 @@ export function renderDailyTokenFryzlewiczWbsMeanSegmentation(
   lines.push(
     chalk.dim(
       `(reference anchor: m = 0 = no WBS-significant MEAN changepoints (single mean regime); m >= 1 = m accepted changepoints under the c_zeta*sqrt(2*sigma^2*log n) threshold. tauStarDays are the ESTIMATED mean-shift days. maxAbsCusum > threshold indicates strength of the strongest accepted shift. meanRangeRatio = max(meanSeg)/min(meanSeg) across segments of length >= 3; large = strongly heterogeneous mean regimes. meanHomogeneity in (0, 1]: 1 = single mean regime, near 0 = strong heterogeneity. Compare with axis-224 PELT (multiple variance regimes): if both fire = compound MEAN+VARIANCE regime change; if only WBS fires = pure mean shift; if only PELT fires = variance-only shift.)`,
+    ),
+  );
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+export function renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(
+  r: DailyTokenMattesonJamesEDivisiveDistributionalSegmentationReport,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    chalk.bold.cyan("pew-insights daily-token-matteson-james-edivisive-distributional-segmentation"),
+  );
+  lines.push(
+    chalk.dim(
+      `as of: ${r.generatedAt}    sources: ${formatNumber(r.totalSources)} (shown ${formatNumber(r.sources.length)})    tokens: ${formatNumber(r.totalTokens)}    min-tokens: ${formatNumber(r.minTokens)}    min-tenure-days: ${formatNumber(r.minTenureDays)}    cZeta: ${r.cZeta}    top: ${r.top === 0 ? "\u2014" : r.top}    sort: ${r.sort}`,
+    ),
+  );
+  lines.push(
+    chalk.dim(
+      `dropped: ${formatNumber(r.droppedInvalidHourStart)} bad hour_start, ${formatNumber(r.droppedNonPositiveTokens)} non-positive tokens, ${formatNumber(r.droppedSourceFilter)} source-filter, ${formatNumber(r.droppedSparseSources)} below min-tokens, ${formatNumber(r.droppedBelowMinTenure)} below min-tenure-days, ${formatNumber(r.droppedZeroVariance)} zero-variance, ${formatNumber(r.droppedNonFiniteFit)} non-finite-fit, ${formatNumber(r.droppedTopSources)} below top cap`,
+    ),
+  );
+  if (r.windowStart || r.windowEnd) {
+    lines.push(
+      chalk.dim(`window: ${r.windowStart ?? "-inf"} -> ${r.windowEnd ?? "+inf"}`),
+    );
+  }
+  if (r.source !== null) {
+    lines.push(chalk.dim(`source filter: ${r.source}`));
+  }
+  lines.push(
+    chalk.dim(
+      `(per-source MATTESON-JAMES 2014 E-DIVISIVE (ECP) MULTIPLE-CHANGEPOINT estimator for the FULL DISTRIBUTION of the gap-filled daily token series. Distribution-free / non-parametric: at each candidate split b in [s+2, e-2] of segment [s, e), compute the Szekely-Rizzo 2004 EMPIRICAL ENERGY DISTANCE between the left and right halves, scaled by n1*n2/(n1+n2). Argmax over interior splits; accept iff Q^* > zeta_n = c_zeta*sigma*log(n) with sigma estimated by MAD-of-first-differences / sqrt(2). Recurse on the two sub-segments. TWO-HUNDRED-AND-TWENTY-SIXTH cross-source axis. ORTHOGONAL to all prior changepoint axes (221-225) by (1) MOMENT (full distribution vs first or second moment), (2) PARAMETRIC ASSUMPTION (distribution-free vs Gaussian or rank-based), (3) ALGORITHM (deterministic full-scan energy-distance maximisation vs CUSUM / DP / closed-form argmax / randomised wild intervals). Refs: Matteson-James 2014 *JASA* 109:334-345; Szekely-Rizzo 2004; James-Matteson 2014 *J. Stat. Software* 62(7).)`,
+    ),
+  );
+  lines.push("");
+
+  if (r.sources.length === 0) {
+    lines.push(chalk.yellow("  no source rows after filters. nothing to chart."));
+    return lines.join("\n");
+  }
+
+  lines.push(
+    chalk.bold(
+      `per-source ECP distributional segmentation (sorted by ${r.sort}; ties: source asc)`,
+    ),
+  );
+  const headers = [
+    "source",
+    "firstDay",
+    "lastDay",
+    "tenure",
+    "m",
+    "tauStarDays",
+    "maxQStar",
+    "threshold",
+    "sdRangeRatio",
+    "distHomog",
+    "tokens",
+  ];
+  const rowsOut: string[][] = r.sources.map((s) => [
+    s.source,
+    s.firstActiveDay,
+    s.lastActiveDay,
+    formatNumber(s.nTenureDays),
+    `${s.mChangepoints}`,
+    s.tauStarDays.length === 0 ? "-" : s.tauStarDays.join(","),
+    s.maxQStar.toFixed(2),
+    s.threshold.toFixed(2),
+    Number.isFinite(s.sdRangeRatio) ? s.sdRangeRatio.toFixed(3) : `${s.sdRangeRatio}`,
+    s.distributionalHomogeneity.toFixed(4),
+    formatNumber(s.totalTokens),
+  ]);
+  lines.push(renderTableLocal(headers, rowsOut));
+  lines.push("");
+  lines.push(
+    chalk.dim(
+      `(reference anchor: m = 0 = no ECP-significant DISTRIBUTIONAL changepoints (single distributional regime); m >= 1 = m accepted CPs under the c_zeta*sigma*log n threshold. tauStarDays are the ESTIMATED distributional shift days. maxQStar > threshold indicates strength of the strongest accepted shift. sdRangeRatio = max(sdSeg)/min(sdSeg) across segments of length >= 3; large = strongly heterogeneous variance regimes. distHomog in (0, 1]: 1 = single distributional regime, near 0 = strong distributional heterogeneity. Compare with axis-225 WBS (mean shifts) and axis-224 PELT (variance shifts): ECP fires on ANY distributional change including shape / tail / multimodality changes that WBS and PELT miss.)`,
     ),
   );
 

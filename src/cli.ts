@@ -231,6 +231,7 @@ import {
   renderDailyTokenInclanTiaoIcssVarianceChangepoint,
   renderDailyTokenKillickPeltVarianceSegmentation,
   renderDailyTokenFryzlewiczWbsMeanSegmentation,
+  renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation,
   renderDailyTokenConoverSquaredRanksHalves,
   renderDailyTokenMoodHalves,
   renderDailyTokenSukhatmeHalves,
@@ -811,6 +812,10 @@ import {
   buildDailyTokenFryzlewiczWbsMeanSegmentation,
   type DailyTokenFryzlewiczWbsMeanSegmentationSort,
 } from './dailytokenfryzlewiczwbsmeansegmentation.js';
+import {
+  buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation,
+  type DailyTokenMattesonJamesEDivisiveDistributionalSegmentationSort,
+} from './dailytokenmattesonjamesedivisivedistributionalsegmentation.js';
 import {
   buildDailyTokenConoverSquaredRanksHalves,
   type DailyTokenConoverSquaredRanksHalvesSort,
@@ -49378,6 +49383,123 @@ program
         } else {
           process.stdout.write(
             renderDailyTokenFryzlewiczWbsMeanSegmentation(report) + '\n',
+          );
+        }
+      } catch (e) {
+        die(e);
+      }
+    },
+  );
+
+program
+  .command('daily-token-matteson-james-edivisive-distributional-segmentation')
+  .description(
+    "Per-source MATTESON-JAMES 2014 E-DIVISIVE (ECP) MULTIPLE-CHANGEPOINT estimator for the FULL DISTRIBUTION on the gap-filled daily total_tokens series (TWO-HUNDRED-AND-TWENTY-SIXTH cross-source axis). Distribution-free / non-parametric. At each candidate split b in [s+2, e-2] of segment [s, e), compute the Szekely-Rizzo 2004 EMPIRICAL ENERGY DISTANCE between the left and right halves scaled by n1*n2/(n1+n2); argmax over interior splits; accept iff Q^* > zeta_n = c_zeta*sigma*log(n) with sigma estimated by MAD-of-first-differences / sqrt(2). Recurse on the two sub-segments. ORTHOGONAL to all prior changepoint axes (221-225) by (1) MOMENT (full distribution vs first or second moment), (2) PARAMETRIC ASSUMPTION (distribution-free vs Gaussian or rank-based), (3) ALGORITHM (deterministic full-scan energy-distance maximisation vs CUSUM / DP / closed-form argmax / randomised wild intervals). Refs: Matteson-James 2014 *JASA* 109:334-345; Szekely-Rizzo 2004; James-Matteson 2014 *J. Stat. Software* 62(7).",
+  )
+  .option('--since <iso>', 'inclusive ISO lower bound on hour_start')
+  .option('--until <iso>', 'exclusive ISO upper bound on hour_start')
+  .option(
+    '--source <name>',
+    'restrict analysis to a single source; non-matching rows surface as droppedSourceFilter',
+  )
+  .option(
+    '--min-tokens <n>',
+    'hide source rows with total_tokens below n (default 1000); counts surface as droppedSparseSources',
+    '1000',
+  )
+  .option(
+    '--min-tenure-days <n>',
+    'hide source rows whose gap-filled tenure is below n. Hard floor 21. Default 21.',
+    '21',
+  )
+  .option(
+    '--top <n>',
+    'show only the top n sources after sort; remainder surface as droppedTopSources (default 0 = no cap)',
+    '0',
+  )
+  .option(
+    '--c-zeta <c>',
+    'ECP threshold scale c_zeta in zeta_n = c_zeta*sigma*log n; default 1.0.',
+    '1.0',
+  )
+  .option(
+    '--sort <key>',
+    'sort key: mChangepointsDesc (default) | mChangepoints | maxQStar | maxQStarDesc | sdRangeRatio | sdRangeRatioDesc | distributionalHomogeneity | distributionalHomogeneityDesc | tokens | tenure | source.',
+    'mChangepointsDesc',
+  )
+  .option('--json', 'emit JSON instead of a pretty report')
+  .action(
+    async (
+      opts: {
+        since?: string;
+        until?: string;
+        source?: string;
+        minTokens: string;
+        minTenureDays: string;
+        top: string;
+        cZeta: string;
+        sort: string;
+        json?: boolean;
+      },
+      cmd,
+    ) => {
+      try {
+        const common = cmd.optsWithGlobals() as CommonOpts;
+        const paths = resolvePewPaths(common.pewHome);
+        const minTokens = Number.parseFloat(opts.minTokens);
+        if (!Number.isFinite(minTokens) || minTokens < 0) {
+          throw new Error(
+            `--min-tokens must be a non-negative number (got ${opts.minTokens})`,
+          );
+        }
+        const minTenureDays = Number.parseInt(opts.minTenureDays, 10);
+        if (!Number.isInteger(minTenureDays) || minTenureDays < 21) {
+          throw new Error(
+            `--min-tenure-days must be an integer >= 21 (got ${opts.minTenureDays})`,
+          );
+        }
+        const top = Number.parseInt(opts.top, 10);
+        if (!Number.isInteger(top) || top < 0) {
+          throw new Error(`--top must be a non-negative integer (got ${opts.top})`);
+        }
+        const cZeta = Number.parseFloat(opts.cZeta);
+        if (!Number.isFinite(cZeta) || cZeta <= 0) {
+          throw new Error(`--c-zeta must be > 0 (got ${opts.cZeta})`);
+        }
+        const validSorts = [
+          'mChangepoints',
+          'mChangepointsDesc',
+          'maxQStar',
+          'maxQStarDesc',
+          'sdRangeRatio',
+          'sdRangeRatioDesc',
+          'distributionalHomogeneity',
+          'distributionalHomogeneityDesc',
+          'tokens',
+          'tenure',
+          'source',
+        ];
+        if (!validSorts.includes(opts.sort)) {
+          throw new Error(
+            `--sort must be one of ${validSorts.join('|')} (got ${opts.sort})`,
+          );
+        }
+        const queue = await readQueue(paths);
+        const report = buildDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(queue, {
+          since: opts.since ?? null,
+          until: opts.until ?? null,
+          source: opts.source ?? null,
+          minTokens,
+          minTenureDays,
+          top,
+          cZeta,
+          sort: opts.sort as DailyTokenMattesonJamesEDivisiveDistributionalSegmentationSort,
+        });
+        if (opts.json || common.json) {
+          process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        } else {
+          process.stdout.write(
+            renderDailyTokenMattesonJamesEDivisiveDistributionalSegmentation(report) + '\n',
           );
         }
       } catch (e) {
