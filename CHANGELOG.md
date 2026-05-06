@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.568 — 2026-05-06
+
+### Added — axis-225 x axis-224 WBS-vs-PELT mean-vs-variance multiple-changepoint compound
+
+Pure-library cross-axis 5-bucket diagnostic joining the v0.6.567
+axis-225 FRYZLEWICZ 2014 WILD BINARY SEGMENTATION (WBS) MULTIPLE-
+CHANGEPOINT MEAN estimator with the v0.6.563 axis-224 KILLICK-
+FEARNHEAD-ECKLEY 2012 PELT MULTIPLE-CHANGEPOINT VARIANCE-
+SEGMENTATION on a per-source basis.
+
+Both axes are MULTIPLE-CHANGEPOINT estimators, so the cardinality
+dimension is shared. They are mutually orthogonal along three
+INDEPENDENT dimensions inside the multiple-CP class:
+
+  1. MOMENT TARGETED. WBS targets the FIRST MOMENT (mean shift via
+     CUSUM on the raw series). PELT targets the SECOND MOMENT
+     (variance segmentation under Gaussian variance cost on the
+     mean-centred series).
+  2. ESTIMATION CRITERION. WBS uses a CUSUM-MAX TEST against a
+     SIGMA-AND-LOG-N THRESHOLD calibrated by MAD-of-first-
+     differences. PELT uses a BIC-PENALISED LIKELIHOOD with a
+     Schwarz finite-sample penalty -- no test threshold.
+  3. ALGORITHMIC FAMILY. WBS is a RANDOMISED RECURSIVE CUSUM
+     AGGREGATION over wild sub-intervals (with seedable mulberry32
+     determinism). PELT is a DETERMINISTIC DYNAMIC-PROGRAMMING
+     RECURSION with sub-additivity pruning.
+
+5-bucket compound:
+
+```
+'agree-aligned'    wbsDecisive AND peltDecisive AND aligned
+'agree-misaligned' wbsDecisive AND peltDecisive AND NOT aligned
+'wbs-only'         wbsDecisive AND NOT peltDecisive
+'pelt-only'        peltDecisive AND NOT wbsDecisive
+'no-evidence'      neither decisive
+```
+
+Decisiveness:
+  - wbsDecisive  := wbsM >= 1
+  - peltDecisive := peltM >= 1
+
+Aligned (when both decisive):
+  - aligned := exists (i, j) with
+              |wbsTauStar[i] - peltTauStar[j]| <= proximityGuard
+    (NEAREST-NEIGHBOUR proximity in either direction; both axes
+    can have multiple taus). proximityGuard = 0 forces exact-match
+    on a shared CP.
+
+Mechanistic reading:
+
+  - wbs-only: pure mean shifts that do not perturb the segment-wise
+    variance enough to pay the BIC penalty -- slowly-drifting load
+    where within-segment scatter is roughly constant but the level
+    moves.
+  - pelt-only: pure variance regime change with no detectable mean
+    shift -- bursty / quiescent alternation around a stable long-
+    run mean.
+  - agree-aligned: joint MEAN-AND-VARIANCE regime change at the
+    same epoch -- strongest evidence for a single underlying
+    regime transition.
+  - agree-misaligned: source has a mean-shift schedule disjoint
+    from its variance-shift schedule -- compound pipeline events
+    (e.g. config change vs traffic spike).
+  - no-evidence: joint mean-and-variance stationarity at both
+    thresholds.
+
+Surfaces per source: `wbsM`, `wbsTauStar`, `wbsMaxAbsCusum`,
+`wbsThreshold`, `wbsMeanRangeRatio`, `wbsMeanHomogeneity`, `peltM`,
+`peltTauStar`, `peltVarRangeRatio`, `peltCostReduction`,
+`peltVarHomogeneity`, `wbsDecisive`, `peltDecisive`,
+`nearestPairDistance` (min over all (i, j) pairs;
+MAX_SAFE_INTEGER if either tau set is empty), `multiRegimeEither`
+(true iff at least one axis returned m >= 2), `bucket`,
+`jointAlignment`. Report aggregates: `bucketCounts`, `bothDecisive`,
+`atLeastOneDecisive`, `byJointAlignment` (aligned / misaligned /
+anyMissingDecisive), `bothDecisiveMultiRegime`,
+`bothDecisiveSingleRegime`, `sourcesOnlyInWbs`, `sourcesOnlyInPelt`.
+
+Tests: 16165 -> 16184 (+19). v0.6.567 -> v0.6.568.
+
+Refs: Fryzlewicz 2014 *Annals of Statistics* 42(6):2243-2281;
+Killick-Fearnhead-Eckley 2012 *JASA* 107:1590-1598.
+
 ## 0.6.567 — 2026-05-06
 
 ### Added — axis-225 FRYZLEWICZ 2014 WILD BINARY SEGMENTATION (WBS) MEAN-CHANGEPOINT ESTIMATOR
