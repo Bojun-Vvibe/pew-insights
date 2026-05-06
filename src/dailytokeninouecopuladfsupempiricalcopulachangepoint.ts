@@ -313,6 +313,59 @@ export function inoueVerdict(
   return 'strong-shift';
 }
 
+/**
+ * Numeric stability guard: returns true when (dPrefix, dSuffix)
+ * are both finite and the absolute mass gap exceeds `epsMass`.
+ * Useful for downstream consumers that want to suppress rows
+ * whose verdict is technically 'shift' but whose copula-mass
+ * differential is microscopic (numerically driven, not
+ * substantively driven).
+ */
+export function inoueIsSubstantiveShift(
+  row: { dPrefix: number; dSuffix: number; verdict: string },
+  epsMass = 0.02,
+): boolean {
+  if (!Number.isFinite(row.dPrefix) || !Number.isFinite(row.dSuffix)) return false;
+  if (row.verdict === 'no-shift' || row.verdict === 'borderline') return false;
+  return Math.abs(row.dPrefix - row.dSuffix) >= epsMass;
+}
+
+/**
+ * Compact JSON-friendly summary for one source row. Strips
+ * the (potentially large) dCurve from `inoueCopulaScan` results
+ * and keeps only the headline fields needed for dashboards.
+ */
+export function inoueSummariseRow(row: {
+  source: string;
+  dMax: number;
+  tauHat: number;
+  tauHatDay: string;
+  verdict: string;
+  nTenureDays: number;
+  nEmbedded: number;
+  kMin: number;
+}): {
+  source: string;
+  dMax: number;
+  tauHat: number;
+  tauHatDay: string;
+  verdict: string;
+  n: number;
+  nEmbedded: number;
+  kMin: number;
+} {
+  return {
+    source: row.source,
+    dMax: row.dMax,
+    tauHat: row.tauHat,
+    tauHatDay: row.tauHatDay,
+    verdict: row.verdict,
+    n: row.nTenureDays,
+    nEmbedded: row.nEmbedded,
+    kMin: row.kMin,
+  };
+}
+
 // =========================================================
 // SECTION 3. PER-SOURCE BUILDER
 // =========================================================

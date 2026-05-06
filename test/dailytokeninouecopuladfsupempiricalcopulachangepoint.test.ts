@@ -4,6 +4,8 @@ import {
   buildDailyTokenInoueCopulaDfSupEmpiricalCopulaChangepoint,
   inoueCopulaScan,
   inoueVerdict,
+  inoueIsSubstantiveShift,
+  inoueSummariseRow,
   averageRanks,
   fnv1a32,
 } from '../src/dailytokeninouecopuladfsupempiricalcopulachangepoint.js';
@@ -382,4 +384,111 @@ test('inoueVerdict: cutoff ladder', () => {
 test('fnv1a32: deterministic and non-zero', () => {
   assert.equal(fnv1a32('axis231'), fnv1a32('axis231'));
   assert.notEqual(fnv1a32('a'), fnv1a32('b'));
+});
+
+// ---- refinement: substantive-shift guard + summariser -------------------
+
+test('inoueIsSubstantiveShift: rejects no-shift / borderline regardless of mass gap', () => {
+  assert.equal(
+    inoueIsSubstantiveShift({ dPrefix: 0.9, dSuffix: 0.1, verdict: 'no-shift' }),
+    false,
+  );
+  assert.equal(
+    inoueIsSubstantiveShift({ dPrefix: 0.9, dSuffix: 0.1, verdict: 'borderline' }),
+    false,
+  );
+});
+
+test('inoueIsSubstantiveShift: accepts shift when mass gap exceeds default eps', () => {
+  assert.equal(
+    inoueIsSubstantiveShift({ dPrefix: 0.7, dSuffix: 0.3, verdict: 'shift' }),
+    true,
+  );
+  assert.equal(
+    inoueIsSubstantiveShift({
+      dPrefix: 0.7,
+      dSuffix: 0.3,
+      verdict: 'strong-shift',
+    }),
+    true,
+  );
+});
+
+test('inoueIsSubstantiveShift: rejects shift when mass gap below eps', () => {
+  // Default eps is 0.02; 0.001 differential should be filtered.
+  assert.equal(
+    inoueIsSubstantiveShift({ dPrefix: 0.5, dSuffix: 0.501, verdict: 'shift' }),
+    false,
+  );
+});
+
+test('inoueIsSubstantiveShift: respects custom eps', () => {
+  assert.equal(
+    inoueIsSubstantiveShift(
+      { dPrefix: 0.50, dSuffix: 0.55, verdict: 'shift' },
+      0.10,
+    ),
+    false,
+  );
+  assert.equal(
+    inoueIsSubstantiveShift(
+      { dPrefix: 0.50, dSuffix: 0.55, verdict: 'shift' },
+      0.01,
+    ),
+    true,
+  );
+});
+
+test('inoueIsSubstantiveShift: rejects non-finite inputs', () => {
+  assert.equal(
+    inoueIsSubstantiveShift({ dPrefix: NaN, dSuffix: 0.5, verdict: 'shift' }),
+    false,
+  );
+  assert.equal(
+    inoueIsSubstantiveShift({
+      dPrefix: 0.5,
+      dSuffix: Infinity,
+      verdict: 'shift',
+    }),
+    false,
+  );
+});
+
+test('inoueSummariseRow: keeps only headline fields', () => {
+  const summary = inoueSummariseRow({
+    source: 's',
+    dMax: 1.7,
+    tauHat: 12,
+    tauHatDay: '2026-04-01',
+    verdict: 'shift',
+    nTenureDays: 30,
+    nEmbedded: 29,
+    kMin: 5,
+  });
+  assert.deepEqual(summary, {
+    source: 's',
+    dMax: 1.7,
+    tauHat: 12,
+    tauHatDay: '2026-04-01',
+    verdict: 'shift',
+    n: 30,
+    nEmbedded: 29,
+    kMin: 5,
+  });
+});
+
+test('inoueSummariseRow: round-trips through JSON.stringify cleanly', () => {
+  const summary = inoueSummariseRow({
+    source: 'claude-code',
+    dMax: 2.72,
+    tauHat: 34,
+    tauHatDay: '2026-03-17',
+    verdict: 'strong-shift',
+    nTenureDays: 72,
+    nEmbedded: 71,
+    kMin: 8,
+  });
+  const json = JSON.stringify(summary);
+  const parsed = JSON.parse(json);
+  assert.deepEqual(parsed, summary);
 });
