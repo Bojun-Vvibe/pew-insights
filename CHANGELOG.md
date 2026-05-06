@@ -2,6 +2,109 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.560 — 2026-05-06
+
+### Added — axis-223 x axis-222 Inclán-Tiao vs Lombard variance-vs-location compound
+
+Pure-library cross-axis 5-bucket diagnostic joining the v0.6.558
+axis-223 INCLÁN-TIAO 1994 ICSS VARIANCE-CHANGEPOINT TEST (`itStat`,
+`pApprox`, `kStar`, `directionSign`, `logVarRatio`, `kCritical05`)
+with the v0.6.554 axis-222 LOMBARD 1987 RANK-BASED SMOOTH-CHANGEPOINT
+TEST (`ln`, `pApprox`, `kStar`, `directionSign`, `meanShift`) on a
+per-source basis.
+
+Structural claim. The two axes are mutually orthogonal because they
+target DIFFERENT MOMENTS under COMPLEMENTARY NULLS:
+
+  1. MOMENT TARGETED: ICSS tests for a change in the SECOND MOMENT
+     (variance) under H0 of constant unconditional variance. Lombard
+     tests for a change in the FIRST MOMENT (location) under H0 of
+     exchangeability with constant variance.
+  2. INVARIANCES: ICSS is invariant under mean-shifts (mean-centring
+     removes them); Lombard is invariant under monotone marginal
+     transformations (rank-based) but NOT under variance-shifts. The
+     pair therefore DECOUPLES the location and scale dimensions of a
+     regime change.
+  3. ASYMPTOTIC NULL DISTRIBUTION: ICSS has a Kolmogorov-Smirnov sup-
+     norm null (L-infinity functional of a Brownian bridge of squared
+     residuals); Lombard has an Anderson-Darling-like integrated null
+     (L-2 functional of a Brownian bridge of smoothed ranks).
+
+ICSS-vs-Lombard is therefore the MOMENT-TARGETED x FUNCTIONAL DOUBLE
+DUAL on the single-changepoint surface, complementing the within-
+location single-axis duals shipped in v0.6.552 (axis-221 SNHT vs
+axis-154 Pettitt, statistic-family only) and v0.6.556 (axis-222
+Lombard vs axis-221 SNHT, statistic-family x change-shape on
+location).
+
+Buckets (5): `agree-aligned`, `agree-misaligned`, `icss-only`,
+`lombard-only`, `no-evidence`. Decisiveness: ICSS decisive iff
+`icssPApprox < alpha` OR `icssItStat >= icssKCritical05` (defensive
+OR -- pApprox is the closed-form Kolmogorov upper-tail; kCritical05
+is the Inclán-Tiao 1994 Table-1 asymptotic 1.358); Lombard decisive
+iff `lombardPApprox < alpha`. Alignment (when both decisive):
+`|icssKStar - lombardKStar| <= proximityGuard` (default 5 days).
+Both axes already report kStar in 0-based indexing, so no
+normalisation is required.
+
+Diagnostic semantics:
+
+  - agree-aligned: a coupled regime change where mean AND variance
+    shift around the same day -- strongest evidence for a true
+    behavioural transition (e.g. an account quota change that both
+    raises the daily mean AND widens its spread).
+  - agree-misaligned: two structurally distinct regime breaks -- one
+    in the first moment, one in the second moment, separated by more
+    than the guard window. Surface for forensic review.
+  - icss-only: pure VARIANCE shift -- the mean is stable while the
+    spread of daily total_tokens widens or narrows. Common when token
+    volume becomes more bursty (e.g. interleaving of long-output
+    models alongside short-output ones).
+  - lombard-only: pure LOCATION shift -- the mean drifts smoothly
+    while the spread is stable. Common with linear / logistic ramps
+    in adoption.
+  - no-evidence: stationarity in both moments at alpha.
+
+Diagnostic surfaces in the joined row:
+  - `argmaxDistance`: `|icssKStar - lombardKStar|` in days.
+  - `signAgreement`: `sign(icssLogVarRatio)` vs `sign(lombardMeanShift)`
+    (both nonzero). True iff the variance shift direction (positive
+    = variance INCREASES after kStar) and the location shift direction
+    (positive = mean INCREASES after kStar) coincide.
+  - `jointAlignment` in {`aligned`, `misaligned`, null}: null when at
+    least one axis is not decisive.
+
+Pure transform. Determinism: full. Caller supplies pre-computed ICSS
+and Lombard row arrays; the classifier performs an inner-join on
+`source`, tracks asymmetric membership via `sourcesOnlyInIcss` /
+`sourcesOnlyInLombard`, and returns aggregate counts (`bucketCounts`,
+`bothDecisive`, `atLeastOneDecisive`, `byJointAlignment`,
+`bothDecisiveSignAgree`, `bothDecisiveSignDisagree`).
+
+Also exposes `summarizeAxis223Axis222IcssLombardReport` for compact
+one-line operational logs.
+
+Tests: 16036 -> 16065 (+29). Coverage: input validation (alpha range,
+proximityGuard non-negative integer, array inputs, source string
+non-empty, ICSS `itStat >= 0`, p in [0, 1], `kStar` non-negative
+integer, `directionSign` in {-1, 0, +1}, `kCritical05 > 0`, finite
+`logVarRatio`, Lombard `ln >= 0`, p in [0, 1]); all 5 bucket cases
+including the OR-decisiveness path (`icssPApprox >= alpha` but
+`icssItStat >= kCritical05`); proximityGuard parameterisation
+including 0 (exact match required); alpha threshold sensitivity at
+the boundary; sign-agreement handling for zero direction-sign and
+opposite signs; source-set asymmetry tracking (ICSS-only and
+Lombard-only); duplicate-source rejection; deterministic alphabetic
+ordering; mixed bucket distribution end-to-end. Summarizer exercise
+on a representative joined report.
+
+Caveats. Both axes assume independence under their respective nulls;
+sources with strong autocorrelation may inflate both pApprox values.
+The joint test is not a formal omnibus -- bucket counts are
+descriptive, not a probability. For the joint omnibus surface use
+the (axis-223, axis-222, axis-221) triple (smooth-vs-abrupt-vs-
+variance) once axis-224+ ships an explicit triple compound.
+
 ## 0.6.558 — 2026-05-06
 
 ### Added — axis-223 Inclán-Tiao 1994 ICSS variance-changepoint test
