@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.575 — 2026-05-06
+
+### Added — axis-229 x axis-228 spectral-CUSUM x SSA-subspace compound
+
+5-bucket cross-paradigm compound classifier joining the
+v0.6.574 axis-229 PICARD-AUE-HORVATH SPECTRAL CUSUM
+(FREQUENCY-DOMAIN) per-source surface with the v0.6.573
+axis-228 MOSKVINA-ZHIGLJAVSKY SSA SUBSPACE (STATE-SPACE
+/ HANKEL DELAY-EMBEDDING) per-source surface.
+
+Both axes are MULTIPLE-CHANGEPOINT estimators on the
+same gap-filled daily total_tokens series, so the
+cardinality dimension is shared. They are mutually
+orthogonal along three INDEPENDENT dimensions:
+
+  1. REPRESENTATION DOMAIN. Axis-229 lives in the
+     FOURIER FREQUENCY DOMAIN (periodogram, complex-
+     exponential basis). Axis-228 lives in the TIME-
+     DOMAIN STATE SPACE (Hankel delay embedding, SVD
+     subspace).
+  2. WHAT IS DETECTED. Axis-229 fires on changes in
+     SUB-BAND SPECTRAL ENERGY. Axis-228 fires on
+     changes in the L-LAG SUBSPACE (Hankel column
+     span). Spectrum and Hankel subspace are related
+     (Karhunen) but not equal: a sub-band energy flip
+     can occur with no Hankel rank change when the flip
+     is between in-subspace modes; conversely an
+     in-band frequency-phase reshuffle that preserves
+     total band energy can change the Hankel subspace
+     without moving the periodogram total in B.
+  3. ALGORITHMIC FAMILY. Axis-229 = DFT + Picard
+     standardised partial-sum CUSUM. Axis-228 =
+     SVD/Jacobi eigendecomposition + Frobenius
+     subspace-projection statistic. The DFT is shift-
+     invariant in time; the SVD is rotation-invariant
+     in column space — disjoint invariances.
+
+Buckets:
+
+```
+'agree-aligned'    spectralM>=1 AND ssaM>=1 AND aligned
+'agree-misaligned' spectralM>=1 AND ssaM>=1 AND NOT aligned
+'spectral-only'    spectralM>=1 AND ssaM=0
+'ssa-only'         ssaM>=1 AND spectralM=0
+'no-evidence'      neither decisive
+```
+
+Aligned = exists (i, j) with
+| spectralTauStar[i] - ssaTauStar[j] | <= proximityGuard
+(default 5 days).
+
+Joint behaviour is mechanistically informative:
+
+  - spectral-only -> a sub-band power flip that the
+    L-lag subspace doesn't see (e.g. weekday/weekend
+    pattern flip with unchanged Hankel rank).
+  - ssa-only -> a low-rank trajectory-basis rotation
+    that leaves sub-band integrated energy unchanged
+    (a new lag-coupling mode whose mass spreads
+    across the spectrum).
+  - agree-aligned -> simultaneous spectral + state-
+    space regime change at the same epoch. Strongest
+    cross-paradigm evidence for a single underlying
+    time-series event.
+
+24 new tests covering shape validation, bucket logic,
+proximity guard, multi-regime tracking, and
+determinism.
+
+Library-only (no CLI/format wiring) following the
+recent compound-classifier convention (axes 221-227).
+
+Refs: Picard 1985 *Adv. Appl. Probab.* 17(4):841-867;
+Aue, Hormann, Horvath & Reimherr 2009 *Ann. Statist.*
+37(6B):4046-4087; Moskvina & Zhigljavsky 2003 *Comm.
+Statist. Simul. Comput.* 32(2):319-352.
+
 ## 0.6.574 — 2026-05-06
 
 ### Added — axis-229 Picard-Aue-Horvath spectral CUSUM changepoint
