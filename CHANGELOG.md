@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.564 — 2026-05-06
+
+### Added — axis-224 x axis-223 PELT vs ICSS multiple-vs-single variance changepoint compound
+
+Pure-library cross-axis 5-bucket diagnostic joining the v0.6.563
+axis-224 KILLICK-FEARNHEAD-ECKLEY 2012 PELT MULTIPLE-CHANGEPOINT
+VARIANCE-SEGMENTATION (`mChangepoints`, `tauStar`, `varRangeRatio`,
+`costReduction`, `varHomogeneity`) with the v0.6.558 axis-223
+INCLAN-TIAO 1994 ICSS SINGLE-CHANGEPOINT VARIANCE TEST
+(`itStat`, `pApprox`, `kStar`, `kCritical05`, `directionSign`,
+`logVarRatio`) on a per-source basis.
+
+Structural claim. Both axes target VARIANCE regime change, so they
+share the second-moment dimension. They are mutually orthogonal
+along three INDEPENDENT dimensions inside that shared moment:
+
+  1. CARDINALITY OF CHANGEPOINTS. ICSS is a SINGLE-CHANGEPOINT
+     detector (H0: constant variance vs H1: exactly one shift).
+     PELT is a MULTIPLE-CHANGEPOINT EXACT segmenter that returns
+     the optimal m for m in {0, 1, 2, ...} jointly with {tau_j}.
+  2. ESTIMATION CRITERION. ICSS uses the Brownian-bridge SUP-NORM
+     functional with a Kolmogorov asymptotic null. PELT uses the
+     GAUSSIAN BIC-PENALISED LIKELIHOOD with a Schwarz finite-sample
+     penalty -- no null distribution required.
+  3. ALGORITHMIC FAMILY. ICSS is a CLOSED-FORM ARGMAX of a
+     cumulative-sum-of-squares functional. PELT is a DYNAMIC-
+     PROGRAMMING RECURSION with sub-additivity pruning.
+
+The two estimators DECOUPLE the regime-cardinality and the test-
+criterion dimensions of variance changepoint detection.
+
+5-bucket compound:
+
+```
+'agree-aligned'    icssDecisive AND peltDecisive AND aligned
+'agree-misaligned' icssDecisive AND peltDecisive AND NOT aligned
+'pelt-only'        peltDecisive AND NOT icssDecisive
+'icss-only'        icssDecisive AND NOT peltDecisive
+'no-evidence'      neither decisive
+```
+
+Decisiveness:
+  - icssDecisive := icssPApprox < alpha OR icssItStat >= icssKCritical05
+  - peltDecisive := peltMChangepoints >= 1
+
+Aligned (both decisive):
+  - aligned := min_j |icssKStar - peltTauStar[j]| <= proximityGuard
+    (NEAREST-NEIGHBOUR distance, since PELT can have multiple taus)
+
+argmaxDistance is set to Number.MAX_SAFE_INTEGER if peltTauStar is
+empty (PELT non-decisive). multiRegimeOverIcss is true iff both
+decisive AND peltMChangepoints >= 2 (ICSS finds one but PELT finds
+multiple variance regimes -- the genuinely interesting case).
+
+bothDecisiveMultiRegime / bothDecisiveSingleRegime partition
+bothDecisive into the m>=2 vs m=1 PELT outcomes, surfacing the
+fraction of ICSS-positive sources that PELT decomposes into
+multiple regimes.
+
+Tests: 16102 -> 16125 (+23). v0.6.563 -> v0.6.564.
+
 ## 0.6.563 — 2026-05-06
 
 ### Added — axis-224 Killick-Fearnhead-Eckley 2012 PELT variance segmentation
